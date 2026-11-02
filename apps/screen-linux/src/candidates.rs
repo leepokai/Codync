@@ -138,6 +138,7 @@ mod tests {
             pipeline: gst::Pipeline::new(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
             incoming: Some(Mutex::default()),
+            _input: tokio::sync::oneshot::channel().0,
         };
         (helper, events, session)
     }

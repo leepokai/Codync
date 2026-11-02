@@ -183,6 +183,15 @@ pub async fn reconnect(slot: &Slot, dead: &X11, data: &Path) -> bool {
 }
 
 impl Backend {
+    /// Whether `other` is this same portal session or X connection.
+    pub fn same(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Portal(a), Self::Portal(b)) => a.same(b),
+            (Self::X11(a), Self::X11(b)) => a.same(b),
+            _ => false,
+        }
+    }
+
     pub fn is_active(&self) -> bool {
         match self {
             Self::Portal(p) => p.is_active(),

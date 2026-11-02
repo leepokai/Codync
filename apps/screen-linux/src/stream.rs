@@ -2,6 +2,7 @@
 //! sent over GStreamer `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
 
 use crate::Helper;
+use crate::backend::Backend;
 pub use crate::capture::Capture;
 #[cfg(test)]
 use crate::capture::capture_source;
@@ -16,7 +17,7 @@ use gst::prelude::*;
 use serde_json::{Value, json};
 use std::os::fd::IntoRawFd;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 /// Hardware encoders first; x264 is the always-there fallback.
 const ENCODERS: &[&str] = &[
@@ -36,6 +37,8 @@ pub struct Session {
     pub(super) webrtc: gst::Element,
     /// The phone's candidates so far; `None` for a complete-SDP session.
     pub(super) incoming: Option<Mutex<crate::candidates::Candidates>>,
+    /// Dropped with the session, which ends its input task once the input queued so far is done.
+    pub(super) _input: oneshot::Sender<()>,
 }
 
 impl Session {
@@ -44,6 +47,7 @@ impl Session {
         display: &Display,
         capture: Capture,
         helper: &Arc<Helper>,
+        backend: &Backend,
         config: &Value,
     ) -> Result<Self> {
         let payload = h264_payload(config["sdp"].as_str().context("missing offer")?)?;
@@ -97,8 +101,9 @@ impl Session {
         pipeline.add_many(chain)?;
         gst::Element::link_many(chain)?;
 
-        // Input from the phone, applied in order.
+        // Input from the phone, applied in order, only to what this stream shares.
         let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
+        let (input, mut ended) = oneshot::channel::<()>();
         let view = View {
             crop: crop.clone(),
             size: size.clone(),
@@ -109,19 +114,37 @@ impl Session {
             let helper = helper.clone();
             let channels = channels.clone();
             let display = display.clone();
+            let backend = backend.clone();
             tokio::spawn(async move {
-                while let Some(msg) = rx.recv().await {
+                let mut open = true;
+                loop {
+                    let msg = tokio::select! {
+                        // The stream ended: no more input, but what it queued (a button release)
+                        // still applies, to the backend it shares or not at all.
+                        _ = &mut ended, if open => {
+                            open = false;
+                            rx.close();
+                            continue;
+                        }
+                        msg = rx.recv() => match msg {
+                            Some(msg) => msg,
+                            None => break,
+                        },
+                    };
                     let reply = match msg["type"].as_str() {
                         Some("view") => Some(view.apply(&msg)),
-                        Some("clipboard") => {
-                            let x11 = helper.x11_display().await;
-                            clipboard::set(msg["text"].as_str().unwrap_or_default(), x11.as_deref())
-                                .await
-                                .err()
-                                .as_ref()
-                                .map(error_msg)
-                        }
-                        _ => match helper.portal().await {
+                        Some("clipboard") => match helper.x11_display(&backend).await {
+                            Ok(x11) => clipboard::set(
+                                msg["text"].as_str().unwrap_or_default(),
+                                x11.as_deref(),
+                            )
+                            .await
+                            .err()
+                            .as_ref()
+                            .map(error_msg),
+                            Err(error) => Some(error_msg(&error)),
+                        },
+                        _ => match helper.input_backend(&backend).await {
                             Ok(portal) => portal
                                 .perform(&display, &msg)
                                 .await
@@ -171,6 +194,7 @@ impl Session {
             pipeline,
             webrtc,
             incoming: trickle.then(Mutex::default),
+            _input: input,
         })
     }
 
@@ -354,6 +378,7 @@ mod tests {
             pipeline,
             webrtc,
             incoming: Some(Mutex::default()),
+            _input: tokio::sync::oneshot::channel().0,
         };
         let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
             m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\n\

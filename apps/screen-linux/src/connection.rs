@@ -46,6 +46,7 @@ mod tests {
             pipeline: gst::Pipeline::new(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
             incoming: Some(std::sync::Mutex::default()),
+            _input: tokio::sync::oneshot::channel().0,
         }
     }
 

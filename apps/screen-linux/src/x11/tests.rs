@@ -216,6 +216,31 @@ async fn caps_lock_doesnt_change_the_typed_letters() {
 }
 
 #[tokio::test]
+async fn a_streams_input_never_reaches_the_display_shared_after_it() {
+    use crate::backend::Backend;
+    use tokio::sync::Mutex as AsyncMutex;
+    let Some(server) = Xvfb::start() else { return };
+    let first = Backend::X11(X11::connect(server.1.clone()).await.unwrap());
+    let helper = crate::Helper {
+        portal: Arc::new(AsyncMutex::new(Some(first.clone()))),
+        last_status: AsyncMutex::new(None),
+        sessions: crate::sessions::Sessions::default(),
+        out: tokio::sync::mpsc::unbounded_channel().0,
+        rt: tokio::runtime::Handle::current(),
+    };
+    assert!(helper.input_backend(&first).await.is_ok());
+    let paste = helper.x11_display(&first).await.unwrap();
+    assert_eq!(paste.as_deref(), Some(server.1.as_str()));
+    // A reconnection replaced the backend, here with the same display: what the ended stream
+    // still sends is refused.
+    let next = Backend::X11(X11::connect(server.1.clone()).await.unwrap());
+    *helper.portal.lock().await = Some(next.clone());
+    assert!(helper.input_backend(&first).await.is_err());
+    assert!(helper.x11_display(&first).await.is_err());
+    assert!(helper.input_backend(&next).await.is_ok());
+}
+
+#[tokio::test]
 async fn paste_goes_to_the_shared_x_display() {
     if std::process::Command::new("xclip")
         .arg("-version")

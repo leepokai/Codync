@@ -162,6 +162,11 @@ impl Portal {
         self.0.active.load(Ordering::Relaxed)
     }
 
+    /// Whether `other` is this same portal session.
+    pub fn same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
     pub fn has_input(&self) -> bool {
         self.is_active() && self.0.input
     }

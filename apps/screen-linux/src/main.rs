@@ -37,6 +37,9 @@ fn data_dir() -> PathBuf {
     )
 }
 
+/// Why input from a stream is refused once what it showed is no longer shared.
+const SESSION_ENDED: &str = "This screen session has ended.";
+
 /// Messages to the host, one JSON line each.
 pub type Outbox = mpsc::UnboundedSender<Value>;
 
@@ -144,7 +147,7 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
                 .answer(id, sdp, async {
                     let d = display().await?;
                     let capture = portal.capture().await?;
-                    let session = stream::Session::new(creating, &d, capture, h, p)?;
+                    let session = stream::Session::new(creating, &d, capture, h, &portal, p)?;
                     let answer = session.answer(sdp).await?;
                     Ok((session, answer))
                 })
@@ -241,11 +244,26 @@ impl Helper {
         }
     }
 
-    /// The X display being shared, `None` through the portals or before setup.
-    async fn x11_display(&self) -> Option<String> {
+    /// The backend for input from a stream that shares `stream`. Input a stream queued before it
+    /// ended must not reach a display shared after it.
+    async fn input_backend(&self, stream: &backend::Backend) -> Result<backend::Backend> {
+        let current = self.portal().await?;
+        if current.same(stream) {
+            Ok(current)
+        } else {
+            Err(anyhow!(SESSION_ENDED))
+        }
+    }
+
+    /// The X display a paste from a stream that shares `stream` goes to, `None` through the
+    /// portals.
+    async fn x11_display(&self, stream: &backend::Backend) -> Result<Option<String>> {
         match self.portal.lock().await.as_ref() {
-            Some(backend::Backend::X11(x11)) => Some(x11.name().to_owned()),
-            _ => None,
+            Some(current) if current.same(stream) => Ok(match current {
+                backend::Backend::X11(x11) => Some(x11.name().to_owned()),
+                backend::Backend::Portal(_) => None,
+            }),
+            _ => Err(anyhow!(SESSION_ENDED)),
         }
     }
 

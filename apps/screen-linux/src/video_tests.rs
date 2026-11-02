@@ -34,6 +34,7 @@ async fn baseline_offer_starts_video_after_the_answer_is_negotiated() {
         pipeline,
         webrtc,
         incoming: None,
+        _input: tokio::sync::oneshot::channel().0,
     };
     let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
             m=video 9 UDP/TLS/RTP/SAVPF 102\r\nc=IN IP4 0.0.0.0\r\n\
@@ -131,6 +132,7 @@ async fn answer_accepts_the_phones_retransmissions() {
         pipeline,
         webrtc,
         incoming: Some(Mutex::default()),
+        _input: tokio::sync::oneshot::channel().0,
     };
     // What libwebrtc (iOS) offers for H.264 with retransmissions.
     let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\

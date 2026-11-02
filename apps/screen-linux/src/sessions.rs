@@ -151,6 +151,7 @@ mod tests {
             pipeline: pipeline.clone(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
             incoming: Some(std::sync::Mutex::default()),
+            _input: tokio::sync::oneshot::channel().0,
         };
         (session, pipeline)
     }

@@ -24,12 +24,13 @@ pub enum Backend {
 }
 
 /// The first candidate display that connects, or why none did. With `granted`, only the display
-/// consent was given on or a later one (see `display::follows_consent`).
-async fn find_x11(granted: Option<u32>) -> Result<X11> {
+/// consent was given on or a later one (see `display::follows_consent`); never `besides`.
+async fn find_x11(granted: Option<u32>, besides: Option<&str>) -> Result<X11> {
     connect_first(
         display::candidates()
             .into_iter()
-            .filter(|name| granted.is_none_or(|g| display::follows_consent(name, g))),
+            .filter(|name| granted.is_none_or(|g| display::follows_consent(name, g)))
+            .filter(|name| besides.is_none_or(|b| display::number(name) != display::number(b))),
     )
     .await
 }
@@ -52,7 +53,7 @@ pub async fn x11_fallback(data: &Path) -> Option<Backend> {
     if Portal::available().await {
         return None;
     }
-    match find_x11(Some(granted)).await {
+    match find_x11(Some(granted), None).await {
         Ok(x11) => {
             tracing::info!(
                 display = x11.name(),
@@ -84,7 +85,7 @@ pub async fn wait_for_x11(slot: Slot, data: PathBuf) {
         if slot.lock().await.is_some() || Portal::available().await {
             return;
         }
-        match find_x11(Some(granted)).await {
+        match find_x11(Some(granted), None).await {
             Ok(x11) => {
                 let mut current = slot.lock().await;
                 if current.is_none() {
@@ -150,8 +151,10 @@ pub async fn reconnect(slot: &Slot, dead: &X11, data: &Path) -> bool {
                 display = dead.name(),
                 "X display still unreachable"
             );
+            // It was just tried: look only at the other displays, so a frozen one can't hold up
+            // the search.
             if dead.reconnect_failed() >= REPICK_AFTER {
-                find_x11(Some(granted)).await.ok()
+                find_x11(Some(granted), Some(dead.name())).await.ok()
             } else {
                 None
             }

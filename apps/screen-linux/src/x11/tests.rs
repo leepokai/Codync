@@ -165,3 +165,45 @@ async fn paste_goes_to_the_shared_x_display() {
         .unwrap();
     assert_eq!(String::from_utf8_lossy(&read.stdout), "pasted é");
 }
+
+#[tokio::test]
+async fn a_frozen_x_server_doesnt_keep_connection_attempts_open() {
+    use std::io::Read as _;
+    // Accepts connections and never answers, like an X server that froze. Over TCP, so no real
+    // display's socket is involved: `127.0.0.1:N` is port 6000 + N.
+    let (listener, number) = (100..200)
+        .find_map(|n| {
+            Some((
+                std::net::TcpListener::bind(("127.0.0.1", 6000 + n)).ok()?,
+                n,
+            ))
+        })
+        .unwrap();
+    let (closed, hangups) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let closed = closed.clone();
+            std::thread::spawn(move || {
+                // Gives up after a while, so a stuck attempt fails this test instead of hanging it.
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                if (&stream).read_to_end(&mut Vec::new()).is_ok() {
+                    let _ = closed.send(());
+                }
+            });
+        }
+    });
+    let name = format!("127.0.0.1:{number}");
+    let error = X11::connect(name.clone()).await.err().unwrap();
+    assert!(format!("{error:#}").contains("didn't answer"), "{error:#}");
+    hangups
+        .recv_timeout(Duration::from_secs(1))
+        .expect("the timed-out attempt hung up its connection");
+    // Its slot is free again: as many attempts as the limit allows still get through.
+    let attempts = (0..MAX_HUNG_CONNECTS).map(|_| X11::connect(name.clone()));
+    for error in futures_util::future::join_all(attempts).await {
+        let error = error.err().unwrap();
+        assert!(format!("{error:#}").contains("didn't answer"), "{error:#}");
+    }
+}

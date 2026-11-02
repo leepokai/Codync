@@ -13,8 +13,11 @@ use crate::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, MODIFIER_KEYSYMS};
 use crate::portal::Display;
 use anyhow::{Context, Result, anyhow, bail};
 use keymap::Keymap;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::net::Shutdown;
+use std::os::fd::{AsFd, OwnedFd};
+use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{
@@ -22,14 +25,18 @@ use x11rb::protocol::xproto::{
     MOTION_NOTIFY_EVENT, Window,
 };
 use x11rb::protocol::xtest::ConnectionExt as _;
-use x11rb::rust_connection::RustConnection;
+use x11rb::reexports::x11rb_protocol::parse_display::parse_display;
+use x11rb::reexports::x11rb_protocol::xauth::get_auth;
+use x11rb::rust_connection::{DefaultStream, RustConnection};
 
 /// A local X server answers in milliseconds; one that takes this long counts as gone.
 const X_TIMEOUT: Duration = Duration::from_secs(2);
-/// Connection attempts left blocked by a frozen X server before new ones are refused, so retries
-/// can't fill tokio's blocking pool.
+/// Connection attempts to one display in flight before new ones to it are refused. A timed-out
+/// attempt hangs up its socket and ends; one stuck in `connect(2)` (a frozen server whose listen
+/// queue is full) can't, and this keeps those from filling tokio's blocking pool.
 const MAX_HUNG_CONNECTS: usize = 4;
-static CONNECTING: AtomicUsize = AtomicUsize::new(0);
+/// The display of each connection attempt in flight.
+static CONNECTING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 #[derive(Clone)]
 pub struct X11(Arc<Inner>);
@@ -56,30 +63,53 @@ impl X11 {
     /// Connects to an X display and checks XTest. Xwayland is turned down: it shows only the
     /// X clients of a Wayland desktop, which the portals share instead.
     pub async fn connect(name: String) -> Result<Self> {
-        /// One connection attempt in flight; counted until its thread returns or panics.
-        struct Attempt;
-        impl Drop for Attempt {
-            fn drop(&mut self) {
-                CONNECTING.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let attempt = Attempt;
-        if CONNECTING.fetch_add(1, Ordering::SeqCst) >= MAX_HUNG_CONNECTS {
-            bail!("earlier connections to the X display are still hanging");
-        }
+        let attempt = Attempt::start(&name)?;
+        let hangup = Arc::new(Hangup::default());
+        // Also when the caller stops waiting, for example when the host link drops.
+        let abandon = Abandon(&hangup);
         let shown = name.clone();
-        let connecting = tokio::task::spawn_blocking(move || {
-            let _attempt = attempt;
-            Self::connect_blocking(name)
+        let mut connecting = tokio::task::spawn_blocking({
+            let hangup = hangup.clone();
+            move || {
+                let _attempt = attempt;
+                Self::connect_blocking(name, &hangup)
+            }
         });
-        tokio::time::timeout(X_TIMEOUT, connecting)
-            .await
-            .map_err(|_| anyhow!("the X display {shown} didn't answer"))??
+        if let Ok(connected) = tokio::time::timeout(X_TIMEOUT, &mut connecting).await {
+            hangup.keep();
+            return connected?;
+        }
+        drop(abandon);
+        // The hung-up thread ends; wait for it so its slot is free for the next attempt.
+        let _ = tokio::time::timeout(X_TIMEOUT, connecting).await;
+        bail!("the X display {shown} didn't answer");
     }
 
-    fn connect_blocking(name: String) -> Result<Self> {
-        let (conn, screen) = x11rb::connect(Some(&name))
-            .with_context(|| format!("couldn't open X display {name}"))?;
+    /// `x11rb::connect`, handing the socket to `hangup` before anything waits on the server.
+    fn connect_blocking(name: String, hangup: &Hangup) -> Result<Self> {
+        let open = || -> Result<_> {
+            let parsed = parse_display(Some(&name))?;
+            let mut last = anyhow!("no address to connect to");
+            for address in parsed.connect_instruction() {
+                match DefaultStream::connect(&address) {
+                    Ok((stream, (family, peer))) => {
+                        hangup.watch(&stream)?;
+                        let (auth_name, auth_data) = get_auth(family, &peer, parsed.display)
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default();
+                        let screen = usize::from(parsed.screen);
+                        let conn = RustConnection::connect_to_stream_with_auth_info(
+                            stream, screen, auth_name, auth_data,
+                        )?;
+                        return Ok((conn, screen));
+                    }
+                    Err(error) => last = error.into(),
+                }
+            }
+            Err(last)
+        };
+        let (conn, screen) = open().with_context(|| format!("couldn't open X display {name}"))?;
         let root = conn.setup().roots[screen].root;
         conn.xtest_get_version(2, 2)?
             .reply()
@@ -288,6 +318,79 @@ impl X11 {
             self.fake(KEY_RELEASE_EVENT, code, 0, 0)?;
         }
         self.flush()
+    }
+}
+
+/// One connection attempt in flight, counted for its display until its thread returns or panics.
+struct Attempt(String);
+
+impl Attempt {
+    fn start(name: &str) -> Result<Self> {
+        let mut connecting = CONNECTING.lock().unwrap_or_else(PoisonError::into_inner);
+        if connecting.iter().filter(|n| *n == name).count() >= MAX_HUNG_CONNECTS {
+            bail!("earlier connections to the X display {name} are still hanging");
+        }
+        connecting.push(name.to_owned());
+        Ok(Self(name.to_owned()))
+    }
+}
+
+impl Drop for Attempt {
+    fn drop(&mut self) {
+        let mut connecting = CONNECTING.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(i) = connecting.iter().position(|n| *n == self.0) {
+            connecting.swap_remove(i);
+        }
+    }
+}
+
+/// The socket of a connection attempt. Shutting it down when the attempt is abandoned wakes the
+/// thread waiting on a frozen X server, so the attempt ends instead of hanging.
+#[derive(Default)]
+struct Hangup(Mutex<HangupState>);
+
+#[derive(Default)]
+enum HangupState {
+    #[default]
+    Connecting,
+    Open(OwnedFd),
+    Done,
+}
+
+/// Hangs up an attempt that didn't finish when dropped.
+struct Abandon<'a>(&'a Hangup);
+
+impl Drop for Abandon<'_> {
+    fn drop(&mut self) {
+        self.0.now();
+    }
+}
+
+impl Hangup {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HangupState> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Keeps a copy of the socket to shut down later; fails if the attempt was abandoned.
+    fn watch(&self, stream: &DefaultStream) -> Result<()> {
+        let mut state = self.lock();
+        if matches!(*state, HangupState::Done) {
+            bail!("the X display didn't answer in time");
+        }
+        *state = HangupState::Open(AsFd::as_fd(stream).try_clone_to_owned()?);
+        Ok(())
+    }
+
+    /// The attempt finished: closes the copy and leaves the connection alone.
+    fn keep(&self) {
+        *self.lock() = HangupState::Done;
+    }
+
+    fn now(&self) {
+        if let HangupState::Open(fd) = std::mem::replace(&mut *self.lock(), HangupState::Done) {
+            // `shutdown(2)` works on any socket, TCP included; UnixStream only wraps the call.
+            let _ = UnixStream::from(fd).shutdown(Shutdown::Both);
+        }
     }
 }
 

@@ -26,6 +26,10 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         }
         /** Deletes a computer's mirror with its journal files, once it's closed. */
         fun delete(directory: File, computerId: String) { SQLiteDatabase.deleteDatabase(file(directory, computerId)) }
+        /** A mirror [LocalStore.adopt] copied from account folder [from]: its queued messages name this folder's copies of their files. */
+        fun relocate(context: Context, directory: File, computerId: String, from: File) {
+            if (file(directory, computerId).exists()) MirrorDatabase(context, directory, computerId).use { it.relocate(from, directory) }
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -87,7 +91,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             rows(db, "SELECT payload FROM bots WHERE deleted=0") { WireJson.decodeFromString<Bot>(it) }
                 .map { it.copy(customIcon = icons["bot:${it.id}"]) },
             rows(db, "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) },
-            rows(db, "SELECT payload FROM pending ORDER BY created") { WireJson.decodeFromString<PendingSend>(it) },
+            pending(db, "ORDER BY created"),
             meta(db, "rev")?.toLong() ?: 0,
             meta(db, "usage")?.let { WireJson.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap()),
             meta(db, "screen")?.let { WireJson.parseToJsonElement(it).jsonObject },
@@ -156,9 +160,11 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     }
     @Synchronized fun discard(nonce: String) = transaction { it.delete("pending", "nonce=?", arrayOf(nonce)) }
     @Synchronized fun recoverInterrupted() = transaction { db ->
-        rows(db, "SELECT payload FROM pending") { WireJson.decodeFromString<PendingSend>(it) }
-            .filter { it.status == SendStatus.Sending }.forEach { writePending(db, it.copy(status = SendStatus.Failed,
-                error = "Sending was interrupted. Retry uses the same message ID.")) }
+        pending(db).filter { it.status == SendStatus.Sending }.forEach { writePending(db, it.copy(status = SendStatus.Failed,
+            error = "Sending was interrupted. Retry uses the same message ID.")) }
+    }
+    @Synchronized private fun relocate(from: File, to: File) = transaction { db ->
+        pending(db).forEach { writePending(db, it.copy(files = it.files.map { file -> AttachmentFiles.moved(file, from, to) })) }
     }
     @Synchronized fun historyComplete(botId: String): Boolean = readableDatabase.rawQuery(
         "SELECT 1 FROM history WHERE lane=?", arrayOf(botId)).use { it.moveToFirst() }
@@ -174,8 +180,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Couldn't save the bot update." }
         if (bot.deleted) {
             db.delete("entries", "bot_id=?", arrayOf(bot.id))
-            rows(db, "SELECT payload FROM pending") { WireJson.decodeFromString<PendingSend>(it) }
-                .filter { it.botId == bot.id }.forEach { db.delete("pending", "nonce=?", arrayOf(it.nonce)) }
+            pending(db).filter { it.botId == bot.id }.forEach { db.delete("pending", "nonce=?", arrayOf(it.nonce)) }
             db.delete("history", "lane=?", arrayOf(bot.id))
         }
     }
@@ -211,6 +216,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             "Couldn't save the conversation checkpoint."
         }
     }
+    private fun pending(db: SQLiteDatabase, order: String = "") =
+        rows(db, "SELECT payload FROM pending $order") { WireJson.decodeFromString<PendingSend>(it) }
     private fun <T> rows(db: SQLiteDatabase, query: String, decode: (String) -> T): List<T> = db.rawQuery(query, null).use {
         buildList { while (it.moveToNext()) add(decode(it.getString(0))) }
     }

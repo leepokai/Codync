@@ -102,12 +102,13 @@ the Dynamic Island) with its feature graphic, per language.
   Play Console. Set the repository variable `PLAY_TRACK=alpha` once it runs, then run
   `Submit Android` by hand with the current version and `alpha` (it moves the version Play
   already has there) or promote it in Play Console.
-- [ ] Account deletion inside the app: Play requires it for apps that create accounts. Today an
-  account is deleted on request (`codync.dev/privacy#delete-account`, by email); add a *Delete
-  account* action (cloud method that deletes the Clerk user, whose webhook already removes the
-  rest) to every client.
-- [ ] Reviewer access: pairing needs a computer, so review needs a way in (a demo video of
-  pairing and a chat, or a reusable demo host), linked from App content → Login details.
+- [x] Account deletion inside the app: *Delete account* in the account sheet (2.35.0) deletes the
+  Clerk user, whose webhook removes the rest. The web address Play asks for is
+  `codync.dev/delete-account`.
+- [ ] Reviewer access: the app requires sign-in (2.35.0), and pairing needs a computer. In App
+  content → App access, say that the reviewer signs in with any Google account (no credentials
+  needed), and link a way to a computer (a demo video of pairing and a chat, or a reusable demo
+  host).
 - [ ] The foreground service video Play asks for the microphone and media playback services
   (voice calls), if it asks when the release goes to review.
 - [ ] Physical upgrade keeps the saved account, pinned keys, bots and history.

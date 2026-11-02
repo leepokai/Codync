@@ -14,6 +14,7 @@ mod model;
 mod navigate;
 mod new_bot;
 mod overlay_keys;
+mod pair;
 mod roster;
 mod section_order;
 mod slash;
@@ -71,6 +72,10 @@ pub struct App {
     pub screen: Value,
     /// This computer's network (`networkView`'s shape); null on hosts without one.
     pub network: Value,
+    /// The host's account and relay (`cloudStatus`, `cloud` events): null until the pair sheet asks.
+    pub cloud: Value,
+    /// Phones waiting for this computer to let them in (`pairingRequests`), oldest first.
+    pub pairing_requests: Vec<Value>,
     pub backends: Vec<Value>,
     pub custom_icons: bool,
     pub selected: Option<String>,
@@ -169,6 +174,8 @@ impl App {
             usage: Value::Null,
             screen: Value::Null,
             network: Value::Null,
+            cloud: Value::Null,
+            pairing_requests: vec![],
             backends: vec![],
             custom_icons: false,
             selected: None,

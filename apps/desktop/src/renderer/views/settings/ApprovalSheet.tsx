@@ -6,7 +6,8 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import type { Approval } from '../../store/app-model'
 import { useApp } from '../../store/context'
-import { deviceIcon, errorText, spacedCode } from './parts'
+import { deviceIcon, errorText } from './parts'
+import { spacedCode } from '../../lib/account-copy'
 import { useTr } from '../../lib/use-language'
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { CharacterAvatar, type Mood } from '../components/Avatar'
 import { Button, Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
@@ -6,13 +6,29 @@ import { HStack, Spacer, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useReduceMotion } from '../lib/theme'
 import { useTr } from '../lib/use-language'
-import { useAccount } from '../store/account'
+import { showsWelcome } from '../lib/welcome-gate'
+import { prefs, usePref } from '../lib/prefs'
+import { account, useAccount } from '../store/account'
+import { analytics } from '../store/analytics'
 import googleLogo from '../assets/google.svg'
+import type { SignInProvider } from '@shared/analytics'
 import './account-welcome.css'
 
 const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 
-/** First-run account choice. A restored session skips this screen as soon as it is back. */
+/** Whether the welcome covers the window (`showsWelcome`). `finish`: the first run's choice was made. */
+export function useWelcomeGate() {
+  const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
+  const { isConfigured, isReady, isSignedIn } = useAccount()
+  const finish = useCallback(() => {
+    if (prefs.onboardingDone.get()) return
+    setOnboarded(true)
+    analytics.track({ event: 'onboarding_completed', signed_in: account.isSignedIn })
+  }, [setOnboarded])
+  return { shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn }), finish }
+}
+
+/** The welcome: signing in, or, in a build without accounts, going on without one. A restored session skips it as soon as it is back. */
 export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   const account = useAccount()
   const reduce = useReduceMotion()
@@ -36,9 +52,11 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
       <VStack align="center" justify="center" gap={14} className="welcome-restoring">
         <Spinner size={24} />
         <Text as="div" size="callout" tone="secondary">{tr(`Checking for a saved account…`)}</Text>
-        <button className="welcome-skip" onClick={onContinue}>
-          {onThis}
-        </button>
+        {account.isConfigured ? null : (
+          <button className="welcome-skip" onClick={onContinue}>
+            {onThis}
+          </button>
+        )}
       </VStack>
     )
   }
@@ -64,29 +82,14 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
         </VStack>
         <Spacer min={32} />
         <VStack gap={10} style={rise(beat >= 4)}>
-          <Button onClick={onContinue} className="welcome-button">
-            {onThis}
-          </Button>
-          <Button onClick={() => void account.signIn('apple')} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
-            {account.isBusy ? (
-              <Spinner size={18} />
-            ) : (
-              <HStack as="span" gap={10}>
-                <Icon name="apple.logo" size={20} />
-                {tr('Continue with Apple')}
-              </HStack>
-            )}
-          </Button>
-          <Button kind="secondary" onClick={() => void account.signIn('google')} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
-            {account.isBusy ? (
-              <Spinner size={18} />
-            ) : (
-              <HStack as="span" gap={10}>
-                <img src={googleLogo} alt="" width={20} height={20} />
-                {tr('Continue with Google')}
-              </HStack>
-            )}
-          </Button>
+          {account.isConfigured ? null : (
+            <Button onClick={onContinue} className="welcome-button">
+              {onThis}
+            </Button>
+          )}
+          <ProviderButton provider="apple" mark={<Icon name="apple.logo" size={20} />} title="Continue with Apple" />
+          <ProviderButton provider="google" kind="secondary" mark={<img src={googleLogo} alt="" width={20} height={20} />} title="Continue with Google" />
+          <ProviderButton provider="github" kind="secondary" mark={<Icon name="github.logo" size={20} />} title="Continue with GitHub" />
           {!account.isConfigured ? (
             <Text as="div" size="footnote" tone="tertiary">{tr(deviceName === 'Mac' ? "Sign-in isn't configured in this build. You can still use Codync on this Mac." : "Sign-in isn't configured in this build. You can still use Codync on this computer.")}</Text>
           ) : null}
@@ -94,6 +97,24 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
         </VStack>
       </VStack>
     </div>
+  )
+}
+
+/** One provider's sign-in button; every one shares the busy spinner and the disabled rule. */
+function ProviderButton({ provider, kind, mark, title }: { provider: SignInProvider; kind?: 'primary' | 'secondary'; mark: ReactNode; title: string }) {
+  const account = useAccount()
+  const tr = useTr()
+  return (
+    <Button kind={kind} onClick={() => void account.signIn(provider)} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
+      {account.isBusy ? (
+        <Spinner size={18} />
+      ) : (
+        <HStack as="span" gap={10}>
+          {mark}
+          {tr(title)}
+        </HStack>
+      )}
+    </Button>
   )
 }
 

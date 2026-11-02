@@ -15,6 +15,7 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
+import { devicesLoseAccess } from '../../lib/account-copy'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
@@ -89,10 +90,10 @@ export function ComputersView() {
       <Dialog
         open={removing !== null}
         title={tr(removingOlder ? 'Remove the older {name}?' : 'Remove {name} from the account?').replaceAll('{name}', removing?.name ?? 'computer')}
-        message={tr(removingOlder
-          ? "It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account."
+        message={removingOlder
+          ? tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removing.name)
           // Offline may only mean asleep: removal unclaims it, and its own app won't add it back by itself.
-          : 'Devices that were approved through the account lose access to {name}. It comes back only when you add it to the account again on {name} itself.').replaceAll('{name}', removing?.name ?? 'a computer')}
+          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', removing?.name ?? 'a computer')}`}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removing.computerId) }] : []}
         onClose={() => setRemoving(null)}
       />
@@ -271,7 +272,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       <Dialog
         open={confirmUnclaim}
         title={tr('Remove {name} from the account?').replaceAll('{name}', name)}
-        message={tr('Devices that were approved through the account lose access. Devices paired with a QR code keep it.')}
+        message={devicesLoseAccess(tr, owner?.email)}
         actions={[{ title: 'Remove from account', destructive: true, action: () => run(() => app.cloud.unclaim(store)) }]}
         onClose={() => setConfirmUnclaim(false)}
       />
@@ -345,7 +346,7 @@ function PairingPanel({ store }: { store: BotStore }) {
     if (!client) throw new Error(`${store.hostName} isn't connected.`)
     return client.call<PairingInfo>('pairing')
   }, [store])
-  return <PairingCode name={store.hostName} cloudOn={store.cloud?.enabled === true} requestCode={requestCode} />
+  return <PairingCode name={store.hostName} cloud={store.cloud} requestCode={requestCode} />
 }
 
 // MARK: SSH

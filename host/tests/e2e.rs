@@ -34,6 +34,16 @@ impl Drop for Host {
     }
 }
 
+/// A device certificate as the cloud signs it (`cloud/src/certificate.ts`), with the test host's trusted key.
+fn test_certificate(device_key: &str, user_id: &str) -> Value {
+    let exp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() + 60_000;
+    let payload = json!({"v": 1, "deviceKey": device_key, "userId": user_id, "email": "kevin@example.com", "exp": exp})
+        .to_string();
+    let key = SigningKey::from_bytes(&common::TEST_CLOUD_SEED);
+    let sig = crypto::sign(&key, format!("codync/device-cert/v1\n{payload}").as_bytes());
+    json!({"payload": payload, "sig": crypto::b64(&sig)})
+}
+
 async fn start_host() -> Host {
     let home = std::env::temp_dir().join(format!("codync-e2e-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
@@ -363,7 +373,20 @@ async fn phone_pairs_and_chats_over_the_direct_channel() {
 
     let mut phone = Phone::connect(&host, &key, &sk, true).await;
     let code = query_param(url, "code");
-    phone.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Test iPhone", "platform": "ios"}})).await;
+    let certificate = test_certificate(&crypto::b64(key.verifying_key().as_bytes()), "user_1");
+    phone
+        .send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Test iPhone", "platform": "ios", "certificate": certificate}}))
+        .await;
+    // A computer in no account asks first; the test answers for it.
+    let request = loop {
+        let list = host.call("pairingRequests", json!({})).await;
+        if let Some(r) = list["requests"].as_array().and_then(|r| r.first()) {
+            break r.clone();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_eq!(request["deviceName"], "Test iPhone");
+    host.call("decidePairing", json!({"requestId": request["requestId"], "approve": true})).await;
     assert_eq!(phone.inner().await["ok"]["computerId"], crypto::computer_id(&sk));
     assert!(matches!(phone.recv().await, Frame::Closed(4100)));
 

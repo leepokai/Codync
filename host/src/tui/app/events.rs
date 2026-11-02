@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, PairCode, Status, merge_toggles};
+use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, Status, merge_toggles};
 
 /// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
 /// connection began: `seq` grows with insertion, so it predates the window and only arrived because
@@ -64,6 +64,8 @@ impl App {
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
+            Some("cloud") => self.cloud = v["cloud"].clone(),
+            Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
                 self.memory_moved(&v["bot"]);
@@ -165,6 +167,10 @@ impl App {
             self.network_reply(n, r);
             return;
         }
+        if matches!(after, After::Pairing | After::Cloud | After::PairingRequests | After::PairingDecided) {
+            self.pair_reply(&after, r);
+            return;
+        }
         let v = match r {
             Ok(v) => v,
             Err(e) => {
@@ -197,12 +203,6 @@ impl App {
                             p.busy = false;
                         }
                     }
-                    // In place of the code, which may have expired.
-                    After::Pairing => {
-                        if let Some(Overlay::Pair(code)) = self.overlays.last_mut() {
-                            *code = PairCode::Failed(e);
-                        }
-                    }
                     _ => self.flash(&e),
                 }
                 return;
@@ -215,7 +215,11 @@ impl App {
             | After::Sheet(_)
             | After::Network(_)
             | After::Sent(_)
-            | After::Connection(_, _) => {}
+            | After::Connection(_, _)
+            | After::Pairing
+            | After::Cloud
+            | After::PairingRequests
+            | After::PairingDecided => {}
             After::Installed => {
                 self.error = None;
                 self.flash("Host installed; connecting…");
@@ -290,14 +294,6 @@ impl App {
                     p.query.clear();
                     p.cursor = 0;
                     p.error = None;
-                }
-            }
-            After::Pairing => {
-                if let Some(Overlay::Pair(code)) = self.overlays.last_mut() {
-                    *code = match v["pairingUrl"].as_str() {
-                        Some(url) => PairCode::Ready(url.to_owned()),
-                        None => PairCode::Failed("The host sent no pairing code.".into()),
-                    };
                 }
             }
             After::Saved => {

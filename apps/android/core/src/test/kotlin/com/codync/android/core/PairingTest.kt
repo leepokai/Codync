@@ -16,6 +16,13 @@ class PairingTest {
     private fun link(fields: Map<String, String> = params): String = "codync://pair?" + fields.entries.joinToString("&") {
         "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
 
+    @Test fun `short pairing codes are recognized in any case and links are not codes`() {
+        for (typed in listOf("QRTX-4821", "qrtx4821", " Qrtx 4821\n", "QRTX4821")) assertEquals("QRTX-4821", Pairing.shortCode(typed))
+        for (other in listOf("QRT-4821", "QRTX-482", "QRTX--4821", "QRTX_4821", "1234-QRTX", "QRTXX4821", link(), "")) {
+            assertEquals(null, Pairing.shortCode(other))
+        }
+    }
+
     @Test fun `a valid pairing preserves pins direct candidates relay and name`() {
         val pairing = Pairing.parse(" ${link()} \n", "codync")
         assertEquals(params["id"], pairing.computer.id)
@@ -74,5 +81,10 @@ class PairingTest {
         for (value in listOf("AA=", "AB", "A", "+A", "AA ")) assertFails<IllegalArgumentException> { value.decodeBase64Url() }
         assertFails<IllegalArgumentException> { "AA".decodeBase64Url(32) }
     }
-}
 
+    @Test fun `a pairing's check code is this phone's with that computer`() {
+        val pairing = Pairing.parse(link(), "codync")
+        val identity = DeviceIdentity(ByteArray(32) { 3 }, ByteArray(32) { 12 })
+        assertEquals(RelayCrypto.pairCheck(identity.deviceKey, pairing.computer.signKey.decodeBase64Url(32)), pairing.checkCode(identity))
+    }
+}

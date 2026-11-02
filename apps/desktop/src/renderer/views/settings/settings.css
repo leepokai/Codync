@@ -105,6 +105,11 @@
   background: var(--code-background);
   border-radius: var(--radius-xs);
 }
+/* Several lines a command printed, kept as it wrapped them. */
+.settings-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .settings-mono {
   font-family: var(--mono);
 }

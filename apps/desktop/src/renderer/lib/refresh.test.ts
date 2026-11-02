@@ -105,3 +105,17 @@ test('an unresponsive host cannot leave manual refresh spinning forever', async 
   await rejected
   store.retire()
 })
+
+test('a pairing answer the host never got brings the question back', async () => {
+  const app = new AppModel(false)
+  const store = { isLoopback: true, computer: { id: 'mac' }, pairingRequests: [{ requestId: 'r1' }],
+    ready: async () => ({ call: () => Promise.reject(new Error('Offline')) }) } as unknown as BotStore
+  app.stores.set('mac', store)
+  const [ask] = app.pairingAsks
+  const answer = app.decidePairing(ask, true)
+  assert.equal(app.pairingAsks.length, 0, 'off the screen at once')
+  assert.equal(await answer, false)
+  assert.equal(app.lastError, 'Offline')
+  assert.equal(app.pairingAsks.length, 1, 'the question comes back')
+  app.stores.clear()
+})

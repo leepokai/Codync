@@ -20,6 +20,8 @@ pub mod codebuddy;
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;
+/// How long an exited agent's last stderr lines get to be read before its exit is reported.
+const STDERR_FLUSH: Duration = Duration::from_secs(1);
 /// How long a stopped agent gets to exit by itself before what's left of it is killed.
 const EXIT_GRACE: Duration = Duration::from_secs(10);
 
@@ -76,6 +78,36 @@ pub fn needs_sign_in(e: &anyhow::Error) -> bool {
 /// stream ended with one ("The Claude Agent session has ended") until the session is closed.
 pub fn may_end_session(e: &anyhow::Error) -> bool {
     e.chain().filter_map(|c| c.downcast_ref::<RpcError>()).any(|r| r.code == INTERNAL_ERROR && r.kind.is_none())
+}
+
+/// What an agent that failed with `e` printed to stderr, when `e` is its process going away: the reader reports
+/// the tail right after it fails the waiters. `None` when it's still running or says nothing in time.
+pub async fn exit_tail(e: &anyhow::Error, inbox: &mut mpsc::UnboundedReceiver<Incoming>) -> Option<String> {
+    let exited = e.chain().filter_map(|c| c.downcast_ref::<Failure>()).any(|f| f.kind == FailureKind::Exited);
+    if !exited {
+        return None;
+    }
+    let closed = async {
+        while let Some(incoming) = inbox.recv().await {
+            if let Incoming::Closed { stderr_tail } = incoming {
+                return Some(stderr_tail);
+            }
+        }
+        None
+    };
+    tokio::time::timeout(STDERR_FLUSH * 2, closed).await.ok().flatten()
+}
+
+/// The stderr line that says why the agent quit: an error line, else the last one that isn't a pretty-printed Node
+/// error's closing brace.
+pub fn stderr_reason(stderr_tail: &str) -> Option<String> {
+    let lines: Vec<&str> = stderr_tail.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    lines
+        .iter()
+        .rev()
+        .find(|line| line.contains("Error"))
+        .or_else(|| lines.iter().rev().find(|line| !matches!(**line, "}" | "{" | "}," | "]" | "[")))
+        .map(|line| (*line).to_owned())
 }
 
 /// A way an agent fails that the host itself recognizes, kept as a type so usage
@@ -214,7 +246,7 @@ impl Acp {
         let pending = Pending::default();
 
         let tail = Arc::new(std::sync::Mutex::new(VecDeque::<String>::with_capacity(STDERR_TAIL_LINES)));
-        {
+        let stderr_read = {
             let tail = tail.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
@@ -226,8 +258,8 @@ impl Acp {
                     }
                     t.push_back(line);
                 }
-            });
-        }
+            })
+        };
         {
             let pending = pending.clone();
             tokio::spawn(async move {
@@ -261,6 +293,8 @@ impl Acp {
                 }
                 // Process gone: dropping the waiters fails them as `FailureKind::Exited`.
                 pending.locked().clear();
+                // What it printed on its way out is still being read; a child that keeps stderr open isn't waited for.
+                let _ = tokio::time::timeout(STDERR_FLUSH, stderr_read).await;
                 let stderr_tail = tail.locked().iter().cloned().collect::<Vec<_>>().join("\n");
                 let _ = tx.send(Incoming::Closed { stderr_tail });
             });
@@ -522,5 +556,30 @@ mod tests {
             _ => panic!("expected notification"),
         }
         assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_quits_at_once_says_why() {
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let command =
+            format!(r#"{python} -c "import sys; sys.stderr.write('profile acp does not exist\n'); sys.exit(1)""#);
+        let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let e = acp.request("initialize", json!({})).await.unwrap_err();
+        let tail = exit_tail(&e, &mut rx).await;
+        assert_eq!(tail.as_deref(), Some("profile acp does not exist"));
+    }
+
+    #[tokio::test]
+    async fn an_agent_still_running_has_no_exit_tail() {
+        let (_tx, mut rx) = mpsc::unbounded_channel();
+        let e = anyhow::anyhow!(RpcError { code: INTERNAL_ERROR, message: "no".into(), kind: None });
+        assert_eq!(exit_tail(&e, &mut rx).await, None);
+    }
+
+    #[test]
+    fn stderr_reason_skips_a_closing_brace() {
+        let tail = "Error: Cannot find module '../dist/codebuddy'\nRequire stack:\n- /cli/bin/codebuddy\n  code: 'MODULE_NOT_FOUND'\n}\n";
+        assert_eq!(stderr_reason(tail).as_deref(), Some("Error: Cannot find module '../dist/codebuddy'"));
+        assert_eq!(stderr_reason("agent said no\n").as_deref(), Some("agent said no"));
     }
 }

@@ -29,7 +29,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
             let mut command = [candidate.resolve(|_| {}).await?.acp()];
             let mut env = env.clone();
             crate::agent::own_memory::turn_off(&cfg.backend, &cwd, &mut env, &mut command).await;
-            crate::agent::bot::start_agent(&command[0], &cwd, &env, Duration::from_mins(1)).await
+            crate::agent::bot::start_agent(&cfg.backend, &command[0], &cwd, &env, Duration::from_mins(1)).await
         };
         match started.await {
             Ok(c) => {

@@ -1511,5 +1511,13 @@
   "This computer isn't in an account: it uses a private relay": "這臺電腦不在任何賬戶裡：它用私人中繼",
   "This computer isn't in your account": "這臺電腦不在你的賬戶裡",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "這臺 iPhone 不再收到這個賬戶的通知，但會保留它的電腦，重新登入後不用再掃碼。要把它從那些電腦上移除，請改用設定裡的「重新開始」。",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "這支手機不再收到這個賬戶的通知，但會保留它的電腦，重新登入後不用再掃碼。要把它從那些電腦上移除，請改用設定裡的「重新開始」。"
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "這支手機不再收到這個賬戶的通知，但會保留它的電腦，重新登入後不用再掃碼。要把它從那些電腦上移除，請改用設定裡的「重新開始」。",
+  "Paste this code on the sign-in page that opens next.": "把這組代碼貼到接下來開啟的登入頁。",
+  "Copy and open": "複製並開啟",
+  "Code {code} copied: paste it on the page that opened, then ^r refreshes": "代碼 {code} 已複製：貼到剛開啟的頁面，然後按 ^r 重新整理",
+  "Code {code} copied: paste it at {url}, then ^r refreshes": "代碼 {code} 已複製：到 {url} 貼上，然後按 ^r 重新整理",
+  "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "代碼 {code} 已複製。貼到登入頁後，按 Enter 檢查。Ctrl+X 取消。",
+  "Sign in instead of using a saved token": "改用登入，不再用已存的 token",
+  "↵ sign in instead of the token": "↵ 改用登入，不再用 token",
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "代碼 {code} 已複製：到 {url} 貼上後，按 Enter 檢查。Ctrl+X 取消。"
 }

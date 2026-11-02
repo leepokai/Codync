@@ -1511,5 +1511,13 @@
   "This computer isn't in an account: it uses a private relay": "Este ordenador no está en ninguna cuenta: usa un relé privado",
   "This computer isn't in your account": "Este ordenador no está en tu cuenta",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Este iPhone deja de recibir las notificaciones de la cuenta y conserva sus ordenadores, así que al volver a iniciar sesión no hace falta escanear. Para quitarlo de ellos, usa en su lugar «Empezar de nuevo» en Ajustes.",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Este teléfono deja de recibir las notificaciones de la cuenta y conserva sus ordenadores, así que al volver a iniciar sesión no hace falta escanear. Para quitarlo de ellos, usa en su lugar «Empezar de nuevo» en Ajustes."
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Este teléfono deja de recibir las notificaciones de la cuenta y conserva sus ordenadores, así que al volver a iniciar sesión no hace falta escanear. Para quitarlo de ellos, usa en su lugar «Empezar de nuevo» en Ajustes.",
+  "Paste this code on the sign-in page that opens next.": "Pega este código en la página de inicio de sesión que se abre a continuación.",
+  "Copy and open": "Copiar y abrir",
+  "Code {code} copied: paste it on the page that opened, then ^r refreshes": "Código {code} copiado: pégalo en la página que se abrió y luego ^r actualiza",
+  "Code {code} copied: paste it at {url}, then ^r refreshes": "Código {code} copiado: pégalo en {url} y luego ^r actualiza",
+  "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "Código {code} copiado. Pégalo en la página de inicio de sesión y luego Enter comprueba. Ctrl+X cancela.",
+  "Sign in instead of using a saved token": "Inicia sesión en lugar de usar un token guardado",
+  "↵ sign in instead of the token": "↵ iniciar sesión en lugar del token",
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "Código {code} copiado: pégalo en {url} y luego Enter comprueba. Ctrl+X cancela."
 }

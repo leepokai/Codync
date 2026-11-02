@@ -361,8 +361,10 @@ def main():
                 with sqlite3.connect(home / "codync.db") as db:
                     row = db.execute("SELECT v FROM kv WHERE k='vault.id'").fetchone()
                 if row:
-                    removed = subprocess.run(["security", "delete-generic-password", "-s", "dev.codync.credentials", "-a", row[0]], capture_output=True)
-                    assert removed.returncode == 0, "Could not remove temporary Keychain entry: " + row[0]
+                    # The vault's service name follows the host's environment (vault.rs).
+                    removed = [subprocess.run(["security", "delete-generic-password", "-s", service, "-a", row[0]], capture_output=True)
+                               for service in ("dev.codync.development.credentials", "dev.codync.credentials")]
+                    assert any(r.returncode == 0 for r in removed), "Could not remove temporary Keychain entry: " + row[0]
             print("Temporary host, data and Keychain key cleaned up.", flush=True)
     failed = sum(not ok for _, ok in results)
     print(f"{len(results) - failed}/{len(results)} passed", flush=True)

@@ -88,6 +88,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "joinAccount": join_account.is_some(),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
+                "workflows": true,
             })
         }
         "refreshBackends" => {

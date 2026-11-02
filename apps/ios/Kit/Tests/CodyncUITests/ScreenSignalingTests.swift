@@ -42,8 +42,8 @@ actor ScreenTransport: HostTransport {
 }
 
 @MainActor
-func waitForScreenCondition(_ condition: @MainActor () async -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+func waitForScreenCondition(timeout: Duration = .seconds(10), _ condition: @MainActor () async -> Bool) async throws {
+    let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {
         let satisfied = await condition()
         if satisfied { return }
@@ -178,7 +178,9 @@ private actor FailingSignalingTransport: HostTransport {
     let transport = FailingSignalingTransport()
     let session = ScreenSession(client: HostClient(transport: transport), display: nil)
     await session.start()
-    try await waitForScreenCondition {
+    // Three recoveries sleep 2s then 4s, and each attempt builds a peer connection.
+    // Ten seconds is enough on a quiet machine and short of that on a busy runner.
+    try await waitForScreenCondition(timeout: .seconds(45)) {
         if case .failed = session.phase { return true }
         return false
     }

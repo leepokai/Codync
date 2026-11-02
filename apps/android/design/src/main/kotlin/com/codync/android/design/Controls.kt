@@ -212,14 +212,18 @@ import com.kyant.shapes.RoundedRectangle
 
 /** Shows the current choice in a pill with a chevron and opens the menu: `ChoicePicker`. */
 @Composable fun <T> ChoicePicker(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier,
-    fill: Color = Color.Transparent, label: String? = null, enabled: Boolean = true) {
+    fill: Color = Color.Transparent, label: String? = null, enabled: Boolean = true, wide: Boolean = false) {
     val rows = options.map { (id, text) -> id to tr(text) }
     val current = rows.firstOrNull { it.first == selection }?.second ?: tr("Choose")
     DropdownMenu({ rows.map { (id, text) -> MenuItem(text, selected = id == selection) { select(id) } } }, modifier,
         enabled = enabled, label = label?.let { "${tr(it)}: $current" }) {
-        Row(Modifier.then(if (fill == Color.Transparent) Modifier.outline() else Modifier).pill(fill),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(current, Modifier.weight(1f, fill = false), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val row = if (wide) {
+            Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(horizontal = 16.dp, vertical = 16.dp)
+        } else {
+            Modifier.then(if (fill == Color.Transparent) Modifier.outline() else Modifier).pill(fill)
+        }
+        Row(row, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(current, Modifier.weight(1f, fill = wide), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
         }
     }
@@ -236,8 +240,11 @@ import com.kyant.shapes.RoundedRectangle
 
 /** The rows of a `CardSection`, split by inset hairlines. */
 class CardRows internal constructor() {
-    internal val rows = mutableListOf<@Composable () -> Unit>()
-    fun row(content: @Composable () -> Unit) { rows += content }
+    internal class Entry(val onClick: (() -> Unit)?, val content: @Composable () -> Unit)
+    internal val rows = mutableListOf<Entry>()
+
+    /** `onClick` covers the whole row, including the card's padding. The chevron is only a hint. */
+    fun row(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) { rows += Entry(onClick, content) }
 }
 
 /**
@@ -255,9 +262,12 @@ class CardRows internal constructor() {
         }
         if (list.isNotEmpty()) Column(Modifier.fillMaxWidth().cardGroup()) {
             for ((index, row) in list.withIndex()) {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 32.dp),
+                val open = row.onClick
+                Box(Modifier.fillMaxWidth()
+                    .then(if (open != null) Modifier.plainButton { open() } else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 32.dp),
                     contentAlignment = Alignment.CenterStart) {
-                    CompositionLocalProvider(LocalTextStyle provides Type.body, LocalContentColor provides Palette.text) { row() }
+                    CompositionLocalProvider(LocalTextStyle provides Type.body, LocalContentColor provides Palette.text) { row.content() }
                 }
                 if (index < list.lastIndex) Hairline(Modifier.padding(horizontal = 16.dp))
             }

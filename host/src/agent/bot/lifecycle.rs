@@ -83,6 +83,7 @@ impl Actor {
             && self.active_request.is_none()
             && self.active_group.is_none()
             && self.active_routine.is_none()
+            && self.active_workflow.is_none()
             && self.routine_completion.is_none()
             && self.cancel_deadline.is_none()
     }

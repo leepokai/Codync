@@ -81,8 +81,8 @@ export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (
           <PageContent page={page} />
         </div>
       </div>
-      <span className="settings-close">
-        <IconButton title="Close" icon="xmark" onClick={dismiss} />
+      <span className="settings-close no-drag">
+        <IconButton title="Close" icon="xmark" onClick={(event) => { event.stopPropagation(); dismiss() }} />
       </span>
     </div>
   )

@@ -16,6 +16,8 @@ public enum HostEvent: Sendable {
     /// The computer's network changed (members, roles, presence, offered bots, cloud assistants).
     case network(NetworkView)
     case resync
+    /// A workflow change. It carries no `rev`; a decode failure is ignored, not `.undecodable`.
+    case workflow(WorkflowEvent)
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
 }
@@ -137,6 +139,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(NetworkWrap.self, from: data)).map { .network($0.network) }
         case "resync":
             return .resync
+        case "workflow":
+            // A workflow event this build can't read is dropped. It has no rev, so it must not rewind the stream.
+            guard let event = try? d.decode(WorkflowEvent.self, from: data) else { return nil }
+            return .workflow(event)
         default:
             return nil
         }

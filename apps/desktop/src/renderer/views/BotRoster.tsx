@@ -14,6 +14,8 @@ import { BotRow } from './BotRow'
 import { ComputerHeadingLabel, ComputerRosterSection } from './ComputerRosterSection'
 import { SectionRoster } from './SectionRoster'
 import { UpdateNeededCard } from './UpdateNeededCard'
+import { canOpenWorkflows } from './workflows/pins'
+import { WorkflowPins } from './workflows/WorkflowPins'
 
 /** A bot being dragged among its computer's bots, and the order it has made so far. */
 interface BotDrag {
@@ -36,13 +38,16 @@ interface Lift {
   seq: number
 }
 
-export function BotRoster({ roster, compact, onContext, onSectionContext, openExtensions }: {
+export function BotRoster({ roster, compact, onContext, onSectionContext, openExtensions, openWorkflows, workflowComputerId }: {
   roster: ReturnType<typeof useComputerRoster>
   compact: boolean
   onContext: (bot: Bot, store: BotStore, x: number, y: number) => void
   onSectionContext: (section: string, store: BotStore, x: number, y: number) => void
   /** A computer's own Extensions, from its heading. */
   openExtensions: (computerId: string) => void
+  /** Opens that computer's workflows, optionally on one pinned workflow. */
+  openWorkflows: (computerId: string, workflowId?: string) => void
+  workflowComputerId: string | null
 }) {
   const app = useApp()
   const selected = app.selection
@@ -213,20 +218,25 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
   const sections = sectionOrder.map(({ computer, store, items }) => {
     const index = roster.sections.findIndex((s) => s.computer.id === computer.id)
     const notice = store.mismatch && !compact ? <StoreContext.Provider value={store}><UpdateNeededCard /></StoreContext.Provider> : null
+    const pins = canOpenWorkflows(store)
+      ? <WorkflowPins store={store} compact={compact} activeId={workflowComputerId === computer.id ? store.workflowSession?.id ?? null : null} onOpen={(id) => openWorkflows(computer.id, id)} />
+      : null
     const rows = <SectionRoster computerId={computer.id} items={ordered(computer.id, items)} compact={compact}
       folded={roster.folded} order={roster.sectionOrders[computer.id] ?? []}
       save={(names) => roster.orderSections(computer.id, names)} toggle={roster.toggleFold}
       onContext={(name, x, y) => onSectionContext(name, store, x, y)} row={(item) => row(item, items)} />
-    if (!roster.grouped) return <div key={computer.id}>{notice}{rows}</div>
+    if (!roster.grouped) return <div key={computer.id}>{pins}{notice}{rows}</div>
     return (
       <ComputerRosterSection key={computer.id} store={store} compact={compact}
         openExtensions={store.shownConnection.kind === 'online' && !store.mismatch ? () => openExtensions(computer.id) : undefined}
+        openWorkflows={canOpenWorkflows(store) ? () => openWorkflows(computer.id) : undefined}
         collapsed={sectionDrag !== null || roster.collapsed.includes(computer.id)} toggle={() => roster.toggle(computer.id)}
         previous={roster.sections[index - 1]?.computer.id} next={roster.sections[index + 1]?.computer.id}
         lifted={sectionDrag?.id === computer.id && lift !== null}
         drag={pointerDrag({ start: (from) => liftHeading(store, from), over: headingOver, drop: dropHeading, cancel: endDrag })}
         move={roster.move}>
         {/* The notice folds with its computer's bots; the heading still reads "Needs update". */}
+        {pins}
         {notice}
         {rows}
         {!items.length && !store.mismatch && !compact ? <div className="computer-roster-empty">{store.shownConnection.kind === 'online' ? 'No bots yet' : store.connectionLabel}</div> : null}

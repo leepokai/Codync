@@ -68,6 +68,12 @@ extension BotStore {
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
         // One this phone brought in before was taken out since: it stays out.
         if h.joinAccount == true, computer.joinedAccount != true { onJoinAccount?(client) }
+        // A reconnect, including the one a lagged stream asks for, fills the pin rows in again.
+        if h.workflows == true {
+            Task { [weak self] in await self?.reloadWorkflows() }
+        } else {
+            workflows = []
+        }
     }
 
     private func noteHostVersion(_ new: HostVersion) {
@@ -152,7 +158,11 @@ extension BotStore {
                 // A newer host this app can't follow: stop syncing and ask for an update.
                 if mismatch != nil { restartEvents() }
             }
+        case let .workflow(event):
+            applyWorkflow(event)
         }
+        // Workflow events carry no rev and are not part of the bot mirror.
+        if case .workflow = event { return }
         scheduleSave()
     }
 
@@ -169,6 +179,10 @@ extension BotStore {
         historyComplete = []
         windowFloors = [:]
         screen = nil
+        workflows = []
+        dirtyWorkflowGraphs = []
+        deletedWorkflows = []
+        workflowNotices = [:]
         saveCache()
     }
 

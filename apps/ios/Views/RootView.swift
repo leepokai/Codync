@@ -56,6 +56,7 @@ struct RootView: View {
             }
         }
         .codyncSheet(isPresented: Bindable(app).showComputers) { ComputersView() }
+        .codyncSheet(isPresented: Bindable(app).showStatus) { StateTab() }
         .codyncSheet(item: Binding(get: { app.marketplace.map(MarketplaceTarget.init) }, set: { app.marketplace = $0?.computerId })) { target in
             // Each computer has its own; it's opened from that computer's heading or row.
             if let store = accounts.store(for: target.computerId) {
@@ -78,8 +79,8 @@ struct RootView: View {
                         }
                 }
             }
-            Tab(L10n.tr("State"), systemImage: "rectangle.stack.fill", value: AppTab.state) {
-                StateTab()
+            Tab(L10n.tr("Workflows"), systemImage: "flowchart", value: AppTab.workflows) {
+                WorkflowsTab()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
             Tab(L10n.tr("Settings"), systemImage: "gearshape", value: AppTab.settings) {
@@ -103,7 +104,7 @@ struct RootView: View {
     private var screen: AnalyticsEvent.Screen {
         switch app.tab {
         case .bots: .bots
-        case .state: .state
+        case .workflows: .workflows
         case .settings: .settings
         }
     }
@@ -180,6 +181,7 @@ private struct StateTab: View {
     enum Surface: Hashable { case widget, liveActivity, island }
 
     @Environment(AppStore.self) private var app
+    @Environment(\.dismissModal) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Screenshots: CODYNC_STATE_SURFACE=widget|liveActivity|island opens the tab on that gallery.
     @State private var surface: Surface = {
@@ -197,7 +199,7 @@ private struct StateTab: View {
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader {
-                EmptyView()
+                IconButton("Close", systemImage: "xmark") { dismiss() }
             } title: {
                 Text(L10n.tr("State")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
@@ -211,7 +213,7 @@ private struct StateTab: View {
             ZStack {
                 // Holds the gallery's pushes (Lock Screen widgets); no bar shows.
                 NavigationStack { WidgetGalleryView() }
-                    .environment(\.stateSurfaceActive, app.tab == .state && surface == .widget)
+                    .environment(\.stateSurfaceActive, app.showStatus && surface == .widget)
                     .tabLayer(surface == .widget)
                 ActivityGalleryView(forms: [.lockScreen])
                     .tabLayer(surface == .liveActivity)
@@ -221,6 +223,7 @@ private struct StateTab: View {
             .animation(Motion.reduced(Motion.fade, reduceMotion), value: surface)
         }
         .background(Palette.background)
+        .tracked(.screenViewed(.state))
         .codyncSheet(isPresented: Bindable(app).showUsage) { UsageSheet() }
     }
 }

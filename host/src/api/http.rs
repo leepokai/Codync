@@ -26,6 +26,7 @@ pub fn router(hub: Arc<Hub>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/hooks/routines/{id}", post(routine_hook))
+        .route("/hooks/workflows/{id}", post(workflow_hook))
         .route("/events", get(events))
         .route("/api/{method}", post(command))
         .route("/api/setIcon", post(icon_command).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
@@ -251,20 +252,39 @@ async fn routine_hook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Value>, ApiError> {
-    use crate::routines::hooks::{MAX_BODY, Refused};
+    use crate::routines::hooks::MAX_BODY;
     if body.len() > MAX_BODY {
         return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "event too large".into()));
     }
     let headers =
         headers.iter().filter_map(|(k, v)| Some((k.as_str().to_owned(), v.to_str().ok()?.to_owned()))).collect();
-    hub.routines.receive(&hub, &id, &headers, &body).map(Json).map_err(|e| {
-        let status = match e {
-            Refused::Unauthorized => StatusCode::UNAUTHORIZED,
-            Refused::Paused | Refused::Busy => StatusCode::CONFLICT,
-            Refused::Invalid(_) => StatusCode::BAD_REQUEST,
-        };
-        ApiError(status, e.to_string())
-    })
+    hub.routines.receive(&hub, &id, &headers, &body).map(Json).map_err(hook_error)
+}
+
+async fn workflow_hook(
+    State(hub): State<Arc<Hub>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    use crate::routines::hooks::MAX_BODY;
+    if body.len() > MAX_BODY {
+        return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE, "event too large".into()));
+    }
+    let headers =
+        headers.iter().filter_map(|(k, v)| Some((k.as_str().to_owned(), v.to_str().ok()?.to_owned()))).collect();
+    crate::workflows::receive_hook(&hub, &id, &headers, &body).map(Json).map_err(hook_error)
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn hook_error(error: crate::routines::hooks::Refused) -> ApiError {
+    use crate::routines::hooks::Refused;
+    let status = match error {
+        Refused::Unauthorized => StatusCode::UNAUTHORIZED,
+        Refused::Paused | Refused::Busy => StatusCode::CONFLICT,
+        Refused::Invalid(_) => StatusCode::BAD_REQUEST,
+    };
+    ApiError(status, error.to_string())
 }
 
 #[cfg(test)]

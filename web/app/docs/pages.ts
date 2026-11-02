@@ -62,6 +62,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
           "Have a bot do work on a schedule or when a webhook arrives: set it up in the routine editor or by asking the bot.",
       },
       {
+        slug: "workflows",
+        title: "Workflows",
+        description:
+          "Chain steps on your computer: a trigger, prompts, assistants, a condition, an approval and a result, on a canvas or a step list.",
+      },
+      {
         slug: "artifacts",
         title: "Artifacts and the Library",
         description:

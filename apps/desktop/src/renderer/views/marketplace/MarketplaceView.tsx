@@ -191,8 +191,8 @@ export function MarketplaceView() {
         </MarketPanel>
       </div>
       {/* Dismissing slides the sheet away; clearing the caller's state would cut it off. */}
-      <div className="market-close">
-        <IconButton title="Close" icon="xmark" onClick={dismiss} />
+      <div className="market-close no-drag">
+        <IconButton title="Close" icon="xmark" onClick={(event) => { event.stopPropagation(); dismiss() }} />
       </div>
     </div>
   )

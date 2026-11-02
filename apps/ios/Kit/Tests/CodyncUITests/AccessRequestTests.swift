@@ -42,6 +42,7 @@ private final class AccessCloudStub: URLProtocol {
 @MainActor @Test func accessIsAskedOnlyOnTapAndOutlivesItsSheet() async throws {
     let suite = "AccessRequest.\(UUID().uuidString)"
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    AccessCloudStub.commits.withLock { $0 = 0 }
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [AccessCloudStub.self]
     let identity = DeviceIdentity(signing: .init(), push: .init())

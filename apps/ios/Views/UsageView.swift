@@ -2,7 +2,7 @@ import CodyncKit
 import CodyncUI
 import SwiftUI
 
-/// Usage limits (opened from the State tab): one card per provider, the tightest limit as a big bar, every limit listed below.
+/// Usage limits (opened from State): one card per provider, the tightest limit as a big bar, every limit listed below.
 struct UsageView: View {
     @Environment(BotStore.self) private var model
     @State private var collapsed: Set<String> = []

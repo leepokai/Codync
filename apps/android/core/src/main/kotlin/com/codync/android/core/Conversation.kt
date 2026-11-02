@@ -150,8 +150,18 @@ data class OutgoingFile(val path: String, val name: String, val size: Long)
 
 sealed interface MirrorEvent {
     data class Icons(val icons: Map<String, CustomIcon>, val revision: Long = 0) : MirrorEvent
-    /** The stream's first event; `network` is null from hosts before the network view (or one this app can't read). */
-    data class Hello(val hostId: String, val rev: Long, val usage: JsonObject, val screen: JsonObject?, val network: NetworkView? = null) : MirrorEvent
+    /**
+     * The stream's first event. `network` is null from hosts before the network view.
+     * `workflows` defaults to false when the host does not offer them.
+     */
+    data class Hello(
+        val hostId: String,
+        val rev: Long,
+        val usage: JsonObject,
+        val screen: JsonObject?,
+        val network: NetworkView? = null,
+        val workflows: Boolean = false,
+    ) : MirrorEvent
     data class BotChanged(val bot: Bot) : MirrorEvent
     data class EntryChanged(val entry: Entry) : MirrorEvent
     data class Usage(val value: JsonObject) : MirrorEvent
@@ -162,6 +172,8 @@ sealed interface MirrorEvent {
     data class Call(val cue: CallCue) : MirrorEvent
     /** The computer's network changed: live only, never a checkpoint. */
     data class Network(val view: NetworkView) : MirrorEvent
+    /** A workflow changed. Live only, no `rev`, so it never moves the sync cursor. */
+    data class Workflow(val change: WorkflowChanged) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -171,7 +183,8 @@ sealed interface MirrorEvent {
             "hello" -> Hello(requireNotNull(value.text("hostId")),
                 requireNotNull(value["rev"]?.jsonPrimitive?.longOrNull),
                 value["usage"]?.jsonObject ?: JsonObject(emptyMap()), value["screen"]?.takeUnless { it == JsonNull }?.jsonObject,
-                value["network"]?.takeUnless { it == JsonNull }?.let { runCatching { NetworkView.decode(it) }.getOrNull() })
+                value["network"]?.takeUnless { it == JsonNull }?.let { runCatching { NetworkView.decode(it) }.getOrNull() },
+                runCatching { value["workflows"]?.jsonPrimitive?.booleanOrNull }.getOrNull() == true)
             "bot" -> BotChanged(HostClient.decode(value.getValue("bot").jsonObject))
             "entry" -> EntryChanged(Entry.decode(value.getValue("entry").jsonObject))
             "usage" -> Usage(value.getValue("usage").jsonObject)
@@ -181,11 +194,25 @@ sealed interface MirrorEvent {
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
+            // A workflow event this app cannot read is ignored. It has no rev, so sync does not rewind.
+            "workflow" -> runCatching { workflowEvent(value) }.getOrDefault(Ignored)
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored
         }
     }
+}
+
+private val WORKFLOW_CHANGES = setOf("graph", "enabled", "run", "step", "deleted")
+
+/** A workflow event, or [MirrorEvent.Ignored] when the body is not one this app can apply. */
+private fun workflowEvent(value: JsonObject): MirrorEvent {
+    val id = value.text("workflowId")?.takeIf { it.isNotBlank() } ?: return MirrorEvent.Ignored
+    val change = value.text("change")?.takeIf { it in WORKFLOW_CHANGES } ?: return MirrorEvent.Ignored
+    val runId = value["runId"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.content
+    val stepId = value.text("stepId")?.takeIf { it.isNotBlank() }
+    val enabled = value["enabled"]?.takeUnless { it == JsonNull }?.jsonPrimitive?.booleanOrNull
+    return MirrorEvent.Workflow(WorkflowChanged(change, id, runId, stepId, enabled))
 }
 
 data class MirrorSnapshot(

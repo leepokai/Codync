@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 73] = [
+const HELP: [(&str, &str, &str); 74] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -65,6 +65,7 @@ const HELP: [(&str, &str, &str); 73] = [
     ("BOTS", "z", "fold / unfold section"),
     ("BOTS", "M", "memory"),
     ("BOTS", "R", "details: routines, computer"),
+    ("BOTS", "f", "workflows"),
     ("BOTS", "B", "details: switch back to the bot's own agent"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),
     ("BOTS", "⇧← ⇧→", "between details, library, memory and settings"),
@@ -123,7 +124,8 @@ pub(super) fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
             section = sec;
         }
         put(buf, x, y, 11, k, t.bold.patch(t.panel));
-        put(buf, x + 12, y, col_w.saturating_sub(13), d, t.secondary.patch(t.panel));
+        let label = tr(d);
+        put(buf, x + 12, y, col_w.saturating_sub(13), label.as_ref(), t.secondary.patch(t.panel));
         y += 1;
         shown += 1;
     }

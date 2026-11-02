@@ -16,7 +16,7 @@ function isLoopback(url: string) {
   }
 }
 
-async function call(baseURL: string, token: string, method: string, body: unknown, timeoutMs: number): Promise<unknown> {
+export async function call(baseURL: string, token: string, method: string, body: unknown, timeoutMs: number): Promise<unknown> {
   if (!isLoopback(baseURL)) throw { status: 0, message: 'Not a loopback host.' } satisfies CallError
   let res: Response
   try {

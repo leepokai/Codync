@@ -1,0 +1,99 @@
+/* The Remote screen window: a bar above a black stage that holds the video. */
+.screen-viewer {
+  height: 100vh;
+  background: #000;
+  color: var(--text);
+}
+.screen-bar {
+  flex: none;
+  padding: 8px 12px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+}
+.screen-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.screen-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--attention);
+  flex: none;
+}
+.screen-status.ok .screen-dot { background: var(--added); }
+.screen-status.error .screen-dot { background: var(--danger); }
+.screen-agent {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  min-width: 0;
+}
+.screen-displays {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.screen-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+  /* Wheel and drags belong to the remote screen, never to the page. */
+  overscroll-behavior: none;
+  user-select: none;
+}
+.screen-video {
+  position: absolute;
+  display: block;
+  background: #000;
+  pointer-events: none;
+}
+/* Takes the keyboard (and an IME's text) without showing: focus stays here while the window is active. */
+.screen-keys {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  resize: none;
+  pointer-events: none;
+}
+.screen-notice {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  max-width: 420px;
+  padding: 32px;
+  text-align: center;
+  pointer-events: none;
+}
+.screen-notice:has(button) { pointer-events: auto; }
+.screen-notice.dim {
+  inset: auto 0 24px;
+  padding: 8px 16px;
+  width: fit-content;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.6);
+}
+.screen-note {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: min(520px, 90%);
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  pointer-events: none;
+}

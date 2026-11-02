@@ -1511,5 +1511,12 @@
   "This computer isn't in an account: it uses a private relay": "Dieser Computer ist in keinem Konto: er nutzt ein privates Relay",
   "This computer isn't in your account": "Dieser Computer ist nicht in deinem Konto",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Dieses iPhone bekommt keine Benachrichtigungen des Kontos mehr und behält seine Computer, sodass du nach dem erneuten Anmelden nichts scannen musst. Um es von ihnen zu entfernen, nutze stattdessen „Neu beginnen“ in den Einstellungen.",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Dieses Telefon bekommt keine Benachrichtigungen des Kontos mehr und behält seine Computer, sodass du nach dem erneuten Anmelden nichts scannen musst. Um es von ihnen zu entfernen, nutze stattdessen „Neu beginnen“ in den Einstellungen."
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Dieses Telefon bekommt keine Benachrichtigungen des Kontos mehr und behält seine Computer, sodass du nach dem erneuten Anmelden nichts scannen musst. Um es von ihnen zu entfernen, nutze stattdessen „Neu beginnen“ in den Einstellungen.",
+  "Send my clipboard": "Meine Zwischenablage senden",
+  "Copy from computer": "Vom Computer kopieren",
+  "Hand back to bots": "An Bots zurückgeben",
+  "Take over": "Übernehmen",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Verbindung zum Remote-Bildschirm fehlgeschlagen. Prüfe die Verbindung des Computers und versuche es erneut.",
+  "Couldn't reconnect to the remote screen.": "Wiederverbindung mit dem Remote-Bildschirm fehlgeschlagen.",
+  "Couldn't reach the computer.": "Der Computer ist nicht erreichbar."
 }

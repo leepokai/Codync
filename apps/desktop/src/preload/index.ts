@@ -130,6 +130,11 @@ const bridge: CodyncBridge = {
     finish: (id) => ipcRenderer.invoke('files:finish', id),
     cancel: (id) => ipcRenderer.invoke('files:cancel', id),
   },
+  screenViewer: {
+    open: (computerId, name) => ipcRenderer.send('screenViewer:open', computerId, name),
+    report: (baseURL, token, session) => ipcRenderer.send('screenViewer:report', baseURL, token, session),
+    close: () => ipcRenderer.send('screenViewer:close'),
+  },
   app: {
     reportError: (report) => ipcRenderer.send('app:reportError', report),
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
@@ -137,6 +142,7 @@ const bridge: CodyncBridge = {
     pickFiles: () => ipcRenderer.invoke('app:pickFiles'),
     pickExport: () => ipcRenderer.invoke('app:pickExport'),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),
+    readClipboardText: () => ipcRenderer.invoke('app:clipboardText'),
     setTraySummary: (summary: TraySummary) => ipcRenderer.send('app:traySummary', summary),
     showWindow: () => ipcRenderer.send('app:showWindow'),
     onCommand: (cb: (c: WindowCommand) => void) => listen('app:command', cb),

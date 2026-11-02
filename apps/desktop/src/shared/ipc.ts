@@ -246,6 +246,15 @@ export interface CodyncBridge {
     finish(id: string): Promise<void>
     cancel(id: string): Promise<void>
   }
+  /** The Remote screen window of a computer (`main/screen-viewer.ts`). */
+  screenViewer: {
+    /** Opens its window, or brings it forward. */
+    open(computerId: string, name: string): void
+    /** The viewer window tells the main process which session is live, so the window closing for any reason still closes it on the computer. */
+    report(baseURL: string, token: string, session: string | null): void
+    /** Closes this window. */
+    close(): void
+  }
   app: {
     /** Error tracking: an uncaught error in this window (shared/error-report.ts). */
     reportError(report: ErrorReport): void
@@ -256,6 +265,8 @@ export interface CodyncBridge {
     /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
     pickExport(): Promise<string | null>
     readClipboardFiles(): Promise<PickedFile[]>
+    /** The text on the system clipboard ('' when there is none). */
+    readClipboardText(): Promise<string>
     setTraySummary(summary: TraySummary): void
     /** Brings the chat window forward (a phone waits for this computer to let it in). */
     showWindow(): void

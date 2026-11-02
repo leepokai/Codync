@@ -1511,5 +1511,12 @@
   "This computer isn't in an account: it uses a private relay": "這臺電腦不在任何賬戶裡：它用私人中繼",
   "This computer isn't in your account": "這臺電腦不在你的賬戶裡",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "這臺 iPhone 不再收到這個賬戶的通知，但會保留它的電腦，重新登入後不用再掃碼。要把它從那些電腦上移除，請改用設定裡的「重新開始」。",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "這支手機不再收到這個賬戶的通知，但會保留它的電腦，重新登入後不用再掃碼。要把它從那些電腦上移除，請改用設定裡的「重新開始」。"
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "這支手機不再收到這個賬戶的通知，但會保留它的電腦，重新登入後不用再掃碼。要把它從那些電腦上移除，請改用設定裡的「重新開始」。",
+  "Send my clipboard": "傳送我的剪貼簿",
+  "Copy from computer": "從電腦複製",
+  "Hand back to bots": "交還給機器人",
+  "Take over": "接管",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "無法連線到遠端螢幕。請檢查電腦的網路連線後重試。",
+  "Couldn't reconnect to the remote screen.": "無法重新連線到遠端螢幕。",
+  "Couldn't reach the computer.": "無法連線到這臺電腦。"
 }

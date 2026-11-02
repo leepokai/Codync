@@ -102,6 +102,8 @@ The TUI connects to one host at a time, so it keeps its single roster.
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
+  The app also views and controls *another* computer's screen (over its SSH tunnel) in a window of
+  its own, with the phones' protocol: [desktop viewer](../features/remote-screen.md#desktop-viewer).
 - **Other computers in the account** are reached through this computer's own host and SSH
   tunnels only. The encrypted channel to account computers (`ChannelTransport`) wasn't ported:
   the product targets one computer, so "Ask for access" rows show status only. Every offline row

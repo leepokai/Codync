@@ -1511,5 +1511,12 @@
   "This computer isn't in an account: it uses a private relay": "このコンピュータはどのアカウントにもありません: プライベートリレーを使っています",
   "This computer isn't in your account": "このコンピュータはあなたのアカウントにありません",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "この iPhone はアカウントの通知を受け取らなくなりますが、コンピュータは残るので、もう一度サインインすればスキャンは不要です。コンピュータから外すには、代わりに設定の「やり直す」を使ってください。",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "このスマートフォンはアカウントの通知を受け取らなくなりますが、コンピュータは残るので、もう一度サインインすればスキャンは不要です。コンピュータから外すには、代わりに設定の「やり直す」を使ってください。"
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "このスマートフォンはアカウントの通知を受け取らなくなりますが、コンピュータは残るので、もう一度サインインすればスキャンは不要です。コンピュータから外すには、代わりに設定の「やり直す」を使ってください。",
+  "Send my clipboard": "自分のクリップボードを送信",
+  "Copy from computer": "コンピュータからコピー",
+  "Hand back to bots": "ボットに返す",
+  "Take over": "操作を引き継ぐ",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "リモート画面に接続できませんでした。コンピュータの接続を確認して、もう一度お試しください。",
+  "Couldn't reconnect to the remote screen.": "リモート画面に再接続できませんでした。",
+  "Couldn't reach the computer.": "コンピュータに接続できませんでした。"
 }

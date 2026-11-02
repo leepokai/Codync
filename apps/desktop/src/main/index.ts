@@ -18,6 +18,7 @@ import { handleURL, registerAuthIPC, registerSchemes, urlFromArgv } from './auth
 import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
+import { ScreenViewers } from './screen-viewer'
 import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
@@ -47,6 +48,7 @@ const account = new AccountService()
 const updates = new Updates(host)
 let chat: BrowserWindow | null = null
 let pairing: BrowserWindow | null = null
+const screenViewers = new ScreenViewers({ preload: join(__dirname, '../preload/index.js'), url: (computerId) => `${rendererURL('screen')}&computer=${encodeURIComponent(computerId)}` })
 const quitLifecycle = new QuitLifecycle(app, autoUpdater)
 const isMac = process.platform === 'darwin'
 
@@ -183,6 +185,7 @@ function registerIPC(tray: Tray) {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   ipcMain.handle('app:clipboardFiles', () => readClipboardFiles())
+  ipcMain.handle('app:clipboardText', () => clipboard.readText())
   ipcMain.on('app:traySummary', (_e, summary) => tray.update(summary))
   ipcMain.on('app:showWindow', () => {
     openChat()
@@ -255,6 +258,7 @@ if (yieldsToInstall()) {
     registerAuthIPC()
     registerSpeech()
     registerScreenIPC()
+    screenViewers.register()
     registerCloud(account)
     registerSSH(() => BrowserWindow.getAllWindows())
     registerSSHConfig()

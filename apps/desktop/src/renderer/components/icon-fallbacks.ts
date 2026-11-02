@@ -36,6 +36,7 @@ const map: Record<string, IconNode> = {
   'arrow.right': L.ArrowRight,
   'arrow.right.doc.on.clipboard': L.ClipboardCopy,
   'arrow.up.doc.on.clipboard': L.ClipboardPaste,
+  'arrow.down.doc.on.clipboard': L.ClipboardCopy,
   'arrow.right.to.line': L.ArrowRightToLine,
   'arrow.triangle.2.circlepath': L.RefreshCw,
   'arrow.triangle.branch': L.GitBranch,

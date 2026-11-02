@@ -1,6 +1,6 @@
 Codync can do two things with your computer's screen:
 
-- **Remote screen:** you see the screen on your iPhone and control it with touch and the keyboard.
+- **Remote screen:** you see the screen on your iPhone, Android phone or another computer running the desktop app, and control it with touch, the mouse and the keyboard.
 - **Use the computer:** a bot opens apps, reads windows, clicks and types, the way you would.
 
 Both run through **Codync Screen**, a small helper on the computer that the desktop app sets up. You can watch a bot work from your phone and take over at any time.
@@ -46,6 +46,20 @@ The buttons along the top:
 | **Take over** / **Hand back to bots** | Takes control from the bots, or gives it back |
 
 If the computer allows viewing but not control, the screen says "View only" and points you to Computer access on the computer.
+
+## View and control another computer from the desktop app
+
+When the desktop app manages another computer over SSH, that computer's card in **Settings → Computers** (and its heading in the sidebar) has a **Remote screen** button. It appears when that computer is connected, Remote screen is on there, and screen recording is allowed. The button doesn't appear for the computer you're sitting at.
+
+It opens a window with the other computer's screen, fitted without stretching. You have control right away, and the pointer on the screen is the pointer on the other computer (there's no trackpad mode):
+
+- The mouse moves, clicks (left, right and middle), double-clicks, drags and scrolls, sideways too.
+- Keys go through while the window is focused, shortcuts included. **Cmd** (or the Windows key) is sent as Cmd. **Cmd+V** (**Ctrl+V** on Windows and Linux) types the text on your clipboard into the other computer.
+- The bar above the screen shows the computer's name and the connection (**Connecting…**, **Connected**, **Reconnecting…** or an error with **Try again**), the same clipboard, **Displays** and **Take over** / **Hand back to bots** buttons as on the phone, and **Close**.
+
+A lost connection reconnects up to three times before showing the error. Closing the window ends the session and hands control back to the bots.
+
+The desktop app reaches the other computer through its SSH tunnel, so the picture and input travel straight between the two computers (same Wi-Fi, LAN or Tailscale), not through the Codync relay.
 
 ### How the screen travels
 

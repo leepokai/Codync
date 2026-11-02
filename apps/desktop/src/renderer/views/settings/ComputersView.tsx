@@ -19,6 +19,8 @@ import { devicesLoseAccess } from '../../lib/account-copy'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
+import { offersRemoteScreen } from '../screen/screen-access'
+import { openRemoteScreen } from '../screen/open-remote-screen'
 import { RelayAddressRow, RelayTokenRow } from './RelayFields'
 import { useSSH } from './ssh-model'
 import { SSHConfigSuggestions } from './SSHConfigSuggestions'
@@ -180,6 +182,9 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
             {overSSH ? (
               // This computer's voice settings are their own Settings page.
               <IconButton title="Voice chat" icon="waveform" selected={showVoice} disabled={!online} onClick={() => setShowVoice((s) => !s)} />
+            ) : null}
+            {offersRemoteScreen(store.screen, manageable, store === app.local) ? (
+              <IconButton title="Remote screen" icon="display" onClick={() => openRemoteScreen(store)} />
             ) : null}
             <IconButton title="Pair iPhone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
           </div>,

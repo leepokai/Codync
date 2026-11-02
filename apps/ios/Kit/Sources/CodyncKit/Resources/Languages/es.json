@@ -1511,5 +1511,12 @@
   "This computer isn't in an account: it uses a private relay": "Este ordenador no está en ninguna cuenta: usa un relé privado",
   "This computer isn't in your account": "Este ordenador no está en tu cuenta",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Este iPhone deja de recibir las notificaciones de la cuenta y conserva sus ordenadores, así que al volver a iniciar sesión no hace falta escanear. Para quitarlo de ellos, usa en su lugar «Empezar de nuevo» en Ajustes.",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Este teléfono deja de recibir las notificaciones de la cuenta y conserva sus ordenadores, así que al volver a iniciar sesión no hace falta escanear. Para quitarlo de ellos, usa en su lugar «Empezar de nuevo» en Ajustes."
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Este teléfono deja de recibir las notificaciones de la cuenta y conserva sus ordenadores, así que al volver a iniciar sesión no hace falta escanear. Para quitarlo de ellos, usa en su lugar «Empezar de nuevo» en Ajustes.",
+  "Send my clipboard": "Enviar mi portapapeles",
+  "Copy from computer": "Copiar desde la computadora",
+  "Hand back to bots": "Devolver el control a los bots",
+  "Take over": "Tomar el control",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "No se pudo conectar con la pantalla remota. Comprueba la conexión de la computadora e inténtalo de nuevo.",
+  "Couldn't reconnect to the remote screen.": "No se pudo volver a conectar con la pantalla remota.",
+  "Couldn't reach the computer.": "No se pudo conectar con la computadora."
 }

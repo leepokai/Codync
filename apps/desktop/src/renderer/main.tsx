@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import './styles/theme.css'
 import { ChatWindow } from './views/ChatWindow'
 import { PairingWindow } from './views/PairingWindow'
+import { ScreenViewerWindow } from './views/screen/ScreenViewerWindow'
 import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
 import { AppModel } from './store/app-model'
@@ -28,6 +29,10 @@ if (page === 'island') {
   const island = new IslandModel()
   island.start()
   root.render(<IslandWindow model={island} />)
+} else if (page === 'screen') {
+  // A computer's Remote screen: its own host connection (resolved by computer id), no mirror of its bots.
+  const computerId = new URLSearchParams(location.search).get('computer')
+  if (computerId) root.render(<ScreenViewerWindow computerId={computerId} />)
 } else {
   // The pairing window only needs this computer's host, not a mirror of its bots.
   const app = new AppModel(page !== 'pairing')

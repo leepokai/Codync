@@ -97,13 +97,13 @@ Runs on iPhone and Android when an account becomes active and the signed-out con
 | **New** (no device key, no computers) | Everything moves: the device and push keys, the computers, order, drafts, shortcut lead, widget snapshot. Hosts see the same key, so nothing is paired again and push keeps working |
 | **Already used** (has its own key) | The computer lists merge (the account's entry wins for the same id). Computers paired only with the signed-out key are refused by their hosts; they show the existing "pair again" state (`isStale`) |
 
-After either case the signed-out context is erased, and when computers moved an analytics event `signed_out_pairings_moved {computers, keys: moved|rescan}` is sent (in [analytics events](../reference/analytics-events.md) and both apps).
+After either case the signed-out context is erased (on iOS except a mirror cache that couldn't be renamed, below), and when computers moved an analytics event `signed_out_pairings_moved {computers, keys: moved|rescan}` is sent (in [analytics events](../reference/analytics-events.md) and both apps).
 
 **iOS**
 - `SharedStore.Context.adopt(from:)` in the Kit:
   - Moves the Keychain items `com.pokai.Codync.device-key` / `push-key` from account `local` to the context id.
   - Moves the `UserDefaults` names in `Context.names` to their `account.<id>.` keys.
-  - Drops `ActivityIconCache`, which rebuilds. When the keys move, the signed-out mirror caches are renamed into the account's, since they hold the messages not yet sent; otherwise they go.
+  - Drops `ActivityIconCache`, which rebuilds. When the keys move, the signed-out mirror caches are renamed into the account's, since they hold the messages not yet sent; otherwise they go. A cache whose rename fails stays on disk under the signed-out name rather than be deleted, though nothing loads it again (Start over removes it).
   - The Kit's test bundle has no Keychain entitlement, so its tests keep keys in memory (`Keychain.memory`, debug builds only).
 - Unit tests in `CodyncKitTests` cover both cases.
 
@@ -111,7 +111,7 @@ After either case the signed-out context is erased, and when computers moved an 
 - `LocalStore.adopt(from)`:
   - The identity is sealed with a per-scope Keystore alias and AAD, so the seeds are decrypted with the old key and sealed again under the new scope.
   - Every other file in the folder is copied. Drafts and queued messages name their attachments by full path, so after the copy they're pointed at the new folder's `outgoing/` (`AttachmentFiles.moved`, `DraftBook.relocate`, `MirrorDatabase.relocate`).
-  - In the merge case only `computers.json` merges.
+  - In the merge case only `computers.json` merges. A key or file that fails to copy makes it the merge case.
 - Unit tests cover both cases.
 
 ### 5. Desktop: computer in another account

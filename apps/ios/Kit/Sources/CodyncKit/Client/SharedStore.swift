@@ -111,12 +111,15 @@ public enum SharedStore {
         }
 
         /// Signing out or removing the account: device keys, computers, widget snapshot and caches go.
-        public func erase() {
+        public func erase() { erase(keeping: []) }
+
+        /// `erase()`, except for the mirror caches in `kept` (`adopt(from:)`).
+        fileprivate func erase(keeping kept: [URL]) {
             for name in Self.names { defaults.removeObject(forKey: key(name)) }
             DeviceIdentity.delete(context: self)
             do { try ActivityIconCache.erase(context: id) }
             catch { Logger(subsystem: "com.pokai.Codync", category: "CustomIcon").error("Cannot erase activity icons: \(error.localizedDescription)") }
-            for file in mirrorCaches() { try? FileManager.default.removeItem(at: file) }
+            for file in mirrorCaches() where !kept.contains(file) { try? FileManager.default.removeItem(at: file) }
         }
 
         /// This context's mirror caches (`BotStore.saveCache`): `codync-mirror-<app>-<id>-<computer>.json`.
@@ -146,7 +149,8 @@ public extension SharedStore.Context {
         guard accountID != nil, local.accountID == nil, local.suite == suite else { return nil }
         let moving = local.computers
         guard !moving.isEmpty || DeviceIdentity.exists(context: local) else { return nil }
-        defer { local.erase() }
+        var unmoved: [URL] = []
+        defer { local.erase(keeping: unmoved) }
         if !DeviceIdentity.exists(context: self), computers.isEmpty {
             do {
                 try DeviceIdentity.move(from: local, to: self)
@@ -155,7 +159,7 @@ public extension SharedStore.Context {
                 return merge(moving)
             }
             for name in Self.names { defaults.set(local.defaults.object(forKey: local.key(name)), forKey: key(name)) }
-            moveMirrorCaches(from: local)
+            unmoved = moveMirrorCaches(from: local)
             return Adoption(computers: moving.count, keys: .moved)
         }
         return merge(moving)
@@ -163,7 +167,10 @@ public extension SharedStore.Context {
 
     /// Unsent and failed messages live only in the mirror caches: they come along rather than go with `erase()`.
     /// A rename in one folder: only a cache left at the account's name (it has no computers yet) is in the way.
-    private func moveMirrorCaches(from local: Self) {
+    /// Returns the caches that couldn't move: `erase` leaves them on disk rather than delete the only copy, though
+    /// nothing loads them again (Start over removes them).
+    private func moveMirrorCaches(from local: Self) -> [URL] {
+        var unmoved: [URL] = []
         for file in local.mirrorCaches() {
             let name = file.lastPathComponent
             guard let marker = name.range(of: "-\(local.id)-") else { continue }
@@ -173,8 +180,10 @@ public extension SharedStore.Context {
                 try FileManager.default.moveItem(at: file, to: moved)
             } catch {
                 log.error("Cannot move unsent messages: \(error.localizedDescription)")
+                unmoved.append(file)
             }
         }
+        return unmoved
     }
 
     private func merge(_ moving: [Computer]) -> Adoption {

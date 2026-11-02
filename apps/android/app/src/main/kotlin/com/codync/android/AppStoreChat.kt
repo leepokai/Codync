@@ -28,9 +28,18 @@ internal fun AppStore.settleEarlyOpens() {
     for (id in opened.filter { keptUnread(it) }) markRead(id)
 }
 
-/** The rev catch-up runs to: a batch's `hello` names it, or it stays as it was. */
-internal fun catchUpRevIn(events: List<MirrorEvent>, current: Long): Long =
-    events.filterIsInstance<MirrorEvent.Hello>().lastOrNull()?.rev ?: current
+/** Counts a stream's catch-up by its `hello`'s `catchUp`: the host's rev can be ahead of every event it replays. */
+internal class CatchUpCount {
+    private var left: Long? = null
+
+    /** True once, on the event that ends this stream's catch-up. */
+    fun ended(event: JsonObject): Boolean {
+        left = if (event.text("type") == "hello") event["catchUp"]?.jsonPrimitive?.longOrNull else left?.minus(1)
+        if (left != 0L) return false
+        left = null
+        return true
+    }
+}
 
 /** The roster's "Mark as read", and opening a chat marked unread: after a mark as unread still under way, so the host never gets them the other way round. */
 fun AppStore.markRead(id: String) {

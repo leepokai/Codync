@@ -31,10 +31,14 @@ class ReadingTest {
         assertEquals(listOf("held"), keptUnreadIn(listOf(held, MirrorEvent.BotChanged(Bot("bot", unread = 1)), message())))
     }
 
-    @Test fun `catch-up runs to the rev a batch's hello names`() {
-        val hello = MirrorEvent.Hello("h1", 7, buildJsonObject {}, null)
-        assertEquals(7L, catchUpRevIn(listOf(message(), hello), Long.MAX_VALUE))
-        assertEquals(Long.MAX_VALUE, catchUpRevIn(listOf(message()), Long.MAX_VALUE))
+    @Test fun `catch-up ends on its last replayed event even when the host rev is ahead of all of them`() {
+        val hello = buildJsonObject { put("type", "hello"); put("rev", 9); put("catchUp", 2) }
+        val icons = buildJsonObject { put("type", "icons") }
+        val bot = buildJsonObject { put("type", "bot"); put("rev", 3) }
+        val count = CatchUpCount()
+        assertEquals(listOf(false, false, true, false), listOf(hello, icons, bot, bot).map(count::ended))
+        assertEquals(false, CatchUpCount().ended(bot))
+        assertEquals(true, CatchUpCount().ended(buildJsonObject { put("type", "hello"); put("catchUp", 0) }))
     }
 
     @Test fun `mark as unread is offered for a read chat on a host that has it`() {

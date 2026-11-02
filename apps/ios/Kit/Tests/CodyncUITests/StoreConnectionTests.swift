@@ -79,12 +79,14 @@ import Testing
     defer { store.setActive(false) }
     #expect(await until { await fake.subscribed })
     store.openConversation("b1")
-    await fake.emit(#"{"type":"hello","hostId":"h1","rev":3}"#)
+    // A custom icon saved last left the host's rev ahead of every replayed event.
+    await fake.emit(#"{"type":"hello","hostId":"h1","rev":5,"catchUp":2}"#)
+    await fake.emit(#"{"type":"icons","icons":{},"iconsRevision":1}"#)
     await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":3,"unread":1,"keptUnread":true}}"#)
     #expect(await until { await fake.readReceipts.count == 1 })
     // A hold arriving after catch-up waits for the chat to be opened again.
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":4,"unread":1,"keptUnread":true}}"#)
-    #expect(await until { store.bots["b1"]?.rev == 4 })
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":6,"unread":1,"keptUnread":true}}"#)
+    #expect(await until { store.bots["b1"]?.rev == 6 })
     try await Task.sleep(for: .milliseconds(50))
     #expect(await fake.readReceipts.count == 1)
 }

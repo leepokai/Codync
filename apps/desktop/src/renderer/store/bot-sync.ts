@@ -5,6 +5,7 @@ import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import { ReadMarks } from './read-marks'
+import { CatchUp } from './catch-up'
 import type { CallCue } from '@shared/calls'
 
 const REFRESH_TIMEOUT = 20_000
@@ -47,8 +48,7 @@ export class BotSync extends BotMirror {
   /** The `since` the current events connection asked for, and the per-bot floors snapshotted at its `hello`. */
   private requestedSince = 0
   private floors = new Map<string, number>()
-  /** The host's rev at this stream's `hello`: once `rev` reaches it, the mirror is current. */
-  private catchUpRev = Infinity
+  private readonly catchUp = new CatchUp()
   private readingViews = new Map<string, string>()
   protected readonly reads = new ReadMarks(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
@@ -164,7 +164,7 @@ export class BotSync extends BotMirror {
         await new Promise<void>((resolve, reject) => {
           this.requestedSince = this.rev
           this.floors = new Map()
-          this.catchUpRev = Infinity
+          this.catchUp.reset()
           this.reads.catchingUp()
           this.closeEvents = client.events(
             this.requestedSince,
@@ -174,10 +174,7 @@ export class BotSync extends BotMirror {
               this.setConnection({ kind: 'online' })
               backoff = 1000
               this.apply(event)
-              if (this.rev >= this.catchUpRev) {
-                this.catchUpRev = Infinity
-                this.reads.caughtUp()
-              }
+              if (this.catchUp.ended(event)) this.reads.caughtUp()
               this.finishRefresh?.()
             },
             (error) => (error ? reject(error) : resolve()),
@@ -243,7 +240,6 @@ export class BotSync extends BotMirror {
         this.screen = event.screen
         this.network = event.network
         if (event.rev < this.rev) this.rev = 0
-        this.catchUpRev = event.rev
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
       case 'bot':

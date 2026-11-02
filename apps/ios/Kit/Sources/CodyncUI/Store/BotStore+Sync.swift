@@ -21,13 +21,14 @@ extension BotStore {
                 }
                 requestedSince = rev
                 windowFloors = [:]
-                openCatchUpRev = .max
+                openCatchUpLeft = nil
                 if openedEarly == nil { openedEarly = [] }
                 for try await event in client.events(since: requestedSince, client: "ios") {
                     guard !Task.isCancelled, !retired else { return }
                     setConnection(.online)
                     backoff = 1
                     apply(event)
+                    countCatchUp(event)
                 }
             } catch is CancellationError {
                 return
@@ -88,7 +89,7 @@ extension BotStore {
         switch event {
         case let .icons(icons, revision):
             applyIcons(icons, revision: revision)
-        case let .hello(id, hostRev, newUsage, newScreen, newNetwork):
+        case let .hello(id, hostRev, newUsage, newScreen, newNetwork, _):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
@@ -101,7 +102,6 @@ extension BotStore {
             if hostRewound { rev = 0 }
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
-            openCatchUpRev = hostRev
             bump(rev)
         case .bot(let received):
             let bot = putHostBot(received)
@@ -194,10 +194,14 @@ extension BotStore {
     private func bump(_ r: Int64) {
         rev = max(rev, r)
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
-        if rev >= openCatchUpRev {
-            openCatchUpRev = .max
-            settleEarlyOpens()
-        }
+    }
+
+    /// Settles `openedEarly` on the stream's last catch-up event, counted from its `hello`.
+    func countCatchUp(_ event: HostEvent) {
+        if case let .hello(_, _, _, _, _, catchUp) = event { openCatchUpLeft = catchUp } else if let left = openCatchUpLeft { openCatchUpLeft = left - 1 }
+        guard openCatchUpLeft == 0 else { return }
+        openCatchUpLeft = nil
+        settleEarlyOpens()
     }
 
     /// Per bot, the lowest synced `seq` in the mirror (optimistic entries don't count).

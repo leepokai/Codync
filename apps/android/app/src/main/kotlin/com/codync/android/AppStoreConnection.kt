@@ -157,7 +157,7 @@ fun AppStore.connect() {
 
 /** Drain available catch-up in bounded transactions, without delaying a lone live event. */
 private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Long): Unit = coroutineScope {
-    openCatchUpRev = Long.MAX_VALUE
+    val catchUp = CatchUpCount()
     if (openedEarly == null) openedEarly = mutableSetOf()
     val source = active.events(cursor).produceIn(this)
     try {
@@ -165,12 +165,15 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             val batch = mutableListOf<MirrorEvent>()
             var next: JsonObject? = source.receiveCatching().getOrThrow()
             var resync = false
+            var caughtUp = false
             while (next != null && batch.size < 64) {
+                caughtUp = catchUp.ended(next)
                 when (val event = decode(next)) {
                     null -> {}
                     MirrorEvent.Resync -> { resync = true; break }
                     else -> batch.add(event)
                 }
+                if (caughtUp) break
                 next = if (batch.size < 64) source.tryReceive().getOrNull() else null
             }
             withContext(Dispatchers.IO) { requireNotNull(database).apply(batch) }
@@ -179,11 +182,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveNetwork(batch)
             hearCalls(batch)
             markingUnread -= keptUnreadIn(batch).toSet()
-            openCatchUpRev = catchUpRevIn(batch, openCatchUpRev)
-            if (openCatchUpRev != Long.MAX_VALUE && withContext(Dispatchers.IO) { requireNotNull(database).revision() } >= openCatchUpRev) {
-                openCatchUpRev = Long.MAX_VALUE
-                settleEarlyOpens()
-            }
+            if (caughtUp) settleEarlyOpens()
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
         }

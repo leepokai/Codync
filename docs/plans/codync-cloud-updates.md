@@ -70,7 +70,7 @@ For a security hole or a critical bug, an operator sets `HOST_FLOOR` (a version 
 `HOST_FLOOR_REASON` on the Worker:
 
 - **Running cloud machines**: the Worker's cron finds cloud computers whose `computers.version` is below the floor
-  and runs `codync-host update --force` on each through the provider (`codync-machines` `exec`). This works with
+  and runs `codync-host update --force` on each through the provider (`codync-cloud` `exec`). This works with
   any host version, including ones from before this design. Working bots are interrupted; their sessions resume.
 - **Sleeping cloud machines** update on their next wake, before the relay lets any device in: the relay refuses
   device sockets to a host below the floor.
@@ -99,7 +99,7 @@ For a security hole or a critical bug, an operator sets `HOST_FLOOR` (a version 
 | Host, `api/devices.rs`, `api/host.rs` | `hostUpdateStatus`, `checkHostUpdate`, `installHostUpdate` allowed for account devices on a managed host; `installHostUpdate` takes `atLeast` and keeps it as a pending target (checked every 2 minutes, up to a day) while *latest* is below it |
 | Host, `remote/` | On `426 upgradeRequired` from the relay, start an update check |
 | Worker | `HOST_FLOOR` / `HOST_FLOOR_REASON` vars; cron `exec` for cloud machines below it; relay refuses devices to cloud hosts below it and (optionally) self-hosted registration with 426 |
-| `codync-machines` | `exec(id, argv)` (Boat runs commands over its API; the scoped key needs the exec action) |
+| `codync-cloud` | `exec(id, argv)` (Boat runs commands over its API; the scoped key needs the exec action) |
 | iPhone, Android, desktop | On a cloud computer the *Update Codync on <computer>* state calls `installHostUpdate { atLeast: <its minHost> }` itself and reads *Your cloud computer is updating*, with *Update now* (`force`) while bots work (the cloud flag comes with the provider name in `/v1/computers`). The terminal UI runs on the host and is unaffected |
 | Android | *Update this app* opens Google Play's in-app update (immediate) instead of text, before Android goes public |
 | Release gate | Also require Google Play's version ≥ `MIN_APP` before Android goes public (today it reads only the App Store) |

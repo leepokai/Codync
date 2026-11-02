@@ -30,7 +30,7 @@ private val CloudMachine.stateLabel: String get() = when (state) {
 }
 
 /**
- * Settings → Codync Cloud: the computer Codync runs for this account. Shown only to an account that has one or may
+ * Computers → Codync Cloud: the computer Codync runs for this account. Shown only to an account that has one or may
  * create one (the feature isn't public yet).
  */
 @Composable internal fun CloudSettings(state: AppState, store: AppStore) {

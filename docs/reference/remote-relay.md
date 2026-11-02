@@ -544,7 +544,7 @@ The route table below summarizes the contract. Executable schema and validation 
 
 ## 10. iOS Swift integration
 
-`CodyncKit/Client` (`apps/ios/Kit/`) owns transport, crypto, identity and cloud API models. `CodyncUI` owns account/per-computer stores and presentation. The desktop app doesn't use the device channel; it reaches its own host and SSH computers over loopback. Consumers must retain account and computer scope when handling asynchronous responses, links and cached widget data. See [file structure](../architecture/file-structure.md).
+`CodyncKit/Client` (`apps/ios/Kit/`) owns transport, crypto, identity and cloud API models. `CodyncUI` owns account/per-computer stores and presentation. The desktop app reaches its own host and SSH computers over loopback, and only the account's Codync Cloud computer over the device channel (relay only, `apps/desktop/src/main/channel/`). Consumers must retain account and computer scope when handling asynchronous responses, links and cached widget data. See [file structure](../architecture/file-structure.md).
 
 ## 11. Apps and SSH
 

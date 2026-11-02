@@ -10,7 +10,7 @@ const PREPARING_POLL_MS = 3_000
 const PREPARING_POLL_MAX_MS = 30_000
 
 /**
- * Settings → Codync Cloud: the account's cloud computer (`/v1/cloud-computers`), creating it and deleting
+ * Computers → Codync Cloud: the account's cloud computer (`/v1/cloud-computers`), creating it and deleting
  * it or its snapshots. Once claimed it is an account computer like any other (`CloudModel.computers`).
  */
 export class CloudComputerModel extends Observable {

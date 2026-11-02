@@ -1,6 +1,8 @@
 # Codync Cloud
 
-Status: proposed 2026-10-24, nothing built. Owner decisions (2026-10-24):
+Status (2026-10-31): steps 1–3 of the [build order](#build-order-on-boat) and both update paths are built on
+`feat/cloud-boat`, synced with `dev`, and passed end to end on Boat and the iPhone app; payments are set aside.
+What's left before each release: [Delivery](#delivery). Owner decisions (2026-10-24):
 
 - **One Codync Cloud subscription, sold by Codync.** Codync runs the machine on its own provider
   account; the user never sees a provider account, API key or cookie. The rest of the app stays free.
@@ -67,9 +69,11 @@ What changes against the generic design below:
    [trial log §11](codync-cloud-boat-trial.md#11-phase-1-end-to-end-2026-10-24)).
 2. **Sleep and wake**: host idle → `stop`; relay DO → Worker → `resume` on a device connection, mailbox item, hook
    or `wakeAt`; 14-day snapshot policy; start-limit budget. Sleep and wake are built and passed on Boat on
-   2026-10-24 ([trial log §12](codync-cloud-boat-trial.md#12-phase-2-sleep-and-wake-2026-10-24)); still open:
-   the day-10 saved snapshot, a start-limit budget beyond retrying, and the update before sleep (waits for the
-   update design below).
+   2026-10-24 ([trial log §12](codync-cloud-boat-trial.md#12-phase-2-sleep-and-wake-2026-10-24)), with the day-10
+   backup and the update before sleep (`POST /v1/host/sleep` answers `{update}`); backups, a cold wake and a
+   restore from a backup passed on Boat's paid plan on 2026-10-31 ([trial log
+   §15](codync-cloud-boat-trial.md#15-updates-backups-and-a-cold-wake-on-the-paid-plan-2026-10-31)). Still open:
+   a start-limit budget beyond retrying (decided once the internal beta shows real use, owner 2026-10-31).
 3. **App UI** on iOS, Android and desktop (provisioning entry, "preparing your cloud computer" for the ~10 s until
    it is claimed, Cloud badge with provider and region, an automatic access request for the account's cloud
    computer instead of the "Ask for access" tap, a sleeping computer shown as ready ("wakes when you message")
@@ -77,7 +81,7 @@ What changes against the generic design below:
 4. **Payments and pricing.**
 
 The app UI talks to the Worker, never to a provider: the Worker lists the offers it can provision (provider,
-region, wake speed, size, price) and the apps show them as choices, so adding InstaBox or Fly to `codync-machines`
+region, wake speed, size, price) and the apps show them as choices, so adding InstaBox or Fly to `codync-cloud`
 later shows up as new options (for example "Europe, wakes in seconds" on Boat beside "Asia, wakes in under a
 second" on Fly at a different price) with no app release needed for the provider itself.
 
@@ -170,6 +174,8 @@ their phone, the phone shows *Update this app* and stops syncing. Two layers:
 - Rollout: internal accounts first, then batches; a host that isn't `relay ready` within a few minutes of updating
   stops the rollout. (Not built yet: every cloud computer takes its target when it next sleeps.)
 - Nothing is forced on anyone.
+- The owner can skip ahead: *Update* on the cloud computer's Codync row installs the latest release now, even past
+  what the oldest app can handle ([Delivery](#delivery)).
 
 ### Cloud hard update (雲端強更新, emergencies only)
 
@@ -300,10 +306,10 @@ request wakes a sleeping machine by itself.
 | Part | Change |
 |---|---|
 | `cloud/` | `routes/cloud-computers.ts` (create, status, delete), one provider file (~150 lines), a provisioning workflow, `wake.ts` (`relay.ts` is past 500 lines), a host-signed claim-completion route, D1 migration (`cloud_machines`), crons for lapse/grace, rollout, backups and abuse checks |
-| Relay DO | accept `wakeAt` from the host; wake a sleeping Codync Cloud computer when a device opens, a mailbox item or hook arrives, or `wakeAt` passes (rate limited) |
+| Relay DO | accept `wakeAt` from the host; wake a sleeping Codync Cloud computer when a device opens, a mailbox item or hook arrives, an access request comes in, or `wakeAt` passes (rate limited) |
 | Host | (1) reconnect as soon as the wall clock jumps ahead of the monotonic clock (resumed VM; maybe a Mac waking too) instead of after 90 s of silence; (2) managed mode from the environment: claim ticket on first boot, auto approval, self-update off; (3) idle decision + `wakeAt` + self-sleep (Fly socket); (4) memory admission for agent processes; (5) a request carrying `X-Forwarded-For` is never loopback; (6) follow-up 1 |
 | Image | `codync-cloud` Dockerfile + release workflow (Fly), or the snapshot script (InstaBox) |
-| iOS, Android, desktop | provisioning progress, Cloud badge and sleeping state on the computer row ("Sleeping, wakes when you message"), Settings → Codync Cloud (status, delete) on all three. Where the purchase happens is set aside with payments |
+| iOS, Android, desktop | provisioning progress, Cloud badge and sleeping state on the computer row ("Sleeping, wakes when you message"), Computers → Codync Cloud (status, delete) on all three. Each app is a full client of it (chats, bots and their settings): the desktop app reaches it over the relay's encrypted channel like the phones (owner, 2026-11-02), connected only while its window is in use so the computer can still sleep. Where the purchase happens is set aside with payments |
 | Terminal UI | none: it always runs on a host, it doesn't create computers |
 
 ## Trust and privacy
@@ -467,6 +473,27 @@ public.
    signed.
 3. **Launch**: release with the client UI on every platform, App Review, website pricing page.
 4. **Later**: bring your own cloud (own VPS via the one-line install, own InstaBox key), more sizes.
+
+## Delivery
+
+Three releases, each gated by the Worker (`BOAT_API_KEY` unset or the user not in `CLOUD_COMPUTER_USERS`: the
+apps show no Codync Cloud section, so shipping the code changes nothing for anyone else).
+
+1. **Dark merge into `dev`**: the branch split into reviewable commits that pass the pre-commit checks, the
+   `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
+   with migrations `0005`/`0006` on the dev D1 and a dev Boat key, then `npm run e2e:cloud` and the iPhone and
+   Android apps against dev.
+2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations, a Boat key
+   scoped to `sandbox.create/read/stop/resume/delete` + `snapshot.read/write`, `CLOUD_COMPUTER_USERS` = internal
+   accounts); Boat's $20 plan (on since 2026-10-31); MFA on the internal accounts.
+3. **Public launch**: payments (still set aside), terms, acceptable use and privacy policy, encryption at rest,
+   memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
+   screen's "Start a cloud computer", the user manual page, App Review notes (3.1.3(f)), the pricing page.
+
+The cloud picks a cloud computer's version on its own (the soft and hard updates), and its owner can also update
+it to the latest release from any device, like any computer (owner, 2026-10-31): *Update* on its Codync row
+(`installHostUpdate`, offered through `hello.canUpdate` and `latestVersion`). A device whose app is older than that
+release's `minApp` then gets *Update this app*.
 
 ## Acceptance (end to end)
 

@@ -107,6 +107,19 @@ describe("sleep and wake", () => {
     await vi.waitFor(async () => expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("starting"));
   });
 
+  it("wakes it for an access request, which it has to answer", async () => {
+    const { userId, host, hostWs } = await cloudComputer();
+    hostWs.ws.close();
+    await sleep(100);
+    const token = await clerkToken(userId);
+    const key = ref.signKey();
+    expect((await call("POST", "/v1/devices", { token, key, body: { name: "Mac", platform: "macos" } })).status).toBe(200);
+    const fetch = stoppedBoat();
+    const req = await call("POST", `/v1/computers/${host.cid}/access-requests`, { token, key, body: { commit: ref.b64url(ref.sasCommit(key.pub, ref.random(32))) } });
+    expect(req.status).toBe(200);
+    await vi.waitFor(() => expect(calls(fetch)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume"), { timeout: 5000 });
+  });
+
   it("wakes it at the time it asked for", async () => {
     const { host, hostWs } = await cloudComputer();
     hostWs.ws.close();
@@ -135,6 +148,29 @@ describe("sleep and wake", () => {
       vi.useRealTimers();
     }
     expect(calls(retried)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
+  });
+
+  it("wakes it again once the minute is up when it went back to sleep right after a wake", async () => {
+    const { host, device, hostWs } = await cloudComputer();
+    hostWs.ws.close();
+    await sleep(100);
+    const first = stoppedBoat();
+    const dev = await socket(devicePath(host), device);
+    await vi.waitFor(() => expect(calls(first)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume"));
+    dev.ws.close();
+    await sleep(100);
+    // Asked again within the minute: nothing now, but it isn't forgotten.
+    const second = stoppedBoat();
+    await socket(devicePath(host), device);
+    await sleep(100);
+    expect(calls(second)).toEqual([]);
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
+    try {
+      await runDurableObjectAlarm(relay(host));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(calls(second)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
   });
 });
 

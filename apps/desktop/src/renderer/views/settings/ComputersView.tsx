@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
-import { Button, CardSection, IconButton, Reveal, Spinner, Switch } from '../../components/Controls'
+import { Button, CardSection, IconButton, Reveal, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -18,6 +18,7 @@ import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { CodyncCloudSection } from './CodyncCloudSection'
+import { CodyncVersionRow } from './CodyncVersionRow'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
 import { RelayAddressRow, RelayTokenRow } from './RelayFields'
@@ -276,35 +277,6 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         onClose={() => setConfirmUnclaim(false)}
       />
     </VStack>
-  )
-}
-
-/** The Codync a computer runs, and its update when one is due (iOS `CodyncVersionRow`). */
-function CodyncVersionRow({ store }: { store: BotStore }) {
-  const tr = useTr()
-  // Moved on when an update asked from here runs out of time, so one that never finished is offered again.
-  const [now, setNow] = useState(Date.now)
-  const ends = store.hostUpdateWaitEnds
-  useEffect(() => {
-    if (ends === null) return
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, ends - Date.now()))
-    return () => clearTimeout(timer)
-  }, [ends])
-  const line = store.hostVersionLine(Math.max(now, Date.now()))
-  if (!line) return null
-  return (
-    <div className="settings-row settings-appear">
-      <Icon name="arrow.down.circle" size={13} color="var(--secondary)" />
-      <VStack grow className="settings-stack">
-        <Text>Codync <Text tone="secondary" tabular>{line.version}</Text></Text>
-        {line.detail.length > 0 ? (
-          <Text size="caption" tone={line.warns ? 'attention' : 'secondary'}>{line.detail.map((sentence) => tr(sentence)).join(' ')}</Text>
-        ) : null}
-      </VStack>
-      {line.accessory?.kind === 'updating' ? <Spinner />
-        : line.accessory ? <Button onClick={() => store.requestHostUpdate()}>{line.accessory.title}</Button>
-        : null}
-    </div>
   )
 }
 

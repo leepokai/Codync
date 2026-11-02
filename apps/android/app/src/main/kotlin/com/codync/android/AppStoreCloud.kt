@@ -5,7 +5,7 @@ import com.codync.android.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-// Codync Cloud: the computer Codync runs for this account (Settings → Codync Cloud, docs/plans/codync-cloud.md).
+// Codync Cloud: the computer Codync runs for this account (Computers → Codync Cloud, docs/plans/codync-cloud.md).
 
 /** The account's cloud computer and whether it may have one; while it's being prepared, until it joins the account. */
 fun AppStore.refreshCloudMachine() = action("cloudMachine") {

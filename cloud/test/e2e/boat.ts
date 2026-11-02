@@ -1,8 +1,9 @@
 // Boat for cloud computer end-to-end runs (docs/guides/cloud-computer-testing.md): the scoped key the local
-// cloud uses, the `boat` CLI (its own login) for commands and reverse port forwards, and a sweep of test
-// machines a crashed run left behind.
+// cloud uses, the `boat` CLI (its own login) for commands and reverse port forwards, a sweep of test
+// machines a crashed run left behind, and a pass-through to Boat's API that can expire a machine's snapshot.
 
 import { execFile } from "node:child_process";
+import { createServer, type Server } from "node:http";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -72,4 +73,65 @@ export async function sweep(key: string, olderThanMs: number): Promise<string[]>
     await fetch(`${API}/sandboxes/${s.id}`, { method: "DELETE", headers: { ...headers, "X-Ascii-Confirm-Delete": s.id } });
   }
   return stale.map((s) => s.id);
+}
+
+/** Whether Boat has the saved snapshot (a backup) `name`. */
+export async function savedSnapshot(key: string, name: string): Promise<boolean> {
+  const res = await fetch(`${API}/saved-snapshots/${encodeURIComponent(name)}`, { headers: { authorization: `Bearer ${key}` } });
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error(`Boat saved snapshot: ${res.status}`);
+  return true;
+}
+
+/** Deletes a test machine by id (one the cloud no longer tracks, such as the sandbox a restore replaced). */
+export async function deleteSandbox(key: string, id: string): Promise<void> {
+  await fetch(`${API}/sandboxes/${encodeURIComponent(id)}`, { method: "DELETE", headers: { authorization: `Bearer ${key}`, "X-Ascii-Confirm-Delete": id } });
+}
+
+/**
+ * The cloud's way to Boat (`BOAT_API_URL`), passed through unchanged until `expired` is set: then a resume gets
+ * Boat's answer for a machine stopped over 14 days (`409 snapshot_data_expired`), so the cloud restores it from
+ * its backup on the real Boat.
+ */
+export function boatProxy(port: number): { expired: boolean; server: Server; seen: Map<string, string> } {
+  const proxy = { expired: false, server: undefined as unknown as Server, seen: new Map<string, string>() };
+  proxy.server = createServer(async (req, res) => {
+    try {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      if (proxy.expired && req.method === "POST" && /^\/sandboxes\/[^/]+\/resume$/.test(req.url ?? "")) {
+        console.log(`  [boat api] ${req.method} ${req.url} → 409 snapshot_data_expired (made up)`);
+        res.writeHead(409, { "content-type": "application/json" });
+        res.end(JSON.stringify({ code: "snapshot_data_expired", message: "The snapshot expired (e2e)." }));
+        return;
+      }
+      const headers: Record<string, string> = {};
+      for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string" && !["host", "connection", "content-length"].includes(k)) headers[k] = v;
+      const up = await fetch(API + req.url, { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+      const body = Buffer.from(await up.arrayBuffer());
+      // Every call, but a state poll only when the state it reads changes: a failed step shows what the cloud
+      // asked of Boat and what it saw.
+      const seen = req.method === "GET" && up.ok ? stateOf(body) : undefined;
+      if (seen === undefined || proxy.seen.get(req.url ?? "") !== seen) {
+        if (seen !== undefined) proxy.seen.set(req.url ?? "", seen);
+        console.log(`  [boat api] ${req.method} ${req.url} → ${up.status}${seen ? ` ${seen}` : up.ok ? "" : ` ${body.toString().slice(0, 200)}`}`);
+      }
+      res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json" });
+      res.end(body);
+    } catch (e) {
+      res.writeHead(502, { "content-type": "application/json" });
+      res.end(JSON.stringify({ code: "proxy", message: String(e) }));
+    }
+  }).listen(port, "127.0.0.1");
+  return proxy;
+}
+
+/** A sandbox answer's state (and the status of its latest snapshot), for the proxy's log. */
+function stateOf(body: Buffer): string | undefined {
+  try {
+    const s = (JSON.parse(body.toString()) as { sandbox?: { state?: string; lastSnapshotStatus?: string } }).sandbox;
+    return s?.state ? `${s.state}${s.lastSnapshotStatus ? ` (snapshot ${s.lastSnapshotStatus})` : ""}` : undefined;
+  } catch {
+    return undefined;
+  }
 }

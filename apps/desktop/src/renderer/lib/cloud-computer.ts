@@ -39,7 +39,7 @@ export const isPreparing = (m: CloudMachine | null) => m !== null && m.computerI
 
 const stateNames: Record<CloudState, string> = { starting: 'Starting', running: 'Running', stopping: 'Going to sleep', stopped: 'Sleeping', failed: 'Failed' }
 
-/** Settings → Codync Cloud's State. */
+/** Computers → Codync Cloud's State. */
 export function machineStatus(m: CloudMachine): StatusLine {
   if (isPreparing(m)) return { text: 'Preparing your cloud computer…', error: false }
   return { text: stateNames[m.state], error: m.state === 'failed' }

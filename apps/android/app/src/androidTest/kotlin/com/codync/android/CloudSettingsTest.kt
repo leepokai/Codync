@@ -16,7 +16,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
-/** Codync Cloud from fixture state: its computer's rows, Settings → Codync Cloud and the update cards. Read-only. */
+/** Codync Cloud from fixture state: its computer's rows, Computers → Codync Cloud and the update cards. Read-only. */
 class CloudSettingsTest {
     @get:Rule val compose = createComposeRule()
     private val account = AccountState(ready = true, configured = true, userId = "fixture",
@@ -29,7 +29,7 @@ class CloudSettingsTest {
     @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
 
     @Test fun aSleepingCloudComputerShowsItsProviderAndCanBeDeleted() {
-        compose.setContent { Hosted { SettingsView(fixture(CloudOffer(machine("stopped"), true), listOf(cloudComputer("stopped"))), viewModel(), null, {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("stopped"), true), listOf(cloudComputer("stopped"))), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Codync Cloud · Boat · EU").assertIsDisplayed()
         compose.onNodeWithText("Sleeping · wakes when you message").assertIsDisplayed()
         compose.onNodeWithText("Runs on Boat · EU").performScrollTo().assertIsDisplayed()
@@ -42,19 +42,19 @@ class CloudSettingsTest {
     }
 
     @Test fun aNewCloudComputerIsPreparedUntilItJoinsTheAccount() {
-        compose.setContent { Hosted { SettingsView(fixture(CloudOffer(machine("starting", computerId = null), true)), viewModel(), null, {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("starting", computerId = null), true)), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Preparing your cloud computer…").performScrollTo().assertIsDisplayed()
         snapshot("preparing")
     }
 
     @Test fun onlyAnAccountThatMayHaveOneCanCreateIt() {
-        compose.setContent { Hosted { SettingsView(fixture(CloudOffer(null, available = true)), viewModel(), null, {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true)), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Create cloud computer").performScrollTo().assertIsDisplayed()
         snapshot("create")
     }
 
     @Test fun aCloudOffForThisAccountIsHidden() {
-        compose.setContent { Hosted { SettingsView(fixture(CloudOffer(null, available = false)), viewModel(), null, {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = false)), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Create cloud computer").assertDoesNotExist()
         compose.onNodeWithText("Codync Cloud").assertDoesNotExist()
     }
@@ -62,14 +62,14 @@ class CloudSettingsTest {
     @Test fun aCloudComputerBehindThisAppUpdatesItself() {
         val state = fixture(null, listOf(cloudComputer("running"))).copy(computers = listOf(Computer("cloud", "Cloud computer", "key")),
             connection = LinkState.Ready(HostRoute.Relay), hello = buildJsonObject { put("version", "2.0.0") })
-        compose.setContent { Hosted { UpdateNeededCard(state, requireNotNull(state.mismatch)) } }
+        compose.setContent { Hosted { UpdateNeededCard(state, requireNotNull(state.mismatch), {}) } }
         compose.onNodeWithText("Your cloud computer is updating…").assertIsDisplayed()
         snapshot("updating")
     }
 
     @Test fun theCloudTurningThisAppAwayShowsItsReason() {
         val state = fixture(null).copy(appFloor = "Update Codync to keep using it: this version has a security problem.")
-        compose.setContent { Hosted { UpdateNeededCard(state, requireNotNull(state.mismatch)) } }
+        compose.setContent { Hosted { UpdateNeededCard(state, requireNotNull(state.mismatch), {}) } }
         compose.onNodeWithText("Update this app").assertIsDisplayed()
         compose.onNodeWithText("Update Codync to keep using it: this version has a security problem.").assertIsDisplayed()
         snapshot("app-floor")

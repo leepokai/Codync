@@ -1,7 +1,10 @@
 // Codync Cloud on Boat, end to end, isolated (docs/guides/cloud-computer-testing.md): a local cloud creates a
 // real Boat sandbox, the host on it claims itself, the owner's new phone gets access without a code, the idle
 // computer goes to sleep and a mailbox message wakes it. With CODYNC_E2E_UPDATE_TO (a published release above the
-// host's own version, which must then be a production release build), an app that needs that host updates it.
+// host's own version, which must then be a production release build), an app that needs that host updates it; with
+// CODYNC_E2E_UPDATE_NOW=1 (same build), the owner updates it to the latest release from a phone. With
+// CODYNC_E2E_COLD=1 (a long run, about an hour): backups, a cold wake after CODYNC_E2E_COLD_MINUTES (31) asleep, a
+// restore from the backup once its own snapshot expired, and deleting the snapshot history.
 // Run with `npm run e2e:cloud`. Needs BOAT_API_KEY or BOAT_API_KEY_FILE (scoped key) and a logged-in `boat` CLI.
 // CODYNC_HOST_LINUX_BIN: the Linux x86_64 host to test, served to the machine at its first boot (without it, the
 // released host, which can't run every step until a release has them). Costs a few minutes of Boat compute; the
@@ -9,7 +12,7 @@
 
 import { join } from "node:path";
 import * as ref from "../ref.ts";
-import { boatKey, keepForwarded, sh, sweep, TEST_PREFIX } from "./boat.ts";
+import { boatKey, boatProxy, deleteSandbox, keepForwarded, savedSnapshot, sh, sweep, TEST_PREFIX } from "./boat.ts";
 import { check, freePort, LocalCloud, lock, ROOT, serveFiles, step } from "./harness.ts";
 import { Channel, FakePhone, waitFor, type Json } from "./phone.ts";
 
@@ -17,14 +20,22 @@ const HOST_LINUX_BIN = process.env.CODYNC_HOST_LINUX_BIN;
 const USER_ID = "user_cloud_e2e";
 const IDLE_SECS = 20;
 const UPDATE_TO = process.env.CODYNC_E2E_UPDATE_TO;
+const UPDATE_NOW = process.env.CODYNC_E2E_UPDATE_NOW === "1";
+const COLD = process.env.CODYNC_E2E_COLD === "1";
+const COLD_MINUTES = Number(process.env.CODYNC_E2E_COLD_MINUTES ?? 31);
+const SWEEP_CRON = "*/15 * * * *";
 
 const key = boatKey();
 const release = lock("boat");
 const cloud = new LocalCloud(await freePort());
 const filesPort = await freePort();
 const files = serveFiles({ ...(HOST_LINUX_BIN ? { "codync-host": HOST_LINUX_BIN } : {}), "fake_agent.py": join(ROOT, "host/tests/fake_agent.py") }, filesPort);
+const proxyPort = await freePort();
+const proxy = COLD ? boatProxy(proxyPort) : undefined;
 let created = false;
 let sandboxId: string | undefined;
+/** Sandboxes the cloud stopped tracking (the one a restore replaced), deleted at the end. */
+const replaced: string[] = [];
 
 async function main() {
   step("1. local cloud with a Boat key");
@@ -33,13 +44,14 @@ async function main() {
   await cloud.start({
     BOAT_API_KEY: key,
     CLOUD_COMPUTER_USERS: USER_ID,
-    // Boat's trial refuses sandboxes without an auto-stop; an hour covers the run.
-    CLOUD_AUTO_STOP_SECONDS: "3600",
+    // A machine a crashed run leaves behind stops by itself; two hours cover the long run.
+    CLOUD_AUTO_STOP_SECONDS: "7200",
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,
     // The machine reaches this cloud at its own 127.0.0.1 (a reverse forward), so the host signs the authority the
     // Worker sees. Idle after 20 s instead of 10 minutes; its events marked `env: dev`.
     CLOUD_HOST_ENV: `CODYNC_CLOUD_URL=${cloud.url} CODYNC_SLEEP_IDLE_SECS=${IDLE_SECS} CODYNC_ANALYTICS_ENV=dev`,
     ...(HOST_LINUX_BIN ? { CLOUD_HOST_BINARY_URL: `http://127.0.0.1:${filesPort}/codync-host` } : {}),
+    ...(proxy ? { BOAT_API_URL: `http://127.0.0.1:${proxyPort}` } : {}),
   });
   const token = await cloud.token(USER_ID);
   check((await cloud.call("POST", "/v1/cloud-computers", { token: await cloud.token("user_not_listed") })).status === 403, "a user off the list is refused");
@@ -92,37 +104,96 @@ async function main() {
   const ch = await waitFor("relay socket", () => phone.relay(cloud.url, computerId, signKey).catch(() => undefined), 30_000);
   const hello = await ch.call("hello", {});
   check(hello.computerId === computerId, `connected through the relay ${Date.now() - started} ms after create`);
-  const bot = (await ch.call("createBot", { name: "Sleeper", backend: "custom", command: "python3 /home/user/fake_agent.py", cwd: "/home/user", permission: "ask" })).bot.id as string;
+  // Approvals on `auto`, as new bots start: a bot waiting for the owner's answer counts as working and keeps the
+  // computer awake.
+  const bot = (await ch.call("createBot", { name: "Sleeper", backend: "custom", command: "python3 /home/user/fake_agent.py", cwd: "/home/user", permission: "auto" })).bot.id as string;
   ch.wire.ws.close();
+
+  const state = async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputer.state as string;
+  const machine = async () => (await cloud.d1(`SELECT provider_id, backup FROM cloud_machines WHERE id = '${cc.cloudComputerId}'`))[0]!;
+  const asleep = () => waitFor("stopped", async () => ((await state()) === "stopped" ? true : undefined), 300_000);
+  /** Puts `text` in the sleeping computer's mailbox and waits until the host the message woke delivers it to the
+   * bot. Returns how long that took and the phone's connection, still open (a connected device keeps it awake). */
+  async function wakeWith(nonce: string, text: string, ms: number) {
+    const wire = phone.relayWire(cloud.url, computerId);
+    await wire.opened;
+    check((await wire.next((m) => m.t === "presence", "presence")).online === false, "the phone sees it offline");
+    // The relay drops a device socket that stays silent for 90 s; a real phone pings every 30 s.
+    const keepalive = setInterval(() => wire.send({ t: "ping" }), 30_000);
+    const sent = Date.now();
+    phone.mailboxPut(wire, { signKey, boxKey: ref.unb64url(hello.boxKey) }, bot, text, nonce);
+    check((await wire.next((m) => m.t === "mbox.ok", "mbox.ok")).state === "queued", "queued in the mailbox");
+    await wire.next((m) => m.t === "mbox.delivered" && m.nonce === nonce, "mbox.delivered", ms);
+    const took = Date.now() - sent;
+    const woken = await Channel.open(wire, phone.key, signKey, { relay: true });
+    const history = await waitFor("message in history", async () => {
+      const h = await woken.call("history", { botId: bot });
+      return h.entries.some((e: Json) => e.data?.clientNonce === nonce) ? h : undefined;
+    });
+    check(!!history, "the bot got the message");
+    return { took, history, close: () => (clearInterval(keepalive), wire.ws.close()) };
+  }
 
   step("6. idle, it goes to sleep");
   const closed = Date.now();
-  const state = async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputer.state as string;
   await waitFor("stopping", async () => (["stopping", "stopped"].includes(await state()) ? true : undefined), 180_000);
   check(true, `asked to sleep ${Date.now() - closed} ms after the phone left (idle ${IDLE_SECS} s)`);
   await waitFor("stopped", async () => ((await state()) === "stopped" ? true : undefined), 300_000);
   check(true, `stopped ${Date.now() - closed} ms after the phone left`);
 
   step("7. a message wakes it");
-  const wire = phone.relayWire(cloud.url, computerId);
-  await wire.opened;
-  check((await wire.next((m) => m.t === "presence", "presence")).online === false, "the phone sees it offline");
-  // The relay drops a device socket that stays silent for 90 s; a real phone pings every 30 s.
-  const keepalive = setInterval(() => wire.send({ t: "ping" }), 30_000);
-  const sent = Date.now();
-  phone.mailboxPut(wire, { signKey, boxKey: ref.unb64url(hello.boxKey) }, bot, "hello after sleep", "e2e-wake-1");
-  check((await wire.next((m) => m.t === "mbox.ok", "mbox.ok")).state === "queued", "queued in the mailbox");
-  await wire.next((m) => m.t === "mbox.delivered" && m.nonce === "e2e-wake-1", "mbox.delivered", 300_000);
-  clearInterval(keepalive);
-  check(true, `woke and delivered ${Date.now() - sent} ms after the message`);
+  const woke = await wakeWith("e2e-wake-1", "hello after sleep", 300_000);
+  check(true, `woke and delivered ${woke.took} ms after the message`);
   check((await state()) === "running", "running again");
-  const woken = await Channel.open(wire, phone.key, signKey, { relay: true });
-  const history = await waitFor("message in history", async () => {
-    const h = await woken.call("history", { botId: bot });
-    return h.entries.some((e: Json) => e.data?.clientNonce === "e2e-wake-1") ? h : undefined;
-  });
-  check(!!history, "the bot got the message");
-  wire.ws.close();
+  woke.close();
+
+  if (COLD) {
+    step("7a. asleep, its history stays put, and after 10 days it gets a backup");
+    const bootId = async () => (await sh((await machine()).provider_id as string, "cat /proc/sys/kernel/random/boot_id").catch(() => ({ stdout: "?" }))).stdout.trim();
+    const bootBefore = await bootId();
+    await asleep();
+    const stoppedAt = Date.now();
+    check((await cloud.call("DELETE", "/v1/cloud-computers/snapshots", { token })).status === 409, "asleep, its snapshot history can't be deleted");
+    await cloud.d1(`UPDATE cloud_machines SET updated_at = updated_at - ${11 * 86_400_000} WHERE id = '${cc.cloudComputerId}'`);
+    await cloud.cron(SWEEP_CRON);
+    const backup = await waitFor("backup saved", async () => ((await machine()).backup as string | null) ?? undefined, 120_000);
+    check(await savedSnapshot(key, backup), `backup ${backup} saved on Boat from the stopped machine`);
+
+    step(`7b. a cold wake: asleep over ${COLD_MINUTES} minutes, a message brings it back`);
+    const left = stoppedAt + COLD_MINUTES * 60_000 - Date.now();
+    console.log(`  waiting ${Math.ceil(left / 60_000)} min`);
+    await new Promise((r) => setTimeout(r, Math.max(0, left)));
+    check((await state()) === "stopped", `still asleep after ${Math.round((Date.now() - stoppedAt) / 60_000)} min`);
+    const cold = await wakeWith("e2e-cold-1", "hello after a long sleep", 600_000);
+    check(true, `woke and delivered ${cold.took} ms after the message`);
+    const bootAfter = await bootId();
+    console.log(`  boot id ${bootBefore} → ${bootAfter} (${bootBefore === bootAfter ? "same machine" : "a fresh machine"})`);
+    cold.close();
+
+    step("7c. its own snapshot expired (Boat keeps it 14 days): the cloud brings it back from the backup");
+    await asleep();
+    const before = (await machine()).provider_id as string;
+    // The restored machine reaches this computer through its own forward, opened once the cloud names it.
+    const watch = setInterval(async () => {
+      const now = (await machine().catch(() => undefined))?.provider_id as string | undefined;
+      if (!now || now === before || replaced.includes(before)) return;
+      replaced.push(before);
+      sandboxId = now;
+      keepForwarded(cloud, key, now, [cloud.port, filesPort]);
+    }, 3000);
+    proxy!.expired = true;
+    const restored = await wakeWith("e2e-restore-1", "hello from the backup", 600_000);
+    proxy!.expired = false;
+    clearInterval(watch);
+    check(sandboxId !== before, `restored on a new machine (${before} → ${sandboxId}) ${restored.took} ms after the message`);
+    check(restored.history.entries.some((e: Json) => e.data?.clientNonce === "e2e-wake-1"), "with the bot's history from the backup");
+
+    step("7d. awake, its snapshot history and backup can be deleted");
+    check((await cloud.call("DELETE", "/v1/cloud-computers/snapshots", { token })).status === 200, "deleted while awake");
+    check((await machine()).backup === null && !(await savedSnapshot(key, backup)), "the backup is gone from Boat");
+    check((await state()) === "running", "the computer keeps running");
+    restored.close();
+  }
 
   if (UPDATE_TO) {
     step("8. an app that needs a newer host updates the cloud computer first");
@@ -143,7 +214,36 @@ async function main() {
     needy.ws.close();
   }
 
-  step("9. delete");
+  if (UPDATE_NOW) {
+    step("9. the owner updates it to the latest release from a phone");
+    const wire = phone.relayWire(cloud.url, computerId);
+    await wire.opened;
+    const ping = setInterval(() => wire.send({ t: "ping" }), 30_000);
+    // Asleep again after the last step: the phone's connection wakes it.
+    const ch = await waitFor("handshake", () => Channel.open(wire, phone.key, signKey, { relay: true }).catch(() => undefined), 300_000);
+    const offer = await waitFor("an update offered", async () => {
+      const h = await ch.call("hello", {});
+      return h.canUpdate === true && typeof h.latestVersion === "string" && h.latestVersion !== h.version ? h : undefined;
+    }, 60_000);
+    check(true, `${offer.version} offers ${offer.latestVersion}`);
+    const before = Date.now();
+    // Like on any computer, a working bot holds the update back until the owner says to go ahead (`force`, the
+    // bot's session resumes).
+    const asked = await ch.call("installHostUpdate", {}).then(() => "scheduled", (e: Error) => e.message);
+    if (asked !== "scheduled") {
+      check(asked.includes("A bot is working"), `held back while a bot works: ${asked}`);
+      check((await ch.call("installHostUpdate", { force: true })).scheduled === true, "the update is scheduled anyway");
+    }
+    await waitFor("host on the latest release", async () => {
+      const c = ((await cloud.call("GET", "/v1/computers", { token, key: phone.key })).body.computers as Json[]).find((c) => c.computerId === computerId);
+      return c?.version === offer.latestVersion && c.online ? c : undefined;
+    }, 300_000);
+    check(true, `updated to ${offer.latestVersion} and back online ${Date.now() - before} ms after asking`);
+    clearInterval(ping);
+    wire.ws.close();
+  }
+
+  step("10. delete");
   check((await cloud.call("DELETE", "/v1/cloud-computers", { token })).status === 200, "deleted");
   created = false;
   check((await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputer === null, "no cloud computer left");
@@ -155,6 +255,8 @@ async function main() {
 
 async function cleanup(failed = false) {
   files.close();
+  for (const id of replaced) await deleteSandbox(key, id).catch(() => undefined);
+  if (failed) console.error(`\nworker logs:\n${await cloud.logs()}`);
   if (failed && sandboxId) {
     const log = await sh(sandboxId, "journalctl --user -u codync-host -n 60 --no-pager").catch(() => undefined);
     if (log) console.error(`\nhost log:\n${log.stdout}`);
@@ -163,6 +265,8 @@ async function cleanup(failed = false) {
     const res = await cloud.call("DELETE", "/v1/cloud-computers", { token: await cloud.token(USER_ID) }).catch(() => undefined);
     if (res?.status !== 200) console.error("  couldn't delete the sandbox; run `boat list` and delete it by hand");
   }
+  // The cloud reaches Boat through the proxy, also for that last delete.
+  proxy?.server.close();
   await cloud.cleanup();
   release();
 }

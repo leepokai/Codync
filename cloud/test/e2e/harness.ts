@@ -133,7 +133,8 @@ export class LocalCloud {
     if (migrate.status !== 0) throw new Error(`migrations failed: ${migrate.stderr}`);
     const clerk = o.clerk === "dev" ? await devClerk() : { CLERK_JWT_KEY: jwtKey };
     const varArgs = Object.entries({ ...clerk, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
-    this.run(WRANGLER, ["dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(this.port), "--persist-to", this.persist, ...varArgs]);
+    // `--test-scheduled`: `cron()` runs the Worker's cron jobs on demand.
+    this.run(WRANGLER, ["dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(this.port), "--persist-to", this.persist, "--test-scheduled", ...varArgs]);
     await waitFor("cloud /v1/health", () => fetch(`${this.url}/v1/health`).then((r) => r.ok || undefined).catch(() => undefined), 60_000);
   }
 
@@ -147,6 +148,22 @@ export class LocalCloud {
         resolve((JSON.parse(stdout) as { results: Json[] }[])[0]?.results ?? []);
       }),
     );
+  }
+
+  /** Runs the cron job `cron` (as in `wrangler.toml`) once, now. */
+  async cron(cron: string): Promise<void> {
+    const res = await fetch(`${this.url}/__scheduled?cron=${encodeURIComponent(cron)}`);
+    if (!res.ok) throw new Error(`cron ${cron}: ${res.status}`);
+  }
+
+  /** The Worker's latest console lines (wrangler keeps them for agents' sessions), to print when a run fails. */
+  async logs(limit = 40): Promise<string> {
+    const res = await fetch(`${this.url}/cdn-cgi/local/explorer/api/local/observability/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql: `SELECT * FROM logs ORDER BY rowid DESC LIMIT ${limit}` }),
+    }).catch(() => undefined);
+    return res ? await res.text() : "(no logs)";
   }
 
   async token(sub: string): Promise<string> {

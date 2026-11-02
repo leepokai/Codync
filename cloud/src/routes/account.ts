@@ -13,6 +13,7 @@ import {
   effectiveStatus,
   key,
   notify,
+  notifyAwake,
   oneOf,
   optStr,
   ownedComputer,
@@ -273,7 +274,7 @@ export async function createAccessRequest(c: Ctx, [computerId]: string[]) {
        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
     ).bind(requestId, computerId, dev.id, u.userId, commit, c.now, expiresAt),
   ]);
-  await notify(c.env, computerId!);
+  await notifyAwake(c.env, computerId!);
   return { requestId, expiresAt };
 }
 

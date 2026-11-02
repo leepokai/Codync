@@ -1,5 +1,5 @@
 {
-  "name": "codync-machines",
+  "name": "codync-cloud",
   "version": "0.1.0",
   "description": "Long-lived, sleepable personal machines on interchangeable providers: requests to send and answers to read, no I/O of its own",
   "license": "Apache-2.0",

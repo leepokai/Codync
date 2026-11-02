@@ -21,14 +21,16 @@ export function offerHostUpdate(update: HostUpdate | null, canUpdate: boolean, n
 
 /** The words every client uses for a version mismatch (iOS, the TUI and this app). */
 export const updateNeededText = {
-  title(m: VersionMismatch, host: string) {
-    return m.kind === 'updateApp' ? 'Update this app' : `Update Codync on ${host}`
+  /** `cloud`: a Codync Cloud computer, which the cloud updates by itself. */
+  title(m: VersionMismatch, host: string, cloud = false) {
+    return m.kind === 'updateApp' ? 'Update this app' : cloud ? 'Your cloud computer is updating…' : `Update Codync on ${host}`
   },
-  detail(m: VersionMismatch, host: string, hostVersion: string | null | undefined, os: string | null | undefined, instructions = true) {
+  detail(m: VersionMismatch, host: string, hostVersion: string | null | undefined, os: string | null | undefined, instructions = true, cloud = false) {
     if (m.kind === 'updateApp') {
       const runs = hostVersion ? `${host} runs Codync ${hostVersion} and` : host
       return `${runs} needs this app to be ${m.minimum} or newer. Your chats are safe on the computer.`
     }
+    if (cloud) return `It's moving from Codync ${m.version} to ${m.minimum} or newer. This app reconnects when it's done.`
     const needs = `${host} runs Codync ${m.version}; this app needs ${m.minimum} or newer.`
     return instructions ? `${needs} ${updateNeededText.how(os)}` : needs
   },

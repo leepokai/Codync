@@ -75,6 +75,9 @@ export class ComputerRelay extends DurableObject<Env> {
     if (pathname === "/internal/sleep" && req.method === "POST") return this.sleep(req);
     if (pathname === "/internal/changed" && req.method === "POST") {
       this.toHosts({ t: "cloud.changed" });
+      // An access request: a sleeping cloud computer has to wake to answer it.
+      const body = (await req.json().catch(() => null)) as { wake?: unknown } | null;
+      if (body?.wake === true) await this.wakeHost(Date.now());
       return Response.json({});
     }
     return errorResponse(404, "notFound");
@@ -201,10 +204,13 @@ export class ComputerRelay extends DurableObject<Env> {
     return Response.json({});
   }
 
-  /** Starts this computer when it is a sleeping cloud computer, at most once a minute; retried while it can't. */
+  /** Starts this computer when it is a sleeping cloud computer, at most once a minute; retried while it can't.
+   * Asked again within that minute, it tries once the minute is up: the computer may have gone back to sleep. */
   private async wakeHost(now: number): Promise<void> {
     const id = this.meta("computerId");
-    if (!id || this.readyHost() || now - Number(this.meta("wokeAt") ?? 0) < WAKE_DEBOUNCE_MS) return;
+    if (!id || this.readyHost()) return;
+    const woke = Number(this.meta("wokeAt") ?? 0);
+    if (now - woke < WAKE_DEBOUNCE_MS) return this.wakeLater(woke + WAKE_DEBOUNCE_MS);
     this.setMeta("wokeAt", String(now));
     const result = await wake(this.env, id, now).catch((e) => {
       console.error("cloud computer wake failed", { computerId: id, error: String(e) });
@@ -216,9 +222,16 @@ export class ComputerRelay extends DurableObject<Env> {
       if (ws && a) await this.markReady(ws, a, now);
     } else if (result === "retry") {
       this.setMeta("wokeAt", "0");
-      this.setMeta("wakeAt", String(now + WAKE_RETRY_MS));
-      await this.ensureAlarm(now + WAKE_RETRY_MS);
+      await this.wakeLater(now + WAKE_RETRY_MS);
     }
+  }
+
+  /** Wakes it from the alarm at `at`, unless a wake is already due by then. */
+  private async wakeLater(at: number): Promise<void> {
+    const due = Number(this.meta("wakeAt") || 0);
+    if (due && due <= at) return;
+    this.setMeta("wakeAt", String(at));
+    await this.ensureAlarm(at);
   }
 
   // ---- the cloud assistant (§7.9) ----

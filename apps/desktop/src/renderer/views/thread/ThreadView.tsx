@@ -252,6 +252,7 @@ function ConnectionSubtitle() {
   const connecting = store.shownConnection.kind === 'connecting'
   const symbol = store.connection.kind !== 'online' ? 'wifi.slash' : store.hostRoute === 'relay' ? 'cloud' : store.hostRoute === 'direct' ? 'wifi' : store.hostRoute === 'loopback' ? 'desktopcomputer' : 'network'
   const description = (() => {
+    if (store.isAsleep) return 'Sleeping · wakes when you message'
     switch (store.shownConnection.kind) {
       case 'connecting':
         return 'Connecting'
@@ -263,6 +264,7 @@ function ConnectionSubtitle() {
       case 'unpaired':
         return 'Not paired'
     }
+    if (store.isCloudUpdating) return 'Updating…'
     if (store.mismatch) return 'Needs update'
     return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? 'Connected over Wi-Fi or Tailscale' : store.hostRoute === 'loopback' ? 'Connected locally' : 'Connected'
   })()
@@ -270,7 +272,7 @@ function ConnectionSubtitle() {
   return (
     <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
-      <Text size="caption" weight="medium" truncate>{store.connectionLabel}</Text>
+      <Text size="caption" weight="medium" truncate>{store.isAsleep ? description : store.connectionLabel}</Text>
     </HStack>
   )
 }

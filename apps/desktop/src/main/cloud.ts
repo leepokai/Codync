@@ -12,14 +12,15 @@ import type { AccountService } from './account'
 
 const b64url = (b: Buffer) => b.toString('base64url')
 
-interface Identity {
+export interface Identity {
   key: KeyObject
   publicKey: string
 }
 
 const identities = new Map<string, Identity>()
 
-async function identity(userId: string): Promise<Identity> {
+/** This install's device key for `userId`'s account, made on first use. */
+export async function identity(userId: string): Promise<Identity> {
   const cached = identities.get(userId)
   if (cached) return cached
   const path = join(app.getPath('userData'), `device-key-${createHash('sha256').update(userId).digest('hex').slice(0, 16)}.bin`)
@@ -53,7 +54,7 @@ function publicFromSeed(seed: Buffer) {
 }
 
 /** `Codync-Sig: v=1,kid,ts,nonce,sig` over method, authority, path and the body's hash. */
-function signatureHeader(id: Identity, method: string, url: URL, body: Buffer) {
+export function signatureHeader(id: Identity, method: string, url: URL, body: Buffer) {
   const ts = Date.now()
   const nonce = b64url(randomBytes(16))
   const input = ['codync-sig-v1', method.toUpperCase(), url.host.toLowerCase(), `${url.pathname || '/'}${url.search}`, String(ts), nonce, b64url(createHash('sha256').update(body).digest())].join('\n')
@@ -67,32 +68,37 @@ export interface CloudFailure {
   message: string | null
 }
 
+export type CloudResult = { ok: true; value: Record<string, unknown> } | { ok: false; error: CloudFailure }
+
+/** One `/v1` request as the signed-in user; `signed` adds this device's `Codync-Sig`. */
+export async function cloudRequest(account: AccountService, method: string, path: string, body: unknown, signed: boolean): Promise<CloudResult> {
+  const base = account.state.cloudURL
+  const user = account.state.user
+  if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } }
+  const url = new URL(path.replace(/^\//, ''), `${base}/`)
+  const payload = body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body))
+  const headers: Record<string, string> = { 'Codync-App': appHeader(app.getVersion()) }
+  try {
+    headers.Authorization = `Bearer ${await account.sessionToken()}`
+  } catch (error) {
+    return { ok: false, error: { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } }
+  }
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (signed) headers['Codync-Sig'] = signatureHeader(await identity(user.userId), method, url, payload)
+  try {
+    const res = await fetch(url, { method, headers, body: body === undefined ? undefined : payload, signal: AbortSignal.timeout(20_000) })
+    const text = await res.text()
+    const json = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+    if (!res.ok) {
+      const e = (json.error ?? {}) as { code?: string; message?: string }
+      return { ok: false, error: { status: res.status, code: e.code ?? `http${res.status}`, message: e.message ?? null } }
+    }
+    return { ok: true, value: json }
+  } catch {
+    return { ok: false, error: { status: 0, code: 'unreachable', message: "Can't reach the Codync cloud. Check your connection." } }
+  }
+}
+
 export function registerCloud(account: AccountService) {
-  ipcMain.handle('cloud:request', async (_e, method: string, path: string, body: unknown, signed: boolean) => {
-    const base = account.state.cloudURL
-    const user = account.state.user
-    if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } satisfies CloudFailure }
-    const url = new URL(path.replace(/^\//, ''), `${base}/`)
-    const payload = body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body))
-    const headers: Record<string, string> = { 'Codync-App': appHeader(app.getVersion()) }
-    try {
-      headers.Authorization = `Bearer ${await account.sessionToken()}`
-    } catch (error) {
-      return { ok: false, error: { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } }
-    }
-    if (body !== undefined) headers['Content-Type'] = 'application/json'
-    if (signed) headers['Codync-Sig'] = signatureHeader(await identity(user.userId), method, url, payload)
-    try {
-      const res = await fetch(url, { method, headers, body: body === undefined ? undefined : payload, signal: AbortSignal.timeout(20_000) })
-      const text = await res.text()
-      const json = text ? (JSON.parse(text) as Record<string, unknown>) : {}
-      if (!res.ok) {
-        const e = (json.error ?? {}) as { code?: string; message?: string }
-        return { ok: false, error: { status: res.status, code: e.code ?? `http${res.status}`, message: e.message ?? null } }
-      }
-      return { ok: true, value: json }
-    } catch {
-      return { ok: false, error: { status: 0, code: 'unreachable', message: "Can't reach the Codync cloud. Check your connection." } }
-    }
-  })
+  ipcMain.handle('cloud:request', (_e, method: string, path: string, body: unknown, signed: boolean) => cloudRequest(account, method, path, body, signed))
 }

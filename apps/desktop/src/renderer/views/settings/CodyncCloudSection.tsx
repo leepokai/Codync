@@ -9,7 +9,9 @@ import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import { useAccount } from '../../store/account'
 import type { CloudComputerAction, CloudComputerModel } from '../../store/cloud-computer'
+import type { BotStore } from '../../store/bot-store'
 import { useApp } from '../../store/context'
+import { CodyncVersionRow } from './CodyncVersionRow'
 
 type Confirming = Exclude<CloudComputerAction, 'create'> | null
 
@@ -24,6 +26,8 @@ export function CodyncCloudSection() {
   const [confirming, setConfirming] = useState<Confirming>(null)
   const tr = useTr()
   const userId = account.user?.userId
+  // Once this app reaches it: the Codync it runs, and the owner's update to the latest release.
+  const store = useModel(model.machine?.computerId ? app.store(model.machine.computerId) : null)
   useEffect(() => void (userId && app.cloudComputer.refresh()), [app, userId])
   if (!userId || !model.shown) return null
   return (
@@ -34,7 +38,7 @@ export function CodyncCloudSection() {
         footer={model.error ? <Text size="caption" tone="danger">{model.error}</Text> : null}
       >
         {model.machine ? (
-          machineRows(model.machine, model, tr, setConfirming)
+          machineRows(model.machine, model, store, tr, setConfirming)
         ) : (
           <HStack gap={12} className="settings-row">
             <Text size="callout" tone="secondary" grow>{tr('A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.')}</Text>
@@ -61,7 +65,7 @@ export function CodyncCloudSection() {
 }
 
 /** One card row each (CardSection puts hairlines between its children). */
-function machineRows(machine: CloudMachine, model: CloudComputerModel, tr: (s: string) => string, confirm: (c: Confirming) => void): ReactNode[] {
+function machineRows(machine: CloudMachine, model: CloudComputerModel, store: BotStore | null, tr: (s: string) => string, confirm: (c: Confirming) => void): ReactNode[] {
   const status = machineStatus(machine)
   const deleteRow = (action: Exclude<Confirming, null>, label: string) => (
     <HStack key={action} gap={12} className="settings-row">
@@ -77,6 +81,7 @@ function machineRows(machine: CloudMachine, model: CloudComputerModel, tr: (s: s
     <ValueRow key="state" label="State">
       <Text tone={status.error ? 'danger' : 'secondary'}>{tr(status.text)}</Text>
     </ValueRow>,
+    ...(store ? [<CodyncVersionRow key="codync" store={store} />] : []),
     deleteRow('deleteSnapshots', 'Delete snapshots'),
     deleteRow('delete', 'Delete cloud computer'),
   ]

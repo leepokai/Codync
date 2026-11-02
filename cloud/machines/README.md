@@ -1,4 +1,4 @@
-# codync-machines
+# codync-cloud
 
 Long-lived, sleepable personal machines on interchangeable providers: the machine layer behind
 [Codync Cloud](../../docs/plans/codync-cloud.md), as a standalone package.
@@ -20,7 +20,7 @@ request, and stores what comes back.
 ## Use
 
 ```ts
-import { boat } from "codync-machines";
+import { boat } from "codync-cloud";
 
 const req = boat.create({ name: "codync-u1", size: "small", files: [], setupScript: "true" }, crypto.randomUUID());
 const res = await fetch(`https://boat.dev/api/v1${req.path}`, {

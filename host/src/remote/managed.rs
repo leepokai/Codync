@@ -7,7 +7,8 @@
 //!
 //! Its updates come from the cloud, not from the host's own automatic updater: an order in the cloud state (an
 //! app needs a newer host, or an emergency floor) is installed at once; before sleeping, the cloud may name a
-//! newer release every device of the account can use, installed instead of sleeping.
+//! newer release every device of the account can use, installed instead of sleeping. Its owner can still install
+//! the latest release from any device (`installHostUpdate`), like on any computer.
 
 use crate::LockExt;
 use crate::environment::Environment;
@@ -26,9 +27,9 @@ use std::time::{Duration, Instant};
 /// Store key: this host is a cloud computer Codync runs (set from its claim ticket).
 const MANAGED: &str = "cloud_managed";
 /// No device, turn, run or setup terminal for this long.
-const IDLE: Duration = Duration::from_secs(10 * 60);
+const IDLE: Duration = Duration::from_mins(10);
 /// Awake at least this long after starting, so a wake always gets its work done.
-const MIN_AWAKE: Duration = Duration::from_secs(2 * 60);
+const MIN_AWAKE: Duration = Duration::from_mins(2);
 /// A routine due sooner than this keeps the computer awake.
 const ROUTINE_LEAD_MS: i64 = 5 * 60_000;
 /// Wake this long before a routine is due.

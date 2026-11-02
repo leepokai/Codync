@@ -14,13 +14,15 @@ import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
 
-/** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
+/** How a client reaches a host API: loopback (the computer's own host or an SSH tunnel) or the relay (a cloud computer). */
 export type HostRoute = 'loopback' | 'direct' | 'relay'
 
 export class HostError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The computer isn't connected to the relay: a cloud computer asleep (the connection wakes it), or one that's off. */
+    readonly offline = false,
   ) {
     super(message)
   }
@@ -36,12 +38,16 @@ export class HostError extends Error {
 }
 
 export interface HostTransport {
+  /** How it reaches the host, shown in the thread header. */
+  readonly route?: HostRoute
   call(method: string, body: unknown, timeoutMs: number): Promise<unknown>
   /** Each element is one event's JSON (what SSE puts after `data:`). */
   stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void): () => void
 }
 
 export class LoopbackTransport implements HostTransport {
+  readonly route = 'loopback'
+
   constructor(
     readonly baseURL: string,
     private token: string,
@@ -62,6 +68,30 @@ export class LoopbackTransport implements HostTransport {
     )
   }
 }
+
+/** An account computer through the relay's encrypted channel, which the main process keeps (`main/channel`). */
+export class ChannelTransport implements HostTransport {
+  readonly route = 'relay'
+
+  constructor(
+    readonly computerId: string,
+    private signKey: string,
+  ) {}
+
+  async call(method: string, body: unknown, timeoutMs: number) {
+    try {
+      return await window.codync.channel.call(this.computerId, this.signKey, method, body, timeoutMs)
+    } catch (e) {
+      throw channelError(e as CallError)
+    }
+  }
+
+  stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
+    return window.codync.channel.stream(this.computerId, this.signKey, path, onData, (error) => onEnd(error ? channelError(error) : null))
+  }
+}
+
+const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e.offline === true)
 
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }

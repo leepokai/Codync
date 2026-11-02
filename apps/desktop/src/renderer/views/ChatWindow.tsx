@@ -45,6 +45,7 @@ import { SectionNameDialog } from './SectionNameDialog'
 import { useTraySummary } from './tray-summary'
 import { useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
+import { useCloudAttachments } from '../store/cloud-attachments'
 import './chat-window.css'
 import './sidebar-header.css'
 import { useTr } from '../lib/use-language'
@@ -60,6 +61,7 @@ export function ChatWindow() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [upToDate, setUpToDate] = useState(false)
   useSSHAttachments(app)
+  useCloudAttachments(app)
   const ssh = useSSH()
   const showsChat = shouldShowChat(app.host.state.kind, app.computers.length, ssh.state)
   const finishAccess = (ready: boolean, onboarding: boolean) => {

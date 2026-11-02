@@ -110,7 +110,7 @@ pub async fn run_ticket(hub: Arc<Hub>) {
             Err(e) => tracing::warn!(error = format!("{e:#}"), "couldn't complete the claim yet"),
         }
         tokio::time::sleep(wait).await;
-        wait = (wait * 2).min(Duration::from_secs(60));
+        wait = (wait * 2).min(Duration::from_mins(1));
     }
 }
 

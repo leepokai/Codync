@@ -19,7 +19,7 @@ data class AppState(
     val approvedAccess: Map<String, String> = emptyMap(),
     /** The account computer an access request is running for: one at a time. */
     val askingAccess: String? = null,
-    /** The account's Codync Cloud computer and whether it may have one (Settings → Codync Cloud); null until asked. */
+    /** The account's Codync Cloud computer and whether it may have one (Computers → Codync Cloud); null until asked. */
     val cloudOffer: CloudOffer? = null,
     /** The Codync cloud asked this app version to update (`426 appUpdateRequired`), with its reason. */
     val appFloor: String? = null,

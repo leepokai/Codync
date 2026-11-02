@@ -5,7 +5,7 @@ import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "CloudMachine")
 
-/// The account's Codync Cloud computer, for Settings → Codync Cloud: whether this account has or may
+/// The account's Codync Cloud computer, for Computers → Codync Cloud: whether this account has or may
 /// create one, creating it, and deleting its snapshots or the whole machine (docs/plans/codync-cloud.md).
 @MainActor
 @Observable

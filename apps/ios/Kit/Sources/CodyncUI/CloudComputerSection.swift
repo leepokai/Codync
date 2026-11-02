@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// Settings → Codync Cloud: the account's cloud computer, where it runs and whether it's awake, with
+/// Computers → Codync Cloud: the account's cloud computer, where it runs and whether it's awake, with
 /// deleting its snapshots or the whole computer; or creating one. Hidden while this account can't have one.
 public struct CloudComputerSection: View {
     let store: CloudMachineStore

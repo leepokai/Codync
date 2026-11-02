@@ -20,10 +20,10 @@ Everything a run creates is its own and goes away with it:
 - **Machines**: the local cloud gets the test Boat key (`boat api-key create codync-cloud-e2e --ttl 7d --actions
   sandbox.create,sandbox.read,sandbox.stop,sandbox.resume,sandbox.delete,snapshot.read,snapshot.write`; without
   the snapshot actions *Delete snapshots* and backups fail with `api_key_action_forbidden`) and
-  `CLOUD_MACHINE_PREFIX=codync-e2e`. Each run deletes
-  its machine when it ends, also after a failure, and first sweeps test machines older than two hours (a run
-  that crashed before its cleanup). Runs take a lock (`~/.codync-e2e/boat.lock`): Boat's trial allows two
-  machines at once, and several sessions share this computer.
+  `CLOUD_MACHINE_PREFIX=codync-e2e`. Each run deletes its machine when it ends, also after a failure, and first
+  sweeps test machines older than two hours (a run that crashed before its cleanup). Runs take a lock
+  (`~/.codync-e2e/boat.lock`), since several sessions share this computer: of two runs at once (2026-10-31), one
+  timed out in its machine's first boot and the other in a wake, and each passed alone.
 - **Reaching this computer**: a machine reaches the local cloud and a small file server through
   `boat forward --reverse`, at its own `127.0.0.1` with the same port numbers, so the host signs the same
   authority the Worker checks. A sleep of several minutes ends the tunnel, so it is opened again each time the
@@ -49,10 +49,16 @@ cd cloud
 BOAT_API_KEY_FILE=<scoped key file> CODYNC_HOST_LINUX_BIN=<linux host> npm run e2e:cloud
 # also the update steps: a production release build below a published version
 CODYNC_E2E_UPDATE_TO=2.24.0 CODYNC_HOST_LINUX_BIN=<release build at 2.23.9> … npm run e2e:cloud
+# the owner's own update to the latest release, from a phone (same kind of build)
+CODYNC_E2E_UPDATE_NOW=1 CODYNC_HOST_LINUX_BIN=<release build below the latest> … npm run e2e:cloud
+# the long run (about an hour): backups, a cold wake, a restore from the backup, deleting the snapshot history;
+# a host build at the latest version, so the cron's release list offers no update before sleep
+CODYNC_E2E_COLD=1 CODYNC_HOST_LINUX_BIN=<release build at the latest version> … npm run e2e:cloud
 ```
 
 A fake phone (`test/e2e/phone.ts`) walks: create → first boot → self-claim → access without a code → chat → idle
-sleep → a mailbox message wakes it → an app that needs a newer host updates it first → delete. Results so far:
+sleep → a mailbox message wakes it → an app that needs a newer host updates it first → the owner updates it to the
+latest release from the phone → delete. Results so far:
 [Boat trial log](../plans/codync-cloud-boat-trial.md).
 
 ### Real apps against a local cloud
@@ -63,7 +69,8 @@ local only), forwards each new machine, and prints how to point each app at it:
 
 - iOS simulator: `SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> xcrun simctl launch <udid> com.pokai.Codync.ios.dev`, on a
   simulator no other session uses.
-- Desktop: `CODYNC_CLOUD_URL=<url> npm run dev` in the worktree (its sandbox host).
+- Desktop: `CODYNC_CLOUD_URL=<url> npm run dev` in the worktree (its sandbox host, signed in to its Clerk test
+  account; a development build takes the local `http://127.0.0.1` cloud, a release build only HTTPS).
 - Android: `adb reverse tcp:<port> tcp:<port>` on its own emulator, built with `-PcodyncCloudUrl=<url>`.
 - Sign in with a Clerk test address (`anything+clerk_test@example.com`, code `424242`; the instance asks for a
   password at sign-up, so the test hook sets a random one): no mail, no personal account. The iPhone app's debug
@@ -73,11 +80,14 @@ local only), forwards each new machine, and prints how to point each app at it:
 Set `CODYNC_STACK_PORT` to keep the URL stable across runs. Ctrl-C deletes the machines.
 
 What to walk with the apps: Codync Cloud hidden for an account that isn't allowed; create → "Preparing your cloud
-computer…" → claimed → the phone gets access by itself → chat with a bot on it; idle → "Sleeping · wakes when you
+computer…" → claimed → each app (desktop included) gets access by itself → chat with a bot on it, and create and
+set up bots there from each app; on the desktop, hide the window → the channel closes and the computer can sleep; idle → "Sleeping · wakes when you
 message" → send → it wakes and answers; an app with a newer `minHost` → "Your cloud computer is updating…" →
 back; `APP_FLOOR_*` → *Update this app*; delete snapshots (awake: done; asleep: refused); delete the computer →
-gone from every app. A cold wake (stopped over 30 minutes, new machine) takes a scheduled long run. Backups need a
-paid Boat plan (the trial can't save snapshots).
+gone from every app. Backups and a cold wake (stopped over 30 minutes) are in the scripted long run
+(`CODYNC_E2E_COLD=1`; backups need a paid Boat plan). A restore from a backup happens only once Boat drops a
+stopped machine's own snapshot (14 days), so the long run has a pass-through to Boat answer one resume with
+`409 snapshot_data_expired`; everything else, the new machine included, is the real Boat.
 
 ## Dev: the persistent remote environment
 

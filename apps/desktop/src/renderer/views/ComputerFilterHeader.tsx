@@ -64,7 +64,7 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
       const detail = sshStatusDetail(status, false)
       list.push({ title: p.name || p.host, verbatim: true, detail, icon: 'network', action: manage })
     }
-    if (app.computers.length > 1) app.computers.forEach((c, i) => list.push({ title: `Only ${c.name}`, leading: <ComputerBadge computer={c} size={26} />, divider: i === 0, action: () => setHidden(selection.only(c.id)) }))
+    if (app.computers.length > 1) app.computers.forEach((c, i) => list.push({ title: `Only ${app.store(c.id)?.hostName ?? c.name}`, leading: <ComputerBadge computer={c} size={26} />, divider: i === 0, action: () => setHidden(selection.only(c.id)) }))
     if (stores.length) list.push({ title: 'Reconnect', icon: 'arrow.clockwise', divider: true, action: () => stores.forEach((s) => s.restartStream()) })
     if (app.host.state.kind === 'notInstalled') list.push({ title: `Install host on this ${window.codync.platform === 'darwin' ? 'Mac' : 'computer'}`, icon: 'desktopcomputer', action: () => window.codync.host.install() })
     if (app.host.state.kind === 'failed') list.push({ title: 'Try again on this computer', icon: 'arrow.clockwise', action: () => window.codync.host.restart() })

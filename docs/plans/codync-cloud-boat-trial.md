@@ -134,6 +134,47 @@ a production build of this branch (2.23.9, `CODYNC_ANALYTICS_ENV=dev`) as the ma
   key needs those actions, for backups too. (2) A sleep of several minutes ends the `boat forward --reverse`
   tunnel, so the test scripts now open it again each time the machine comes up.
 
+### 15. Updates, backups and a cold wake on the paid plan (2026-10-31)
+
+`npm run e2e:cloud` with release builds of this branch (synced with `dev`) on Boat's $20 plan:
+
+- **The owner's update** (`CODYNC_E2E_UPDATE_NOW=1`, host 2.32.9): the cloud computer offered 2.33.6 (GitHub's
+  latest); with a bot working, `installHostUpdate` was held back until asked with `force`; back online on 2.33.6
+  6.9 s later.
+- **An app that needs a newer host** (`CODYNC_E2E_UPDATE_TO=2.33.5`): updated to exactly 2.33.5, back online
+  14 s after the app connected.
+- **The long run** (`CODYNC_E2E_COLD=1`, host 2.33.6): asleep, *Delete snapshots* is refused; the cron saved a
+  backup of the stopped machine (`POST /saved-snapshots` 202); after 31 minutes asleep a message woke it on a
+  fresh machine (new boot id) and the bot had it 15 s later; with the resume answered `409
+  snapshot_data_expired` (a pass-through to Boat makes that one answer up), the cloud started a new sandbox from
+  the backup and the message was delivered 54 s later, the bot's earlier history included; awake, *Delete
+  snapshots* erased the history and the backup; the cloud computer kept running.
+- Found on the way: (1) a wake asked within a minute of the last one was dropped, so a computer that went back
+  to sleep inside that minute stayed asleep until something else woke it; the relay now tries again once the
+  minute is up (in production the computer stays awake at least 10 minutes, but nothing should be lost). (2) A
+  bot waiting for the owner's approval counts as working, so the computer never sleeps while one waits. (3) Two
+  runs at once timed out (a first boot, a wake); each passed alone, so runs keep their lock.
+
+
+### 16. The desktop app as a client of the cloud computer (2026-11-02)
+
+`npm run cloud:stack` (host 2.33.6 on Boat, `CODYNC_SLEEP_IDLE_SECS=90`) with this worktree's desktop sandbox
+pointed at it, driven through its DevTools port:
+
+- Created from the desktop's account; the desktop asked for access by itself and the computer approved it; the
+  computer then showed in the sidebar and the computer filter with its lead bot, chats over the relay.
+- From the desktop: opened the lead bot's chat (history, agent sign-in card), created a bot *Cloud helper* on it,
+  and set its standing instructions; read back from the computer over a second stream.
+- Hidden window: the channel closed, the computer slept 82 s later (Boat `archived`); shown again: it woke and the
+  desktop reconnected (about 15 s once the test tunnel was up).
+- Found on the way: Electron's `node:crypto` (BoringSSL) has no ChaCha20-Poly1305, so the first build crashed the
+  main process at the first frame (Node's OpenSSL passed the unit tests); frames now use `@noble/ciphers`. A view
+  that refreshes every 3 s (a bot's routines) kept the channel open while the window was hidden, so the computer
+  never slept: the main process now closes channels whenever nobody looks at the window, whatever views ask for.
+  An access request now wakes a sleeping cloud computer (it has to answer it), for every app.
+- Test harness, not product: after the second wake the stack's reverse tunnel for the local cloud port didn't come
+  back (`keepForwarded`), so the host couldn't reach the local cloud until it was reopened by hand.
+
 ## Findings
 
 | Path | Time |

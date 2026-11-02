@@ -5,6 +5,8 @@ import SwiftUI
 public struct WorkflowsView: View {
     var pendingWorkflowId: String?
     var pendingRunId: String?
+    var pendingNodeId: String?
+    var pendingStepId: String?
     var pendingToken: UUID?
     var onPendingHandled: () -> Void
 
@@ -17,9 +19,11 @@ public struct WorkflowsView: View {
     @State private var drafting = false
     @State private var pinRevision = 0
 
-    public init(pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingToken: UUID? = nil, onPendingHandled: @escaping () -> Void = {}) {
+    public init(pendingWorkflowId: String? = nil, pendingRunId: String? = nil, pendingNodeId: String? = nil, pendingStepId: String? = nil, pendingToken: UUID? = nil, onPendingHandled: @escaping () -> Void = {}) {
         self.pendingWorkflowId = pendingWorkflowId
         self.pendingRunId = pendingRunId
+        self.pendingNodeId = pendingNodeId
+        self.pendingStepId = pendingStepId
         self.pendingToken = pendingToken
         self.onPendingHandled = onPendingHandled
     }
@@ -64,7 +68,7 @@ public struct WorkflowsView: View {
             }
         }
         .navigationDestination(item: $opened) { item in
-            WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId)
+            WorkflowDetailView(workflowId: item.id, pendingRunId: item.runId, pendingNodeId: item.nodeId, pendingStepId: item.stepId)
                 .environment(model)
         }
         .navigationDestination(item: $editing) { route in
@@ -74,12 +78,14 @@ public struct WorkflowsView: View {
         .task(id: pendingToken) {
             let pending = pendingWorkflowId
             let run = pendingRunId
+            let node = pendingNodeId
+            let step = pendingStepId
             let token = pendingToken
             error = await model.reloadWorkflows()
             loaded = true
             // Coming back to the list restarts this task. A claimed link must not push the detail again.
             if let pending, let token, PendingWorkflowOpen.claim(token) {
-                opened = OpenedWorkflow(id: pending, runId: run)
+                opened = OpenedWorkflow(id: pending, runId: run, nodeId: node, stepId: step)
                 onPendingHandled()
             }
         }
@@ -122,6 +128,8 @@ public struct WorkflowsView: View {
 struct OpenedWorkflow: Identifiable, Hashable {
     var id: String
     var runId: String?
+    var nodeId: String?
+    var stepId: String?
 }
 
 /// One deep link opens its workflow once, even if the list is created again on the way back.
@@ -134,6 +142,8 @@ enum PendingWorkflowOpen {
 
 struct WorkflowEditorRoute: Identifiable, Hashable {
     var id: String
+    var nodeId: String?
+    var stepId: String?
 }
 
 public struct WorkflowSummaryLine: View {

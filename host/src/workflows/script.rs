@@ -242,7 +242,8 @@ fn text_expr(
     let mut parts: Vec<String> = Vec::new();
     let mut from_trigger = false;
     for edge in &graph.edges {
-        if edge.to != node.id {
+        // An order edge only makes the later step wait. The runner never reads it as text.
+        if edge.to != node.id || edge.id.ends_with(":order") {
             continue;
         }
         let Some(source) = graph.nodes.iter().find(|n| n.id == edge.from) else { continue };
@@ -424,6 +425,28 @@ mod tests {
         assert!(edges.iter().any(|edge| edge.from == first && edge.to == second && edge.id.ends_with(":order")));
         assert!(edges.iter().any(|edge| edge.from == second && edge.to == output.id && edge.id.ends_with(":order")));
         assert!(edges.iter().any(|edge| edge.from == first && edge.to == output.id && !edge.id.ends_with(":order")));
+    }
+
+    #[test]
+    fn an_order_edge_is_not_copied_into_the_next_prompt() {
+        let first = node(
+            "a".into(),
+            NodeKind::Agent,
+            80.0,
+            200.0,
+            field_map(&[("botId", json!("a")), ("task", json!("first"))]),
+        );
+        let second = node(
+            "b".into(),
+            NodeKind::Agent,
+            80.0,
+            320.0,
+            field_map(&[("botId", json!("b")), ("task", json!("second"))]),
+        );
+        let graph =
+            Graph { nodes: vec![manual("t"), first, second], edges: vec![order_edge("a", "b")], strokes: Vec::new() };
+        let script = generate("N", &graph);
+        assert!(script.contains("await agent(\"b\", \"second\","), "{script}");
     }
 
     #[test]

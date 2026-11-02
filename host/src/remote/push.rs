@@ -33,6 +33,7 @@ pub struct WorkflowLink {
     pub workflow: String,
     pub run: Option<String>,
     pub step: String,
+    pub node: String,
 }
 /// Tickets the relay reported as dead (app uninstalled / token rotated); purged on the next push.
 static GONE: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -167,6 +168,9 @@ pub fn notify(
         if let Some(link) = link {
             data["workflowId"] = link.workflow.clone().into();
             data["stepId"] = link.step.clone().into();
+            if !link.node.is_empty() {
+                data["nodeId"] = link.node.clone().into();
+            }
             if let Some(run) = &link.run {
                 data["runId"] = run.clone().into();
             }

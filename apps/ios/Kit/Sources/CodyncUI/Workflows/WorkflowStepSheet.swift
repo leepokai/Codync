@@ -37,6 +37,7 @@ struct WorkflowStepSheet: View {
     var sourceOptions: [(id: String, label: String)] = []
     var onSource: (String) -> Void = { _ in }
     var prepare: () async -> String? = { nil }
+    var pendingStepId: String? = nil
 
     @Environment(BotStore.self) private var model
     @State private var draft: WorkflowNodeEdit
@@ -55,7 +56,7 @@ struct WorkflowStepSheet: View {
     init(node: WorkflowNode, webhook: WorkflowWebhook?, onChange: @escaping (WorkflowNodeEdit) -> Void,
          onReveal: @escaping () async -> [WorkflowWebhook], onRotate: @escaping () async -> String?, workflowId: String,
          sourceSelection: String = "", sourceOptions: [(id: String, label: String)] = [], onSource: @escaping (String) -> Void = { _ in },
-         prepare: @escaping () async -> String? = { nil }) {
+         prepare: @escaping () async -> String? = { nil }, pendingStepId: String? = nil) {
         self.node = node
         self.webhook = webhook
         self.onChange = onChange
@@ -66,6 +67,7 @@ struct WorkflowStepSheet: View {
         self.sourceOptions = sourceOptions
         self.onSource = onSource
         self.prepare = prepare
+        self.pendingStepId = pendingStepId
         _draft = State(initialValue: WorkflowNodeEdit(node))
     }
 
@@ -82,7 +84,7 @@ struct WorkflowStepSheet: View {
                                    revealed: revealed, showKey: $showKey, copied: $copied, rotating: rotating,
                                    offline: model.isOffline, onPickZone: { pickingZone = true },
                                    onReveal: { Task { await reveal() } }, onRotate: { confirmRotate = true },
-                                   onTrigger: setTrigger, prepare: prepare)
+                                   onTrigger: setTrigger, prepare: prepare, pendingStepId: pendingStepId)
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)

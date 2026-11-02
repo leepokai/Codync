@@ -206,7 +206,7 @@ class PushService : FirebaseMessagingService() {
                         alert = PushAlert.decode(local.identity().openPush(sealed, computerId).toString(Charsets.UTF_8))
                     }
                 } catch (_: Exception) { /* Locked/unavailable key: show only a generic fallback. */ }
-                NotificationDisplay.alert(context, scope, computerId, botId, alert, data["category"], token(data["workflowId"]), token(data["runId"]))
+                NotificationDisplay.alert(context, scope, computerId, botId, alert, data["category"], token(data["workflowId"]), token(data["runId"]), token(data["nodeId"]), token(data["stepId"]))
             } catch (_: Exception) { /* A malformed push cannot crash the Firebase service. */ }
             }
         }
@@ -220,24 +220,30 @@ internal object NotificationDisplay {
     const val ALERT_KIND = "codync:alertKind"
     const val WORKFLOW_ID = "codync:workflowId"
     const val RUN_ID = "codync:runId"
+    const val NODE_ID = "codync:nodeId"
+    const val STEP_ID = "codync:stepId"
     fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(ALERTS, "Bot updates", NotificationManager.IMPORTANCE_HIGH))
         manager.createNotificationChannel(NotificationChannel(TASKS, "Delegated tasks", NotificationManager.IMPORTANCE_LOW))
     }
-    private fun open(context: Context, scope: String, computer: String, bot: String, workflowId: String? = null, runId: String? = null): Intent {
+    private fun open(context: Context, scope: String, computer: String, bot: String, workflowId: String? = null, runId: String? = null, nodeId: String? = null, stepId: String? = null): Intent {
         val url = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority("bot").appendPath(bot).appendQueryParameter("scope", scope).appendQueryParameter("computer", computer)
         workflowId?.let { url.appendQueryParameter("workflow", it) }
         runId?.let { url.appendQueryParameter("run", it) }
+        nodeId?.let { url.appendQueryParameter("node", it) }
+        stepId?.let { url.appendQueryParameter("step", it) }
         return Intent(context, MainActivity::class.java).setAction(Intent.ACTION_VIEW).setData(url.build()).apply {
             workflowId?.let { putExtra(WORKFLOW_ID, it) }
             runId?.let { putExtra(RUN_ID, it) }
+            nodeId?.let { putExtra(NODE_ID, it) }
+            stepId?.let { putExtra(STEP_ID, it) }
         }
     }
     /** An alert's tap carries its kind; its own request code keeps it apart from the same bot's task. */
     private fun builder(context: Context, scope: String, computer: String, bot: String, channel: String, alertKind: String? = null,
-        workflowId: String? = null, runId: String? = null): NotificationCompat.Builder {
-        val intent = open(context, scope, computer, bot, workflowId, runId).apply { alertKind?.let { putExtra(ALERT_KIND, it) } }
+        workflowId: String? = null, runId: String? = null, nodeId: String? = null, stepId: String? = null): NotificationCompat.Builder {
+        val intent = open(context, scope, computer, bot, workflowId, runId, nodeId, stepId).apply { alertKind?.let { putExtra(ALERT_KIND, it) } }
         val pending = PendingIntent.getActivity(context, if (alertKind != null) 1 else 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val generic = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.app_name)).setContentText("A bot has an update.").build()
@@ -245,15 +251,15 @@ internal object NotificationDisplay {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(generic).setGroup("$scope/$computer")
     }
     /** The alert's title, what happened and its text; with the chat's face, a conversation from the bot. */
-    fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert, kind: String?, workflowId: String? = null, runId: String? = null) {
+    fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert, kind: String?, workflowId: String? = null, runId: String? = null, nodeId: String? = null, stepId: String? = null) {
         channels(context)
         val tag = "$scope/$computer/$bot"
-        val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty(), workflowId, runId).setContentTitle(alert.title).setContentText(alert.body)
+        val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty(), workflowId, runId, nodeId, stepId).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
         alert.copy(faces = alert.faces.withCustomIcons(notificationIcons(context, scope, computer))).conversation(bot)?.let { conversation ->
             // A system that refuses the conversation still shows the plain alert.
-            try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot, workflowId, runId), alert.body, conversation) }
+            try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot, workflowId, runId, nodeId, stepId), alert.body, conversation) }
             catch (error: Exception) { android.util.Log.w("Codync", "Alert shown without its conversation", error) }
         }
         try { context.getSystemService(NotificationManager::class.java).notify(tag, 1, builder.build()) } catch (_: SecurityException) { }

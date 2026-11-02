@@ -5,6 +5,8 @@ import SwiftUI
 public struct WorkflowDetailView: View {
     let workflowId: String
     var pendingRunId: String?
+    var pendingNodeId: String?
+    var pendingStepId: String?
 
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -18,6 +20,7 @@ public struct WorkflowDetailView: View {
     @State private var renaming = false
     @State private var renameText = ""
     @State private var editing: WorkflowEditorRoute?
+    @State private var didOpenPendingStep = false
     @State private var showingRuns: WorkflowRunsRoute?
     @State private var showingVersions = false
     @State private var openedRun: WorkflowRunRoute?
@@ -28,9 +31,11 @@ public struct WorkflowDetailView: View {
 
     private var display: WorkflowStepDisplay { WorkflowStepDisplay(rawValue: displayRaw) ?? .labels }
 
-    public init(workflowId: String, pendingRunId: String? = nil) {
+    public init(workflowId: String, pendingRunId: String? = nil, pendingNodeId: String? = nil, pendingStepId: String? = nil) {
         self.workflowId = workflowId
         self.pendingRunId = pendingRunId
+        self.pendingNodeId = pendingNodeId
+        self.pendingStepId = pendingStepId
     }
 
     public var body: some View {
@@ -87,8 +92,8 @@ public struct WorkflowDetailView: View {
                 .accessibilityLabel(L10n.tr("Mode"))
             }
         }
-        .navigationDestination(item: $editing) { _ in
-            WorkflowEditorView(workflowId: workflowId)
+        .navigationDestination(item: $editing) { route in
+            WorkflowEditorView(workflowId: workflowId, openNodeId: route.nodeId, openStepId: route.stepId)
                 .environment(model)
         }
         .navigationDestination(item: $showingRuns) { _ in
@@ -365,6 +370,9 @@ public struct WorkflowDetailView: View {
             if let pendingRunId, !didOpenPendingRun {
                 didOpenPendingRun = true
                 openedRun = WorkflowRunRoute(id: pendingRunId)
+            } else if pendingRunId == nil, let pendingNodeId, !didOpenPendingStep {
+                didOpenPendingStep = true
+                editing = WorkflowEditorRoute(id: workflowId, nodeId: pendingNodeId, stepId: pendingStepId)
             }
         } catch {
             if detail == nil { self.error = error.localizedDescription }

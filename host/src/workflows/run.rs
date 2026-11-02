@@ -64,6 +64,9 @@ pub fn start(
             return run_detail(hub, &existing);
         }
         let Some((summary, graph)) = store::load(&hub.store, id)? else { bail!("This workflow was deleted") };
+        if source == RunSource::Schedule && !scheduled_trigger(&graph, from) {
+            bail!("This trigger is no longer on a schedule");
+        }
         if !can_start(&graph, summary["source"].as_str() == Some("script"), source) {
             bail!("Add a trigger first");
         }
@@ -212,6 +215,16 @@ fn walk_back(graph: &Graph, seeds: &HashSet<String>) -> HashSet<String> {
 
 /// A manual run with steps can start from those steps. A blank canvas, a script, or a
 /// schedule or webhook still needs a trigger node.
+fn scheduled_trigger(graph: &Graph, from: Option<&str>) -> bool {
+    let Some(id) = from else { return false };
+    graph.nodes.iter().any(|node| {
+        node.id == id
+            && node.kind == NodeKind::Trigger
+            && field_str(&node.fields, "trigger") == Some("schedule")
+            && node.schedule.is_some()
+    })
+}
+
 fn can_start(graph: &Graph, scripted: bool, source: RunSource) -> bool {
     if graph.nodes.iter().any(|node| node.kind == NodeKind::Trigger) {
         return true;
@@ -964,6 +977,17 @@ pub fn open_run(store: &Store, workflow: &str) -> Result<Option<String>> {
     })
 }
 
+fn step_node(store: &Store, step: &str) -> Option<String> {
+    store
+        .with_immediate(|tx| {
+            tx.query_row("SELECT node_id FROM workflow_steps WHERE id = ?1", [step], |r| r.get(0))
+                .optional()
+                .map_err(Into::into)
+        })
+        .ok()
+        .flatten()
+}
+
 pub fn dispatch_pushes(hub: &Hub, effects: &Effects) {
     for push in &effects.pushes {
         let Ok(Some(bot)) = hub.store.bot(&push.bot) else { continue };
@@ -974,7 +998,12 @@ pub fn dispatch_pushes(hub: &Hub, effects: &Effects) {
             &push.title,
             &push.body,
             push.kind,
-            Some(&WorkflowLink { workflow: push.workflow.clone(), run: push.run.clone(), step: push.step.clone() }),
+            Some(&WorkflowLink {
+                workflow: push.workflow.clone(),
+                run: push.run.clone(),
+                step: push.step.clone(),
+                node: step_node(&hub.store, &push.step).unwrap_or_default(),
+            }),
         );
     }
 }

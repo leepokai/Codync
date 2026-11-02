@@ -71,9 +71,9 @@ fun AppStore.openWorkflows() {
 }
 
 /** Opens one workflow, and a run when [runId] is set. Clears the open chat. */
-fun AppStore.showWorkflow(id: String?, runId: String? = null) {
+fun AppStore.showWorkflow(id: String?, runId: String? = null, nodeId: String? = null, stepId: String? = null) {
     mutableState.update {
-        it.copy(selectedBot = null, workflow = if (id == null) WorkflowRoute() else WorkflowRoute(id, runId), workflowMessage = null)
+        it.copy(selectedBot = null, workflow = if (id == null) WorkflowRoute() else WorkflowRoute(id, runId, nodeId, stepId), workflowMessage = null)
     }
 }
 
@@ -86,7 +86,7 @@ internal fun AppStore.noteWorkflow(message: String?) {
 }
 
 /** A notification that names a workflow: leave the chat, land on Bots, open the workflow or its run. */
-fun AccountStore.openWorkflowLink(uri: android.net.Uri, workflowId: String, runId: String?) {
+fun AccountStore.openWorkflowLink(uri: android.net.Uri, workflowId: String, runId: String?, nodeId: String? = null, stepId: String? = null) {
     linkJob?.cancel()
     linkJob = viewModelScope.launch {
         val completed = withTimeoutOrNull(30_000) {
@@ -106,7 +106,7 @@ fun AccountStore.openWorkflowLink(uri: android.net.Uri, workflowId: String, runI
                 return@withTimeoutOrNull true
             }
             if (state.value.generation != ready.generation) return@withTimeoutOrNull true
-            focusWorkflows(destination.computerId, workflowId, runId?.takeIf { id -> id.isNotBlank() })
+            focusWorkflows(destination.computerId, workflowId, runId?.takeIf { id -> id.isNotBlank() }, nodeId?.takeIf { id -> id.isNotBlank() }, stepId?.takeIf { id -> id.isNotBlank() })
             true
         }
         if (completed == null) mutableState.update { it.copy(error = "Couldn't open this notification yet. Reconnect and try again.") }

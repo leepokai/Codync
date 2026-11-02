@@ -44,7 +44,15 @@ import kotlinx.coroutines.CancellationException
 @Composable internal fun WorkflowsView(state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp, selectComputer: (String) -> Unit) {
     val route = state.workflow ?: return
     var editOn by rememberSaveable { mutableStateOf<String?>(null) }
+    var openedNode by rememberSaveable { mutableStateOf<String?>(null) }
     var runsOn by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(route.id, route.nodeId, route.runId) {
+        val node = route.nodeId
+        if (!node.isNullOrBlank() && route.runId.isNullOrBlank() && openedNode != node) {
+            openedNode = node
+            editOn = route.id
+        }
+    }
     if (editOn != null && editOn != route.id) editOn = null
     val back = remember { mutableStateOf<() -> Unit>({}) }
     val latest = rememberUpdatedState(Triple(route, editOn, runsOn))
@@ -72,7 +80,7 @@ import kotlinx.coroutines.CancellationException
         when (page) {
             WorkflowPage.List -> WorkflowListView(state, store, computers, bottomInset, selectComputer) { editOn = it }
             is WorkflowPage.Detail -> WorkflowDetailView(state, store, page.id, { back.value() }, { editOn = page.id }, { runsOn = true })
-            is WorkflowPage.Editor -> WorkflowEditorView(state, store, page.id) { back.value() }
+            is WorkflowPage.Editor -> WorkflowEditorView(state, store, page.id, route.nodeId, route.stepId) { back.value() }
             is WorkflowPage.Runs -> WorkflowRunsView(state, store, page.id, { back.value() }) { store.showWorkflow(page.id, it) }
             is WorkflowPage.Run -> WorkflowRunView(state, store, page.id, page.runId) { back.value() }
         }

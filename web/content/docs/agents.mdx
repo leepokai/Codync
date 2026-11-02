@@ -75,6 +75,8 @@ To run an agent that isn't listed, open the bot's settings, set **Agent** to **C
 
 The host looks for each agent's command on the same `PATH` your login shell uses, plus the usual install folders (Homebrew, `~/.local/bin`, nvm, bun, volta, asdf, mise, pnpm and others). When an installed agent has its own ACP mode, Codync runs it directly. Otherwise it runs the agent's ACP adapter from the registry.
 
+Agents also get the environment variables your login shell sets on macOS and Linux, such as an API key you `export` in `~/.zshrc` for a custom model. A config like OpenCode's `"apiKey": "{env:MY_KEY}"` then works the same in Codync as in your terminal. Only the agents get them: Codync itself keeps its own settings. After you add or change one, restart the host (or the computer) so bots that are already running start with the new value.
+
 Opening **Extensions** checks again, so an agent you installed or signed in to outside Codync shows up without restarting anything.
 
 ## Extensions: install and set up agents

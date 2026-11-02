@@ -15,6 +15,7 @@ import type { NetworkView, RecoveryCode } from '@shared/network'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
+import { MemoryStorage } from '../lib/memory-storage'
 import { Observable } from '../lib/observable'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
@@ -79,10 +80,12 @@ export class BotMirror extends Observable {
     protected makeTransport: () => HostTransport,
     protected appVersion = window.codync.appVersion,
     readonly contextId = 'local',
+    /** The demo: nothing is read from or written to the device. */
+    protected readonly volatile = false,
   ) {
     super()
     this.computer = computer
-    this.composerDrafts = new ComposerDrafts(localStorage, `codync-drafts-v1-${JSON.stringify([contextId, computer.id])}`,
+    this.composerDrafts = new ComposerDrafts(volatile ? new MemoryStorage() : localStorage, `codync-drafts-v1-${JSON.stringify([contextId, computer.id])}`,
       () => this.setError("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it."))
     this.loadCache()
   }
@@ -244,6 +247,7 @@ export class BotMirror extends Observable {
   }
 
   private loadCache() {
+    if (this.volatile) return
     try {
       const raw = localStorage.getItem(this.cacheKey)
       if (!raw) return
@@ -265,7 +269,7 @@ export class BotMirror extends Observable {
   }
 
   saveCache() {
-    if (this.retired) return
+    if (this.retired || this.volatile) return
     // Keep the newest 200 entries per bot; older ones page in from the host.
     const kept: Entry[] = []
     for (const list of this.entries.values()) {

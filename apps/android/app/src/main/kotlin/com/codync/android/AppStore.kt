@@ -221,6 +221,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
 
     /** The ready channel, waiting briefly for a reconnect; a timeout is an error the action shows. */
     internal suspend fun ready(): EncryptedChannel = deadline(20_000, "Can't reach the computer. Check that it's on, then try again.") {
+        // The demo shows sample data: nothing may reach the real computer meanwhile.
+        if (DemoMode.active.value) throw IOException(com.codync.android.core.DemoScript.REFUSAL)
         while (true) {
             val active = channel
             if (active?.state?.value is LinkState.Ready) return@deadline active

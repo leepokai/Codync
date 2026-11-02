@@ -1,7 +1,7 @@
 import { trackBody } from '@shared/analytics'
 import type { HostSnapshot, LocalHost } from '@shared/ipc'
 import type { AccessRequest, Bot, Computer } from '@shared/models'
-import { HostError, LoopbackTransport } from '../client/host-client'
+import { HostError, LoopbackTransport, type HostTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
 import { account } from './account'
 import { analytics } from './analytics'
@@ -63,12 +63,21 @@ export class AppModel extends Observable {
   readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
 
-  constructor(private mirrors = true) {
+  /**
+   * `demo`: a model that talks to an in-memory host (`demo/demo-transport.ts`) and keeps nothing on the device. It stands in for
+   * this one while the person tries the demo, and is thrown away after (`dispose`).
+   */
+  constructor(private mirrors = true, private readonly demo: { transport: () => HostTransport; snapshot: HostSnapshot } | null = null) {
     super()
     this.computerAccess = new ComputerAccess(this)
     this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
-    account.subscribe(() => this.noteAccount())
+    if (!demo) account.subscribe(() => this.noteAccount())
+  }
+
+  /** Ends a demo model: its stores stop and drop what they held. */
+  dispose() {
+    for (const id of [...this.stores.keys()]) this.detach(id)
   }
 
   setError(message: string | null) {
@@ -77,6 +86,7 @@ export class AppModel extends Observable {
   }
 
   async start() {
+    if (this.demo) return this.setHost(this.demo.snapshot)
     window.codync.host.onChange((s) => this.setHost(s))
     if (this.mirrors) {
       // Once per launch; it goes out when this computer's host first answers.
@@ -90,15 +100,18 @@ export class AppModel extends Observable {
     const old = this.host.local
     this.host = snapshot
     const local = snapshot.local
-    this.connectAnalytics(local)
+    if (!this.demo) this.connectAnalytics(local)
     if (!this.mirrors) return this.changed()
     if (local && (old?.computerId !== local.computerId || old.token !== local.token || !this.stores.has(local.computerId))) {
       if (old && old.computerId !== local.computerId) this.detach(old.computerId)
       const cached = this.computers.find((c) => c.id === local.computerId)
       const computer: Computer = cached ?? { id: local.computerId, name: 'This computer', signKey: '', urls: [] }
-      const store = new BotStore(computer, true, () => new LoopbackTransport(local.baseURL, local.token))
+      const demo = this.demo
+      const store = demo
+        ? new BotStore(computer, true, demo.transport, undefined, 'demo', true)
+        : new BotStore(computer, true, () => new LoopbackTransport(local.baseURL, local.token))
       this.attach(computer, store)
-      store.subscribe(() => this.syncScreen(store))
+      if (!demo) store.subscribe(() => this.syncScreen(store))
     } else if (!local && old) {
       this.detach(old.computerId)
     }

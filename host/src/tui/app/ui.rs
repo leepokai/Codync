@@ -62,6 +62,7 @@ pub enum Action {
     Channels,
     Beliefs,
     Proposals,
+    Demo,
     Usage,
     CheckUpdate,
     Analytics,
@@ -72,7 +73,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 25] = [
+pub const ACTIONS: [(&str, &str, Action); 26] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -88,6 +89,7 @@ pub const ACTIONS: [(&str, &str, Action); 25] = [
     ("Channels: Telegram and Slack…", "", Action::Channels),
     ("What this bot knows about you…", "", Action::Beliefs),
     ("Skills this bot proposes…", "", Action::Proposals),
+    ("Demo mode: try it, or leave it", "", Action::Demo),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),

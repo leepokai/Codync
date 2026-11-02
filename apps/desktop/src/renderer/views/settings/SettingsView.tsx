@@ -29,6 +29,7 @@ import { AnalyticsSheet } from './AnalyticsSheet'
 import { DiagnosticsView } from './DiagnosticsView'
 import { AgentImportSection } from './AgentImportSection'
 import { ChannelsSection } from './ChannelsSection'
+import { DemoSection } from './DemoSection'
 import { ResearchSettingsSection } from './ResearchSettingsSection'
 import { HiddenBotsSection } from './HiddenBotsSection'
 
@@ -238,6 +239,7 @@ function GeneralSettings() {
       {window.codync.platform === 'win32' ? <ResearchSettingsSection /> : null}
       <ChannelsSection />
       <AgentImportSection />
+      <DemoSection />
       <HiddenBotsSection />
     </CardForm>
   )

@@ -116,6 +116,10 @@ pub struct App {
     pub frame: u64,
     pub term_focused: bool,
     pub quit: bool,
+    /// This is the demo's app: its client answers from a script and nothing is read from or written to the device.
+    pub demo: bool,
+    /// The person asked to try the demo; the main loop starts it.
+    pub demo_toggle: bool,
     pub hits: Hits,
     pub width: Width,
     /// Chat/trace viewport heights from the last draw, for page scrolling.
@@ -167,6 +171,8 @@ impl App {
             url,
             host: String::new(),
             home: String::new(),
+            demo: false,
+            demo_toggle: false,
             online: false,
             error: None,
             mismatch: None,

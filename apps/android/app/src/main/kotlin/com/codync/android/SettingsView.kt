@@ -108,6 +108,12 @@ import com.codync.android.design.*
                 }
             }
         }
+        CardSection(footer = "Look around with sample bots, a session, an approval and a routine. Nothing is saved or sent, and leaving brings back exactly what you had.") {
+            row {
+                val demo by DemoMode.active.collectAsState()
+                SecondaryButton(if (demo) "Exit demo mode" else "Try demo mode") { if (demo) DemoMode.exit() else DemoMode.enter() }
+            }
+        }
         CardSection {
             row { ValueRow("App version", BuildConfig.VERSION_NAME) }
             row { LinkButton("Source code") { uri.open("https://github.com/leepokai/Codync", OutboundLink.Github) } }

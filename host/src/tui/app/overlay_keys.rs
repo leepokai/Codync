@@ -60,6 +60,13 @@ impl App {
             Action::Channels => self.open_channels(),
             Action::Beliefs => self.open_beliefs(),
             Action::Proposals => self.open_proposals(),
+            Action::Demo => {
+                if self.demo {
+                    self.quit = true;
+                } else {
+                    self.demo_toggle = true;
+                }
+            }
             Action::Usage => {
                 self.overlays.push(Overlay::Usage(0));
                 self.call("weekSummary", json!({"days": 7}), After::Week);

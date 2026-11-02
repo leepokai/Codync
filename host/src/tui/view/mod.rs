@@ -159,6 +159,9 @@ fn status_line(buf: &mut Buffer, r: Rect, app: &mut App) {
         x = put(buf, x, r.y, 4, &c[i].to_string(), t.secondary.patch(t.panel)) + 2;
         app.hits.clicks.push((Rect::new(start, r.y, x - start, 1), Click::Filter(filter)));
     }
+    if app.demo {
+        x = put(buf, x, r.y, 24, "DEMO · sample data", t.amber.patch(t.panel)) + 2;
+    }
     if !app.online {
         x = put(buf, x, r.y, 20, "offline", t.amber.patch(t.panel)) + 2;
     } else if app.mismatch.is_some() {

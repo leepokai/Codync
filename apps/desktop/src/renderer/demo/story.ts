@@ -159,3 +159,13 @@ export function usage(now: number): Usage {
     ],
   }
 }
+
+/** The one routine the demo shows, on the bot that watches the tests. */
+export function routines(botId: string, now: number) {
+  if (botId !== 'scout') return []
+  return [{
+    id: 'demo-routine', botId, name: 'Morning check', instruction: 'Run the tests and tell me what broke overnight.',
+    triggers: [], enabled: true, createdAt: now - 86_400_000, updatedAt: now - 3_600_000,
+    triggerDescriptions: ['Every weekday at 9:00'], nextRunAt: now + 12 * 3_600_000, timeoutSeconds: 600, lastError: null,
+  }]
+}

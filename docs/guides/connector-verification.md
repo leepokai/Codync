@@ -19,6 +19,16 @@ SQLite, Keychain and MCP subprocesses. `--network` additionally exercises live
 providers. `--slow` waits for the production 90-second handshake timeout.
 Failures produce a nonzero exit code; live provider failures are not skipped.
 
+## Editing a custom local connector
+
+Edit a custom local connector through `updateConnector` without changing its id
+or bot assignments. Omitted fields keep their values, including `args` when only
+`command` changes. The update's `command` is an executable path; pass arguments
+separately in `args`, or `args: []` to clear them. Unlike installation, updates
+do not split a command line. `env` merges entries, with `null` removing a key.
+The host saves a valid edit before verification; a failed handshake does not
+roll back that edit. Bot tool refresh occurs only after verification succeeds.
+
 ## Recorded result: 2026-10-05, macOS
 
 `python3 tools/check-connectors.py --network --slow`: **15/15 passed**.

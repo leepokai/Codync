@@ -31,7 +31,9 @@ pub fn update_custom_connector(store: &crate::store::Store, b: &Value) -> Result
                     None => c.command.clone().unwrap_or_default(),
                     Some(_) => bail!("`command` is a string"),
                 };
-                Some(split_command(&line, args)?)
+                // Updates treat the executable and its arguments as independent fields.
+                let preserved_args = serde_json::json!(&c.args);
+                Some(split_command(&line, Some(args.unwrap_or(&preserved_args)))?)
             }
         };
         let env = b.get("env").map(env_changes).transpose()?;
@@ -136,13 +138,46 @@ mod tests {
         let c = only(&store);
         assert_eq!((c.name.as_str(), c.description.as_str()), ("Local", "kept"));
         assert_eq!((c.command.as_deref(), c.args.as_slice()), (Some("node"), ["b.js".to_owned()].as_slice()));
-        // With no args at all the command is a command line, split like it is when adding one.
-        update_custom_connector(&store, &json!({"id": id, "command": "node c.js --quiet"})).expect("command line");
+        update_custom_connector(&store, &json!({"id": id, "command": "/opt/node-new/bin/node"})).expect("command only");
         let c = only(&store);
         assert_eq!(
             (c.command.as_deref(), c.args.as_slice()),
-            (Some("node"), ["c.js".to_owned(), "--quiet".to_owned()].as_slice())
+            (Some("/opt/node-new/bin/node"), ["b.js".to_owned()].as_slice())
         );
+    }
+
+    #[tokio::test]
+    async fn command_updates_preserve_omitted_arguments() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
+        let id = add_local(&store, json!({"name": "Local", "command": "node", "args": ["server.js", "--flag"]})).await;
+        for command in ["/opt/node-new/bin/node", "C:\\Program Files\\nodejs\\node.exe"] {
+            update_custom_connector(&store, &json!({"id": id, "command": command})).expect("command only");
+            let c = only(&store);
+            assert_eq!(c.command.as_deref(), Some(command));
+            assert_eq!(c.args, ["server.js", "--flag"], "omitting args preserves the server entry point");
+        }
+        update_custom_connector(&store, &json!({"id": id, "args": []})).expect("clear arguments");
+        let c = only(&store);
+        assert_eq!(c.command.as_deref(), Some("C:\\Program Files\\nodejs\\node.exe"));
+        assert!(c.args.is_empty(), "an explicit empty list clears the arguments");
+    }
+
+    #[tokio::test]
+    async fn command_only_update_keeps_a_working_mcp_connector() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py");
+        let id = add_local(
+            &store,
+            json!({"name": "Local", "command": python, "args": [fixture], "env": {"API_KEY": "test-private-key"}}),
+        )
+        .await;
+        let before = crate::market::verify::verify(&store, &id, 0).await.expect("initial MCP handshake");
+        update_custom_connector(&store, &json!({"id": id, "command": python})).expect("command only");
+        let after = crate::market::verify::verify(&store, &id, 0).await.expect("MCP handshake after edit");
+        assert_eq!(before, after);
+        assert_eq!(after["status"], "ready");
+        assert_eq!(after["toolCount"], 0);
     }
 
     #[tokio::test]

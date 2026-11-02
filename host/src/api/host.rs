@@ -93,6 +93,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             serde_json::to_value(&*hub.usage.locked())?
         }
+        "hostHealth" => crate::health::value(hub),
+        "setHealthThresholds" => {
+            let thresholds = crate::health::Thresholds {
+                warn: u8::try_from(b["warn"].as_u64().unwrap_or(0)).unwrap_or(0),
+                critical: u8::try_from(b["critical"].as_u64().unwrap_or(0)).unwrap_or(0),
+            };
+            hub.health.set_thresholds(&hub.store, thresholds)?;
+            crate::health::value(hub)
+        }
         "weekSummary" => {
             let days = b["days"].as_i64().unwrap_or(7).clamp(1, 31);
             let since = crate::store::now_ms() - days * 24 * 60 * 60 * 1000;

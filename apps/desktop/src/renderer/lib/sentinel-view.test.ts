@@ -30,7 +30,7 @@ function render(report: SentinelReport): Node[] {
     '../../lib/observable': { useModel: (value: unknown) => value },
     '../../store/context': { useApp: () => ({ local }) },
     '../../store/maintenance-store': { MaintenanceStore: class {} },
-    './BotBundleSection': {}, './BotCheckSection': {}, './TeamRunSection': {}, './TokenBudgetSection': {}, './parts': {},
+    './BotBundleSection': {}, './BotCheckSection': {}, './HealthSection': {}, './TeamRunSection': {}, './TokenBudgetSection': {}, './parts': {},
   }
   const source = readFileSync(new URL('../views/settings/DiagnosticsView.tsx', import.meta.url), 'utf8')
   const output = ts.transpileModule(source, {

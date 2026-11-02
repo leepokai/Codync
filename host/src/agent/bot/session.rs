@@ -223,6 +223,7 @@ impl Actor {
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 match self.start_candidate(candidate, &env, budget, &progress).await {
                     Ok(conn) => {
+                        self.hub.health.set_agent(&self.cfg.id, conn.acp.pid());
                         self.conn = Some(conn);
                         break;
                     }

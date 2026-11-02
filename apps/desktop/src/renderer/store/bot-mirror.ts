@@ -10,6 +10,7 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import type { HostHealth } from '@shared/health'
 import type { NetworkView, RecoveryCode } from '@shared/network'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import { rosterOrder } from '../lib/computer-roster'
@@ -42,6 +43,8 @@ export class BotMirror extends Observable {
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
   usage: Usage = { providers: [] }
+  /** Memory, CPU and disk of this computer (`hostHealth`); null until read, or from an older host. */
+  health: HostHealth | null = null
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
   cloud: CloudStatus | null = null

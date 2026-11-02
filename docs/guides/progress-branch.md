@@ -26,7 +26,7 @@ card (desktop and Android), `SETUP_PROMPT.md`.
 | 8 | Mini-app and check-in fixes | done | see `git log` (`fix(host): a half-done scheduled check-in stays private`) | items 1-5 were already done by the merged base (evidence in the report); the one-hour real-host e2e not run; the Android WebView callbacks not seen; see `miniapps-and-check-ins-report.md` |
 | 9 | Questions and plans from external sessions | done | see `git log` (`feat(host): answer a terminal session's questions and plans from any client`) | no real Claude Code session was run; plan approval output (`allow` + echoed input) is undocumented by Claude Code; multi-select questions stay in the terminal; see `external-questions-report.md` |
 | 10 | Messaging channels (3 phases) | done | see `git log` (`feat(host): Slack Socket Mode`, `feat(host): Telegram channel`, `feat(...): Channels screen`) | nothing tested against real Slack or Telegram (see `slack-manual-checklist.md`, `telegram-manual-checklist.md`); Android and terminal cannot add a Telegram bot or set up Slack (tokens stay on the computer); no Slack form in any client; iOS skipped; see `channels-report.md` |
-| 11 | Computer health | pending | | |
+| 11 | Computer health | done | see `git log` (`feat(host): computer health`) | real sampler and runaway-agent stop only tested with simulated readings; no screen seen; "ask before an expensive turn" not done (documented); iOS skipped; see `computer-health-report.md` |
 | 12 | Import agents | pending | | |
 | 13 | Memory as beliefs | pending | | |
 | 14 | Proposed skills inbox | pending | | |

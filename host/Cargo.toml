@@ -60,6 +60,7 @@ uuid = { version = "1.26.1", features = ["v4", "v7"] }
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 
 zeroize = "1"
+sysinfo = { version = "0.38.4", default-features = false, features = ["system", "disk"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", features = ["apple-native"] }

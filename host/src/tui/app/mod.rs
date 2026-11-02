@@ -9,6 +9,7 @@ mod events;
 mod exchange;
 mod fallbacks;
 mod forms;
+pub mod health;
 mod input;
 mod model;
 mod navigate;
@@ -71,6 +72,9 @@ pub struct App {
     pub usage: Value,
     /// The last seven days (`weekSummary`), read when the usage sheet opens; null until then.
     pub week: Value,
+    /// `hostHealth`, for the header; null from an older host.
+    pub health: Value,
+    health_asked: Option<Instant>,
     /// The security profiles the host offers (`securityProfiles`), read when they are first needed.
     pub profiles: Vec<Value>,
     pub screen: Value,
@@ -166,6 +170,8 @@ impl App {
             entries: HashMap::new(),
             usage: Value::Null,
             week: Value::Null,
+            health: Value::Null,
+            health_asked: None,
             profiles: Vec::new(),
             screen: Value::Null,
             network: Value::Null,
@@ -406,6 +412,10 @@ impl App {
             self.selected = Some(id);
         }
         let now = Instant::now();
+        if self.online && self.health_asked.is_none_or(|at| at.elapsed() >= health::REFRESH) {
+            self.health_asked = Some(now);
+            self.call("hostHealth", json!({}), After::Health);
+        }
         self.toasts.retain(|t| t.until > now);
         if self.hint.as_ref().is_some_and(|(_, until)| *until <= now) {
             self.hint = None;

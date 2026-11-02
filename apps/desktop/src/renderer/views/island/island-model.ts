@@ -20,7 +20,7 @@ const voiceShortcutUsed = pref('islandVoiceShortcutUsed', false)
 
 /** The island window's state: the chat window's summary, the pointer, the header's tab and what was put off. */
 export class IslandModel extends Observable {
-  summary: IslandSummary = { bots: [], permissions: [], usage: [] }
+  summary: IslandSummary = { bots: [], permissions: [], usage: [], health: null }
   screen: IslandScreen = { notch: null }
   open = false
   tab: IslandTab = 'auto'

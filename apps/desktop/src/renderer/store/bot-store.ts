@@ -25,6 +25,7 @@ import {
 import type { BotCatalog } from '@shared/catalog'
 import type { CallLine } from '@shared/calls'
 import { cleanRules, type ApprovalEvaluation, type ApprovalRule, type RuleProposal } from '@shared/approval-rules'
+import type { HostHealth } from '@shared/health'
 import type { SecurityProfile } from '@shared/security-profiles'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
@@ -591,6 +592,22 @@ export class BotStore extends BotSync {
     } catch {
       return null
     }
+  }
+
+  /** Reads the computer's health; an older host keeps what was there (nothing). */
+  async refreshHealth() {
+    if (this.retired || !this.client) return
+    try {
+      this.health = await this.client.call<HostHealth>('hostHealth', {})
+      this.changed()
+    } catch {}
+  }
+
+  /** Changes the memory levels that warn and that stop new turns; throws the host's reason when they make no sense. */
+  async setHealthThresholds(warn: number, critical: number) {
+    if (this.retired || !this.client) return
+    this.health = await this.client.call<HostHealth>('setHealthThresholds', { warn, critical })
+    this.changed()
   }
 
   async refreshUsage() {

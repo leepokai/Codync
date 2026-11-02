@@ -79,6 +79,8 @@ pub struct Hub {
     pub routines: crate::routines::Routines,
     /// Daily token limits and what each bot used today (`budget`).
     pub budget: crate::budget::Budgets,
+    /// Memory, CPU and disk of this computer, and the memory of the agents started here (`health`).
+    pub health: crate::health::Monitor,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
@@ -133,6 +135,10 @@ impl Hub {
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
             budget: crate::budget::Budgets::load(&store),
+            health: crate::health::Monitor::new(
+                Box::new(crate::health::System::new(service::data_dir())),
+                crate::health::Monitor::saved_thresholds(&store),
+            ),
             team: crate::chat::team::Requests::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),

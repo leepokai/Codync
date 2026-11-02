@@ -162,6 +162,11 @@ fn status_line(buf: &mut Buffer, r: Rect, app: &mut App) {
     } else if app.mismatch.is_some() {
         x = put(buf, x, r.y, 20, "needs update", t.red.patch(t.panel)) + 2;
     }
+    if app.online
+        && let Some(alert) = super::app::health::alert(&app.health)
+    {
+        x = put(buf, x, r.y, 44, &alert, t.amber.patch(t.panel)) + 2;
+    }
     let hint = if insert { "↵ send · esc nav" } else { "? keys" };
     let mut right = rput(buf, r.right() - 1, r.y, hint, t.dim.patch(t.panel)).saturating_sub(3);
     let mut edge = right;

@@ -6,6 +6,7 @@ use std::sync::Arc;
 pub fn start(hub: &Arc<Hub>) {
     tokio::spawn(crate::slack::run(hub.clone()));
     tokio::spawn(crate::telegram::run(hub.clone()));
+    tokio::spawn(crate::health::run(hub.clone()));
     tokio::spawn({
         let hub = hub.clone();
         async move {

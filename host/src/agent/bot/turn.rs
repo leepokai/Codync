@@ -99,6 +99,8 @@ impl Actor {
         hidden: bool,
         done_tx: &mpsc::UnboundedSender<Done>,
     ) -> Result<()> {
+        // A computer short of memory takes on no new work; the person is told why (`start_failed`).
+        self.hub.health.admit(now_ms())?;
         self.proactive_turn = self.proactive_batch(entry_ids);
         self.continuation = if self.continue_batch(entry_ids) { self.continuation + 1 } else { 0 };
         // A routine run keeps the turn its notice took when it began (`Routines::begin`).

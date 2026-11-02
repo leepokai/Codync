@@ -19,6 +19,7 @@ mod documents;
 mod egress;
 mod environment;
 mod external;
+mod health;
 mod hub;
 mod market;
 mod mcp;

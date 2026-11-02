@@ -9,6 +9,7 @@ import { useApp } from '../../store/context'
 import { MaintenanceStore } from '../../store/maintenance-store'
 import { BotBundleSection } from './BotBundleSection'
 import { BotCheckSection } from './BotCheckSection'
+import { HealthSection } from './HealthSection'
 import { TeamRunSection } from './TeamRunSection'
 import { TokenBudgetSection } from './TokenBudgetSection'
 import { errorText } from './parts'
@@ -61,6 +62,7 @@ export function DiagnosticsView() {
 
   return (
     <CardForm>
+      <HealthSection />
       <CardSection
         title="Sentinel Watchdog"
         footer="Reviews recent tool errors, failed turns, retry loops, and queue waits."

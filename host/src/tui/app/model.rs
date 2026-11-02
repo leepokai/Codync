@@ -39,6 +39,8 @@ pub enum After {
     RuleTest,
     /// `securityProfiles`.
     Profiles,
+    /// `hostHealth`: the header's memory word; a host without it says nothing.
+    Health,
     /// `telegramStatus` and the Telegram calls that answer with it.
     Channels,
     /// `slackStatus`.

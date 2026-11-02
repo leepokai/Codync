@@ -181,7 +181,7 @@ impl App {
             Err(e) => {
                 match after {
                     After::Hello => self.error = Some(e),
-                    After::Tracked | After::Week | After::RuleTest | After::Profiles => {}
+                    After::Tracked | After::Week | After::RuleTest | After::Profiles | After::Health => {}
                     After::Channels | After::ChannelsSlack => self.flash(&format!("Channels: {e}")),
                     After::RulesSaved => self.rules_saved(Err(e)),
                     After::Proposal(entry, option) => self.always_proposed(entry, option, Err(e)),
@@ -268,6 +268,7 @@ impl App {
             }
             After::Week => self.week = v,
             After::RuleTest => self.rules_tested(&v),
+            After::Health => self.health = v,
             After::Profiles => self.profiles = v["profiles"].as_array().cloned().unwrap_or_default(),
             After::Channels => self.channels_loaded(&v),
             After::ChannelsSlack => self.channels_slack_loaded(v),

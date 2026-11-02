@@ -1,4 +1,5 @@
 //! Durable bot routines, shared by API clients and the built-in MCP server.
+mod chain;
 mod check;
 pub use check::Checked;
 mod editor;
@@ -149,7 +150,7 @@ fn hook_set(state: &State) -> Vec<Hook> {
     state
         .routines
         .iter()
-        .filter(|r| !r.deleted && r.triggers.iter().any(|t| matches!(t, Trigger::Webhook | Trigger::Event { .. })))
+        .filter(|r| !r.deleted && r.triggers.iter().any(Trigger::external))
         .map(|r| Hook { id: r.id.clone(), key: r.webhook_key.clone(), enabled: r.enabled })
         .collect()
 }
@@ -221,8 +222,24 @@ impl Routines {
 
     pub fn list(&self, bot: &str) -> Value {
         let state = self.state.locked();
-        json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
+        json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(|r| public(&state, r)).collect::<Vec<_>>(),
             "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
+    }
+
+    /// Another bot's routines as a routine trigger can follow them: no instructions or run history.
+    pub fn list_followable(&self, bot: &str) -> Value {
+        let state = self.state.locked();
+        let routines: Vec<Value> = state
+            .routines
+            .iter()
+            .filter(|r| r.bot_id == bot && !r.deleted)
+            .map(|r| {
+                let full = public(&state, r);
+                json!({"id": r.id, "botId": r.bot_id, "name": r.name, "enabled": r.enabled,
+                    "triggerDescriptions": full["triggerDescriptions"]})
+            })
+            .collect();
+        json!({ "routines": routines })
     }
 
     pub fn owns(&self, bot: &str, id: &str) -> bool {
@@ -278,16 +295,17 @@ impl Routines {
             Ok(r)
         })?;
         hub.add_entry(&Lane::main(bot), EntryKind::Notice, 0, &json!({"text":format!("{} routine: {name}", if updated {"Updated"} else {"Created"}), "routineId": id, "style":"info"}));
-        Ok(json!({"routine":public(&routine)}))
+        Ok(json!({"routine":public(&self.state.locked(), &routine)}))
     }
 
     pub fn set_enabled(&self, store: &Store, bot: &str, id: &str, enabled: bool) -> Result<Value> {
         self.change(store, |s| {
-            let r = s
+            let i = s
                 .routines
-                .iter_mut()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
+                .iter()
+                .position(|r| r.id == id && r.bot_id == bot && !r.deleted)
                 .context("routine not found")?;
+            let r = &mut s.routines[i];
             if enabled && !r.enabled {
                 r.next_runs = r.triggers.iter().map(|t| t.next(now_ms())).collect::<Result<_>>()?;
             }
@@ -300,7 +318,7 @@ impl Routines {
                     }
                 }
             }
-            Ok(json!({"routine":public(r)}))
+            Ok(json!({"routine":public(s, &s.routines[i])}))
         })
     }
 
@@ -410,6 +428,10 @@ impl Routines {
         let Some(event) = hooks::event(headers, body)? else {
             return Ok(json!({"ping": true}));
         };
+        // Only the host reports a run finishing, so a sender holding the key can't start a chain.
+        if event["source"] == chain::SOURCE {
+            return Err(Refused::Invalid("routine events come only from this host".into()));
+        }
         if !r.enabled {
             return Err(Refused::Paused);
         }
@@ -426,10 +448,18 @@ impl Routines {
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
     body[key].as_str().with_context(|| format!("{key} is required"))
 }
-fn public(r: &Routine) -> Value {
+fn public(s: &State, r: &Routine) -> Value {
+    let descriptions: Vec<String> = r
+        .triggers
+        .iter()
+        .map(|t| match (t, chain::upstream_name(s, t)) {
+            (Trigger::Event { event, filters, .. }, Some(name)) => chain::describe(&name, event, filters),
+            _ => t.description(),
+        })
+        .collect();
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
-        "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
+        "triggerDescriptions":descriptions,"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
     Run {

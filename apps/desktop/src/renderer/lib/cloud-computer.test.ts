@@ -8,7 +8,7 @@ const machine: CloudMachine = {
 }
 
 test('a cloud computer names its provider and region', () => {
-  assert.equal(placementLine(machine), 'Codync Cloud · Boat · EU')
+  assert.equal(placementLine(machine, (t) => t), 'Runs on Boat · EU')
 })
 
 test('an offline cloud computer that sleeps is not offline, and one that failed is an error', () => {

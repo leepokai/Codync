@@ -60,7 +60,7 @@ impl Channel {
         };
         tracing::info!(device = self.key, platform, "device paired");
         crate::analytics::device_paired(&self.hub, crate::analytics::Via::Qr, platform, false);
-        let mut ok = json!({"computerId": self.hub.identity.computer_id(), "name": crate::service::host_name()});
+        let mut ok = json!({"computerId": self.hub.identity.computer_id(), "name": crate::remote::managed::computer_name(&self.hub.store)});
         if owner.is_none() {
             // Joining the phone's account: the computer signs the claim the phone made; the phone, which holds
             // the account's session, completes it with the cloud.

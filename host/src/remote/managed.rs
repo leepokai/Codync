@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 
 /// Store key: this host is a cloud computer Codync runs (set from its claim ticket).
 const MANAGED: &str = "cloud_managed";
+const NAME: &str = "Codync Cloud";
 /// No device, turn, run or setup terminal for this long.
 const IDLE: Duration = Duration::from_mins(10);
 /// Awake at least this long after starting, so a wake always gets its work done.
@@ -44,6 +45,19 @@ pub fn is_managed(store: &Store) -> bool {
 
 pub fn set_managed(store: &Store) -> Result<()> {
     store.kv_set(MANAGED, "1")
+}
+
+/// The name every app shows for this computer: a cloud computer's machine gets another hostname on each wake.
+pub fn computer_name(store: &Store) -> String {
+    if is_managed(store) { NAME.into() } else { crate::service::host_name() }
+}
+
+/// What every app draws this computer as.
+pub async fn computer_device(store: &Store) -> Result<crate::service::Device> {
+    if is_managed(store) {
+        return Ok(crate::service::Device::Cloud);
+    }
+    Ok(tokio::task::spawn_blocking(crate::service::device).await?)
 }
 
 /// `CODYNC_SLEEP_IDLE_SECS` shortens the idle time for end-to-end tests.
@@ -184,5 +198,17 @@ mod tests {
         assert!(!routine_soon(None, 0));
         assert!(!routine_soon(Some(ROUTINE_LEAD_MS), 0));
         assert!(routine_soon(Some(ROUTINE_LEAD_MS - 1), 0));
+    }
+
+    #[tokio::test]
+    async fn a_cloud_computer_is_codync_cloud_with_a_cloud_in_every_app() {
+        let dir = std::env::temp_dir().join(format!("codync-managed-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let store = Store::open(&dir.join("t.db")).expect("store");
+        assert_eq!(computer_name(&store), crate::service::host_name());
+        set_managed(&store).expect("set");
+        assert_eq!(computer_name(&store), "Codync Cloud");
+        assert_eq!(computer_device(&store).await.expect("device"), crate::service::Device::Cloud);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

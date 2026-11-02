@@ -65,7 +65,7 @@ private final class AutoAccessStub: CloudComputerStub {
     let id = RelayCrypto.computerId(signKey: cloudKey)
 
     await accounts.refreshCloud()
-    #expect(accounts.cloudComputers.first { $0.computerId == id }?.cloud?.placement == "Boat · EU")
+    #expect(accounts.cloudComputers.first { $0.computerId == id }?.cloud.map { "\($0.providerName) · \($0.region)" } == "Boat · EU")
     #expect(accounts.cloudComputers.first { $0.computerId == id }?.cloud?.state.isAsleep == true)
     for _ in 0..<100 where accounts.pendingAccess[id] == nil {
         try await Task.sleep(for: .milliseconds(50))

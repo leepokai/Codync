@@ -43,7 +43,8 @@ export function ComputersView() {
   const removingOlder = removing !== null && cloud.isOlderCopy(removing)
   const managed = app.managedStores
   // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
-  const others = cloud.computers.filter((c) => c.computerId !== app.local?.computer.id)
+  // Account computers this app isn't using (iOS `accountOnly`): the ones it uses have their own card or section.
+  const others = cloud.computers.filter((c) => !app.store(c.computerId))
   const addSSH = (host: string) => setEditing({ profile: { ...newSSHProfile(window.codync.hostPort), host }, isNew: true })
 
   return (
@@ -300,11 +301,8 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
           <ComputerBadge computer={{ id: computer.computerId, name: computer.name, signKey: computer.signKey, urls: [], device: computer.device ?? null }} size={22} />
         </span>
         <div className="settings-stack">
-          <HStack gap={5}>
-            <Text size="callout" weight="medium" tone={olderCopy ? 'secondary' : undefined}>{computer.name}</Text>
-            {computer.cloud ? <span title={tr('Codync Cloud')}><Icon name="cloud" size={11} color="var(--secondary)" /></span> : null}
-          </HStack>
-          {computer.cloud ? <Text size="caption" tone="secondary">{placementLine(computer.cloud)}</Text> : null}
+          <Text size="callout" weight="medium" tone={olderCopy ? 'secondary' : undefined}>{computer.name}</Text>
+          {computer.cloud ? <Text size="caption" tone="secondary">{placementLine(computer.cloud, tr)}</Text> : null}
           <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />

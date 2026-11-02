@@ -4,7 +4,7 @@ import { Icon } from '../../components/Icon'
 import { Dialog } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { machineStatus, type CloudMachine } from '../../lib/cloud-computer'
+import { machineStatus, placementLine, type CloudMachine } from '../../lib/cloud-computer'
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import { useAccount } from '../../store/account'
@@ -76,7 +76,7 @@ function machineRows(machine: CloudMachine, model: CloudComputerModel, store: Bo
   return [
     <HStack key="machine" gap={10} className="settings-row">
       <Icon name="cloud" size={16} color="var(--secondary)" />
-      <Text grow>{tr('Runs on {provider} · {region}').replace('{provider}', machine.providerName).replace('{region}', machine.region)}</Text>
+      <Text grow>{placementLine(machine, tr)}</Text>
     </HStack>,
     <ValueRow key="state" label="State">
       <Text tone={status.error ? 'danger' : 'secondary'}>{tr(status.text)}</Text>

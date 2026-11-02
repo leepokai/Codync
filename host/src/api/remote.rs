@@ -153,7 +153,7 @@ async fn pairing(hub: &Arc<Hub>, short_code: bool) -> Result<Value> {
     let issued = hub.pairing.locked().issue();
     hub.auth_changed();
     let url = crate::service::pairing_url(&crate::service::PairingQr {
-        name: &crate::service::host_name(),
+        name: &crate::remote::managed::computer_name(&hub.store),
         computer_id: &hub.identity.computer_id(),
         sign_key: &hub.identity.sign_pub_b64(),
         box_key: &hub.identity.box_pub_b64(),

@@ -258,9 +258,9 @@ async fn answer(req: reqwest::RequestBuilder) -> Result<Value> {
 pub async fn register(hub: &Hub, cloud: &Address) -> Result<()> {
     let body = json!({
         "boxKey": hub.identity.box_pub_b64(),
-        "name": crate::service::host_name(),
+        "name": super::managed::computer_name(&hub.store),
         "platform": std::env::consts::OS,
-        "device": tokio::task::spawn_blocking(crate::service::device).await?,
+        "device": super::managed::computer_device(&hub.store).await?,
         "version": env!("CARGO_PKG_VERSION"),
     });
     let mut req = signed(hub, &cloud.url, Method::POST, "/v1/host/register", Some(&body))?;

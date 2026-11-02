@@ -76,7 +76,6 @@ class ConnectionPresentationTest {
         val behind = cloudState(LinkState.Ready(HostRoute.Relay), "running").copy(hello = buildJsonObject { put("version", "2.0.0") })
         assertTrue(behind.cloudUpdating)
         assertEquals("Updating…", statusText(behind))
-        assertEquals("Codync Cloud · Boat · EU", CloudMachine("boat", "Boat", "EU", "running").summary)
     }
 
     @Test fun theCloudTurningThisAppAwayAsksForAnUpdate() {

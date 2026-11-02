@@ -35,8 +35,11 @@ public struct CloudHosting: Codable, Hashable, Sendable {
     public var region: String
     public var state: CloudMachineState
 
-    /// "Boat · EU".
-    public var placement: String { "\(providerName) · \(region)" }
+    /// "Runs on Boat · EU", translated: under the cloud computer's name, which is Codync Cloud already.
+    public var runsOn: String {
+        L10n.tr("Runs on {provider} · {region}").replacingOccurrences(of: "{provider}", with: providerName)
+            .replacingOccurrences(of: "{region}", with: region)
+    }
 }
 
 public enum CloudMachineState: String, Codable, Sendable {

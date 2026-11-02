@@ -64,7 +64,8 @@ What changes against the generic design below:
    allowlist of user IDs while payments are set aside), D1 `cloud_machines`, the Boat calls in `cloud/machines/`
    (sans-I/O), and in the host a first-boot claim from `~/.codync/managed.json` (written by Boat's `files` before
    the sandbox is ready, deleted once used) plus `Approval::Auto`. The computer then appears in the account's
-   Computers list on every app; "Ask for access" is approved by the host itself. Tested end to end against a local
+   Computers list on every app, as *Codync Cloud* with a cloud icon (`device: "cloud"`; the machine's own hostname
+   changes on every wake, owner 2026-11-02); "Ask for access" is approved by the host itself. Tested end to end against a local
    Worker that the sandbox reaches through `boat forward --reverse`, so nothing is deployed (passed 2026-10-24:
    [trial log §11](codync-cloud-boat-trial.md#11-phase-1-end-to-end-2026-10-24)).
 2. **Sleep and wake**: host idle → `stop`; relay DO → Worker → `resume` on a device connection, mailbox item, hook

@@ -76,6 +76,7 @@ pub async fn run_ticket(hub: Arc<Hub>) {
             Ok(()) => {
                 tracing::info!(claim_id = ticket.claim_id, "claimed this computer for its Codync account");
                 remove(&path).await;
+                rename(&hub).await;
                 return;
             }
             Err(e) if is_final(&e) => {
@@ -98,6 +99,15 @@ async fn complete(hub: &Arc<Hub>, ticket: &Ticket) -> Result<()> {
     let base = cloud::codync_url(hub)?;
     cloud::call(hub, &base, Method::POST, "/v1/host/claim", Some(&body)).await?;
     Ok(())
+}
+
+/// The account keeps the name and icon the computer registered with, which may predate it knowing it is a cloud
+/// computer: registering again gives them Codync Cloud's.
+async fn rename(hub: &Hub) {
+    let Some(address) = cloud::current(&hub.store) else { return };
+    if let Err(e) = cloud::register(hub, &address).await {
+        tracing::warn!(error = format!("{e:#}"), "couldn't give the account this cloud computer's name");
+    }
 }
 
 async fn remove(path: &PathBuf) {

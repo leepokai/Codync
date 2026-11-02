@@ -47,7 +47,7 @@ public struct CloudComputerSection: View {
     }
 
     @ViewBuilder private func machineRows(_ machine: CloudMachine) -> some View {
-        let runsOn = "Runs on \(machine.hosting.placement)"
+        let runsOn = machine.hosting.runsOn
         if store.isPreparing {
             ValueRow(runsOn, detail: "Preparing your cloud computer…") { Spinner() }
         } else {
@@ -76,14 +76,14 @@ public struct CloudComputerSection: View {
     }
 }
 
-/// Under a Codync Cloud computer's name: the Cloud marker with the provider and region the cloud names.
+/// Under a Codync Cloud computer's name: the provider and region the cloud names.
 public struct CloudHostingLine: View {
     let hosting: CloudHosting
 
     public init(_ hosting: CloudHosting) { self.hosting = hosting }
 
     public var body: some View {
-        Label("Codync Cloud · \(hosting.placement)", systemImage: "cloud.fill")
+        Text(verbatim: hosting.runsOn)
             .font(.footnote)
             .foregroundStyle(Palette.secondary)
             .lineLimit(1)

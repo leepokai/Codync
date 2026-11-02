@@ -17,8 +17,8 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.CloudMachine
 import com.codync.android.design.*
 
-/** "Codync Cloud · Boat · EU": a cloud computer's line in the computer list (the brand stays English). */
-internal val CloudMachine.summary: String get() = "Codync Cloud · $providerName · $region"
+/** "Runs on Boat · EU": under the cloud computer's name, which is Codync Cloud already. */
+@Composable internal fun CloudMachine.runsOn(): String = tr("Runs on {provider} · {region}").replace("{provider}", providerName).replace("{region}", region)
 
 private val CloudMachine.stateLabel: String get() = when (state) {
     "starting" -> "Starting"
@@ -47,7 +47,7 @@ private val CloudMachine.stateLabel: String get() = when (state) {
             row {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Symbol("cloud", size = 20.dp, tint = Palette.text)
-                    Text(tr("Runs on {provider} · {region}").replace("{provider}", machine.providerName).replace("{region}", machine.region),
+                    Text(machine.runsOn(),
                         style = Type.body, color = Palette.text)
                 }
             }

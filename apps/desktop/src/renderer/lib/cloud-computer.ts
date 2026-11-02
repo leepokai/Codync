@@ -23,8 +23,9 @@ export interface StatusLine {
   error: boolean
 }
 
-/** "Codync Cloud · Boat · EU". */
-export const placementLine = (p: CloudPlacement) => `Codync Cloud · ${p.providerName} · ${p.region}`
+/** "Runs on Boat · EU", through `tr`: under the cloud computer's name, which is Codync Cloud already. */
+export const placementLine = (p: CloudPlacement, tr: (text: string) => string) =>
+  tr('Runs on {provider} · {region}').replace('{provider}', p.providerName).replace('{region}', p.region)
 
 /** An offline cloud computer that sleeps isn't offline, and one that failed is an error; null: plain offline. */
 export function offlineCloudStatus(cloud: CloudPlacement | null | undefined): StatusLine | null {

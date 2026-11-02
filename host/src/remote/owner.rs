@@ -85,9 +85,9 @@ pub async fn sign_claim(hub: &Hub, claim_id: &str, nonce: &str, user_id: &str) -
         "computerId": computer_id,
         "signKey": hub.identity.sign_pub_b64(),
         "boxKey": box_key,
-        "name": crate::service::host_name(),
+        "name": super::managed::computer_name(&hub.store),
         "platform": std::env::consts::OS,
-        "device": tokio::task::spawn_blocking(crate::service::device).await?,
+        "device": super::managed::computer_device(&hub.store).await?,
         "version": env!("CARGO_PKG_VERSION"),
         "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
     }))

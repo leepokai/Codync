@@ -178,7 +178,7 @@ pub fn host_name() -> String {
 }
 
 /// What the computer is, so phones can draw the right icon (Linux gets its penguin;
-/// Windows counts as a desktop).
+/// Windows counts as a desktop; a Codync Cloud computer, its cloud).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Device {
@@ -189,6 +189,7 @@ pub enum Device {
     MacPro,
     Desktop,
     Linux,
+    Cloud,
 }
 
 /// Detected once; on macOS from `system_profiler`'s model name.

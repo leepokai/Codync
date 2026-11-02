@@ -173,10 +173,9 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ComputerBadge(state.hello?.text("device"), 32.dp, computer.color)
             Text(state.hello?.text("name") ?: computer.name, Modifier.weight(1f), style = Type.body.semibold, color = Palette.text)
-            if (cloud != null) Symbol("cloud", size = 18.dp, tint = Palette.tertiary, contentDescription = "Codync Cloud")
             if (inAccount) Symbol("person.crop.circle.badge.checkmark", size = 20.dp, tint = Palette.tertiary, contentDescription = "In your account")
         }
-        if (cloud != null) Text(cloud.summary, style = Type.footnote, color = Palette.secondary)
+        if (cloud != null) Text(cloud.runsOn(), style = Type.footnote, color = Palette.secondary)
         // A sleeping cloud computer is fine: messaging it wakes it.
         val unreachable = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating && cloud?.asleep != true
         val ink = when {
@@ -253,9 +252,8 @@ private const val NETWORK_ICON = "codync.network"
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(computer.name, Modifier.weight(1f, fill = false), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (cloud != null) Symbol("cloud", size = 16.dp, tint = Palette.tertiary, contentDescription = "Codync Cloud")
             }
-            if (cloud != null) Text(cloud.summary, style = Type.footnote, color = Palette.secondary)
+            if (cloud != null) Text(cloud.runsOn(), style = Type.footnote, color = Palette.secondary)
             Text(detail, style = Type.subheadline, color = if (cloud?.failed == true) Palette.danger else Palette.secondary,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
@@ -342,5 +340,6 @@ internal fun computerSymbol(device: String?): String = when (device) {
     "macstudio" -> "macstudio"
     "macpro" -> "macpro.gen3"
     "linux" -> "computer.linux"
+    "cloud" -> "cloud"
     else -> "desktopcomputer"
 }

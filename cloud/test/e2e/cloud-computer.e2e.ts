@@ -89,6 +89,12 @@ async function main() {
   check((await cloud.call("POST", "/v1/devices", { token, key: phone.key, body: { name: "Cloud phone", platform: "ios" } })).status === 200, "phone registered");
   const listed = ((await cloud.call("GET", "/v1/computers", { token, key: phone.key })).body.computers as Json[]).find((c) => c.computerId === computerId);
   check(listed?.access === "none", "the cloud computer is in the account's list");
+  if (HOST_LINUX_BIN) {
+    // Not the machine's hostname, which changes on every wake (the released host before this build still sends it).
+    const named = async () => ((await cloud.call("GET", "/v1/computers", { token })).body.computers as Json[]).find((c) => c.computerId === computerId);
+    await waitFor("named", async () => ((c) => (c?.name === "Codync Cloud" && c.device === "cloud") || undefined)(await named()), 30_000);
+    check(true, "every app shows it as Codync Cloud with a cloud icon");
+  }
   const nD = ref.random(32);
   const req = await cloud.call("POST", `/v1/computers/${computerId}/access-requests`, {
     token,

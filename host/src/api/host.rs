@@ -64,7 +64,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "signKey": hub.identity.sign_pub_b64(),
                 "boxKey": hub.identity.box_pub_b64(),
                 "cloud": crate::remote::cloud::url(&hub.store),
-                "name": crate::service::host_name(),
+                "name": crate::remote::managed::computer_name(&hub.store),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
                 // Whether `installHostUpdate` can update this computer, from here or a phone.
@@ -72,7 +72,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 // The latest release, so a phone can say whether this computer is current (null: unknown).
                 "latestVersion": tokio::task::spawn_blocking(crate::update::latest_version).await?,
                 "os": std::env::consts::OS,
-                "device": tokio::task::spawn_blocking(crate::service::device).await?,
+                "device": crate::remote::managed::computer_device(&hub.store).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
                 "backends": backends::list(),
                 "icons": icons.icons,

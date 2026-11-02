@@ -1,20 +1,27 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { DropdownMenu, IconButton, Spinner } from '../../components/Controls'
+import { useEffect, useRef, useState } from 'react'
+import { DropdownMenu, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useModel } from '../../lib/observable'
 import { screenAvailable } from './screen-access'
-import { accessGuidance, failureText } from './screen-guidance'
+import { failureText, screenNotice } from './screen-guidance'
+import { useStageSize } from './screen-hooks'
+import { ScreenNotice } from './ScreenNotice'
 import type { PointerInfo } from './screen-input'
+import type { ViewerMode } from './screen-mode'
 import { ScreenViewerModel } from './screen-viewer-model'
+import type { Insets } from './screen-viewport'
 import './screen-viewer.css'
+
+/** The video keeps clear of the window's edges, with room below for the mode switch. */
+const VIDEO_INSETS: Insets = { top: 12, right: 16, bottom: 64, left: 16 }
 
 /** The Remote screen window: a computer's display with its mouse and keyboard (the phones' `ScreenView`, for a desktop). */
 export function ScreenViewerWindow({ computerId }: { computerId: string }) {
   const tr = useTr()
-  const [model] = useState(() => new ScreenViewerModel(computerId))
+  const [model] = useState(() => new ScreenViewerModel(computerId, { insets: VIDEO_INSETS }))
   useModel(model)
   const session = useModel(model.session)
   const screen = model.screen
@@ -112,21 +119,20 @@ export function ScreenViewerWindow({ computerId }: { computerId: string }) {
             <Icon name="display.2" size={14} weight="medium" />
           </DropdownMenu>
         ) : null}
-        {session ? (
-          <IconButton title={model.interactive ? 'Hand back to bots' : 'Take over'} icon={model.interactive ? 'hand.raised.slash' : 'hand.raised'} size={28}
-            disabled={screen?.input !== true} onClick={() => model.setInteractive(!model.interactive)} />
-        ) : null}
       </HStack>
-      <div ref={stage} className="screen-stage" onContextMenu={(e) => e.preventDefault()}>
-        <textarea ref={keys} className="screen-keys" aria-label={tr('Remote screen')} autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          onKeyDown={onKeyDown}
-          onCompositionEnd={(e) => { model.input.text(e.data); e.currentTarget.value = '' }}
-          onInput={(e) => { if (!(e.nativeEvent as InputEvent).isComposing) e.currentTarget.value = '' }} />
-        {live ? (
-          <video ref={video} className="screen-video" autoPlay muted playsInline
-            style={{ left: frame.x, top: frame.y, width: frame.width, height: frame.height }} />
-        ) : null}
-        <Overlay model={model} live={live} />
+      <div className="screen-body">
+        <div ref={stage} className="screen-stage" onContextMenu={(e) => e.preventDefault()}>
+          <textarea ref={keys} className="screen-keys" aria-label={tr('Remote screen')} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            onKeyDown={onKeyDown}
+            onCompositionEnd={(e) => { model.input.text(e.data); e.currentTarget.value = '' }}
+            onInput={(e) => { if (!(e.nativeEvent as InputEvent).isComposing) e.currentTarget.value = '' }} />
+          {live ? (
+            <video ref={video} className="screen-video" autoPlay muted playsInline
+              style={{ left: frame.x, top: frame.y, width: frame.width, height: frame.height }} />
+          ) : null}
+          <Overlay model={model} live={live} />
+        </div>
+        {session ? <ModeSwitch model={model} /> : null}
       </div>
     </VStack>
   )
@@ -136,60 +142,34 @@ export function ScreenViewerWindow({ computerId }: { computerId: string }) {
 function Overlay({ model, live }: { model: ScreenViewerModel; live: boolean }) {
   const tr = useTr()
   const { screen, session } = model
-  const phase = session?.phase
-  if (!live) {
-    if (model.unreachable && !screen) return <Notice icon="wifi.slash" text={tr('This computer is offline.')} />
-    if (!screen) return <Notice text={tr('Connecting to the screen…')} />
-    return <Notice icon="lock.display" text={accessGuidance(screen, tr)} />
-  }
-  if (phase?.kind === 'connecting') return <Notice text={tr('Connecting to the screen…')} />
-  if (phase?.kind === 'reconnecting') return <Notice text={tr('Reconnecting…')} dim />
-  if (phase?.kind === 'failed') return <Notice icon="exclamationmark.triangle" text={failureText(phase.failure, tr)} retry={() => model.retry()} />
+  const notice = screenNotice({ live, unreachable: model.unreachable, screen, phase: session?.phase }, tr)
+  if (notice) return <ScreenNotice notice={notice} retry={() => model.retry()} />
   const note = screen && !screen.input
     ? tr('View only. To allow control, open Codync → Settings → Computer access on the computer.')
     : session?.lastError ?? null
   return note ? <Text className="screen-note" size="caption">{note}</Text> : null
 }
 
-/** A centered icon (or a spinner), a line and an optional retry. */
-function Notice({ icon, text, retry, dim = false }: { icon?: string; text: string; retry?: () => void; dim?: boolean }) {
+/** View or Take control, under the video: View sends nothing; Take control drives the computer (and takes it from the bots). */
+function ModeSwitch({ model }: { model: ScreenViewerModel }) {
+  const tr = useTr()
+  const canControl = model.screen?.input === true
+  const options: { mode: ViewerMode; label: string }[] = [{ mode: 'view', label: tr('View') }, { mode: 'control', label: tr('Take control') }]
   return (
-    <VStack gap={12} align="center" className={`screen-notice ${dim ? 'dim' : ''}`}>
-      {icon ? <Icon name={icon} size={36} color="var(--secondary)" /> : <Spinner size={22} />}
-      <Text size="callout" tone="secondary">{text}</Text>
-      {retry ? <IconButton title="Try again" icon="arrow.clockwise" size={32} onClick={retry} /> : null}
-    </VStack>
+    // The keyboard stays with the remote screen: pressing here doesn't take focus.
+    <div className="screen-mode" role="radiogroup" aria-label={tr('Remote screen')} onMouseDown={(e) => e.preventDefault()}>
+      {options.map(({ mode, label }) => {
+        const disabled = mode === 'control' && !canControl
+        return (
+          <button key={mode} role="radio" aria-checked={model.mode === mode} disabled={disabled}
+            title={disabled ? tr('View only. To allow control, open Codync → Settings → Computer access on the computer.') : undefined}
+            className={`screen-mode-option${model.mode === mode ? ' on' : ''}`} onClick={() => model.setMode(mode)}>
+            <Text size="callout" weight="medium">{label}</Text>
+          </button>
+        )
+      })}
+    </div>
   )
-}
-
-/** The video box's size and the device pixel ratio, kept on the model: they place the video and the pointer. */
-function useStageSize(stage: React.RefObject<HTMLDivElement | null>, model: ScreenViewerModel) {
-  useLayoutEffect(() => {
-    const element = stage.current
-    if (!element) return
-    const measure = () => {
-      const { width, height } = element.getBoundingClientRect()
-      model.setView({ width, height }, window.devicePixelRatio || 1)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    // Moving the window to another display changes the ratio without resizing it.
-    let query = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
-    const ratio = () => {
-      measure()
-      query.removeEventListener('change', ratio)
-      query = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
-      query.addEventListener('change', ratio)
-    }
-    query.addEventListener('change', ratio)
-    window.addEventListener('resize', measure)
-    return () => {
-      observer.disconnect()
-      query.removeEventListener('change', ratio)
-      window.removeEventListener('resize', measure)
-    }
-  }, [stage, model])
 }
 
 /** Mouse and wheel: presses start on the stage and follow the pointer anywhere until released. */

@@ -139,6 +139,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   const presentAgent = useCallback((id: string) => (id === botId ? presentRoutine(null) : setEditingMember(id)), [botId, presentRoutine])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
+  const screenTab = offersRemoteScreen(store.screen, store.shownConnection.kind === 'online' && !store.mismatch, store === app.local)
   const details = (
     <DetailsPanel
       key={routineRequest}
@@ -146,6 +147,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
       routineId={routineId}
       tab={detailsTab}
       setTab={setDetailsTab}
+      screenTab={screenTab}
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
       share={() => {
@@ -166,7 +168,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
           <TopFade />
           <div className="top-chrome-row">
             <Spacer />
-            {offersRemoteScreen(store.screen, store.shownConnection.kind === 'online' && !store.mismatch, store === app.local) ? (
+            {screenTab ? (
               <MacChatButton className="ringed" title="Remote screen" icon="display" onClick={() => openRemoteScreen(store)} />
             ) : null}
             {(!showSettings || !wide) && !compactDetails ? (

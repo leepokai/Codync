@@ -3,11 +3,19 @@ import { Observable } from '../../lib/observable'
 import { screenAvailable } from './screen-access'
 import { ScreenInput } from './screen-input'
 import { ScreenLink } from './screen-link'
+import { openingMode, type ViewerMode } from './screen-mode'
 import { messageOf } from './screen-recovery'
 import { ScreenSession } from './screen-session'
-import { ScreenViewport, type Size } from './screen-viewport'
+import { NO_INSETS, ScreenViewport, type Insets, type Size } from './screen-viewport'
 
 const POLL_MS = 3_000
+
+export interface ScreenViewerOptions {
+  /** Never takes control and sends no input: the preview in the details panel. */
+  viewOnly?: boolean
+  /** Space kept clear around the video. */
+  insets?: Insets
+}
 
 /** The Remote screen window's state for one computer: its status, the live session, who is in control, and input. */
 export class ScreenViewerModel extends Observable {
@@ -18,6 +26,10 @@ export class ScreenViewerModel extends Observable {
   session: ScreenSession | null = null
   /** This window controls the computer (bots may still look). */
   interactive = false
+  /** The mode the user chose, kept across reconnects; null until the first session picks the opening one. */
+  private preferred: ViewerMode | null = null
+  private readonly viewOnly: boolean
+  private readonly insets: Insets
   readonly input: ScreenInput
   private link: ScreenLink
   private tookOver = false
@@ -28,10 +40,18 @@ export class ScreenViewerModel extends Observable {
   private stopped = false
   private refreshing = false
 
-  constructor(computerId: string) {
+  constructor(computerId: string, { viewOnly = false, insets = NO_INSETS }: ScreenViewerOptions = {}) {
     super()
+    this.viewOnly = viewOnly
+    this.insets = insets
     this.link = new ScreenLink(computerId)
-    this.input = new ScreenInput((message) => this.session?.send(message), new ScreenViewport({ width: 0, height: 0 }, { width: 0, height: 0 }))
+    this.input = new ScreenInput((message) => this.session?.send(message), new ScreenViewport({ width: 0, height: 0 }, { width: 0, height: 0 }, insets))
+    // Nothing is sent until a mode allows it.
+    this.input.interactive = false
+  }
+
+  get mode(): ViewerMode {
+    return this.interactive ? 'control' : 'view'
   }
 
   /** The display on show: the chosen one, else the computer's main. */
@@ -41,10 +61,12 @@ export class ScreenViewerModel extends Observable {
   }
 
   start() {
-    void this.link.call<{ name?: string }>('hello').then((hello) => {
-      this.name = hello.name ?? ''
-      this.changed()
-    }, () => {})
+    if (!this.viewOnly) {
+      void this.link.call<{ name?: string }>('hello').then((hello) => {
+        this.name = hello.name ?? ''
+        this.changed()
+      }, () => {})
+    }
     void this.refresh()
     this.timer = setInterval(() => void this.refresh(), POLL_MS)
   }
@@ -71,7 +93,7 @@ export class ScreenViewerModel extends Observable {
       this.refreshing = false
     }
     if (this.stopped) return
-    if (this.screen && !this.screen.input && this.interactive) this.setInteractive(false)
+    if (this.screen && !this.screen.input && this.interactive) this.setMode('view')
     if (!screenAvailable(this.screen)) this.endSession()
     else if (!this.session) this.beginSession()
     this.syncViewport()
@@ -88,8 +110,9 @@ export class ScreenViewerModel extends Observable {
     this.session = session
     session.subscribe(() => this.sessionChanged(session))
     session.start()
-    // Opened from the computer's menu to use it: take the screen (bots may still look).
-    this.setInteractive(true)
+    // A window looks while a bot works on the screen and drives otherwise; the choice then outlives reconnects.
+    this.preferred ??= this.viewOnly ? 'view' : openingMode(this.screen)
+    this.setInteractive(this.preferred === 'control')
     this.syncViewport()
   }
 
@@ -115,11 +138,18 @@ export class ScreenViewerModel extends Observable {
 
   retry() {
     this.session?.start()
-    this.setInteractive(true)
+    this.setInteractive(this.preferred === 'control')
+  }
+
+  /** The window's View / Take control switch. A preview ignores it. */
+  setMode(mode: ViewerMode) {
+    if (this.viewOnly) return
+    this.preferred = mode
+    this.setInteractive(mode === 'control')
   }
 
   /** Control needs the computer's input permission; without it the window only looks. */
-  setInteractive(on: boolean) {
+  private setInteractive(on: boolean) {
     const allowed = on && this.screen?.input === true && this.session !== null
     this.interactive = allowed
     this.input.interactive = allowed
@@ -149,14 +179,15 @@ export class ScreenViewerModel extends Observable {
   private syncViewport() {
     const display = this.display
     if (!display) return
-    const viewport = new ScreenViewport({ width: display.width, height: display.height }, this.viewSize)
+    const viewport = new ScreenViewport({ width: display.width, height: display.height }, this.viewSize, this.insets)
     this.input.viewport = viewport
-    if (viewport.view.width > 0) this.session?.setPixels(viewport.pixels(this.pixelRatio))
+    if (viewport.area.width > 0 && viewport.area.height > 0) this.session?.setPixels(viewport.pixels(this.pixelRatio))
   }
 
   private reportSession(id: string | null) {
     const target = this.link.target
-    if (target) window.codync.screenViewer.report(target.baseURL, target.token, id)
+    // Only a Remote screen window reports: the main process closes its session if the window dies.
+    if (target && !this.viewOnly) window.codync.screenViewer.report(target.baseURL, target.token, id)
   }
 
   // MARK: clipboard

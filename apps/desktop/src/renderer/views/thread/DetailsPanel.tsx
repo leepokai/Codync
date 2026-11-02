@@ -14,26 +14,31 @@ import { MemoryCard } from '../bots/MemoryView'
 import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
 import { MacChatButton } from './MacChatButton'
+import { openRemoteScreen } from '../screen/open-remote-screen'
+import { ScreenThumbnail } from '../screen/ScreenThumbnail'
 import '../bots/bots.css'
 import './details-panel.css'
 import { useTr } from '../../lib/use-language'
 
 
-export type DetailsTab = 'details' | 'library' | 'memory' | 'settings'
+export type DetailsTab = 'details' | 'library' | 'memory' | 'computer' | 'settings'
 
 const TABS: { id: DetailsTab; label: string }[] = [
   { id: 'details', label: 'Details' },
   { id: 'library', label: 'Library' },
   { id: 'memory', label: 'Memory' },
+  { id: 'computer', label: 'Computer' },
   { id: 'settings', label: 'Settings' },
 ]
 
 /** The inspector beside a conversation (Grok Bot's): who the bot is, then its details, library, memory and settings. */
-export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArtifact, share, close }: {
+export function DetailsPanel({ botId, routineId, tab, setTab, screenTab, editGroup, openArtifact, share, close }: {
   botId: string
   routineId: string | null
   tab: DetailsTab
   setTab: (tab: DetailsTab) => void
+  /** The computer's screen can be viewed from here: the Computer tab shows. */
+  screenTab: boolean
   editGroup: () => void
   openArtifact: (artifactId: string) => void
   share: () => void
@@ -43,6 +48,9 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
   const bot = store.bots.get(botId) ?? null
   const group = !!bot && isGroup(bot)
   useScreenViewed('bot_details')
+  const tabs = TABS.filter((t) => (t.id !== 'library' || hasLibrary(store.hostVersion?.version)) && (t.id !== 'computer' || screenTab || tab === 'computer'))
+  // A new Computer tab needs a viewable screen, but one already open stays and says why the screen went (offline, off).
+  const shown = tabs.some((t) => t.id === tab) ? tab : 'details'
   return (
     <div className="details-panel">
       <div className="details-drag" />
@@ -56,18 +64,20 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
           <GroupMembersList group={bot} editGroup={editGroup} />
         ) : (
           <>
-            <TabChoice label="Conversation details" selection={tab} options={hasLibrary(store.hostVersion?.version) ? TABS : TABS.filter((t) => t.id !== 'library')} onChange={setTab} />
-            <div key={tab} className="details-tab fade-in">
-              {tab === 'details' ? (
+            <TabChoice label="Conversation details" selection={shown} options={tabs} onChange={setTab} />
+            <div key={shown} className="details-tab fade-in">
+              {shown === 'details' ? (
                 <>
                   <BotSettingsPanel botId={botId} part="often" />
                   {bot ? <ComputerUse bot={bot} /> : null}
                   <RoutinesView botId={botId} initialId={routineId} />
                 </>
-              ) : tab === 'library' ? (
+              ) : shown === 'library' ? (
                 <LibraryView botId={botId} openArtifact={openArtifact} />
-              ) : tab === 'memory' ? (
+              ) : shown === 'memory' ? (
                 <MemoryCard botId={botId} />
+              ) : shown === 'computer' ? (
+                <ScreenThumbnail computerId={store.computer.id} name={store.hostName} open={() => openRemoteScreen(store)} />
               ) : (
                 <BotSettingsPanel botId={botId} part="rarely" />
               )}

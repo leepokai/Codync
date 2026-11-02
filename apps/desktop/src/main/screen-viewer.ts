@@ -34,6 +34,18 @@ export class ScreenViewers {
       this.live.set(e.sender.id, { baseURL, token, session: typeof session === 'string' ? session : null })
     })
     ipcMain.on('screenViewer:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close())
+    ipcMain.handle('screenViewer:list', () => this.openComputers())
+  }
+
+  /** The computers whose Remote screen window is open. */
+  private openComputers(): string[] {
+    return [...this.windows].filter(([, window]) => !window.isDestroyed()).map(([computerId]) => computerId)
+  }
+
+  /** Tells every window (the details panel's preview yields to the full viewer) which windows are open. */
+  private announce() {
+    const open = this.openComputers()
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('screenViewer:windows', open)
   }
 
   open(computerId: string, name: string) {
@@ -55,6 +67,7 @@ export class ScreenViewers {
     })
     const id = window.webContents.id
     this.windows.set(computerId, window)
+    this.announce()
     // Cmd+W, Cmd+Q, Cmd+F and the rest go to the remote computer while this window has focus, not to this app's menu.
     window.webContents.setIgnoreMenuShortcuts(true)
     // Windows and Linux would otherwise open the menu bar on a lone Alt or F10, and the keys after it never reach the remote.
@@ -62,6 +75,7 @@ export class ScreenViewers {
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.on('closed', () => {
       if (this.windows.get(computerId) === window) this.windows.delete(computerId)
+      this.announce()
       const live = this.live.get(id)
       this.live.delete(id)
       if (live?.session) void call(live.baseURL, live.token, 'screenClose', { session: live.session }, 15_000).catch(() => {})

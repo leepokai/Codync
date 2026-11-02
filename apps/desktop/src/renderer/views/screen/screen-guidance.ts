@@ -1,5 +1,6 @@
 import type { ScreenState } from '@shared/models'
 import type { Failure } from './screen-recovery'
+import type { Phase } from './screen-session'
 
 /**
  * Why the screen can't be viewed yet, and what to do on that computer (the phones'
@@ -24,5 +25,32 @@ export function failureText(failure: Failure, tr: (text: string) => string): str
     case 'unreachable': return tr("Couldn't reach the computer.")
     case 'host': return failure.detail ?? tr("Couldn't reconnect to the remote screen.")
     case 'reconnect': return tr("Couldn't reconnect to the remote screen.")
+  }
+}
+
+/** What covers a viewer in place of the video: an icon or a spinner, a line, and whether a retry goes with it. */
+export interface Notice {
+  icon?: string
+  text: string
+  retry?: boolean
+  /** A small note over the video, not a cover. */
+  dim?: boolean
+}
+
+/** The notice a viewer (window or preview) shows for its state, or null when the video plays. `tr` takes literals. */
+export function screenNotice(
+  { live, unreachable, screen, phase }: { live: boolean; unreachable: boolean; screen: ScreenState | null; phase: Phase | undefined },
+  tr: (text: string) => string,
+): Notice | null {
+  if (!live) {
+    if (unreachable && !screen) return { icon: 'wifi.slash', text: tr('This computer is offline.') }
+    if (!screen) return { text: tr('Connecting to the screen…') }
+    return { icon: 'lock.display', text: accessGuidance(screen, tr) }
+  }
+  switch (phase?.kind) {
+    case 'connecting': return { text: tr('Connecting to the screen…') }
+    case 'reconnecting': return { text: tr('Reconnecting…'), dim: true }
+    case 'failed': return { icon: 'exclamationmark.triangle', text: failureText(phase.failure, tr), retry: true }
+    default: return null
   }
 }

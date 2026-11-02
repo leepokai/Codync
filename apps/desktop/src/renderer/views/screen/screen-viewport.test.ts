@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ScreenViewport } from './screen-viewport.ts'
+import { ScreenViewport, type Insets } from './screen-viewport.ts'
 
 const near = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≠ ${expected}`)
 
@@ -51,4 +51,49 @@ test('before layout the view is empty and nothing is NaN', () => {
   assert.equal(viewport.scale, 1)
   assert.equal(viewport.toDisplay({ x: 0, y: 0 }), null)
   assert.ok(Number.isFinite(viewport.pixels(2).width))
+})
+
+const padded: Insets = { top: 10, right: 20, bottom: 50, left: 20 }
+
+test('insets keep the video clear of the edges and the mode switch', () => {
+  // The area is 960×540 at (20, 10): a 1920×1080 display fits it at 0.5.
+  const viewport = new ScreenViewport({ width: 1920, height: 1080 }, { width: 1000, height: 600 }, padded)
+  near(viewport.scale, 0.5)
+  assert.deepEqual(viewport.frame, { x: 20, y: 10, width: 960, height: 540 })
+  assert.deepEqual(viewport.toDisplay({ x: 20, y: 10 }), { x: 0, y: 0 }, 'the video corner')
+  assert.deepEqual(viewport.toDisplay({ x: 500, y: 280 }), { x: 960, y: 540 })
+  assert.equal(viewport.toDisplay({ x: 10, y: 300 }), null, 'a click in the side inset is not sent')
+  assert.equal(viewport.toDisplay({ x: 500, y: 570 }), null, 'a click on the strip under the video is not sent')
+})
+
+test('with insets the letterbox centers inside the area, not the view', () => {
+  const viewport = new ScreenViewport({ width: 1000, height: 500 }, { width: 1000, height: 600 }, padded)
+  // Area 960×540: width-bound, scale 0.96, the frame 960×480 centered in the area's height.
+  near(viewport.scale, 0.96)
+  const f = viewport.frame
+  near(f.x, 20)
+  near(f.y, 10 + (540 - 480) / 2)
+  assert.equal(viewport.toDisplay({ x: 500, y: 12 }), null, 'the letterbox bar above the video')
+  const middle = viewport.toDisplay({ x: 500, y: 10 + 540 / 2 })
+  assert.ok(middle)
+  near(middle.x, (500 - 20) / 0.96)
+  near(middle.y, 250)
+})
+
+test('a drag past the video clamps to the display even from inside an inset', () => {
+  const viewport = new ScreenViewport({ width: 1000, height: 500 }, { width: 1000, height: 600 }, padded)
+  assert.deepEqual(viewport.clampToDisplay({ x: 0, y: 0 }), { x: 0, y: 0 })
+  assert.deepEqual(viewport.clampToDisplay({ x: 1000, y: 600 }), { x: 999, y: 499 })
+})
+
+test('the computer is asked for the area, not the whole view', () => {
+  const viewport = new ScreenViewport({ width: 1920, height: 1080 }, { width: 1000, height: 600 }, padded)
+  assert.deepEqual(viewport.pixels(2), { width: 1920, height: 1080 })
+})
+
+test('a view smaller than its insets is empty and nothing is NaN', () => {
+  const viewport = new ScreenViewport({ width: 1000, height: 500 }, { width: 30, height: 40 }, padded)
+  assert.equal(viewport.scale, 1)
+  assert.equal(viewport.toDisplay({ x: 20, y: 10 }), null)
+  assert.ok(Number.isFinite(viewport.frame.x) && Number.isFinite(viewport.pixels(2).width))
 })

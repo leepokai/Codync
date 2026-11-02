@@ -60,6 +60,8 @@
   color: var(--secondary);
 }
 
+.details-scroll .tab-choice { flex-wrap: wrap; padding: 0 12px; }
+
 .details-tab {
   display: flex;
   flex-direction: column;

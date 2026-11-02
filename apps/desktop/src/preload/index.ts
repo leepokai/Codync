@@ -134,6 +134,8 @@ const bridge: CodyncBridge = {
     open: (computerId, name) => ipcRenderer.send('screenViewer:open', computerId, name),
     report: (baseURL, token, session) => ipcRenderer.send('screenViewer:report', baseURL, token, session),
     close: () => ipcRenderer.send('screenViewer:close'),
+    openWindows: () => ipcRenderer.invoke('screenViewer:list'),
+    onWindowsChanged: (cb) => listen('screenViewer:windows', cb),
   },
   app: {
     reportError: (report) => ipcRenderer.send('app:reportError', report),

@@ -31,6 +31,7 @@ const map: Record<string, IconNode> = {
   'arrow.down.circle': L.CircleArrowDown,
   'arrow.clockwise.circle': L.RotateCw,
   'arrow.down.right.and.arrow.up.left': L.Minimize2,
+  'arrow.up.left.and.arrow.down.right': L.Maximize2,
   'arrow.left': L.ArrowLeft,
   'arrow.left.arrow.right': L.ArrowLeftRight,
   'arrow.right': L.ArrowRight,

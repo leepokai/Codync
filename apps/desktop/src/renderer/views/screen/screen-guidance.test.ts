@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ScreenState } from '../../../shared/models.ts'
-import { accessGuidance, failureText } from './screen-guidance.ts'
+import { accessGuidance, failureText, screenNotice } from './screen-guidance.ts'
 import { offersRemoteScreen, screenAvailable } from './screen-access.ts'
 
 const state = (extra: Partial<ScreenState>): ScreenState =>
@@ -40,4 +40,17 @@ test('a failure reads in this app\'s wording, except the host\'s own text, which
   assert.equal(failureText({ reason: 'reconnect', detail: null }, tr), "«Couldn't reconnect to the remote screen.»")
   assert.equal(failureText({ reason: 'unreachable', detail: null }, tr), "«Couldn't reach the computer.»")
   assert.equal(failureText({ reason: 'host', detail: 'Remote screen is turned off on this computer.' }, tr), 'Remote screen is turned off on this computer.')
+})
+
+test('the notice names why the screen is missing, and nothing while the video plays', () => {
+  const base = { live: false, unreachable: false, screen: null, phase: undefined }
+  assert.deepEqual(screenNotice({ ...base, unreachable: true }, same), { icon: 'wifi.slash', text: 'This computer is offline.' })
+  assert.deepEqual(screenNotice(base, same), { text: 'Connecting to the screen…' })
+  assert.match(screenNotice({ ...base, screen: state({ enabled: false }) }, same)?.text ?? '', /^Remote screen is off\./)
+  const live = { ...base, live: true, screen: state({}) }
+  assert.deepEqual(screenNotice({ ...live, phase: { kind: 'connecting' } }, same), { text: 'Connecting to the screen…' })
+  assert.deepEqual(screenNotice({ ...live, phase: { kind: 'reconnecting' } }, same), { text: 'Reconnecting…', dim: true })
+  const failed = screenNotice({ ...live, phase: { kind: 'failed', failure: { reason: 'unreachable', detail: null } } }, same)
+  assert.deepEqual(failed, { icon: 'exclamationmark.triangle', text: "Couldn't reach the computer.", retry: true })
+  assert.equal(screenNotice({ ...live, phase: { kind: 'live' } }, same), null)
 })

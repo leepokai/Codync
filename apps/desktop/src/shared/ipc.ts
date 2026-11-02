@@ -254,6 +254,10 @@ export interface CodyncBridge {
     report(baseURL: string, token: string, session: string | null): void
     /** Closes this window. */
     close(): void
+    /** The computers whose window is open now. */
+    openWindows(): Promise<string[]>
+    /** The computers whose window is open, whenever one opens or closes. */
+    onWindowsChanged(cb: (computerIds: string[]) => void): () => void
   }
   app: {
     /** Error tracking: an uncaught error in this window (shared/error-report.ts). */

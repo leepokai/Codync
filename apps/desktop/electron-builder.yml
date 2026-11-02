@@ -50,6 +50,7 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: Talk to your bots in a voice call.
     NSSpeechRecognitionUsageDescription: Your words are transcribed on this Mac and sent to your bot as a message.
+    NSLocalNetworkUsageDescription: Connect to model servers and devices on your local network.
   # The host ships inside the Mac app; Linux uses the installed codync-host (an AppImage's
   # mount path changes every launch, so a service can't point into it).
   extraResources:

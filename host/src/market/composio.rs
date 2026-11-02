@@ -26,7 +26,9 @@ pub const INSTRUCTIONS: &str = "Act in the user's connected apps through Composi
 `search_tools`, read its parameters with `get_tool`, then run it with `execute`. Tool slugs look like \
 GMAIL_SEND_EMAIL. Only the apps listed by `list_apps` are available to you. An app can have several \
 accounts (e.g. several Gmail inboxes): `list_apps` gives each its `account` id; pass it to `execute` to pick \
-one, and run the tool once per account to cover them all.";
+one. To read or search across apps with several accounts, run the read tool once per account. Anything that \
+writes (sending, replying, creating, deleting) runs once, on the account the user meant; if that isn't clear, \
+ask which one.";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -502,13 +504,8 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
             let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
             let t = tool(&c.key, slug).await?;
             let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
-            let app = match args["account"].as_str().filter(|s| !s.is_empty()) {
-                Some(id) => apps
-                    .iter()
-                    .find(|a| a.id == id && a.toolkit.eq_ignore_ascii_case(&toolkit))
-                    .ok_or_else(|| anyhow!("account `{id}` isn't a connected {toolkit} account (see list_apps)"))?,
-                None => app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?,
-            };
+            let app = pick(&apps, &toolkit, args["account"].as_str())
+                .map_err(|e| anyhow!("{slug}: {e}"))?;
             let arguments = args.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
             let v = post(
                 &c.key,
@@ -525,6 +522,19 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
     }
 }
 
+/// The connection a tool runs on: the given `account` of `toolkit`, else its first connection.
+fn pick<'a>(apps: &'a [Connection], toolkit: &str, account: Option<&str>) -> Result<&'a Connection> {
+    let of_toolkit = |a: &&Connection| a.toolkit.eq_ignore_ascii_case(toolkit);
+    match account.filter(|s| !s.is_empty()) {
+        Some(id) => apps
+            .iter()
+            .filter(of_toolkit)
+            .find(|a| a.id == id)
+            .ok_or_else(|| anyhow!("account `{id}` isn't a connected {toolkit} account this bot can use (see list_apps)")),
+        None => apps.iter().find(of_toolkit).ok_or_else(|| anyhow!("belongs to an app this bot can't use")),
+    }
+}
+
 async fn tool(key: &str, slug: &str) -> Result<Value> {
     get(key, &format!("/tools/{slug}"), &[("toolkit_versions", "latest")]).await
 }
@@ -532,6 +542,21 @@ async fn tool(key: &str, slug: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn conn(id: &str, toolkit: &str) -> Connection {
+        Connection { id: id.into(), toolkit: toolkit.into(), name: String::new(), logo: None, status: "active".into() }
+    }
+
+    #[test]
+    fn pick_chooses_the_requested_account() {
+        let apps = [conn("ca_1", "gmail"), conn("ca_2", "gmail"), conn("ca_3", "slack")];
+        assert_eq!(pick(&apps, "gmail", None).unwrap().id, "ca_1");
+        assert_eq!(pick(&apps, "gmail", Some("")).unwrap().id, "ca_1");
+        assert_eq!(pick(&apps, "GMAIL", Some("ca_2")).unwrap().id, "ca_2");
+        assert!(pick(&apps, "gmail", Some("ca_3")).is_err(), "an account of another app");
+        assert!(pick(&apps, "gmail", Some("ca_9")).is_err(), "an unknown account");
+        assert!(pick(&apps, "notion", None).is_err(), "an app the bot can't use");
+    }
 
     #[tokio::test]
     async fn consumer_key_explains_connect_authentication_without_saving() {

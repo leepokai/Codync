@@ -199,7 +199,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
         selected={isSelected}
         dragKey={key}
         onHover={(on) => setHovered((h) => (on ? key : h === key ? null : h))}
-        onClick={() => app.select(item.ref)}
+        onClick={() => app.open(item.ref)}
         onContext={(x, y) => onContext(item.bot, item.store, x, y)}
         lifted={held && lift !== null}
         drag={pointerDrag({ start: (from) => liftRow(item, siblings, from), over: dragOver, drop, cancel: endDrag })}

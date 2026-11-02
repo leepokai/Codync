@@ -24,6 +24,18 @@ class OnboardingTest {
         compose.onNodeWithText("Get started").assertDoesNotExist()
     }
 
+    @Test fun aFailedRestoreOffersTryAgainWhileSignInWaits() {
+        compose.mainClock.autoAdvance = false
+        val failed = AccountContext(loading = false,
+            account = AccountState(ready = false, configured = true, error = "Couldn't restore sign-in. Check your connection and retry."))
+        compose.setContent { Hosted { CodyncApp(failed, emptyMap(), viewModel()) } }
+        step()
+        // Below the fold: scrolling would wait on a clock this test holds still.
+        compose.onNodeWithText("Couldn't restore sign-in. Check your connection and retry.").assertExists()
+        compose.onNodeWithContentDescription("Try again").assertIsEnabled()
+        compose.onNodeWithText("Continue with Apple").assertIsNotEnabled()
+    }
+
     @Test fun welcomeLeadsToInstallAndBackReturnsToWelcome() {
         // The welcome crew never stops moving: step the clock by hand so the test can settle.
         compose.mainClock.autoAdvance = false

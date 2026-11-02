@@ -4,7 +4,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.Computer
 import com.codync.android.core.DeviceIdentity
+import com.codync.android.core.OutgoingFile
+import com.codync.android.core.PendingSend
 import com.codync.android.core.RelayCrypto
+import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -56,6 +59,30 @@ class LocalStoreTest {
             assertFalse(signedOut.hasIdentity())
             assertTrue(signedOut.computers().isEmpty())
             assertNull("nothing left to move", account.adopt(signedOut))
+        } finally { signedOut.erase(); account.erase() }
+    }
+
+    @Test fun aNewAccountsDraftsAndQueuedMessagesKeepTheirFiles() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val scope = "test-${java.util.UUID.randomUUID()}"
+        val signedOut = LocalStore(context, "$scope-local")
+        val account = LocalStore(context, scope)
+        try {
+            signedOut.identity()
+            val mac = computer(1, "Mac mini")
+            signedOut.saveComputers(listOf(mac))
+            val photo = File(File(signedOut.directory, "outgoing").apply { mkdirs() }, java.util.UUID.randomUUID().toString()).apply { writeText("photo") }
+            val file = OutgoingFile(photo.path, "photo.jpg", photo.length())
+            DraftBook(signedOut.directory, mac.id).save(listOf(ComposerDraft("bot", "draft", listOf(file))))
+            MirrorDatabase(context, signedOut.directory, mac.id).use { it.save(PendingSend("queued", "bot", "queued", 1, files = listOf(file))) }
+            assertEquals(LocalStore.Adoption(1, MovedKeys.Moved), account.adopt(signedOut))
+            val draft = DraftBook(account.directory, mac.id).read().single().files.single()
+            val queued = MirrorDatabase(context, account.directory, mac.id).use { it.snapshot().pending.single().files.single() }
+            for (moved in listOf(draft, queued)) {
+                assertEquals(File(account.directory, "outgoing"), File(moved.path).parentFile)
+                assertEquals("photo", File(moved.path).readText())
+            }
+            assertFalse("the signed-out folder is gone", photo.exists())
         } finally { signedOut.erase(); account.erase() }
     }
 

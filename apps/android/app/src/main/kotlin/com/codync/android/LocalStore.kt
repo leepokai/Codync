@@ -17,7 +17,7 @@ import javax.crypto.spec.GCMParameterSpec
 import kotlinx.serialization.json.Json
 
 /** Account-scoped, atomic storage excluded from both backup and device transfer. */
-class LocalStore(context: Context, val contextId: String = "local") {
+class LocalStore(private val context: Context, val contextId: String = "local") {
     private val scopeId = MessageDigest.getInstance("SHA-256").digest(contextId.toByteArray())
         .joinToString("") { "%02x".format(it) }
     val referenceId = referenceId(contextId)
@@ -83,6 +83,11 @@ class LocalStore(context: Context, val contextId: String = "local") {
         // Not the sealed identity or AtomicFile's leftovers of it: only [sealSeeds] writes this scope's.
         for (file in from.directory.listFiles().orEmpty().filter { !it.name.startsWith("identity") }) {
             file.copyRecursively(File(directory, file.name), overwrite = true)
+        }
+        // Drafts and queued messages name their files by full path: point them at the copies here.
+        for (computer in from.computers()) {
+            DraftBook(directory, computer.id).relocate(from.directory)
+            MirrorDatabase.relocate(context, directory, computer.id, from.directory)
         }
         true
     } catch (error: Exception) {

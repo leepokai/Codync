@@ -20,10 +20,15 @@ import Testing
         let key = try DeviceIdentity.load(context: local)
         local.computers = [v.computer]
         local.composerDrafts = [v.computer.id: ["b1": "draft"]]
+        let cache = URL.cachesDirectory.appending(path: "codync-mirror-tests-\(local.id)-\(v.computer.id).json")
+        try Data("unsent".utf8).write(to: cache)
 
         #expect(account.adopt(from: local) == .init(computers: 1, keys: .moved))
         #expect(account.computers == [v.computer])
         #expect(account.composerDrafts[v.computer.id]?["b1"] == "draft")
+        let movedCache = URL.cachesDirectory.appending(path: "codync-mirror-tests-\(account.id)-\(v.computer.id).json")
+        #expect(try Data(contentsOf: movedCache) == Data("unsent".utf8), "unsent messages come along")
+        #expect(!FileManager.default.fileExists(atPath: cache.path()))
         let moved = try DeviceIdentity.load(context: account)
         #expect(moved.publicKey == key.publicKey, "hosts see the same device")
         #expect(moved.pushKey == key.pushKey, "push keeps opening")

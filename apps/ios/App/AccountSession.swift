@@ -47,6 +47,19 @@ final class AccountSession {
         }
         return isReady
     }
+    /// Clerk gave up restoring (launched offline, an outage) and tries again only when the app comes back to the
+    /// foreground, so the welcome offers `retryRestore()`. Clears itself once Clerk loads.
+    var restoreFailed: Bool { restoreGaveUp && !isReady }
+    private var restoreGaveUp = false
+
+    /// Clerk's launch refresh again: the environment and the client it restores sign-in from.
+    func retryRestore() async {
+        guard let clerk, restoreFailed else { return }
+        restoreGaveUp = false
+        _ = try? await clerk.refreshEnvironment()
+        _ = try? await clerk.refreshClient()
+        restoreGaveUp = !isReady
+    }
     /// The Codync cloud (accounts and the encrypted relay); nil in builds without one.
     let cloudURL: URL?
     var isSignedIn: Bool { userID != nil }
@@ -74,6 +87,8 @@ final class AccountSession {
             telemetryEnabled: false,
             redirectConfig: .init(redirectUrl: "\(scheme)://callback", callbackUrlScheme: scheme)
         ))
+        // Clerk's own launch refresh tries three times within a few seconds, then only logs.
+        Task { restoreGaveUp = !(await waitUntilReady(timeout: .seconds(10))) }
         if key.hasPrefix("pk_test_"), let ticket = env["CODYNC_DEV_SIGN_IN_TICKET"], !ticket.isEmpty {
             Task { await signInForDevelopment(ticket: ticket) }
         }

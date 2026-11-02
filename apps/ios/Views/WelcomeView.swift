@@ -83,7 +83,17 @@ struct WelcomeView: View {
                     Text(message).font(.footnote).foregroundStyle(Palette.danger)
                         .transition(.opacity)
                 }
+                if account.restoreFailed {
+                    HStack(spacing: 8) {
+                        Text(L10n.tr("Couldn't restore sign-in. Check your connection and retry."))
+                            .font(.footnote).foregroundStyle(Palette.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                        IconButton("Try again", systemImage: "arrow.clockwise") { Task { await account.retryRestore() } }
+                    }
+                    .transition(.opacity)
+                }
             }
+            .animation(Motion.fade, value: account.restoreFailed)
             .rise(beat >= 4)
         }
         .padding(.horizontal, 24)

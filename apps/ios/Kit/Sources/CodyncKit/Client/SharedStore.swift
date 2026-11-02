@@ -114,12 +114,15 @@ public enum SharedStore {
             DeviceIdentity.delete(context: self)
             do { try ActivityIconCache.erase(context: id) }
             catch { Logger(subsystem: "com.pokai.Codync", category: "CustomIcon").error("Cannot erase activity icons: \(error.localizedDescription)") }
+            for file in mirrorCaches() { try? FileManager.default.removeItem(at: file) }
+        }
+
+        /// This context's mirror caches (`BotStore.saveCache`): `codync-mirror-<app>-<id>-<computer>.json`.
+        fileprivate func mirrorCaches() -> [URL] {
             let caches = URL.cachesDirectory
-            let marker = "-\(id)-"
-            for file in (try? FileManager.default.contentsOfDirectory(atPath: caches.path())) ?? []
-            where file.hasPrefix("codync-mirror-") && file.contains(marker) {
-                try? FileManager.default.removeItem(at: caches.appending(path: file))
-            }
+            return ((try? FileManager.default.contentsOfDirectory(atPath: caches.path())) ?? [])
+                .filter { $0.hasPrefix("codync-mirror-") && $0.contains("-\(id)-") }
+                .map { caches.appending(path: $0) }
         }
     }
 }
@@ -150,6 +153,12 @@ public extension SharedStore.Context {
                 return merge(moving)
             }
             for name in Self.names { defaults.set(local.defaults.object(forKey: local.key(name)), forKey: key(name)) }
+            // Unsent and failed messages live only in the mirror caches: they come along rather than go with `erase()`.
+            for file in local.mirrorCaches() {
+                let name = file.lastPathComponent
+                guard let marker = name.range(of: "-\(local.id)-") else { continue }
+                try? FileManager.default.moveItem(at: file, to: file.deletingLastPathComponent().appending(path: name.replacingCharacters(in: marker, with: "-\(id)-")))
+            }
             return Adoption(computers: moving.count, keys: .moved)
         }
         return merge(moving)

@@ -64,6 +64,7 @@ The two calls are best effort, with a short timeout each. Signing out never fail
 | --- | --- | --- |
 | Configured | Restoring (`isReady == false`) | The launch splash. The last active context stays loaded, as `AppStore.init` already does, so an offline launch keeps working |
 | Configured | Ready, signed out | The sign-in screen |
+| Configured | Restore failed (offline launch, Clerk outage) | With no last account context: the sign-in screen with its buttons disabled, "Couldn't restore sign-in" and a Try again button (Android: `AccountStore.retryAccounts` → `Clerk.reinitialize`, sooner than Clerk's own retry, which backs off to a minute; iPhone, where Clerk retries only on returning to the foreground: `AccountSession.retryRestore`, shown once Clerk isn't loaded 10 seconds after launch). The desktop instead stays "restoring" and retries every 30 seconds |
 | Configured | Signed in | Today's flow: pairing when there's no computer, else the tabs |
 | Not configured | — | Today's flow, signed-out context |
 
@@ -102,14 +103,14 @@ After either case the signed-out context is erased, and when computers moved an 
 - `SharedStore.Context.adopt(from:)` in the Kit:
   - Moves the Keychain items `com.pokai.Codync.device-key` / `push-key` from account `local` to the context id.
   - Moves the `UserDefaults` names in `Context.names` to their `account.<id>.` keys.
-  - Drops `ActivityIconCache` and the `codync-mirror-local-*` caches, which rebuild.
+  - Drops `ActivityIconCache`, which rebuilds. When the keys move, the signed-out mirror caches are renamed into the account's, since they hold the messages not yet sent; otherwise they go.
   - The Kit's test bundle has no Keychain entitlement, so its tests keep keys in memory (`Keychain.memory`, debug builds only).
 - Unit tests in `CodyncKitTests` cover both cases.
 
 **Android**
 - `LocalStore.adopt(from)`:
   - The identity is sealed with a per-scope Keystore alias and AAD, so the seeds are decrypted with the old key and sealed again under the new scope.
-  - Every other file in the folder is copied.
+  - Every other file in the folder is copied. Drafts and queued messages name their attachments by full path, so after the copy they're pointed at the new folder's `outgoing/` (`AttachmentFiles.moved`, `DraftBook.relocate`, `MirrorDatabase.relocate`).
   - In the merge case only `computers.json` merges.
 - Unit tests cover both cases.
 

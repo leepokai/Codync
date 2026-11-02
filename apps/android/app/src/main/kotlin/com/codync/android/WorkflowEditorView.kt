@@ -47,6 +47,9 @@ import kotlinx.serialization.json.put
     var error by remember(id) { mutableStateOf<String?>(null) }
     var conditionNote by remember(id) { mutableStateOf(false) }
     var sheet by remember(id) { mutableStateOf(openNode) }
+    LaunchedEffect(openStep) {
+        if (!openStep.isNullOrBlank()) sheet = openNode
+    }
     val kicks = remember(id) { Channel<Unit>(Channel.CONFLATED) }
     val scope = rememberCoroutineScope()
     fun apply(next: Graph) {

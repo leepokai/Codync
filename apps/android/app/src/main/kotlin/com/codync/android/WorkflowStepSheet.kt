@@ -270,10 +270,10 @@ import kotlinx.coroutines.launch
 }
 
 @Composable private fun SoloRun(store: AppStore, workflowId: String, nodeId: String, pendingStepId: String?) {
-    var step by remember(nodeId) { mutableStateOf<WorkflowStep?>(null) }
-    var approvalId by remember(nodeId) { mutableStateOf(pendingStepId) }
-    var error by remember(nodeId) { mutableStateOf<String?>(null) }
-    var busy by remember(nodeId) { mutableStateOf(false) }
+    var step by remember(nodeId, pendingStepId) { mutableStateOf<WorkflowStep?>(null) }
+    var approvalId by remember(nodeId, pendingStepId) { mutableStateOf(pendingStepId) }
+    var error by remember(nodeId, pendingStepId) { mutableStateOf<String?>(null) }
+    var busy by remember(nodeId, pendingStepId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     error?.let { Text(tr(it), style = Type.caption, color = Palette.danger) }
     val approval = approvalId

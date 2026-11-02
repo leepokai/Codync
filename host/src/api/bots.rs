@@ -338,6 +338,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "memory" | "memoryFile" => crate::chat::memory::call(hub, method, &b).await?,
+        "importAgentMemory" => crate::chat::memory::import_agent_memory(hub, str_arg(&b, "botId")?, &b["facts"]).await?,
         "library" => crate::chat::library::list(hub, str_arg(&b, "botId")?)?,
         "readArtifact" | "renameArtifact" => crate::chat::artifacts::api(hub, method, &b).await?,
         "editHandoff" | "keepConversation" => crate::chat::handoff::call(hub, method, &b)?,

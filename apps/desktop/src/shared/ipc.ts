@@ -19,6 +19,17 @@ export type HostState =
   | { kind: 'failed'; message: string }
 
 /** This computer's own host, once it answered. */
+/** The files of another agent's folder that the importer reads (`main/agent-import.ts`). */
+export interface AgentFolder {
+  root: string
+  /** Path relative to the agent's home (or its workspace) → text. */
+  files: Record<string, string>
+  /** Settings and secret files: named, never read. */
+  secretPaths: string[]
+  /** Something was left out for size. */
+  truncated: boolean
+}
+
 export interface LocalHost {
   computerId: string
   baseURL: string
@@ -220,6 +231,10 @@ export interface CodyncBridge {
     /** Makes `codync-artifact://<id>` serve this HTML. */
     show(id: string, html: Uint8Array): Promise<void>
     openInBrowser(id: string, html: Uint8Array): Promise<void>
+  }
+  agentImport: {
+    /** Asks for another agent's folder and reads the few files that matter; null when cancelled. */
+    pick(): Promise<AgentFolder | null>
   }
   files: {
     begin(file: SharedFile): Promise<string | null>

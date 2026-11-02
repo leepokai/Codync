@@ -17,9 +17,9 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 新增俄文介面：到「設定」選擇語言。
 
 ### en-US
-- Codync now asks you to sign in with Apple, Google or GitHub. Computers you paired before come along, no new scan.
+- Sign in with Apple, Google or GitHub. Computers paired before come along, no new scan.
 - Signing out stops notifications and keeps your computers: sign back in, no scan.
-- Delete your account in the app: account button (top left of Bots), then Delete account.
-- Pairing checks your account: a computer in another account says whose; one in no account asks first, then joins yours.
+- Delete your account: account button (top left of Bots), then Delete account.
+- Pairing checks accounts: a computer in another account says whose; one in none asks first, then joins yours.
 - Or type the short code `codync-host pair` prints instead of scanning.
 - New Russian interface: pick it under Settings → Language.

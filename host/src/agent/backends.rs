@@ -144,6 +144,22 @@ pub fn belongs_to_other(backend: &str, program: &str) -> bool {
         && !HARNESSES.iter().any(|h| own(h) && h.bins.contains(&name))
 }
 
+/// Why `backend`'s agent quit, from the stderr it left: a CLI too old for its ACP mode is told to update,
+/// anything else is the line that explains it.
+pub fn exit_reason(backend: &str, stderr_tail: &str) -> Option<String> {
+    let outdated = catalog::OUTDATED.iter().any(|(id, says)| *id == backend && stderr_tail.contains(says));
+    match harness(backend).filter(|_| outdated) {
+        Some(h) => {
+            let update = match h.install {
+                Some(Install::Npm(pkg)) => format!("Update it (npm install -g {pkg}@latest) and try again."),
+                _ => "Update it and try again.".to_owned(),
+            };
+            Some(format!("The {} on this computer is too old to run in Codync. {update}", h.name))
+        }
+        None => acp::stderr_reason(stderr_tail),
+    }
+}
+
 pub fn is_known(id: &str) -> bool {
     harness(id).is_some() || registry::agent(id).is_some()
 }

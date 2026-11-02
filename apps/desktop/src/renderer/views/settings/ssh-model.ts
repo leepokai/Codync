@@ -8,10 +8,12 @@ import { BotStore } from '../../store/bot-store'
 
 /** The main process's SSH computers, mirrored for views. */
 class SSHModel extends Observable {
-  state: SSHState = { profiles: [], status: {}, attachments: [] }
+  state: SSHState = { profiles: [], status: {}, attachments: [], needsLinger: [] }
   /** `~/.ssh/config`'s hosts and whether the user allowed reading it; null until known. */
   config: SSHConfigHosts | null = null
   private started = false
+  /** Profiles installed from here: their computer joins the account once it's up (installing shows the intent). */
+  private joining = new Set<string>()
 
   start() {
     if (this.started) return
@@ -43,6 +45,16 @@ class SSHModel extends Observable {
   get newConfigHosts() {
     const added = new Set(this.state.profiles.map((p) => p.host))
     return (this.config?.hosts ?? []).filter((h) => !added.has(h.alias))
+  }
+
+  install(id: string) {
+    this.joining.add(id)
+    window.codync.ssh.install(id)
+  }
+
+  /** Whether the computer attached through `profileId` was installed from here; true once. */
+  takeInstalled(profileId: string) {
+    return this.joining.delete(profileId)
   }
 
   status(id: string) {
@@ -77,8 +89,10 @@ export function useSSHAttachments(app: AppModel) {
         if (attached.get(id) === key) continue
         const cached = app.computers.find((c) => c.id === id)
         const computer: Computer = { ...a.computer, urls: [], color: cached?.color ?? null, device: cached?.device ?? null }
-        app.attach(computer, new BotStore(computer, true, () => new LoopbackTransport(a.baseURL, a.token)))
+        const store = new BotStore(computer, true, () => new LoopbackTransport(a.baseURL, a.token))
+        app.attach(computer, store)
         attached.set(id, key)
+        if (ssh.takeInstalled(a.profileId)) void app.cloud.joinAfterInstall(store)
       }
       for (const id of [...attached.keys()]) {
         if (live.has(id)) continue

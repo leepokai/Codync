@@ -1,6 +1,7 @@
 // Clerk-authenticated account routes: devices, claims, computers, access requests and grants.
 
 import { computerIdFor, fromB64url, randomId, utf8, verifyEd25519 } from "../auth";
+import { CERT_TTL_MS, certify } from "../certificate";
 import {
   ApiError,
   audit,
@@ -99,6 +100,25 @@ export async function listDevices(c: Ctx) {
   return {
     devices: results.map((d) => ({ ...deviceView(d), lastUsedAt: d.last_used_at, revoked: d.revoked_at !== null })),
   };
+}
+
+/** A certificate that this (registered, unrevoked) device key is in the caller's account, for pairing in person. */
+export async function deviceCertificate(c: Ctx) {
+  const u = await user(c);
+  const s = await signed(c);
+  if (!c.env.DEVICE_CERT_KEY) throw new ApiError("notConfigured", "This cloud doesn't issue device certificates");
+  const known = await c.env.DB.prepare("SELECT 1 FROM devices WHERE owner_user_id = ? AND sign_pub = ? AND revoked_at IS NULL")
+    .bind(u.userId, s.kid)
+    .first();
+  if (!known) throw new ApiError("forbidden", "Register this device with the account first");
+  const certificate = await certify(c.env.DEVICE_CERT_KEY, {
+    v: 1,
+    deviceKey: s.kid,
+    userId: u.userId,
+    email: u.email,
+    exp: c.now + CERT_TTL_MS,
+  });
+  return { certificate };
 }
 
 export async function revokeDevice(c: Ctx, [deviceId]: string[]) {

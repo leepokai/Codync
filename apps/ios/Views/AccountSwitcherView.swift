@@ -28,6 +28,7 @@ struct AccountSwitcherView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountSession.self) private var account
     @State private var confirmSignOut = false
+    @State private var confirmDelete = false
     @State private var pairing = false
     @State private var addingAccount = false
 
@@ -63,6 +64,11 @@ struct AccountSwitcherView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(account.isBusy)
+                    Button { confirmDelete = true } label: {
+                        RowLabel("Delete account", systemImage: "trash", tint: Palette.danger)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(account.isBusy)
                 }
             }
 
@@ -92,6 +98,10 @@ struct AccountSwitcherView: View {
         .codyncDialog("Sign out of \(account.email ?? "this account")?", isPresented: $confirmSignOut,
                       message: "This iPhone forgets the account's computers. Your bots stay on them.") {
             [DialogAction("Sign out", destructive: true) { Task { await app.signOut() } }]
+        }
+        .codyncDialog("Delete your Codync account?", isPresented: $confirmDelete,
+                      message: "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.") {
+            [DialogAction("Delete account", destructive: true) { Task { await app.deleteAccount() } }]
         }
     }
 
@@ -161,29 +171,6 @@ struct AccountSwitcherView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-    }
-}
-
-/// Google's mark plus the one line it needs; used wherever sign-in is offered.
-struct GoogleSignInButton: View {
-    @Environment(AccountSession.self) private var account
-
-    var body: some View {
-        Button { Task { await account.signIn() } } label: {
-            ZStack {
-                HStack(spacing: 10) {
-                    Image("google").resizable().frame(width: 20, height: 20)
-                    Text(L10n.tr("Continue with Google"))
-                }
-                .opacity(account.isBusy ? 0 : 1)
-                if account.isBusy { Spinner(size: 18) }
-            }
-            .font(.headline)
-            .frame(maxWidth: .infinity, minHeight: 50)
-        }
-        .buttonStyle(.secondary)
-        .disabled(account.isBusy)
-        .animation(Motion.fade, value: account.isBusy)
     }
 }
 

@@ -47,6 +47,19 @@ final class AccountSession {
         }
         return isReady
     }
+    /// Clerk gave up restoring (launched offline, an outage) and tries again only when the app comes back to the
+    /// foreground, so the welcome offers `retryRestore()`. Clears itself once Clerk loads.
+    var restoreFailed: Bool { restoreGaveUp && !isReady }
+    private var restoreGaveUp = false
+
+    /// Clerk's launch refresh again: the environment and the client it restores sign-in from.
+    func retryRestore() async {
+        guard let clerk, restoreFailed else { return }
+        restoreGaveUp = false
+        _ = try? await clerk.refreshEnvironment()
+        _ = try? await clerk.refreshClient()
+        restoreGaveUp = !isReady
+    }
     /// The Codync cloud (accounts and the encrypted relay); nil in builds without one.
     let cloudURL: URL?
     var isSignedIn: Bool { userID != nil }
@@ -74,6 +87,8 @@ final class AccountSession {
             telemetryEnabled: false,
             redirectConfig: .init(redirectUrl: "\(scheme)://callback", callbackUrlScheme: scheme)
         ))
+        // Clerk's own launch refresh tries three times within a few seconds, then only logs.
+        Task { restoreGaveUp = !(await waitUntilReady(timeout: .seconds(10))) }
         if key.hasPrefix("pk_test_"), let ticket = env["CODYNC_DEV_SIGN_IN_TICKET"], !ticket.isEmpty {
             Task { await signInForDevelopment(ticket: ticket) }
         }
@@ -112,47 +127,44 @@ final class AccountSession {
         var errorDescription: String? { "Sign in again to reach your account." }
     }
 
-    enum SignInProvider: String {
-        case google = "Google"
-        case apple = "Apple"
-    }
-
-    func signIn(provider: SignInProvider = .google) async {
+    func signIn(provider: AnalyticsEvent.SignInProvider) async {
         guard !isBusy else { return }
-        guard let clerk else {
-            errorMessage = "Sign-in setup isn't finished yet. You can continue using local pairing."
-            return
-        }
-        let tracked: AnalyticsEvent.SignInProvider = provider == .apple ? .apple : .google
-        Analytics.shared.capture(.signInStarted(tracked))
+        guard let clerk else { return }
+        Analytics.shared.capture(.signInStarted(provider))
         isBusy = true
         errorMessage = nil
         defer { isBusy = false }
         do {
-            // Both providers use Clerk's transfer flow and activate the same kind of session.
+            // Every provider uses Clerk's transfer flow and activates the same kind of session.
+            let name: String
             let result: TransferFlowResult
             switch provider {
-            case .google:
-                result = try await clerk.auth.signInWithOAuth(provider: .google, prefersEphemeralWebBrowserSession: isSignedIn)
             case .apple:
+                name = "Apple"
                 result = try await clerk.auth.signInWithApple()
+            case .google:
+                name = "Google"
+                result = try await clerk.auth.signInWithOAuth(provider: .google, prefersEphemeralWebBrowserSession: isSignedIn)
+            case .github:
+                name = "GitHub"
+                result = try await clerk.auth.signInWithOAuth(provider: .github, prefersEphemeralWebBrowserSession: isSignedIn)
             }
             switch result {
             case .signIn(let signIn):
                 if signIn.status != .complete {
-                    errorMessage = "\(provider.rawValue) sign-in needs additional verification. Your account is not signed in yet."
+                    errorMessage = "\(name) sign-in needs additional verification. Your account is not signed in yet."
                 }
             case .signUp(let signUp):
                 if signUp.status != .complete {
-                    errorMessage = "\(provider.rawValue) sign-up needs additional account information. Your account is not signed in yet."
+                    errorMessage = "\(name) sign-up needs additional account information. Your account is not signed in yet."
                 }
             }
-            Analytics.shared.capture(errorMessage == nil ? .signedIn(tracked) : .signInFailed(tracked, reason: .verification))
+            Analytics.shared.capture(errorMessage == nil ? .signedIn(provider) : .signInFailed(provider, reason: .verification))
         } catch where Self.isCancellation(error) {
-            Analytics.shared.capture(.signInFailed(tracked, reason: .cancelled))
+            Analytics.shared.capture(.signInFailed(provider, reason: .cancelled))
         } catch {
             errorMessage = "Couldn't sign in. Check your connection and try again."
-            Analytics.shared.capture(.signInFailed(tracked, reason: .error))
+            Analytics.shared.capture(.signInFailed(provider, reason: .error))
         }
     }
 
@@ -175,6 +187,18 @@ final class AccountSession {
         } catch {
             errorMessage = "Couldn't sign out. Check your connection and try again."
         }
+    }
+
+    /// Deletes the signed-in user in Clerk (App Store 5.1.1(v)); the cloud cleans up after Clerk's `user.deleted`.
+    /// Throws when Clerk refused or couldn't be reached, and then nothing changed.
+    func deleteUser() async throws {
+        guard let clerk, let user = clerk.user, let sessionID = clerk.session?.id else { throw SessionError.signedOut }
+        isBusy = true
+        errorMessage = nil
+        defer { isBusy = false }
+        try await user.delete()
+        // Clerk ends the session with the user; make sure it's gone here too.
+        if userID == user.id { try? await clerk.auth.signOut(sessionId: sessionID) }
     }
 
     /// Every account on this device, for starting over.

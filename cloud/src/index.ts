@@ -26,12 +26,16 @@ export interface Env {
   HOOK_LIMITER?: RateLimit;
   /** Cloud assistant (MCP connector) requests per account. */
   ASSISTANT_LIMITER?: RateLimit;
+  /** Short pairing codes typed per account and per IP. */
+  PAIRING_CODE_LIMITER?: RateLimit;
   CLERK_ISSUER: string;
   CLERK_SECRET_KEY?: string;
   /** dev / e2e only: networkless verification with this public key. */
   CLERK_JWT_KEY?: string;
   CLERK_AUTHORIZED_PARTIES?: string;
   CLERK_WEBHOOK_SECRET?: string;
+  /** Ed25519 private key (JWK JSON) that signs device certificates; hosts compile in its public half. */
+  DEVICE_CERT_KEY?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
 }
@@ -56,6 +60,7 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/v1\/me$/, api.me],
   ["POST", /^\/v1\/devices$/, api.registerDevice],
   ["GET", /^\/v1\/devices$/, api.listDevices],
+  ["POST", /^\/v1\/devices\/certificate$/, api.deviceCertificate],
   ["DELETE", new RegExp(`^/v1/devices/${ID}$`), api.revokeDevice],
   ["POST", /^\/v1\/claims$/, api.createClaim],
   ["POST", new RegExp(`^/v1/claims/${ID}/complete$`), api.completeClaim],
@@ -75,6 +80,8 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", new RegExp(`^/v1/host/access-requests/${ID}/decision$`), api.hostDecision],
   ["POST", new RegExp(`^/v1/host/grants/${ID}/revoke$`), api.hostRevokeGrant],
   ["POST", /^\/v1\/host\/unclaim$/, api.hostUnclaim],
+  ["POST", /^\/v1\/host\/pairing-codes$/, api.createPairingCode],
+  ["GET", new RegExp(`^/v1/pairing-codes/${ID}$`), api.redeemPairingCode],
   ["GET", /^\/v1\/relay\/host$/, api.relayHost],
   // Any segment reaches the handler so a malformed computerId gets its 400 (§7.1).
   ["GET", /^\/v1\/relay\/device\/([^/]+)$/, api.relayDevice],

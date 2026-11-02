@@ -134,6 +134,10 @@ describe("SAS, offer, claim, push", () => {
     expect(ref.sasCode(hostSign.pub, device.pub, nD, nH)).toBe(V.sas.code);
   });
 
+  it("pairing check", () => {
+    expect(ref.pairCheck(device.pub, hostSign.pub)).toBe(V.pairCheck.code);
+  });
+
   it("offer id", () => {
     expect(ref.offerId(u(V.pairing.code))).toBe(V.pairing.offerId);
   });

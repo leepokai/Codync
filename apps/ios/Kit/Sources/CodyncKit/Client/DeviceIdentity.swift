@@ -40,6 +40,20 @@ public struct DeviceIdentity: Sendable {
         Keychain.delete(service: pushService, account: context.id)
     }
 
+    /// Whether `context` has a device key yet (`load` creates one).
+    static func exists(context: SharedStore.Context) -> Bool {
+        (try? Keychain.read(service: deviceService, account: context.id)) != nil
+    }
+
+    /// Hands `source`'s keys to `target`, which must have none: hosts keep seeing the same device.
+    static func move(from source: SharedStore.Context, to target: SharedStore.Context) throws {
+        for service in [deviceService, pushService] {
+            guard let raw = try Keychain.read(service: service, account: source.id) else { continue }
+            try Keychain.add(raw, service: service, account: target.id)
+            Keychain.delete(service: service, account: source.id)
+        }
+    }
+
     var deviceKey: Data { signing.publicKey.rawRepresentation }
 
     func sign(_ data: Data) throws -> Data { try signing.signature(for: data) }
@@ -109,7 +123,15 @@ enum Keychain {
         return q
     }
 
+    #if DEBUG
+    /// The Kit's test bundle has no Keychain entitlement (-34018), so tests keep keys here; nil uses the Keychain.
+    static let memory = OSAllocatedUnfairLock<[String: Data]?>(initialState: nil)
+    #endif
+
     static func read(service: String, account: String) throws -> Data? {
+        #if DEBUG
+        if let stored = memory.withLock({ $0 }) { return stored["\(service)/\(account)"] }
+        #endif
         var q = query(service: service, account: account)
         q[kSecReturnData] = true
         q[kSecMatchLimit] = kSecMatchLimitOne
@@ -124,19 +146,36 @@ enum Keychain {
     /// Stores a new key; if another process won the race, returns the one it stored.
     static func create<K: RawKey>(service: String, account: String, _ make: () -> K) throws -> K {
         let key = make()
-        var q = query(service: service, account: account)
-        q[kSecValueData] = key.rawRepresentation
-        q[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        switch SecItemAdd(q as CFDictionary, nil) {
-        case errSecSuccess: return key
-        case errSecDuplicateItem:
+        do {
+            try add(key.rawRepresentation, service: service, account: account)
+            return key
+        } catch let error as Failure where error.status == errSecDuplicateItem {
             guard let raw = try read(service: service, account: account) else { throw Failure(status: errSecItemNotFound) }
             return try K(rawRepresentation: raw)
-        case let status: throw Failure(status: status)
         }
     }
 
+    static func add(_ raw: Data, service: String, account: String) throws {
+        #if DEBUG
+        if memory.withLock({ $0 != nil }) {
+            try memory.withLock { stored in
+                guard stored?["\(service)/\(account)"] == nil else { throw Failure(status: errSecDuplicateItem) }
+                stored?["\(service)/\(account)"] = raw
+            }
+            return
+        }
+        #endif
+        var q = query(service: service, account: account)
+        q[kSecValueData] = raw
+        q[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(q as CFDictionary, nil)
+        guard status == errSecSuccess else { throw Failure(status: status) }
+    }
+
     static func delete(service: String, account: String) {
+        #if DEBUG
+        if memory.withLock({ $0 != nil }) { memory.withLock { $0?["\(service)/\(account)"] = nil }; return }
+        #endif
         SecItemDelete(query(service: service, account: account) as CFDictionary)
     }
 }

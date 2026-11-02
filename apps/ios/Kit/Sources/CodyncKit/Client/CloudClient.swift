@@ -58,10 +58,36 @@ public struct CloudClient: Sendable {
         let _: Res = try await request("POST", "v1/devices", body: ["name": name, "platform": platform], signed: true)
     }
 
+    /// What pairing shows a computer to prove this device's account. 403: the key isn't registered (or was revoked).
+    public func deviceCertificate() async throws -> DeviceCertificate {
+        struct Res: Decodable { var certificate: DeviceCertificate }
+        let res: Res = try await request("POST", "v1/devices/certificate", signed: true)
+        return res.certificate
+    }
+
     public func devices() async throws -> [CloudDevice] {
         struct Res: Decodable { var devices: [CloudDevice] }
         let res: Res = try await request("GET", "v1/devices")
         return res.devices
+    }
+
+    /// Signing out: this device leaves the account, and with it every grant and pending request.
+    public func revokeThisDevice() async throws {
+        guard let device = try await thisDevice() else { return }
+        try await send("DELETE", "v1/devices/\(device.deviceId)")
+    }
+
+    /// This device in the account; nil without a device key or when it was never registered.
+    private func thisDevice() async throws -> CloudDevice? {
+        guard let identity else { return nil }
+        return try await devices().first(where: { $0.deviceKey == identity.publicKey })
+    }
+
+    /// This client on the session token it would send now, for a call that goes out after signing out: a
+    /// session token stays valid until it expires (about a minute). Nil when there's no token to take.
+    public func pinningToken() async -> CloudClient? {
+        guard let token = try? await token() else { return nil }
+        return CloudClient(baseURL: baseURL, identity: identity, session: session) { token }
     }
 
     // MARK: computers
@@ -85,8 +111,8 @@ public struct CloudClient: Sendable {
 
     /// Revokes only this phone's grants, so it can request a fresh approval without removing the computer.
     public func revokeDeviceAccess(_ id: ComputerID) async throws {
-        guard let identity else { throw CloudError(status: 0, code: "noDeviceKey", message: "Sign in again on this device.") }
-        guard let device = try await devices().first(where: { $0.deviceKey == identity.publicKey }) else {
+        guard identity != nil else { throw CloudError(status: 0, code: "noDeviceKey", message: "Sign in again on this device.") }
+        guard let device = try await thisDevice() else {
             throw CloudError(status: 404, code: "notFound", message: "This phone isn't registered in your account. Sign in again.")
         }
         for grant in try await grants(id) where grant.deviceId == device.deviceId {
@@ -151,6 +177,24 @@ public struct CloudClient: Sendable {
 
     // MARK: claims (§4.2 A)
 
+    public func createClaim() async throws -> CloudClaim {
+        try await request("POST", "v1/claims")
+    }
+
+    /// `claim`: the JSON object the computer signed while pairing, sent as it came.
+    public func completeClaim(claimId: String, claim: Data) async throws {
+        let _: Ignored = try await request("POST", "v1/claims/\(claimId)/complete", json: claim, signed: false)
+    }
+
+    // MARK: pairing codes
+
+    /// The pairing link a short code (`Pairing.shortCode`) stands for. The cloud hands it out once.
+    public func pairingLink(code: String) async throws -> String {
+        struct Res: Decodable { var link: String }
+        let res: Res = try await request("GET", "v1/pairing-codes/\(code)")
+        return res.link
+    }
+
     // MARK: plumbing
 
     private struct NoBody: Encodable {}
@@ -165,11 +209,15 @@ public struct CloudClient: Sendable {
     }
 
     func request<T: Decodable>(_ method: String, _ path: String, body: (some Encodable)? = NoBody?.none, signed: Bool = false) async throws -> T {
+        try await request(method, path, json: try body.map { try JSONEncoder().encode($0) }, signed: signed)
+    }
+
+    private func request<T: Decodable>(_ method: String, _ path: String, json: Data?, signed: Bool) async throws -> T {
         let url = baseURL.appending(path: path)
         var req = URLRequest(url: url, timeoutInterval: 20)
         req.httpMethod = method
-        let data = try body.map { try JSONEncoder().encode($0) } ?? Data()
-        if body != nil {
+        let data = json ?? Data()
+        if json != nil {
             req.httpBody = data
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }

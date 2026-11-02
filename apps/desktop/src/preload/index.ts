@@ -75,6 +75,7 @@ const bridge: CodyncBridge = {
     onChange: (cb) => listen('account:change', cb),
     signIn: (provider) => ipcRenderer.invoke('account:signIn', provider),
     signOut: () => ipcRenderer.invoke('account:signOut'),
+    deleteAccount: () => ipcRenderer.invoke('account:delete'),
     token: () => ipcRenderer.invoke('account:token'),
   },
   speech: {
@@ -137,6 +138,7 @@ const bridge: CodyncBridge = {
     pickExport: () => ipcRenderer.invoke('app:pickExport'),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),
     setTraySummary: (summary: TraySummary) => ipcRenderer.send('app:traySummary', summary),
+    showWindow: () => ipcRenderer.send('app:showWindow'),
     onCommand: (cb: (c: WindowCommand) => void) => listen('app:command', cb),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
     setLaunchAtLogin: (on) => ipcRenderer.invoke('app:setLaunchAtLogin', on),

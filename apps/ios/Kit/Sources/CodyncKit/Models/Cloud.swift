@@ -76,6 +76,35 @@ public struct CloudDevice: Codable, Hashable, Sendable, Identifiable {
     public var id: String { deviceId }
 }
 
+/// The cloud's word that this device key is in the account (`POST /v1/devices/certificate`), shown to a computer
+/// when pairing; it checks the signature offline. `payload` is the signed JSON text, passed on unchanged.
+public struct DeviceCertificate: Codable, Hashable, Sendable {
+    public var payload: String
+    public var sig: String
+
+    public init(payload: String, sig: String) {
+        self.payload = payload
+        self.sig = sig
+    }
+
+    /// When computers stop taking it; 0 when the payload can't be read.
+    public var exp: Int64 {
+        struct Claims: Decodable { var exp: Int64 }
+        return (try? JSONDecoder().decode(Claims.self, from: Data(payload.utf8)))?.exp ?? 0
+    }
+
+    /// Valid for more than another day: reused rather than asked for again.
+    public func isFresh(at now: Date = .now) -> Bool { isValid(at: now.addingTimeInterval(86_400)) }
+
+    public func isValid(at now: Date = .now) -> Bool { exp > Int64(now.timeIntervalSince1970 * 1000) }
+}
+
+/// A claim the account opened (`POST /v1/claims`), for a computer in no account to sign while pairing.
+public struct CloudClaim: Codable, Hashable, Sendable {
+    public var claimId: String
+    public var nonce: String
+}
+
 /// `GET /v1/computers/{id}/grants`.
 public struct CloudGrant: Codable, Hashable, Sendable, Identifiable {
     public var grantId: String

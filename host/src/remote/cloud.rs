@@ -4,7 +4,6 @@
 //! SAS. Which cloud this host uses lives in `cloud_url`, the relay socket in `relay`.
 
 use crate::LockExt;
-use crate::chat::team::assistant;
 use crate::hub::Hub;
 use crate::remote::crypto::{self, b64};
 use crate::store::{Device, DeviceSource, Scope, Store, now_ms};
@@ -64,6 +63,9 @@ pub struct CloudStatus {
     pub assistants: bool,
     /// Whose relay: on a private one there is no account, access request or relayed screen.
     pub relay: RelayKind,
+    /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs asks to bring it
+    /// into its account. Kept by [`update_status`], so every app words it the same.
+    pub can_join_account: bool,
 }
 
 /// How account devices get in (`setApproval`, local only).
@@ -113,6 +115,8 @@ pub struct Cloud {
     requests: Mutex<Vec<Request>>,
     /// One state pull at a time.
     pulling: tokio::sync::Mutex<()>,
+    /// Held while the account changes and while pairing saves a phone against it (`owner::while_unchanged`).
+    pub(super) account: Mutex<()>,
     /// Bumped when the cloud is turned on or off or pointed elsewhere: the relay restarts.
     pub config: watch::Sender<u64>,
 }
@@ -123,6 +127,7 @@ impl Default for Cloud {
             status: Mutex::default(),
             requests: Mutex::default(),
             pulling: tokio::sync::Mutex::new(()),
+            account: Mutex::default(),
             config: watch::Sender::new(0),
         }
     }
@@ -144,6 +149,7 @@ pub fn update_status(hub: &Hub, f: impl FnOnce(&mut CloudStatus)) {
         let mut s = hub.cloud.status.locked();
         let before = s.clone();
         f(&mut s);
+        s.can_join_account = s.enabled && s.relay == RelayKind::Codync && s.owner.is_none();
         (*s != before).then(|| s.clone())
     };
     if let Some(s) = changed {
@@ -227,7 +233,7 @@ fn signed(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value
 }
 
 /// One signed `/v1/host/*` call.
-async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
+pub(super) async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
     answer(signed(hub, base, method, path, body)?).await
 }
 
@@ -332,15 +338,15 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
+    super::owner::remember(hub, state.owner.as_ref())?;
     let in_account = state.owner.is_some();
     // A pull that works also settles an earlier failed one.
     update_status(hub, |s| {
         s.owner = state.owner;
         s.last_error = None;
     });
-    // Out of an account, cloud assistants go off: the account this computer joins next is asked again.
-    if !in_account && assistant::enabled(&hub.store) {
-        assistant::set_enabled(hub, false)?;
+    if !in_account {
+        super::owner::out_of_account(hub)?;
     }
     sync_requests(hub, base, state.requests).await;
     if approval(&hub.store) == Approval::Auto {
@@ -558,6 +564,8 @@ pub async fn decide(hub: &Hub, id: &str, approve: bool, how: Approval) -> Result
         lease_until: Some(now_ms() + LEASE_MS),
         created_at: now_ms(),
         last_seen_at: None,
+        // Approved through the account the computer is in.
+        account: super::owner::owner(&hub.store).map(|o| o.user_id),
     };
     hub.store.put_device(&device)?;
     tracing::info!(grant_id = grant, "account device approved");
@@ -635,6 +643,7 @@ pub fn set_approval(hub: &Hub, approval: Approval) -> Result<CloudStatus> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+    use crate::chat::team::assistant;
     use crate::remote::identity::Identity;
 
     fn temp_hub() -> Arc<Hub> {
@@ -655,6 +664,7 @@ mod tests {
             lease_until: Some(now_ms() + 1000),
             created_at: now_ms(),
             last_seen_at: None,
+            account: None,
         }
     }
 
@@ -768,7 +778,7 @@ mod tests {
         set_approval(&hub, Approval::Auto).unwrap();
         let (dk, nd): ([u8; 32], [u8; 32]) = (crypto::random(), crypto::random());
         let request = |host_nonce: Option<String>, device_nonce: Option<[u8; 32]>| {
-            json!({"owner": null, "grants": [], "requests": [{"requestId": "req_1", "deviceKey": b64(&dk),
+            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [{"requestId": "req_1", "deviceKey": b64(&dk),
                 "commit": b64(&crypto::sas_commit(&dk, &nd)), "hostNonce": host_nonce,
                 "deviceNonce": device_nonce.map(|n| b64(&n))}]})
         };
@@ -793,16 +803,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leaving_the_account_turns_cloud_assistants_off() {
+    async fn leaving_the_account_turns_cloud_assistants_off_and_the_check_on() {
         let hub = temp_hub();
         let fake = Arc::new(FakeCloud::default());
         let base = fake_cloud(fake.clone()).await;
         *fake.state.lock().unwrap() = json!({"owner": {"userId": "user_1"}, "grants": [], "requests": []});
         pull(&hub, &base).await.unwrap();
         assistant::set_enabled(&hub, true).unwrap();
+        set_approval(&hub, Approval::Auto).unwrap();
         *fake.state.lock().unwrap() = json!({"owner": null, "grants": [], "requests": []});
         pull(&hub, &base).await.unwrap();
         assert!(!assistant::enabled(&hub.store) && !hub.cloud.status().assistants, "the next account is asked again");
+        assert_eq!(hub.cloud.status().approval, Approval::Code, "the next account's devices show a code");
+        assert_eq!(approval(&hub.store), Approval::Code);
     }
 
     #[tokio::test]

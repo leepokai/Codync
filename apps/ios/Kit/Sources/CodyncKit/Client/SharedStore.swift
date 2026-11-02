@@ -2,6 +2,8 @@ import CryptoKit
 import Foundation
 import os
 
+private let log = Logger(subsystem: "com.pokai.Codync", category: "Account")
+
 /// Values shared between the app, its widgets and its notification extension through the App Group,
 /// one namespace per account context so a signed-out account's data never shows in another.
 public enum SharedStore {
@@ -24,8 +26,8 @@ public enum SharedStore {
         /// The raw Clerk user ID; nil = the local (signed-out) context.
         public let accountID: String?
         /// The UserDefaults suite (the App Group; tests use their own).
-        private let suite: String
-        private var defaults: UserDefaults { UserDefaults(suiteName: suite) ?? .standard }
+        fileprivate let suite: String
+        fileprivate var defaults: UserDefaults { UserDefaults(suiteName: suite) ?? .standard }
         public var id: String { accountID.map { Self.digest($0) } ?? "local" }
 
         public init(accountID: String?, suite: String = SharedStore.appGroup) {
@@ -33,8 +35,8 @@ public enum SharedStore {
             self.suite = suite
         }
 
-        private static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer"]
-        private func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
+        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer"]
+        fileprivate func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
         public static func digest(_ value: String) -> String {
             SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
         }
@@ -109,18 +111,85 @@ public enum SharedStore {
         }
 
         /// Signing out or removing the account: device keys, computers, widget snapshot and caches go.
-        public func erase() {
+        public func erase() { erase(keeping: []) }
+
+        /// `erase()`, except for the mirror caches in `kept` (`adopt(from:)`).
+        fileprivate func erase(keeping kept: [URL]) {
             for name in Self.names { defaults.removeObject(forKey: key(name)) }
             DeviceIdentity.delete(context: self)
             do { try ActivityIconCache.erase(context: id) }
             catch { Logger(subsystem: "com.pokai.Codync", category: "CustomIcon").error("Cannot erase activity icons: \(error.localizedDescription)") }
+            for file in mirrorCaches() where !kept.contains(file) { try? FileManager.default.removeItem(at: file) }
+        }
+
+        /// This context's mirror caches (`BotStore.saveCache`): `codync-mirror-<app>-<id>-<computer>.json`.
+        fileprivate func mirrorCaches() -> [URL] {
             let caches = URL.cachesDirectory
-            let marker = "-\(id)-"
-            for file in (try? FileManager.default.contentsOfDirectory(atPath: caches.path())) ?? []
-            where file.hasPrefix("codync-mirror-") && file.contains(marker) {
-                try? FileManager.default.removeItem(at: caches.appending(path: file))
+            return ((try? FileManager.default.contentsOfDirectory(atPath: caches.path())) ?? [])
+                .filter { $0.hasPrefix("codync-mirror-") && $0.contains("-\(id)-") }
+                .map { caches.appending(path: $0) }
+        }
+    }
+}
+
+// MARK: signed-out pairings move into the account
+
+public extension SharedStore.Context {
+    /// What `adopt(from:)` did with the signed-out context's pairings: how many computers came over, and whether
+    /// this iPhone's keys came with them (`moved`: this context was new, so they keep working) or they have to be
+    /// paired again (`rescan`: this context has its own key).
+    struct Adoption: Equatable, Sendable {
+        public let computers: Int
+        public let keys: AnalyticsEvent.MovedKeys
+    }
+
+    /// Sign-in is required: the signed-out context's computers move into this account context, which
+    /// then erases it. Runs before this context's stores and keys load. Nil when there was nothing to move.
+    func adopt(from local: Self) -> Adoption? {
+        guard accountID != nil, local.accountID == nil, local.suite == suite else { return nil }
+        let moving = local.computers
+        guard !moving.isEmpty || DeviceIdentity.exists(context: local) else { return nil }
+        var unmoved: [URL] = []
+        defer { local.erase(keeping: unmoved) }
+        if !DeviceIdentity.exists(context: self), computers.isEmpty {
+            do {
+                try DeviceIdentity.move(from: local, to: self)
+            } catch {
+                log.error("Cannot move the device key: \(error.localizedDescription)")
+                return merge(moving)
+            }
+            for name in Self.names { defaults.set(local.defaults.object(forKey: local.key(name)), forKey: key(name)) }
+            unmoved = moveMirrorCaches(from: local)
+            return Adoption(computers: moving.count, keys: .moved)
+        }
+        return merge(moving)
+    }
+
+    /// Unsent and failed messages live only in the mirror caches: they come along rather than go with `erase()`.
+    /// A rename in one folder: only a cache left at the account's name (it has no computers yet) is in the way.
+    /// Returns the caches that couldn't move: `erase` leaves them on disk rather than delete the only copy, though
+    /// nothing loads them again (Start over removes them).
+    private func moveMirrorCaches(from local: Self) -> [URL] {
+        var unmoved: [URL] = []
+        for file in local.mirrorCaches() {
+            let name = file.lastPathComponent
+            guard let marker = name.range(of: "-\(local.id)-") else { continue }
+            let moved = file.deletingLastPathComponent().appending(path: name.replacingCharacters(in: marker, with: "-\(id)-"))
+            do {
+                if FileManager.default.fileExists(atPath: moved.path()) { try FileManager.default.removeItem(at: moved) }
+                try FileManager.default.moveItem(at: file, to: moved)
+            } catch {
+                log.error("Cannot move unsent messages: \(error.localizedDescription)")
+                unmoved.append(file)
             }
         }
+        return unmoved
+    }
+
+    private func merge(_ moving: [Computer]) -> Adoption {
+        let known = Set(computers.map(\.id))
+        computers += moving.filter { !known.contains($0.id) }
+        return Adoption(computers: moving.count, keys: .rescan)
     }
 }
 

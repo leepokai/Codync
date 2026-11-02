@@ -60,6 +60,26 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `a pairing code is looked up unsigned and an unknown one fails with the cloud's message`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"link":"codync://pair?v=3"}"""))
+            server.enqueue(MockResponse().setResponseCode(404)
+                .setBody("""{"error":{"code":"notFound","message":"That code expired or was used. Show a new one on the computer."}}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            assertEquals("codync://pair?v=3", client.pairingLink("QRTX-4821"))
+            val request = server.takeRequest()
+            assertEquals("GET", request.method)
+            assertEquals("/v1/pairing-codes/QRTX-4821", request.path)
+            assertEquals("Bearer session", request.getHeader("Authorization"))
+            assertNull(request.getHeader("Codync-Sig"))
+            val error = try { client.pairingLink("QRTX-4821"); error("Expected a used code") } catch (error: CloudError) { error }
+            assertEquals(404, error.status)
+            assertEquals("That code expired or was used. Show a new one on the computer.", error.message)
+        } finally { server.shutdown() }
+    }
+
     @Test fun `an error page that isn't JSON still fails with its status`() = runBlocking {
         val server = MockWebServer()
         server.start()
@@ -130,6 +150,73 @@ class CloudClientTest {
             val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
             client.revokeAccess(id)
             assertEquals("/v1/devices", server.takeRequest().path)
+        } finally { server.shutdown() }
+    }
+
+    private fun certificateBody(exp: Long) =
+        """{"certificate":{"payload":${JsonPrimitive("""{"v":1,"deviceKey":"${identity.publicKey}","userId":"u","exp":$exp}""")},"sig":"s"}}"""
+
+    @Test fun `a certificate is reused while more than a day is left and a new key is registered first`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            val day = 24L * 60 * 60 * 1000
+            val lasting = DeviceCertificate("""{"exp":${System.currentTimeMillis() + 2 * day}}""", "s")
+            assertSame(lasting, client.certificate(lasting, "Pixel"))
+            assertEquals(0, server.requestCount)
+
+            val exp = System.currentTimeMillis() + 7 * day
+            server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"code":"forbidden"}}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            server.enqueue(MockResponse().setBody(certificateBody(exp)))
+            val ending = DeviceCertificate("""{"exp":${System.currentTimeMillis() + day / 2}}""", "s")
+            val fresh = client.certificate(ending, "Pixel")
+            assertEquals(exp, fresh.expiresAt)
+            assertEquals("s", fresh.sig)
+            val asked = server.takeRequest()
+            assertEquals("POST", asked.method)
+            assertEquals("/v1/devices/certificate", asked.path)
+            assertEquals("Bearer session", asked.getHeader("Authorization"))
+            assertTrue(requireNotNull(asked.getHeader("Codync-Sig")).contains("kid=${identity.publicKey}"))
+            assertEquals("/v1/devices", server.takeRequest().path)
+            assertEquals("/v1/devices/certificate", server.takeRequest().path)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `a claim is made then completed with the computer's signed object as is`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"claimId":"clm_1","nonce":"n","expiresAt":1}"""))
+            server.enqueue(MockResponse().setBody("""{"computer":{}}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            assertEquals(PairingClaim("clm_1", "n"), client.createClaim())
+            val signed = buildJsonObject { put("computerId", id); put("signKey", hostKey.base64Url()); put("sig", "x"); put("device", JsonNull) }
+            client.completeClaim("clm_1", signed)
+            assertEquals("/v1/claims", server.takeRequest().path)
+            val complete = server.takeRequest()
+            assertEquals("/v1/claims/clm_1/complete", complete.path)
+            assertEquals(signed, Json.parseToJsonElement(complete.body.readUtf8()))
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `signing out deletes only this device from the account, on the token taken before`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"devices":[{"deviceId":"other","deviceKey":"elsewhere"},{"deviceId":"mine","deviceKey":"${identity.publicKey}"}]}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            var signedIn = true
+            val client = CloudClient(server.url("/").toString(), identity, { check(signedIn); "session" }, OkHttpClient(), 1, Unit)
+            val pinned = requireNotNull(client.pinningToken())
+            signedIn = false
+            pinned.revokeThisDevice()
+            val list = server.takeRequest()
+            assertEquals("/v1/devices" to "Bearer session", list.path to list.getHeader("Authorization"))
+            val delete = server.takeRequest()
+            assertEquals("DELETE" to "/v1/devices/mine", delete.method to delete.path)
+            assertEquals(null, client.pinningToken())
         } finally { server.shutdown() }
     }
 }

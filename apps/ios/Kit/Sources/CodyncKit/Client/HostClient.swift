@@ -352,6 +352,16 @@ public extension HostClient {
         let _: Empty = try await call("unregisterDevice")
     }
 
+    /// Removes this device from the computer (signing out): its access and alerts go. A computer
+    /// older than `forgetDevice` only stops the alerts; the key is erased right after either way.
+    func forgetDevice() async throws {
+        do {
+            let _: Empty = try await call("forgetDevice")
+        } catch {
+            let _: Empty = try await call("unregisterDevice")
+        }
+    }
+
     func registerActivity(botId: String, ticket: String) async throws {
         let _: Empty = try await call("registerActivity", ["botId": botId, "ticket": ticket])
     }

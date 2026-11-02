@@ -53,6 +53,21 @@ The integration runner starts an isolated Wrangler service and real host with te
 
 This runner does not validate a deployed Worker, actual Google consent, APNs or iOS background behavior. Cloud CI runs unit/type checks; run this integration command explicitly for the complete local scenario.
 
+### Real phones against a local cloud
+
+To walk a cloud change on the iPhone and Android apps before it is deployed (for example the device certificates and short pairing codes of 2.36.0), run Wrangler so it trusts the dev Clerk instance's tokens, and point a host and the debug apps at it. Debug builds of both apps accept plain `http` to `127.0.0.1`/`localhost` as a cloud.
+
+```sh
+cd cloud && npx wrangler d1 migrations apply codync-local --env local --local
+curl -s https://sunny-mollusk-8651.clerk.accounts.dev/.well-known/jwks.json   # → CLERK_JWT_KEY as PEM
+npx wrangler dev --env local --port 8787 --var CLERK_ISSUER:https://sunny-mollusk-8651.clerk.accounts.dev \
+  --var "CLERK_JWT_KEY:$PEM" --var "DEVICE_CERT_KEY:$JWK"          # a throwaway Ed25519 JWK
+CODYNC_HOME=$TMP CODYNC_CLOUD_URL=http://127.0.0.1:8787 CODYNC_DEVICE_CERT_KEY=$PUB codync-host serve --port 19391
+```
+
+- iPhone: launch with `SIMCTL_CHILD_CODYNC_CLOUD_URL=http://127.0.0.1:8787` (also while running `npm run phone-account`).
+- Android: build with `-PcodyncCloudUrl=http://127.0.0.1:8787` plus the dev `codyncClerkPublishableKey` and `codyncPushRelayUrl` (the three go together), and `adb reverse tcp:8787 tcp:8787`.
+
 ## Troubleshooting
 
 - **Direct works, relay fails:** compare cloud URLs, cloud enablement, registration status and host logs.

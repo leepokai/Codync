@@ -241,9 +241,13 @@ export function openMailbox(hostSignPub: Uint8Array, hostBox: BoxKey, dk: Uint8A
 export const sasCommit = (dk: Uint8Array, nD: Uint8Array) => sha256(concat(enc.encode("codync/sascommit/v1"), dk, nD));
 
 export function sasCode(hostSignPub: Uint8Array, dk: Uint8Array, nD: Uint8Array, nH: Uint8Array): string {
-  const h = sha256(concat(enc.encode("codync/sas/v2"), hostSignPub, dk, nD, nH));
-  return String(new DataView(h.buffer, h.byteOffset).getUint32(0) % 1_000_000).padStart(6, "0");
+  return sixDigits(sha256(concat(enc.encode("codync/sas/v2"), hostSignPub, dk, nD, nH)));
 }
+
+/** The code a pairing phone and a computer in no account both show while the computer asks. */
+export const pairCheck = (dk: Uint8Array, hostSignPub: Uint8Array) => sixDigits(sha256(concat(enc.encode("codync/pair-check/v1"), dk, hostSignPub)));
+
+const sixDigits = (h: Uint8Array) => String(new DataView(h.buffer, h.byteOffset).getUint32(0) % 1_000_000).padStart(6, "0");
 
 export const offerId = (code: Uint8Array) => b64url(sha256(concat(enc.encode("codync/offer/v1"), code)).subarray(0, 16));
 

@@ -31,6 +31,7 @@ const STATUS: Record<string, number> = {
   tooLarge: 413,
   rateLimited: 429,
   internal: 500,
+  notConfigured: 503,
 };
 
 export class ApiError extends Error {

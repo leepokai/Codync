@@ -33,6 +33,7 @@ import com.codync.android.design.*
         listOf(
             DialogAction("Continue with Apple") { accounts?.signIn(SignInProvider.Apple) },
             DialogAction("Continue with Google") { accounts?.signIn(SignInProvider.Google) },
+            DialogAction("Continue with GitHub") { accounts?.signIn(SignInProvider.GitHub) },
         )
     }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -1,5 +1,5 @@
 import type { CloudStatus, ClaimSignature } from '@shared/models'
-import { mayAutoClaim } from '../lib/auto-claim'
+import { accountMismatch, mayAutoClaim, mayJoinAfterInstall, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
 import { relayAddressToSave } from '../lib/relay-address'
@@ -93,6 +93,8 @@ export class CloudModel extends Observable {
   private listing: Promise<boolean> = Promise.resolve(false)
   private enablingCloud = false
   private autoClaiming = false
+  /** This computer is on its way from another account into this one (`moveHere`). */
+  private moving = false
 
   constructor(private app: AppModel) {
     super()
@@ -213,9 +215,70 @@ export class CloudModel extends Observable {
   private get autoClaimTarget(): BotStore | null {
     const user = this.userId
     const store = this.app.local
-    if (!user || !store) return null
-    const host = { id: store.computer.id, online: store.connection.kind === 'online', cloud: store.cloud }
-    return mayAutoClaim(host, keptOut(user).get(), claimedIds(user).get()) ? store : null
+    if (!user || !store || this.moving) return null
+    return mayAutoClaim(candidate(store), keptOut(user).get(), claimedIds(user).get()) ? store : null
+  }
+
+  /** This computer, still in another account than the one signed in here: the user is asked to move it (`mayOfferMove`). */
+  get moveOffer(): { store: BotStore; from: string | null } | null {
+    const user = this.userId
+    const store = this.app.local
+    if (!user || !store || this.moving || !mayOfferMove(candidate(store), user, keptOut(user).get())) return null
+    return { store, from: store.cloud?.owner?.email ?? null }
+  }
+
+  /** This computer and the account signed in here differ (`accountMismatch`): the sidebar's one line. */
+  get mismatch(): AccountMismatch | null {
+    const user = this.userId
+    const store = this.app.local
+    if (!user || !store || this.moving) return null
+    return accountMismatch(candidate(store), user, keptOut(user).get(), claimedIds(user).get())
+  }
+
+  /** The sidebar line: asks again whether to move this computer here, even after "Keep it there". */
+  reconsiderMove() {
+    const user = this.userId
+    const store = this.app.local
+    if (!user || !store) return
+    const out = keptOut(user)
+    out.set(out.get().filter((x) => x !== store.computer.id))
+    this.changed()
+  }
+
+  /** No to `moveOffer`: this computer stays in its account and isn't offered again (Remove, then Add to account, still moves it). */
+  keepInOtherAccount(store: BotStore) {
+    const user = this.userId
+    if (user) include(keptOut(user), store.computer.id)
+    this.changed()
+  }
+
+  /**
+   * Yes to `moveOffer`: out of the other account, then into this one. Every device of that account loses
+   * access, QR-paired ones included; out of an account the host turns the 6-digit check back on, so the new account's devices show
+   * a code before getting in.
+   */
+  async moveHere(store: BotStore) {
+    this.moving = true
+    this.changed()
+    try {
+      await (await store.ready()).call('unclaim', {}, 30_000)
+      await this.claim(store)
+    } catch (error) {
+      this.fail(error)
+    } finally {
+      this.moving = false
+      this.changed()
+    }
+  }
+
+  /** Add to account for an SSH computer just installed from here (installing shows the intent), once its host is up. */
+  async joinAfterInstall(store: BotStore) {
+    if (!this.userId) return
+    try {
+      if (mayJoinAfterInstall(await (await store.ready()).call<CloudStatus>('cloudStatus'))) await this.claim(store)
+    } catch (error) {
+      this.fail(error)
+    }
   }
 
   /** §4.2 A: makes a computer this app manages part of the account; its cloud is turned on first. */
@@ -330,6 +393,11 @@ export class CloudModel extends Observable {
   isOlderCopy(c: CloudComputer) {
     return isOlderCopy(c, this.computers, this.app.computers)
   }
+}
+
+/** What the account rules (`auto-claim`) read of a computer's host. */
+function candidate(store: BotStore): ClaimCandidate {
+  return { id: store.computer.id, online: store.connection.kind === 'online', cloud: store.cloud }
 }
 
 /** This computer's name for the account's device list. */

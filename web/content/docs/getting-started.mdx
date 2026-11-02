@@ -41,7 +41,7 @@ You can also install the host with Homebrew (`brew install leepokai/codync/codyn
 
 ### The first launch of the desktop app
 
-The app first asks about an account. Signing in with Apple or Google is optional. Choose **Continue on this Mac** (or **Continue on this computer**) to go on without one. It then offers **Computer access**, which bots need only to use the screen; choose **Set up later** to skip it. See [Computer use](/docs/computer-use).
+The app first asks you to sign in with Apple, Google or GitHub. The computer joins your account, so your phone can find it there. It then offers **Computer access**, which bots need only to use the screen; choose **Set up later** to skip it. See [Computer use](/docs/computer-use).
 
 Setup also offers an optional GitHub star. If you skip it, the desktop app can remind you once after seven days. That reminder has two actions: **Star on GitHub** opens the repository, and **Not now** dismisses it. You can also dismiss it by clicking outside the card or pressing Escape. Opening the repository or dismissing this reminder ends further reminders on that computer.
 
@@ -70,7 +70,7 @@ Every iPhone release goes through Apple's App Review first, so the App Store ver
 
 ## 3. Pair your iPhone
 
-Pairing connects your phone to your computer with a QR code. No account is needed.
+Pairing connects your phone to your computer with a QR code. The phone needs to be signed in first, with Apple, Google or GitHub, and with the same account as the desktop app: a computer in another account turns the phone away. Apple with Hide My Email on one and Google on the other are two different accounts (more in [Remote access](/docs/remote-access#pairing)).
 
 On the computer, show the pairing code:
 
@@ -79,7 +79,7 @@ On the computer, show the pairing code:
 - **Any desktop app:** Settings → Computers, then the **Pair iPhone** button on the computer.
 - **Terminal:** run `codync-host pair`, or press `P` in the terminal UI.
 
-On the iPhone, open Codync and tap **Get started**, then **Continue**, then scan the code. The iPhone Camera app can scan it too. If you can't scan, copy the pairing link on the computer and paste it into the field under the viewfinder. To pair later, tap the account button at the top left of the Bots tab, then **Scan a computer's code**.
+On the iPhone, open Codync, sign in with Apple, Google or GitHub, tap **Continue**, then scan the code. The iPhone Camera app can scan it too. If you can't scan, copy the pairing link on the computer and paste it into the field under the viewfinder. To pair later, tap the account button at the top left of the Bots tab, then **Scan a computer's code**.
 
 The iPhone app has three tabs: **Bots** (your bots and chats), **State** (widgets, Live Activities and usage limits) and **Settings** (this iPhone's own settings). Each computer's settings, such as Extensions, voice chat and push notifications, are in **Manage computers**: tap the connection status at the top of the Bots tab (such as **1 connected**).
 

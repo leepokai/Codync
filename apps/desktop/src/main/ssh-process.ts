@@ -31,14 +31,14 @@ export const lastLine = (text: string) => text.split(/\r?\n/).filter(Boolean).po
 
 interface Result { status: number; stdout: string; stderr: string }
 
-/** Runs a tool with hidden Windows consoles while draining both output pipes; one that hangs is killed after 30 s. */
-export function run(bin: string, args: string[], input?: string): Promise<Result> {
+/** Runs a tool with hidden Windows consoles while draining both output pipes; one that hangs is killed after `timeout` ms. */
+export function run(bin: string, args: string[], input?: string, timeout = 30_000): Promise<Result> {
   return new Promise((resolve) => {
     let stdout = ''
     let stderr = ''
     let child: ChildProcess
     try {
-      child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 30_000 })
+      child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true, timeout })
     } catch (error) {
       return resolve({ status: -1, stdout, stderr: String(error) })
     }

@@ -64,7 +64,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.store.remove_activity_ticket(str_arg(&b, "botId")?, caller.device_key())?;
             json!({})
         }
-        "pairing" => pairing(hub).await?,
+        "pairing" => pairing(hub, b["shortCode"] == true).await?,
         "devices" => {
             let connected = hub.connected.locked().clone();
             let devices: Vec<Value> = hub
@@ -79,16 +79,18 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .collect();
             json!({"devices": devices})
         }
-        "revokeDevice" => {
-            let key = str_arg(&b, "key")?;
-            let device = hub.store.device(key).ok_or_else(|| anyhow!("unknown device"))?;
-            hub.revoke_device(key)?;
-            if let Some(grant) = device.grant_id.filter(|_| device.source == DeviceSource::Account) {
-                tokio::spawn(crate::remote::cloud::revoke_grant(hub.clone(), grant));
-            }
+        "revokeDevice" => revoke(hub, str_arg(&b, "key")?)?,
+        // A device leaving on its own (signing out): the same as revoking it at the computer.
+        "forgetDevice" => revoke(hub, caller.device_key())?,
+        "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
+        "pairingRequests" => json!({"requests": hub.pairing_requests.json()}),
+        // `codync-host pair` waits until its code is used.
+        "pairingCodeOpen" => json!({"open": hub.pairing.locked().valid(str_arg(&b, "code")?)}),
+        "decidePairing" => {
+            let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
+            crate::remote::pairing_requests::decide(hub, str_arg(&b, "requestId")?, approve)?;
             json!({})
         }
-        "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
         "decideAccessRequest" => {
             let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
             let id = str_arg(&b, "requestId")?;
@@ -121,13 +123,26 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let on = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
             serde_json::to_value(crate::chat::team::assistant::set_enabled(hub, on)?)?
         }
-        "claimSign" => claim_sign(hub, &b).await?,
+        "claimSign" => {
+            let (claim_id, nonce, user_id) = (str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, str_arg(&b, "userId")?);
+            crate::remote::owner::sign_claim(hub, claim_id, nonce, user_id).await?
+        }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
 }
 
+/// Removes a device, and its cloud grant when it was approved through the account.
+fn revoke(hub: &Arc<Hub>, key: &str) -> Result<Value> {
+    let device = hub.store.device(key).ok_or_else(|| anyhow!("unknown device"))?;
+    hub.revoke_device(key)?;
+    if let Some(grant) = device.grant_id.filter(|_| device.source == DeviceSource::Account) {
+        tokio::spawn(crate::remote::cloud::revoke_grant(hub.clone(), grant));
+    }
+    Ok(json!({}))
+}
+
 /// A new one-time pairing code and the QR that carries it (§4.1).
-async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
+async fn pairing(hub: &Arc<Hub>, short_code: bool) -> Result<Value> {
     let port = hub.port;
     // Shells out to `tailscale`: keep it off the async workers.
     let urls = tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?;
@@ -146,32 +161,53 @@ async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
         urls: &urls,
         cloud: cloud.as_deref(),
     });
-    Ok(json!({"pairingUrl": url, "urls": urls, "expiresAt": issued.expires_at}))
+    // Asked for (`codync-host pair`): a code to type instead of scanning, when the Codync cloud can hold the link.
+    let short_code = if short_code {
+        crate::remote::short_code::register(hub, &url, issued.expires_at)
+            .await
+            .inspect_err(|e| tracing::info!(error = format!("{e:#}"), "no short pairing code"))
+            .ok()
+    } else {
+        None
+    };
+    Ok(json!({"pairingUrl": url, "urls": urls, "expiresAt": issued.expires_at, "shortCode": short_code}))
 }
 
-/// Signs this computer into an account claim (§4.2 A) for the signed-in desktop app to complete.
-async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
-    crate::remote::cloud::require_accounts(&hub.store)?;
-    let field = |k: &str| -> Result<&str> {
-        let v = str_arg(b, k)?;
-        // Fields are newline-separated in the signed string: a newline would forge another field.
-        if v.is_empty() || v.contains('\n') {
-            bail!("`{k}` is invalid");
-        }
-        Ok(v)
-    };
-    let (claim_id, nonce, user_id) = (field("claimId")?, field("nonce")?, field("userId")?);
-    let computer_id = hub.identity.computer_id();
-    let box_key = hub.identity.box_pub_b64();
-    let input = crypto::claim_input(claim_id, nonce, user_id, &computer_id, &box_key);
-    Ok(json!({
-        "computerId": computer_id,
-        "signKey": hub.identity.sign_pub_b64(),
-        "boxKey": box_key,
-        "name": crate::service::host_name(),
-        "platform": std::env::consts::OS,
-        "device": tokio::task::spawn_blocking(crate::service::device).await?,
-        "version": env!("CARGO_PKG_VERSION"),
-        "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
-    }))
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::remote::identity::Identity;
+    use crate::store::{Device, Scope, Store};
+
+    #[tokio::test]
+    async fn a_device_forgets_only_itself() {
+        let dir = std::env::temp_dir().join(format!("codync-forget-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        let hub = Hub::new(store, "test".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0);
+        let phone = Device {
+            key: "me".into(),
+            name: "Phone".into(),
+            platform: "ios".into(),
+            source: DeviceSource::Local,
+            grant_id: None,
+            scopes: vec![Scope::Control, Scope::Screen],
+            lease_until: None,
+            created_at: 1,
+            last_seen_at: None,
+            account: None,
+        };
+        hub.store.put_device(&phone).unwrap();
+        hub.store.put_device(&Device { key: "other".into(), ..phone.clone() }).unwrap();
+        hub.store.add_push_ticket("t1", "me", None, None, "Phone").unwrap();
+        let me = Caller::Device { key: "me".into(), scopes: phone.scopes.clone() };
+
+        assert!(call(&hub, &me, "forgetDevice", json!({"key": "other"})).await.unwrap().is_break());
+        assert!(hub.store.device("me").is_none());
+        assert!(hub.store.device("other").is_some(), "only the caller's own device goes");
+        assert!(hub.store.push_tickets().is_empty());
+        assert!(call(&hub, &me, "forgetDevice", json!({})).await.is_err(), "already gone");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

@@ -14,6 +14,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 可以在 App 裡刪除賬戶：點 Bots 分頁左上角的賬戶按鈕，再點「刪除賬戶」。
 - 配對會確認賬戶：在別人賬戶裡的電腦會告訴你它在誰的賬戶；還不在任何賬戶的電腦，會先在電腦上問一聲，再加入你的賬戶。
 - 也可以輸入 `codync-host pair` 印出的短代碼來配對，不用掃 QR code。
+- 新增俄文介面：到「設定」選擇語言。
 
 ### en-US
 - Codync now asks you to sign in with Apple, Google or GitHub. Computers you paired before come along, no new scan.
@@ -21,3 +22,4 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Delete your account in the app: account button (top left of Bots), then Delete account.
 - Pairing checks your account: a computer in another account says whose; one in no account asks first, then joins yours.
 - Or type the short code `codync-host pair` prints instead of scanning.
+- New Russian interface: pick it under Settings → Language.

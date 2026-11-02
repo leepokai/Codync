@@ -145,6 +145,77 @@ async fn xtest_moves_the_pointer_and_types_symbols_missing_from_the_keymap() {
 }
 
 #[tokio::test]
+async fn caps_lock_doesnt_change_the_typed_letters() {
+    use x11rb::protocol::Event;
+    use x11rb::protocol::xproto::{
+        CreateWindowAux, EventMask, InputFocus, KeyButMask, WindowClass,
+    };
+    let Some(server) = Xvfb::start() else { return };
+    let x11 = X11::connect(server.1.clone()).await.unwrap();
+    let screen = x11.display(None).await.unwrap();
+    // Another client's focused window, which gets the key events.
+    let (reader, _) = x11rb::connect(Some(&server.1)).unwrap();
+    let window = reader.generate_id().unwrap();
+    let root = reader.setup().roots[0].root;
+    let aux = CreateWindowAux::new().event_mask(EventMask::KEY_PRESS);
+    reader
+        .create_window(
+            0,
+            window,
+            root,
+            0,
+            0,
+            10,
+            10,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            0,
+            &aux,
+        )
+        .unwrap();
+    reader.map_window(window).unwrap();
+    reader
+        .set_input_focus(InputFocus::PARENT, window, x11rb::CURRENT_TIME)
+        .unwrap();
+    reader.get_input_focus().unwrap().reply().unwrap();
+    x11.call(|x| x.lock_keyboard(true, Group::M1))
+        .await
+        .unwrap();
+
+    let input = X11Input {
+        x11: &x11,
+        display: &screen,
+    };
+    // `a` is on the keymap; `é` goes through the spare keycode.
+    input.tap(0x61).await.unwrap();
+    input.tap(0xe9).await.unwrap();
+    // Clients apply the Lock in an event's state: with it, both would come out in capitals.
+    let mut states = Vec::new();
+    let deadline = std::time::Instant::now() + X_TIMEOUT;
+    while states.len() < 2 && std::time::Instant::now() < deadline {
+        match reader.poll_for_event().unwrap() {
+            Some(Event::KeyPress(press)) => states.push(press.state),
+            Some(_) => {}
+            None => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+    assert_eq!(states.len(), 2, "both keys reached the focused window");
+    assert!(states.iter().all(|s| !s.contains(KeyButMask::LOCK)));
+    // Caps Lock is on again for whoever types at the desktop.
+    let locked = x11
+        .call(|x| {
+            Ok(x.0
+                .conn
+                .xkb_get_state(xkb::ID::USE_CORE_KBD.into())?
+                .reply()?)
+        })
+        .await
+        .unwrap()
+        .locked_mods;
+    assert!(locked.contains(ModMask::LOCK));
+}
+
+#[tokio::test]
 async fn paste_goes_to_the_shared_x_display() {
     if std::process::Command::new("xclip")
         .arg("-version")

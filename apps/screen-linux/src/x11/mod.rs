@@ -20,9 +20,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use x11rb::connection::Connection as _;
+use x11rb::protocol::xkb::{self, ConnectionExt as _, Group};
 use x11rb::protocol::xproto::{
     BUTTON_RELEASE_EVENT, ConnectionExt as _, KEY_PRESS_EVENT, KEY_RELEASE_EVENT,
-    MOTION_NOTIFY_EVENT, Window,
+    MOTION_NOTIFY_EVENT, ModMask, Window,
 };
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::reexports::x11rb_protocol::parse_display::parse_display;
@@ -46,6 +47,8 @@ struct Inner {
     name: String,
     conn: RustConnection,
     root: Window,
+    /// Whether the server has XKB, which holds Caps Lock and the layout group.
+    xkb: bool,
     active: AtomicBool,
     /// Failed reconnections since the connection broke.
     failures: AtomicU32,
@@ -117,10 +120,16 @@ impl X11 {
         if conn.query_extension(b"XWAYLAND")?.reply()?.present {
             bail!("{name} is Xwayland, part of a Wayland desktop");
         }
+        let xkb = conn
+            .xkb_use_extension(1, 0)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .is_some_and(|reply| reply.supported);
         Ok(Self(Arc::new(Inner {
             name,
             conn,
             root,
+            xkb,
             active: AtomicBool::new(true),
             failures: AtomicU32::new(0),
             keys: Arc::default(),
@@ -310,14 +319,56 @@ impl X11 {
         self.sync()
     }
 
+    /// Presses `codes` in order and releases them. Caps Lock and a layout other than the first
+    /// change what a keycode types (`a` becomes `A` or `ф`), a temporarily bound one included, so
+    /// both are unlocked for these keys and locked again right after.
     fn press_release(&self, codes: &[u8]) -> Result<()> {
-        for &code in codes {
-            self.fake(KEY_PRESS_EVENT, code, 0, 0)?;
+        let locked = self.unlock_keyboard()?;
+        let typed = codes
+            .iter()
+            .map(|&code| (KEY_PRESS_EVENT, code))
+            .chain(codes.iter().rev().map(|&code| (KEY_RELEASE_EVENT, code)))
+            .try_for_each(|(kind, code)| self.fake(kind, code, 0, 0));
+        if let Some((caps, group)) = locked {
+            self.lock_keyboard(caps, group)?;
         }
-        for &code in codes.iter().rev() {
-            self.fake(KEY_RELEASE_EVENT, code, 0, 0)?;
-        }
+        typed?;
         self.flush()
+    }
+
+    /// Unlocks Caps Lock and the first layout if either is locked; returns what to lock again.
+    fn unlock_keyboard(&self) -> Result<Option<(bool, Group)>> {
+        if !self.0.xkb {
+            return Ok(None);
+        }
+        let cookie = self.check(self.0.conn.xkb_get_state(xkb::ID::USE_CORE_KBD.into()))?;
+        let state = self.check(cookie.reply())?;
+        let caps = state.locked_mods.contains(ModMask::LOCK);
+        if !caps && state.locked_group == Group::M1 {
+            return Ok(None);
+        }
+        self.lock_keyboard(false, Group::M1)?;
+        Ok(Some((caps, state.locked_group)))
+    }
+
+    /// Sets the locked Caps Lock and layout group, which XTest key events don't touch.
+    fn lock_keyboard(&self, caps: bool, group: Group) -> Result<()> {
+        let mods = if caps {
+            ModMask::LOCK
+        } else {
+            ModMask::from(0u16)
+        };
+        self.check(self.0.conn.xkb_latch_lock_state(
+            xkb::ID::USE_CORE_KBD.into(),
+            ModMask::LOCK,
+            mods,
+            true,
+            group,
+            ModMask::from(0u16),
+            false,
+            0,
+        ))?;
+        Ok(())
     }
 }
 

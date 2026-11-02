@@ -20,9 +20,8 @@ import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { AllWorkButton, AllWorkSheet } from './AllWorkView'
 import { BotRoster } from './BotRoster'
+import { PageRail } from './PageRail'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
-import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
-import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
 import { queueVoiceKey } from './thread/voice-shortcut-keys'
@@ -38,6 +37,8 @@ import { ResetAllDataDialogs } from './settings/ResetSection'
 import { FindBar } from './FindBar'
 import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
+import { WorkflowsView } from './workflows/WorkflowsView'
+import { canOpenWorkflows } from './workflows/pins'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
@@ -48,7 +49,7 @@ import { RefreshIndicator } from './RefreshIndicator'
 import { MainPrompts } from './MainPrompts'
 import { PairingRequestPrompt } from './PairingRequestPrompt'
 import { OpenVoiceSettings } from './call/CallView'
-import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
+import { AccountPanelLayer } from './PanelMenus'
 import { DesktopActionMenu } from './DesktopActionMenu'
 import { moveToSectionItems, sectionHeaderItems } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
@@ -205,6 +206,7 @@ function ChatSplitView() {
   const ssh = useSSH()
   const connecting = ssh.state.profiles.some((p) => isSSHConnecting(ssh.status(p.id))) || [...app.stores.values()].some((s) => s.shownConnection.kind === 'connecting')
   const [compact, setCompact] = usePref(prefs.sidebarCompact)
+  const [agentsOpen, setAgentsOpen] = usePref(prefs.agentsOpen)
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
@@ -220,6 +222,8 @@ function ChatSplitView() {
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [newSessionBot, setNewSessionBot] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
+  const [workflowComputerId, setWorkflowComputerId] = useState<string | null>(null)
+  const [workflowFocus, setWorkflowFocus] = useState<string | null>(null)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
@@ -281,7 +285,13 @@ function ChatSplitView() {
         // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
         if (c.kind === 'find') app.selection ? find.open() : setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
-        if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
+        if (c.kind === 'toggleSidebar') {
+          if (prefs.agentsOpen.get()) setAgentsOpen(false)
+          else {
+            setCompact(false)
+            setAgentsOpen(true)
+          }
+        }
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)
           queueVoiceKey(c.key)
@@ -323,7 +333,18 @@ function ChatSplitView() {
     ...(localOnline ? [{ title: 'Import bots…', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
   ]
 
-  const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
+  const openMarketplace = () => setMarketplace((current) => current ? null : ((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null))
+  const workflowTarget = selectedStore ?? app.local ?? onlineStores[0]
+  const openWorkflows = (computerId: string, workflowId?: string) => {
+    app.select(null)
+    setWorkflowFocus(workflowId ?? null)
+    setWorkflowComputerId(computerId)
+    setAgentsOpen(false)
+  }
+
+  useEffect(() => {
+    if (app.selection) setWorkflowComputerId(null)
+  }, [app.selection])
 
   // One plain list. The lead stays in sight: no hide.
   const botActions = (bot: Bot, store: BotStore): MenuItem[] => [
@@ -370,8 +391,15 @@ function ChatSplitView() {
   const selected = app.selection
   const selectedBot = selected && selectedStore?.bots.get(selected.botId)
 
+  const workflowStore = workflowComputerId ? app.store(workflowComputerId) : null
   let detail: ReactNode
-  if (selected && selectedStore && selectedBot) {
+  if (workflowStore && !selected && canOpenWorkflows(workflowStore)) {
+    detail = (
+      <StoreContext.Provider value={workflowStore}>
+        <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} />
+      </StoreContext.Provider>
+    )
+  } else if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
         <ThreadView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
@@ -397,10 +425,34 @@ function ChatSplitView() {
     )
   }
 
-  const width = compact ? 76 : sidebarWidth
+  const showAgents = () => {
+    setWorkflowComputerId(null)
+    setCompact(false)
+    setAgentsOpen(true)
+  }
+  const toggleAgents = () => {
+    if (workflowComputerId || !agentsOpen) showAgents()
+    else setAgentsOpen(false)
+  }
+  const toggleWorkflows = () => {
+    if (!workflowTarget) return
+    if (workflowComputerId && !agentsOpen) showAgents()
+    else openWorkflows(workflowTarget.computer.id)
+  }
+  const width = agentsOpen ? (compact ? 76 : sidebarWidth) : 0
   return (
     <div className={`split ${showAccount || context ? 'covered' : ''}`}>
-      <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
+      <PageRail
+        open={agentsOpen}
+        workflowsOpen={!!workflowComputerId && !agentsOpen}
+        onToggle={toggleAgents}
+        accountOpen={showAccount}
+        onAccount={() => setShowAccount((s) => !s)}
+        onWorkflows={workflowTarget && canOpenWorkflows(workflowTarget) ? toggleWorkflows : undefined}
+        onExtensions={openMarketplace}
+        onComputers={() => setSettings('computers')}
+      />
+      <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }} inert={!agentsOpen} aria-hidden={!agentsOpen}>
         <div className="sidebar-header drag" inert={compact}>
           <Spacer />
           <HStack gap={6} className="no-drag">
@@ -430,7 +482,9 @@ function ChatSplitView() {
               // Found it: the tip about where Extensions went has done its job.
               prefs.extensionsMovedTipSeen.set(true)
               setMarketplace(id)
-            }} />
+            }}
+            openWorkflows={openWorkflows}
+            workflowComputerId={workflowComputerId} />
           {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
@@ -444,19 +498,10 @@ function ChatSplitView() {
             {workButton(36)}
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
-            <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
-            <UpdateBadge size={32} />
-            <RailAccountNotice />
-            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
-              <ProfileAvatar />
-            </button>
           </div>
-        ) : (
-          // With several computers each heading opens its own Extensions instead.
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
-        )}
+        ) : null}
       </aside>
-      <ResizeHandle label={tr('Resize sidebar')} width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
+      {agentsOpen ? <ResizeHandle label={tr('Resize sidebar')} width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} /> : null}
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
@@ -465,7 +510,7 @@ function ChatSplitView() {
 
       {showAccount ? (
         <AccountPanelLayer
-          compact={compact}
+          compact={!agentsOpen || compact}
           approvals={app.approvals.length}
           onDismiss={() => setShowAccount(false)}
           onUsage={() => {

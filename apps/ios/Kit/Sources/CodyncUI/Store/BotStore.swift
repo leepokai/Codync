@@ -59,6 +59,17 @@ public final class BotStore {
     public internal(set) var hostRoute: HostRoute?
     public internal(set) var client: HostClient?
     public internal(set) var hello: Hello?
+    /// Summaries for the roster pins and the workflow list. Not written into the bot cache, and not a rev.
+    public internal(set) var workflows: [WorkflowSummary] = []
+    /// Editors with unsaved graph edits. A graph event does not reload those.
+    var dirtyWorkflowGraphs: Set<String> = []
+    /// Bumped when a clean workflow should reload its graph.
+    public internal(set) var workflowReload = 0
+    /// Bumped when an open run should reload. Run and step events do not reload a graph.
+    public internal(set) var workflowRunReload = 0
+    public internal(set) var deletedWorkflows: Set<String> = []
+    /// Sentences for an open workflow, such as a delete or a save conflict.
+    public internal(set) var workflowNotices: [String: String] = [:]
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
     /// An update this phone asked of the computer; cleared when its version changes.

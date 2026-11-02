@@ -21,6 +21,13 @@ struct SettingsView: View {
                 .foregroundStyle(Palette.text)
                 .accessibilityAddTraits(.isHeader)
 
+            CardSection {
+                Button { app.showStatus = true } label: {
+                    RowLabel("Show status", systemImage: "rectangle.stack.fill", chevron: true)
+                }
+                .buttonStyle(.plain)
+            }
+
             AppearanceSettings()
 
             LanguageSettings()

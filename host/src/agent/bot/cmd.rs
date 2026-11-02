@@ -16,6 +16,14 @@ pub enum Cmd {
     FollowUp(String),
     /// One of the bot's tasks ended (`chat::tasks`): its report, for a turn in the bot's chat.
     TaskReport(crate::chat::tasks::Report),
+    /// One assistant step of a workflow. `step_id` is `workflow_steps.id`.
+    WorkflowStep {
+        step_id: String,
+    },
+    /// Stop that step if it is the current turn, or drop it if it is still queued.
+    WorkflowStop {
+        step_id: String,
+    },
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -120,6 +128,7 @@ pub(super) enum Queued {
     Routine(String),
     FollowUp(String),
     TaskReport(crate::chat::tasks::Report),
+    WorkflowStep(String),
     User {
         lane: Lane,
         entry_id: String,

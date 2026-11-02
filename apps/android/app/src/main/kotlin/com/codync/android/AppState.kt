@@ -2,11 +2,15 @@ package com.codync.android
 
 import com.codync.android.core.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 /** Where a link lands once everything open is closed: the roster, or a sheet over it. */
-enum class LinkPage { Bots, Usage, Computers, Extensions }
+enum class LinkPage { Bots, Usage, Computers, Extensions, Workflows }
+
+/** The workflow stack item between the roster and a chat. A null id is the list. */
+data class WorkflowRoute(val id: String? = null, val runId: String? = null)
 
 /**
  * The active account as the UI renders it (iOS `AccountStore`): its computers, each with its own
@@ -99,6 +103,15 @@ data class AppState(
     val detailsRequest: String? = null,
     /** A bot and the item of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
     val cardRequest: Pair<String, WorkItem>? = null,
+    /** Workflows open between the roster and a chat: the list, or one workflow and an optional run. */
+    val workflow: WorkflowRoute? = null,
+    val workflows: List<WorkflowSummary> = emptyList(),
+    /** False after this host says it has workflows but rejects the methods. */
+    val workflowsSupported: Boolean = true,
+    /** Shown on the list: deleted, edited elsewhere, or an unknown method. */
+    val workflowMessage: String? = null,
+    /** Bumps when a workflow event should reload an open detail or run, without touching a dirty graph. */
+    val workflowTick: Int = 0,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
     /** Chats that page back no further, and why: their earlier row is dropped. */
@@ -130,6 +143,10 @@ data class AppState(
     val appFloor: String? = null,
     val error: String? = null,
 ) {
+    /** The computer is online and its hello offered workflows. */
+    internal val offersWorkflows: Boolean
+        get() = workflowsSupported && hello?.get("workflows")?.jsonPrimitive?.booleanOrNull == true
+
     /** Connection alone cannot make a cached roster current before event catch-up. */
     internal val widgetBotsCurrent: Boolean get() {
         val head = hello?.get("rev")?.jsonPrimitive?.longOrNull ?: return false

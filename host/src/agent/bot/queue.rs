@@ -26,6 +26,8 @@ impl Actor {
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
+            Cmd::WorkflowStep { step_id } => self.enqueue(Queued::WorkflowStep(step_id), done_tx).await,
+            Cmd::WorkflowStop { step_id } => self.stop_workflow(&step_id).await,
             Cmd::Send { lane, entry_id, text } => {
                 if !self.try_decision_message(&lane, &entry_id) {
                     self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
@@ -175,6 +177,9 @@ impl Actor {
         // told this member answers there once free, and only the group's Stop drops it.
         for queued in std::mem::take(&mut self.queue) {
             match queued {
+                Queued::WorkflowStep(step) => {
+                    self.hub.workflows.finish(&self.hub, &step, None, None, true);
+                }
                 Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
                 // An item's report is news the user still wants.
                 Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
@@ -188,6 +193,15 @@ impl Actor {
             }
         }
         self.cancel_turn().await;
+    }
+
+    async fn stop_workflow(&mut self, step_id: &str) {
+        self.queue.retain(|queued| !matches!(queued, Queued::WorkflowStep(id) if id == step_id));
+        if self.active_workflow.as_deref() == Some(step_id) {
+            self.cancel_turn().await;
+        } else {
+            self.hub.workflows.finish(&self.hub, step_id, None, None, true);
+        }
     }
 
     /// Stops the running turn only (queued ones stay).
@@ -230,6 +244,31 @@ impl Actor {
             // bot replies carry another computer's text.
             self.hub.ceilings.set(&self.cfg.id, Access::Allow);
             match self.queue.front() {
+                Some(Queued::WorkflowStep(_)) => {
+                    let Some(Queued::WorkflowStep(id)) = self.queue.pop_front() else {
+                        unreachable!("front is a workflow step")
+                    };
+                    self.active_workflow = Some(id.clone());
+                    match crate::workflows::agent_begin(&self.hub, &id) {
+                        Ok(Some(prepared)) => {
+                            self.routine_deadline = Some(Instant::now() + prepared.timeout);
+                            let result = self.start_turn(prepared.lane, &[], &prepared.prompt, false, done_tx).await;
+                            if let Err(error) = result {
+                                self.routine_deadline = None;
+                                self.hub.workflows.finish(&self.hub, &id, None, Some(format!("{error:#}")), false);
+                                self.active_workflow = None;
+                            } else if let Err(error) = crate::workflows::agent_mark_started(&self.hub, &id) {
+                                tracing::warn!(error = format!("{error:#}"), "couldn't mark a workflow step started");
+                            }
+                        }
+                        Ok(None) => self.active_workflow = None,
+                        Err(error) => {
+                            self.hub.workflows.finish(&self.hub, &id, None, Some(format!("{error:#}")), false);
+                            self.active_workflow = None;
+                        }
+                    }
+                    continue;
+                }
                 Some(Queued::Routine(_)) => {
                     let Some(Queued::Routine(id)) = self.queue.pop_front() else { unreachable!("front is a routine") };
                     self.active_routine = Some(id.clone());

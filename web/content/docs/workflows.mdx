@@ -1,0 +1,43 @@
+A workflow runs a series of steps on your computer. A trigger starts it, prompts and assistants do the work, a condition picks a branch, an approval waits for you, and an output sends the result to a chat or as a notification.
+
+A workflow belongs to the computer, not to one bot. One run can call more than one of that computer's bots. A [routine](/docs/routines) is different: it is one bot's own instruction.
+
+## Open workflows
+
+- **Desktop:** on a computer's row, choose the branch icon next to Extensions. The same icon is on the sidebar when you are on that computer.
+- **iPhone:** on the computer's heading in the bot list, choose the branch icon next to Extensions.
+- **Terminal UI:** open the workflow list from the computer screen. The help page names the key.
+
+The icon is hidden when that computer is offline, or when it is running a Codync that does not have workflows yet.
+
+## The canvas and the list
+
+On the desktop the workflow is a canvas. Add a trigger first, then connect prompts, assistants, a condition, an approval and an output. Drag to move a step. The bottom bar selects, pans, draws, and adds a note, a shape or text.
+
+On the iPhone the same workflow is a vertical list of steps when it is a single chain, or a chain with one condition. You can add, remove and reorder those steps. A loop, a second condition, or a layout the list cannot show stays as it is: you can still change each step's settings, and the lines are kept.
+
+The terminal UI uses the same list.
+
+A workflow is also a script. On the desktop, the script button opens it. A script the canvas can draw stays a graph. A script that decides its steps while it runs keeps its trigger on the canvas, and the steps show up on the run. On the iPhone you can change that trigger. The steps appear when it runs. Saving the script changes the next run. If it was saved somewhere else, the message is "This workflow was edited somewhere else".
+
+## Run
+
+Choose Run to start the whole workflow, or run one trigger or one assistant from its card. A workflow only runs one at a time. While one is going, the button stops it.
+
+Pause keeps schedules and webhooks from starting a new run. You can still run it yourself. Pausing does not stop the run that is already going.
+
+An assistant step shows up in that bot's chat as its own turn. An approval waits until you accept or reject it. Rejecting stops the run. An output either posts into a bot's chat or sends you a notification.
+
+## Webhooks and schedules
+
+A trigger can be manual, a schedule, or a webhook. The schedule uses the same time and time zone fields as a routine. A webhook has a URL and a secret. The secret is hidden until you reveal it. Rotating it asks you to confirm, and the previous secret stops working.
+
+Someone calling the webhook while a run is already going gets a busy response and can try again later. A paused workflow refuses the call.
+
+## Versions
+
+Each workflow keeps older copies of the graph. You can open one and restore it. Restoring keeps the graph you had as a version too. If the workflow was saved somewhere else while you were editing, your next save is refused and the editor loads the saved graph. The message is "This workflow was edited somewhere else".
+
+## Pin a workflow
+
+On the phone, long-press a workflow to pin it on that computer's bot list, above the bots. Pins stay on that device. The list keeps up to twenty.

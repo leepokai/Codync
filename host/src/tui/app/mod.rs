@@ -172,6 +172,8 @@ pub struct App {
     pub analytics: Option<bool>,
     /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
     pub auto_order: Option<bool>,
+    /// `hello.workflows`: this host serves the workflow list.
+    pub workflows: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
     kofi: kofi::Invite,
@@ -248,6 +250,7 @@ impl App {
             hint: None,
             analytics: None,
             auto_order: None,
+            workflows: false,
             seen: analytics::Seen::default(),
             kofi: kofi::Invite::load(),
         }

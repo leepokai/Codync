@@ -77,6 +77,7 @@ impl App {
                     }
                 }
             }
+            Reply::Workflow(reply) => self.workflow_reply(reply, &v),
             Reply::Routines(bot) => {
                 if v["routines"].is_array() {
                     let (work, max_agents) = self.bots.get(&bot).map_or((&[][..], None), |b| (&b.work, b.max_agents));
@@ -374,6 +375,7 @@ impl App {
                 }
                 self.flash(&e);
             }
+            Reply::Workflow(reply) => self.workflow_failed(reply, &e),
             Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {

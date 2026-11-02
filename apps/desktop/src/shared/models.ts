@@ -671,6 +671,8 @@ export interface Hello {
   autoOrder?: boolean
   /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
   credentialsReset?: boolean
+  /** The host can store workflows. Missing means it cannot. */
+  workflows?: boolean
 }
 
 export interface PairingInfo {

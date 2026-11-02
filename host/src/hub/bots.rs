@@ -87,6 +87,7 @@ impl Hub {
             self.delete_bot(&task.id)?;
         }
         self.routines.disable_bot(&self.store, id)?;
+        crate::workflows::clear_bot(self, id);
         self.team.end_turn(id);
         self.ceilings.set(id, codync_network::Access::Allow);
         crate::chat::group::stop(self, id);

@@ -65,24 +65,7 @@ struct WorkflowEditorView: View {
         .navigationSubtitle(String(workflowId.prefix(8)))
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
-        .codyncSheet(item: $editing) { route in
-            if let node = graph.node(route.id) {
-                let choices = workflowSourceChoices(graph: graph, step: node.id, botName: botName)
-                WorkflowStepSheet(
-                    node: node,
-                    webhook: webhooks.first { $0.nodeId == route.id },
-                    onChange: { replace($0.node) },
-                    onReveal: { await revealWebhook() },
-                    onRotate: { await rotateWebhook(route.id) },
-                    workflowId: workflowId,
-                    pendingStepId: route.id == openNodeId ? openStepId : nil,
-                    sourceSelection: choices.selection,
-                    sourceOptions: choices.options,
-                    onSource: { token in retarget(node.id, to: token) },
-                    prepare: { await flushForRun() }
-                )
-            }
-        }
+        .codyncSheet(item: $editing, content: stepSheet)
         .codyncSheet(item: $adding) { route in
             WorkflowAddStepSheet(route: route, outline: outline) { kind in
                 add(kind, route: route)
@@ -273,6 +256,26 @@ struct WorkflowEditorView: View {
             await loadSchedules()
         } catch {
             if !loaded { self.error = error.localizedDescription }
+        }
+    }
+
+    @ViewBuilder private func stepSheet(_ route: StepRoute) -> some View {
+        if let node = graph.node(route.id) {
+            let choices = workflowSourceChoices(graph: graph, step: node.id, botName: botName)
+            let pending = route.id == openNodeId ? openStepId : nil
+            WorkflowStepSheet(
+                node: node,
+                webhook: webhooks.first { $0.nodeId == route.id },
+                onChange: { replace($0.node) },
+                onReveal: { await revealWebhook() },
+                onRotate: { await rotateWebhook(route.id) },
+                workflowId: workflowId,
+                sourceSelection: choices.selection,
+                sourceOptions: choices.options,
+                onSource: { token in retarget(node.id, to: token) },
+                prepare: { await flushForRun() },
+                pendingStepId: pending
+            )
         }
     }
 

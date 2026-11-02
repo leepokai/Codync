@@ -28,12 +28,16 @@ connects to its local host; neither has this phone access-request screen.
 
 The iOS app uses `apps/ios/App/AccountSession.swift`. Public keys and cloud URLs come from `apps/shared/Config/<env>.plist`, copied into the bundle as `AccountConfig.plist` by `project.yml`; `iOS Dev` (`DevDebug` / `DevRelease`) selects dev and `iOS` (`Debug` / `Release`) selects main. The desktop app reads the same plist through `node apps/desktop/tools/account-config.mjs <env>` (run by `npm run dev` and `npm run dist:*:<env>`), which writes `resources/account-config.json` (`CODYNC_CLERK_PUBLISHABLE_KEY` / `CODYNC_CLOUD_URL` override it). See [environments](environments-and-deployment.md).
 
-Confirm Apple and Google sign-in, Native API and the native app registrations in the intended Clerk instance. The desktop app uses `com.pokai.Codync`, iOS uses `com.pokai.Codync.ios`, with their matching `://callback` URLs. Dashboard configuration and actual OAuth consent must be verified independently of the checked-in plist. Do not bundle Clerk secret keys.
+Confirm Apple, Google and GitHub sign-in, Native API and the native app registrations in the intended Clerk instance. The desktop app uses `com.pokai.Codync`, iOS uses `com.pokai.Codync.ios`, with their matching `://callback` URLs. Dashboard configuration and actual OAuth consent must be verified independently of the checked-in plist. Do not bundle Clerk secret keys.
+
+### GitHub sign-in
+
+**Continue with GitHub** sits under Google on every sign-in surface (welcome, account menu, custom icon dialog; desktop Settings → General → Account). It is Clerk's built-in GitHub connection, run like Google: `oauth_github` through the system browser on the desktop, `clerk.auth.signInWithOAuth(provider: .github)` on iOS, `OAuthProvider.GITHUB` on Android. GitHub gives Clerk the account's verified email, so nothing in `cloud/` changes. The development instance can use Clerk's shared credentials; production needs a GitHub OAuth App (GitHub → Settings → Developer settings → OAuth Apps) whose callback URL is the one Clerk shows under SSO connections → GitHub → Use custom credentials, with its Client ID and secret pasted there. Enable it in production before a release with the button ships.
 
 ### Desktop Sign in with Apple
 
 The welcome screen (`apps/desktop/src/renderer/views/AccountWelcomeView.tsx`) offers
-**Continue with Apple** and **Continue with Google**; **Settings → General → Account**
+**Continue with Apple**, **Continue with Google** and **Continue with GitHub**; **Settings → General → Account**
 has Sign out.
 
 On the desktop, `AccountService.signIn('apple')` starts Clerk's `oauth_apple` sign-in
@@ -68,9 +72,9 @@ still need to be checked on a release build.
 ### iOS Sign in with Apple
 
 The welcome, pairing and account screens offer **Continue with Apple** alongside
-Google, with matching headline typography and button sizing. Apple's native
+Google and GitHub, with matching headline typography and button sizing. Apple's native
 authorization is presented by Clerk. Adding another account lets the user choose
-either provider. `AccountSession.signIn(provider: .apple)` calls
+any provider. `AccountSession.signIn(provider: .apple)` calls
 `clerk.auth.signInWithApple()`; Clerk owns Apple's credential exchange, new-user
 transfer, session activation and persistence. Cancellation is silent and
 incomplete sign-in/sign-up results remain explicit errors.
@@ -171,12 +175,12 @@ computer approves each device after comparing a 6-digit code
   desktop app with `npm run dev` in `apps/desktop/`.
 - Open the account menu from either sidebar layout; test arrows, Return, Escape
   and clicking outside the panel.
-- Sign in with Apple and Google test users, verify the avatar/email, restart the app and
+- Sign in with Apple, Google and GitHub test users, verify the avatar/email, restart the app and
   verify session restoration, then log out and verify the anonymous state.
 - Cancel the browser flow and verify no error; retry with networking unavailable
   and verify that the application stays usable.
 
-Dashboard creation and the end-to-end Apple/Google flows require the user's browser
+Dashboard creation and the end-to-end Apple/Google/GitHub flows require the user's browser
 consent; compilation alone does not verify those steps.
 
 References:

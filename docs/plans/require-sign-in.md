@@ -69,7 +69,7 @@ The two calls are best effort, with a short timeout each. Signing out never fail
 
 **iPhone (`RootView.swift`, `WelcomeView.swift`)**
 - `WelcomeView` keeps the crew, the chat glimpse and **Watch the demo**.
-- With Clerk configured, **Get started** is replaced by `SignInButtons` (Apple, Google) as the primary actions.
+- With Clerk configured, **Get started** is replaced by `SignInButtons` (Apple, Google, GitHub) as the primary actions.
 - The pairing screen's **Skip** stays: a signed-in user may look around before pairing.
 - When the signed-out context has computers, one more line appears: "Sign in to keep using your {n} computers. They move into your account; you won't need to scan again."
 - `RootView`'s condition becomes "configured and ready and signed out" instead of `!onboardingCompleted && !welcomed`. Signing out of the last account lands back on this screen.
@@ -80,7 +80,7 @@ The two calls are best effort, with a short timeout each. Signing out never fail
 - `NativeAccounts.configured` stands in for `isConfigured`.
 
 **Desktop (`ChatWindow.tsx`, `AccountWelcomeView.tsx`)**
-- With Clerk configured, **Continue on this Mac** (the button and the skip link) goes, and the welcome shows only **Continue with Apple** / **Continue with Google**.
+- With Clerk configured, **Continue on this Mac** (the button and the skip link) goes, and the welcome shows only **Continue with Apple** / **Continue with Google** / **Continue with GitHub**.
 - `onboarded` alone no longer opens the chat window. The welcome shows whenever the app is configured, ready and signed out, so signing out from the account menu returns to it.
 - The host keeps running while signed out, and so do the tray and menu bar.
 - Signing out also revokes the desktop app's own cloud device (`DELETE /v1/devices/{id}`, best effort, on a token taken before Clerk signs out) once Clerk has signed out, then its key file goes: the cloud refuses a revoked key, so the next sign-in makes a new one.

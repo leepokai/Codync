@@ -23,7 +23,7 @@ export type Screen =
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
 
-export type SignInProvider = 'apple' | 'google'
+export type SignInProvider = 'apple' | 'google' | 'github'
 
 /** Why a sign-in ended without an account. */
 export type SignInFailure = 'cancelled' | 'timeout' | 'verification' | 'error'

@@ -36,8 +36,7 @@ struct CodyncApp: App {
                 .environment(\.customIconAccount, CustomIconAccount(
                     signedIn: app.account.isSignedIn, loading: app.account.isBusy || !app.account.isReady,
                     error: app.account.errorMessage,
-                    signInApple: { Task { await app.account.signIn(provider: .apple) } },
-                    signInGoogle: { Task { await app.account.signIn(provider: .google) } }))
+                    signIn: { provider in Task { await app.account.signIn(provider: provider) } }))
                 // A computer needs a newer app: its App Store page has the Update button.
                 .environment(\.appUpdate, AppUpdateAction {
                     Analytics.shared.capture(.linkOpened(.appStore))

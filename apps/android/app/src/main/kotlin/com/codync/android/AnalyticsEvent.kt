@@ -110,7 +110,7 @@ internal enum class OnboardingStep(override val wire: String) : CatalogValue { W
 
 internal enum class OnboardingVia(override val wire: String) : CatalogValue { Paired("paired"), Account("account"), Skipped("skipped") }
 
-internal enum class SignInProvider(override val wire: String) : CatalogValue { Apple("apple"), Google("google"), Hosted("hosted") }
+internal enum class SignInProvider(override val wire: String) : CatalogValue { Apple("apple"), Google("google"), GitHub("github"), Hosted("hosted") }
 
 /** The signed-out pairings' keys at sign-in: [Moved] with them, or listed to be scanned again ([Rescan]). */
 internal enum class MovedKeys(override val wire: String) : CatalogValue { Moved("moved"), Rescan("rescan") }

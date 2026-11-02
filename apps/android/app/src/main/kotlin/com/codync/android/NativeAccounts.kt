@@ -60,9 +60,16 @@ object NativeAccounts {
 
     private fun Session.usableUserId(): String? = takeIf { it.status == Session.SessionStatus.ACTIVE && it.expireAt > System.currentTimeMillis() }?.user?.id
 
-    suspend fun signIn(apple: Boolean) {
+    internal suspend fun signIn(provider: SignInProvider) = when (provider) {
+        SignInProvider.Apple -> oauthSignIn(OAuthProvider.APPLE)
+        SignInProvider.Google -> oauthSignIn(OAuthProvider.GOOGLE)
+        SignInProvider.GitHub -> oauthSignIn(OAuthProvider.GITHUB)
+        SignInProvider.Hosted -> hostedSignIn()
+    }
+
+    private suspend fun oauthSignIn(provider: OAuthProvider) {
         require(Clerk.isInitialized.value) { "Wait for sign-in to finish loading." }
-        val result = Clerk.auth.signInWithOAuth(if (apple) OAuthProvider.APPLE else OAuthProvider.GOOGLE)
+        val result = Clerk.auth.signInWithOAuth(provider)
         when (result) {
             is ClerkResult.Failure -> throw signInError(result)
             is ClerkResult.Success -> {
@@ -92,7 +99,7 @@ object NativeAccounts {
         }
     }
 
-    suspend fun hostedSignIn() {
+    private suspend fun hostedSignIn() {
         val result = Clerk.auth.startHostedAuth()
         if (result is ClerkResult.Failure) throw signInError(result)
     }

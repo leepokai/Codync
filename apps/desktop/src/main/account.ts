@@ -17,6 +17,7 @@ import { buildConfig, identity } from './environment'
 
 const SCHEME = identity.appId
 const REDIRECT = `${SCHEME}://callback`
+const PROVIDER_NAMES: Record<SignInProvider, string> = { apple: 'Apple', google: 'Google', github: 'GitHub' }
 
 interface Config {
   clerkPublishableKey: string | null
@@ -263,7 +264,7 @@ export class AccountService extends EventEmitter {
       return 'error'
     }
     const attempt = ++this.signInAttempt
-    const name = provider === 'apple' ? 'Apple' : 'Google'
+    const name = PROVIDER_NAMES[provider]
     let failure: SignInFailure | null = null
     this.set({ busy: true, error: null })
     try {

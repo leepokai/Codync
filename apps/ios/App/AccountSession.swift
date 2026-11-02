@@ -112,44 +112,44 @@ final class AccountSession {
         var errorDescription: String? { "Sign in again to reach your account." }
     }
 
-    enum SignInProvider: String {
-        case google = "Google"
-        case apple = "Apple"
-    }
-
-    func signIn(provider: SignInProvider = .google) async {
+    func signIn(provider: AnalyticsEvent.SignInProvider) async {
         guard !isBusy else { return }
         guard let clerk else { return }
-        let tracked: AnalyticsEvent.SignInProvider = provider == .apple ? .apple : .google
-        Analytics.shared.capture(.signInStarted(tracked))
+        Analytics.shared.capture(.signInStarted(provider))
         isBusy = true
         errorMessage = nil
         defer { isBusy = false }
         do {
-            // Both providers use Clerk's transfer flow and activate the same kind of session.
+            // Every provider uses Clerk's transfer flow and activates the same kind of session.
+            let name: String
             let result: TransferFlowResult
             switch provider {
-            case .google:
-                result = try await clerk.auth.signInWithOAuth(provider: .google, prefersEphemeralWebBrowserSession: isSignedIn)
             case .apple:
+                name = "Apple"
                 result = try await clerk.auth.signInWithApple()
+            case .google:
+                name = "Google"
+                result = try await clerk.auth.signInWithOAuth(provider: .google, prefersEphemeralWebBrowserSession: isSignedIn)
+            case .github:
+                name = "GitHub"
+                result = try await clerk.auth.signInWithOAuth(provider: .github, prefersEphemeralWebBrowserSession: isSignedIn)
             }
             switch result {
             case .signIn(let signIn):
                 if signIn.status != .complete {
-                    errorMessage = "\(provider.rawValue) sign-in needs additional verification. Your account is not signed in yet."
+                    errorMessage = "\(name) sign-in needs additional verification. Your account is not signed in yet."
                 }
             case .signUp(let signUp):
                 if signUp.status != .complete {
-                    errorMessage = "\(provider.rawValue) sign-up needs additional account information. Your account is not signed in yet."
+                    errorMessage = "\(name) sign-up needs additional account information. Your account is not signed in yet."
                 }
             }
-            Analytics.shared.capture(errorMessage == nil ? .signedIn(tracked) : .signInFailed(tracked, reason: .verification))
+            Analytics.shared.capture(errorMessage == nil ? .signedIn(provider) : .signInFailed(provider, reason: .verification))
         } catch where Self.isCancellation(error) {
-            Analytics.shared.capture(.signInFailed(tracked, reason: .cancelled))
+            Analytics.shared.capture(.signInFailed(provider, reason: .cancelled))
         } catch {
             errorMessage = "Couldn't sign in. Check your connection and try again."
-            Analytics.shared.capture(.signInFailed(tracked, reason: .error))
+            Analytics.shared.capture(.signInFailed(provider, reason: .error))
         }
     }
 

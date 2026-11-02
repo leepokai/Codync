@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.*
 internal fun AccountStore.signIn(provider: SignInProvider) = sessionAction {
     Analytics.capture(AnalyticsEvent.SignInStarted(provider))
     try {
-        if (provider == SignInProvider.Hosted) NativeAccounts.hostedSignIn() else NativeAccounts.signIn(apple = provider == SignInProvider.Apple)
+        NativeAccounts.signIn(provider)
     } catch (error: CancellationException) { throw error }
     catch (error: Exception) {
         Analytics.capture(AnalyticsEvent.SignInFailed(provider, (error as? SignInError)?.reason ?: SignInFailure.Error))

@@ -18,7 +18,7 @@ const questions: [string, string][] = [
   ],
   [
     "How do I start?",
-    "Install Codync on the computer your agents run on and create a bot. Then sign in on your iPhone with Apple or Google and pair it by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair.",
+    "Install Codync on the computer your agents run on and create a bot. Then sign in on your iPhone with Apple, Google or GitHub and pair it by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair.",
   ],
   [
     "Where does my data go?",
@@ -26,7 +26,7 @@ const questions: [string, string][] = [
   ],
   [
     "Do I need an account?",
-    "Yes, a free one: the apps ask you to sign in with Apple or Google. It lists every computer on your account on your phone. An account alone never unlocks a computer: you still pair in person by scanning a code, or approve a 6-digit code on the computer.",
+    "Yes, a free one: the apps ask you to sign in with Apple, Google or GitHub. It lists every computer on your account on your phone. An account alone never unlocks a computer: you still pair in person by scanning a code, or approve a 6-digit code on the computer.",
   ],
   [
     "Which computers can run it?",

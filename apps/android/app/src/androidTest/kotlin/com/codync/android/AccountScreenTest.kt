@@ -86,9 +86,10 @@ class AccountScreenTest {
         compose.setContent { Hosted { AccountSwitcherView(state.value, viewModel()) {} } }
         val apple = compose.onNodeWithText("Continue with Apple").assertIsDisplayed().assertIsEnabled().fetchSemanticsNode().boundsInRoot
         val google = compose.onNodeWithText("Continue with Google").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        assertTrue(apple.bottom <= google.top)
-        assertEquals(apple.left, google.left, 1f)
-        assertEquals(apple.right, google.right, 1f)
+        val github = compose.onNodeWithText("Continue with GitHub").performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(apple.bottom <= google.top && google.bottom <= github.top)
+        assertEquals(apple.left, github.left, 1f)
+        assertEquals(apple.right, github.right, 1f)
         compose.onNodeWithText("Other sign-in options").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
         compose.onNodeWithText("Delete account").assertDoesNotExist()

@@ -164,7 +164,7 @@ private val CREW = listOf(
     }
 }
 
-/** Equal access to both account providers at every sign-in entry point (iOS `SignInButtons`). */
+/** Equal access to every account provider at every sign-in entry point (iOS `SignInButtons`). */
 @Composable internal fun SignInButtons(state: AccountContext, store: AccountStore) {
     val busy = "session" in state.busy
     val enabled = state.account.ready && !busy
@@ -176,6 +176,10 @@ private val CREW = listOf(
         WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.Google) }) {
             Image(painterResource(R.drawable.google_logo), null, Modifier.size(20.dp))
             Text(tr("Continue with Google"))
+        }
+        WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.GitHub) }) {
+            Symbol("github.logo", size = 20.dp)
+            Text(tr("Continue with GitHub"))
         }
         // Clerk's own page covers the sign-ins that need another step (email codes, verification).
         LinkButton("Other sign-in options", enabled = enabled, color = Palette.secondary, style = Type.footnote) { store.signIn(SignInProvider.Hosted) }

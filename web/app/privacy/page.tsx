@@ -37,7 +37,7 @@ export default function Privacy() {
         </Section>
 
         <Section title="Codync account">
-          The Codync apps ask you to sign in with Apple or Google, so your phones can find your computers. Your account keeps your email address, an account ID, and the names of the phones and computers you connect with it. You can delete it at any time: see <a href="#delete-account" className="underline">Delete your Codync account</a> below.
+          The Codync apps ask you to sign in with Apple, Google or GitHub, so your phones can find your computers. Your account keeps your email address, an account ID, and the names of the phones and computers you connect with it. You can delete it at any time: see <a href="#delete-account" className="underline">Delete your Codync account</a> below.
         </Section>
 
         <Section title="Data we collect">

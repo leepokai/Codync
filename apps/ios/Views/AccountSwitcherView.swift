@@ -174,29 +174,6 @@ struct AccountSwitcherView: View {
     }
 }
 
-/// Google's mark plus the one line it needs; used wherever sign-in is offered.
-struct GoogleSignInButton: View {
-    @Environment(AccountSession.self) private var account
-
-    var body: some View {
-        Button { Task { await account.signIn() } } label: {
-            ZStack {
-                HStack(spacing: 10) {
-                    Image("google").resizable().frame(width: 20, height: 20)
-                    Text(L10n.tr("Continue with Google"))
-                }
-                .opacity(account.isBusy ? 0 : 1)
-                if account.isBusy { Spinner(size: 18) }
-            }
-            .font(.headline)
-            .frame(maxWidth: .infinity, minHeight: 50)
-        }
-        .buttonStyle(.secondary)
-        .disabled(account.isBusy)
-        .animation(Motion.fade, value: account.isBusy)
-    }
-}
-
 /// The account's photo; its first letter on a tinted circle until (or unless) the photo loads.
 struct AccountAvatar: View {
     let url: URL?

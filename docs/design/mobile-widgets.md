@@ -13,7 +13,7 @@
 
 ## Onboarding 與帳號
 
-1. 首次開啟由 Welcome 提供 Apple／Google 登入（必須登入；沒有 Clerk 的 build 才有 Get started），再進入配對／帳號電腦流程。
+1. 首次開啟由 Welcome 提供 Apple／Google／GitHub 登入（必須登入；沒有 Clerk 的 build 才有 Get started），再進入配對／帳號電腦流程。
 2. 儲存第一台配對電腦後，記錄此裝置的 `onboardingCompleted`。
 3. 既有已配對安裝自動視為完成 onboarding。
 4. 完成後才顯示帳號入口；切換到沒有電腦的帳號，或解除配對後，入口仍保留，避免無法切回原帳號。

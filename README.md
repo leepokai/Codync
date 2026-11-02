@@ -201,7 +201,7 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 
 **Where does my data go?** Bots, chats and memory stay on your computer. The phone reaches it directly on the same network, or through an end-to-end encrypted relay that can't read your messages.
 
-**Do I need an account?** Yes, a free one: the apps ask you to sign in with Apple or Google. An account alone never unlocks a computer: you still pair by scanning a QR code, or approve a 6-digit code on the computer.
+**Do I need an account?** Yes, a free one: the apps ask you to sign in with Apple, Google or GitHub. An account alone never unlocks a computer: you still pair by scanning a QR code, or approve a 6-digit code on the computer.
 
 **Which computers can run it?** A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host.
 

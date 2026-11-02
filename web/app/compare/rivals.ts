@@ -24,7 +24,7 @@ const us = {
   apps: "iPhone, Mac, Windows and Linux apps, plus a terminal UI over SSH.",
   data: "Stays on your computer. The phone connects directly, or through an end-to-end encrypted relay.",
   source: "Open source, Apache 2.0.",
-  account: "Sign in with Apple or Google, free. An account never unlocks a computer: each one approves each device itself.",
+  account: "Sign in with Apple, Google or GitHub, free. An account never unlocks a computer: each one approves each device itself.",
   approvals: "Edits and commands come to your phone: allow once, always allow or deny.",
   rooms: "Group chats where every bot answers in its own session, and replies that quote any message.",
   memory: "Memory per bot, and routines that run on a schedule or from a webhook.",

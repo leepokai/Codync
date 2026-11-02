@@ -4,6 +4,8 @@ import SwiftUI
 /// Outline columns, or each step's settings when the graph is not an outline.
 struct WorkflowEditorView: View {
     let workflowId: String
+    var openNodeId: String?
+    var openStepId: String?
 
     @Environment(BotStore.self) private var model
     @State private var title = ""
@@ -14,6 +16,7 @@ struct WorkflowEditorView: View {
     @State private var webhooks: [WorkflowWebhook] = []
     @State private var scheduleLines: [String: String] = [:]
     @State private var loaded = false
+    @State private var didOpenNode = false
     @State private var dirty = false
     @State private var saving = false
     @State private var pending = false
@@ -72,6 +75,7 @@ struct WorkflowEditorView: View {
                     onReveal: { await revealWebhook() },
                     onRotate: { await rotateWebhook(route.id) },
                     workflowId: workflowId,
+                    pendingStepId: route.id == openNodeId ? openStepId : nil,
                     sourceSelection: choices.selection,
                     sourceOptions: choices.options,
                     onSource: { token in retarget(node.id, to: token) },
@@ -265,10 +269,17 @@ struct WorkflowEditorView: View {
             apply(detail, conflict: false)
             loaded = true
             error = nil
+            openPendingStep()
             await loadSchedules()
         } catch {
             if !loaded { self.error = error.localizedDescription }
         }
+    }
+
+    private func openPendingStep() {
+        guard !didOpenNode, let openNodeId, graph.node(openNodeId) != nil else { return }
+        didOpenNode = true
+        editing = StepRoute(id: openNodeId)
     }
 
     private func apply(_ detail: WorkflowDetail, conflict: Bool) {

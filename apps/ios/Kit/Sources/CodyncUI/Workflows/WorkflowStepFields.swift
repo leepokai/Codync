@@ -21,12 +21,13 @@ struct WorkflowStepFields: View {
     var onRotate: () -> Void
     var onTrigger: (String) -> Void
     var prepare: () async -> String? = { nil }
+    var pendingStepId: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             kind
             if !workflowId.isEmpty {
-                WorkflowSoloRun(workflowId: workflowId, nodeId: draft.id, kind: draft.kind, prepare: prepare)
+                WorkflowSoloRun(workflowId: workflowId, nodeId: draft.id, kind: draft.kind, pendingStepId: pendingStepId, prepare: prepare)
             }
         }
     }

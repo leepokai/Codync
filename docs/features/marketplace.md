@@ -8,7 +8,7 @@ Under the open section, one line says where that section comes from: agents from
 | --- | --- | --- |
 | Agents | `host/src/agent/backends.rs`, `host/src/agent/registry.rs`, `host/src/agent/node.rs` | Detect installed harnesses, resolve ACP registry adapters, provide Node.js for npm agents |
 | Connectors | `host/src/market/mod.rs`, `registry.rs`, `install.rs` | Discover MCP servers or add one manually; install per computer; on for every bot unless a bot turns it off |
-| Connected apps | `host/src/market/composio.rs` | Expose connected Composio apps as connectors |
+| Connected apps | `host/src/market/composio/mod.rs` | Expose connected Composio apps as connectors |
 | Skills | `host/src/market/skills.rs` | Instruction folders containing `SKILL.md`, stored under `~/.codync/skills/<id>`; on for every bot unless a bot turns it off |
 
 Composio Connect is featured in Connectors through the official MCP Registry

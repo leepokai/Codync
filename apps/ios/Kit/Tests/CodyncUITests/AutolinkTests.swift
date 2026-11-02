@@ -53,3 +53,12 @@ private func urls(_ text: String) -> [String] { Autolink.find(text).map(\.url.ab
         #expect(text.runs.compactMap { $0.link?.absoluteString } == [url])
     }
 }
+
+/// A written link doesn't keep Apple's destination on the same address left bare beside it.
+@MainActor @Test func repliesRebuildABareAddressNextToAWrittenLink() {
+    for source in ["[docs](http://www.example.com) www.example.com",
+                   "[www.example.com](http://www.example.com) www.example.com"] {
+        let text = MarkdownText.inline(source)
+        #expect(text.runs.compactMap { $0.link?.absoluteString } == ["http://www.example.com", "https://www.example.com"])
+    }
+}

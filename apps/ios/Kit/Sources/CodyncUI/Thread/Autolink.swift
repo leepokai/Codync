@@ -46,12 +46,17 @@ enum Autolink {
     /// its own, so code or bold text right after an address doesn't join it. Apple's Markdown
     /// links bare addresses by its own rule (`www.` over http, `**` kept inside), so those links
     /// are found again by this one; a link written in `source` (`[label](url)`, `<url>`) stays.
+    /// Each written link keeps one run, so the same address left bare elsewhere is still found again.
     static func link(_ text: inout AttributedString, source: String = "") {
+        var kept: [String: Int] = [:]
         for run in text.runs {
             guard let url = run.link?.absoluteString else { continue }
             let shown = String(text[run.range].characters)
-            let written = source.contains("](\(url)") || source.contains("](<\(url)") || source.contains("<\(url)>")
-            if !written, url == shown || url == "http://\(shown)" { text[run.range].link = nil }
+            guard url == shown || url == "http://\(shown)" else { continue }
+            let key = "\(shown)\n\(url)"
+            let written = ["[\(shown)](\(url))", "[\(shown)](<\(url)>)", "<\(url)>"]
+                .reduce(0) { $0 + source.components(separatedBy: $1).count - 1 }
+            if kept[key, default: 0] < written { kept[key, default: 0] += 1 } else { text[run.range].link = nil }
         }
         var ranges: [(Range<AttributedString.Index>, URL)] = []
         for run in text.runs where run.link == nil && run.inlinePresentationIntent?.contains(.code) != true {

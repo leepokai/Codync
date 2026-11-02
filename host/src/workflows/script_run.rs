@@ -953,6 +953,12 @@ fn js_len(value: f64) -> usize {
     value as usize
 }
 
+/// The first attempt uses `script:{run}:{index}`. A retry leaves that row in place, so it
+/// takes a new id and the failed attempt stays findable.
+fn script_request(canonical: &str, step: &str, taken: bool) -> String {
+    if taken { format!("{canonical}:{step}") } else { canonical.to_owned() }
+}
+
 fn apply(hub: &Hub, run: &RunInfo, host: Host) -> Result<()> {
     let mut effects = Effects { agents: Vec::new(), pushes: Vec::new() };
     let now = now_ms();
@@ -978,8 +984,15 @@ fn apply(hub: &Hub, run: &RunInfo, host: Host) -> Result<()> {
         };
         let prompt = clip(&if fresh.kind == "output" { fresh.text.clone() } else { fresh.prompt.clone() }, MAX_INPUT);
         let truncated = i64::from(prompt.chars().count() >= MAX_INPUT);
-        let request = format!("script:{}:{}", run.id, fresh.index);
+        // A retry keeps the failed row and its request id. This attempt needs its own.
+        let canonical = format!("script:{}:{}", run.id, fresh.index);
         hub.store.with_immediate(|tx| {
+            let taken: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM workflow_steps WHERE workflow_id = ?1 AND request_id = ?2",
+                params![run.workflow, canonical],
+                |r| r.get(0),
+            )?;
+            let request = script_request(&canonical, &step, taken > 0);
             tx.execute(
                 "INSERT INTO workflow_steps(id, workflow_id, run_id, node_id, kind, status, attempt, request_id, input, output, error, bot_id, passes, truncated, label, phase, schema_json, created_at, updated_at)
                  VALUES(?1,?2,?3,?4,?5,?6,1,?7,?8,?9,?10,?11,1,?12,?13,?14,?15,?16,?16)",
@@ -1336,7 +1349,7 @@ pub fn start_script(
 
 #[cfg(test)]
 mod tests {
-    use super::{drain_stdout, finish_child, interpret, run_open};
+    use super::{drain_stdout, finish_child, interpret, run_open, script_request};
     use std::collections::HashMap;
 
     #[test]
@@ -1381,6 +1394,15 @@ mod tests {
             ]);
             command
         }
+    }
+
+    #[test]
+    fn a_retry_takes_a_new_request_id_and_keeps_the_failed_one() {
+        let canonical = "script:run:3";
+        assert_eq!(script_request(canonical, "step-new", false), canonical);
+        let retry = script_request(canonical, "step-new", true);
+        assert_eq!(retry, "script:run:3:step-new");
+        assert_ne!(retry, canonical);
     }
 
     #[test]

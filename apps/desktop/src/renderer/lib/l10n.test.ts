@@ -190,3 +190,10 @@ test('Russian resolves regional tags and keeps its native menu name', () => {
   assert.equal(languageTitle('ru', 'en', 'en'), 'Русский')
   assert.equal(resolvedLanguage('ru', 'pt-BR'), 'ru')
 })
+
+test('host notice templates keep user-chosen names as written', () => {
+  // "Reviewer" and "Settings" are catalog phrases; as a bot's name they must not be translated.
+  assert.equal(translate('Created bot Reviewer', 'ru', false).endsWith('Reviewer'), true)
+  assert.equal(translate('Updated routine: Settings', 'ru', false).endsWith('Settings'), true)
+  assert.notEqual(translate('Created bot Reviewer', 'ru', false), 'Created bot Reviewer')
+})

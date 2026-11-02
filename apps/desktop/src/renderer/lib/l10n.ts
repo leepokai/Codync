@@ -118,7 +118,10 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
   if (pos !== text.length) return undefined
   let result = phrase
   for (const [token, value] of caps) {
-    const inner = hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
+    // `{name}` holds what the user named (a bot, routine or computer): it stays as written. Lowercase
+    // fillers ("this Mac") are app text and still translate.
+    // ponytail: casing heuristic; a lowercase bot named like a catalog phrase would still translate.
+    const inner = token === '{name}' && !/^[a-z]/.test(value) ? value : hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
     result = result.replaceAll(token, inner)
   }
   return result

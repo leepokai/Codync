@@ -23,6 +23,7 @@ import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
 import { queueVoiceKey } from './thread/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
+import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
@@ -37,7 +38,8 @@ export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
 import { StarPrompt } from './StarPrompt'
 import { OpenVoiceSettings } from './call/CallView'
-import { AccountPanelLayer, DesktopActionMenu, ProfileAvatar, type ActionItem } from './PanelMenus'
+import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
+import { DesktopActionMenu, type ActionItem } from './DesktopActionMenu'
 import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
 import { SectionNameDialog } from './SectionNameDialog'
@@ -201,6 +203,7 @@ function ChatSplitView() {
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
   const [creating, setCreating] = useState<CreateTarget | null>(null)
+  const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
   const [railNewMenu, setRailNewMenu] = useState(false)
   const [context, setContext] = useState<{ items: ActionItem[]; x: number; y: number } | null>(null)
@@ -232,6 +235,7 @@ function ChatSplitView() {
   const onlineStores = stores.filter((s) => shown.has(s.computer.id) && s.connection.kind === 'online' && !s.mismatch)
   const selectedStore = app.selectedStore
   const createStore = creating ? app.store(creating.computerId) : null
+  const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
 
@@ -267,6 +271,10 @@ function ChatSplitView() {
       if (!onlineStores.length) return
       debugOpened.current = true
       create(target === 'newBot' ? 'bot' : 'group')
+    } else if (target === 'importBots') {
+      if (!localOnline) return
+      debugOpened.current = true
+      setImporting(true)
     } else if (target === 'plugins') {
       if (!app.local) return
       debugOpened.current = true
@@ -285,6 +293,7 @@ function ChatSplitView() {
   const newItems = (): MenuItem[] => [
     { title: 'New bot', icon: 'plus', action: () => create('bot') },
     { title: 'New group chat', icon: 'person.2', action: () => create('group') },
+    ...(localOnline ? [{ title: 'Import bots…', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
   ]
 
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
@@ -463,6 +472,7 @@ function ChatSplitView() {
           </StoreContext.Provider>
         ) : null}
       </Sheet>
+      <ImportBotsSheet store={localOnline ? app.local : null} open={importing} onClose={() => setImporting(false)} maxHeight={sheetHeight} />
       <Sheet open={marketplace !== null} onClose={() => setMarketplace(null)} width={Math.min(920, windowSize.width - 80)} height={sheetHeight} dismissOnDim>
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>

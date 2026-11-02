@@ -30,6 +30,7 @@
 		4C9ADD8046382132129B1302 /* CodyncBot-squircle-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CEF1A5792B9675FDA7E07740 /* CodyncBot-squircle-Ink.ttf */; };
 		4DDC38E58D673047B332FDD5 /* AccessRequestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B97102DEC6029268332DF901 /* AccessRequestView.swift */; };
 		501377099B6CF42761B230CB /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D57A7C09154869DD84BACE19 /* WelcomeView.swift */; };
+		518BD325D0FE6D7AAE973588 /* BotRosterLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70093609851E57B883D23DB9 /* BotRosterLine.swift */; };
 		52CF04B855C6AAEC47B75B8F /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1285DDFA0390A76ECDAAD6C0 /* CodyncKit */; };
 		54CEEA0734C2940E2D9FAC7D /* AXTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D13418ABB5FD7CFC087677 /* AXTree.swift */; };
 		5A56EF5D36D12ACCEA100642 /* LanguageSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73D324231A9BCE79C84C0403 /* LanguageSettings.swift */; };
@@ -76,6 +77,7 @@
 		C7ED489193AC0934515D2E85 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D0DE72EEAEC947C1D3CA237F /* PrivacyInfo.xcprivacy */; };
 		CF8160C37D98BD7C1472CF49 /* ReviewInvitationModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1B021A5F4CCAA3D180C2CB /* ReviewInvitationModifier.swift */; };
 		E0D116BF893B81AEC0D2135A /* BotShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300202AE0BDAB4961D1E4423 /* BotShortcuts.swift */; };
+		E1C181D77EA48DCDFEC2F15D /* CustomActivityIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 365F24B61AEDCFE6C389E904 /* CustomActivityIcon.swift */; };
 		E695251CFD06AC6F4E3396B7 /* OpenBotIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */; };
 		E78E3B5FAFEB79F31AAC104D /* CodyncBot-teardrop-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C8F46BD8301E7E2C83C35111 /* CodyncBot-teardrop-Tint.ttf */; };
 		EBB0417A5FB2CE6D514D21BE /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = D9AB2F442A5F243653EAE936 /* ClerkKit */; };
@@ -84,6 +86,7 @@
 		F6A380E8A026CA849620F2F7 /* Driver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D16AD9979C77D976BC832D1 /* Driver.swift */; };
 		F842AE1C5ED96AF9A7F5D16C /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D734BEE7CD3F84677B0218B /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F97C489DDB806224CEFCEB57 /* ScreenHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B2CB561A43ED9F2F1A4391 /* ScreenHelper.swift */; };
+		FABB0D19F485A2B9DC16A446 /* EmptyRoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 531BFEBACA116F08530E289F /* EmptyRoster.swift */; };
 		FCE6E509AEFC88C3D05D8E3D /* CodyncBot-tablet-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F7CAD5C4F330637102B40288 /* CodyncBot-tablet-Tint.ttf */; };
 		FFCAB62428CD3D4FB479B4AB /* SessionCandidates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46538A6E6E6B7C5E212F5CDF /* SessionCandidates.swift */; };
 /* End PBXBuildFile section */
@@ -139,6 +142,7 @@
 		300202AE0BDAB4961D1E4423 /* BotShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotShortcuts.swift; sourceTree = "<group>"; };
 		305DDCC18BB8AA6CD9D19CEF /* WidgetPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPreviews.swift; sourceTree = "<group>"; };
 		31BFDAD6DCCE1CC98642ACDD /* AccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSession.swift; sourceTree = "<group>"; };
+		365F24B61AEDCFE6C389E904 /* CustomActivityIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomActivityIcon.swift; sourceTree = "<group>"; };
 		36C62636FD789C49762696A3 /* RosterSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosterSectionHeader.swift; sourceTree = "<group>"; };
 		3F4C4D3B64C608AEF2F85F91 /* Kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Kit; path = ios/Kit; sourceTree = SOURCE_ROOT; };
 		445DB0A03CFBB5CC7A830139 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -147,6 +151,7 @@
 		4EB282B31FBC94EE70D07638 /* AccountSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSwitcherView.swift; sourceTree = "<group>"; };
 		4FA78A055791BBBA79DF8C8B /* Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Permissions.swift; sourceTree = "<group>"; };
 		52A96030D47F1B9678095909 /* iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iOS.entitlements; sourceTree = "<group>"; };
+		531BFEBACA116F08530E289F /* EmptyRoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyRoster.swift; sourceTree = "<group>"; };
 		5A21538E748C62E82DF7B139 /* CodyncBot-cloud-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-cloud-Ink.ttf"; sourceTree = "<group>"; };
 		5B22589689593E0089118FDB /* WidgetGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetGalleryView.swift; sourceTree = "<group>"; };
 		5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenBotIntent.swift; sourceTree = "<group>"; };
@@ -156,6 +161,7 @@
 		6BC00039A6C2C0D3F39A5F67 /* ComputerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerStatus.swift; sourceTree = "<group>"; };
 		6D734BEE7CD3F84677B0218B /* Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6FC76D28AB02DF1427D530ED /* LaunchSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchSplash.swift; sourceTree = "<group>"; };
+		70093609851E57B883D23DB9 /* BotRosterLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotRosterLine.swift; sourceTree = "<group>"; };
 		73D324231A9BCE79C84C0403 /* LanguageSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSettings.swift; sourceTree = "<group>"; };
 		741B706007BA1B91CB853699 /* Screen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Screen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B7E845BA1B8696B266CF578 /* NotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -306,6 +312,7 @@
 				F1162D95B42A1BF2EB5EC0E9 /* CallControlIntents.swift */,
 				F5B2717A8DFD43DC6DAA9D8C /* CallLiveActivity.swift */,
 				FAB9BDB52C3A9F7B2568A750 /* CodyncWidgets.swift */,
+				365F24B61AEDCFE6C389E904 /* CustomActivityIcon.swift */,
 				5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */,
 				305DDCC18BB8AA6CD9D19CEF /* WidgetPreviews.swift */,
 				39BD6D06FC3DE74E5AA24856 /* Resources */,
@@ -321,9 +328,11 @@
 				DD3DE9A4EEB369C4F75C9448 /* ActivityGalleryView.swift */,
 				0814BD0C30F01A163FBDF896 /* AppearanceSettings.swift */,
 				0582B6169BFC36E4BCD51C0D /* BotListView.swift */,
+				70093609851E57B883D23DB9 /* BotRosterLine.swift */,
 				1FB8080D4CB79347C36A7E75 /* ComputerSection.swift */,
 				6BC00039A6C2C0D3F39A5F67 /* ComputerStatus.swift */,
 				E3E35BCE6E7037B78D22F927 /* ComputersView.swift */,
+				531BFEBACA116F08530E289F /* EmptyRoster.swift */,
 				73D324231A9BCE79C84C0403 /* LanguageSettings.swift */,
 				6FC76D28AB02DF1427D530ED /* LaunchSplash.swift */,
 				ECD0B4EA4BBA2BB2826C4362 /* PairingView.swift */,
@@ -682,6 +691,7 @@
 				B6ECB0743C67903DA1956B29 /* CallControlIntents.swift in Sources */,
 				ECE1339FED40D7D5D8806608 /* CallLiveActivity.swift in Sources */,
 				2CDF3DF16A13DAF83CA42168 /* CodyncWidgets.swift in Sources */,
+				E1C181D77EA48DCDFEC2F15D /* CustomActivityIcon.swift in Sources */,
 				5C9AE497DA83EB32AEC9057C /* OpenBotIntent.swift in Sources */,
 				3BCC04815E5CA8953E0DDCAD /* WidgetPreviews.swift in Sources */,
 			);
@@ -716,12 +726,14 @@
 				107232310A15C4D9A3BCF466 /* AppStore+Shortcuts.swift in Sources */,
 				16C24A622E33414C24B0C148 /* AppearanceSettings.swift in Sources */,
 				01A1F820EFEE49A8FCCFC3F3 /* BotListView.swift in Sources */,
+				518BD325D0FE6D7AAE973588 /* BotRosterLine.swift in Sources */,
 				E0D116BF893B81AEC0D2135A /* BotShortcuts.swift in Sources */,
 				AF04355DFF3452C3ED0CA641 /* CallControlIntents.swift in Sources */,
 				7C20764DC05D499075BC5E8C /* CodyncApp.swift in Sources */,
 				9E1D40B1216F6D46A615277E /* ComputerSection.swift in Sources */,
 				2002C16E427B4E4E7279E1C4 /* ComputerStatus.swift in Sources */,
 				AC044B31C0B4A68463B9024E /* ComputersView.swift in Sources */,
+				FABB0D19F485A2B9DC16A446 /* EmptyRoster.swift in Sources */,
 				5A56EF5D36D12ACCEA100642 /* LanguageSettings.swift in Sources */,
 				35CFB641A4F10C0EBD21CB14 /* LaunchSplash.swift in Sources */,
 				E695251CFD06AC6F4E3396B7 /* OpenBotIntent.swift in Sources */,
@@ -834,7 +846,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.33.2;
+				MARKETING_VERSION = 2.34.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -932,7 +944,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.33.2;
+				MARKETING_VERSION = 2.34.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1191,7 +1203,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.33.2;
+				MARKETING_VERSION = 2.34.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1341,7 +1353,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.33.2;
+				MARKETING_VERSION = 2.34.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

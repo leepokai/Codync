@@ -3,6 +3,7 @@ import { Icon } from '../components/Icon'
 import { HStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useSlide } from '../lib/slide'
+import type { pointerDrag } from '../lib/pointer-drag'
 import { useTr } from '../lib/use-language'
 import './computer-roster.css'
 
@@ -15,16 +16,20 @@ interface Props {
   compact: boolean
   toggle: () => void
   onContext: (x: number, y: number) => void
+  drag?: ReturnType<typeof pointerDrag>
+  move?: (offset: number) => void
   children: ReactNode
 }
 
 /** A section the user made (Slack's custom sidebar sections): its header folds its rows. */
-export function RosterSection({ name, count, unread, folded, compact, toggle, onContext, children }: Props) {
+export function RosterSection({ name, count, unread, folded, compact, toggle, onContext, drag, move, children }: Props) {
   const section = useRef<HTMLElement>(null)
   useSlide(section)
   return (
     <section ref={section} aria-label={name}>
-      <button className="roster-section-toggle" aria-expanded={!folded} aria-label={name} title={name} onClick={toggle}
+      <button data-section-heading className="roster-section-toggle" {...drag} onKeyDown={(e) => {
+        if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); e.stopPropagation(); move?.(e.key === 'ArrowUp' ? -1 : 1) }
+      }} aria-expanded={!folded} aria-label={name} title={name} onClick={toggle}
         onContextMenu={(e) => {
           e.preventDefault()
           onContext(e.clientX, e.clientY)
@@ -45,10 +50,14 @@ export function RosterSection({ name, count, unread, folded, compact, toggle, on
 
 /** The plain "Bots" label over the bots in no section, set like a section's name; it folds nothing.
  *  The narrow rail drops its text, as headers drop their names, and keeps the gap. */
-export function RosterLabel({ compact }: { compact: boolean }) {
+export function RosterLabel({ compact, drag, move }: { compact: boolean; drag?: ReturnType<typeof pointerDrag>; move?: (offset: number) => void }) {
   const tr = useTr()
-  const label = useRef<HTMLDivElement>(null)
+  const label = useRef<HTMLButtonElement>(null)
   useSlide(label)
-  if (compact) return <div ref={label} className="roster-label" role="heading" aria-level={3} aria-label={tr('Bots')} />
-  return <div ref={label} className="roster-label"><Text as="h3" size="caption" weight="semibold" tone="secondary">{tr('Bots')}</Text></div>
+  return <button ref={label} data-section-heading className="roster-label" {...drag} aria-label={tr('Bots')}
+    onKeyDown={(e) => {
+      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); e.stopPropagation(); move?.(e.key === 'ArrowUp' ? -1 : 1) }
+    }}>
+    {!compact ? <Text as="span" size="caption" weight="semibold" tone="secondary">{tr('Bots')}</Text> : null}
+  </button>
 }

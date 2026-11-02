@@ -22,12 +22,12 @@ fun AppStore.openScreen(watching: String? = null) = mutableState.update { it.cop
 
 fun AppStore.closeScreen() = mutableState.update { it.copy(screenRequest = null) }
 
-/** `codync://screen`: the paired computer's screen, once the account has loaded. */
-fun AppStore.openScreenLink() {
+/** `codync://screen`: the last active computer's screen (iOS `currentStore`), once the account has loaded. */
+fun AccountStore.openScreenLink() {
     linkJob?.cancel()
     linkJob = viewModelScope.launch {
-        val ready = withTimeoutOrNull(30_000) { activated() }
-        if (ready?.computers?.isNotEmpty() == true) openScreen()
+        val ready = withTimeoutOrNull(30_000) { activated() } ?: return@launch
+        store(ready.currentComputerId)?.openScreen()
     }
 }
 

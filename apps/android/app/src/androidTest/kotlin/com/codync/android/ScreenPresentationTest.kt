@@ -8,8 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import com.codync.android.design.CodyncSheet
@@ -22,18 +22,19 @@ import java.io.File
 
 /** The real root's sheets and Android Back dispatch, on read-only fixtures. */
 class ScreenPresentationTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val bot = Bot("presentation-fixture", "Scout")
-    private fun fixture() = AppState(contextId = "presentation-fixture", loading = false,
-        setupComplete = true, rosterLoaded = true, bots = listOf(bot),
-        computers = listOf(Computer("fixture-computer", "Fixture computer", "fixture-key")),
+    private val computer = Computer("fixture-computer-00001", "Fixture computer", "fixture-key")
+    private val state = AppState(computer, contextId = "presentation-fixture", loading = false, rosterLoaded = true, bots = listOf(bot))
+    private val computers = mapOf(computer.id to state)
+    private fun fixture() = AccountContext(contextId = "presentation-fixture", loading = false, setupComplete = true, computers = listOf(computer),
         account = AccountState(ready = true, configured = true, multiple = true, userId = "fixture-account",
             accounts = listOf(SavedAccount("fixture-account", "fixture-session", "alex@example.test", null))))
 
     @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
 
-    @Test fun settingsIsATabAndBackClosesComputerManagementOneLayerAtATime() {
-        compose.setContent { Hosted { CodyncApp(fixture(), viewModel()) } }
+    @Test fun settingsIsATabAndBackClosesComputerManagementOneLayerAtATime() = compose.withPreviewAccounts(computer) { accounts ->
+        compose.setContent { Hosted { CodyncApp(fixture(), computers, accounts) } }
         compose.onNodeWithContentDescription("Switch account").performClick()
         compose.onNodeWithText("Account").assertIsDisplayed()
         snapshot("account-sheet")
@@ -56,9 +57,9 @@ class ScreenPresentationTest {
         compose.onNodeWithText(bot.name).assertIsDisplayed()
     }
 
-    @Test fun closingTheEditorDropsItsDraftAndANewGenerationRetiresIt() {
+    @Test fun closingTheEditorDropsItsDraftAndANewGenerationRetiresIt() = compose.withPreviewAccounts(computer) { accounts ->
         val state = mutableStateOf(fixture())
-        compose.setContent { Hosted { CodyncApp(state.value, viewModel()) } }
+        compose.setContent { Hosted { CodyncApp(state.value, computers, accounts) } }
         compose.rosterAction(bot.name, "Edit profile")
         compose.onNodeWithContentDescription("Save").assertIsNotEnabled()
         compose.onNode(hasSetTextAction() and hasText(bot.name)).performTextReplacement("Discard this draft")
@@ -71,8 +72,8 @@ class ScreenPresentationTest {
         compose.onNodeWithContentDescription("Save").assertDoesNotExist()
     }
 
-    @Test fun aBotsTouchAndHoldMenuHasNoNewSession() {
-        compose.setContent { Hosted { CodyncApp(fixture(), viewModel()) } }
+    @Test fun aBotsTouchAndHoldMenuHasNoNewSession() = compose.withPreviewAccounts(computer) { accounts ->
+        compose.setContent { Hosted { CodyncApp(fixture(), computers, accounts) } }
         compose.rosterActions(bot.name)
         compose.onNodeWithText("Edit profile").assertIsDisplayed()
         compose.onNodeWithText("New session").assertDoesNotExist()
@@ -80,10 +81,11 @@ class ScreenPresentationTest {
 
     @Test fun largeTextKeepsSettingsActionsAndCompactOptionsWithinTheSheet() {
         val draft = BotDraft(id = bot.id, name = bot.name, cwd = "/projects/A-long-project-name")
+        val store = previewStore(computer)
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
-                Hosted { CodyncSheet(true, {}) { BotEditor(fixture(), draft, viewModel()) } }
+                Hosted { CodyncSheet(true, {}) { BotEditor(state, draft, store) } }
             }
         }
         val title = compose.onNodeWithText("Settings").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
@@ -91,8 +93,10 @@ class ScreenPresentationTest {
         val close = compose.onNodeWithContentDescription("Close").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(title.right < save.left && save.right <= close.left)
         val screen = compose.onRoot().fetchSemanticsNode().boundsInRoot
-        listOf("Agent: Claude", "Workspace", "Permissions: Approve automatically").forEach { label ->
-            val row = compose.onNodeWithContentDescription(label).performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        // The agent row reads "<agent> · <model>"; the pickers say their name and value.
+        listOf(hasText("Default", substring = true) and hasClickAction(), hasContentDescription("Workspace", substring = true),
+            hasContentDescription("Permissions", substring = true)).forEach { matcher ->
+            val row = compose.onNode(matcher).performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue(row.left >= screen.left && row.right <= screen.right)
         }
         compose.onNode(hasText("Notifications") and isToggleable()).performScrollTo().assertIsOn().performClick().assertIsOff()

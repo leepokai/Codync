@@ -8,11 +8,10 @@ import kotlinx.coroutines.sync.withLock
 import com.codync.android.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.serialization.json.*
 
 // Accounts, account computers and starting over: what the account sheet, Computer management and Settings ask for.
 
-internal fun AppStore.signIn(provider: SignInProvider) = sessionAction {
+internal fun AccountStore.signIn(provider: SignInProvider) = sessionAction {
     Analytics.capture(AnalyticsEvent.SignInStarted(provider))
     try {
         if (provider == SignInProvider.Hosted) NativeAccounts.hostedSignIn() else NativeAccounts.signIn(apple = provider == SignInProvider.Apple)
@@ -24,9 +23,9 @@ internal fun AppStore.signIn(provider: SignInProvider) = sessionAction {
     // Clerk holds the new session already, so this counts toward the account.
     Analytics.capture(AnalyticsEvent.SignedIn(provider))
 }
-fun AppStore.switchAccount(account: SavedAccount) = sessionAction { NativeAccounts.switch(account) }
-fun AppStore.retryAccounts() { NativeAccounts.retry() }
-fun AppStore.signOut() = sessionAction {
+fun AccountStore.switchAccount(account: SavedAccount) = sessionAction { NativeAccounts.switch(account) }
+fun AccountStore.retryAccounts() { NativeAccounts.retry() }
+fun AccountStore.signOut() = sessionAction {
     val old = state.value.account.accounts.firstOrNull { it.userId == state.value.account.userId } ?: return@sessionAction
     // Sent first so it still counts toward the account.
     Analytics.capture(AnalyticsEvent.SignedOut)
@@ -44,7 +43,7 @@ fun AppStore.signOut() = sessionAction {
     }
 }
 
-fun AppStore.refreshCloud() = action("cloud") {
+fun AccountStore.refreshCloud() = action("cloud") {
     val client = cloud ?: return@action
     try {
         client.registerDevice(Build.MODEL.take(100))
@@ -61,29 +60,40 @@ fun AppStore.refreshCloud() = action("cloud") {
 }
 
 /** A pull to refresh: the account's computers, joining a refresh already under way. */
-suspend fun AppStore.refreshComputers() { refreshCloud(); actions["cloud"]?.join() }
+suspend fun AccountStore.refreshComputers() { refreshCloud(); actions["cloud"]?.join() }
 
-fun AppStore.requestAccess(target: CloudComputer, renew: Boolean = false) {
+/** The roster's pull to refresh: every computer reconnects, and the account's computers are asked for again (iOS `refreshable`). */
+suspend fun AccountStore.refreshRoster() {
+    for (store in stores.value) store.reconnect()
+    refreshComputers()
+}
+
+/**
+ * Asks [target] for access; the code arrives in `access`, where it must match the one the computer shows.
+ * Asking again while it runs joins it; [renew] revokes this phone's earlier grant and asks anew (iOS `requestAccess`).
+ */
+fun AccountStore.requestAccess(target: CloudComputer, renew: Boolean = false) {
+    val key = "access:" + target.computerId
     if (renew) {
-        action("renewAccess") {
+        action("renewAccess:" + target.computerId) {
             // Await cancellation cleanup before replacing this phone's grant and request.
-            actions["access"]?.cancelAndJoin()
+            actions[key]?.cancelAndJoin()
             startAccess(target, renew = true)
         }
     } else startAccess(target, renew = false)
 }
 
-private fun AppStore.startAccess(target: CloudComputer, renew: Boolean) = action("access") {
-    mutableState.update { it.copy(askingAccess = target.computerId) }
-    try { askForAccess(target, renew) } finally { mutableState.update { it.copy(askingAccess = null) } }
+private fun AccountStore.startAccess(target: CloudComputer, renew: Boolean) = action("access:" + target.computerId) {
+    mutableState.update { it.copy(asking = it.asking + target.computerId) }
+    try { askForAccess(target, renew) } finally { mutableState.update { it.copy(asking = it.asking - target.computerId) } }
 }
 
-private suspend fun AppStore.askForAccess(target: CloudComputer, renew: Boolean) {
+private suspend fun AccountStore.askForAccess(target: CloudComputer, renew: Boolean) {
     val client = requireNotNull(cloud) { "Sign in to reach your account." }
     if (renew) client.revokeAccess(target.computerId)
     val ticket = client.requestAccess(target.computerId, target.signKey)
     Analytics.capture(AnalyticsEvent.AccessRequested)
-    mutableState.update { it.copy(access = ticket) }
+    mutableState.update { it.copy(access = it.access + (ticket.computerId to ticket)) }
     try {
         while (currentCoroutineContext().isActive) {
             if (System.currentTimeMillis() >= ticket.expiresAt) throw CloudError(410, "requestExpired")
@@ -97,8 +107,8 @@ private suspend fun AppStore.askForAccess(target: CloudComputer, renew: Boolean)
                     // Pin only the key used in the SAS. The first authenticated hello supplies addresses and box key.
                     val previous = state.value.computers.firstOrNull { it.id == ticket.computerId && it.signKey == ticket.signKey }
                     val computer = Computer(ticket.computerId, target.name, ticket.signKey, cloud = BuildConfig.CLOUD_URL)
-                        .copy(urls = previous?.urls.orEmpty(), boxKey = previous?.boxKey,
-                            color = previous?.color, route = previous?.route ?: ConnectionRoute.Automatic)
+                        .copy(urls = previous?.urls.orEmpty(), boxKey = previous?.boxKey)
+                        .keepingDevicePicks(previous)
                     computer.validate()
                     Analytics.capture(AnalyticsEvent.ComputerPaired(PairedVia.Account, computer.id))
                     useApprovedComputer(computer, ticket.requestId)
@@ -120,37 +130,32 @@ private suspend fun AppStore.askForAccess(target: CloudComputer, renew: Boolean)
     } catch (error: CloudError) {
         if (error.code == "requestExpired") Analytics.capture(AnalyticsEvent.AccessRequestFailed(AccessFailure.Expired))
         throw error
-    } finally { mutableState.update { it.copy(access = null) } }
+    } finally { mutableState.update { it.copy(access = it.access - ticket.computerId) } }
 }
 
-/** Switch only after approval, retiring the old channel and its writers before replacing its mirror. */
-internal fun AppStore.useApprovedComputer(approved: Computer, requestId: String) {
-    val computer = approved.keepingDevicePicks(state.value.computers.firstOrNull { it.id == approved.id && it.signKey == approved.signKey })
-    // Approval is already confirmed by the cloud, even when switching must wait.
+/** The approved computer joins this phone's computers (or replaces its older pairing), then connects. */
+private suspend fun AccountStore.useApprovedComputer(computer: Computer, requestId: String) {
+    // Approval is already confirmed by the cloud.
     mutableState.update { it.copy(approvedAccess = it.approvedAccess + (computer.id to requestId)) }
-    val contextId = state.value.contextId
-    val generation = state.value.generation
-    sessionAction(wait = true) {
-        transitions.withLock {
-            if (state.value.contextId != contextId || state.value.generation != generation) return@withLock
-            val userId = state.value.account.userId
-            retireContext()
-            try {
-                withContext(Dispatchers.IO) { local.saveComputers(listOf(computer)); local.completeSetup() }
-            } finally {
-                loadContext(userId)
-            }
-            mutableState.update { it.copy(approvedAccess = it.approvedAccess + (computer.id to requestId)) }
-        }
-    }
+    transitions.withLock { addComputer(computer) }
+    withContext(Dispatchers.IO) { local.completeSetup() }
+    mutableState.update { it.copy(setupComplete = true) }
+    refreshCloud()
 }
 
-fun AppStore.cancelAccess() {
-    val ticket = state.value.access
+/** Saves [computer] (a new one goes last, a known one keeps its place) and opens its store afresh. */
+internal suspend fun AccountStore.addComputer(computer: Computer) {
+    store(computer.id)?.retire()
+    saveComputer(computer)
+    open(computer)
+}
+
+fun AccountStore.cancelAccess(computerId: String) {
+    val ticket = state.value.access[computerId]
     val client = cloud
-    val request = actions["access"]
+    val request = actions["access:$computerId"]
     if (ticket != null) Analytics.capture(AnalyticsEvent.AccessRequestFailed(AccessFailure.Cancelled))
-    action("cancelAccess") {
+    action("cancelAccess:$computerId") {
         request?.cancelAndJoin()
         if (ticket != null && client != null) client.cancelAccess(ticket.requestId)
     }
@@ -160,52 +165,42 @@ fun AppStore.cancelAccess() {
  * Takes back this phone's account access to a computer (its grants) and forgets the computer here.
  * Also the way out when an earlier install was approved but this one never checked the code.
  */
-fun AppStore.revokeAccess(computerId: String) = action("revoke") {
+fun AccountStore.revokeAccess(computerId: String) = action("revoke:$computerId") {
     requireNotNull(cloud) { "Sign in to reach your account." }.revokeAccess(computerId)
-    if (state.value.computers.firstOrNull()?.id == computerId) forgetComputer() else refreshCloud()
+    if (store(computerId) != null) transitions.withLock { close(computerId) }
+    refreshCloud()
 }
-
-/** The computer's badge color, picked on this phone (an `AvatarPalette` id). */
-fun AppStore.setColor(color: String) = action("color") { changeComputer { it.copy(color = color) } }
 
 /**
  * Remove: forgets the computer here. Approved through the account, its grant goes too (as on iOS), or it
  * would come straight back as an account row; a failed revoke still forgets it, and its error shows.
  */
-fun AppStore.removeComputer() = sessionAction {
-    val id = state.value.computers.firstOrNull()?.id ?: return@sessionAction
-    val granted = state.value.cloudComputers.any { it.computerId == id && it.isGranted }
-    val failure = if (!granted) null else try { requireNotNull(cloud) { "Sign in to reach your account." }.revokeAccess(id); null }
+fun AccountStore.removeComputer(computerId: String) = sessionAction {
+    val granted = state.value.cloudComputers.any { it.computerId == computerId && it.isGranted }
+    val failure = if (!granted) null else try { requireNotNull(cloud) { "Sign in to reach your account." }.revokeAccess(computerId); null }
         catch (error: CancellationException) { throw error }
         catch (error: Exception) { error }
-    forget()
-    // Thrown after the context reloads, which clears the error shown.
+    transitions.withLock { close(computerId) }
+    if (granted) refreshCloud()
     failure?.let { throw it }
 }
 
-fun AppStore.forgetComputer() = sessionAction { forget() }
-
-private suspend fun AppStore.forget() {
-    transitions.withLock {
-        val userId = state.value.account.userId
-        retireContext()
-        withContext(Dispatchers.IO) {
-            local.saveComputers(emptyList())
-            local.directory.listFiles()?.filter { it.name.startsWith("mirror-") || it.name.startsWith("drafts-") }?.forEach { it.delete() }
-        }
-        loadContext(userId)
-    }
-}
-
-fun AppStore.skipSetup() = action("setup") {
+fun AccountStore.skipSetup() = action("setup") {
     withContext(Dispatchers.IO) { local.completeSetup() }
     mutableState.update { it.copy(setupComplete = true) }
     Analytics.completeOnboarding(OnboardingVia.Skipped)
 }
 
-fun AppStore.clearError() { mutableState.update { it.copy(error = null) } }
+fun AccountStore.taskNotifications(enabled: Boolean) = action("taskSettings") {
+    PushPreferences.tasks(getApplication(), enabled)
+    mutableState.update { it.copy(tasks = enabled) }
+    Analytics.capture(AnalyticsEvent.SettingChanged(PhoneSetting.LiveActivities, enabled))
+    if (!enabled) NotificationDisplay.cancel(getApplication(), 2)
+    for (store in stores.value) store.syncPush()
+    PushDelivery.schedule(getApplication())
+}
 
-fun AppStore.startOver() = sessionAction {
+fun AccountStore.startOver() = sessionAction {
     transitions.withLock {
         retireContext()
         withContext(NonCancellable) {

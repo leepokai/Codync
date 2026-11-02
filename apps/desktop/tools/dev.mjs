@@ -174,7 +174,8 @@ async function sandbox() {
   if (stopping) return
   if (account) {
     appEnv.CODYNC_DEV_SIGN_IN_TICKET = account.token
-    console.log(`  test account               ${account.email}\n`)
+    console.log(`  test account               ${account.email}`)
+    console.log(`  sign a phone into it       npm run phone-account -- --ios <simulator udid> | --android <adb serial> --name ${name}\n`)
   }
   app = startApp(appEnv)
   app.child.on('exit', (code) => stop(code ?? 0))

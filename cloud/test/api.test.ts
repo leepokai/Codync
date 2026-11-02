@@ -504,6 +504,32 @@ describe("Clerk webhook", () => {
     });
   };
 
+  it("revokes access before failed R2 cleanup and retries the retained ownership", async () => {
+    const u = await newUser();
+    const host = await newHost();
+    await claim(u, host);
+    await grantAccess(u, host);
+    const id = `msg_${crypto.randomUUID()}`;
+    const payload = { type: "user.deleted", data: { id: u.userId } };
+    const body = JSON.stringify(payload);
+    const now = new Date();
+    const response = await worker.fetch(new Request("https://cloud.test/v1/webhooks/clerk", {
+      method: "POST", body,
+      headers: {
+        "svix-id": id,
+        "svix-timestamp": String(Math.floor(now.getTime() / 1000)),
+        "svix-signature": new Webhook(env.CLERK_WEBHOOK_SECRET!).sign(id, now, body),
+      },
+    }), { ...env, ICONS: { delete: async () => { throw new Error("R2 unavailable") } } as unknown as R2Bucket }, {} as ExecutionContext);
+    expect(response.status).toBe(500);
+    const state = (await call("GET", "/v1/host/state", { key: host.sign })).body;
+    expect(state.grants).toEqual([]);
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM devices WHERE owner_user_id=? AND revoked_at IS NULL").bind(u.userId).first<{n:number}>())?.n).toBe(0);
+    expect((await env.DB.prepare("SELECT owner_user_id FROM computers WHERE id=?").bind(host.cid).first<{owner_user_id:string}>())?.owner_user_id).toBe(u.userId);
+    expect((await deliver(id, payload)).status).toBe(200);
+    expect((await call("GET", "/v1/host/state", { key: host.sign })).body.owner).toBeNull();
+  });
+
   it("rejects bad signatures", async () => {
     const r = await deliver("msg_bad", { type: "user.deleted", data: { id: "x" } }, `whsec_${btoa("0".repeat(24))}`);
     expect(r.status).toBe(401);

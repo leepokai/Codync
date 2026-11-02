@@ -30,6 +30,8 @@ pub struct Bot {
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
+    /// The agent mode it works in (`agent::modes`); none for the agent's default.
+    pub mode: Option<String>,
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): option id → value.
     pub model_options: BTreeMap<String, String>,
@@ -173,6 +175,7 @@ impl Bot {
             cwd: s("cwd"),
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",
+            mode: v["mode"].as_str().map(str::to_owned),
             model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
             model_options: v["modelOptions"]
                 .as_object()

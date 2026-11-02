@@ -174,6 +174,8 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
     implementation(libs.work)
+    // What Google Play has for this app (the update notice).
+    implementation(libs.play.app.update)
     implementation(libs.glance)
     // Remote screen video and OpenAI Realtime voice, as the iPhone app's WebRTC.
     implementation(libs.webrtc)

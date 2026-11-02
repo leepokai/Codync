@@ -54,13 +54,12 @@ impl App {
 }
 
 impl NewBot {
-    /// A personal workspace, automatic approvals, notifications on. The agent, connectors and
-    /// skills are left unset: the host picks the agent and turns on every installed plugin.
+    /// A personal workspace, notifications on. The agent, approvals, connectors and skills are left unset: the
+    /// host picks the agent, its Auto mode and every installed plugin.
     fn body(&self) -> Value {
         json!({
             "name": self.name.text.trim(),
             "cwd": "",
-            "permission": "auto",
             "notify": true,
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],

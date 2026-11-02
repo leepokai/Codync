@@ -29,6 +29,9 @@ data class Computer(
     }
 }
 
+/** The computer Usage follows, in the app and its widget: the last active one while it's still here, else the first. */
+fun Iterable<Computer>.currentId(last: String?): String? = last?.takeIf { id -> any { it.id == id } } ?: firstOrNull()?.id
+
 @Serializable
 enum class ConnectionRoute { Automatic, CloudflareFirst, DirectOnly }
 

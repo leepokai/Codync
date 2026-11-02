@@ -79,7 +79,7 @@ export interface PairingInfo {
 export function parsePairing(link: string): PairingInfo {
   const u = new URL(link);
   const q = u.searchParams;
-  if (u.protocol !== "codync:" || q.get("v") !== "3") throw new Error(`not a v3 pairing link: ${link}`);
+  if (!["codync:", "codync-dev:"].includes(u.protocol) || q.get("v") !== "3") throw new Error(`not a v3 pairing link: ${link}`);
   const signKey = ref.unb64url(q.get("sk") ?? "");
   if (ref.computerId(signKey) !== q.get("id")) throw new Error("pairing link id doesn't match sk");
   return {

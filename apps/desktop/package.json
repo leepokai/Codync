@@ -1,7 +1,7 @@
 {
   "name": "codync-desktop",
   "productName": "Codync",
-  "version": "2.33.2",
+  "version": "2.34.0",
   "description": "Codync for macOS, Linux and Windows: your coding agents as teammates.",
   "author": {
     "name": "leepokai",
@@ -13,6 +13,7 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/dev.mjs",
+    "phone-account": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/phone-account.mjs",
     "build": "electron-vite build",
     "build:demo": "vite build --config vite.demo.config.ts && mv ../../web/public/demo/desktop/index.html ../../web/public/demo/desktop.html",
     "typecheck": "tsc --noEmit -p tsconfig.json",

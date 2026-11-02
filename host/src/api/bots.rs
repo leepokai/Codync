@@ -84,6 +84,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??})
         }
+        // Bots from another app's export file on this computer (`import`).
+        "previewImport" => crate::import::preview(&b).await?,
+        "importBots" => crate::import::apply(hub, &b).await?,
+        "importSkill" => json!({"name": "codync-export", "text": crate::import::EXPORT_SKILL}),
         "updateBot" => {
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.update_bot(&b)).await??})

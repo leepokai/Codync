@@ -12,7 +12,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
-    <queries><intent><action android:name="android.intent.action.TTS_SERVICE" /></intent></queries>
+    <queries>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+        <!-- Dictation's recognizer (SpeechRecognizer needs to see the phone's recognition service). -->
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+    </queries>
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
@@ -50,6 +54,15 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_provider" />
         </receiver>
+        <!-- Fixed-provider widgets appear as separate choices in the widget picker, as on the iPhone. -->
+        <receiver android:name=".ClaudeUsageWidgetReceiver" android:exported="true" android:label="Claude Code">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_claude" />
+        </receiver>
+        <receiver android:name=".CodexUsageWidgetReceiver" android:exported="true" android:label="Codex">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_codex" />
+        </receiver>
         <receiver android:name=".UsageWidgetReceiver" android:exported="true" android:label="Usage limits">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_usage" />
@@ -60,6 +73,16 @@
         </service>
         <activity android:name=".WidgetConfigurationActivity" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
+        </activity>
+        <!-- Text shared from another app goes to a bot's message box (the iPhone's Send Text to Bot). The share sheet
+             starts this in the sender's task; it hands the text to MainActivity in Codync's own and closes. -->
+        <activity android:name=".ShareActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay"
+            android:taskAffinity="" android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <!-- Direct ws:// channels already encrypt every inner request with Codync E2E.
              Core accepts HTTP only for validated direct candidates; cloud remains HTTPS. -->

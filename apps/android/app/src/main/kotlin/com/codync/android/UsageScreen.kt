@@ -48,16 +48,17 @@ import kotlin.math.roundToInt
  * Usage limits, opened from the State tab (iOS `UsageSheet` + `UsageView`): one card per
  * provider, the tightest limit as a big bar, every limit listed below. Pull down to refresh.
  */
-@Composable fun UsageScreen(state: AppState, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit) {
+@Composable fun UsageScreen(state: AppState?, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit,
+    trailing: @Composable () -> Unit = {}) {
     val dismiss = LocalDismissModal.current
-    val report = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() ?: UsageReport() }
-    val online = state.actualConnection is LinkState.Ready
+    val report = remember(state?.usage) { state?.let { runCatching { UsageReport.decode(it.usage) }.getOrNull() } ?: UsageReport() }
+    val online = state?.actualConnection is LinkState.Ready
     // Opening Usage asks the computer for a current report (it answers from cache when it can).
     LaunchedEffect(online) { if (online) refresh(false) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(leading = { IconButton("Close", "xmark", action = dismiss) },
-            title = { Text("Usage", style = Type.body.semibold, color = Palette.text) })
-        if (state.computers.isEmpty()) {
+            title = { Text("Usage", style = Type.body.semibold, color = Palette.text) }, trailing = { trailing() })
+        if (state == null) {
             EmptyUsage("No computer yet", "Usage shows up once a computer is connected.")
             return@Column
         }
@@ -70,14 +71,8 @@ import kotlin.math.roundToInt
     }
 }
 
-@Composable private fun EmptyUsage(title: String, message: String) {
-    Column(Modifier.fillMaxWidth().padding(top = 60.dp, start = 24.dp, end = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Symbol("chart.bar", size = 48.dp, tint = Palette.tertiary)
-        Text(tr(title), style = Type.title3.semibold, color = Palette.text, textAlign = TextAlign.Center)
-        Text(tr(message), style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
-    }
-}
+@Composable private fun EmptyUsage(title: String, message: String) =
+    EmptyState("chart.bar", title, Modifier.fillMaxWidth().padding(top = 60.dp), message)
 
 @Composable private fun ProviderCard(provider: UsageProvider) {
     var collapsed by rememberSaveable(provider.id) { mutableStateOf(false) }
@@ -96,7 +91,7 @@ import kotlin.math.roundToInt
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row {
                     Text(tr(top.title), Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
-                    Text(percent(top.percent), style = Type.subheadline.monospacedDigit, color = Palette.text)
+                    Text(usedText(top.percent), style = Type.subheadline.monospacedDigit, color = Palette.text)
                 }
                 UsageTicks(top.percent ?: 0.0, tint, 15.dp)
                 val reset = top.resetsShort()
@@ -118,9 +113,11 @@ import kotlin.math.roundToInt
     }
 }
 
-private fun reading(window: UsageWindow) = window.text?.takeIf { it.isNotBlank() } ?: percent(window.percent)
+@Composable private fun reading(window: UsageWindow) = window.text?.takeIf { it.isNotBlank() } ?: usedText(window.percent)
 
-private fun percent(value: Double?) = value?.takeIf { it.isFinite() }?.let { "${it.roundToInt()}%" } ?: "—"
+/** "62% used": the share of the cap already spent, said so (a bare percent reads as what's left). */
+@Composable private fun usedText(value: Double?) =
+    value?.takeIf { it.isFinite() }?.let { tr("{percent}% used").replace("{percent}", "${it.roundToInt()}") } ?: "—"
 
 /** "Oct 17, 2026 at 10:20 PM", as iOS formats an abbreviated date with a short time. */
 private fun updatedAt(milliseconds: Long): String {

@@ -5,8 +5,6 @@ import SwiftUI
 struct RoutinesView: View {
     let botId: String
     var initialId: String?
-    /// Goes back to the chat once a request to the bot is in the composer.
-    var leave: (() -> Void)?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var routines: [Routine] = []
@@ -26,7 +24,6 @@ struct RoutinesView: View {
                     .foregroundStyle(Palette.text)
                     .padding(.leading, 2)
                 Spacer(minLength: 0)
-                askInChat
                 IconButton("Set up a routine", systemImage: "plus") { open(nil) }
                     .disabled(model.isOffline)
             }
@@ -115,13 +112,6 @@ struct RoutinesView: View {
         return routine.triggerDescriptions.joined(separator: " · ")
     }
 
-    private var askInChat: some View {
-        IconButton("Ask the bot for a routine", systemImage: "text.bubble") {
-            edit("I want a routine that ")
-        }
-        .disabled(model.isOffline)
-    }
-
     private func runLabel(_ run: RoutineRun) -> String {
         switch run.status {
         case "pending": run.notBefore.map(retrying) ?? "Queued"
@@ -142,12 +132,7 @@ struct RoutinesView: View {
 
     private func animate(_ change: () -> Void) { withAnimation(Motion.reduced(Motion.layout, reduceMotion), change) }
     private func open(_ id: String?) { animate { editing = EditorTarget(id: UUID().uuidString, routineId: id) } }
-    private func edit(_ text: String) {
-        animate {
-            model.routineDrafts[botId] = text
-            leave?()
-        }
-    }
+
     private func action(_ method: String, _ routine: Routine, enabled: Bool? = nil) {
         guard !busy, let client = model.client else { return }
         busy = true

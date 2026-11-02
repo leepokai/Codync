@@ -62,6 +62,7 @@ export const prefs = {
   computerOrder: pref<string[]>('computerOrder', []),
   collapsedComputers: pref<string[]>('collapsedComputerSections', []),
   /** Folded roster sections, by name: on this device only. */
+  rosterSectionOrder: pref<Record<string, string[]>>('rosterSectionOrder', {}),
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   onboardingDone: pref('macAccountOnboardingCompleted', false),

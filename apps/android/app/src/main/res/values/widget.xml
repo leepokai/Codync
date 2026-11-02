@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- The app icon's shortcut that calls the lead bot (the iPhone's Siri phrase). -->
+    <string name="talk_shortcut">Talk to Codync</string>
     <string name="widget_loading">Codync · Open the app for the latest report</string>
     <string name="widget_bots_description">Latest bot status and unread counts</string>
     <string name="widget_team_description">Four bots as characters, the ones that need you first</string>
     <string name="widget_provider_description">Latest limits from your selected provider</string>
+    <string name="widget_claude_description">Claude Code session and weekly usage limits.</string>
+    <string name="widget_codex_description">Codex session and weekly usage limits.</string>
     <string name="widget_usage_description">Subscription limits your computer reports, for every provider</string>
     <color name="widget_background">#F8F8F8</color>
     <color name="widget_foreground">#111111</color>

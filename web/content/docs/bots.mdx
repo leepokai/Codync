@@ -14,7 +14,7 @@ You set it up and arrange it like any bot: name, avatar, agent, folder, connecto
 
 **Pick your own lead.** Any other bot can take the role: touch and hold it on the iPhone or Android, or right-click it on the desktop, and choose **Make lead agent** (in the terminal, select it and press `*`). The star, the calls and shortcuts that name no bot, and speaking first move to it; the bot that led before becomes an ordinary bot again and keeps its routines, Check in included. You can also delete the lead like any bot. Codync doesn't make a new one; until you pick another, Open Live Mode asks which bot to call.
 
-**More than one computer.** Each computer has its own lead. On the iPhone, Siri, the Action button and Open Live Mode without a bot call the lead of the first computer in your list. To call another one, go to **Settings → Shortcuts → Lead to call** and pick it.
+**More than one computer.** Each computer has its own lead. On the iPhone, Siri, the Action button and Open Live Mode without a bot call the lead of the first computer in your list; on Android, **Talk to Codync** in the app icon's shortcuts does. To call another one, go to **Settings → Shortcuts → Lead to call** and pick it.
 
 ## How a bot runs
 
@@ -24,12 +24,12 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 
 - **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
 - **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
-- **Android:** the same sheet, without **Memory** until that screen is ported.
+- **Android:** the same sheet and tabs as the iPhone.
 - **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
 
 ## Profile
 
-- **Avatar:** a character shape and a color.
+- **Avatar:** a character shape and a color, or your own image.
 - **Name:** shown in the bot list, the chat and notifications. If you create a bot without a name, it's called "New Bot" until Codync names it after its first few conversations.
 - **Standing instructions:** rules that always apply, such as "Reviews PRs. Never pushes without asking." Put task-specific requests in the chat instead. The bot gets your changes with its next message, and the conversation continues.
 
@@ -49,24 +49,33 @@ Changing the agent or the model starts a new agent session. The chat history sta
 The **Workspace** setting is the folder the bot starts in.
 
 - **Personal workspace** (the default): a folder of its own inside Codync's data folder, `~/.codync/bots/`. It stays when you rename the bot, change its model, restart the computer or start a new session.
-- **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are. It starts at your home folder; Back climbs to the folders above it and, on Windows, to the list of drives. Linked folders (symlinks, junctions, mounted drives) show up like any other folder.
+- **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are. Start with **Recent workspaces**, or choose **Browse other folders**. In the browser, use the path breadcrumbs and **Parent folder** to move through folders or Windows drives, or **Enter folder path** to paste an absolute path (including `~/`). Search filters the visible recent list or the current folder, not the whole computer. Confirm with **Use this folder** at the bottom. Recent selections are stored on that computer and shared across its connected clients; older hosts support browsing without recent history. Linked folders (symlinks, junctions, mounted drives) show up like any other folder.
 
 Either way, the bot can work in other folders when you ask it to. A workspace isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them.
 
 Changing the folder starts a new agent session.
 
-## Permissions: Ask me or Approve automatically
+When there are no recent workspaces, **Browse other folders** appears first. After you choose a folder, recent workspaces and their search appear on your next visit.
 
-The **Permissions** setting decides what happens when the agent asks to run a command, change files or use another tool.
+## Permissions
+
+The **Permissions** setting decides how much the agent does on its own before it asks you. It lists the modes the bot's agent offers, its Auto mode first, then **Approve automatically**.
 
 | Setting | What happens |
 | --- | --- |
-| **Ask me** | An approval card appears in the chat and your iPhone gets a "needs you" notification. The agent waits for your answer. |
+| **Auto** (Claude Code), **Auto review** (Codex) | The agent decides what's safe and does it. It blocks risky actions or asks you about them on an approval card. New bots start here. |
+| The agent's other modes, such as **Manual**, **Accept edits** and **Plan** (Claude Code) or **Read-only** and **Full access** (Codex) | The agent works in that mode. Anything it asks about appears as an approval card in the chat, and your iPhone gets a "needs you" notification. The agent waits for your answer. |
+| **Ask me** | For an agent without modes, or a bot that keeps the agent's default mode: every request it makes appears as an approval card. |
 | **Approve automatically** | Codync allows each request for you, choosing the agent's "allow once" option when it offers one. |
 
-New bots start on **Approve automatically**. With either setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals** (Ask or Auto).
+- **An agent without an Auto mode:** a new bot asks you about every request (**Ask me**).
+- **A model without Claude Code's Auto mode:** Claude Code works in **Accept edits** instead and says so in the chat.
+- **Another agent:** when you change the bot's agent, a mode you picked becomes the new agent's Auto mode.
+- **A mode the agent won't switch to, or doesn't have:** the bot doesn't start the turn, and the chat says why. A fallback agent without the bot's mode doesn't take over either; with **Auto**, each agent carries on in its own Auto mode.
 
-The same setting covers changes a bot makes to other bots with **Manage the team**: under Ask me, each change waits for your Allow.
+Bots made before Codync 2.34 keep the setting they had. With any setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals**, and ←/→ goes through the same choices.
+
+The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting.
 
 How approval cards work: [Conversations](/docs/conversations#approval-cards).
 
@@ -92,7 +101,7 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
 
 - **Pin:** pinned bots stay at the top of the list. iPhone: touch and hold the bot. Desktop: right-click it. Terminal UI: `p`.
 - **Order:** drag bots into the order you want. The computer keeps the order, so it's the same on every device. iPhone: touch and hold a bot, then drag it. Desktop: drag it, or select it and press Alt+Up or Alt+Down. Terminal UI: `J` and `K`.
-- **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
+- **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone and Android: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
 - **Hide:** iPhone: touch and hold the bot, then **Hide from list**. Desktop: right-click it, then **Hide from sidebar**. A hidden bot sends no notifications. To bring it back:
   - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Desktop:** open **Settings → General** and click the eye button (**Unhide**) beside the bot under **Hidden bots**.
@@ -103,7 +112,8 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
 
 Sections group a computer's bots under headings you name, such as Work and Personal. They need Codync 2.32.0 or newer on the computer.
 
-- **Move a bot into a section:** open the bot's menu (iPhone: touch and hold it; Desktop: right-click it) and choose **Move to section**, then a section, **New section…** or **Remove from section**. Terminal UI: `w`, then type the section's name, or leave it empty to take the bot out.
+- **Move a bot into a section:** open the bot's menu (iPhone: touch and hold it; Desktop: right-click it) and choose **Move to section**, then a section, **New section…** or **Remove from section**. On Desktop, hover over **Move to section** to open its submenu; clicking it or pressing `→` also opens it. Terminal UI: `w`, then type the section's name, or leave it empty to take the bot out.
+- **Reorder sections:** drag a heading up or down (iPhone: touch and hold, then drag). Move custom sections above or below **Bots**; pinned bots stay on top. Each device remembers its own order. On Desktop, focus a heading and press `Alt+↑` or `Alt+↓`. Terminal UI: select a bot in the section and press `Alt+↑` or `Alt+↓`; its order lasts until you quit.
 - **Fold a section:** tap or click its heading to fold its bots away. A folded heading shows their unread count. Each device keeps its own folds. Terminal UI: `z`, or click the section's label; its folds last until you quit.
 - **Rename or remove a section:** touch and hold its heading (Desktop: right-click it) and choose **Rename section…** or **Remove section**. Its bots stay, without a section. Renaming it to another section's name merges the two. Terminal UI: `W`; an empty name removes the section.
 - Pinned bots stay on top, outside sections. A pinned bot goes back to its section when you unpin it. Bots in no section sit under a **Bots** label, and dragging moves a bot only within its section.
@@ -126,3 +136,27 @@ Confirm with **Delete bot and its conversation**. Deleting your lead bot leaves 
 
 On the iPhone details sheet or the desktop details panel, **Create template** shows the bot's settings as text you can copy, without its conversation.
 
+
+## Import bots from Grok Bot
+
+Bring your Grok Bot agents over without setting each one up again. Each agent becomes a bot with its instructions, avatar, skills, scheduled tasks (as routines), memories and, if you choose, its workspace files; group chats become groups.
+
+1. In the desktop app, click **+** and choose **Import bots…**, then **Copy export skill**.
+2. In Grok Bot, paste it as a skill of one agent (or into its instructions) and send that agent: *Export my agents for Codync*. It asks which agents to include and whether to add workspace files, then saves `codync-export-<date>.zip` to Downloads.
+3. Back in Codync, click **Choose file…**, pick that file, turn off any bot or group chat you don't want, and click **Import**.
+
+Chats aren't copied: the export keeps what matters in them as memories. The file is read on your computer and isn't uploaded. Codync leaves out secrets it finds in the file (`.env` files, private keys) and anything it can't read, and lists what it left out. An avatar picture needs the computer signed in, like any [custom icon](#custom-icons); otherwise the bot keeps a Codync character. A group chat's routines and memories go to its lead bot.
+
+Exports other apps make from Grok Bot, and their own transfer files, import the same way. From a terminal: `codync-host import <file>` (`--dry-run` lists what the file holds, `--skill` prints the export skill).
+
+## Custom icons
+
+Open an existing bot's avatar picker and choose **Upload from desktop** (**Upload image** on phones), or choose **Paste URL** to reveal the address field, paste an HTTPS image address, and press the arrow button. Changes save immediately. **Tint icon** uses the bot's color; turn it off to keep the picture's original colors. **Use default** restores the character.
+
+PNG, JPEG and WebP files can be up to 5 MiB and 4096 × 4096 pixels. SVG files can be up to 256 KiB; external images and fonts are not loaded. Codync turns the image into a static PNG no larger than 256 × 256 pixels and compresses it to at most 48 KiB. Animated files use a still image.
+
+Sign in to the app and claim your computer before uploading. Choosing an image or Paste URL while signed out opens a sign-in prompt. The computer encrypts images before storing them in private Cloudflare R2 storage. Cached images remain available offline, and showing an icon does not download it from R2 again. New uploads and removals need a connection; a failed save keeps the previous icon. Each computer can have 128 custom icons.
+
+On iPhone, custom pictures stay still in Live Activities and the Dynamic Island. Built-in characters keep their animations. If a cached custom image cannot load, a still default character takes its place.
+
+In the **Terminal UI**, press Ctrl+O in a bot's settings. Enter a local file path or HTTPS URL, choose original colors, tint, or default, then press Enter. The terminal keeps its text avatar; graphical apps show your image.

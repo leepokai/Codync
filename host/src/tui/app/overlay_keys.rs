@@ -5,8 +5,8 @@ use serde_json::json;
 
 use super::super::manage::{AnalyticsSheet, Reply};
 use super::{
-    ACTIONS, Action, After, App, Bot, ConfirmAct, Dir, Editor, FILTERS, FolderPicker, Goto, GotoItem, Overlay,
-    PairCode, contains, fuzzy,
+    ACTIONS, Action, After, App, Bot, ConfirmAct, Dir, Editor, FILTERS, FolderMode, FolderPicker, Goto, GotoItem,
+    Overlay, PairCode, contains, fuzzy,
 };
 
 impl App {
@@ -215,7 +215,13 @@ impl App {
     }
 
     pub(super) fn open_folder(&mut self, start: &str) {
+        let request_id = uuid::Uuid::new_v4().to_string();
         self.overlays.push(Overlay::Folder(FolderPicker {
+            request_id: request_id.clone(),
+            mode: FolderMode::Recent,
+            recent: vec![],
+            remembers: false,
+            busy: true,
             path: start.to_owned(),
             parent: None,
             dirs: vec![],
@@ -224,14 +230,60 @@ impl App {
             error: None,
         }));
         let body = if start.is_empty() { json!({}) } else { json!({"path": start}) };
-        self.call("listDirs", body, After::Dirs);
+        self.call("listDirs", body, After::Dirs(request_id));
     }
 
     pub fn folder_matches(p: &FolderPicker) -> Vec<&Dir> {
-        p.dirs.iter().filter(|d| fuzzy(&p.query.text, &[&d.name])).collect()
+        let items = if p.mode == FolderMode::Recent { &p.recent } else { &p.dirs };
+        items.iter().filter(|d| fuzzy(&p.query.text, &[&d.name, &d.path])).collect()
     }
 
     fn folder_key(&mut self, mut p: FolderPicker, k: KeyEvent) -> Option<Overlay> {
+        if k.code == KeyCode::Esc && p.mode != FolderMode::Path {
+            return None;
+        }
+        if p.busy {
+            return Some(Overlay::Folder(p));
+        }
+        if k.modifiers.contains(KeyModifiers::CONTROL) {
+            match k.code {
+                KeyCode::Char('r') => {
+                    p.mode = FolderMode::Recent;
+                    p.query.clear();
+                    p.cursor = 0;
+                }
+                KeyCode::Char('b') => {
+                    p.mode = FolderMode::Browse;
+                    p.query.clear();
+                    p.cursor = 0;
+                }
+                KeyCode::Char('l') => {
+                    p.mode = FolderMode::Path;
+                    p.query.clear();
+                }
+                _ => {
+                    p.query.key(k);
+                }
+            }
+            return Some(Overlay::Folder(p));
+        }
+        if p.mode == FolderMode::Path {
+            match k.code {
+                KeyCode::Esc => {
+                    p.mode = FolderMode::Browse;
+                    p.query.clear();
+                }
+                KeyCode::Enter if !p.query.text.trim().is_empty() => {
+                    self.call("listDirs", json!({"path": p.query.text.trim()}), After::Dirs(p.request_id.clone()));
+                    p.mode = FolderMode::Browse;
+                    p.busy = true;
+                }
+                _ => {
+                    p.query.key(k);
+                }
+            }
+            return Some(Overlay::Folder(p));
+        }
         let matches: Vec<Dir> = Self::folder_matches(&p).into_iter().cloned().collect();
         match k.code {
             KeyCode::Esc => return None,
@@ -239,29 +291,34 @@ impl App {
             KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
             KeyCode::Right | KeyCode::Tab => {
                 if let Some(d) = matches.get(p.cursor) {
-                    let path = d.path.clone();
-                    self.call("listDirs", json!({"path": path}), After::Dirs);
+                    self.call("listDirs", json!({"path": d.path}), After::Dirs(p.request_id.clone()));
+                    p.mode = FolderMode::Browse;
+                    p.busy = true;
                 }
             }
             KeyCode::Left | KeyCode::Backspace if p.query.text.is_empty() => {
                 if let Some(parent) = p.parent.clone() {
-                    self.call("listDirs", json!({"path": parent}), After::Dirs);
+                    self.call("listDirs", json!({"path": parent}), After::Dirs(p.request_id.clone()));
+                    p.mode = FolderMode::Browse;
+                    p.busy = true;
                 }
             }
-            KeyCode::Enter => {
-                // Enter on a highlighted child uses it; with nothing typed and no match, the current folder.
-                let chosen = if p.query.text.is_empty() && k.modifiers.contains(KeyModifiers::ALT) {
+            KeyCode::Enter | KeyCode::Char('.') if k.code == KeyCode::Enter || p.query.text.is_empty() => {
+                let current = k.code == KeyCode::Char('.') || k.modifiers.contains(KeyModifiers::ALT);
+                let chosen = if current {
                     p.path.clone()
                 } else {
-                    matches.get(p.cursor).map_or_else(|| p.path.clone(), |d| d.path.clone())
+                    matches.get(p.cursor).map_or_else(String::new, |d| d.path.clone())
                 };
-                self.folder_chosen(chosen);
-                return None;
-            }
-            KeyCode::Char('.') if p.query.text.is_empty() => {
-                let chosen = p.path.clone();
-                self.folder_chosen(chosen);
-                return None;
+                if !chosen.is_empty() {
+                    // Older hosts still validate using their existing directory endpoint.
+                    self.call(
+                        if p.remembers { "selectWorkspace" } else { "listDirs" },
+                        json!({"path": chosen}),
+                        After::WorkspaceSelected(p.request_id.clone()),
+                    );
+                    p.busy = true;
+                }
             }
             _ => {
                 if p.query.key(k) {
@@ -272,7 +329,7 @@ impl App {
         Some(Overlay::Folder(p))
     }
 
-    fn folder_chosen(&mut self, path: String) {
+    pub(super) fn folder_chosen(&mut self, path: String) {
         // The drive list (Windows) has no path of its own to use.
         if path.is_empty() {
             return;

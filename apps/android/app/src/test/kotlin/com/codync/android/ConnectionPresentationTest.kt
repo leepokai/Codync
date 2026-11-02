@@ -8,10 +8,12 @@ import org.junit.Test
 
 class ConnectionPresentationTest {
     private val computer = Computer("fixture", "Studio", "fixture")
-    private fun state(link: LinkState, cloud: List<CloudComputer> = emptyList(), computers: List<Computer> = listOf(computer)) = AppState(
-        account = AccountState(configured = false), loading = false, setupComplete = true,
-        computers = computers, connection = link, actualConnection = link, cloudComputers = cloud)
+    private fun state(link: LinkState, computer: Computer = this.computer) = AppState(computer, loading = false, connection = link, actualConnection = link)
+    private fun context(cloud: List<CloudComputer> = emptyList(), computers: List<Computer> = listOf(computer)) = AccountContext(
+        account = AccountState(configured = false), loading = false, setupComplete = true, computers = computers, cloudComputers = cloud)
     private fun cloud(id: String, online: Boolean, name: String = "Studio") = CloudComputer(id, name, "key", online = online)
+    private fun stale(link: LinkState, cloud: List<CloudComputer> = emptyList(), others: List<AppState> = emptyList()) =
+        context(cloud).isStale(state(link), others)
 
     @Test fun eachConnectionReadsAsOnIPhone() {
         val revoked = LinkState.Failed("This device isn't allowed on Studio anymore.", 403)
@@ -28,13 +30,9 @@ class ConnectionPresentationTest {
             assertEquals(words.second, connectionLabel(state(link)))
             assertEquals(words.third, connectionDescription(state(link)))
         }
-        val unpaired = state(LinkState.Connecting, computers = emptyList())
-        assertEquals("Not paired", statusText(unpaired))
-        assertEquals("Not paired", connectionLabel(unpaired))
-        assertEquals("Not paired", connectionDescription(unpaired))
         val custom = computer.copy(cloud = "https://relay.example.com")
-        assertEquals("Connected through Private relay (relay.example.com)", connectionDescription(state(LinkState.Ready(HostRoute.Relay), computers = listOf(custom))))
-        assertEquals("Connected through Cloudflare", connectionDescription(state(LinkState.Ready(HostRoute.Relay), computers = listOf(computer.copy(cloud = "https://api.codync.dev")))))
+        assertEquals("Connected through Private relay (relay.example.com)", connectionDescription(state(LinkState.Ready(HostRoute.Relay), custom)))
+        assertEquals("Connected through Cloudflare", connectionDescription(state(LinkState.Ready(HostRoute.Relay), computer.copy(cloud = "https://api.codync.dev"))))
         assertEquals("relay.example.com", relayHost("https://relay.example.com/"))
         assertEquals(null, relayHost("https://dev-api.codync.dev"))
         assertEquals("[2001:db8::1]:8443", relayHost("https://[2001:db8::1]:8443"))
@@ -69,50 +67,72 @@ class ConnectionPresentationTest {
     }
 
     @Test fun theHeaderSummarizesTheComputers() {
-        assertEquals("1 connected", connectionSummary(state(LinkState.Ready(HostRoute.Direct))))
-        assertEquals("Connecting…", connectionSummary(state(LinkState.Connecting)))
-        assertEquals("No access", connectionSummary(state(LinkState.Failed("Revoked", 403))))
-        assertEquals("1 offline", connectionSummary(state(LinkState.ComputerOffline(null))))
-        assertEquals("Computers", connectionSummary(state(LinkState.Connecting, computers = emptyList())))
+        assertEquals("1 connected", connectionSummary(listOf(state(LinkState.Ready(HostRoute.Direct)))).filled())
+        assertEquals("Connecting…", connectionSummary(listOf(state(LinkState.Connecting))).filled())
+        assertEquals("No access", connectionSummary(listOf(state(LinkState.Failed("Revoked", 403)))).filled())
+        assertEquals("1 offline", connectionSummary(listOf(state(LinkState.ComputerOffline(null)))).filled())
+        assertEquals("Computers", connectionSummary(emptyList()).filled())
+        val laptop = Computer("laptop", "Laptop", "laptop")
+        assertEquals("2 connected", connectionSummary(listOf(state(LinkState.Ready(HostRoute.Direct)), state(LinkState.Ready(HostRoute.Relay), laptop))).filled())
+        assertEquals("1/2 connected", connectionSummary(listOf(state(LinkState.Ready(HostRoute.Direct)), state(LinkState.ComputerOffline(null), laptop))).filled())
+        assertEquals("2 offline", connectionSummary(listOf(state(LinkState.Failed("Revoked", 403)), state(LinkState.ComputerOffline(null), laptop))).filled())
     }
 
     @Test fun aComputerTurningThisPhoneAwayOrReplacedByANewIdentityIsStale() {
-        assertTrue(state(LinkState.Failed("Revoked", 403)).isStale)
-        val offline = state(LinkState.ComputerOffline(null), listOf(cloud("new", online = true)))
-        assertTrue(offline.isStale)
-        assertEquals("Older copy of this computer · Offline", computerStatusText(offline))
-        assertFalse(state(LinkState.ComputerOffline(null), listOf(cloud("new", online = false))).isStale)
-        assertFalse(state(LinkState.Ready(HostRoute.Direct), listOf(cloud("new", online = true))).isStale)
-        assertEquals("Revoked", computerStatusText(state(LinkState.Failed("Revoked", 403), listOf(cloud("new", online = true)))))
+        assertTrue(stale(LinkState.Failed("Revoked", 403)))
+        val offline = state(LinkState.ComputerOffline(null))
+        assertTrue(stale(LinkState.ComputerOffline(null), listOf(cloud("new", online = true))))
+        assertEquals("Older copy of this computer · Offline", computerStatusText(offline, stale = true))
+        assertEquals("Offline", computerStatusText(offline, stale = false))
+        assertFalse(stale(LinkState.ComputerOffline(null), listOf(cloud("new", online = false))))
+        assertFalse(stale(LinkState.Ready(HostRoute.Direct), listOf(cloud("new", online = true))))
+        val revoked = LinkState.Failed("Revoked", 403)
+        assertEquals("Revoked", computerStatusText(state(revoked), stale(revoked, listOf(cloud("new", online = true)))))
+    }
+
+    @Test fun anOfflineComputerIsStaleWhenAnotherSavedComputerWithItsNameIsOnlineAndJoinedLater() {
+        val namesake = Computer("new", "Studio", "new")
+        val joined = listOf(cloud("new", online = false).copy(claimedAt = 100))
+        // Paired here with its code only: the name decides.
+        assertTrue(stale(LinkState.ComputerOffline(null), others = listOf(state(LinkState.Ready(HostRoute.Direct), namesake))))
+        assertFalse(stale(LinkState.ComputerOffline(null), others = listOf(state(LinkState.ComputerOffline(null), namesake))))
+        assertFalse(stale(LinkState.ComputerOffline(null), others = listOf(state(LinkState.Ready(HostRoute.Direct), namesake.copy(name = "Laptop")))))
+        // It was last seen before the namesake joined the account: replaced; after: two machines.
+        assertTrue(stale(LinkState.ComputerOffline(50), joined, listOf(state(LinkState.Ready(HostRoute.Direct), namesake))))
+        assertFalse(stale(LinkState.ComputerOffline(200), joined, listOf(state(LinkState.Ready(HostRoute.Direct), namesake))))
+        // Its own state among the others never makes it stale.
+        assertFalse(stale(LinkState.ComputerOffline(null), others = listOf(state(LinkState.Ready(HostRoute.Direct)))))
     }
 
     @Test fun aComputerSeenAfterItsNamesakeJoinedTheAccountRunsBesideItAndIsNotStale() {
         val namesake = cloud("new", online = true).copy(claimedAt = 100)
         fun own(seen: Long) = cloud("fixture", online = false).copy(lastSeenAt = seen)
         // Its own account entry says when it was last seen.
-        assertFalse(state(LinkState.ComputerOffline(null), listOf(own(200), namesake)).isStale)
-        assertTrue(state(LinkState.ComputerOffline(null), listOf(own(50), namesake)).isStale)
-        assertFalse(state(LinkState.Failed("Connection closed."), listOf(own(200), namesake)).isStale)
+        assertFalse(stale(LinkState.ComputerOffline(null), listOf(own(200), namesake)))
+        assertTrue(stale(LinkState.ComputerOffline(null), listOf(own(50), namesake)))
+        assertFalse(stale(LinkState.Failed("Connection closed."), listOf(own(200), namesake)))
         // Paired with its code only: the relay's last seen decides.
-        assertFalse(state(LinkState.ComputerOffline(200), listOf(namesake)).isStale)
-        assertTrue(state(LinkState.ComputerOffline(50), listOf(namesake)).isStale)
+        assertFalse(stale(LinkState.ComputerOffline(200), listOf(namesake)))
+        assertTrue(stale(LinkState.ComputerOffline(50), listOf(namesake)))
         // Without the namesake's join time, the name alone.
-        assertTrue(state(LinkState.ComputerOffline(200), listOf(cloud("new", online = true))).isStale)
+        assertTrue(stale(LinkState.ComputerOffline(200), listOf(cloud("new", online = true))))
     }
 
     @Test fun anOfflineAccountComputerNamedLikeTheCurrentOneIsAnOlderCopy() {
         val old = cloud("old", online = false)
-        assertTrue(state(LinkState.Connecting, listOf(old)).isOlderCopy(old))
-        assertFalse(state(LinkState.Connecting, listOf(old.copy(online = true))).isOlderCopy(old.copy(online = true)))
-        assertFalse(state(LinkState.Connecting, listOf(old), computers = emptyList()).isOlderCopy(old))
+        assertTrue(context(listOf(old)).isOlderCopy(old))
+        assertFalse(context(listOf(old.copy(online = true))).isOlderCopy(old.copy(online = true)))
+        assertFalse(context(listOf(old), computers = emptyList()).isOlderCopy(old))
         val renamed = cloud("old", online = false, name = "Laptop")
-        assertFalse(state(LinkState.Connecting, listOf(renamed)).isOlderCopy(renamed))
+        assertFalse(context(listOf(renamed)).isOlderCopy(renamed))
         // Not paired here, but the new identity is online in the account.
-        val accountOnly = state(LinkState.Connecting, listOf(old, cloud("new", online = true)), computers = emptyList())
-        assertTrue(accountOnly.isOlderCopy(old))
+        assertTrue(context(listOf(old, cloud("new", online = true)), computers = emptyList()).isOlderCopy(old))
         // Seen after the current one joined the account: two machines that share a name.
         val seen = old.copy(lastSeenAt = 200)
-        assertFalse(state(LinkState.Connecting, listOf(seen, cloud("fixture", online = true).copy(claimedAt = 100))).isOlderCopy(seen))
-        assertTrue(state(LinkState.Connecting, listOf(seen, cloud("fixture", online = true).copy(claimedAt = 300))).isOlderCopy(seen))
+        assertFalse(context(listOf(seen, cloud("fixture", online = true).copy(claimedAt = 100))).isOlderCopy(seen))
+        assertTrue(context(listOf(seen, cloud("fixture", online = true).copy(claimedAt = 300))).isOlderCopy(seen))
+        // Two computers paired here: the older copy of the second one is found too.
+        val laptop = Computer("laptop", "Laptop", "laptop")
+        assertTrue(context(listOf(renamed), computers = listOf(computer, laptop)).isOlderCopy(renamed))
     }
 }

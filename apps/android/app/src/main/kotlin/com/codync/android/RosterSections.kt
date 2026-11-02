@@ -33,20 +33,23 @@ internal sealed interface RosterLine {
  * bots in roster order unless it's [folded]), then bots without a section, under [RosterLine.Label]
  * when there are sections. A pinned bot shows only on top.
  */
-internal fun rosterLines(roster: List<Bot>, folded: Set<String>): List<RosterLine> = buildList {
+internal fun rosterLines(roster: List<Bot>, folded: Set<String>, order: List<String> = emptyList(), moving: Boolean = false): List<RosterLine> = buildList {
     val (pinned, unpinned) = roster.partition { it.pinned }
     val sections = unpinned.groupBy(Bot::section)
     pinned.forEach { add(RosterLine.Row(it)) }
-    val names = sectionNames(unpinned)
+    val custom = sectionNames(unpinned)
+    val names = orderedSections(custom + if (sections[null].isNullOrEmpty()) emptyList() else listOf(""), order)
     for (name in names) {
-        val bots = sections.getValue(name)
-        val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, name in folded)
-        add(header)
-        if (!header.folded) bots.forEach { add(RosterLine.Row(it)) }
+        if (name.isEmpty()) {
+            if (custom.isNotEmpty()) add(RosterLine.Label)
+            if (!moving) sections[null].orEmpty().forEach { add(RosterLine.Row(it)) }
+        } else {
+            val bots = sections.getValue(name)
+            val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, moving || name in folded)
+            add(header)
+            if (!header.folded) bots.forEach { add(RosterLine.Row(it)) }
+        }
     }
-    val loose = sections[null].orEmpty()
-    if (names.isNotEmpty() && loose.isNotEmpty()) add(RosterLine.Label)
-    loose.forEach { add(RosterLine.Row(it)) }
 }
 
 /** The sections [bots] are in, sorted the way the phone's language sorts ("İş" where Turkish puts it). */
@@ -106,10 +109,20 @@ internal fun withMoves(bots: List<Bot>, pending: List<SectionMove>): List<Bot> {
     return bots.map { bot -> if (bot.id in sections) bot.copy(section = sections[bot.id]) else bot }
 }
 
-/** The sections folded on this device (iOS `@AppStorage("collapsedRosterSections")`); not synced. */
+/** The roster's preferences: kept on this device, never synced. */
+internal fun rosterPrefs(context: Context) = context.getSharedPreferences("codync-roster", Context.MODE_PRIVATE)
+
+/** The sections folded on this device (iOS `@AppStorage("collapsedRosterSections")`). */
 internal object FoldedSections {
     private const val KEY = "collapsedRosterSections"
-    private fun prefs(context: Context) = context.getSharedPreferences("codync-roster", Context.MODE_PRIVATE)
-    fun load(context: Context): Set<String> = prefs(context).getStringSet(KEY, null).orEmpty().toSet()
-    fun save(context: Context, names: Set<String>) { prefs(context).edit { putStringSet(KEY, names) } }
+    fun load(context: Context): Set<String> = rosterPrefs(context).getStringSet(KEY, null).orEmpty().toSet()
+    fun save(context: Context, names: Set<String>) { rosterPrefs(context).edit { putStringSet(KEY, names) } }
+}
+
+/** Computers left out of the roster (`ComputerSelection`'s list), and computers whose bots are folded away (iOS `@AppStorage`). */
+internal object RosterComputers {
+    fun hidden(context: Context): String = rosterPrefs(context).getString("hiddenComputers", "").orEmpty()
+    fun setHidden(context: Context, value: String) = rosterPrefs(context).edit { putString("hiddenComputers", value) }
+    fun folded(context: Context): Set<String> = rosterPrefs(context).getStringSet("foldedComputers", null).orEmpty().toSet()
+    fun setFolded(context: Context, ids: Set<String>) = rosterPrefs(context).edit { putStringSet("foldedComputers", ids) }
 }

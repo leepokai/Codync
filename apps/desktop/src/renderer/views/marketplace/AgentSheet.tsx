@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Backend } from '@shared/models'
-import { agentIconURL } from '../../components/AgentIcon'
+import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
@@ -37,21 +37,8 @@ export function agentTint(registry: string | null | undefined) {
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {
   return (
     <div className="agent-tile" style={{ width: tile, height: tile, borderRadius: radius }}>
-      <TintedAgentIcon registry={registry} size={icon} />
+      <AgentIcon registry={registry} size={icon} color={agentTint(registry)} />
     </div>
-  )
-}
-
-/** `AgentIcon` painted with `agentTint` (which can be a gradient, so a mask over `background`). */
-function TintedAgentIcon({ registry, size }: { registry?: string | null; size: number }) {
-  const url = agentIconURL(registry)
-  if (!url) return <Icon name="terminal" size={size * 0.8} scaled={false} />
-  return (
-    <span
-      aria-hidden
-      className="agent-icon"
-      style={{ width: size, height: size, background: agentTint(registry), WebkitMaskImage: `url("${url}")` }}
-    />
   )
 }
 

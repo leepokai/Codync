@@ -1,4 +1,4 @@
-// Milestones in #milestones, each posted once with @everyone and the way left to the goal: every 100th GitHub
+// Milestones in #milestones, each posted once (no pings) with the way left to the goal: every 100th GitHub
 // star (from the repo webhook) and every 1,000th download of the desktop app (counted once a day).
 
 import { githubAll, send } from "./guild.ts";
@@ -32,7 +32,7 @@ export async function celebrate(env: Env, kind: Kind, count: number): Promise<vo
   const last = Number((await env.LINKS.get(key)) ?? 0);
   if (milestone <= last) return;
   // ponytail: KV isn't atomic, so two stars delivered at the same instant on a new milestone could post it twice.
-  if (await send(env, env.MILESTONES_CHANNEL_ID, milestoneMessage(kind, milestone, Number(KINDS[kind].goal(env)), env.REPO), ["everyone"])) {
+  if (await send(env, env.MILESTONES_CHANNEL_ID, milestoneMessage(kind, milestone, Number(KINDS[kind].goal(env)), env.REPO))) {
     await env.LINKS.put(key, String(milestone));
     console.log("milestone", { kind, milestone });
   }
@@ -70,5 +70,5 @@ export function milestoneMessage(kind: Kind, count: number, goal: number, repo: 
   const filled = Math.round((count / goal) * BAR);
   const progress = count < goal ? `\n\`${"█".repeat(filled)}${"░".repeat(BAR - filled)}\` ${n(count)} / ${n(goal)}` : "";
   const ask = count < goal ? `Help us reach ${n(goal)}: tell people about Codync` : "Keep spreading the word";
-  return `@everyone ${head}${progress}\n${thanks(repo)}\n\n📣 ${ask} on ${shareLinks(`https://github.com/${repo}`)}, or wherever you hang out.`;
+  return `${head}${progress}\n${thanks(repo)}\n\n📣 ${ask} on ${shareLinks(`https://github.com/${repo}`)}, or wherever you hang out.`;
 }

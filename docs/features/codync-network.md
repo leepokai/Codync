@@ -166,7 +166,8 @@ and nothing new crosses the wire beyond a refusal's reason.
 - **Reachable by cloud assistants**, per bot (`reachableByAssistants`, on by default): `list_bots` from the cloud
   assistant leaves it out and `message_bot` refuses it (`chat/team/assistant.rs`). A letter from the cloud
   assistant through another computer (`cloud-assistant@desk`) meets the same checks here, and this computer's own
-  Cloud assistants switch: off, it refuses them all (`remote::take`).
+  Cloud assistants switch: off, it refuses them all (`remote::take`). The switch turns on only while this computer
+  is in the Codync account, so the receiving computer needs the account too.
 - **Rules**, per network: an ordered list of `{fromComputer, fromAgent, toAgent, access}` (`allow`/`deny`, `*`
   for any). The first rule that matches decides; with none, everyone may write (`codync_network::rules`). The crate
   checks them in `node/inbound.rs` before it takes a letter, so the standalone daemon has them too (`rules.json`

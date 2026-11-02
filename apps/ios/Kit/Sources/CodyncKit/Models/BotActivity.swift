@@ -39,6 +39,8 @@ public struct BotActivityAttributes: ActivityAttributes {
         public var callStartedAt: Date?
         /// That call's microphone is muted (its Live Activity's mute button).
         public var callMuted: Bool?
+        /// Changes trigger a local redraw; remote status updates still use the shared local pointer.
+        public var customIconRevision: String?
 
         public init(status: String, activity: String, startedAt: Date?, call: CallState? = nil, callStartedAt: Date? = nil,
                     callMuted: Bool? = nil) {
@@ -57,13 +59,29 @@ public struct BotActivityAttributes: ActivityAttributes {
     public var name: String
     public var avatarShape: String
     public var avatarColor: String
+    public var customIconContext: String?
+    public var iconContext: String { customIconContext ?? "local" }
+    public var customIconName: String?
+    public var customIconTinted: Bool?
+
+    public var currentCustomIconName: String? {
+        let name = ActivityIconCache.activityReference(computerId: computerId, botId: botId, context: iconContext)?.name ?? customIconName
+        return name?.isEmpty == true ? nil : name
+    }
+
+    public var currentCustomIconTinted: Bool {
+        ActivityIconCache.activityReference(computerId: computerId, botId: botId, context: iconContext)?.tinted ?? (customIconTinted == true)
+    }
 
     public init(bot: Bot, computerId: ComputerID, link: URL? = nil) {
+        customIconContext = URLComponents(url: link ?? AppEnvironment.current.link("bot"), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "scope" }?.value ?? SharedStore.activeContext.id
         self.link = link
         self.computerId = computerId
         botId = bot.id
         name = bot.name
         avatarShape = bot.avatarShape
         avatarColor = bot.avatarColor
+        customIconName = bot.customIcon?.filename
+        customIconTinted = bot.customIcon?.tinted
     }
 }

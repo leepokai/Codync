@@ -62,6 +62,10 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class SettingChanged(val setting: PhoneSetting, val on: Boolean) : AnalyticsEvent("setting_changed") {
         override val properties get() = mapOf("setting" to setting.json, "on" to JsonPrimitive(on))
     }
+    /** Rate on Google Play, in Settings (iOS `reviewLinkOpened`). */
+    data object ReviewLinkOpened : AnalyticsEvent("review_link_opened") {
+        override val properties get() = mapOf("source" to JsonPrimitive("settings"))
+    }
     data class LinkOpened(val link: OutboundLink) : AnalyticsEvent("link_opened") {
         override val properties get() = mapOf("link" to link.json)
     }
@@ -152,7 +156,7 @@ internal enum class PhoneSetting(override val wire: String) : CatalogValue { Pus
 
 /** What an outbound link leads to (`install_command`: an install command copied). */
 internal enum class OutboundLink(override val wire: String) : CatalogValue {
-    Github("github"), Demo("demo"), Tailscale("tailscale"), Privacy("privacy"), InstallCommand("install_command"),
+    Github("github"), Issues("issues"), AppStore("app_store"), Demo("demo"), Tailscale("tailscale"), Privacy("privacy"), InstallCommand("install_command"),
 }
 
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {

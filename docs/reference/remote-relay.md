@@ -269,7 +269,7 @@ d         = ChaCha20-Poly1305(kDir, nonce, plaintext, aad)   (密文 ‖ 16-byte
 ```
 - 每個方向各自從 `c = 0` 起算，每 frame +1；接收方要求 `c` 恰為預期值，否則關閉（close `4002 protocolError`）。這同時提供重放與重排保護。
 - 一則 inner 訊息（§6.5 的 JSON）UTF-8 編碼後切成 ≤ 256 KiB 的 chunk；接收方串接直到 flag `0x00`，再 JSON parse。
-- 重組上限：device→host 1 MiB；host→device 16 MiB。超過 → 關閉 `4013 tooLarge`。
+- 重組上限：已授權 device→host 8 MiB（含 5 MiB 自訂圖片的 base64/JSON）；僅供配對的 channel 維持 1 MiB；host→device 16 MiB。超過 → 關閉 `4013 tooLarge`。單一 WebSocket 訊息仍使用 256 KiB chunks。
 
 ### 6.4 Mailbox 封裝（device → 離線 host）
 
@@ -470,7 +470,7 @@ Close code 總表：`1000` 正常、`1011` 內部錯誤／逾時、`4001 unautho
 - **登入**：Clerk 是 authorization server，Worker 只是 protected resource。未帶有效 token → `401`，`WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp", scope="profile email"`；metadata 指向 Clerk issuer（`/.well-known/oauth-authorization-server` 也代轉 Clerk 的，給舊 client）。Client 以 CIMD 註冊（DCR 關閉）。Token 必須是 Clerk 發的 OAuth access token（`at+jwt`，或 opaque 時向 Clerk 驗），`aud` 必須等於 `<origin>/mcp`；App 的 session token 不算。`ASSISTANT_LIMITER`：每帳號每分鐘 120 次。
 - **路由**：Worker 只把呼叫送到 token 帳號擁有、`active` 的 computer。`list_computers` 由 Worker 從 D1 回答；其餘工具：指定 `computer`（名稱或 id）→ 該台；未指定時帳號只有一台、或只有一台在線 → 該台；`list_bots`／`read_replies` 在多台在線時每台都問並合併成 `{computers:[{computer, …}]}`；`message_bot` 則要求指定。
 - **DO**：`POST /internal/assistant {user, tool, args}` → host 不在線 `503 {"ok":false,"code":"offline"}`；否則送 `assistant.call`，在 request 存活期間等同 `id` 的 `assistant.result`，最多 10 秒（逾時 `{"ok":false,"code":"timeout"}`，舊 host 會忽略這個訊息）。host 斷線時等待中的呼叫一律 `offline`。只在 request 存活時佔用 DO，不排隊、不存任何內容。
-- **Host**（`chat::team::assistant`）：預設關閉，`setAssistants`（loopback only：桌面 app 與 TUI 的 Cloud assistants 開關，或 `codync-host cloud --assistants on|off`）才開；`user` 必須等於 host 的 owner（`/v1/host/state`）；private relay 上不處理。`message_bot` 走一般 bot request（`Back::Assistant`），回覆留在 host 記憶體給 `read_replies`（最新 50 則，同時最多 16 則執行中，重啟即忘）。`reachableByAssistants` 關掉的 bot 不列出、不收。`list_bots` 也列同一 network 裡其他電腦提供的 bot（`reviewer@laptop`）；對它們的 `message_bot` 是一封由 `cloud-assistant@<這台>` 寄出的 codync-network 信，結果回到同一份 replies。收信的電腦自己再檢查：它的 Cloud assistants 開關、該 bot 的 `reachableByAssistants` 與 network rules。Host 在 relay session 外另起 task 回答 `assistant.call`（第一次列出時可能要等其他電腦最多 5 秒），不會卡住同一條連線上的裝置訊息。
+- **Host**（`chat::team::assistant`）：預設關閉，`setAssistants`（loopback only：桌面 app 與 TUI 的 Cloud assistants 開關，或 `codync-host cloud --assistants on|off`）才開，且電腦不在 Codync 帳號裡時拒絕打開（這條連線還沒有成功的 state pull 時回「帳號還不知道」；關永遠可以），state pull 回 `owner: null` 時自動關掉，下次加入的帳號要重新同意；`user` 必須等於 host 的 owner（`/v1/host/state`）；private relay 上不處理。`message_bot` 走一般 bot request（`Back::Assistant`），回覆留在 host 記憶體給 `read_replies`（最新 50 則，同時最多 16 則執行中，重啟即忘）。`reachableByAssistants` 關掉的 bot 不列出、不收。`list_bots` 也列同一 network 裡其他電腦提供的 bot（`reviewer@laptop`）；對它們的 `message_bot` 是一封由 `cloud-assistant@<這台>` 寄出的 codync-network 信，結果回到同一份 replies。收信的電腦自己再檢查：它的 Cloud assistants 開關（所以它也要在帳號裡）、該 bot 的 `reachableByAssistants` 與 network rules。Host 在 relay session 外另起 task 回答 `assistant.call`（第一次列出時可能要等其他電腦最多 5 秒），不會卡住同一條連線上的裝置訊息。
 - **信任邊界**：和 §7.8 一樣，雲端以 HTTPS 解開並看得到這些呼叫與回覆的明文，不是 §6 的端對端加密。因此要電腦本機同意（開關）才放行，雲端無法自行替電腦打開；App 與文件都需明講。
 
 ---

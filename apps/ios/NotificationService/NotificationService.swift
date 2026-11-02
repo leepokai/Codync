@@ -35,7 +35,11 @@ final class NotificationService: UNNotificationServiceExtension {
     private static func fromBot(_ content: UNMutableNotificationContent, alert: PushAlert, botId: String?, computerId: String, ctx: String) -> UNNotificationContent {
         let store = SharedStore.activeContext
         let snapshot = store.id == ctx ? store.bots.filter { $0.computerId == computerId }.map(\.bot) : []
-        let bots = (alert.faces ?? []) + snapshot
+        let bots = (alert.faces ?? []).map { face in
+            var face = face
+            face.customIcon = snapshot.first { $0.id == face.id }?.customIcon
+            return face
+        } + snapshot
         guard let botId, let chat = bots.first(where: { $0.id == botId }) else { return content }
         let members = chat.members.compactMap { id in bots.first { $0.id == id } }
         let conversation = "\(computerId)/\(chat.id)"

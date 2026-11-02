@@ -25,6 +25,13 @@ pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
     if (cfg.model != stored.model || cfg.backend != stored.backend) && patch.get("modelOptions").is_none() {
         cfg.model_options.clear();
     }
+    // So do modes, to one agent: on another, a picked mode becomes its Auto mode, as the apps do it.
+    if cfg.backend != stored.backend
+        && patch.get("mode").is_none()
+        && cfg.mode.as_deref().is_some_and(|m| m != crate::agent::modes::AUTO)
+    {
+        cfg.mode = Some(crate::agent::modes::AUTO.into());
+    }
     if cfg.kind != stored.kind {
         bail!("a bot can't become a group, or a group a bot");
     }
@@ -47,5 +54,16 @@ mod tests {
         assert_eq!(section(json!({"id": "a", "name": "b"})).as_deref(), Some("Play"), "left out: kept");
         assert_eq!(section(json!({"id": "a", "section": null})), None, "null: out of its section");
         assert_eq!(section(json!({"id": "a", "section": "Work"})).as_deref(), Some("Work"));
+    }
+
+    #[test]
+    fn another_agent_works_in_its_auto_mode_unless_the_patch_picks_one() {
+        let stored: BotConfig =
+            serde_json::from_value(json!({"id": "a", "name": "a", "backend": "claude", "cwd": "/tmp", "mode": "plan"}))
+                .expect("a bot config");
+        let mode = |patch| patched(&stored, &patch).expect("a valid patch").mode;
+        assert_eq!(mode(json!({"backend": "codex"})).as_deref(), Some("auto"), "plan is Claude's");
+        assert_eq!(mode(json!({"backend": "codex", "mode": "read-only"})).as_deref(), Some("read-only"));
+        assert_eq!(mode(json!({"name": "b"})).as_deref(), Some("plan"));
     }
 }

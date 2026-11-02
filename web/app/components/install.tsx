@@ -5,9 +5,7 @@ import CopyCommand from "./copy-command";
 import Eyebrow from "./eyebrow";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
-import { APP_STORE, DMG, WINDOWS } from "../links";
-
-const INSTALL_SH = "curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh";
+import { APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
 
 export default function Install() {
   return (
@@ -66,6 +64,16 @@ export default function Install() {
               <div className="mt-5">
                 <CopyCommand command={INSTALL_SH} platform="linux" />
               </div>
+              <p className="mt-4 text-sm text-neutral-500">
+                Desktop app:{" "}
+                <a href={LINUX} className="text-neutral-300 underline underline-offset-4 transition hover:text-white">
+                  x86_64
+                </a>
+                {" · "}
+                <a href={LINUX_ARM} className="text-neutral-300 underline underline-offset-4 transition hover:text-white">
+                  arm64
+                </a>
+              </p>
             </div>
           </Reveal>
 

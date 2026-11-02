@@ -62,13 +62,18 @@ export class Tray {
     return translate(text, preference, 'en')
   }
 
-  /** The renderer draws menu images at 1× and 2× (`tray-summary.ts`): each screen gets its own pixels. */
-  private image(drawn: TrayImage | null) {
+  /**
+   * The renderer draws menu images at 1× and 2× (`tray-summary.ts`): each screen gets its own pixels.
+   * A template image follows the menu's highlight and appearance on macOS, like its SF Symbols.
+   */
+  private image(drawn: TrayImage | null, template = false) {
     if (!drawn) return undefined
     const image = nativeImage.createEmpty()
     image.addRepresentation({ scaleFactor: 1, dataURL: drawn.x1 })
     image.addRepresentation({ scaleFactor: 2, dataURL: drawn.x2 })
-    return image.isEmpty() ? undefined : image
+    if (image.isEmpty()) return undefined
+    image.setTemplateImage(template)
+    return image
   }
 
   /** The symbol beside an action: SF Symbols on macOS, the renderer's drawing of it on Windows and Linux. */
@@ -134,7 +139,7 @@ export class Tray {
         }
         if (s?.screen || s?.networks) items.push({ type: 'separator' })
         if (s?.screen) items.push({ label: this.tr('Remote screen'), icon: this.symbol('display'), submenu: this.screenMenu(s.screen) })
-        if (s?.networks) items.push({ label: this.tr('Network'), icon: this.symbol('point.3.connected.trianglepath.dotted'), submenu: this.networkMenu(s.networks) })
+        if (s?.networks) items.push({ label: this.tr('Network'), icon: this.image(s.networkIcon, process.platform === 'darwin'), submenu: this.networkMenu(s.networks) })
         if (s && s.usage.length) {
           items.push({ type: 'separator' })
           for (const provider of s.usage) {

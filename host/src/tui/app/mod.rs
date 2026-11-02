@@ -1,22 +1,26 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
 mod analytics;
+mod approvals;
 mod bot;
 mod editor;
 mod events;
 mod exchange;
 mod fallbacks;
 mod forms;
+mod group_form;
 mod input;
 mod model;
 mod navigate;
 mod new_bot;
 mod overlay_keys;
 mod roster;
+mod section_order;
 mod slash;
 mod steps;
 mod ui;
 
+pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
@@ -25,9 +29,9 @@ pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
 pub use ui::{
-    ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderPicker, Form, Goto,
-    GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle, TraceMode,
-    Width,
+    ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
+    Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
+    TraceMode, Width,
 };
 
 use crate::tui::l10n::tr;
@@ -68,6 +72,7 @@ pub struct App {
     /// This computer's network (`networkView`'s shape); null on hosts without one.
     pub network: Value,
     pub backends: Vec<Value>,
+    pub custom_icons: bool,
     pub selected: Option<String>,
     pub focus: Focus,
     pub typing: bool,
@@ -112,6 +117,8 @@ pub struct App {
     pub unfolded: HashSet<String>,
     /// Roster sections showing their label alone (`z`); this run only.
     pub folded: HashSet<String>,
+    /// Section order for this terminal session; the empty name is the unsectioned Bots group.
+    pub section_order: Vec<String>,
     /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
     pub call_entries: HashMap<String, Vec<Entry>>,
     pub market: (Vec<Toggle>, Vec<Toggle>),
@@ -121,6 +128,8 @@ pub struct App {
     pub models: HashMap<String, Option<Vec<AgentModel>>>,
     /// Agents whose model list came with Fast mode.
     pub fast_mode: HashSet<String>,
+    /// The modes each agent's model list came with.
+    pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
@@ -161,6 +170,7 @@ impl App {
             screen: Value::Null,
             network: Value::Null,
             backends: vec![],
+            custom_icons: false,
             selected: None,
             focus: Focus::Roster,
             typing: false,
@@ -189,11 +199,13 @@ impl App {
             pick: None,
             unfolded: HashSet::new(),
             folded: HashSet::new(),
+            section_order: Vec::new(),
             call_entries: HashMap::new(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
             models: HashMap::new(),
             fast_mode: HashSet::new(),
+            modes: HashMap::new(),
             shell: None,
             reading: HashSet::new(),
             history_busy: HashSet::new(),

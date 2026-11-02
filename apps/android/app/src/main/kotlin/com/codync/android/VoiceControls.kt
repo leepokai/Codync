@@ -83,7 +83,7 @@ internal fun openAppSettings(context: android.content.Context) =
                 .semantics { contentDescription = if (speaking) "Interrupt" else bot?.name.orEmpty() }) {
                 if (bot != null) BotAvatar(bot, state.bots, 34.dp)
             }
-            CallLevelDots(voice.level, speaking, bot?.status == "working", voice.phase.connecting, color,
+            LevelDots(voice.level, speaking, bot?.status == "working", voice.phase.connecting, color,
                 Modifier.weight(1f).height(20.dp).semantics { contentDescription = statusText(voice, bot?.status == "working") })
             // Audio leaves the phone: say where.
             voice.provider?.let { provider ->
@@ -138,7 +138,7 @@ private const val CONNECTING_PERIOD = 2.4f
  * an indeterminate progress line instead (a short segment gliding back and forth along a faint track,
  * resting at the left with reduced motion), and fades back to the dots.
  */
-@Composable private fun CallLevelDots(level: Float, speaking: Boolean, working: Boolean, connecting: Boolean, color: Color, modifier: Modifier) {
+@Composable internal fun LevelDots(level: Float, speaking: Boolean, working: Boolean, connecting: Boolean, color: Color, modifier: Modifier) {
     val still = reduceMotion()
     var time by remember { mutableFloatStateOf(0f) }
     if (!still) LaunchedEffect(Unit) { while (true) withFrameNanos { time = it / 1e9f } }

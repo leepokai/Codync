@@ -201,6 +201,8 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
 /** One row in a Codync menu: an action, or a choice when `selected` is set. */
 export interface MenuItem {
   title: string
+  /** Secondary context below the main label. */
+  detail?: string
   icon?: string
   /** A picture in the icon's place (an agent's logo). */
   leading?: ReactNode
@@ -288,7 +290,10 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
                 {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
               </span>
             ) : null}
-            <span className="menu-title">{item.verbatim ? item.title : tr(item.title)}</span>
+            <span className={`menu-title${item.detail ? ' with-detail' : ''}`}>
+              <span>{item.verbatim ? item.title : tr(item.title)}</span>
+              {item.detail && <span className="menu-detail">{tr(item.detail)}</span>}
+            </span>
             {item.selected !== undefined ? (
               <span className={`check-slot${item.selected ? ' on' : ''}`}>
                 <Icon name="checkmark" size={10} weight="semibold" />

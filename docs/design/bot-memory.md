@@ -12,9 +12,8 @@ memory like any file, through one set of tools in every harness. How it works to
 
 Left before release, found 2026-10-18 and put off by the owner for now:
 
-- **The Android app's memory screen errors.** It still calls the removed Engram methods and has none of the new
-  memory UI. Android isn't released, so it doesn't hold the release; the port is listed in
-  [the Android plan](../plans/android-app.md#not-ported-yet).
+- ~~The Android app's memory screen errors.~~ Ported on 2026-10-31: the same read-only screen as the iPhone's
+  ([the Android plan](../plans/android-app.md#coverage)).
 - **Full e2e on Linux and Windows** hasn't run; only macOS has.
 - **Bots inherit the owner's own Claude Code setup** (`~/.claude/CLAUDE.md`, permission mode, claude.ai
   connectors); isolating them waits for the owner's decision ([evaluation](#evaluation)).

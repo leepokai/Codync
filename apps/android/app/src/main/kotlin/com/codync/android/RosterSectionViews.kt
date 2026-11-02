@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -45,7 +47,8 @@ import com.codync.android.design.*
  * A section's heading, drawn like iOS `ComputerSection`: its name and bot count, their unread while
  * folded, and the chevron. Tap folds it; touch and hold opens [actions] (none for a host without sections).
  */
-@Composable internal fun SectionHeader(header: RosterLine.Header, toggle: () -> Unit, actions: List<MenuItem>, modifier: Modifier = Modifier) {
+@Composable internal fun SectionHeader(header: RosterLine.Header, toggle: () -> Unit, actions: List<MenuItem>, modifier: Modifier = Modifier, drag: ContextDrag? = null, move: (Int) -> Unit = {}) {
+    val translate = translator()
     val turn by animateFloatAsState(if (header.folded) -90f else 0f, Motion.layout(), label = "Chevron")
     val state = if (header.folded) tr("Collapsed") else tr("Expanded")
     // "Work, 2 bots, 3 unread", its phrase translated before the name goes in: last, so one that reads "{count}" stays as typed.
@@ -56,12 +59,13 @@ import com.codync.android.design.*
         header.count == 1 -> tr("{name}, 1 bot, {unread} unread")
         else -> tr("{name}, {count} bots, {unread} unread")
     }.replace("{count}", "${header.count}").replace("{unread}", "${header.unread}").replace("{name}", header.name)
-    val tap = if (actions.isEmpty()) Modifier.clickable(role = Role.Button, onClick = toggle)
-        else Modifier.contextActions(onClick = toggle) { actions }.semantics { role = Role.Button }
+    val tap = if (actions.isEmpty() && drag == null) Modifier.clickable(role = Role.Button, onClick = toggle)
+        else Modifier.contextActions(onClick = toggle, reorder = drag) { actions }.semantics { role = Role.Button }
     Row(modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp).then(tap)
         // One spoken line for the whole header (the count and the badge say nothing alone): clear the parts, then describe it.
         .clearAndSetSemantics {
             heading()
+            customActions = listOf(CustomAccessibilityAction(translate("Move up")) { move(-1); true }, CustomAccessibilityAction(translate("Move down")) { move(1); true })
             stateDescription = state
             contentDescription = spoken
         }
@@ -81,8 +85,12 @@ import com.codync.android.design.*
 }
 
 /** The plain "Bots" label over the bots in no section: a header's name, where its row starts; it folds nothing. */
-@Composable internal fun SectionLabel(modifier: Modifier = Modifier) {
-    Text(tr("Bots"), modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp).semantics { heading() }.padding(vertical = 6.dp),
+@Composable internal fun SectionLabel(modifier: Modifier = Modifier, drag: ContextDrag? = null, move: (Int) -> Unit = {}) {
+    val translate = translator()
+    Text(tr("Bots"), modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp).contextActions(reorder = drag) { emptyList() }.semantics {
+        heading()
+        customActions = listOf(CustomAccessibilityAction(translate("Move up")) { move(-1); true }, CustomAccessibilityAction(translate("Move down")) { move(1); true })
+    }.padding(vertical = 6.dp),
         style = Type.footnote.semibold, color = Palette.secondary)
 }
 
@@ -91,10 +99,10 @@ import com.codync.android.design.*
  * and none when the bot is in one; [move] puts the bot in a section (null: out of its own).
  */
 internal fun sectionMenu(bot: Bot, sections: List<String>, move: (String?) -> Unit, newSection: () -> Unit): MenuItem {
-    val others = sections.filter { it != bot.section }.map { name -> MenuItem(name, verbatim = true) { move(name) } }
-    return MenuItem("Move to section", icon = "arrow.turn.down.right", children = others + listOfNotNull(
-        MenuItem("New section…", icon = "plus", divider = true, action = newSection),
-        if (bot.section != null) MenuItem("Remove from section", icon = "xmark.circle") { move(null) } else null,
+    val others = sections.filter { it != bot.section }.map { name -> MenuItem(name, icon = "tray", verbatim = true) { move(name) } }
+    return MenuItem("Move to section", icon = "tray", children = others + listOfNotNull(
+        MenuItem("New section…", icon = "plus", divider = others.isNotEmpty(), action = newSection),
+        if (bot.section != null) MenuItem("Remove from section", icon = "minus.circle") { move(null) } else null,
     ))
 }
 

@@ -12,13 +12,17 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var description: String
     public var avatarColor: String
     public var avatarShape: String
+    public var customIcon: CustomIcon?
     public var backend: String
     public var command: String?
     public var cwd: String
     /// Host-allocated personal workspace rather than a user-selected project.
     public var managedWorkspace: Bool = false
-    /// `ask` or `auto`.
+    /// `ask` or `auto`: whether Codync asks about what the agent asks, or approves it.
     public var permission: String
+    /// The agent mode it works in (Claude's Manual / Plan / Auto…): the agent's id, or `auto` for its Auto mode
+    /// under any id. Nil keeps the agent's default.
+    public var mode: String?
     public var model: String?
     /// The model's own settings (effort, fast…): agent option id → value.
     public var modelOptions: [String: String] = [:]
@@ -107,11 +111,13 @@ extension Bot {
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         avatarColor = try c.decodeIfPresent(String.self, forKey: .avatarColor) ?? "blue"
         avatarShape = try c.decodeIfPresent(String.self, forKey: .avatarShape) ?? "blob"
+        customIcon = try c.decodeIfPresent(CustomIcon.self, forKey: .customIcon)
         backend = try c.decodeIfPresent(String.self, forKey: .backend) ?? "custom"
         command = try c.decodeIfPresent(String.self, forKey: .command)
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd) ?? ""
         managedWorkspace = try c.decodeIfPresent(Bool.self, forKey: .managedWorkspace) ?? false
-        permission = try c.decodeIfPresent(String.self, forKey: .permission) ?? "auto"
+        permission = try c.decodeIfPresent(String.self, forKey: .permission) ?? "ask"
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
         model = try c.decodeIfPresent(String.self, forKey: .model)
         modelOptions = try c.decodeIfPresent([String: String].self, forKey: .modelOptions) ?? [:]
         fastMode = try c.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false

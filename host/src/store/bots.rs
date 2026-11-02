@@ -173,6 +173,7 @@ mod tests {
             command: None,
             cwd: "/tmp".into(),
             permission: Permission::Ask,
+            mode: None,
             model: None,
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,

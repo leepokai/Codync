@@ -137,7 +137,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                 inner.x,
                 inner.y + 1,
                 inner.width,
-                &tr("No routines. c asks the bot for one; n sets one up here."),
+                &tr("No routines. n sets one up here, or ask the bot in chat."),
                 t.secondary.patch(t.panel),
             );
         }
@@ -176,12 +176,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
             }
         }
     }
-    footer(
-        buf,
-        inner,
-        None,
-        "n new · c ask the bot · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc",
-    );
+    footer(buf, inner, None, "n new · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc");
 }
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {

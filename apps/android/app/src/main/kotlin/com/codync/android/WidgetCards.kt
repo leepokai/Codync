@@ -285,7 +285,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
                 summary()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(horizontalArrangement = Arrangement.spacedBy((-4).dp)) {
-                        for (bot in ordered.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 23.dp)
+                        for (bot in ordered.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 23.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                     }
                     Spacer(Modifier.weight(1f))
                     if (working > 0 && needs > 0) Text("$working working", style = Type.system(9f), color = Palette.secondary)
@@ -300,7 +300,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
         for (bot in bots) {
             val (label, tint) = widgetState(bot.status)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                CharacterAvatar(bot.avatarShape, bot.avatarColor, 24.dp)
+                CharacterAvatar(bot.avatarShape, bot.avatarColor, 24.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(widgetName(bot), style = Type.system(11f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val activity = activities[bot.id]?.takeIf { bot.status == "working" || bot.status == "needsInput" }
@@ -322,7 +322,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
                 if (bot == null) Box(Modifier.size(26.dp)) { CharacterAvatar("blob", "gray", 26.dp, monochrome = Palette.text.copy(alpha = 0.18f)) }
                 else {
                     Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        CharacterAvatar(bot.avatarShape, bot.avatarColor, 30.dp, bot.status)
+                        CharacterAvatar(bot.avatarShape, bot.avatarColor, 30.dp, bot.status, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                         Text(widgetName(bot), style = Type.system(9f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (bot.status == "working" || bot.status == "error") Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(7.dp)

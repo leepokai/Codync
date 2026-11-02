@@ -177,7 +177,7 @@ async fn execute(args: &SendArgs) -> Result<Exit, Failure> {
         .await
         .map_err(|_| Failure::usage("couldn't read the message"))??;
     let base = format!("http://127.0.0.1:{}", args.port);
-    let token = Client::new(&base, None).token().ok_or_else(|| Failure::host(crate::NOT_RUNNING))?;
+    let token = Client::new(&base, None).token().ok_or_else(|| Failure::host(crate::local_api::NOT_RUNNING))?;
     let mut feed = BotFeed::connect(&base, &token).await?;
     let bots = feed.bots();
     let bot = resolve_bot(&args.bot, &bots)?;
@@ -233,7 +233,7 @@ async fn send(base: &str, token: &str, body: &Value) -> Result<Value, Failure> {
         };
         match answer {
             Some(answer) => return Ok(answer),
-            None if attempts == 3 => return Err(Failure::host(crate::NOT_RUNNING)),
+            None if attempts == 3 => return Err(Failure::host(crate::local_api::NOT_RUNNING)),
             None => attempts += 1,
         }
         tokio::time::sleep(Duration::from_millis(250)).await;

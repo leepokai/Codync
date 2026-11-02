@@ -136,12 +136,15 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
         }
         "permission" -> Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group) AuthorLabel(entry.data.text("author"), state)
-            PermissionCard(entry, state.computers.firstOrNull()?.name.orEmpty(), answering = "permission:" + entry.id in state.busy) {
+            PermissionCard(entry, state.hostName, answering = "permission:" + entry.id in state.busy) {
                 store.respond(entry, it)
             }
         }
         else -> if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
+        } else if (entry.data["handoff"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
+            // A fresh conversation starts at the left, as on the iPhone.
+            HandoffCardRow(entry, entry.data["handoff"] as JsonObject, state, store)
         } else Box(Modifier.padding(top = 10.dp)) {
             // In a group, the member whose agent failed.
             val owner = state.bots.firstOrNull { it.id == (entry.data.text("author") ?: entry.botId) && it.kind != "group" }
@@ -157,7 +160,7 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 @Composable internal fun AuthorLabel(botId: String?, state: AppState, name: String? = null) {
     val bot = state.bots.firstOrNull { it.id == botId }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp)
+        if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
         Text(state.authorName(botId, name), style = Type.subheadline.medium, color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.secondary)
     }
 }
@@ -300,7 +303,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(emoji, style = Type.system(15f))
                 Row(horizontalArrangement = Arrangement.spacedBy((-5).dp)) {
-                    for (bot in bots.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 16.dp)
+                    for (bot in bots.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 16.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                 }
             }
         }
@@ -347,12 +350,6 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
             }
         }
         "agentSwitch" in entry.data -> AgentSwitchLine(text, (entry.data["agentSwitch"] as? JsonObject)?.text("carried"))
-        // A fresh conversation starts at the left, as on the iPhone.
-        "handoff" in entry.data -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Symbol("arrow.triangle.branch", size = 13.dp, tint = Palette.secondary)
-            Text(text, style = Type.footnote, color = Palette.secondary)
-        }
         else -> Text(text, Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
     }
 }

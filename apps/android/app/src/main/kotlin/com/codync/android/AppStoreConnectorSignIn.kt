@@ -1,6 +1,5 @@
 package com.codync.android
 
-import android.app.Application
 import android.net.Uri
 import java.io.IOException
 import androidx.lifecycle.viewModelScope
@@ -16,7 +15,7 @@ fun AppStore.connectorSignIn(id: String, requestId: String? = null) = action("oa
     oauthRequestId = requestId
     val response = hostQuery("connectorSignIn", body("id" to id), 60_000)
     val plan = WireJson.decodeFromJsonElement<ConnectorSignIn>(response)
-    val computer = requireNotNull(state.value.computers.firstOrNull())
+    val computer = state.value.computer
     externalHttps(plan.url)
     if (plan.callback == "app") {
         val pending = PendingConnectorOAuth.create(plan, id, computer.id, System.currentTimeMillis()).copy(requestId = requestId)
@@ -26,7 +25,7 @@ fun AppStore.connectorSignIn(id: String, requestId: String? = null) = action("oa
         withContext(Dispatchers.IO) { ConnectorOAuthBook(local.directory).clear() }
     }
     val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(plan.url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-    try { getApplication<Application>().startActivity(intent) }
+    try { application.startActivity(intent) }
     catch (error: Exception) { withContext(Dispatchers.IO) { ConnectorOAuthBook(local.directory).clear() }; throw IOException("Couldn't open the sign-in browser.", error) }
     if (plan.callback == "host") {
         val complete = withTimeoutOrNull(600_000) {
@@ -57,25 +56,21 @@ internal suspend fun AppStore.cancelOAuthPending(requestId: String?) {
     oauthRequestId = null
     refreshPlugins()
 }
-fun AppStore.finishConnectorSignIn(uri: Uri) {
+/** The browser came back with a connector sign-in: it finishes on the computer that started it. */
+fun AccountStore.finishConnectorSignIn(uri: Uri) {
     linkJob?.cancel()
     linkJob = viewModelScope.launch {
         var expectedGeneration: Int? = null
         try {
             val back = OAuthReturn.parse(uri.toString(), BuildConfig.URL_SCHEME)
-            val activated = deadline(35_000, "This account didn't finish opening.") { state.first { !it.loading && it.account.ready &&
-                it.contextId == LocalStore.referenceId(it.account.userId ?: "local") } }
-            val generation = activated.generation
-            expectedGeneration = generation
+            val activated = deadline(35_000, "This account didn't finish opening.") { activated() }
+            expectedGeneration = activated.generation
             val directory = local.directory
             val pending = withContext(Dispatchers.IO) { ConnectorOAuthBook(directory).read() }
                 ?: throw IOException("No connector sign-in is pending for this account. Start sign-in again.")
-            pending.validate(back, activated.computers.firstOrNull()?.id.orEmpty(), System.currentTimeMillis())
-            val response = hostQuery("connectorSignInFinish", body("state" to back.state, "code" to back.code, "error" to back.error), 60_000, generation)
-            val connector = WireJson.decodeFromJsonElement<InstalledConnector>(response.jsonObject.getValue("connector"))
-            pending.requestId?.let { finishConnectionRequest(it, connectorId = connector.id, expectedGeneration = generation) }
-            withContext(Dispatchers.IO) { ConnectorOAuthBook(directory).clear() }
-            if (state.value.generation == generation) { oauthRequestId = null; refreshPlugins(); mutableState.update { it.copy(error = null) } }
+            val store = requireNotNull(store(pending.computerId)) { "The computer that started this sign-in is no longer paired here." }
+            pending.validate(back, store.id, System.currentTimeMillis())
+            store.finishConnectorSignIn(back, pending, directory)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {
             mutableState.update {
@@ -84,4 +79,13 @@ fun AppStore.finishConnectorSignIn(uri: Uri) {
             }
         }
     }
+}
+
+private suspend fun AppStore.finishConnectorSignIn(back: OAuthReturn, pending: PendingConnectorOAuth, directory: java.io.File) {
+    val generation = state.value.generation
+    val response = hostQuery("connectorSignInFinish", body("state" to back.state, "code" to back.code, "error" to back.error), 60_000, generation)
+    val connector = WireJson.decodeFromJsonElement<InstalledConnector>(response.jsonObject.getValue("connector"))
+    pending.requestId?.let { finishConnectionRequest(it, connectorId = connector.id, expectedGeneration = generation) }
+    withContext(Dispatchers.IO) { ConnectorOAuthBook(directory).clear() }
+    oauthRequestId = null; refreshPlugins(); mutableState.update { it.copy(error = null) }
 }

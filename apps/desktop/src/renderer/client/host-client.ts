@@ -64,8 +64,9 @@ export class LoopbackTransport implements HostTransport {
 }
 
 export type HostEvent =
+  | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }
   /** `network` is null from hosts before the network view. */
-  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null }
+  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons }
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
@@ -92,6 +93,8 @@ export function parseEvent(line: string): HostEvent | null {
   }
   const type = raw.type
   switch (type) {
+    case 'icons':
+      return { type, iconsRevision: Number(raw.iconsRevision ?? 0), icons: (raw.icons ?? {}) as import('@shared/custom-icons').CustomIcons }
     case 'hello':
       return {
         type,
@@ -100,6 +103,7 @@ export function parseEvent(line: string): HostEvent | null {
         usage: (raw.usage as Usage) ?? { providers: [] },
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
+        icons: raw.icons as import('@shared/custom-icons').CustomIcons | undefined,
       }
     case 'bot': {
       const bot = raw.bot as (Bot & { deleted?: boolean }) | undefined

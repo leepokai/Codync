@@ -17,6 +17,7 @@ import { Observable } from '../lib/observable'
 import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
+import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -34,6 +35,37 @@ export type Connection =
  * read, entry merging and the on-device cache.
  */
 export class BotMirror extends Observable {
+  icons: import('@shared/custom-icons').CustomIcons = {}
+  private iconsReceived = false
+  protected iconsRevision = -1
+  iconsEpoch = 0
+
+  applyIcons(icons: import('@shared/custom-icons').CustomIcons, revision = 0) {
+    if (revision < this.iconsRevision) return
+    this.iconsRevision = revision
+    this.iconsReceived = true
+    void saveIconCache(this.cacheKey, icons).catch((error: unknown) => console.warn('Could not cache custom icons', error))
+    this.restoreIcons(icons)
+  }
+
+  private restoreIcons(icons: import('@shared/custom-icons').CustomIcons) {
+    this.icons = icons
+    for (const [id, bot] of this.bots) this.bots.set(id, this.withIcon(bot))
+    this.onRosterChanged?.()
+    this.changed()
+  }
+
+  /** Icons sync apart from bots, so no bot the host sends carries its custom icon. */
+  private withIcon(bot: Bot): Bot {
+    return { ...bot, customIcon: this.icons[`bot:${bot.id}`] }
+  }
+
+  /** Stores a bot the host sent, with its custom icon. */
+  protected putHostBot(bot: Bot): Bot {
+    const stored = this.withIcon(bot)
+    this.bots.set(stored.id, stored)
+    return stored
+  }
   computer: Computer
   connection: Connection = { kind: 'connecting' }
   hostRoute: HostRoute | null = null
@@ -53,7 +85,6 @@ export class BotMirror extends Observable {
   /** A new network's recovery code until the user says they saved it: the host keeps it nowhere. */
   recoveryCode: RecoveryCode | null = null
   historyComplete = new Set<string>()
-  routineDrafts = new Map<string, string>()
   readonly composerDrafts: ComposerDrafts
   lastError: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
@@ -254,6 +285,9 @@ export class BotMirror extends Observable {
   }
 
   private loadCache() {
+    void loadIconCache(this.cacheKey).then((icons) => {
+      if (!this.retired && !this.iconsReceived) this.restoreIcons(icons)
+    }).catch((error: unknown) => console.warn('Could not read cached icons', error))
     try {
       const raw = localStorage.getItem(this.cacheKey)
       if (!raw) return
@@ -282,7 +316,8 @@ export class BotMirror extends Observable {
       kept.push(...list.filter((e) => !e.id.startsWith('local-')).slice(-200))
       kept.push(...list.filter((e) => e.id.startsWith('local-') && e.data.status === 'failed'))
     }
-    const cache = { stamp: `${this.appVersion}/${this.hello?.version ?? ''}`, hostId: this.hostId, rev: this.rev, bots: [...this.bots.values()], entries: kept }
+    const bots = [...this.bots.values()].map(({ customIcon: _image, ...bot }) => bot)
+    const cache = { stamp: `${this.appVersion}/${this.hello?.version ?? ''}`, hostId: this.hostId, rev: this.rev, bots, entries: kept }
     try {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache))
     } catch {}

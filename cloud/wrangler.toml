@@ -11,6 +11,15 @@ routes = [{ pattern = "api.codync.dev", custom_domain = true }, { pattern = "mcp
 tag = "v1"
 new_sqlite_classes = ["ComputerRelay"]
 
+[[r2_buckets]]
+binding = "ICONS"
+bucket_name = "codync-icons"
+
+[[ratelimits]]
+name = "ICON_LIMITER"
+namespace_id = "1041"
+simple = { limit = 30, period = 60 }
+
 [vars]
 CLERK_ISSUER = "https://clerk.codync.dev"
 
@@ -56,18 +65,20 @@ crons = ["*/15 * * * *", "*/5 * * * *"]
 # dev: the deployed test environment at dev-api.codync.dev and dev-mcp.codync.dev (Clerk development instance).
 [env.dev]
 name = "codync-cloud-dev"
+r2_buckets = [{ binding = "ICONS", bucket_name = "codync-icons-dev" }]
 routes = [{ pattern = "dev-api.codync.dev", custom_domain = true }, { pattern = "dev-mcp.codync.dev", custom_domain = true }]
 vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev" }
 d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "0c03c398-3cec-4f06-a76e-998176ca19ae", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
-ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1002", simple = { limit = 10, period = 60 } }, { name = "TURN_LIMITER", namespace_id = "1012", simple = { limit = 12, period = 60 } }, { name = "HOOK_LIMITER", namespace_id = "1022", simple = { limit = 60, period = 60 } }, { name = "ASSISTANT_LIMITER", namespace_id = "1032", simple = { limit = 120, period = 60 } }]
+ratelimits = [{ name = "ICON_LIMITER", namespace_id = "1042", simple = { limit = 30, period = 60 } }, { name = "REGISTER_LIMITER", namespace_id = "1002", simple = { limit = 10, period = 60 } }, { name = "TURN_LIMITER", namespace_id = "1012", simple = { limit = 12, period = 60 } }, { name = "HOOK_LIMITER", namespace_id = "1022", simple = { limit = 60, period = 60 } }, { name = "ASSISTANT_LIMITER", namespace_id = "1032", simple = { limit = 120, period = 60 } }]
 triggers = { crons = ["*/15 * * * *"] }
 
 # local: wrangler dev / e2e with a local D1; CLERK_JWT_KEY is injected by the test (--var).
 [env.local]
 name = "codync-cloud-local"
+r2_buckets = [{ binding = "ICONS", bucket_name = "codync-icons-local" }]
 routes = []
 vars = { CLERK_ISSUER = "https://clerk.test.local" }
 d1_databases = [{ binding = "DB", database_name = "codync-local", database_id = "local", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
-ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1003", simple = { limit = 10, period = 60 } }, { name = "TURN_LIMITER", namespace_id = "1013", simple = { limit = 12, period = 60 } }, { name = "HOOK_LIMITER", namespace_id = "1023", simple = { limit = 60, period = 60 } }, { name = "ASSISTANT_LIMITER", namespace_id = "1033", simple = { limit = 120, period = 60 } }]
+ratelimits = [{ name = "ICON_LIMITER", namespace_id = "1043", simple = { limit = 30, period = 60 } }, { name = "REGISTER_LIMITER", namespace_id = "1003", simple = { limit = 10, period = 60 } }, { name = "TURN_LIMITER", namespace_id = "1013", simple = { limit = 12, period = 60 } }, { name = "HOOK_LIMITER", namespace_id = "1023", simple = { limit = 60, period = 60 } }, { name = "ASSISTANT_LIMITER", namespace_id = "1033", simple = { limit = 120, period = 60 } }]

@@ -21,6 +21,8 @@ data class Bot(
     val cwd: String = "",
     val managedWorkspace: Boolean = false,
     val permission: String = "ask",
+    /** The agent mode it works in ([AgentMode]); null for the agent's default. */
+    val mode: String? = null,
     val model: String? = null,
     /** The model's own settings (effort, fast…): agent option id → value. */
     val modelOptions: Map<String, String> = emptyMap(),
@@ -41,6 +43,14 @@ data class Bot(
     val reachableByAssistants: Boolean? = null,
     /** The bot that created this one; null when the user did. */
     val createdBy: String? = null,
+    /** Uses the memory all the user's bots share ("About you"); null from an older host. */
+    val sharedMemory: Boolean? = null,
+    /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
+    val harnessMemory: Boolean? = null,
+    /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
+    val harnessMemoryShared: Boolean? = null,
+    /** Moves whenever memory changes, so an open memory screen fetches it again. */
+    val memoryRev: Long? = null,
     val autoName: Boolean = false,
     val createdAt: Long = 0,
     val startedAt: Long? = null,
@@ -69,6 +79,7 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    val customIcon: CustomIcon? = null,
 ) {
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = if (pinned) 0 else 1

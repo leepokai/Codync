@@ -19,6 +19,7 @@ use crate::remote::cloud::{self, CloudStatus};
 use crate::store::{BotConfig, Store, now_ms};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 /// How it shows in a bot's chat, and its id there (`sourceBotId`).
@@ -35,7 +36,9 @@ const MAX_RUNNING: usize = 16;
 const KEEP: usize = 50;
 const SHOW: usize = 20;
 const OFF: &str = "Cloud assistants are off on this computer. To let ChatGPT or Claude message its bots, \
-turn on Cloud assistants in Codync's settings on it (or run `codync-host cloud --assistants on`).";
+turn on Cloud assistants in Codync's settings on it (or run `codync-host cloud --assistants on`); \
+it has to be in your Codync account.";
+const NOT_IN_ACCOUNT: &str = "This computer isn't in your Codync account.";
 
 pub fn enabled(store: &Store) -> bool {
     store.kv_get(KV).as_deref() == Some("on")
@@ -65,7 +68,18 @@ fn closed(bot: &BotConfig) -> anyhow::Error {
 
 /// `setAssistants`: whether the cloud assistant may reach this computer's bots. Local only.
 pub fn set_enabled(hub: &Hub, on: bool) -> Result<CloudStatus> {
-    cloud::require_accounts(&hub.store)?;
+    // Off always works; on needs the account the cloud routes the assistant's calls from.
+    if on && !available(hub) {
+        cloud::require_accounts(&hub.store)?;
+        // Until a state pull on this connection works, no owner may only mean "not known yet".
+        if !hub.cloud_synced.load(Ordering::Acquire) {
+            bail!(
+                "This computer isn't connected to the Codync cloud yet, so its account isn't known. \
+                Turn on Reach from anywhere, then try again once it's connected."
+            );
+        }
+        bail!("{NOT_IN_ACCOUNT} Sign in on the desktop app or a phone and add this computer to your account first.");
+    }
     hub.store.kv_set(KV, if on { "on" } else { "off" })?;
     tracing::info!(on, "cloud assistants changed");
     cloud::update_status(hub, |s| s.assistants = on);
@@ -93,7 +107,7 @@ async fn cloud_call(hub: &Arc<Hub>, user: &str, tool: &str, args: &Value) -> Res
     }
     // The cloud only routes the account's own calls here; this computer checks that too.
     if user.is_empty() || hub.cloud.status().owner.map(|o| o.user_id).as_deref() != Some(user) {
-        bail!("This computer isn't in your Codync account.");
+        bail!(NOT_IN_ACCOUNT);
     }
     run(hub, &Asker::cloud(), tool, args).await
 }

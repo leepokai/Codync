@@ -12,9 +12,9 @@ data class TaskWatch(val taskId: String = java.util.UUID.randomUUID().toString()
     val seenRunning: Boolean = false, val timestamp: Long = 0, val lastRev: Long = 0, val deadline: Long = System.currentTimeMillis() + 900_000,
     val startedAt: Long = System.currentTimeMillis(), val avatarShape: String = "blob", val avatarColor: String = "blue", val activity: String = "")
 
-/** Bounded delegation markers; inactive contexts never render or accept these updates. */
-class TaskFeed(directory: File) {
-    private val file = AtomicFile(File(directory, "tasks.json"))
+/** One computer's bounded delegation markers; inactive contexts never render or accept these updates. */
+class TaskFeed(directory: File, computerId: String) {
+    private val file = AtomicFile(File(directory, "tasks-$computerId.json"))
     fun all(): List<TaskWatch> = synchronized(lock) {
         if (!file.baseFile.exists()) emptyList() else WireJson.decodeFromString<List<TaskWatch>>(file.readFully().toString(Charsets.UTF_8))
     }

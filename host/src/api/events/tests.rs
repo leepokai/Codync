@@ -52,9 +52,10 @@ async fn full_sync_removes_a_bot_deleted_while_the_client_was_offline() {
 
     // An app/host update rewinds the cursor to zero while keeping the cached roster.
     let events = f.catch_up(0).await;
+    assert_eq!(events[1], json!({"type": "icons", "icons": {}, "iconsRevision": 0}));
     assert_eq!(events[0]["type"], "hello");
     let mut cached = std::collections::HashSet::from(["deleted".to_owned()]);
-    for event in &events[1..] {
+    for event in &events[2..] {
         let bot = &event["bot"];
         let id = bot["id"].as_str().unwrap();
         if bot["deleted"] == true {
@@ -65,7 +66,7 @@ async fn full_sync_removes_a_bot_deleted_while_the_client_was_offline() {
         }
     }
     assert_eq!(cached, std::collections::HashSet::from(["kept".to_owned()]));
-    assert!(events[1..].windows(2).all(|pair| pair[0]["rev"].as_i64() < pair[1]["rev"].as_i64()));
+    assert!(events[2..].windows(2).all(|pair| pair[0]["rev"].as_i64() < pair[1]["rev"].as_i64()));
 }
 
 #[tokio::test]
@@ -74,10 +75,10 @@ async fn incremental_sync_replays_deletions_only_after_the_saved_cursor() {
     let before = f.add_bot("deleted");
     let deleted_rev = f.hub.store.delete_bot("deleted").unwrap();
     let events = f.catch_up(before).await;
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[1]["bot"]["deleted"], true);
-    assert_eq!(events[1]["rev"], deleted_rev);
-    assert_eq!(f.catch_up(deleted_rev).await.len(), 1);
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[2]["bot"]["deleted"], true);
+    assert_eq!(events[2]["rev"], deleted_rev);
+    assert_eq!(f.catch_up(deleted_rev).await.len(), 2);
 }
 
 #[tokio::test]
@@ -98,7 +99,7 @@ async fn catch_up_brings_an_artifact_renamed_while_the_client_was_offline() {
         "entryId": card.id});
     f.hub.store.kv_set(&format!("artifact.b.{id}"), &saved.to_string()).unwrap();
     let cursor = f.hub.store.current_rev();
-    assert_eq!(f.catch_up(cursor).await[1..], [] as [Value; 0], "details without a rev default to 0, never replayed");
+    assert_eq!(f.catch_up(cursor).await[2..], [] as [Value; 0], "details without a rev default to 0, never replayed");
 
     crate::chat::artifacts::api(&f.hub, "renameArtifact", &json!({"botId": "b", "artifactId": id, "title": "New"}))
         .await
@@ -110,8 +111,8 @@ async fn catch_up_brings_an_artifact_renamed_while_the_client_was_offline() {
     let entry = events.iter().find(|e| e["type"] == "entry").expect("its card was retitled");
     assert_eq!(entry["entry"]["data"]["text"], "Artifact: New");
     assert_eq!(entry["entry"]["data"]["artifact"]["title"], "New");
-    assert!(events[1..].windows(2).all(|pair| pair[0]["rev"].as_i64() < pair[1]["rev"].as_i64()), "in rev order");
-    assert_eq!(f.catch_up(f.hub.store.current_rev()).await[1..], [] as [Value; 0]);
+    assert!(events[2..].windows(2).all(|pair| pair[0]["rev"].as_i64() < pair[1]["rev"].as_i64()), "in rev order");
+    assert_eq!(f.catch_up(f.hub.store.current_rev()).await[2..], [] as [Value; 0]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

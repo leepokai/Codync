@@ -43,9 +43,9 @@ struct ActivityGalleryView: View {
                     }
                         .toggleStyle(.codync)
                         .font(.subheadline.weight(.medium))
-                    Text(L10n.tr(island
-                         ? "The Dynamic Island shows the same Live Activity as the Lock Screen, so this switch turns off both."
-                         : "Starts when you send a task or call a bot from this iPhone. Follow its progress, then open the conversation when your bot needs you."))
+                    Text(L10n.tr("Live Activities on the Lock Screen and in the Dynamic Island turn on and off together."))
+                        .font(.footnote).foregroundStyle(Palette.secondary)
+                    Text(L10n.tr("Starts when you send a task or call a bot from this iPhone. Follow its progress, then open the conversation when your bot needs you."))
                         .font(.footnote).foregroundStyle(Palette.secondary)
                     if !allowed {
                         Text(L10n.tr("Live Activities are turned off in iOS Settings."))

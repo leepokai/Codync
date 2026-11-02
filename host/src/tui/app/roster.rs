@@ -157,7 +157,9 @@ impl App {
         let mut v: Vec<&Bot> = self.bots.values().filter(|b| !b.hidden).collect();
         v.sort_by_cached_key(|&b| {
             let section = b.shown_section().map(section_key);
-            (b.band(), section.is_none(), section, b.position, Reverse(b.last_at), b.name.clone())
+            let name = b.shown_section().unwrap_or("");
+            let order = self.section_order.iter().position(|s| s == name).unwrap_or(self.section_order.len());
+            (b.band(), order, section.is_none(), section, b.position, Reverse(b.last_at), b.name.clone())
         });
         v
     }

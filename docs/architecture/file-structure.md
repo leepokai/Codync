@@ -19,7 +19,7 @@ Codync/
 │   │   ├── chat/              # Groups, bot-to-bot requests, prompt snapshots, memory
 │   │   ├── remote/            # Identity, wire crypto, E2E channel, cloud, relay socket, push
 │   │   ├── market/            # Marketplace (registry.rs, install.rs, skills.rs), Composio, MCP OAuth
-│   │   └── tui/               # Terminal client (app/: state and input; view/: drawing; manage/ + sheets.rs: settings; connections.rs: secure connection requests)
+│   │   └── tui/               # Terminal client (app/: state and input, the bot form in forms.rs + approvals.rs, the group form in group_form.rs; view/: drawing; manage/ + sheets.rs: settings; connections.rs: secure connection requests)
 │   └── tests/                 # Host integration tests and scripted ACP agents
 ├── apps/
 │   ├── project.yml            # XcodeGen source of truth for every Apple target
@@ -52,7 +52,7 @@ Codync/
 │   ├── android/               # Android phone app (Kotlin, Compose), ported from the iPhone app; WhatsNew.md (Google Play notes)
 │   │   ├── core/              # JVM models, crypto, pairing, encrypted channel, host and cloud clients
 │   │   ├── design/            # Codync's components: palette, type, motion, glass, sheets, menus, dialogs, controls, symbols
-│   │   ├── app/               # Screens, the store (AppStore), notifications, Live updates, Glance widgets
+│   │   ├── app/               # Screens, the stores (AccountStore, one AppStore per computer), notifications, Live updates, Glance widgets
 │   │   └── tools/             # symbols.py (SF Symbol stand-ins), launcher_icon.py, agent_icons.py
 │   ├── screen-macos/          # macOS screen helper (Xcode Screen target)
 │   ├── screen-macos-tests/    # Swift package testing the helper's socket lifecycle and candidate rules
@@ -103,6 +103,7 @@ Codync/
 | Host cloud state and relay connection | `host/src/remote/cloud.rs`, `cloud_url.rs`, `relay.rs` |
 | Agent discovery, sign-in, setup terminal, Node.js for npm agents | `host/src/agent/backends.rs` (+ `backends/catalog.rs` the known harnesses, `backends/sign_in.rs`, `backends/search_path.rs`, `backends/workbuddy.rs` the CLI inside the WorkBuddy app), `registry.rs`, `auth.rs` (+ `auth/agent.rs` starting an agent and its own sign-in, `auth/models.rs`), `term.rs`, `node.rs` |
 | Fast mode (session config option) | `host/src/agent/config.rs`, `agent/bot/fast_mode.rs` |
+| Agent modes (Permissions) | `host/src/agent/modes.rs` (the modes, Auto, `switch`), `agent/bot/modes.rs` (each session's mode), `agent/auth/models.rs` (`agentModels`, `InFlight`); terminal `host/src/tui/app/approvals.rs`; iPhone `CodyncKit/Models/AgentMode.swift`, `CodyncUI/Bots/ApprovalPicker.swift`; Android `core/Approvals.kt`, `ApprovalRow.kt`; desktop `src/shared/approvals.ts`, `views/bots/ApprovalRow.tsx` |
 | Marketplace, Composio, connector OAuth | `host/src/market/` |
 | Skills a bot writes (`save_skill`) | `host/src/chat/skills.rs`, stored by `host/src/market/skills.rs` |
 | Artifacts (`publish_artifact`) and a chat's Library | `host/src/chat/artifacts.rs`, `library.rs`; desktop `apps/desktop/src/renderer/views/library/` (+ `src/main/artifacts.ts`); iPhone `apps/ios/Kit/Sources/CodyncUI/Artifacts/` (+ `Store/ArtifactCache.swift`, `BotStore+Artifacts.swift`); Android `ArtifactCardView.kt`, `ArtifactViewer.kt`, `ArtifactWebView.kt`, `LibraryView.kt`, `AppStoreArtifacts.kt` (+ `core/Artifact.kt`, `core/Library.kt`); terminal `host/src/tui/net/artifacts.rs`, `manage/library.rs` |

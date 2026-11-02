@@ -1,0 +1,22 @@
+.workspace-picker { display: flex; flex-direction: column; gap: 14px; padding: 0 20px 18px; flex: 1; min-height: 0; overflow: auto; }
+.workspace-computer { display: flex; align-items: center; gap: 10px; background: var(--surface); padding: 11px 12px; border-radius: var(--radius-s); }
+.workspace-computer > :last-child { margin-left: auto; font-size: var(--text-caption); }
+.workspace-navigation { display: flex; align-items: center; gap: 5px; }
+.workspace-location { flex: 1; min-width: 0; display: flex; align-items: center; overflow: auto; gap: 4px; }
+.workspace-location button { color: var(--secondary); white-space: nowrap; padding: 5px; font-size: var(--text-caption); }
+.workspace-location button:last-child { color: var(--text); }
+.workspace-location button + button::before { content: "/"; padding-right: 8px; color: var(--tertiary); }
+.workspace-section-title, .workspace-row-path { font-size: var(--text-caption); }
+.workspace-section-title { margin-top: 8px; }
+.workspace-list { min-height: 130px; animation: fade-in 180ms ease; }
+.workspace-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--radius-s); text-align: left; color: var(--text); transition: background 180ms; }
+.workspace-row:hover { background: var(--bubble-agent); }
+.workspace-row.selected { background: var(--bubble-agent); }
+.workspace-row.directory { padding-block: 10px; }
+.workspace-row-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.workspace-empty { display: block; padding: 24px 12px; text-align: center; }
+.workspace-footer { display: flex; align-items: center; gap: 18px; padding: 16px 20px; background: var(--surface); }
+.workspace-path { display: flex; gap: 8px; opacity: 0; transform: translateY(-4px); transition: opacity 180ms, transform 180ms; }
+.workspace-path.shown { opacity: 1; transform: none; }
+.workspace-path input { flex: 1; min-width: 0; border: 0; padding: 10px 12px; border-radius: var(--radius-s); background: var(--bubble-agent); color: var(--text); font: inherit; }
+@media (prefers-reduced-motion: reduce) { .workspace-path, .workspace-row, .workspace-list { animation: none; transition: none; } }

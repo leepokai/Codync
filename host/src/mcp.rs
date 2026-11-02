@@ -87,8 +87,9 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         Server::Composio => {
             ("codync-composio", crate::market::composio::INSTRUCTIONS, crate::market::composio::tools())
         }
+        // The one server agents that aren't bots add as `codync` (the cloud connector's name too); more tools join it.
         Server::Network => {
-            ("codync-network", crate::chat::team::assistant::INSTRUCTIONS, crate::chat::team::assistant::tools())
+            ("codync", crate::chat::team::assistant::INSTRUCTIONS, crate::chat::team::assistant::tools())
         }
     };
     // Requests still running, by id: a cancelled one stops, and its host call with it (a team change's card expires).

@@ -141,6 +141,7 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.34.0 | 2.34.0 | 2.26.0 (iPhone, Android, desktop) | Custom icons are for bots only: `setIcon` rejects `agent:` targets, so older apps' agent icon editor would fail. |
 | 2.26.0 | 2.21.0 | 2.26.0 (iPhone, Android, desktop) | What a call's voice hears comes from the host as `call` events (replies, approvals, failures, progress); the apps no longer derive it from the chat, so on an older host a call would never hear the bot. |
 | 2.25.0 | 2.21.0 | 2.25.0 (iPhone, Android, desktop) | Voice calls run on the host: the apps start a call, run the voice's tools and end it through `startCall`, `callTool`, `callLines` and `endCall`, which older hosts lack (a Linux desktop or an SSH computer can run one). `logCall` stays for older apps. |
 | 2.21.0 | 2.21.0 | 2.20.1 | Memory is files the bot keeps, and the apps only read it: the edit methods (`saveMemory`, `pinMemory`, `archiveMemory`, `forgetMemory`, `clearMemory`, `undoDream`, `answerMemory`, `undoMemory`, `saveMemoryFile`, `deleteMemoryFile`, `restoreMemoryFile`) are gone, so older apps' memory buttons would fail. `memory` keeps its shape, so new apps still read an older host's memory. |

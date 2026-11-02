@@ -6,18 +6,13 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.33.2
-
+## 2.34.0
 ### zh-Hant
-- 語音輸入尚未設定 API key 時，會直接開啟語音設定。
+- 「權限」改成列出代理程式自己的模式，例如 Claude Code 的 Auto、Manual、Plan。新 bot 預設 Auto：安全的事代理程式直接做，其餘的才問你。
+- 自訂圖示現在只用在 bot 上，代理程式一律顯示自己的標誌。
+- 只用 Cursor CLI 登入時，也能看到 Cursor 的用量。
 
 ### en-US
-- Dictation opens voice settings when your provider API key is missing.
-
-## 2.33.1
-
-### zh-Hant
-- 選專案資料夾時，返回鍵可以往上走到家目錄以外的資料夾，Windows 電腦還能切換磁碟；連結（symlink）的資料夾也會出現在清單中。
-
-### en-US
-- When you choose a project folder, Back climbs above your home folder and, on a Windows computer, to its other drives; linked folders now show up too.
+- Permissions now list your agent's own modes, like Claude Code's Auto, Manual and Plan. New bots start in Auto: the agent does what's safe and asks you about the rest.
+- Custom icons are now for bots only; agents always show their own logo.
+- Cursor usage now shows when you sign in with the Cursor CLI only.

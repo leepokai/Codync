@@ -4,7 +4,7 @@
 use super::speech::{call_so_far, spoken};
 use super::tools::{runtime, waiting};
 use crate::hub::{BotStatus, Hub};
-use crate::store::{BotConfig, Entry, EntryKind, Lane};
+use crate::store::{BotConfig, Entry, EntryKind, Lane, Permission};
 use crate::voice::Provider;
 use codync_mem::files::{self as mf, MAIN};
 use std::path::Path;
@@ -209,10 +209,17 @@ fn bot(hub: &Hub, cfg: &BotConfig) -> String {
     lines.push(format!("Runs on: {}{model}", crate::agent::fallback::name(&cfg.backend)));
     let project = Path::new(&cfg.cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     lines.push(format!("Folder: {} (project {project})", cfg.cwd));
-    lines.push(format!(
-        "Permission mode: {}",
-        serde_json::to_value(cfg.permission).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
-    ));
+    // What the bot does before it acts: the agent's mode, then what Codync does with what still asks.
+    let mode = match cfg.mode.as_deref() {
+        None => "the agent's default mode".to_owned(),
+        Some(crate::agent::modes::AUTO) => "the agent's Auto mode (it decides what's safe)".to_owned(),
+        Some(mode) => format!("the agent's {mode} mode"),
+    };
+    let rest = match cfg.permission {
+        Permission::Ask => "what it still asks about comes to the user as an approval card",
+        Permission::Auto => "Codync approves what it still asks about automatically",
+    };
+    lines.push(format!("Approvals: {mode}; {rest}"));
     if !cfg.connectors.is_empty() {
         lines.push(format!("Connectors: {}", cfg.connectors.join(", ")));
     }
@@ -360,6 +367,7 @@ pub(super) mod tests {
             command: None,
             cwd: cwd.into(),
             permission: Permission::Ask,
+            mode: None,
             model: Some("opus".into()),
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
@@ -422,7 +430,7 @@ pub(super) mod tests {
         // Unstaged, so its porcelain line starts with a space.
         std::fs::write(repo.join("cart.ts"), "y").unwrap();
         let id = uuid::Uuid::new_v4().to_string();
-        let cfg = bot(&id, "Mika", &repo.to_string_lossy());
+        let cfg = BotConfig { mode: Some("auto".into()), ..bot(&id, "Mika", &repo.to_string_lossy()) };
         hub.store.save_bot(&cfg).unwrap();
         hub.store.save_bot(&bot(&uuid::Uuid::new_v4().to_string(), "Owen", "/tmp")).unwrap();
         remember(&hub, Some(&id), "- The shop deploys from main\n");
@@ -454,7 +462,9 @@ pub(super) mod tests {
         ] {
             assert!(gemini.contains(heading), "{heading} is there");
         }
-        for fact in ["Lives in Taipei", "The shop deploys from main", "zh-TW", "github", "Owen"] {
+        let approvals = "Approvals: the agent's Auto mode (it decides what's safe); what it still asks about comes to \
+                         the user as an approval card";
+        for fact in ["Lives in Taipei", "The shop deploys from main", "zh-TW", "github", "Owen", approvals] {
             assert!(gemini.contains(fact), "{fact} reaches the voice");
         }
         if repo_ok {

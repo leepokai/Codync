@@ -21,6 +21,9 @@ public enum SendProgress: Sendable {
 @MainActor
 @Observable
 public final class BotStore {
+    public internal(set) var icons: [String: CustomIcon] = [:]
+    var iconsRevision: Int64 = -1
+    var iconsEpoch: UInt64 = 0
     public enum Connection: Equatable {
         case unpaired
         case connecting
@@ -75,7 +78,6 @@ public final class BotStore {
     var composerDrafts: [String: String] = [:]
     /// What was pasted into each draft, sent along so memory never takes it as the user's own words.
     @ObservationIgnored var composerPasted: [String: [String]] = [:]
-    public var routineDrafts: [String: String] = [:]
     public let fileDownloads = FileDownloads()
     var artifacts = ArtifactCache()
     public var lastError: String?

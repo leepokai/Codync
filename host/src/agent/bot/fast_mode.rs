@@ -12,13 +12,14 @@ pub(super) enum Listing {
     Session,
     /// The answer to our own Fast mode switch.
     Switch,
-    /// A `config_option_update`.
+    /// A `config_option_update`, or the answer to a mode switch.
     Update,
 }
 
 impl Actor {
-    /// Records a session's options from an agent answer or a `config_option_update`.
+    /// Records a session's options from an agent answer or a `config_option_update`: its modes, and Fast mode.
     pub(super) fn note_options(&mut self, sid: &str, options: &Value, listing: Listing) {
+        self.note_modes(sid, options);
         if !options["configOptions"].is_array() {
             // A session without config options has no Fast mode to offer; other answers that
             // leave them out say nothing, and neither overrides what the agent listed before.

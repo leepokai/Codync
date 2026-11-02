@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -27,6 +28,18 @@ class LocalStoreTest {
             store.erase()
             assertFalse(store.setupComplete())
             assertNotEquals(identity.publicKey, store.identity().publicKey)
+        } finally { store.erase() }
+    }
+
+    @Test fun theShortcutsLeadIsSavedPerAccountAndAutomaticIsNone() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val store = LocalStore(context, "test-${java.util.UUID.randomUUID()}")
+        try {
+            assertNull(store.shortcutLead())
+            store.saveShortcutLead("linux")
+            assertEquals("linux", store.shortcutLead())
+            store.saveShortcutLead(null)
+            assertNull(store.shortcutLead())
         } finally { store.erase() }
     }
 

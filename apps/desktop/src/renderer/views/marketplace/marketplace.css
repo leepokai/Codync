@@ -141,14 +141,6 @@
   background: var(--bubble-agent);
   color: var(--text);
 }
-/* The logo as a mask over its tint (agentTint can be a gradient). */
-.agent-icon {
-  display: inline-block;
-  flex: none;
-  -webkit-mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-}
 
 .market-row {
   display: flex;

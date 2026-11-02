@@ -46,12 +46,49 @@ staged_copy() {
     git archive "$(git write-tree)" | tar -x -C "$snapshot"
 }
 
+# The host tests a commit needs, as a nextest filter: unit tests always, plus the end-to-end tests of
+# the areas it touches; "all" for everything else (the hub, the store, the API, bots, agents and chats,
+# which every end-to-end test goes through, and the tests' shared helpers).
+host_tests() {
+    targets=""
+    for file in $(printf '%s\n' "$staged_files" | grep -E '^(host/|packaging/updates/|docs/reference/fixtures/)'); do
+        case "$file" in
+            host/src/routines/*) add="routines_e2e routine_retry_e2e routine_unread_e2e" ;;
+            host/src/network/*|host/src/network_cli.rs|host/crates/network/*) add="network_e2e two_computers" ;;
+            host/src/send_cli*) add="send_cli_e2e" ;;
+            host/src/chat/memory/*|host/crates/memory/*) add="memory_e2e memory_files_e2e compaction_e2e" ;;
+            host/src/voice.rs|host/src/chat/calls*) add="calls_e2e" ;;
+            host/src/tui/*|host/src/screen/*|host/src/update/*|host/src/usage/*|host/src/remote/*|host/src/analytics*|\
+            host/src/service/*|host/src/cloud_cli.rs|host/src/compat.rs|host/src/secret_prompt.rs|\
+            packaging/updates/*|docs/reference/fixtures/*) add="" ;;
+            host/tests/common/*) echo all; return ;;
+            host/tests/*.py|host/tests/fixtures/*)
+                add=$(grep -rl --include='*.rs' "$(basename "$file")" "$snapshot/host/tests" |
+                    sed -E 's#^.*/host/tests/([^/.]+).*#\1#' || true) ;;
+            host/tests/*) add=$(printf '%s' "$file" | sed -E 's#^host/tests/([^/.]+).*#\1#') ;;
+            *) echo all; return ;;
+        esac
+        targets="$targets $add"
+    done
+    filter="kind(lib) | kind(bin)"
+    for target in $targets; do filter="$filter | binary($target)"; done
+    printf '%s\n' "$filter"
+}
+
 if touches '^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vectors\.json)'; then
+    if ! cargo nextest --version >/dev/null 2>&1; then
+        echo "The host checks run their tests with cargo-nextest, as CI does: cargo install cargo-nextest --locked"
+        exit 1
+    fi
     staged_copy
-    echo "Checking the host (cargo fmt, clippy, test)..."
+    tests=$(host_tests)
+    echo "Checking the host (cargo fmt, clippy, test: $tests)..."
+    set -- --profile ci
+    [ "$tests" = all ] || set -- "$@" -E "$tests"
+    # nextest runs every test at once, retries a flaky one and stops one that hangs (`host/.config/nextest.toml`).
     (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" &&
-        cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace --no-run &&
-        within 300 cargo test --workspace)
+        cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings &&
+        within 900 cargo nextest run --workspace "$@")
 fi
 
 if touches '^apps/desktop/'; then

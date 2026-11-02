@@ -1,8 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
-import type { MenuItem } from '../components/Overlay'
-import { HStack, IconSlot, VStack } from '../components/Stack'
+import { IconSlot, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import type { Link } from '@shared/analytics'
 import { account, useAccount } from '../store/account'
@@ -15,24 +14,19 @@ import { useTr } from '../lib/use-language'
 // right-click actions, both built on the same keyboard-driven rows.
 
 export function ProfileAvatar() {
-  const { user, isBusy } = useAccount()
+  const { user, isBusy, isReady } = useAccount()
   return (
     <span className="profile-avatar" aria-hidden>
-      {user?.avatarURL ? (
+      {isBusy || !isReady ? <Spinner size={14} /> : user?.avatarURL ? (
         <img src={user.avatarURL} alt="" className="profile-avatar-image" />
       ) : (
         <Icon name="person.fill" size={15} weight="medium" color="var(--secondary)" />
       )}
-      {isBusy ? (
-        <HStack as="span" justify="center" className="profile-avatar-busy">
-          <Spinner size={14} />
-        </HStack>
-      ) : null}
     </span>
   )
 }
 
-interface PanelItem {
+export interface PanelItem {
   title: string
   icon: string
   detail?: string | null
@@ -43,7 +37,9 @@ interface PanelItem {
   destructive?: boolean
   /** A name the user gave: shown as typed, never translated. */
   verbatim?: boolean
-  action: () => void
+  action: (anchor: HTMLButtonElement | null) => void
+  submenu?: boolean
+  expanded?: boolean
 }
 
 /** The account menu: a window-local floating surface (no system menu styling). */
@@ -112,46 +108,80 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
   )
 }
 
-function PanelRows({ items, onDismiss, after }: { items: PanelItem[]; onDismiss: () => void; after?: (i: number) => ReactNode }) {
+export function PanelRows({ items, onDismiss, after, active = true, label, onPoint, onNavigate, onForward, onBack }: {
+  items: PanelItem[]
+  onDismiss: () => void
+  after?: (i: number) => ReactNode
+  active?: boolean
+  label?: string
+  onPoint?: (index: number, row: HTMLButtonElement) => void
+  onNavigate?: () => void
+  onForward?: (index: number, row: HTMLButtonElement | null) => void
+  onBack?: () => void
+}) {
   const tr = useTr()
   const [highlighted, setHighlighted] = useState(0)
+  const pointed = useRef(-1)
   const highlightedRow = useRef<HTMLButtonElement>(null)
   // A long list scrolls: ↑/↓ and Tab bring the row Enter would run into view.
   // A block, not an arrow's value: Chromium's scrollIntoView returns a promise, which React would call as the clean-up.
   useEffect(() => {
+    if (!active) return
+    highlightedRow.current?.focus({ preventScroll: true })
     highlightedRow.current?.scrollIntoView({ block: 'nearest' })
-  }, [highlighted])
+  }, [highlighted, active])
   useEffect(() => {
+    if (!active) return
     const onKey = (e: KeyboardEvent) => {
+      if (!items.length && e.key !== 'Escape') return
       if (e.key === 'Escape') {
         e.preventDefault()
         onDismiss()
       } else if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
         e.preventDefault()
+        onNavigate?.()
+        pointed.current = -1
         setHighlighted((h) => (h + 1) % items.length)
       } else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
         e.preventDefault()
+        onNavigate?.()
+        pointed.current = -1
         setHighlighted((h) => (h - 1 + items.length) % items.length)
+      } else if (e.key === 'ArrowRight' && onForward) {
+        e.preventDefault()
+        onForward(highlighted, highlightedRow.current)
+      } else if (e.key === 'ArrowLeft' && onBack) {
+        e.preventDefault()
+        onBack()
       } else if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault()
         const item = items[highlighted]
-        if (item && !item.disabled) item.action()
+        if (item && !item.disabled) item.action(highlightedRow.current)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [items, highlighted, onDismiss])
+  }, [items, highlighted, onDismiss, active, onNavigate, onForward, onBack])
   return (
-    <VStack gap={2}>
+    <VStack gap={2} role="menu" aria-label={label} onMouseLeave={() => { pointed.current = -1 }}>
       {items.map((item, i) => (
-        <div key={item.title}>
+        <div key={`${i}-${item.title}`} role="none">
           <button
             ref={highlighted === i ? highlightedRow : undefined}
-            className={`panel-row ${highlighted === i ? 'highlight' : ''} ${item.destructive ? 'destructive' : ''}`}
+            className={`panel-row ${item.expanded || (active && highlighted === i) ? 'highlight' : ''} ${item.destructive ? 'destructive' : ''}`}
+            role="menuitem"
+            tabIndex={active && highlighted === i ? 0 : -1}
+            aria-haspopup={item.submenu ? 'menu' : undefined}
+            aria-expanded={item.submenu ? item.expanded : undefined}
             disabled={item.disabled}
             // Movement, not enter: Chromium re-enters the row under a resting pointer after a scroll, which would undo ↑/↓.
-            onMouseMove={() => setHighlighted(i)}
-            onClick={item.action}
+            onMouseMove={(e) => {
+              setHighlighted(i)
+              if (pointed.current === i) return
+              pointed.current = i
+              onPoint?.(i, e.currentTarget)
+            }}
+            onClick={(e) => item.action(e.currentTarget)}
           >
             <IconSlot width={20}>
               {item.image ? <img src={item.image} alt="" width={14} height={14} /> : <Icon name={item.icon} size={14} />}
@@ -164,35 +194,5 @@ function PanelRows({ items, onDismiss, after }: { items: PanelItem[]; onDismiss:
         </div>
       ))}
     </VStack>
-  )
-}
-
-/** A roster menu row: an action, or with `submenu`, rows that open in the menu's place (as the account menu opens Support). */
-export type ActionItem = MenuItem | (Omit<MenuItem, 'action'> & { submenu: MenuItem[] })
-
-/** The roster's right-click actions at `x`, `y`, shared by pointer and keyboard; kept inside the window, a long list scrolling. */
-export function DesktopActionMenu({ items, onDismiss, x, y }: { items: ActionItem[]; onDismiss: () => void; x: number; y: number }) {
-  const [submenu, setSubmenu] = useState<{ title: string; items: MenuItem[] } | null>(null)
-  const menu = useRef<HTMLDivElement>(null)
-  // Measured after every render: a submenu, or a window resized under it, changes its height.
-  const [height, setHeight] = useState(0)
-  useLayoutEffect(() => setHeight(menu.current?.offsetHeight ?? 0))
-  const row = (m: ActionItem): PanelItem => 'submenu' in m
-    ? { title: m.title, icon: m.icon ?? 'circle', chevron: true, action: () => setSubmenu({ title: m.title, items: m.submenu }) }
-    : { title: m.title, icon: m.icon ?? 'circle', destructive: m.destructive, verbatim: m.verbatim, action: () => { onDismiss(); m.action() } }
-  const rows: { row: PanelItem; divider?: boolean }[] = submenu
-    ? [{ row: { title: submenu.title, icon: 'chevron.left', action: () => setSubmenu(null) } }, ...submenu.items.map((m, i) => ({ row: row(m), divider: i === 0 || m.divider }))]
-    : items.map((m) => ({ row: row(m), divider: m.divider }))
-  return (
-    <div ref={menu} className="action-menu" style={{ left: Math.min(Math.max(8, x), window.innerWidth - 268), top: Math.max(8, Math.min(y, window.innerHeight - 8 - height)) }}>
-      <div className="action-menu-rows">
-        <PanelRows
-          key={submenu?.title}
-          items={rows.map((r) => r.row)}
-          onDismiss={onDismiss}
-          after={(i) => (rows[i + 1]?.divider ? <div className="panel-divider" /> : null)}
-        />
-      </div>
-    </div>
   )
 }

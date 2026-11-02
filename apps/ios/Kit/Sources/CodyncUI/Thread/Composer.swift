@@ -287,13 +287,6 @@ struct Composer: View {
             // Starting a command: list the computer's skills again.
             if value == "/" { Task { await model.refreshPlugins() } }
         }
-        .onChange(of: model.routineDrafts[botId]) { _, value in
-            // A request for a routine belongs in the chat.
-            guard let value, artifact == nil else { return }
-            draft = draft.isEmpty ? value : draft + "\n" + value
-            model.routineDrafts.removeValue(forKey: botId)
-            focused = true
-        }
     }
 
     /// The quoted message, one line, with a way to drop the reply.

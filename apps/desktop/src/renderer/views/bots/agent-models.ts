@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store/context'
+import type { AgentMode } from '@shared/approvals'
 import { errorText } from './drafts'
 
 /** A model's own setting (effort, fast…) and the values the agent accepts. */
@@ -18,6 +19,8 @@ export interface AgentModels {
   /** The agent offers Fast mode (absent on older hosts). */
   fastMode?: boolean
   defaultModelOptions?: boolean
+  /** The agent's modes, its Auto mode first and listed as `auto` (absent on older hosts). */
+  modes?: AgentMode[]
 }
 
 /** What the agent behind `backend` offers, loaded from the selected computer. */

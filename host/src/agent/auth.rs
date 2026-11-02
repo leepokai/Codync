@@ -33,7 +33,7 @@ mod agent;
 mod models;
 pub use agent::authenticate;
 use agent::start;
-pub use models::models;
+pub use models::{InFlight, models, shared_models};
 pub(crate) use models::{model_config, model_ids};
 
 #[derive(Clone, Debug, Serialize)]
@@ -291,6 +291,8 @@ pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) ->
         };
     }
     crate::market::vault::write(store, &env_slot(backend), &serde_json::to_string(&saved)?)?;
+    // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
+    backends::clear_prompt_refused(backend);
     check(store, backend).await
 }
 

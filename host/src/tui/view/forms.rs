@@ -210,8 +210,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 );
             }
             Field::Approvals => {
-                let s = if f.auto { "○ Ask   ◉ Auto (approve every request)" } else { "◉ Ask   ○ Auto" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                let label = app.approval(f).label;
+                put(buf, vx, y, vw, &format!("‹ {} ›", tr(&label)), t.text.patch(base));
             }
             Field::Computer => {
                 let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
@@ -306,6 +306,10 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     } else if f.current() == Field::SelfFallbacks {
         let line = tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.");
         put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
+    } else if f.current() == Field::Approvals {
+        let choice = app.approval(f);
+        let line = [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ");
+        put(buf, inner.x, by - 1, inner.width, line.trim(), t.dim.patch(t.panel));
     } else if f.current() == Field::Team {
         let line =
             "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.";
@@ -318,7 +322,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.");
         put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
     }
-    let save = if f.saving { " … Saving " } else { " ↵ Save " };
+    let save = if f.saving {
+        " … Saving "
+    } else if app.custom_icons {
+        " ↵ Save · ^O Icon "
+    } else {
+        " ↵ Save "
+    };
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {

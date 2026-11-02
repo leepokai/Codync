@@ -152,7 +152,6 @@ private struct ComputerRows: View {
     /// Set when this iPhone's access to the computer can be revoked.
     let revoke: (() -> Void)?
     let remove: () -> Void
-    @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
     @State private var coloring = false
     @State private var voiceSettings = false
@@ -170,14 +169,11 @@ private struct ComputerRows: View {
                     .buttonStyle(.plain)
             }
             if showsNetwork {
-                Button { networkSheet = true } label: { RowLabel("Network", systemImage: Self.networkIcon, chevron: true) }
+                Button { networkSheet = true } label: { RowLabel("Network", image: .codyncNetwork, chevron: true) }
                     .buttonStyle(.plain)
             }
         }
-        Toggle(isOn: Binding(get: { store.computer.notifications ?? true }, set: { app.setNotifications(store.computer.id, $0) })) {
-            RowLabel("Push notifications", systemImage: "bell")
-        }
-        .toggleStyle(.codync)
+        ComputerNotificationsRow(store: store)
         connection
         // Kept while an update asked from here restarts the computer: its spinner says it's updating.
         if store.connection == .online || store.isUpdating, store.hello != nil {
@@ -221,7 +217,7 @@ private struct ComputerRows: View {
                 items.append(MenuItem("Screen", icon: "display", action: openScreen))
             }
             if store.connection == .online, showsNetwork {
-                items.append(MenuItem("Network", icon: Self.networkIcon) { networkSheet = true })
+                items.append(MenuItem("Network", image: .codyncNetwork) { networkSheet = true })
             }
             if let revoke {
                 items.append(MenuItem("Revoke this iPhone's access", icon: "lock.slash", destructive: true, divider: true, action: revoke))
@@ -277,8 +273,6 @@ private struct ComputerRows: View {
     }
 
     private var preference: ConnectionRoute { store.computer.route ?? .automatic }
-
-    private static let networkIcon = "point.3.connected.trianglepath.dotted"
 
     /// In a network of the user's computers, or cloud assistants on (hosts before it say nothing).
     private var showsNetwork: Bool { store.network?.hasContent == true }
@@ -425,5 +419,53 @@ private extension ConnectionRoute {
         case .cloudflareFirst: "cloud"
         case .directOnly: "wifi"
         }
+    }
+}
+
+/// System permission gates the computer preference without changing its saved value.
+private struct ComputerNotificationsRow: View {
+    let store: BotStore
+    @Environment(AppStore.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var allowed: Bool?
+    @State private var checked = false
+
+    var body: some View {
+        Group {
+            if allowed == true {
+                Toggle(isOn: Binding(get: { store.computer.notifications ?? true }, set: { app.setNotifications(store.computer.id, $0) })) {
+                    RowLabel("Push notifications", systemImage: "bell")
+                }
+                .toggleStyle(.codync)
+            } else {
+                Button {
+                    if allowed == false {
+                        UIApplication.shared.open(URL(string: UIApplication.openNotificationSettingsURLString)!)
+                    } else {
+                        Task {
+                            allowed = await PushRegistrar.shared.requestAuthorization(from: .settings)
+                        }
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        RowLabel("Push notifications", systemImage: "bell", chevron: true)
+                        Text(L10n.tr("Turn on notifications in Settings"))
+                            .font(.footnote).foregroundStyle(Palette.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!checked)
+            }
+        }
+        .animation(Motion.layout, value: allowed)
+        .task { await refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await refresh() } }
+        }
+    }
+
+    private func refresh() async {
+        allowed = await PushRegistrar.shared.isAllowed()
+        checked = true
     }
 }

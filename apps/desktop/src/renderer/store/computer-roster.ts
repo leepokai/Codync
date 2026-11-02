@@ -1,7 +1,8 @@
 import { computerSections, moveInOrder, orderedComputers } from '../lib/computer-roster'
+import { renamedSectionOrder } from '../lib/roster-section-order'
 import { prefs, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
-import { foldsAfterRename, rosterLines, sameRosterGroup, sectionRename, shownRows, shownSection } from '../lib/roster-sections'
+import { foldsAfterRename, rosterGroups, rosterLines, sameRosterGroup, sectionRename, shownRows, shownSection } from '../lib/roster-sections'
 import type { BotStore } from './bot-store'
 import type { AppModel, BotRef } from './app-model'
 
@@ -9,6 +10,7 @@ import type { AppModel, BotRef } from './app-model'
 export function useComputerRoster(app: AppModel, shown: Set<string>) {
   const order = useModel(app.computerOrder).ids
   const [collapsed, setCollapsed] = usePref(prefs.collapsedComputers)
+  const [sectionOrders, setSectionOrders] = usePref(prefs.rosterSectionOrder)
   const [folded, setFolded] = usePref(prefs.collapsedRosterSections)
   const computers = orderedComputers(app.computers, order)
   const sections = computerSections(computers.filter((c) => shown.has(c.id)), app.roster)
@@ -20,9 +22,13 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     grouped,
     collapsed,
     folded,
+    sectionOrders,
+    orderSections(computerId: string, names: string[]) {
+      setSectionOrders({ ...prefs.rosterSectionOrder.get(), [computerId]: names })
+    },
     items: sections.flatMap((section) => section.items),
     /** The rows on screen, top to bottom, for ↑/↓. */
-    navigable: sections.flatMap((section) => grouped && collapsed.includes(section.computer.id) ? [] : shownRows(rosterLines(section.items, folded))),
+    navigable: sections.flatMap((section) => grouped && collapsed.includes(section.computer.id) ? [] : shownRows(rosterLines(section.items, folded, sectionOrders[section.computer.id]))),
     toggle(id: string) {
       setCollapsed(toggled(collapsed, id))
     },
@@ -32,12 +38,19 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     },
     /** Renames or removes (null) a section on `store`'s computer; a folded one stays folded under its new name, on this device, unless the host refuses. */
     renameSection(store: BotStore, from: string, to: string | null) {
+      const orders = prefs.rosterSectionOrder.get()
+      const oldOrder = orders[store.computer.id] ?? []
+      const displayed = rosterGroups(store.roster.map((bot) => ({ bot })), [], oldOrder).map((group) => group.name)
+      const newOrder = renamedSectionOrder(displayed, from, sectionRename(from, to).to)
+      setSectionOrders({ ...orders, [store.computer.id]: newOrder })
       // Read now: a name dialog saves after the render that built its menu.
       const before = prefs.collapsedRosterSections.get()
       const after = foldsAfterRename(before, from, sectionRename(from, to).to)
       setFolded(after)
       // Refused: the folds go back with the bots (one render, no open-then-fold), unless they were toggled while the host answered.
       void store.sections.rename(from, to, () => {
+        const current = prefs.rosterSectionOrder.get()
+        if (current[store.computer.id] === newOrder) setSectionOrders({ ...current, [store.computer.id]: oldOrder })
         if (prefs.collapsedRosterSections.get() === after) setFolded(before)
       })
     },

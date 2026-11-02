@@ -233,6 +233,11 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
             .to_owned(),
     );
     lines.push(String::new());
+    lines.push(
+        "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the task is about that computer's files or system rather than its bots."
+            .to_owned(),
+    );
+    lines.push(String::new());
     lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, if crate::agent::workspace::is_managed(cfg) { "Codync allocated it for you alone." } else { "The user chose this project folder." }));
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
@@ -332,6 +337,7 @@ mod tests {
         assert!(system.contains("requests from other bots, send_message isn't available"));
         assert!(system.contains("Replies to your own message_bot requests arrive as a turn of their own"));
         assert!(system.contains("These rules apply to the current turn"));
+        assert!(system.contains("use list_bots and message_bot (ids like name@computer), not SSH"));
     }
 
     #[test]

@@ -139,7 +139,7 @@ export class BotSync extends BotMirror {
     const attempt = async () => {
       if (!alive()) return
       try {
-        await this.refreshHello(client)
+        await this.refreshHello(client, loop)
         if (!alive()) return
         if (this.mismatch) {
           this.finishRefresh?.()
@@ -195,10 +195,13 @@ export class BotSync extends BotMirror {
     this.runEvents(this.client)
   }
 
-  private async refreshHello(client: HostClient) {
+  private async refreshHello(client: HostClient, loop: number) {
+    const epoch = ++this.iconsEpoch
     const h = await client.hello()
-    if (this.retired) return
+    if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
+    this.iconsRevision = -1
     this.hello = h
+    this.applyIcons(h.icons ?? {}, h.iconsRevision)
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
     this.changed()
@@ -219,9 +222,13 @@ export class BotSync extends BotMirror {
 
   private apply(event: HostEvent) {
     switch (event.type) {
+      case 'icons':
+        this.applyIcons(event.icons, event.iconsRevision)
+        break
       case 'hello':
         if (this.hostId && this.hostId !== event.hostId) this.resetMirror()
         this.hostId = event.hostId
+        if (event.icons) this.applyIcons(event.icons)
         this.usage = event.usage
         this.screen = event.screen
         this.network = event.network
@@ -229,7 +236,7 @@ export class BotSync extends BotMirror {
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
       case 'bot':
-        this.bots.set(event.bot.id, event.bot)
+        this.putHostBot(event.bot)
         this.bump(event.bot.rev)
         this.onRosterChanged?.()
         if (event.bot.unread > 0) this.acknowledgeVisible(event.bot.id)
@@ -295,6 +302,8 @@ export class BotSync extends BotMirror {
   }
 
   private resetMirror() {
+    this.iconsRevision = -1
+    this.applyIcons({})
     this.composerDrafts.clear()
     this.bots = new Map()
     this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-'))

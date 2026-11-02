@@ -45,6 +45,8 @@ The app first asks about an account. Signing in with Apple or Google is optional
 
 Setup also offers an optional GitHub star. If you skip it, the desktop app can remind you once after seven days. That reminder has two actions: **Star on GitHub** opens the repository, and **Not now** dismisses it. You can also dismiss it by clicking outside the card or pressing Escape. Opening the repository or dismissing this reminder ends further reminders on that computer.
 
+The computer menu shows a device icon beside each name, helping you distinguish a laptop, Mac mini, or Linux computer. Connection status appears alongside the name (on a separate secondary line on desktop and Android).
+
 Press **⌘R** on macOS or **Ctrl+R** on Windows and Linux to refresh your computers. A small spinning “Loading…” indicator appears while Codync reconnects and updates the computer list. Repeated presses wait for the current refresh to finish.
 
 ## Running only the host
@@ -103,11 +105,11 @@ Every bot, your lead bot too, starts with these defaults, which you can change i
 
 - **Agent:** Claude Code when it can run on the computer, otherwise the first agent Codync knows that can.
 - **Workspace:** a personal folder of its own.
-- **Permissions:** Approve automatically.
+- **Permissions:** the agent's Auto mode, so it asks you only about what it won't decide on its own (Ask me when the agent has no Auto mode).
 - **Notifications:** on.
 - **Connectors and skills:** every one installed on the computer is turned on (connectors only when the computer's credential store is available; see [Linux servers](/docs/linux-servers#limits-on-a-headless-server)).
 
-> **Note:** New bots approve the agent's tool requests automatically. Your agent's own permission rules still apply. To review each request first, open the bot's settings and set **Permissions** to **Ask me**. See [Bots](/docs/bots#permissions-ask-me-or-approve-automatically).
+> **Note:** New bots let the agent do what's safe and ask you about the rest on an approval card. To review every request, set **Permissions** to a mode such as **Manual**; to skip the cards, set it to **Approve automatically**. See [Bots](/docs/bots#permissions).
 
 If the bot's agent isn't signed in, the chat shows a card saying it needs you to sign in before your first message. Tap **Sign in** and follow the steps. See [Agents](/docs/agents#signing-in).
 
@@ -125,3 +127,7 @@ When the bot finishes or needs you, your iPhone gets a notification, unless the 
 - [Agents](/docs/agents): install and sign in to more coding agents.
 - [Conversations](/docs/conversations): files, approvals, replies and notifications.
 - [Group chats](/docs/groups): put several bots in one room.
+
+## Community and help
+
+Ask questions and share feedback on [Discord](https://discord.gg/KBAX3Qznxh), or join the [WeChat community for Codync users in China](/wechat) to exchange tips in Chinese. Scan the QR code with regular WeChat; you do not need WeCom.

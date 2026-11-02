@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 /// Values shared between the app, its widgets and its notification extension through the App Group,
 /// one namespace per account context so a signed-out account's data never shows in another.
@@ -111,6 +112,8 @@ public enum SharedStore {
         public func erase() {
             for name in Self.names { defaults.removeObject(forKey: key(name)) }
             DeviceIdentity.delete(context: self)
+            do { try ActivityIconCache.erase(context: id) }
+            catch { Logger(subsystem: "com.pokai.Codync", category: "CustomIcon").error("Cannot erase activity icons: \(error.localizedDescription)") }
             let caches = URL.cachesDirectory
             let marker = "-\(id)-"
             for file in (try? FileManager.default.contentsOfDirectory(atPath: caches.path())) ?? []

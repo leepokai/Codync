@@ -222,7 +222,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
     let (hub, dir) = temp_hub();
     let cfg = serde_json::from_value(json!({"id": "b1", "name": "b", "backend": "codex", "cwd": "/tmp"})).unwrap();
     hub.store.save_bot(&cfg).unwrap();
-    let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "permission": "ask"})).unwrap();
+    let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "permission": "auto"})).unwrap();
     assert_eq!(p["fields"], json!(["permission"]));
 
     let card = json!({"status": "pending", "options": [{"optionId": "o1", "name": "Allow", "kind": "allow_always"}]});

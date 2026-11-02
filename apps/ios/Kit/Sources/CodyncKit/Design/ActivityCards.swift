@@ -61,13 +61,14 @@ public struct ActivityAvatar: View {
     let color: String
     let state: BotActivityPresentation
     let size: CGFloat
+    let customIcon: CustomIcon?
 
-    public init(shape: String, color: String, state: BotActivityPresentation, size: CGFloat) {
-        self.shape = shape; self.color = color; self.state = state; self.size = size
+    public init(shape: String, color: String, state: BotActivityPresentation, size: CGFloat, customIcon: CustomIcon? = nil) {
+        self.shape = shape; self.color = color; self.state = state; self.size = size; self.customIcon = customIcon
     }
 
     public var body: some View {
-        CharacterAvatar(shape: shape, color: color, size: size, mood: state.mood, still: true)
+        CharacterAvatar(shape: shape, color: color, size: size, mood: state.mood, still: true, customIcon: customIcon)
             .animation(Motion.activityPhase, value: state.mood)
     }
 }
@@ -183,7 +184,7 @@ public struct BotActivityCard<Face: View, Mark: View>: View {
 public extension BotActivityCard where Face == ActivityAvatar, Mark == BotActivityIndicator {
     init(bot: Bot, state: BotActivityPresentation, startedAt: Date? = nil) {
         self.init(name: widgetName(bot), state: state, startedAt: startedAt) {
-            ActivityAvatar(shape: bot.avatarShape, color: bot.avatarColor, state: state, size: 32)
+            ActivityAvatar(shape: bot.avatarShape, color: bot.avatarColor, state: state, size: 32, customIcon: bot.customIcon)
         } mark: {
             BotActivityIndicator(state: state, size: 28)
         }
@@ -315,7 +316,9 @@ public struct BotActivityPreview: View {
     /// The island plays the working bot's loop (WorkingBotFace in the widget); here the live
     /// avatar stands in for it.
     @ViewBuilder private func islandFace(_ size: CGFloat) -> some View {
-        if state.phase == .working {
+        if bot.customIcon != nil {
+            CharacterAvatar(bot: bot, size: size, still: true)
+        } else if state.phase == .working {
             CharacterAvatar(shape: bot.avatarShape, color: bot.avatarColor, size: size, mood: .working)
         } else {
             ActivityAvatar(shape: bot.avatarShape, color: bot.avatarColor, state: state, size: size)

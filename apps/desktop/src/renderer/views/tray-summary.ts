@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { TRAY_SYMBOLS, type TrayImage, type TraySummary } from '@shared/ipc'
 import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageWindow } from '@shared/models'
 import type { NetworkView } from '@shared/network'
+import { iconBitmap, drawIconBitmap } from '../lib/icon-bitmap'
 import { drawCharacter, moodOf } from '../components/Avatar'
 import { fallbackPath } from '../components/icon-fallbacks'
 import { botsTemplate, presenceTitle, roleTitle } from '../lib/network-copy'
@@ -38,15 +39,17 @@ function canvasImage(key: string, width: number, height: number, draw: (ctx: Can
   const x2 = x1 && at(2)
   if (!x1 || !x2) return null
   const image = { x1, x2 }
+  if (cache.size >= 512) cache.delete(cache.keys().next().value!)
   cache.set(full, image)
   return image
 }
 
 function avatarIcon(bot: Bot) {
-  const key = `bot|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
+  const bitmap = iconBitmap(bot.customIcon)?.image
+  const key = `bot|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
   return canvasImage(key, 20, 20, (ctx) => {
     const dark = isDark()
-    drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true })
+    if (!drawIconBitmap(ctx, bot.customIcon, 20, avatarColor(bot.avatarColor))) drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true })
     const badge = needsInput(bot) ? palette(dark).warning : bot.unread > 0 ? (dark ? '#FFFFFF' : '#000000') : null
     if (badge) {
       const r = needsInput(bot) ? 3.6 : 2.8
@@ -96,6 +99,15 @@ function dotIcon(online: boolean) {
   })
 }
 
+/** The Network row's codync-network mark: black for a macOS template image, else the menu's text color. */
+function networkIcon() {
+  return canvasImage('network', 16, 16, (ctx) => {
+    ctx.scale(16 / 24, 16 / 24)
+    ctx.fillStyle = !isMac && isDark() ? '#FFFFFF' : '#000000'
+    ctx.fill(fallbackPath('codync.network'))
+  })
+}
+
 /** The actions' icons for Windows and Linux menus, from the same fallbacks the app's icons use there. */
 function symbolIcons(): TraySummary['symbols'] {
   if (isMac) return null
@@ -114,10 +126,13 @@ function symbolIcons(): TraySummary['symbols'] {
   return icons
 }
 
+/** The menu's language: the app's setting, else the system's. */
+const systemLanguage = () => (typeof navigator === 'undefined' ? 'en' : navigator.language)
+const tr = (text: string) => translate(text, prefs.appLanguage.get(), systemLanguage())
+
 /** "home · Owner" and "desk · Online · 3 bots" per network; null on hosts without networks. */
 function networkLines(view: NetworkView | null | undefined): TraySummary['networks'] {
   if (!view) return null
-  const tr = (text: string) => translate(text, prefs.appLanguage.get(), typeof navigator === 'undefined' ? 'en' : navigator.language)
   return view.networks.map((net) => ({
     title: `${net.name} · ${tr(roleTitle(net.role))}`,
     computers: net.computers.map((c) => ({
@@ -128,22 +143,25 @@ function networkLines(view: NetworkView | null | undefined): TraySummary['networ
 }
 
 function usageLine(w: UsageWindow) {
-  const preference = prefs.appLanguage.get()
-  const system = typeof navigator === 'undefined' ? 'en' : navigator.language
-  const title = translate(windowTitle(w), preference, system)
   const reset = resetDate(w)
-  const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, preference, system) : ''
-  const reading = windowReading(w)
-  return `${title} · ${reading}${spoken ? ` · ${spoken}` : ''}`
+  const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, prefs.appLanguage.get(), systemLanguage()) : ''
+  return `${tr(windowTitle(w))} · ${windowReading(w, tr)}${spoken ? ` · ${spoken}` : ''}`
 }
 
 /** Sends what the menu bar shows whenever the stores change. */
 export function useTraySummary(app: AppModel) {
+  const [, redraw] = useState(0)
   const stores = [...app.stores.values()]
   useModels(stores)
   const [textSize] = usePref(prefs.textSize)
   const [iconStyle] = usePref(prefs.usageIconStyle)
   const [language] = usePref(prefs.appLanguage)
+  useEffect(() => {
+    let current = true
+    const pending = app.roster.map(({ bot }) => iconBitmap(bot.customIcon)).filter((entry) => entry && !entry.image.complete)
+    if (pending.length) void Promise.all(pending.map((entry) => entry!.ready)).then(() => { if (current) redraw((n) => n + 1) })
+    return () => { current = false }
+  })
   useEffect(() => {
     const timer = setTimeout(() => {
       const local = app.local
@@ -180,11 +198,12 @@ export function useTraySummary(app: AppModel) {
             }
           : null,
         networks: networkLines(local?.network),
+        networkIcon: networkIcon(),
         symbols: symbolIcons(),
         needsAttention: app.needsAttention,
         textSize,
         usageIconStyle: iconStyle,
-        language: resolvedLanguage(language, typeof navigator === 'undefined' ? 'en' : navigator.language),
+        language: resolvedLanguage(language, systemLanguage()),
       }
       window.codync.app.setTraySummary(summary)
     }, 150)

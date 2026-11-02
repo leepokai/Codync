@@ -247,6 +247,7 @@ final class LiveActivities {
         guard BotActivityAttributes.mayStart else { return }
         let attributes = BotActivityAttributes(bot: bot, computerId: ref.computerId, link: store.storage.botURL(ref))
         do {
+            try bot.customIcon?.cacheForActivity(context: attributes.iconContext)
             let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: staleDate), pushType: .token)
             // Offline (mailbox): `resume(with:)` registers the push token once the computer connects.
             if let client = store.client { observe(activity, client: client) }
@@ -315,13 +316,14 @@ final class LiveActivities {
         // Until the computer starts on the message, an idle bot just hasn't begun yet.
         let local = ["sending", "queued"].contains(current.content.state.status)
         guard !local || bot.isWorking else { return }
-        let state = CallActivity.withCall(.init(
+        var state = CallActivity.withCall(.init(
             status: bot.status,
             // ACP activity is already visible in the app. Show it in the local Live Activity
             // while this phone is connected; APNs payloads continue to contain no free text.
             activity: bot.activity,
             startedAt: bot.startedAt.map(Date.init(milliseconds:))
         ), botId: ref.botId)
+        state.customIconRevision = (bot.customIcon?.filename ?? "default") + (bot.customIcon?.tinted == true ? ":tint" : ":color")
         // A call with the bot keeps its activity up after the task.
         let working = bot.isWorking || CallActivity.isLive(botId: ref.botId)
         Task.detached { await Self.apply(ref, state: state, end: !working) }

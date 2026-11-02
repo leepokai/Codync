@@ -334,15 +334,13 @@ extension BotStore {
 
     /// Creates a group chat (or opens the one these bots already share) and selects it.
     public func createGroup(name: String, description: String = "", members: [String]) async throws -> Bot {
-        let group = try await ready().createGroup(GroupDraft(name: name, description: description, members: members))
-        bots[group.id] = group
+        let group = putHostBot(try await ready().createGroup(GroupDraft(name: name, description: description, members: members)))
         selection = group.id
         return group
     }
 
     public func updateGroup(_ draft: GroupDraft) async throws {
-        let group = try await ready().updateGroup(draft)
-        bots[group.id] = group
+        putHostBot(try await ready().updateGroup(draft))
     }
 
     /// What a voice call carried, for its conversation. Never `upsert`ed, like `botConversation`.
@@ -358,9 +356,11 @@ extension BotStore {
 
     public func save(_ draft: BotDraft) async throws -> Bot {
         let client = try await ready()
-        let bot = draft.id == nil ? try await client.createBot(draft) : try await client.updateBot(draft)
-        bots[bot.id] = bot
-        return bot
+        return putHostBot(draft.id == nil ? try await client.createBot(draft) : try await client.updateBot(draft))
+    }
+
+    public func selectWorkspace(_ path: String) async throws -> String {
+        try await ready().selectWorkspace(path)
     }
 
     public func listDirs(_ path: String?) async throws -> DirListing {

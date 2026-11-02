@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { isGroup, type Bot } from '@shared/models'
 import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
-import { rosterLines, sameRosterGroup } from '../lib/roster-sections'
+import { sameRosterGroup } from '../lib/roster-sections'
 import { reduceMotion } from '../lib/theme'
 import { useSlide } from '../lib/slide'
 import { sameRef, refKey, type RosterItem } from '../store/app-model'
@@ -12,7 +12,7 @@ import type { useComputerRoster } from '../store/computer-roster'
 import { StoreContext, useApp } from '../store/context'
 import { BotRow } from './BotRow'
 import { ComputerHeadingLabel, ComputerRosterSection } from './ComputerRosterSection'
-import { RosterLabel, RosterSection } from './RosterSection'
+import { SectionRoster } from './SectionRoster'
 import { UpdateNeededCard } from './UpdateNeededCard'
 
 /** A bot being dragged among its computer's bots, and the order it has made so far. */
@@ -213,12 +213,10 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
   const sections = sectionOrder.map(({ computer, store, items }) => {
     const index = roster.sections.findIndex((s) => s.computer.id === computer.id)
     const notice = store.mismatch && !compact ? <StoreContext.Provider value={store}><UpdateNeededCard /></StoreContext.Provider> : null
-    const rows = rosterLines(ordered(computer.id, items), roster.folded).map((line) => line.kind === 'row' ? row(line.item, items) : line.kind === 'label' ? <RosterLabel key="label" compact={compact} /> : (
-      <RosterSection key={`section/${line.name}`} name={line.name} count={line.count} unread={line.unread} folded={line.folded} compact={compact}
-        toggle={() => roster.toggleFold(line.name)} onContext={(x, y) => onSectionContext(line.name, store, x, y)}>
-        {line.items.map((item) => row(item, items))}
-      </RosterSection>
-    ))
+    const rows = <SectionRoster computerId={computer.id} items={ordered(computer.id, items)} compact={compact}
+      folded={roster.folded} order={roster.sectionOrders[computer.id] ?? []}
+      save={(names) => roster.orderSections(computer.id, names)} toggle={roster.toggleFold}
+      onContext={(name, x, y) => onSectionContext(name, store, x, y)} row={(item) => row(item, items)} />
     if (!roster.grouped) return <div key={computer.id}>{notice}{rows}</div>
     return (
       <ComputerRosterSection key={computer.id} store={store} compact={compact}

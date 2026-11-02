@@ -142,16 +142,22 @@ pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
         let mut data = card.data.clone();
         data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Ready)?;
         hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not complete the sign-in request"))?;
-        let Some(bot) = hub.store.bot(&card.bot_id)?.filter(|b| !b.deleted) else { continue };
         let ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
-        let held = ids.iter().filter_map(Value::as_str).filter_map(|id| hub.store.entry(id));
-        for mut entry in held.filter(|entry| now_ms() - entry.created_at <= MAX_AGE) {
-            let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry.data);
-            entry.data["status"] = "queued".into();
-            hub.set_entry(&entry.id, &entry.data);
-            let lane = Lane::main(&entry.bot_id);
-            hub.send_cmd(&card.bot_id, Cmd::Send { lane, entry_id: entry.id, text: prompt })?;
-        }
+        send_again(hub, &card.bot_id, ids.iter().filter_map(Value::as_str))?;
+    }
+    Ok(())
+}
+
+/// `bot` answers the user messages `ids` it couldn't answer (a message older than a day doesn't go out).
+pub fn send_again<'a>(hub: &Hub, bot: &str, ids: impl IntoIterator<Item = &'a str>) -> Result<()> {
+    let Some(bot) = hub.store.bot(bot)?.filter(|b| !b.deleted) else { return Ok(()) };
+    let held = ids.into_iter().filter_map(|id| hub.store.entry(id));
+    for mut entry in held.filter(|entry| now_ms() - entry.created_at <= MAX_AGE) {
+        let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry.data);
+        entry.data["status"] = "queued".into();
+        hub.set_entry(&entry.id, &entry.data);
+        let lane = Lane::main(&entry.bot_id);
+        hub.send_cmd(&bot.config.id, Cmd::Send { lane, entry_id: entry.id, text: prompt })?;
     }
     Ok(())
 }

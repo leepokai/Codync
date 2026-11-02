@@ -144,7 +144,19 @@ pub struct Dir {
     pub git: bool,
 }
 
+#[derive(PartialEq, Eq)]
+pub enum FolderMode {
+    Recent,
+    Browse,
+    Path,
+}
+
 pub struct FolderPicker {
+    pub request_id: String,
+    pub mode: FolderMode,
+    pub recent: Vec<Dir>,
+    pub remembers: bool,
+    pub busy: bool,
     pub path: String,
     pub parent: Option<String>,
     pub dirs: Vec<Dir>,
@@ -220,7 +232,9 @@ pub struct Form {
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
     pub cwd: String,
+    /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
+    pub mode: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// `None`: the host has no Manage the team.

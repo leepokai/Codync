@@ -4,8 +4,8 @@ Routines belong to an agent bot and are usually created by talking to it ("I wan
 a routine that…"); the host gives the [lead bot](lead-bot.md) one of its own, *Check in*. Every agent receives the built-in `routines` MCP server. The Details page
 of the bot's details (the desktop's details panel; the phones' details sheet, which tapping the
 chat's title or a routine's notice opens) shows a compact list
-(name, schedule, on/off switch). The header's chat button puts "I want a routine
-that " in the composer; **+** opens the form for doing it by hand. A row opens
+(name, schedule, on/off switch). **+** opens the form for doing it by hand;
+requests to the bot are typed directly in the chat. A row opens
 the same form filled in, with delete and test run beside Save; the row's switch
 pauses and resumes. Run results appear in the chat. The form is name, instruction, a **When to run** type (Schedule or Webhook, the two
 Claude Code routines also offer besides GitHub events) and a run timeout. A schedule
@@ -16,7 +16,7 @@ cron, checks it and shows the summary and next run. One-off times, intervals, ev
 triggers are left to the bot: editing such a routine shows its current triggers as
 the selected type and keeps them until Schedule or Webhook replaces them. The TUI (`n` form with a typed When: `daily 09:00`, `weekdays 09:00`,
 `weekly mon 09:00`, `hourly :30`, `every 2h`, a cron or `webhook`, optionally ending
-in a time zone that Tab completes; `c` asks the bot) match.
+in a time zone that Tab completes) offers the same actions.
 A saved webhook routine's form shows its public URL and key (copy, reveal, replace
 with confirmation; TUI `w` copies a curl command and `W` replaces the
 key). Creation/update notices open the routine.

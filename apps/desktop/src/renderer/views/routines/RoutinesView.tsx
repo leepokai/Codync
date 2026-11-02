@@ -111,10 +111,6 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
       <HStack>
         <Text size="body" weight="semibold" className="routines-title">{tr(`Routines`)}</Text>
         <Spacer />
-        <IconButton title="Ask the bot for a routine" icon="text.bubble" disabled={store.isOffline} onClick={() => {
-          store.setRoutineDraft(botId, 'I want a routine that ')
-          onClose?.()
-        }} />
         <IconButton title="Set up a routine" icon="plus" disabled={store.isOffline} onClick={() => open(null)} />
         {onClose ? <IconButton title="Close routines" icon="xmark" onClick={onClose} /> : null}
       </HStack>

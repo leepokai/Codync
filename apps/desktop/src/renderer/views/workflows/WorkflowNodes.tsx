@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, VStack } from '../../components/Stack'
@@ -153,9 +154,14 @@ function StepResult({ kind, step, now, onRetry, onDecide, onStop }: {
   onStop: (stepId: string) => void
 }) {
   const tr = useTr()
+  const seen = useRef<number | null>(null)
+  if (!step || step.status !== 'running') seen.current = null
+  else if (step.startedAt) seen.current = step.startedAt
+  else if (seen.current == null) seen.current = now
   if (!step) return null
   if (step.status === 'running') {
-    const seconds = step.startedAt ? Math.max(0, Math.round((now - step.startedAt) / 1000)) : 0
+    const started = step.startedAt ?? seen.current ?? now
+    const seconds = Math.max(0, Math.round((now - started) / 1000))
     return (
       <HStack gap={8} className="workflow-result">
         <Text size="caption" tone="secondary" grow>{tr('Waiting {seconds}s').replaceAll('{seconds}', String(seconds))}</Text>

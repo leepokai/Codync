@@ -1244,6 +1244,10 @@ fn finish_solo_output(
 pub fn stop_one(hub: &Hub, step_id: &str) -> Result<()> {
     let Some(row) = step_meta(&hub.store, step_id)? else { bail!("This step was deleted") };
     if !row.status.is_open() {
+        // The canvas can still be showing this step as running. Tell it to reload.
+        if let Some(run) = &row.run {
+            hub.emit_workflow(json!({"type": "workflow", "change": "run", "workflowId": row.workflow, "runId": run}));
+        }
         return Ok(());
     }
     if row.kind == "agent" && row.status == StepStatus::Running {

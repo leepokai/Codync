@@ -135,13 +135,41 @@ extension AppLanguageTests {
         #expect(L10n.tr("An unknown phrase", preference: language) == "An unknown phrase")
         #expect(AppLanguage.locale(preference: language, systemIsChinese: true).language.languageCode?.identifier == language.rawValue)
     }
-    #expect(AppLanguage.resolved(preference: .system, languages: ["pt-BR"]) == .en)
+    #expect(AppLanguage.resolved(preference: .system, languages: ["nl-NL"]) == .en)
 }
 
 }
 
 
 extension AppLanguageTests {
+    @Test func brazilianPortuguesePersistsAndLoadsItsBundledCatalog() {
+        let name = "AppLanguageTests.Portuguese.\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: name)!
+        defer { suite.removePersistentDomain(forName: name) }
+        AppLanguage.setPreference(.ptBR, in: suite)
+        #expect(suite.string(forKey: AppLanguage.storageKey) == "pt-BR")
+        #expect(AppLanguage.preference(in: suite) == .ptBR)
+        #expect(AppLanguage(rawValue: "pt-BR") == .ptBR)
+        #expect(AppLanguage.ptBR.catalogName == "pt-BR")
+        #expect(Array(AppLanguage.allCases.suffix(2)) == [.es, .ptBR])
+        #expect(AppLanguage.menuTitle(.ptBR, preference: .en, systemIsChinese: true) == "Português (Brasil)")
+        #expect(!AppLanguage.usesChinese(preference: .ptBR, systemIsChinese: true))
+        let locale = AppLanguage.locale(preference: .ptBR, systemIsChinese: true)
+        #expect(locale.language.languageCode?.identifier == "pt")
+        #expect(locale.region?.identifier == "BR")
+        let translated = L10n.tr("Settings", preference: AppLanguage.preference(in: suite), systemIsChinese: false)
+        #expect(translated != "Settings")
+        #expect(L10n.tr("An unknown phrase", preference: .ptBR) == "An unknown phrase")
+        for tag in ["pt", "pt-BR", "pt_BR.UTF-8", "pt-PT", "pt-AO", "pt-MZ", "PT_cv.UTF-8"] {
+            #expect(AppLanguage.resolved(preference: .system, languages: [tag]) == .ptBR)
+            #expect(L10n.tr("Settings", preference: .system, systemIsChinese: false, systemLanguages: [tag]) == translated)
+        }
+        #expect(AppLanguage.resolved(preference: .ptBR, languages: ["zh-TW"]) == .ptBR)
+        #expect(L10n.tr("Settings", preference: .en, systemLanguages: ["pt-BR"]) == "Settings")
+        #expect(AppLanguage.resolved(preference: .system, languages: ["en-US"]) == .en)
+        #expect(AppLanguage.resolved(preference: .system, languages: []) == .en)
+    }
+
     @Test func changingLanguageInvalidatesObservedTranslationConsumers() {
         let store = UserDefaults(suiteName: "language-observation-\(UUID().uuidString)")!
         let changed = Mutex(false)

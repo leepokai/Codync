@@ -80,7 +80,7 @@ export interface TraySummary {
   textSize: number
   usageIconStyle: 'character' | 'original'
   /** The menu bar is a system menu, so the main process translates its labels from this. */
-  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es'
+  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR'
 }
 
 /** Things the tray menu (or the app menu) asks the window to do. */

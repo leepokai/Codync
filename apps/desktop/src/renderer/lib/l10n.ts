@@ -3,11 +3,12 @@ import koPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages
 import frPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/fr.json' with { type: 'json' }
 import dePhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/de.json' with { type: 'json' }
 import esPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/es.json' with { type: 'json' }
+import ptBRPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/pt-BR.json' with { type: 'json' }
 import hansPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hans.json' with { type: 'json' }
 import hantPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json' with { type: 'json' }
 
 /** This app's interface language. `zh` is Simplified, kept so a saved choice still means that. */
-export const appLanguages = ['system', 'en', 'zh', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es'] as const
+export const appLanguages = ['system', 'en', 'zh', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR'] as const
 export type AppLanguage = typeof appLanguages[number]
 
 /** Traditional is its own table. A boolean `true` from older callers means Simplified. */
@@ -51,11 +52,12 @@ export function resolvedLanguage(preference: AppLanguage, system: string | boole
   const tag = languageTag(system).toLowerCase().replaceAll('_', '-').split('.')[0]
   const base = tag.split('-')[0]
   if (base === 'zh') return systemScript(tag) === 'hant' ? 'zh-Hant' : 'zh'
+  if (base === 'pt') return 'pt-BR'
   return ['ja', 'ko', 'fr', 'de', 'es'].includes(base) ? base as 'ja' | 'ko' | 'fr' | 'de' | 'es' : 'en'
 }
 
 const catalogs: Record<Exclude<AppLanguage, 'system'>, Record<string, string>> = {
-  en: {}, zh: hans, 'zh-Hant': hant, ja: jaPhrases, ko: koPhrases, fr: frPhrases, de: dePhrases, es: esPhrases,
+  en: {}, zh: hans, 'zh-Hant': hant, ja: jaPhrases, ko: koPhrases, fr: frPhrases, de: dePhrases, es: esPhrases, 'pt-BR': ptBRPhrases,
 }
 
 /** One piece of a phrase key such as "Runs the official installer on {name}." */
@@ -180,7 +182,7 @@ function compactTime(time: string, tr: (key: string) => string): string | null {
 }
 
 const nativeNames: Record<Exclude<AppLanguage, 'system'>, string> = {
-  en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español',
+  en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', 'pt-BR': 'Português (Brasil)',
 }
 
 export function languageTitle(language: AppLanguage, preference: AppLanguage, system: string | boolean): string {

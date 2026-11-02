@@ -7,7 +7,7 @@ const read = (language: string): Record<string, string> => JSON.parse(readFileSy
 
 test('all shipped catalogs have the same keys and preserve interpolation tokens', () => {
   const source = read('zh-Hans')
-  for (const locale of ['zh-Hant', 'ja', 'ko', 'fr', 'de', 'es']) {
+  for (const locale of ['zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR']) {
     const catalog = read(locale)
     assert.equal(catalog.English, "English", `${locale}: English keeps its native name in language menus`)
     assert.deepEqual(Object.keys(catalog).sort(), Object.keys(source).sort(), locale)

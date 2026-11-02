@@ -23,11 +23,17 @@ const USAGE_ARGS: [&str; 9] = [
 /// `claude -p /usage`: Claude Code's own local usage report, no model call.
 pub(super) async fn collect() -> Option<Vec<Window>> {
     let bin = super::command::program("claude")?;
+    let home = dirs::home_dir()?;
+    let mut cmd = tokio::process::Command::new(bin);
+    // A `claude setup-token` token (CLAUDE_CODE_OAUTH_TOKEN) can only run models: its /usage has no plan
+    // limits. When the user has also signed in normally, ask with that login instead.
+    if home.join(".claude/.credentials.json").is_file() {
+        cmd.env_remove("CLAUDE_CODE_OAUTH_TOKEN");
+    }
     let out = tokio::time::timeout(
         std::time::Duration::from_mins(1),
-        tokio::process::Command::new(bin)
-            .args(USAGE_ARGS)
-            .current_dir(dirs::home_dir()?)
+        cmd.args(USAGE_ARGS)
+            .current_dir(&home)
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)
             .output(),

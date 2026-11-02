@@ -24,7 +24,9 @@ pub const KEY_URL: &str = "https://platform.composio.dev";
 
 pub const INSTRUCTIONS: &str = "Act in the user's connected apps through Composio. Find a tool with \
 `search_tools`, read its parameters with `get_tool`, then run it with `execute`. Tool slugs look like \
-GMAIL_SEND_EMAIL. Only the apps listed by `list_apps` are available to you.";
+GMAIL_SEND_EMAIL. Only the apps listed by `list_apps` are available to you. An app can have several \
+accounts (e.g. several Gmail inboxes): `list_apps` gives each its `account` id; pass it to `execute` to pick \
+one, and run the tool once per account to cover them all.";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -398,7 +400,7 @@ pub fn tools() -> Value {
     json!([
         {
             "name": "list_apps",
-            "description": "The connected apps you may use.",
+            "description": "The connected apps you may use, one entry per connected account (`account` id).",
             "inputSchema": {"type": "object", "properties": {}},
             "annotations": {"readOnlyHint": true},
         },
@@ -426,7 +428,11 @@ pub fn tools() -> Value {
             "description": "Run a tool with arguments that match its input parameters.",
             "inputSchema": {
                 "type": "object",
-                "properties": {"slug": {"type": "string"}, "arguments": {"type": "object"}},
+                "properties": {
+                    "slug": {"type": "string"},
+                    "arguments": {"type": "object"},
+                    "account": {"type": "string", "description": "Which connected account to use (its `account` id from list_apps). Default: the first one."},
+                },
                 "required": ["slug", "arguments"],
             },
         },
@@ -461,7 +467,7 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
     }
     let app_of = |toolkit: &str| apps.iter().find(|a| a.toolkit.eq_ignore_ascii_case(toolkit));
     match name {
-        "list_apps" => Ok(json!(apps.iter().map(|a| json!({"slug": a.toolkit, "name": a.name})).collect::<Vec<_>>())),
+        "list_apps" => Ok(json!(apps.iter().map(|a| json!({"slug": a.toolkit, "name": a.name, "account": a.id})).collect::<Vec<_>>())),
         "search_tools" => {
             let query = args["query"].as_str().unwrap_or_default();
             let targets: Vec<&Connection> = match args["app"].as_str().filter(|s| !s.is_empty()) {
@@ -496,7 +502,13 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
             let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
             let t = tool(&c.key, slug).await?;
             let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
-            let app = app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
+            let app = match args["account"].as_str().filter(|s| !s.is_empty()) {
+                Some(id) => apps
+                    .iter()
+                    .find(|a| a.id == id && a.toolkit.eq_ignore_ascii_case(&toolkit))
+                    .ok_or_else(|| anyhow!("account `{id}` isn't a connected {toolkit} account (see list_apps)"))?,
+                None => app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?,
+            };
             let arguments = args.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
             let v = post(
                 &c.key,

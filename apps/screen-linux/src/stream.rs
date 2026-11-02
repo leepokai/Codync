@@ -7,6 +7,7 @@ pub use crate::capture::Capture;
 use crate::capture::capture_source;
 use crate::negotiation::ice_uri;
 use crate::portal::Display;
+use crate::rtp::{payloader, sender};
 use crate::video::{h264_format, h264_payload};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
@@ -26,6 +27,8 @@ const ENCODERS: &[&str] = &[
     "openh264enc",
 ];
 const BITRATE_KBPS: u32 = 8000;
+/// x264 safety-net keyframe distance: 10 s at 60 fps, for viewers that never send a PLI.
+const KEYFRAME_INTERVAL_FRAMES: u32 = 600;
 
 pub struct Session {
     pub(super) pipeline: gst::Pipeline,
@@ -67,22 +70,8 @@ impl Session {
             .clamp(100_000, u64::from(BITRATE_KBPS) * 1000);
         let encoder = encoder(u32::try_from(bitrate / 1000)?)?;
         let parse = make("h264parse")?;
-        let pay = make("rtph264pay")?;
-        pay.set_property("config-interval", -1i32);
-        pay.set_property_from_str("aggregate-mode", "zero-latency");
-        pay.set_property("pt", u32::try_from(payload)?);
-        let rtp_caps = make("capsfilter")?;
-        rtp_caps.set_property(
-            "caps",
-            gst::Caps::builder("application/x-rtp")
-                .field("media", "video")
-                .field("encoding-name", "H264")
-                .field("payload", payload)
-                .field("clock-rate", 90000i32)
-                .build(),
-        );
-        let webrtc = make("webrtcbin")?;
-        webrtc.set_property_from_str("bundle-policy", "max-bundle");
+        let [pay, rtp_caps] = payloader(payload)?;
+        let webrtc = sender()?;
         if let Some(servers) = config["iceServers"].as_array() {
             for server in servers {
                 for url in server["urls"].as_array().context("missing ICE URLs")? {
@@ -315,7 +304,9 @@ fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
             e.set_property_from_str("tune", "zerolatency");
             e.set_property_from_str("speed-preset", "veryfast");
             e.set_property("bitrate", bitrate_kbps);
-            e.set_property("key-int-max", 120u32);
+            // A screen keyframe is ~100x a delta frame. One every 120 frames (2 s at 60 fps) was a
+            // periodic burst that overflowed shallow links; NACK and the phone's PLI cover recovery.
+            e.set_property("key-int-max", KEYFRAME_INTERVAL_FRAMES);
         }
         "openh264enc" => e.set_property("bitrate", bitrate_kbps * 1000),
         _ => {

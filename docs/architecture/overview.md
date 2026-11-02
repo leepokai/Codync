@@ -68,7 +68,7 @@ When a client needs data or behavior the host doesn't offer, add a host method o
 - On iPhone, `AccountSession` owns Clerk integration; `AccountStore` owns one account context's computer stores.
 - `BotReference(accountId, computerId, botId)` identifies a destination. Widgets and pushes carry account/computer scope.
 - `BotStore` mirrors one computer and consumes a `HostTransport`: loopback or encrypted channel.
-- Account changes retire the old stores; late responses must not update the new context. Signing out erases that context's local credentials and caches.
+- Account changes retire the old stores; late responses must not update the new context. Signing out keeps that context (its key, computers and caches) and only stops its alerts; Start over and Delete account erase it.
 - The desktop app (`apps/desktop/`) has its own TypeScript `BotStore` and attaches its local host and configured SSH hosts through loopback only ([desktop app](desktop-app.md)). iPhone connections use device identities.
 
 Several computers per account are supported: the iPhone and Android apps pair several, with a heading per computer in the roster, Computer management for each, and each computer's push, usage and widgets; the desktop app attaches its local host and configured SSH hosts. Account-scoped aggregation and SSH build on the same structure (`AccountStore`, `BotReference`).

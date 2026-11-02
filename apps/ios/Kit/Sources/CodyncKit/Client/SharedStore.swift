@@ -22,6 +22,18 @@ public enum SharedStore {
 
     public static var activeContext: Context { Context(accountID: activeAccountID) }
 
+    /// Start over: every account context on this iPhone, those signed out here included (signing out keeps their keys
+    /// and computers so the same account comes back without a check), and the signed-out context.
+    public static func eraseAll(suite: String = appGroup) {
+        let defaults = Context(accountID: nil, suite: suite).defaults
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("account.") || Context.names.contains(key) {
+            defaults.removeObject(forKey: key)
+        }
+        DeviceIdentity.deleteAll()
+        do { try ActivityIconCache.eraseAll() } catch { log.error("Cannot erase activity icons: \(error.localizedDescription)") }
+        for file in Context.mirrorCaches(id: nil) { try? FileManager.default.removeItem(at: file) }
+    }
+
     public struct Context: Sendable {
         /// The raw Clerk user ID; nil = the local (signed-out) context.
         public let accountID: String?
@@ -110,7 +122,8 @@ public enum SharedStore {
             return BotReference(accountId: accountID, computerId: computer, botId: botId)
         }
 
-        /// Signing out or removing the account: device keys, computers, widget snapshot and caches go.
+        /// Deleting the account, or the signed-out context once adopted: device keys, computers, widget snapshot and
+        /// caches go.
         public func erase() { erase(keeping: []) }
 
         /// `erase()`, except for the mirror caches in `kept` (`adopt(from:)`).
@@ -119,14 +132,14 @@ public enum SharedStore {
             DeviceIdentity.delete(context: self)
             do { try ActivityIconCache.erase(context: id) }
             catch { Logger(subsystem: "com.pokai.Codync", category: "CustomIcon").error("Cannot erase activity icons: \(error.localizedDescription)") }
-            for file in mirrorCaches() where !kept.contains(file) { try? FileManager.default.removeItem(at: file) }
+            for file in Self.mirrorCaches(id: id) where !kept.contains(file) { try? FileManager.default.removeItem(at: file) }
         }
 
-        /// This context's mirror caches (`BotStore.saveCache`): `codync-mirror-<app>-<id>-<computer>.json`.
-        fileprivate func mirrorCaches() -> [URL] {
+        /// Mirror caches (`BotStore.saveCache`), `codync-mirror-<app>-<id>-<computer>.json`: context `id`'s, or every one.
+        fileprivate static func mirrorCaches(id: String?) -> [URL] {
             let caches = URL.cachesDirectory
             return ((try? FileManager.default.contentsOfDirectory(atPath: caches.path())) ?? [])
-                .filter { $0.hasPrefix("codync-mirror-") && $0.contains("-\(id)-") }
+                .filter { name in name.hasPrefix("codync-mirror-") && id.map { name.contains("-\($0)-") } ?? true }
                 .map { caches.appending(path: $0) }
         }
     }
@@ -171,7 +184,7 @@ public extension SharedStore.Context {
     /// nothing loads them again (Start over removes them).
     private func moveMirrorCaches(from local: Self) -> [URL] {
         var unmoved: [URL] = []
-        for file in local.mirrorCaches() {
+        for file in Self.mirrorCaches(id: local.id) {
             let name = file.lastPathComponent
             guard let marker = name.range(of: "-\(local.id)-") else { continue }
             let moved = file.deletingLastPathComponent().appending(path: name.replacingCharacters(in: marker, with: "-\(id)-"))

@@ -295,7 +295,6 @@
   "Text size": "文字サイズ",
   "This Mac": "このMac",
   "This computer": "このコンピュータ",
-  "This iPhone forgets the account's computers. Your bots stay on them.": "この iPhone はアカウントのコンピュータを忘れます。ボットはそこに留まります。",
   "Through Cloudflare": "Cloudflareを通じて",
   "Auto: Wi-Fi or Tailscale, then Private relay ({host})": "自動: Wi-Fi または Tailscale、次にプライベートリレー（{host}）",
   "Private relay ({host}), then Wi-Fi or Tailscale": "プライベートリレー（{host}）、次に Wi-Fi または Tailscale",
@@ -1510,5 +1509,7 @@
   "This computer is in another account": "このコンピュータは別のアカウントにあります",
   "This computer isn't in an account: its cloud is off": "このコンピュータはどのアカウントにもありません: クラウドがオフです",
   "This computer isn't in an account: it uses a private relay": "このコンピュータはどのアカウントにもありません: プライベートリレーを使っています",
-  "This computer isn't in your account": "このコンピュータはあなたのアカウントにありません"
+  "This computer isn't in your account": "このコンピュータはあなたのアカウントにありません",
+  "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "この iPhone はアカウントの通知を受け取らなくなりますが、コンピュータは残るので、もう一度サインインすればスキャンは不要です。コンピュータから外すには、代わりに設定の「やり直す」を使ってください。",
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "このスマートフォンはアカウントの通知を受け取らなくなりますが、コンピュータは残るので、もう一度サインインすればスキャンは不要です。コンピュータから外すには、代わりに設定の「やり直す」を使ってください。"
 }

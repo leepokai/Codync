@@ -44,4 +44,22 @@ private final class DevicesStub: URLProtocol {
         #expect(DevicesStub.state.withLock { $0.calls } == ["GET /v1/devices Bearer token", "DELETE /v1/devices/this-phone Bearer token"])
         #expect(await cloud.pinningToken() == nil, "signed out: no token to take")
     }
+
+    @Test func signingOutTellsTheAccountOnTheTokenTakenBefore() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DevicesStub.self]
+        let identity = DeviceIdentity(signing: .init(), push: .init())
+        DevicesStub.state.withLock { $0 = (identity.publicKey, []) }
+        let signedIn = OSAllocatedUnfairLock(initialState: true)
+        let cloud = CloudClient(baseURL: URL(string: "https://cloud.test")!, identity: identity, session: URLSession(configuration: config)) {
+            guard signedIn.withLock({ $0 }) else { throw CloudError(status: 401, code: "signedOut") }
+            return "token"
+        }
+
+        let pinned = try #require(await cloud.pinningToken())
+        signedIn.withLock { $0 = false }
+        try await pinned.signOutThisDevice()
+
+        #expect(DevicesStub.state.withLock { $0.calls } == ["POST /v1/devices/sign-out Bearer token"], "the device stays in the account")
+    }
 }

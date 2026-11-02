@@ -37,24 +37,24 @@ App Store 5.1.1(v) and Google Play require in-app deletion for any app that crea
      - iOS: `clerk.user.delete()` (ClerkKit `User.delete()`).
      - Android: `User.delete()` from `com.clerk.api.user`.
      - Desktop: FAPI `DELETE /v1/me`, through `apps/desktop/src/main/account.ts`.
-  2. Hand the key back to the computers this phone reaches, as signing out does (section 2). The account's stores stay open until then, even though Clerk has already ended the session (`AppStore.leaving` on iOS). The cloud side needs no call: the webhook revokes every device.
-  3. Erase this account's local data, the same as signing out.
+  2. Hand the key back to the computers this phone reaches, as Start over does (section 2). The account's stores stay open until then, even though Clerk has already ended the session (`AppStore.leaving` on iOS). The cloud side needs no call: the webhook revokes every device.
+  3. Erase this account's local data.
 - **Cloud: no change.** Clerk's `user.deleted` webhook already revokes every grant, cancels pending requests, removes the account's computers from it and deletes their icons (`cloud/src/routes/webhooks.ts`).
 - **Clerk setting:** "users can delete themselves" (`user_settings.actions.delete_self`) is on in the development instance. Check it is on in production before the release.
 - **Google Play** also wants a web address for deletion requests: add `codync.dev/delete-account`, listing the in-app steps and a contact address.
 
-### 2. Sign-out hands the key back (iPhone, Android)
+### 2. Sign-out stops the alerts and keeps the key (iPhone, Android)
 
-Today iPhone erases only local data, and Android tells only the computer it is connected to. New order, in `AppStore.signOut()` (iOS) and `AccountStore.signOut()` (Android):
+Built in 2.35.0 as handing the key back; changed before release (2026-11-02) to keep it, so signing back in needs no scan or check ([accounts on a phone](../architecture/connections.md#accounts-on-a-phone)). In `AppStore.signOut()` (iOS) and `AccountStore.signOut()` (Android):
 
-1. **Clerk:** sign out first. When that fails the phone stays signed in and keeps its key, so nothing below runs. The cloud call below needs a session token, so one is taken before (`CloudClient.pinningToken()`); it stays valid until it expires. The account's stores stay open until the steps below finish (`AppStore.leaving` on iOS, `transitions` on Android).
-2. **Computers this phone can reach:** call the new host method `forgetDevice`. It removes the caller's own device row and push tickets.
-   - Hosts older than this release answer "unknown method"; then call `unregisterDevice`, which stops the push tickets only.
-   - The device key is erased right after, so a row left on an older host is unusable.
-3. **Cloud:** `DELETE /v1/devices/{id}` for this phone's own device. Find the id the way `CloudClient.revokeDeviceAccess` already does. This revokes every grant and pending request, and hosts drop the device on their next sync. Add `CloudClient.revokeThisDevice()` and its Android twin.
-4. Switch context and erase (as today).
+1. **Clerk:** sign out first. When that fails nothing below runs. The cloud call below needs a session token, so one is taken before (`CloudClient.pinningToken()`); it stays valid until it expires. The account's stores stay open until the steps below finish (`AppStore.leaving` on iOS, `transitions` on Android).
+2. **Computers this phone can reach:** `unregisterDevice` drops its push tickets (Android: closing each computer's store does it, `AppStore.retire`). The device stays.
+3. **Cloud:** `POST /v1/devices/sign-out` (Clerk + `Codync-Sig`) marks the device signed out and tells the account's computers to pull their state, whose `signedOut` lists it: each drops its push tickets. `POST /v1/devices`, which the phone sends with every refresh of the account's computers (opening the account, coming back to the foreground), clears the mark, so a failed one is retried. `CloudClient.signOutThisDevice()` and its Android twin.
+4. Switch context. The account's key, computers and drafts stay on the phone.
 
-The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable. **Start over** hands the open account's key back the same way before it erases everything.
+The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable.
+
+**Start over** and **Delete account** still hand the key back: `forgetDevice` on the computers the phone reaches (it removes the caller's device row and push tickets; hosts older than it answer "unknown method", then `unregisterDevice`), the cloud revokes the device (`DELETE /v1/devices/{id}`, `CloudClient.revokeThisDevice()`; for Delete account, Clerk's webhook), and the data goes. Start over erases every account on the phone, those signed out here included (iOS `SharedStore.eraseAll()`, Android `LocalStore.eraseAll`).
 
 **Host (`host/src/api/remote.rs`):** `forgetDevice` is for a device caller only. It removes `caller.device_key()` from devices and push tickets. It sends no event: a desktop showing the device list sees the change the next time the list loads. It is additive, so `minApp` doesn't change.
 
@@ -152,7 +152,7 @@ After either case the signed-out context is erased (on iOS except a mirror cache
 | Fresh install | The welcome shows only sign-in. Signing in leads to pairing, and a QR pair works |
 | Upgrade | With the previous build signed out, pair by QR. Install this build: the gate counts the computer. Sign in: the computer is there and connects without scanning, and push still arrives |
 | Merge case | Unit tests only: with sign-in required, a phone can't pair signed out any more, so this only happens to someone who was signed in on an older build and had also paired signed out (the older builds can't take the test sign-in ticket) |
-| Sign out | The computer's device list drops the phone, and the cloud lists the device as revoked |
+| Sign out | The computer keeps the phone but has no push ticket for it; the cloud's host state lists it in `signedOut`. Sign back in: it connects without a scan and registers push again |
 | Delete account | The test user is gone in Clerk, and the computers leave the account (`--prune` cleans up) |
 | Desktop | Signed out shows the welcome with no skip. Sign out returns to it. Signed in to a second test account, the footer notice shows and reopens the move choice |
 
@@ -197,7 +197,7 @@ After either case the signed-out context is erased (on iOS except a mirror cache
 Phase 2 and 3 need these once per cloud, before the hosts that ask for them ship (the cloud is deployed by hand):
 
 1. `DEVICE_CERT_KEY`: `grep '^CODYNC_DEVICE_CERT_KEY=' .env.development | cut -d= -f2- | npx wrangler secret put DEVICE_CERT_KEY --env dev` from `cloud/` (and the same from `.env.production` without `--env` for main).
-2. The pairing codes table: `npx wrangler d1 migrations apply codync-dev --env dev --remote` (main: `codync`).
+2. The pairing codes table and the signed-out mark (migrations `0005`, `0006`): `npx wrangler d1 migrations apply codync-dev --env dev --remote` (main: `codync`).
 3. `npm run deploy:dev`, then `npm run deploy:main` right after the release merges.
 
 ## Later

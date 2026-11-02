@@ -55,7 +55,7 @@ Development deployment (see [environment readiness](../docs/guides/environments-
 ```bash
 # Only if the database does not exist: npx wrangler d1 create codync-dev
 # Confirm its database_id in [env.dev] before applying migrations.
-npx wrangler d1 migrations apply codync-dev --env dev --remote   # includes 0005 (short pairing codes)
+npx wrangler d1 migrations apply codync-dev --env dev --remote   # includes 0005 (short pairing codes), 0006 (signed-out devices)
 npx wrangler secret put CLERK_SECRET_KEY --env dev
 npx wrangler secret put CLERK_WEBHOOK_SECRET --env dev
 # The device certificate key: without it phones can't pair (503 notConfigured).

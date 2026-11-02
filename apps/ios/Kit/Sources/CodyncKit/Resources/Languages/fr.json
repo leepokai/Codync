@@ -295,7 +295,6 @@
   "Text size": "Taille du texte",
   "This Mac": "Ce Mac",
   "This computer": "Cet ordinateur",
-  "This iPhone forgets the account's computers. Your bots stay on them.": "Cet iPhone oublie les ordinateurs du compte. Vos bots restent sur ces ordinateurs.",
   "Through Cloudflare": "Via Cloudflare",
   "Auto: Wi-Fi or Tailscale, then Private relay ({host})": "Auto : Wi-Fi ou Tailscale, puis relais privé ({host})",
   "Private relay ({host}), then Wi-Fi or Tailscale": "Relais privé ({host}), puis Wi-Fi ou Tailscale",
@@ -1510,5 +1509,7 @@
   "This computer is in another account": "Cet ordinateur est dans un autre compte",
   "This computer isn't in an account: its cloud is off": "Cet ordinateur n'est dans aucun compte : son cloud est désactivé",
   "This computer isn't in an account: it uses a private relay": "Cet ordinateur n'est dans aucun compte : il utilise un relais privé",
-  "This computer isn't in your account": "Cet ordinateur n'est pas dans votre compte"
+  "This computer isn't in your account": "Cet ordinateur n'est pas dans votre compte",
+  "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Cet iPhone ne reçoit plus les notifications du compte et garde ses ordinateurs : en vous reconnectant, rien à scanner. Pour le retirer de ces ordinateurs, utilisez plutôt « Recommencer » dans Réglages.",
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Ce téléphone ne reçoit plus les notifications du compte et garde ses ordinateurs : en vous reconnectant, rien à scanner. Pour le retirer de ces ordinateurs, utilisez plutôt « Recommencer » dans Réglages."
 }

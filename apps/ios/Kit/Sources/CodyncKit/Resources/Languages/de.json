@@ -295,7 +295,6 @@
   "Text size": "Textgröße",
   "This Mac": "Dieser Mac",
   "This computer": "Dieser Computer",
-  "This iPhone forgets the account's computers. Your bots stay on them.": "Dieses iPhone vergisst die Computer des Kontos. Deine Bots bleiben auf ihnen erhalten.",
   "Through Cloudflare": "Über Cloudflare",
   "Auto: Wi-Fi or Tailscale, then Private relay ({host})": "Auto: Wi-Fi oder Tailscale, dann privates Relay ({host})",
   "Private relay ({host}), then Wi-Fi or Tailscale": "Privates Relay ({host}), dann Wi-Fi oder Tailscale",
@@ -1510,5 +1509,7 @@
   "This computer is in another account": "Dieser Computer ist in einem anderen Konto",
   "This computer isn't in an account: its cloud is off": "Dieser Computer ist in keinem Konto: seine Cloud ist aus",
   "This computer isn't in an account: it uses a private relay": "Dieser Computer ist in keinem Konto: er nutzt ein privates Relay",
-  "This computer isn't in your account": "Dieser Computer ist nicht in deinem Konto"
+  "This computer isn't in your account": "Dieser Computer ist nicht in deinem Konto",
+  "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Dieses iPhone bekommt keine Benachrichtigungen des Kontos mehr und behält seine Computer, sodass du nach dem erneuten Anmelden nichts scannen musst. Um es von ihnen zu entfernen, nutze stattdessen „Neu beginnen“ in den Einstellungen.",
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Dieses Telefon bekommt keine Benachrichtigungen des Kontos mehr und behält seine Computer, sodass du nach dem erneuten Anmelden nichts scannen musst. Um es von ihnen zu entfernen, nutze stattdessen „Neu beginnen“ in den Einstellungen."
 }

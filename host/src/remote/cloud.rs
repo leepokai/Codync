@@ -301,6 +301,9 @@ struct State {
     grants: Vec<Grant>,
     #[serde(default)]
     requests: Vec<StateRequest>,
+    /// The account's phones that signed out: they keep their access, but get no alerts until they sign back in.
+    #[serde(default)]
+    signed_out: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -338,6 +341,9 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
+    for device in &state.signed_out {
+        hub.store.remove_push_tickets(device)?;
+    }
     super::owner::remember(hub, state.owner.as_ref())?;
     let in_account = state.owner.is_some();
     // A pull that works also settles an earlier failed one.
@@ -800,6 +806,20 @@ mod tests {
         update_status(&hub, |s| s.last_error = Some("couldn't get the cloud state".into()));
         pull(&hub, &base).await.unwrap();
         assert_eq!(hub.cloud.status().last_error, None, "Settings stops showing a relay error that's gone");
+    }
+
+    #[tokio::test]
+    async fn a_phone_that_signed_out_gets_no_more_alerts() {
+        let hub = temp_hub();
+        let fake = Arc::new(FakeCloud::default());
+        let base = fake_cloud(fake.clone()).await;
+        hub.store.add_push_ticket("t1", "signed out", None, Some("ctx"), "iPhone").unwrap();
+        hub.store.add_push_ticket("t2", "still in", None, Some("ctx"), "Pixel").unwrap();
+        *fake.state.lock().unwrap() =
+            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [], "signedOut": ["signed out"]});
+        pull(&hub, &base).await.unwrap();
+        let tickets: Vec<String> = hub.store.push_tickets().into_iter().map(|t| t.ticket).collect();
+        assert_eq!(tickets, ["t2"]);
     }
 
     #[tokio::test]

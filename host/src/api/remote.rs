@@ -80,7 +80,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"devices": devices})
         }
         "revokeDevice" => revoke(hub, str_arg(&b, "key")?)?,
-        // A device leaving on its own (signing out): the same as revoking it at the computer.
+        // A device leaving on its own (deleting the account, starting over): the same as revoking it at the computer.
         "forgetDevice" => revoke(hub, caller.device_key())?,
         "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
         "pairingRequests" => json!({"requests": hub.pairing_requests.json()}),

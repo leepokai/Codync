@@ -92,7 +92,7 @@ import com.kyant.shapes.RoundedRectangle
         }
     }
     CodyncDialog("Sign out of ${current?.email ?: "this account"}?", confirmSignOut, { confirmSignOut = false },
-        "This phone forgets the account's computers. Your bots stay on them.") {
+        "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.") {
         listOf(DialogAction("Sign out", destructive = true, action = store::signOut))
     }
     CodyncDialog("Delete your Codync account?", confirmDelete, { confirmDelete = false },

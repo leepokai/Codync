@@ -186,16 +186,15 @@ final class AppStore {
     /// Settings → Start over: signs out of every account and forgets every computer, key and cache
     /// on this iPhone, then shows the welcome again. The computers keep their bots and chats.
     func startOver() async {
-        let userIDs = account.accounts.map(\.id)
-        // The open account's computers and cloud drop this iPhone, as signing out does; its keys go regardless.
+        // The open account's computers and cloud drop this iPhone; every account's keys go regardless, those signed
+        // out here too (signing out keeps them).
         await handBack(cloud: cloud)
         await account.signOutAll()
         accounts.retire()
         PushRegistrar.shared.deactivate()
         LiveActivities.shared.endAll()
-        for id in userIDs { SharedStore.Context(accountID: id).erase() }
+        SharedStore.eraseAll()
         let storage = SharedStore.Context(accountID: nil)
-        storage.erase()
         storage.bots = []
         SharedStore.activeAccountID = nil
         UserDefaults.standard.set(false, forKey: "onboardingCompleted")
@@ -295,19 +294,8 @@ final class AppStore {
             guard let store = accounts?.store(for: ref.computerId) else { return }
             LiveActivities.shared.sent(ref, bot: bot, progress: progress, store: store)
         }
-        if let cloud {
-            // Signed in: make this iPhone known to the account, then list its computers.
-            Task { [weak accounts] in
-                do {
-                    try await cloud.registerDevice(name: UIDevice.current.name, platform: "ios")
-                } catch let error as CloudError where !error.isTransient {
-                    accounts?.lastError = error.localizedDescription
-                } catch {
-                    // Transient (network, busy cloud, token not ready): the next launch registers again.
-                }
-                await accounts?.refreshCloud()
-            }
-        }
+        // Signed in: make this iPhone known to the account, then list its computers.
+        if cloud != nil { Task { [weak accounts] in await accounts?.refreshCloud() } }
         return (accounts, cloud)
     }
 

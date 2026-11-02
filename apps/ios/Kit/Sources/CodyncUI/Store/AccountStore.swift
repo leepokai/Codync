@@ -1,6 +1,7 @@
 import CodyncKit
 import Foundation
 import Observation
+import UIKit
 import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Account")
@@ -212,6 +213,9 @@ public final class AccountStore {
         cloudListVersion += 1
         let version = cloudListVersion
         do {
+            // Every refresh, as on Android: signing back in clears the account's signed-out mark, or its computers
+            // drop this iPhone's push tickets again on their next state pull.
+            try await cloud.registerDevice(name: UIDevice.current.name, platform: "ios")
             let list = try await cloud.computers()
             guard !retired, version == cloudListVersion else { return }
             if list != cloudComputers { Motion.animate { cloudComputers = list } }

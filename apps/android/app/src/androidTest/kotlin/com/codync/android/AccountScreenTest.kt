@@ -108,7 +108,7 @@ class AccountScreenTest {
         compose.setContent { Hosted { AccountSwitcherView(fixture(), viewModel()) {} } }
         compose.onNodeWithText("Sign out").performClick()
         compose.onNodeWithText("Sign out of ${first.email}?").assertIsDisplayed()
-        compose.onNodeWithText("This phone forgets the account's computers. Your bots stay on them.").assertIsDisplayed()
+        compose.onNodeWithText("This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Sign out of ${first.email}?").assertDoesNotExist()
         compose.onNodeWithText(first.email).assertIsDisplayed()

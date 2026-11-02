@@ -85,4 +85,23 @@ import Testing
         #expect(try Data(contentsOf: cache) == Data("unsent".utf8), "the only copy of those messages isn't deleted")
         #expect(local.computers.isEmpty && !DeviceIdentity.exists(context: local))
     }
+
+    @Test func startingOverErasesAccountsSignedOutHereToo() throws {
+        let (local, account, suite) = contexts()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let signedOutHere = SharedStore.Context(accountID: "user_\(UUID().uuidString)", suite: suite)
+        for context in [local, account, signedOutHere] {
+            _ = try DeviceIdentity.load(context: context)
+            context.computers = [v.computer]
+        }
+        let cache = URL.cachesDirectory.appending(path: "codync-mirror-tests-\(signedOutHere.id)-\(v.computer.id).json")
+        try Data("unsent".utf8).write(to: cache)
+
+        SharedStore.eraseAll(suite: suite)
+
+        for context in [local, account, signedOutHere] {
+            #expect(context.computers.isEmpty && !DeviceIdentity.exists(context: context))
+        }
+        #expect(!FileManager.default.fileExists(atPath: cache.path()))
+    }
 }

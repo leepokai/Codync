@@ -61,6 +61,7 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/devices$/, api.registerDevice],
   ["GET", /^\/v1\/devices$/, api.listDevices],
   ["POST", /^\/v1\/devices\/certificate$/, api.deviceCertificate],
+  ["POST", /^\/v1\/devices\/sign-out$/, api.signOutDevice],
   ["DELETE", new RegExp(`^/v1/devices/${ID}$`), api.revokeDevice],
   ["POST", /^\/v1\/claims$/, api.createClaim],
   ["POST", new RegExp(`^/v1/claims/${ID}/complete$`), api.completeClaim],

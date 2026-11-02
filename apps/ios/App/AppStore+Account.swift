@@ -10,8 +10,9 @@ extension AppStore {
         Analytics.shared.capture(.signedOutPairingsMoved(computers: adoption.computers, keys: adoption.keys))
     }
 
-    /// Signing out: Clerk first, so a sign-out that fails keeps the key. Then this iPhone's key goes back (the
-    /// computers it reaches and the account drop it) and the account is forgotten here (spec §3.2).
+    /// Signing out: Clerk first, so a sign-out that fails changes nothing. This iPhone keeps the account's key,
+    /// computers and drafts, so signing back in needs no scan or check; only its alerts stop: the computers it reaches
+    /// drop them now, the others when the account tells them (connections.md, accounts on a phone).
     func signOut() async {
         guard let userID = account.userID else { return }
         // Sent first so it still counts toward the account.
@@ -20,12 +21,14 @@ extension AppStore {
         let cloud = await cloud?.pinningToken()
         leaving = true
         await account.signOut()
-        if hasLeft(userID) { await handBack(cloud: cloud) }
-        forget(userID)
+        if hasLeft(userID) {
+            await tell(computers: { try await $0.unregisterDevice() }, cloud: cloud, account: { try await $0.signOutThisDevice() })
+        }
+        finishLeaving()
     }
 
     /// Delete account: the user goes in Clerk first, and nothing changes when that fails. Then this iPhone leaves the
-    /// computers it reaches and forgets the account, as signing out does. The cloud removes the account's devices,
+    /// computers it reaches and forgets the account. The cloud removes the account's devices,
     /// grants and computers itself, on Clerk's `user.deleted`.
     func deleteAccount() async {
         guard let userID = account.userID else { return }
@@ -39,14 +42,18 @@ extension AppStore {
         forget(userID)
     }
 
-    /// After leaving `userID`: the switch held off while `leaving` runs (a retiring store saves its cache one last
-    /// time), then its device keys, computers and caches go, unless it's still signed in here.
+    /// After deleting `userID`: as `finishLeaving()`, then its device keys, computers and caches go, unless it's
+    /// still signed in here.
     private func forget(_ userID: String) {
+        finishLeaving()
+        if hasLeft(userID) { SharedStore.Context(accountID: userID).erase() }
+    }
+
+    /// The switch held off while `leaving` runs (a retiring store saves its cache one last time); the last account
+    /// gone, the sign-in screen takes over.
+    private func finishLeaving() {
         leaving = false
         switchAccount(to: account.userID)
-        guard hasLeft(userID) else { return }
-        SharedStore.Context(accountID: userID).erase()
-        // The last account gone: the sign-in screen takes over.
         if !account.isSignedIn { account.showSwitcher = false }
     }
 
@@ -54,15 +61,21 @@ extension AppStore {
         account.userID != userID && !account.accounts.contains(where: { $0.id == userID })
     }
 
-    /// This iPhone's key goes back: each computer it's connected to removes it (older hosts only stop its alerts),
-    /// and with `cloud` the account revokes it. Best effort, a few seconds at most: leaving never waits on an
-    /// unreachable computer or cloud, and the key is erased right after.
+    /// This iPhone's key goes back (deleting the account, starting over): each computer it's connected to removes it
+    /// (older hosts only stop its alerts), and with `cloud` the account revokes it. The key is erased right after.
     func handBack(cloud: CloudClient?) async {
+        await tell(computers: { try await $0.forgetDevice() }, cloud: cloud, account: { try await $0.revokeThisDevice() })
+    }
+
+    /// `computers` on each computer this iPhone is connected to, and `account` on `cloud`, at once. Best effort, a
+    /// few seconds at most: leaving never waits on an unreachable computer or cloud.
+    private func tell(computers: @escaping @Sendable (HostClient) async throws -> Void, cloud: CloudClient?,
+                      account: @escaping @Sendable (CloudClient) async throws -> Void) async {
         let clients = accounts.computers.compactMap { accounts.store(for: $0.id) }
             .filter { $0.connection == .online }.compactMap(\.client)
         await withTaskGroup(of: Void.self) { group in
-            for client in clients { group.addTask { await Self.bestEffort(.seconds(3)) { try await client.forgetDevice() } } }
-            if let cloud { group.addTask { await Self.bestEffort(.seconds(5)) { try await cloud.revokeThisDevice() } } }
+            for client in clients { group.addTask { await Self.bestEffort(.seconds(3)) { try await computers(client) } } }
+            if let cloud { group.addTask { await Self.bestEffort(.seconds(5)) { try await account(cloud) } } }
         }
     }
 

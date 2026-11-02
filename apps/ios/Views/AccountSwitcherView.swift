@@ -96,7 +96,7 @@ struct AccountSwitcherView: View {
         .onChange(of: account.userID) { _, _ in withAnimation(Motion.layout) { addingAccount = false } }
         .codyncSheet(isPresented: $pairing) { PairingView(inModal: true) }
         .codyncDialog("Sign out of \(account.email ?? "this account")?", isPresented: $confirmSignOut,
-                      message: "This iPhone forgets the account's computers. Your bots stay on them.") {
+                      message: "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.") {
             [DialogAction("Sign out", destructive: true) { Task { await app.signOut() } }]
         }
         .codyncDialog("Delete your Codync account?", isPresented: $confirmDelete,

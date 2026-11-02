@@ -147,7 +147,15 @@ class CloudClient private constructor(base: String, private val identity: Device
         }
     }
 
-    /** Signing out: this device leaves the account, and with it every grant and pending request (iOS `revokeThisDevice`). */
+    /**
+     * Signing out: this device keeps its key and access, but the account's computers stop its alerts until it registers
+     * again, signing back in (iOS `signOutThisDevice`).
+     */
+    suspend fun signOutThisDevice() {
+        request("POST", listOf("v1", "devices", "sign-out"), buildJsonObject { }, signed = true)
+    }
+
+    /** Starting over: this device leaves the account, and with it every grant and pending request (iOS `revokeThisDevice`). */
     suspend fun revokeThisDevice() {
         request("DELETE", listOf("v1", "devices", deviceId() ?: return))
     }

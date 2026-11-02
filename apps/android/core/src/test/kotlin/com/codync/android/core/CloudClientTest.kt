@@ -219,4 +219,20 @@ class CloudClientTest {
             assertEquals(null, client.pinningToken())
         } finally { server.shutdown() }
     }
+
+    @Test fun `signing out tells the account this device signed out, on the token taken before`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("{}"))
+            var signedIn = true
+            val client = CloudClient(server.url("/").toString(), identity, { check(signedIn); "session" }, OkHttpClient(), 1, Unit)
+            val pinned = requireNotNull(client.pinningToken())
+            signedIn = false
+            pinned.signOutThisDevice()
+            val request = server.takeRequest()
+            assertEquals(listOf("POST", "/v1/devices/sign-out", "Bearer session"), listOf(request.method, request.path, request.getHeader("Authorization")))
+            assertEquals(true, request.getHeader("Codync-Sig") != null)
+        } finally { server.shutdown() }
+    }
 }

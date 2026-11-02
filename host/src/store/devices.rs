@@ -180,7 +180,7 @@ impl Store {
         Ok(())
     }
 
-    /// Stops alerts to a device (its notification switch is off); Live Activity tickets stay.
+    /// Stops alerts to a device (its notification switch is off, or it signed out); Live Activity tickets stay.
     pub fn remove_push_tickets(&self, device_key: &str) -> Result<()> {
         let c = self.db.locked();
         c.execute("DELETE FROM push_tickets WHERE device_key = ?1", [device_key])?;

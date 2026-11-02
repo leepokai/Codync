@@ -71,7 +71,14 @@ public struct CloudClient: Sendable {
         return res.devices
     }
 
-    /// Signing out: this device leaves the account, and with it every grant and pending request.
+    /// Signing out: this device keeps its key and access, but the account's computers stop its alerts until it
+    /// registers again (signing back in).
+    public func signOutThisDevice() async throws {
+        guard identity != nil else { return }
+        try await send("POST", "v1/devices/sign-out", signed: true)
+    }
+
+    /// Start over: this device leaves the account, and with it every grant and pending request.
     public func revokeThisDevice() async throws {
         guard let device = try await thisDevice() else { return }
         try await send("DELETE", "v1/devices/\(device.deviceId)")

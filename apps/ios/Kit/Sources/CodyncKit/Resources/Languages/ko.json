@@ -295,7 +295,6 @@
   "Text size": "텍스트 크기",
   "This Mac": "이 Mac",
   "This computer": "이 컴퓨터",
-  "This iPhone forgets the account's computers. Your bots stay on them.": "이 iPhone는 계정의 컴퓨터를 잊어버립니다. 당신의 봇은 그 위에 머물러 있습니다.",
   "Through Cloudflare": "Cloudflare를 통해",
   "Auto: Wi-Fi or Tailscale, then Private relay ({host})": "자동: Wi-Fi 또는 Tailscale, 프라이빗 릴레이({host})",
   "Private relay ({host}), then Wi-Fi or Tailscale": "프라이빗 릴레이({host}), 그 다음 Wi-Fi 또는 Tailscale",
@@ -1510,5 +1509,7 @@
   "This computer is in another account": "이 컴퓨터는 다른 계정에 있습니다",
   "This computer isn't in an account: its cloud is off": "이 컴퓨터는 어떤 계정에도 없습니다: 클라우드가 꺼져 있습니다",
   "This computer isn't in an account: it uses a private relay": "이 컴퓨터는 어떤 계정에도 없습니다: 개인 릴레이를 사용합니다",
-  "This computer isn't in your account": "이 컴퓨터는 내 계정에 없습니다"
+  "This computer isn't in your account": "이 컴퓨터는 내 계정에 없습니다",
+  "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "이 iPhone은 계정 알림을 더 이상 받지 않지만 컴퓨터는 그대로 남아 있어, 다시 로그인하면 스캔할 필요가 없습니다. 컴퓨터에서 제거하려면 대신 설정에서 '처음부터 시작'을 사용하세요.",
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "이 휴대폰은 계정 알림을 더 이상 받지 않지만 컴퓨터는 그대로 남아 있어, 다시 로그인하면 스캔할 필요가 없습니다. 컴퓨터에서 제거하려면 대신 설정에서 '처음부터 시작'을 사용하세요."
 }

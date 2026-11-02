@@ -34,10 +34,15 @@ public struct DeviceIdentity: Sendable {
         return DeviceIdentity(signing: signing, push: push)
     }
 
-    /// Signing out or removing an account: hosts and the cloud can no longer tie anything to it.
+    /// Deleting an account: hosts and the cloud can no longer tie anything to it.
     public static func delete(context: SharedStore.Context) {
         Keychain.delete(service: deviceService, account: context.id)
         Keychain.delete(service: pushService, account: context.id)
+    }
+
+    /// Start over: every account context's keys.
+    static func deleteAll() {
+        for service in [deviceService, pushService] { Keychain.deleteAll(service: service) }
     }
 
     /// Whether `context` has a device key yet (`load` creates one).
@@ -177,6 +182,16 @@ enum Keychain {
         if memory.withLock({ $0 != nil }) { memory.withLock { $0?["\(service)/\(account)"] = nil }; return }
         #endif
         SecItemDelete(query(service: service, account: account) as CFDictionary)
+    }
+
+    /// Every key of `service`, whichever account context holds it.
+    static func deleteAll(service: String) {
+        #if DEBUG
+        if memory.withLock({ $0 != nil }) { memory.withLock { $0 = $0?.filter { !$0.key.hasPrefix("\(service)/") } }; return }
+        #endif
+        var q = query(service: service, account: "")
+        q.removeValue(forKey: kSecAttrAccount)
+        SecItemDelete(q as CFDictionary)
     }
 }
 

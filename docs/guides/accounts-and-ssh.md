@@ -212,9 +212,11 @@ iPhone (`SharedStore.Context`). Computers paired with a code while signed out
 with the device and push keys when that account's context is new on the phone,
 otherwise as computers to pair again. Each account context gets its own
 `AccountStore`, retired when changing accounts; once Clerk has signed out,
-signing out hands the device key back (`forgetDevice` on reachable computers,
-`DELETE /v1/devices/{id}` on a token taken before), then erases that account's
-computers, device and push keys and caches from the iPhone. **Delete account** deletes the Clerk user first, then does the same.
+signing out keeps the account's device key, computers and caches and only stops
+its alerts (`unregisterDevice` on reachable computers, `POST /v1/devices/sign-out`
+on a token taken before). **Start over** and **Delete account** (which deletes the
+Clerk user first) hand the key back (`forgetDevice`, the cloud revokes the device)
+and erase the data.
 Signed in, the Computers screen also lists the account's computers from the cloud;
 asking one for access shows the 6-digit code to compare on the computer.
 

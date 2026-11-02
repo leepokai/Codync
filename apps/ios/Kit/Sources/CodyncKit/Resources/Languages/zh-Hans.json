@@ -295,7 +295,6 @@
   "Text size": "文字大小",
   "This Mac": "这台 Mac",
   "This computer": "这台电脑",
-  "This iPhone forgets the account's computers. Your bots stay on them.": "这台 iPhone 会忘掉账户里的电脑。Bot 仍留在那些电脑上。",
   "Through Cloudflare": "经 Cloudflare",
   "Auto: Wi-Fi or Tailscale, then Private relay ({host})": "自动：先 Wi-Fi 或 Tailscale，再私人中继（{host}）",
   "Private relay ({host}), then Wi-Fi or Tailscale": "先私人中继（{host}），再 Wi-Fi 或 Tailscale",
@@ -1510,5 +1509,7 @@
   "This computer is in another account": "这台电脑在另一个账户里",
   "This computer isn't in an account: its cloud is off": "这台电脑不在任何账户里：它的云端已关闭",
   "This computer isn't in an account: it uses a private relay": "这台电脑不在任何账户里：它用私人中继",
-  "This computer isn't in your account": "这台电脑不在你的账户里"
+  "This computer isn't in your account": "这台电脑不在你的账户里",
+  "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "这台 iPhone 不再收到这个账户的通知，但会保留它的电脑，重新登录后不用再扫码。要把它从那些电脑上移除，请改用设置里的“重新开始”。",
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "这台手机不再收到这个账户的通知，但会保留它的电脑，重新登录后不用再扫码。要把它从那些电脑上移除，请改用设置里的“重新开始”。"
 }

@@ -117,7 +117,7 @@ class AppStore internal constructor(
     }
 
     /**
-     * Leaving the account: the computer drops this device (`forgetDevice`; one older than that only stops its alerts).
+     * Deleting the account or starting over: the computer drops this device (`forgetDevice`; one older than that only stops its alerts).
      * Best effort, three seconds at most: the key is erased right after, so a row left behind can't be used.
      */
     internal suspend fun forgetDevice() {

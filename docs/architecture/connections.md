@@ -40,7 +40,7 @@ The terminal UI and the CLI are the computer's own console, not apps in this sen
 3. **One account per link.** A device may use a computer only when both are in the same account.
 4. **A computer is in at most one account.** Changing accounts means leaving one and joining the other.
 5. **Manage comes from the OS account.** Whoever sits at a computer can read `~/.codync/token`; Codync doesn't pretend to stop them. A managed computer keeps every setting of its own.
-6. **Signing out affects only that app.** It hands its key back (cloud grant revoked, push stopped, the device removed on computers it can reach) and erases that account's data on the device. The computer stays in its account; leaving takes **Remove from account**.
+6. **Signing out affects only that app.** A phone keeps its key, computers and drafts and only stops getting alerts, so signing back in needs no scan or check; **Start over** and **Delete account** hand the key back and erase the data ([accounts on a phone](#accounts-on-a-phone)). The computer stays in its account; leaving takes **Remove from account**.
 
 ## Pairing a phone
 
@@ -62,18 +62,19 @@ Decided 2026-11-02. A computer is in one account at most; a phone may know sever
 | What happens | On the phone | Computers and cloud |
 | --- | --- | --- |
 | The Clerk session ends on its own (expired, revoked elsewhere) | The sign-in screen; the account's key, computers and drafts stay. Signing in to the same account connects as before: no scan, no 6-digit check | Unchanged |
-| **Sign out** | The key is handed back and the account's data erased | The computers it reaches drop the phone (`forgetDevice`), the cloud revokes the device, push stops |
-| Using another account | Only after signing out: both Clerk instances stay single-session (`single_session_mode`) | As signing out. Back on the first account, each computer takes a scan (same account, no question) or **Ask for access** with the 6-digit check |
+| **Sign out** | The key, computers and drafts stay; signing back in to the same account connects as before, no scan, no check | The phone stays a device. Its alerts stop: the computers it reaches drop its push tickets (`unregisterDevice`), the account marks it signed out (`POST /v1/devices/sign-out`) and the other computers drop them on their next state pull (`signedOut`). Registering again at sign-in clears the mark |
+| Using another account | Only after signing out: both Clerk instances stay single-session (`single_session_mode`) | As signing out: the first account's computers keep the phone, without alerts, until it comes back |
+| **Start over**, **Delete account** | Start over erases every account's keys and data, accounts signed out here included; Delete account erases that account's | The open account's computers drop the phone (`forgetDevice`), the cloud revokes it (Delete account: Clerk's webhook does) |
 
-Signing out hands the key back because it is the phone's one "this phone is done" button (selling, lending, someone else's account), and a key left behind keeps the computers pushing to it. Considered and not taken: a sign-out that keeps the key and only stops push, so the same account comes back without a check. The computers would keep listing a phone that left, and its key would stay on a phone that may have changed hands.
+Signing out is the everyday "not now", so it keeps the key (decided 2026-11-02). Handing the key back made a sign-out and sign-in cost every computer a new scan or a 6-digit check, which switching accounts in single-session mode turned into a regular cost. The price: a computer keeps listing a phone that signed out, until someone removes it there, and the key stays on the phone. **Start over** is the "this phone is done" button (selling, lending), and a lost phone is removed from the computer or another device. Start over hands back only the open account's key: accounts signed out here lose theirs on the phone only, and their computers keep listing it, so the sign-out dialog says to start over instead. A computer that never hears of the sign-out keeps pushing to the phone until it signs back in: one offline at the time with the Codync cloud off or on a private relay, a host older than 2.36.0, or any computer when the phone's call to the cloud failed (it isn't retried). The iPhone shows those alerts with the generic text only (it opens only the selected account's), Android drops them.
 
-**Multi-session stays off.** Turned on in Clerk, a phone would keep several accounts and switch without handing a key back. The apps already show the switcher and **Add account** then (iOS `authConfig.singleSessionMode`, Android `multiSessionModeIsEnabledFlow`), but no instance has run it. Before turning it on:
+**Multi-session stays off.** Turned on in Clerk, a phone would keep several accounts signed in and switch between them without signing out. The apps already show the switcher and **Add account** then (iOS `authConfig.singleSessionMode`, Android `multiSessionModeIsEnabledFlow`), but no instance has run it. Before turning it on:
 
-- **Only the selected account's notifications show, the same on iOS and Android.** Signed in to B, nothing from A's computers. Android already drops them (`PushService.receive`: `ctx` isn't the active account). iOS shows them, text included: the Notification Service Extension opens any account's push with that account's key, and an extension can't drop a visible notification without Apple's filtering entitlement (`com.apple.developer.usernotifications.filtering`). Get the entitlement and drop it there when `ctx` isn't the active context. Unregistering the old account's push tickets at each switch (`unregisterDevice`) would miss computers offline at that moment.
+- **Only the selected account's notifications show, the same on iOS and Android.** Signed in to B, nothing from A's computers. Android already drops them (`PushService.receive`: `ctx` isn't the active account). iOS shows them with the generic text: the Notification Service Extension opens only the active context's push (`ctx`), and an extension can't drop a visible notification without Apple's filtering entitlement (`com.apple.developer.usernotifications.filtering`). Get the entitlement and drop it there when `ctx` isn't the active context. Unregistering the old account's push tickets at each switch (`unregisterDevice`) would miss computers offline at that moment.
 - Tapping another account's notification keeps doing nothing (iOS checks `ctx` in `userNotificationCenter(_:didReceive:)`); none should show anyway.
 - End to end with two accounts on the iOS Simulator and the Android emulator: add one, switch, switch back without a check, notifications only from the selected one.
 
-**Open:** after a session ends on its own no account is selected, so Android drops that account's notifications while iOS still shows them with their text.
+**Open:** after a session ends on its own no account is selected, so Android drops that account's notifications while iOS still shows them, with the generic text.
 
 ## When the app and its computer disagree
 
@@ -156,7 +157,7 @@ Phases, file-level steps, tests and risks: [require sign-in](../plans/require-si
 | Order | Change | Status |
 | --- | --- | --- |
 | 1 | Delete the account from inside the apps (App Store 5.1.1(v), Google Play). The cloud already cleans up on Clerk's `user.deleted` | Built (2.35.0) |
-| 2 | Sign-out hands the key back (iPhone, Android; the desktop revokes its cloud device) | Built (2.35.0) |
+| 2 | Sign-out stops the phone's alerts and keeps its key (the desktop revokes its cloud device); Start over and Delete account hand it back | Built (2.36.0) |
 | 3 | Sign-in required in every app; the phone's signed-out pairings move into the account on first sign-in (with their device and push keys when the account context is new on that phone, otherwise a list to scan again). Builds without Clerk keep the signed-out context | Built (2.35.0) |
 | 4 | Same-account QR: the cloud-signed account proof, the host recording each device's account, joining an unowned computer on first scan with a confirmation, short codes, the refusal message | Built (2.36.0) |
 | 5 | Changing accounts drops every old-account device; the move dialog's text says so | Built (2.36.0); joining a first account keeps the phones paired before 2.36.0 |

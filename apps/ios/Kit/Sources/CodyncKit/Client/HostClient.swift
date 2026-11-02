@@ -347,13 +347,13 @@ public extension HostClient {
         let _: Empty = try await call("registerDevice", Body(ticket: ticket, relay: relay, name: name, pushKey: pushKey, ctx: ctx))
     }
 
-    /// Stops this device's alerts; used when notifications are switched off in the app.
+    /// Stops this device's alerts: notifications switched off in the app, or the phone signed out.
     func unregisterDevice() async throws {
         let _: Empty = try await call("unregisterDevice")
     }
 
-    /// Removes this device from the computer (signing out): its access and alerts go. A computer
-    /// older than `forgetDevice` only stops the alerts; the key is erased right after either way.
+    /// Removes this device from the computer (deleting the account, starting over): its access and alerts go.
+    /// A computer older than `forgetDevice` only stops the alerts; the key is erased right after either way.
     func forgetDevice() async throws {
         do {
             let _: Empty = try await call("forgetDevice")

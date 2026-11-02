@@ -2,6 +2,8 @@ import { account } from './account'
 import type { CustomIcons } from '@shared/custom-icons'
 import { Observable } from '../lib/observable'
 import type { BotStore } from './bot-store'
+import { trNow } from '../lib/l10n.ts'
+
 
 export class IconEditor extends Observable {
   busy = false
@@ -18,7 +20,7 @@ export class IconEditor extends Observable {
       if ((change.file || change.url) && !account.isSignedIn) throw new Error('Sign in to use custom images.')
       const epoch = this.store.iconsEpoch
       const client = this.store.client
-      if (!client || this.store.connection.kind !== 'online') throw new Error('Connect to your computer to change its icons.')
+      if (!client || this.store.connection.kind !== 'online') throw new Error(trNow('Connect to your computer to change its icons.'))
       const { file, ...body } = change
       const data = file ? await readImage(file) : undefined
       const result = await client.call<{ icons: CustomIcons; iconsRevision: number }>('setIcon', { target: this.target, ...body, data }, 60_000)

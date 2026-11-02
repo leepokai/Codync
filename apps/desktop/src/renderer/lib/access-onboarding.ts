@@ -1,5 +1,7 @@
 import type { ComputerAccessStep } from '../../shared/computer-access'
 import type { ScreenState } from '../../shared/models'
+import { trNow } from './l10n.ts'
+
 
 export type AccessPage = 'helper' | 'capture' | 'input' | 'portal' | 'control' | 'star'
 
@@ -17,7 +19,7 @@ export function accessPageReady(page: AccessPage, step: ComputerAccessStep, scre
 
 /** Only list permissions that can actually be granted on this desktop. */
 export function accessPages(platform: string): { id: AccessPage; label: string }[] {
-  if (platform === 'win32') return [{ id: 'control', label: 'Computer control' }, { id: 'star', label: 'GitHub Star' }]
+  if (platform === 'win32') return [{ id: 'control', label: trNow('Computer control') }, { id: 'star', label: trNow('GitHub Star') }]
   return [
     { id: 'helper', label: 'Codync Screen' },
     ...(platform === 'darwin'

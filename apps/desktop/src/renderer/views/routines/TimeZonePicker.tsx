@@ -4,10 +4,12 @@ import { Icon } from '../../components/Icon'
 import { Text } from '../../components/Text'
 import { AnchoredPanel } from '../bots/parts'
 import { currentZone, matchZones, timeZoneOptions, zoneLabel, zoneOffset } from './time-zones'
+import { useTr } from '../../lib/use-language'
 import './routines.css'
 
 /** The routine's time zone: a button that opens every zone, filtered as you type. */
 export function TimeZonePicker({ zone: saved, onChange }: { zone: string; onChange: (zone: string) => void }) {
+  const tr = useTr()
   const zone = currentZone(saved)
   const anchor = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -16,7 +18,7 @@ export function TimeZonePicker({ zone: saved, onChange }: { zone: string; onChan
       <button
         ref={anchor}
         className="schedule-input zone-button"
-        aria-label={`Time zone, ${zone}`}
+        aria-label={tr('Time zone, {zone}').replaceAll('{zone}', zone)}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(true)}
@@ -40,6 +42,7 @@ export function TimeZonePicker({ zone: saved, onChange }: { zone: string; onChan
 
 /** The search box over the matching zones; ↑/↓ move, Return picks. */
 function ZoneList({ zone, pick }: { zone: string; pick: (zone: string) => void }) {
+  const tr = useTr()
   const zones = useMemo(() => timeZoneOptions(), [])
   const [query, setQuery] = useState('')
   const matches = useMemo(() => matchZones(zones, query), [zones, query])
@@ -67,7 +70,7 @@ function ZoneList({ zone, pick }: { zone: string; pick: (zone: string) => void }
     >
       <SearchField
         value={query}
-        prompt="Search time zones"
+        prompt={tr('Search time zones')}
         inputRef={input}
         onChange={(q) => {
           setQuery(q)
@@ -92,7 +95,7 @@ function ZoneList({ zone, pick }: { zone: string; pick: (zone: string) => void }
             </span>
           </button>
         ))}
-        {matches.length === 0 ? <Text size="callout" tone="secondary" className="zone-empty">No time zone matches “{query}”.</Text> : null}
+        {matches.length === 0 ? <Text size="callout" tone="secondary" className="zone-empty">{tr('No time zone matches “{query}”.').replaceAll('{query}', query)}</Text> : null}
       </div>
     </div>
   )

@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from 'react'
+import { trNow } from './l10n.ts'
+
 
 /**
  * A media query read from one MediaQueryList and listened to on another: Chromium shares a list's
@@ -87,17 +89,17 @@ export interface Swatch {
 }
 
 export const AVATAR_COLORS: Swatch[] = [
-  { id: 'black', label: 'Black', hex: '#2B2B2B' },
-  { id: 'brown', label: 'Brown', hex: '#936439' },
-  { id: 'red', label: 'Red', hex: '#FF263C' },
-  { id: 'orange', label: 'Orange', hex: '#FF6700' },
-  { id: 'yellow', label: 'Yellow', hex: '#FF9800' },
-  { id: 'green', label: 'Green', hex: '#00C972' },
-  { id: 'cyan', label: 'Cyan', hex: '#00BCA6' },
-  { id: 'blue', label: 'Blue', hex: '#1084FE' },
-  { id: 'violet', label: 'Violet', hex: '#9159FE' },
-  { id: 'magenta', label: 'Magenta', hex: '#FF309B' },
-  { id: 'gray', label: 'Gray', hex: '#777777' },
+  { id: 'black', label: trNow('Black'), hex: '#2B2B2B' },
+  { id: 'brown', label: trNow('Brown'), hex: '#936439' },
+  { id: 'red', label: trNow('Red'), hex: '#FF263C' },
+  { id: 'orange', label: trNow('Orange'), hex: '#FF6700' },
+  { id: 'yellow', label: trNow('Yellow'), hex: '#FF9800' },
+  { id: 'green', label: trNow('Green'), hex: '#00C972' },
+  { id: 'cyan', label: trNow('Cyan'), hex: '#00BCA6' },
+  { id: 'blue', label: trNow('Blue'), hex: '#1084FE' },
+  { id: 'violet', label: trNow('Violet'), hex: '#9159FE' },
+  { id: 'magenta', label: trNow('Magenta'), hex: '#FF309B' },
+  { id: 'gray', label: trNow('Gray'), hex: '#777777' },
 ]
 
 export const AVATAR_SHAPES = ['blob', 'pebble', 'squircle', 'tablet', 'wedge', 'hex', 'cloud', 'teardrop']

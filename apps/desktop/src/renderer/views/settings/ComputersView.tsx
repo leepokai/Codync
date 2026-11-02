@@ -93,7 +93,7 @@ export function ComputersView() {
         message={removingOlder
           ? tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removing.name)
           // Offline may only mean asleep: removal unclaims it, and its own app won't add it back by itself.
-          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', removing?.name ?? 'a computer')}`}
+          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', removing?.name ?? tr('a computer'))}`}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removing.computerId) }] : []}
         onClose={() => setRemoving(null)}
       />
@@ -365,9 +365,9 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
   const save = async () => {
     const isInt = (s: string) => /^-?\d+$/.test(s)
     const portText = port.trim()
-    if (portText && !isInt(portText)) return setProblem('The SSH port must be a number.')
+    if (portText && !isInt(portText)) return setProblem(tr('The SSH port must be a number.'))
     const remote = remotePort.trim()
-    if (!isInt(remote)) return setProblem('The Codync port must be a number.')
+    if (!isInt(remote)) return setProblem(tr('The Codync port must be a number.'))
     const u = user.trim()
     const p: SSHProfile = {
       ...profile,
@@ -392,15 +392,15 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
   return (
     // Return in a field saves (the default action).
     <VStack className="settings-ssh-editor" onKeyDown={(e) => e.key === 'Enter' && e.target instanceof HTMLInputElement && void save()}>
-      <ModalHeader icon="terminal" title={isNew ? 'Add SSH computer' : 'Edit SSH computer'} trailing={<IconButton title={isNew ? 'Add' : 'Save'} icon="checkmark" onClick={() => void save()} />} />
+      <ModalHeader icon="terminal" title={tr(isNew ? 'Add SSH computer' : 'Edit SSH computer')} trailing={<IconButton title={tr(isNew ? 'Add' : 'Save')} icon="checkmark" onClick={() => void save()} />} />
       <VStack gap={16} className="settings-ssh-editor-body">
         <CardSection>
-          {field('Name', profile.name, (name) => setProfile({ ...profile, name }), 'Optional')}
-          {field('Host', profile.host, (host) => setProfile({ ...profile, host }), 'SSH alias or hostname')}
-          {field('User', user, setUser, 'From SSH config')}
-          {field('SSH port', port, setPort, 'From SSH config')}
+          {field('Name', profile.name, (name) => setProfile({ ...profile, name }), tr('Optional'))}
+          {field(tr('Host'), profile.host, (host) => setProfile({ ...profile, host }), tr('SSH alias or hostname'))}
+          {field(tr('User'), user, setUser, tr('From SSH config'))}
+          {field(tr('SSH port'), port, setPort, tr('From SSH config'))}
           <div className="settings-row">
-            <span>Key</span>
+            <span>{tr('Key')}</span>
             <Spacer />
             <Text tone="secondary">{profile.identityFile?.split(/[\\/]/).pop() ?? tr(`ssh-agent / SSH config`)}</Text>
             <IconButton
@@ -414,7 +414,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
               </HStack>
             ) : null}
           </div>
-          {field('Codync port', remotePort, setRemotePort, '')}
+          {field(tr('Codync port'), remotePort, setRemotePort, '')}
         </CardSection>
         <Text size="caption" tone="secondary">
           {tr(`Codync opens an SSH tunnel to codync-host on that computer's loopback. It uses your SSH config and ssh-agent; agent forwarding stays off.`)}

@@ -19,6 +19,8 @@ import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
+import { trNow } from '../lib/l10n.ts'
+
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -115,7 +117,7 @@ export class BotMirror extends Observable {
     super()
     this.computer = computer
     this.composerDrafts = new ComposerDrafts(localStorage, `codync-drafts-v1-${JSON.stringify([contextId, computer.id])}`,
-      () => this.setError("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it."))
+      () => this.setError(trNow("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it.")))
     this.loadCache()
   }
 
@@ -214,7 +216,7 @@ export class BotMirror extends Observable {
 
   /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
   authorName(id: string | null | undefined, fallback?: string) {
-    return (id && this.bots.get(id)?.name) || fallback || 'A deleted bot'
+    return (id && this.bots.get(id)?.name) || fallback || trNow('A deleted bot')
   }
 
   get connectionLabel() {
@@ -339,6 +341,6 @@ export function builtInBackendName(id: string) {
     case 'gemini':
       return 'Gemini CLI'
     default:
-      return 'Custom agent'
+      return trNow('Custom agent')
   }
 }

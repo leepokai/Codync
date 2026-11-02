@@ -204,7 +204,8 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
 }
 
 export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: () => void }) {
-  const text = entry.data.text ?? ''
+  const tr = useTr()
+  const text = tr(entry.data.text ?? '')
   if (entry.data.callSeconds !== undefined) {
     const s = entry.data.callSeconds
     return (

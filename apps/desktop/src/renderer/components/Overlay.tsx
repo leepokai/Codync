@@ -249,6 +249,7 @@ export interface ReactionPick {
 }
 
 export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick; dismiss?: () => void; size?: number }) {
+  const tr = useTr()
   return (
     <HStack align="stretch">
       {pick.emoji.map((emoji) => {
@@ -258,8 +259,8 @@ export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick
             key={emoji}
             className={`reaction-button ${chosen ? 'chosen' : ''}`}
             style={{ width: size, height: size, borderRadius: size * 0.28 }}
-            title={chosen ? `Remove ${emoji}` : `React ${emoji}`}
-            aria-label={chosen ? `Remove reaction ${emoji}` : `React ${emoji}`}
+            title={chosen ? tr('Remove {emoji}').replaceAll('{emoji}', emoji) : tr('React {emoji}').replaceAll('{emoji}', emoji)}
+            aria-label={chosen ? tr('Remove reaction {emoji}').replaceAll('{emoji}', emoji) : tr('React {emoji}').replaceAll('{emoji}', emoji)}
             onClick={() => {
               dismiss?.()
               pick.toggle(emoji)

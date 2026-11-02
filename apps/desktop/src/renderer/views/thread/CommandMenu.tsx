@@ -53,7 +53,7 @@ export function CommandMenu({ commands, index, hover, pick }: {
   if (!mounted) return null
   return (
     <div className={`command-menu ${shown ? 'shown' : ''}`} inert={!open}>
-      <div className="menu-panel" role="listbox" aria-label="Commands">
+      <div className="menu-panel" role="listbox" aria-label={tr('Commands')}>
         {list.map((c, i) => (
           <button
             key={`${c.action.kind}:${c.name}`}

@@ -6,16 +6,17 @@ import { TimeZonePicker } from './TimeZonePicker'
 import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
+import { trNow } from '../../lib/l10n.ts'
 
 
 const weekdays = [
-  { id: 1, label: 'Mon', title: 'Monday' },
-  { id: 2, label: 'Tue', title: 'Tuesday' },
-  { id: 3, label: 'Wed', title: 'Wednesday' },
-  { id: 4, label: 'Thu', title: 'Thursday' },
-  { id: 5, label: 'Fri', title: 'Friday' },
-  { id: 6, label: 'Sat', title: 'Saturday' },
-  { id: 0, label: 'Sun', title: 'Sunday' },
+  { id: 1, label: trNow('Mon'), title: trNow('Monday') },
+  { id: 2, label: trNow('Tue'), title: trNow('Tuesday') },
+  { id: 3, label: trNow('Wed'), title: trNow('Wednesday') },
+  { id: 4, label: trNow('Thu'), title: trNow('Thursday') },
+  { id: 5, label: trNow('Fri'), title: trNow('Friday') },
+  { id: 6, label: trNow('Sat'), title: trNow('Saturday') },
+  { id: 0, label: trNow('Sun'), title: trNow('Sunday') },
 ]
 const pad = (n: number) => String(n).padStart(2, '0')
 const minutes = Array.from({ length: 60 }, (_, m) => ({ id: m, label: `:${pad(m)}` }))
@@ -41,12 +42,12 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
 
   return (
     <CardSection footer={<SchedulePreview preview={preview} error={error} />}>
-      <LabeledRow key="Repeat" label="Repeat">
+      <LabeledRow key="Repeat" label={tr('Repeat')}>
         <ChipChoice label="Repeat" selection={repeat} options={repeatChoices} onChange={choose} />
       </LabeledRow>
       {repeat === 'weekly' ? (
         <LabeledRow key="On" label="On">
-          <ChipChoice label="Day" selection={schedule.weekday} options={weekdays} onChange={(weekday) => update({ weekday })} />
+          <ChipChoice label={tr('Day')} selection={schedule.weekday} options={weekdays} onChange={(weekday) => update({ weekday })} />
         </LabeledRow>
       ) : null}
       {repeat === 'hourly' ? (
@@ -54,11 +55,11 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
           <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
         </LabeledRow>
       ) : repeat === 'custom' ? (
-        <LabeledRow key="Cron" label="Cron" top>
+        <LabeledRow key="Cron" label={tr('Cron')} top>
           <VStack gap={6} grow>
             <input
               className="schedule-input routine-cron-input"
-              aria-label="Cron"
+              aria-label={tr('Cron')}
               value={schedule.expression}
               placeholder="0 9 * * 1-5"
               spellCheck={false}
@@ -73,7 +74,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
           <input
             type="time"
             className="schedule-input schedule-time"
-            aria-label="Time"
+            aria-label={tr('Time')}
             value={`${pad(schedule.hour)}:${pad(schedule.minute)}`}
             onChange={(e) => {
               const [hour, minute] = e.target.value.split(':').map(Number)

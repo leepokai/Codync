@@ -1,3 +1,5 @@
+import { trNow } from '../../lib/l10n.ts'
+
 // Routines (kit Routine.swift, RoutineScheduleDraft.swift). The host hydrates, compiles,
 // validates and describes schedules; the app only keeps form values.
 
@@ -46,17 +48,17 @@ export function runLabel(run: RoutineRun, now = Date.now()) {
   switch (run.status) {
     case 'pending':
       if (run.notBefore && run.notBefore > now) return `Retrying at ${new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })}`
-      return run.notBefore ? 'Retrying' : 'Queued'
+      return run.notBefore ? trNow('Retrying') : trNow('Queued')
     case 'starting':
-      return 'Starting'
+      return trNow('Starting')
     case 'running':
-      return 'Running'
+      return trNow('Running')
     case 'recovering':
-      return 'Resuming after restart'
+      return trNow('Resuming after restart')
     case 'failed':
       return 'Failed'
     case 'interrupted':
-      return 'Interrupted'
+      return trNow('Interrupted')
     default:
       return run.status.charAt(0).toUpperCase() + run.status.slice(1)
   }
@@ -125,11 +127,11 @@ export interface RoutineSchedulePreview {
  * style (every few minutes, several days, monthly) opens as Custom, its cron as written.
  */
 export const repeatChoices = [
-  { id: 'hourly', label: 'Hourly' },
-  { id: 'daily', label: 'Daily' },
-  { id: 'weekdays', label: 'Weekdays' },
+  { id: 'hourly', label: trNow('Hourly') },
+  { id: 'daily', label: trNow('Daily') },
+  { id: 'weekdays', label: trNow('Weekdays') },
   { id: 'weekly', label: 'Weekly' },
-  { id: 'custom', label: 'Custom' },
+  { id: 'custom', label: trNow('Custom') },
 ] as const
 
 export type RepeatChoice = (typeof repeatChoices)[number]['id']

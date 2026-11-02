@@ -1,6 +1,8 @@
 import type { CallLink, CallSession } from './call-link'
 import { browserPorts, type CallOutput, type GeminiPorts, type LiveSocket } from './gemini-ports'
 import { errorMessage, fromBase64, onDevicesChanged, PROGRESS_TAG, reconnect, toBase64, VoiceEngine } from './voice'
+import { trNow } from '../../lib/l10n.ts'
+
 
 const URL_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained'
 const OPEN = 1
@@ -77,7 +79,7 @@ export class GeminiLiveEngine extends VoiceEngine {
     try {
       const session = await this.link.start('realtime', 'gemini', this.model, this.voice)
       if (this.ended) return
-      if (!session.credential) throw new Error('Gemini sent no session credential.')
+      if (!session.credential) throw new Error(trNow('Gemini sent no session credential.'))
       this.session = session
       const socket = this.ports.socket(`${URL_BASE}?access_token=${encodeURIComponent(session.credential)}`)
       this.socket = socket
@@ -173,9 +175,9 @@ export class GeminiLiveEngine extends VoiceEngine {
     if (this.ended || this.socket !== socket) return
     this.socket = null
     this.ready = false
-    if (!this.connected) return this.fail(reason || "Couldn't reach Gemini.", 'provider')
+    if (!this.connected) return this.fail(reason || trNow("Couldn't reach Gemini."), 'provider')
     // Gemini refused the session (a key, a model, a request): trying again won't help.
-    if (code === 1007 || code === 1008) return this.fail(reason || 'Gemini ended the call.', 'provider')
+    if (code === 1007 || code === 1008) return this.fail(reason || trNow('Gemini ended the call.'), 'provider')
     if (this.replacing) {
       this.replacing = false
       // The turn under way ends with this connection: the resumed one won't complete it.
@@ -191,7 +193,7 @@ export class GeminiLiveEngine extends VoiceEngine {
    * else a fresh one the computer primes with the call so far) before the call falls back.
    */
   private dropped(reason: string) {
-    if (this.reconnects >= reconnect.delays.length) return this.fail(reason || 'Lost the connection to Gemini.', 'connection')
+    if (this.reconnects >= reconnect.delays.length) return this.fail(reason || trNow('Lost the connection to Gemini.'), 'connection')
     const delay = reconnect.delays[this.reconnects]!
     this.reconnects++
     this.stopPlayback()

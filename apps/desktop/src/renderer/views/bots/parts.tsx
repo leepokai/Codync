@@ -54,11 +54,12 @@ export function AutoTextArea({ value, onChange, placeholder, minRows, maxRows, c
 
 /** The avatar's shape and color: each a wrapping, centered row of choices, ringed when picked. */
 export function AvatarPicker({ shape, color, onShape, onColor }: { shape: string; color: string; onShape: (s: string) => void; onColor: (c: string) => void }) {
+  const tr = useTr()
   return (
     <VStack gap={12} className="avatar-picker">
       <div className="swatch-row">
         {AVATAR_SHAPES.map((s) => (
-          <button key={s} className={`swatch ${s === shape ? 'on' : ''}`} aria-label={`${s} shape`} aria-pressed={s === shape} onClick={() => onShape(s)}>
+          <button key={s} className={`swatch ${s === shape ? 'on' : ''}`} aria-label={tr('{shape} shape').replaceAll('{shape}', s)} aria-pressed={s === shape} onClick={() => onShape(s)}>
             <CharacterAvatar shape={s} color={color} size={36} />
           </button>
         ))}

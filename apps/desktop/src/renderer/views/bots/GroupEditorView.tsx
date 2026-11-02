@@ -70,7 +70,7 @@ export function GroupEditorView({ group }: { group: Bot }) {
               <div key={bot.id} className="member-row fade-in">
                 <BotAvatar bot={bot} size={32} animated={false} />
                 <span className="member-name">{bot.name}</span>
-                <IconButton title={`Remove ${bot.name}`} icon="xmark" onClick={() => toggle(bot.id)} />
+                <IconButton title={tr('Remove {name}').replaceAll('{name}', bot.name)} icon="xmark" onClick={() => toggle(bot.id)} />
               </div>
             ))}
             {adding ? (
@@ -87,7 +87,7 @@ export function GroupEditorView({ group }: { group: Bot }) {
                   }}
                 />
                 {candidates.map((bot) => (
-                  <button key={bot.id} className="member-row press fade-in" aria-label={`Add ${bot.name}`} onClick={() => toggle(bot.id)}>
+                  <button key={bot.id} className="member-row press fade-in" aria-label={tr('Add {name}').replaceAll('{name}', bot.name)} onClick={() => toggle(bot.id)}>
                     <BotAvatar bot={bot} size={32} animated={false} />
                     <Text tone="secondary" className="member-name">{bot.name}</Text>
                     <Icon name="plus.circle" size={18} color="var(--secondary)" />

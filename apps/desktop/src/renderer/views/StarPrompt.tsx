@@ -10,6 +10,7 @@ import { prefs, usePref } from '../lib/prefs'
 import { dueStarAsk } from '../lib/star-ask'
 import { useStarAsk } from '../lib/use-star-ask'
 import { useApp } from '../store/context'
+import { trNow } from '../lib/l10n.ts'
 import './star-prompt.css'
 
 const copy = {
@@ -19,7 +20,7 @@ const copy = {
   },
   second: {
     title: 'Enjoying Codync?',
-    message: "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.",
+    message: trNow("You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it."),
   },
 }
 

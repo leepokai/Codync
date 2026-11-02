@@ -44,6 +44,7 @@ interface Peer {
 
 /** The pair a conversation is between, for its header: the chat's own bot, then its peer. */
 function BotPair({ botId, peer }: { botId: string; peer: Peer }) {
+  const tr = useTr()
   const store = useStore()
   const name = (id: string) => store.authorName(id, id === peer.id ? peer.name : undefined)
   const label = (id: string) => (
@@ -53,7 +54,7 @@ function BotPair({ botId, peer }: { botId: string; peer: Peer }) {
     </HStack>
   )
   return (
-    <HStack as="span" gap={8} aria-label={`${name(botId)} and ${name(peer.id)}`}>
+    <HStack as="span" gap={8} aria-label={tr('{name} and {other}').replaceAll('{name}', name(botId)).replaceAll('{other}', name(peer.id))}>
       {label(botId)}
       <Icon name="arrow.left.arrow.right" size={11} color="var(--tertiary)" />
       {label(peer.id)}
@@ -92,6 +93,7 @@ export function BotConversationView({ botId, peerId }: { botId: string; peerId: 
 }
 
 function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer }) {
+  const tr = useTr()
   const store = useStore()
   const name = (id: string) => store.authorName(id, id === peer.id ? peer.name : undefined)
   switch (row.kind) {
@@ -112,7 +114,7 @@ function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer })
       )
     case 'status': {
       const failed = row.outcome.kind === 'failed'
-      const text = row.outcome.kind === 'failed' ? row.outcome.detail || "Didn't complete." : `Waiting for ${name(row.awaiting)}…`
+      const text = row.outcome.kind === 'failed' ? row.outcome.detail || tr("Didn't complete.") : tr('Waiting for {name}…').replaceAll('{name}', name(row.awaiting))
       return <Text as="div" size="footnote" tone={failed ? 'danger' : 'secondary'} className="selectable bot-conversation-status">{text}</Text>
     }
   }

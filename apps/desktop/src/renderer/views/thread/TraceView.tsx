@@ -40,7 +40,7 @@ export function TraceView({ botId }: { botId: string }) {
           {sorted.map(([turn, entries]) => (
             <VStack key={turn} gap={8}>
               <Text as="div" size="compactSecondary" weight="semibold" tone="text" truncate className="trace-turn-title">
-                {entries.find((e) => e.kind === 'user')?.data.text ?? `Turn ${turn}`}
+                {entries.find((e) => e.kind === 'user')?.data.text ?? tr('Turn {turn}').replaceAll('{turn}', String(turn))}
               </Text>
               <CardSection>
                 {entries.map((e) => (
@@ -127,7 +127,7 @@ export function TraceRow({ entry, unfolded }: { entry: Entry; unfolded: boolean 
     case 'permission':
       return (
         <Label icon={<Icon name="hand.raised" size={11} color="var(--secondary)" />} tone="secondary">
-          {d.title ?? 'Approval'}
+          {d.title ?? tr('Approval')}
         </Label>
       )
     default:

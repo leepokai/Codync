@@ -7,6 +7,8 @@ import { pref, type Pref } from '../lib/prefs'
 import { account } from './account'
 import type { AppModel } from './app-model'
 import type { BotStore } from './bot-store'
+import { trNow } from '../lib/l10n.ts'
+
 
 // Wire types of the Codync cloud (`/v1`, cloud/src/api.ts); times are epoch milliseconds.
 
@@ -33,9 +35,9 @@ export class CloudError extends Error {
     message: string | null,
   ) {
     super(
-      code === 'requestExpired' ? 'The request expired. Ask again.'
-      : code === 'accountDeleted' ? 'This account was deleted.'
-      : code === 'rateLimited' ? 'Too many requests. Try again in a little while.'
+      code === 'requestExpired' ? trNow('The request expired. Ask again.')
+      : code === 'accountDeleted' ? trNow('This account was deleted.')
+      : code === 'rateLimited' ? trNow('Too many requests. Try again in a little while.')
       : (message ?? `Codync cloud error (${code})`),
     )
   }
@@ -285,7 +287,7 @@ export class CloudModel extends Observable {
   async claim(store: BotStore, quiet = false): Promise<boolean> {
     const user = this.userId
     if (!user || !store.client) {
-      if (!quiet) this.app.setError('Sign in first.')
+      if (!quiet) this.app.setError(trNow('Sign in first.'))
       return false
     }
     const out = keptOut(user)

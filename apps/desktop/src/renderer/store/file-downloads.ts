@@ -1,6 +1,8 @@
 import type { SharedFile } from '@shared/models'
 import { decodeFileChunk, validateSharedFile } from '../../shared/files.ts'
 import type { HostClient } from '../client/host-client'
+import { trNow } from '../lib/l10n.ts'
+
 
 export type DownloadState = { kind: 'downloading'; received: number } | { kind: 'saved' } | { kind: 'failed'; message: string }
 interface Job { cancelled: boolean; handle: string | null }
@@ -34,7 +36,7 @@ export class FileDownloads {
     this.changed()
     try {
       validateSharedFile(file)
-      if (!client) throw new Error('Connect to this computer to download the file')
+      if (!client) throw new Error(trNow('Connect to this computer to download the file'))
       job.handle = await window.codync.files.begin(file)
       if (!job.handle || !alive()) return
       let offset = 0

@@ -1,5 +1,7 @@
 import type { UsageProvider, UsageWindow } from '@shared/models'
 import { isDark } from '../../lib/theme'
+import { trNow } from '../../lib/l10n.ts'
+
 
 /** Claude keeps its orange; everyone else is ink, like the rest of the app. */
 export function providerTint(id: string) {
@@ -37,7 +39,7 @@ export function windowTitle(w: UsageWindow) {
   return model ?? w.label
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m) => trNow(m))
 
 /**
  * Claude Code's text: "Sep 26 at 12pm (Asia/Taipei)", "Sep 25 at 7:30pm (Asia/Taipei)", or just

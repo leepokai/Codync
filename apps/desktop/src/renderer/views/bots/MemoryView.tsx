@@ -83,10 +83,10 @@ export function MemoryCard({ botId }: { botId: string }) {
           </div>,
           ...(view.dreams.length ? [] : [<div key="empty" className="memory-empty"><Icon name="moon" size={20} color="var(--tertiary)" /><span>{tr('No dreams yet.')}</span></div>]),
           ...view.dreams.map((dream) => <div className="memory-content fade-in" key={dream.id}>
-            <strong>{relativeTime.day(dream.at, tr)}{dream.undone ? ' · undone' : ''}</strong>
+            <strong>{relativeTime.day(dream.at, tr)}{dream.undone ? tr(' · undone') : ''}</strong>
             {dream.added.map((c) => <Text key={`a${c.id}`} tone="added" className="line-clamp memory-clamp" title={c.text}>+ {c.text}</Text>)}
             {dream.archived.map((c) => <Text key={`r${c.id}`} tone="removed" className="line-clamp memory-clamp" title={c.text}>− {c.text}</Text>)}
-            {(dream.files ?? []).map((f) => <span key={`f${f.version}`} className="memory-muted">Added to {f.name}</span>)}
+            {(dream.files ?? []).map((f) => <span key={`f${f.version}`} className="memory-muted">{tr('Added to {name}').replaceAll('{name}', f.name)}</span>)}
           </div>),
         ]}
         {view?.projectMemory && section === 'harness' && <div className="memory-content">
@@ -115,6 +115,6 @@ function EntryRow({ entry }: { entry: MemoryEntry }) {
   const archived = entry.state === 'archived'
   return <div className="memory-content fade-in">
     <strong className={archived ? 'memory-archived' : undefined}>{entry.pinned && <Icon name="pin.fill" size={10} color="var(--secondary)" />}<span className="line-clamp memory-clamp" title={entry.text}>{entry.text}</span></strong>
-    <small>{authorLabel(entry, (id) => host.authorName(id))} · {relativeTime.day(entry.updatedAt, tr)}{archived ? ' · archived' : ''}</small>
+    <small>{authorLabel(entry, (id) => host.authorName(id))} · {relativeTime.day(entry.updatedAt, tr)}{archived ? tr(' · archived') : ''}</small>
   </div>
 }

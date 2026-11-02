@@ -1,5 +1,7 @@
 import type { HostClient } from '../client/host-client'
 import { Observable } from '../lib/observable'
+import { trNow } from '../lib/l10n.ts'
+
 
 /** One memory entry (the host's `codync_mem::store::Entry`). */
 export interface MemoryEntry {
@@ -69,7 +71,7 @@ export interface MemoryView {
   files?: MemoryFiles
 }
 
-const OLDER_HOST = "Update Codync on your computer to see this bot's memory."
+const OLDER_HOST = trNow("Update Codync on your computer to see this bot's memory.")
 
 /** One bot's memory, read-only: the bot changes it. */
 export class MemoryStore extends Observable {
@@ -110,10 +112,10 @@ export class MemoryStore extends Observable {
 /** Who wrote an entry, for its detail line. */
 export function authorLabel(entry: MemoryEntry, botName: (id: string | null) => string) {
   switch (entry.author) {
-    case 'user': return 'You wrote it'
+    case 'user': return trNow('You wrote it')
     case 'bot': return `${botName(entry.authorBot)} remembered it`
     case 'dream': return 'Dreaming'
-    default: return 'Moved from the old memory'
+    default: return trNow('Moved from the old memory')
   }
 }
 

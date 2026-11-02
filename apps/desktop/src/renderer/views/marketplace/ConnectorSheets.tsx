@@ -193,7 +193,7 @@ export function CustomConnectorSheet() {
       <ModalHeader icon="point.3.connected.trianglepath.dotted" title={tr(`Custom connector`)} trailing={saving ? <Spinner /> : <IconButton title="Add" icon="plus" disabled={!ready} onClick={() => void save()} />} />
       <CardForm>
         <CardSection footer={footer}>
-          <SegmentedChoice selection={mode} onChange={setMode} options={[{ id: 'command', label: 'Command' }, { id: 'url', label: 'URL' }, { id: 'config', label: 'Config' }]} />
+          <SegmentedChoice selection={mode} onChange={setMode} options={[{ id: 'command', label: tr('Command') }, { id: 'url', label: tr('URL') }, { id: 'config', label: tr('Config') }]} />
           {mode === 'config' ? <Field value={config} onChange={setConfig} placeholder={'{ "mcpServers": { … } }'} lines={[6, 16]} mono /> : null}
           {mode !== 'config' ? <Field value={name} onChange={setName} placeholder="Name" /> : null}
           {mode !== 'config' ? <Field value={target} onChange={setTarget} placeholder={mode === 'url' ? 'https://example.com/mcp' : 'npx -y @scope/server'} mono /> : null}

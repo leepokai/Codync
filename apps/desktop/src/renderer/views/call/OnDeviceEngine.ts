@@ -1,5 +1,7 @@
 import type { SpeechEvent } from '@shared/ipc'
 import { onDeviceUnavailableReason, spokenText, VoiceEngine, VoiceSettings, type VoiceFailureKind } from './voice'
+import { trNow } from '../../lib/l10n.ts'
+
 
 /**
  * The reply's language from its script, for picking a voice (replies may be English while the
@@ -152,7 +154,7 @@ export class OnDeviceEngine extends VoiceEngine {
         this.restart(e.message)
         break
       case 'stopped':
-        if (!this.started) return this.fail("Speech recognition stopped.")
+        if (!this.started) return this.fail(trNow("Speech recognition stopped."))
         this.restart('Speech recognition stopped.')
         break
     }

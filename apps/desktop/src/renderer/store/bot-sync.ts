@@ -389,8 +389,23 @@ export class BotSync extends BotMirror {
     this.saveCache()
   }
 
+  private resetWorkflowMirror() {
+    this.workflows = []
+    this.workflowSession = null
+    this.workflowDetail = null
+    this.workflowRun = null
+    this.workflowDetailToken += 1
+    this.workflowRunToken += 1
+  }
+
   /** Fetches everything again from rev 0, underneath what's shown: the chats keep their entries until the catch-up has all arrived (`finishRefetch`). */
+  private refetchAll() {
+    this.rev = 0
+    this.refetched = new Set()
+    this.historyComplete = new Set()
     this.resetWorkflowMirror()
+  }
+
   private async loadWorkflowSummaries() {
     const client = this.live
     if (!client || this.hello?.workflows !== true || this.workflowMethodMissing) return
@@ -402,6 +417,8 @@ export class BotSync extends BotMirror {
     } catch (error) {
       this.reportWorkflowFailure(error)
     }
+  }
+
   private ingestWorkflow(event: Extract<HostEvent, { type: 'workflow' }>) {
     if (event.change === 'deleted') {
       this.workflows = this.workflows.filter((item) => item.id !== event.workflowId)
@@ -412,24 +429,51 @@ export class BotSync extends BotMirror {
         this.workflowDeleted = 'This workflow was deleted'
       }
       return
+    }
     if (event.change === 'enabled' && event.enabled !== undefined) {
       this.workflows = this.workflows.map((item) => item.id === event.workflowId ? { ...item, enabled: event.enabled! } : item)
+    }
     void this.loadWorkflowSummaries()
     if (event.change === 'graph') {
       const session = this.workflowSession
       if (session && session.id === event.workflowId && !session.dirty) void this.pullWorkflowDetail(event.workflowId)
+      return
+    }
     const session = this.workflowSession
-    if (session && session.id === event.workflowId && session.followLive && event.runId) void this.pullWorkflowRun(event.runId)
+    // A run opened from history is not "live", but it still has to hear that it finished
+    // or that its stop landed. Otherwise the canvas stays on the snapshot from when it was opened.
+    if (session && session.id === event.workflowId && event.runId && (session.followLive || session.runId === event.runId)) {
+      void this.pullWorkflowRun(event.runId)
+    }
+  }
+
   private async pullWorkflowDetail(id: string) {
+    const client = this.live
     if (!client) return
+    try {
       const { workflow } = await fetchWorkflow(client, id, false)
+      const session = this.workflowSession
       if (this.retired || !session || session.id !== id || session.dirty) return
       this.workflowDetail = workflow
       this.workflowDetailToken += 1
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
+  }
+
   private async pullWorkflowRun(runId: string) {
+    const client = this.live
+    if (!client) return
+    const token = ++this.workflowRunToken
+    try {
       const { run } = await fetchWorkflowRun(client, runId)
-      if (this.retired || !session?.followLive) return
-      if (session.runId && session.runId !== runId) return
+      if (token !== this.workflowRunToken || this.retired) return
+      const session = this.workflowSession
+      if (!session) return
+      const watching = session.followLive || session.runId === runId
+      if (!watching) return
+      if (session.followLive && session.runId && session.runId !== runId) return
       this.workflowRun = run
       if (session.runId !== runId) this.workflowSession = { ...session, runId }
   /**

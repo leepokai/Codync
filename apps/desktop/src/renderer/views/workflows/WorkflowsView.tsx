@@ -159,7 +159,11 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
 
   useEffect(() => {
     const run = store.workflowRun
-    if (!run || !followRef.current) return
+    if (!run) return
+    // The run opened from history is a snapshot. Keep that snapshot current, or Stop
+    // leaves it on "Waiting 0s" after the host has already finished.
+    setViewed((current) => (current?.id === run.id ? run : current))
+    if (!followRef.current) return
     if (runIdRef.current && run.id !== runIdRef.current) return
     runIdRef.current = run.id
     setLiveRun(run)
@@ -316,7 +320,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         onEnabled={(enabled) => void toggle(enabled)}
         onRun={() => void run()}
         onStop={() => void stop()}
-        onLatest={() => { followRef.current = true; setViewed(null); sync(selected, dirtyRef.current) }}
+        onLatest={() => { followRef.current = true; runIdRef.current = null; setViewed(null); sync(selected, dirtyRef.current) }}
         onRunOpen={(id) => void showRun(id)}
         onOlder={() => void older()}
         onLoadVersions={() => void loadVersions()}
@@ -454,11 +458,21 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
   async function showRun(id: string) {
     try {
       const { run: detail } = await fetchWorkflowRun(await store.ready(), id)
-      followRef.current = false
       setVersionGraph(null)
       setPreviewId(null)
       previewRef.current = null
-      setViewed(detail)
+      const open = detail.status === 'running' || detail.status === 'approval' || detail.status === 'stopping'
+      if (open) {
+        followRef.current = true
+        runIdRef.current = detail.id
+        setViewed(null)
+        setLiveRun(detail)
+        setRuns((current) => upsertRun(current, detail))
+      } else {
+        followRef.current = false
+        runIdRef.current = detail.id
+        setViewed(detail)
+      }
       sync(selected, dirtyRef.current)
     } catch (error) {
       if (!store.reportWorkflowFailure(error)) setNotice(error instanceof Error ? error.message : String(error))
@@ -531,11 +545,24 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
 
   async function haltStep(stepId: string) {
     await stopWorkflowStep(await store.ready(), stepId)
+    const id = viewed?.id ?? liveRun?.id
+    if (id) await adoptRun(id)
   }
 
   async function stop() {
-    if (!liveRun) return
-    await stopWorkflowRun(await store.ready(), liveRun.id)
+    const id = viewed?.id ?? liveRun?.id
+    if (!id) return
+    await stopWorkflowRun(await store.ready(), id)
+    await adoptRun(id)
+  }
+
+  async function adoptRun(id: string) {
+    const { run } = await fetchWorkflowRun(await store.ready(), id)
+    setLiveRun((current) => (current?.id === id ? run : current))
+    setViewed((current) => (current?.id === id ? run : current))
+    setRuns((current) => upsertRun(current, run))
+    const open = run.status === 'running' || run.status === 'approval' || run.status === 'stopping'
+    if (!open) setSolo((current) => current.filter((step) => !run.steps.some((item) => item.nodeId === step.nodeId)))
   }
 
   async function refreshRuns() {

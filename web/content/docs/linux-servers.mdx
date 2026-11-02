@@ -104,6 +104,15 @@ codync-host devices revoke <key>     # removes one; it disconnects at once
 ## Limits on a headless server
 
 - **Remote screen and computer use need a desktop session.** They turn on only while a graphical session (Wayland or X11) runs, so on a server they stay off and nothing else is affected. On a Linux desktop, the screen helper needs glibc 2.39 or newer and GStreamer 1.22 or newer with the base, good and bad plugins, PipeWire and xdg-desktop-portal. See [Computer use](/docs/computer-use).
+- **An X11 desktop over xrdp or VNC works without portals.** The screen helper shares the X display with GStreamer's `ximagesrc` (`gstreamer1.0-plugins-good`) and the XTest extension. It starts only after you allow it on the server: open **Computer access** in the desktop app inside that session, or, without the app, run this once as the host's user (the token is read from stdin, not the command line):
+
+  ```sh
+  printf 'Authorization: Bearer %s\n' "$(cat ~/.codync/token)" | curl -sS -H @- \
+    -H 'Content-Type: application/json' -d '{"permission":"portal"}' \
+    http://127.0.0.1:19222/api/requestScreenPermission
+  ```
+
+  It's remembered in `~/.codync/screen-x11-consent`; to stop sharing, delete that file, then turn remote screen off and on again.
 - **Saved secrets need a keyring.** Connector credentials, voice API keys and agent API keys are encrypted with a key kept in the Secret Service (for example GNOME Keyring). The host's user needs a session D-Bus and an unlocked Secret Service; without one, saving such a secret fails with an error, and new bots start with no connectors turned on. If the keyring is locked, the host shows its unlock prompt for a minute and then gives the same error; on a server nobody logs in to graphically, unlock the keyring yourself (for example `gnome-keyring-daemon --unlock`) or give it an empty password. Codync never falls back to storing them in plain text.
 - **No desktop app on the server itself.** The Linux desktop app needs a graphical session. Use the phone, the desktop app on another computer over SSH, or the terminal UI.
 - **Keeping the machine awake does nothing.** VMs don't sleep; if the host can't hold off sleep, it only logs a warning.

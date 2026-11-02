@@ -2,11 +2,14 @@
 //! while Remote screen is on; it connects to `~/.codync/screen.sock` and serves
 //! the same JSON-RPC as the macOS helper (see `host/src/screen/mod.rs`):
 //! capture and input through the xdg `RemoteDesktop` + `ScreenCast` portals
-//! (approved once, then restored from a saved token), video as H.264 over
-//! GStreamer `webrtcbin`, and the accessibility tree over AT-SPI.
+//! (approved once, then restored from a saved token) or, on X11 desktops without
+//! them, `ximagesrc` and XTest; video as H.264 over GStreamer `webrtcbin`, and the
+//! accessibility tree over AT-SPI.
 
 mod a11y;
+mod backend;
 mod candidates;
+mod capture;
 mod connection;
 mod input;
 mod link;
@@ -15,6 +18,7 @@ mod portal;
 mod sessions;
 mod stream;
 mod video;
+mod x11;
 
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
@@ -35,7 +39,7 @@ fn data_dir() -> PathBuf {
 pub type Outbox = mpsc::UnboundedSender<Value>;
 
 pub struct Helper {
-    portal: Arc<Mutex<Option<portal::Portal>>>,
+    portal: backend::Slot,
     last_status: Mutex<Option<Value>>,
     sessions: sessions::Sessions,
     out: Outbox,
@@ -52,8 +56,13 @@ async fn main() -> Result<()> {
         )
         .init();
     gst::init().context("starting GStreamer")?;
-    // Starting the helper must not display a system dialog. Setup explicitly opens a session.
-    let portal = Arc::new(Mutex::new(None));
+    // Starting the helper must not display a system dialog. Setup explicitly opens a portal
+    // session; X11 has no dialog, so that backend starts here only if setup already chose it.
+    let data = data_dir();
+    let portal: backend::Slot = Arc::new(Mutex::new(backend::x11_fallback(&data).await));
+    if portal.lock().await.is_none() && x11::consent::granted(&data).is_some() {
+        tokio::spawn(backend::wait_for_x11(portal.clone(), data));
+    }
     loop {
         match UnixStream::connect(data_dir().join("screen.sock")).await {
             Ok(sock) => {
@@ -68,7 +77,7 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn serve(sock: UnixStream, portal: &Arc<Mutex<Option<portal::Portal>>>) -> Result<()> {
+async fn serve(sock: UnixStream, portal: &backend::Slot) -> Result<()> {
     let (out, outbox) = mpsc::unbounded_channel::<Value>();
     let helper = Arc::new(Helper {
         portal: portal.clone(),
@@ -101,19 +110,7 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
         if p["permission"] != "portal" {
             return Err(anyhow!("Linux uses the screen sharing portal"));
         }
-        let mut portal = h.portal.lock().await;
-        if portal.as_ref().is_none_or(|p| !p.has_input()) {
-            let restore = portal.as_ref().is_none_or(|p| !p.is_active());
-            let next = portal::Portal::start(&data_dir(), restore).await?;
-            if let Some(previous) = portal.as_ref() {
-                if previous.is_active() {
-                    previous.session().close().await?;
-                }
-                h.sessions.close_all().await;
-            }
-            *portal = Some(next);
-        }
-        drop(portal);
+        setup(h).await?;
         h.send_status().await;
         return Ok(json!({}));
     }
@@ -143,9 +140,9 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
             let answer = h
                 .sessions
                 .answer(id, sdp, async {
-                    let d = display()?;
-                    let fd = portal.pipewire_fd().await?;
-                    let session = stream::Session::new(creating, &d, fd, h, p)?;
+                    let d = display().await?;
+                    let capture = portal.capture().await?;
+                    let session = stream::Session::new(creating, &d, capture, h, p)?;
                     let answer = session.answer(sdp).await?;
                     Ok((session, answer))
                 })
@@ -163,17 +160,18 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
                 p["width"].as_u64().unwrap_or(1280),
                 p["height"].as_u64().unwrap_or(800),
             );
-            let d = display()?;
-            let fd = portal.pipewire_fd().await?;
-            let jpeg = stream::screenshot(fd, &d, u32::try_from(w)?, u32::try_from(h2)?).await?;
+            let d = display().await?;
+            let capture = portal.capture().await?;
+            let jpeg =
+                stream::screenshot(capture, &d, u32::try_from(w)?, u32::try_from(h2)?).await?;
             json!({"data": jpeg})
         }
         "input" => {
-            let d = display()?;
-            input::perform(&portal, &d, &p["event"]).await?;
+            let d = display().await?;
+            portal.perform(&d, &p["event"]).await?;
             json!({})
         }
-        "uiTree" => a11y::frontmost(&display()?).await?,
+        "uiTree" => a11y::frontmost(&display().await?).await?,
         "focusedField" => a11y::focused_field().await?,
         "openApp" => {
             input::open_app(
@@ -188,25 +186,88 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
     })
 }
 
+/// Setup on this computer (the host takes `requestPermission` only from loopback): the portals
+/// when the desktop has them, otherwise X11.
+async fn setup(h: &Arc<Helper>) -> Result<()> {
+    if !portal::Portal::available().await {
+        if backend::approve_x11(&h.portal, &data_dir())
+            .await?
+            .is_some()
+        {
+            h.end_sessions().await;
+        }
+        return Ok(());
+    }
+    let mut portal = h.portal.lock().await;
+    // X11 was chosen because the portals were missing; now that they're here, setup uses them.
+    let x11 = matches!(portal.as_ref(), Some(backend::Backend::X11(_)));
+    if !x11 && portal.as_ref().is_some_and(backend::Backend::has_input) {
+        return Ok(());
+    }
+    let restore = match portal.as_ref() {
+        Some(backend::Backend::Portal(p)) => !p.is_active(),
+        _ => true,
+    };
+    // On failure the current backend, X11 included, stays as it was.
+    let next = portal::Portal::start(&data_dir(), restore).await?;
+    if let Some(backend::Backend::Portal(previous)) = portal.as_ref() {
+        if previous.is_active() {
+            previous.session().close().await?;
+        }
+        h.sessions.close_all().await;
+    }
+    let previous = portal.replace(backend::Backend::Portal(next));
+    drop(portal);
+    if matches!(previous, Some(backend::Backend::X11(_))) {
+        h.end_sessions().await;
+    }
+    Ok(())
+}
+
 impl Helper {
-    async fn portal(&self) -> Result<portal::Portal> {
-        let portal = self.portal.lock().await;
-        portal
-            .clone()
-            .filter(portal::Portal::is_active)
-            .ok_or_else(|| anyhow!("Set up Computer access in Codync on this computer first."))
+    async fn portal(&self) -> Result<backend::Backend> {
+        let current = self.portal.lock().await.clone();
+        match current {
+            Some(backend) if backend.is_active() => Ok(backend),
+            Some(backend::Backend::X11(x11)) => Err(anyhow!(
+                "The X display {} isn't reachable; Codync reconnects when it's back.",
+                x11.name()
+            )),
+            _ => Err(anyhow!(
+                "Set up Computer access in Codync on this computer first."
+            )),
+        }
     }
 
     async fn send_status(&self) {
-        let portal = self.portal.lock().await;
-        let status = portal.as_ref().map_or_else(
-            || json!({"platform": "linux", "permissionApp": "Codync Screen", "version": env!("CARGO_PKG_VERSION"), "trickle": true, "capture": false, "input": false, "displays": []}),
-            portal::Portal::status,
-        );
-        drop(portal);
+        let current = self.portal.lock().await.clone();
+        if let Some(backend::Backend::X11(x11)) = &current
+            && !x11.is_active()
+        {
+            // Video from a lost display would stay frozen: end it so viewers reconnect.
+            self.end_sessions().await;
+            backend::reconnect(&self.portal, x11, &data_dir()).await;
+        }
+        let current = self.portal.lock().await.clone();
+        let x11 = matches!(current, Some(backend::Backend::X11(_)));
+        let status = match &current {
+            Some(backend) => backend.status().await,
+            None => {
+                json!({"platform": "linux", "permissionApp": "Codync Screen", "version": env!("CARGO_PKG_VERSION"), "trickle": true, "capture": false, "input": false, "displays": []})
+            }
+        };
         let mut last = self.last_status.lock().await;
         if last.as_ref() == Some(&status) {
             return;
+        }
+        // xrdp resized the X screen: streams keep the old size, so end them and let viewers
+        // reconnect at the new one.
+        if x11
+            && last
+                .as_ref()
+                .is_some_and(|l| l["displays"] != status["displays"])
+        {
+            self.end_sessions().await;
         }
         *last = Some(status.clone());
         // Fails only once the host link is gone; the next link starts a new Helper that sends its status first.
@@ -227,6 +288,14 @@ impl Helper {
     fn notify_session(&self, id: &str, state: &str) {
         if let Err(error) = self.notify("session", json!({"session": id, "state": state})) {
             tracing::debug!(%error, session = id, state, "session notice not sent");
+        }
+    }
+
+    /// Ends every session and tells the host, so viewers can reconnect.
+    async fn end_sessions(&self) {
+        for id in self.sessions.ids().await {
+            self.sessions.close(&id).await;
+            self.notify_session(&id, "closed");
         }
     }
 

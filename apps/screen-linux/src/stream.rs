@@ -1,33 +1,20 @@
-//! Video: a PipeWire monitor stream encoded as H.264 and sent over GStreamer
-//! `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
+//! Video: a PipeWire monitor stream (or the X11 root window) encoded as H.264 and
+//! sent over GStreamer `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
 
+use crate::Helper;
+pub use crate::capture::Capture;
+#[cfg(test)]
+use crate::capture::capture_source;
 use crate::negotiation::ice_uri;
 use crate::portal::Display;
 use crate::video::{h264_format, h264_payload};
-use crate::{Helper, input};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
 use gst::prelude::*;
 use serde_json::{Value, json};
-use std::os::fd::{IntoRawFd, OwnedFd};
+use std::os::fd::IntoRawFd;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-
-/// The PipeWire source for one portal stream. Only properties every supported PipeWire has
-/// (Ubuntu 24.04's 1.0 onward) go in the builder: an unknown one panics there.
-fn capture_source(fd: OwnedFd, node: u32) -> Result<gst::Element> {
-    let src = gst::ElementFactory::make("pipewiresrc")
-        .property("fd", fd.into_raw_fd())
-        .property("path", node.to_string())
-        .property("do-timestamp", true)
-        .build()
-        .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
-    if src.has_property("keepalive-time") {
-        // A still screen keeps sending frames now and then, so keyframe requests get answered.
-        src.set_property("keepalive-time", 1000i32);
-    }
-    Ok(src)
-}
 
 /// Hardware encoders first; x264 is the always-there fallback.
 const ENCODERS: &[&str] = &[
@@ -51,7 +38,7 @@ impl Session {
     pub fn new(
         id: String,
         display: &Display,
-        fd: OwnedFd,
+        capture: Capture,
         helper: &Arc<Helper>,
         config: &Value,
     ) -> Result<Self> {
@@ -60,13 +47,13 @@ impl Session {
         // Capture and keepalive timestamps use the system clock. pipewiresrc only gained a
         // switch for this (`provide-clock`) in PipeWire 1.6; Ubuntu 24.04 ships 1.0.
         pipeline.use_clock(Some(&gst::SystemClock::obtain()));
-        let src = capture_source(fd, display.node)?;
+        let fps = config["maxFramerate"].as_i64().unwrap_or(60).clamp(1, 60);
+        let src = capture.source(display, i32::try_from(fps)?)?;
         let convert = make("videoconvert")?;
         let crop = make("videocrop")?;
         let scale = make("videoscale")?;
         let size = make("capsfilter")?;
         let rate = make("videorate")?;
-        let fps = config["maxFramerate"].as_i64().unwrap_or(60).clamp(1, 60);
         rate.set_property("max-rate", i32::try_from(fps)?);
         rate.set_property("drop-only", true);
         let convert2 = make("videoconvert")?;
@@ -144,7 +131,8 @@ impl Session {
                                 .map(error_msg)
                         }
                         _ => match helper.portal().await {
-                            Ok(portal) => input::perform(&portal, &display, &msg)
+                            Ok(portal) => portal
+                                .perform(&display, &msg)
                                 .await
                                 .err()
                                 .as_ref()
@@ -308,7 +296,7 @@ async fn set_clipboard(text: &str) -> Result<()> {
     ))
 }
 
-fn make(name: &str) -> Result<gst::Element> {
+pub(crate) fn make(name: &str) -> Result<gst::Element> {
     gst::ElementFactory::make(name)
         .build()
         .with_context(|| format!("GStreamer element {name} is missing"))
@@ -341,10 +329,13 @@ fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
 }
 
 /// One still for agents: `width`×`height` JPEG, base64.
-pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Result<String> {
+pub async fn screenshot(capture: Capture, d: &Display, width: u32, height: u32) -> Result<String> {
+    let source = match &capture {
+        Capture::PipeWire(_) => format!("pipewiresrc name=src path={} do-timestamp=true", d.node),
+        Capture::X11(_) => "ximagesrc name=src use-damage=false show-pointer=true".to_owned(),
+    };
     let desc = format!(
-        "pipewiresrc name=src path={} do-timestamp=true ! videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1",
-        d.node
+        "{source} ! videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1"
     );
     let pipeline = gst::parse::launch(&desc)?
         .downcast::<gst::Pipeline>()
@@ -352,7 +343,10 @@ pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Re
     let src = pipeline
         .by_name("src")
         .ok_or_else(|| anyhow!("no source"))?;
-    src.set_property("fd", fd.into_raw_fd());
+    match capture {
+        Capture::PipeWire(fd) => src.set_property("fd", fd.into_raw_fd()),
+        Capture::X11(name) => src.set_property("display-name", name),
+    }
     let sink = pipeline
         .by_name("sink")
         .ok_or_else(|| anyhow!("no sink"))?

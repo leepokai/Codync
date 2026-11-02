@@ -39,6 +39,40 @@ struct Inner {
 }
 
 impl Portal {
+    /// Whether the desktop offers both portals. Creates no session, so it shows no dialog.
+    /// Only a readable `version` counts: ashpd's constructors also succeed when the portal
+    /// service can't be reached yet (early at boot), which must not count as available. A bus
+    /// that doesn't answer within 10 s (D-Bus activation hanging) counts as no portal; that is
+    /// long enough for a portal that is only slow to start, so setup doesn't take it for missing.
+    pub async fn available() -> bool {
+        tokio::time::timeout(std::time::Duration::from_secs(10), Self::probe())
+            .await
+            .unwrap_or(false)
+    }
+
+    async fn probe() -> bool {
+        async fn has(conn: &zbus::Connection, interface: &'static str) -> bool {
+            let Ok(name) = zbus::names::InterfaceName::try_from(interface) else {
+                return false;
+            };
+            let proxy = zbus::fdo::PropertiesProxy::builder(conn)
+                .destination("org.freedesktop.portal.Desktop")
+                .and_then(|b| b.path("/org/freedesktop/portal/desktop"));
+            match proxy {
+                Ok(builder) => match builder.build().await {
+                    Ok(proxy) => proxy.get(name, "version").await.is_ok(),
+                    Err(_) => false,
+                },
+                Err(_) => false,
+            }
+        }
+        let Ok(conn) = zbus::Connection::session().await else {
+            return false;
+        };
+        has(&conn, "org.freedesktop.portal.RemoteDesktop").await
+            && has(&conn, "org.freedesktop.portal.ScreenCast").await
+    }
+
     pub async fn start(data: &Path, restore: bool) -> Result<Self> {
         let token_file = data.join("screen-restore-token");
         let token = if restore {
@@ -133,21 +167,7 @@ impl Portal {
     }
 
     pub fn status(&self) -> Value {
-        json!({
-            "platform": "linux",
-            "permissionApp": "Codync Screen",
-            "version": env!("CARGO_PKG_VERSION"),
-            "capture": self.is_active(),
-            "trickle": true,
-            "input": self.has_input(),
-            "displays": self.0.displays.iter().map(|d| json!({
-                "id": d.id,
-                "name": format!("Display {}", d.id + 1),
-                "width": d.width,
-                "height": d.height,
-                "main": d.id == 0,
-            })).collect::<Vec<_>>(),
-        })
+        status_json(self.is_active(), self.has_input(), &self.0.displays)
     }
 
     pub fn display(&self, id: Option<u64>) -> Result<Display> {
@@ -176,6 +196,25 @@ impl Portal {
     pub fn session(&self) -> &Session<RemoteDesktop> {
         &self.0.session
     }
+}
+
+/// The helper status the host reads (see `host/src/screen/mod.rs`).
+pub fn status_json(capture: bool, input: bool, displays: &[Display]) -> Value {
+    json!({
+        "platform": "linux",
+        "permissionApp": "Codync Screen",
+        "version": env!("CARGO_PKG_VERSION"),
+        "capture": capture,
+        "trickle": true,
+        "input": input,
+        "displays": displays.iter().map(|d| json!({
+            "id": d.id,
+            "name": format!("Display {}", d.id + 1),
+            "width": d.width,
+            "height": d.height,
+            "main": d.id == 0,
+        })).collect::<Vec<_>>(),
+    })
 }
 
 fn save_token(path: &PathBuf, token: &str) {

@@ -368,7 +368,11 @@ export class BotSync extends BotMirror {
       return
     }
     const session = this.workflowSession
-    if (session && session.id === event.workflowId && session.followLive && event.runId) void this.pullWorkflowRun(event.runId)
+    // A run opened from history is not "live", but it still has to hear that it finished
+    // or that its stop landed. Otherwise the canvas stays on the snapshot from when it was opened.
+    if (session && session.id === event.workflowId && event.runId && (session.followLive || session.runId === event.runId)) {
+      void this.pullWorkflowRun(event.runId)
+    }
   }
 
   private async pullWorkflowDetail(id: string) {
@@ -386,14 +390,20 @@ export class BotSync extends BotMirror {
     }
   }
 
+  private workflowRunToken = 0
+
   private async pullWorkflowRun(runId: string) {
     const client = this.live
     if (!client) return
+    const token = ++this.workflowRunToken
     try {
       const { run } = await fetchWorkflowRun(client, runId)
+      if (token !== this.workflowRunToken || this.retired) return
       const session = this.workflowSession
-      if (this.retired || !session?.followLive) return
-      if (session.runId && session.runId !== runId) return
+      if (!session) return
+      const watching = session.followLive || session.runId === runId
+      if (!watching) return
+      if (session.followLive && session.runId && session.runId !== runId) return
       this.workflowRun = run
       if (session.runId !== runId) this.workflowSession = { ...session, runId }
       this.changed()

@@ -162,13 +162,29 @@ fn frame_prompt(
 }
 
 pub fn mark_started(hub: &Hub, step_id: &str) -> Result<()> {
-    hub.store.with_immediate(|tx| {
+    let placed = hub.store.with_immediate(|tx| {
         tx.execute(
             "UPDATE workflow_steps SET started_at = COALESCE(started_at, ?2), updated_at = ?2 WHERE id = ?1",
             params![step_id, now_ms()],
         )?;
-        Ok(())
-    })
+        tx.query_row("SELECT run_id, workflow_id FROM workflow_steps WHERE id = ?1", [step_id], |r| {
+            Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?))
+        })
+        .optional()
+        .map_err(anyhow::Error::from)
+    })?;
+    // The step is inserted with no start time. Without this event the canvas
+    // keeps saying "Waiting 0s" until the reply arrives.
+    if let Some((run, workflow)) = placed {
+        hub.emit_workflow(json!({
+            "type": "workflow",
+            "change": "step",
+            "workflowId": workflow,
+            "runId": run,
+            "stepId": step_id,
+        }));
+    }
+    Ok(())
 }
 
 pub struct Settled {

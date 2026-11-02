@@ -126,15 +126,9 @@ async fn poll(hub: Arc<Hub>, target: Target, oauth: OAuth, device_code: String, 
         };
         match step(&v, interval) {
             Step::Done => {
-                let mut saved = false;
-                match update(&hub.store, id, |c| saved = signed_in(c, &target, &oauth, &v)) {
-                    Err(error) => {
-                        tracing::warn!(connector = %id, error = format!("{error:#}"), "couldn't save the sign-in");
-                    }
-                    Ok(_) if !saved => {
-                        tracing::warn!(connector = %id, "connector changed during sign-in; token dropped");
-                    }
-                    Ok(_) => {}
+                // Fails, dropping the token, when the connector no longer points where the sign-in started.
+                if let Err(error) = update(&hub.store, id, target.url.as_deref(), |c| signed_in(c, &oauth, &v)) {
+                    tracing::warn!(connector = %id, error = format!("{error:#}"), "couldn't save the sign-in");
                 }
                 return;
             }
@@ -148,15 +142,10 @@ async fn poll(hub: Arc<Hub>, target: Target, oauth: OAuth, device_code: String, 
 }
 
 /// Keeps the token, and drops the token header the connector was set up with before it could sign in.
-/// `false`, with nothing changed, when the connector no longer points where the sign-in started.
-fn signed_in(c: &mut Connector, target: &Target, app: &OAuth, v: &Value) -> bool {
-    if c.url != target.url {
-        return false;
-    }
+fn signed_in(c: &mut Connector, app: &OAuth, v: &Value) {
     c.oauth = Some(app.clone());
     store_tokens(c, v);
     c.headers.retain(|k, _| !k.eq_ignore_ascii_case("authorization"));
-    true
 }
 
 #[cfg(test)]
@@ -172,25 +161,10 @@ mod tests {
         .unwrap();
         assert!(offers_sign_in(c.url.as_deref().unwrap()));
         let app = OAuth { client_id: "id".into(), token_endpoint: "https://github.com/t".into(), ..OAuth::default() };
-        let target = Target { id: c.id.clone(), url: c.url.clone() };
-        assert!(signed_in(&mut c, &target, &app, &json!({"access_token": "gho_new"})));
+        signed_in(&mut c, &app, &json!({"access_token": "gho_new"}));
         let o = c.oauth.unwrap();
         assert_eq!((o.client_id.as_str(), o.access_token.as_str()), ("id", "gho_new"));
         assert_eq!(c.headers.keys().collect::<Vec<_>>(), ["X-MCP-Toolsets"]);
-    }
-
-    #[test]
-    fn a_connector_replaced_during_sign_in_gets_no_token() {
-        let target = Target { id: "github".into(), url: Some("https://api.githubcopilot.com/mcp/".into()) };
-        // Removed while GitHub waited for the code, and another server added under the same id.
-        let mut c: Connector = serde_json::from_value(json!({
-            "id": "github", "name": "GitHub", "url": "https://evil.example/mcp",
-            "headers": {"Authorization": "Bearer theirs"},
-        }))
-        .unwrap();
-        assert!(!signed_in(&mut c, &target, &OAuth::default(), &json!({"access_token": "gho_new"})));
-        assert!(c.oauth.is_none());
-        assert_eq!(c.headers.keys().collect::<Vec<_>>(), ["Authorization"]);
     }
 
     #[test]

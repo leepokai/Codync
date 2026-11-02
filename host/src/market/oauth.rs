@@ -106,9 +106,16 @@ fn text(v: &Value) -> Option<String> {
     v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
-fn update(store: &Store, id: &str, f: impl FnOnce(&mut Connector)) -> Result<Connector> {
+/// `c` is connector `id` still pointing at `url`: while a request to its server is in flight, it
+/// can be removed and another added under its id.
+fn is_at(c: &Connector, id: &str, url: Option<&str>) -> bool {
+    c.id == id && c.url.as_deref() == url
+}
+
+/// Changes connector `id` while it still points at `url`: every change here follows a request to its server.
+fn update(store: &Store, id: &str, url: Option<&str>, f: impl FnOnce(&mut Connector)) -> Result<Connector> {
     market::update_connectors(store, |all| {
-        let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| anyhow!("unknown connector"))?;
+        let c = all.iter_mut().find(|c| is_at(c, id, url)).ok_or_else(|| anyhow!("unknown connector"))?;
         f(c);
         Ok(c.clone())
     })
@@ -175,7 +182,7 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
     }
     oauth.token_endpoint = token_endpoint;
     let client_id = oauth.client_id.clone();
-    update(store, id, |c| c.oauth = Some(oauth))?;
+    update(store, id, Some(&url), |c| c.oauth = Some(oauth))?;
 
     let verifier = crate::remote::crypto::b64(&crate::remote::crypto::random::<32>());
     let challenge = crate::remote::crypto::b64(&crate::remote::crypto::sha256(&[verifier.as_bytes()]));
@@ -224,8 +231,7 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
     let code = code.ok_or_else(|| anyhow!("Sign-in didn't return a code"))?;
     let c = market::connectors(store)?
         .into_iter()
-        // Still the server the sign-in started for: it can be removed and another added under its id meanwhile.
-        .find(|c| c.id == p.connector && c.url.as_deref() == Some(p.resource.as_str()))
+        .find(|c| is_at(c, &p.connector, Some(&p.resource)))
         .ok_or_else(|| anyhow!("unknown connector"))?;
     let oauth = c.oauth.ok_or_else(|| anyhow!("unknown connector"))?;
     let v = token_request(
@@ -239,7 +245,7 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
         ],
     )
     .await?;
-    update(store, &p.connector, |c| store_tokens(c, &v))
+    update(store, &p.connector, Some(&p.resource), |c| store_tokens(c, &v))
 }
 
 async fn token_request(oauth: &OAuth, form: &[(&str, &str)]) -> Result<Value> {
@@ -292,8 +298,8 @@ fn store_tokens(c: &mut Connector, v: &Value) {
 }
 
 /// Forgets a connector's tokens (keeps its registration).
-fn sign_out(store: &Store, id: &str) -> Result<Connector> {
-    update(store, id, |c| {
+fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
+    update(store, &c.id, c.url.as_deref(), |c| {
         if let Some(o) = &mut c.oauth {
             o.access_token.clear();
             o.refresh_token = None;
@@ -329,7 +335,8 @@ async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<O
     }
     let _one = REFRESH.lock().await;
     // Someone else may have refreshed while we waited.
-    let current = market::connectors(store)?.into_iter().find(|x| x.id == c.id).and_then(|x| x.oauth);
+    let current =
+        market::connectors(store)?.into_iter().find(|x| is_at(x, &c.id, c.url.as_deref())).and_then(|x| x.oauth);
     if let Some(cur) = &current
         && cur.access_token != o.access_token
         && cur.signed_in()
@@ -337,14 +344,14 @@ async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<O
         return Ok(cur.clone());
     }
     let Some(refresh) = o.refresh_token.clone() else {
-        sign_out(store, &c.id)?;
+        sign_out(store, c)?;
         return Err(signed_out());
     };
     match token_request(o, &[("grant_type", "refresh_token"), ("refresh_token", &refresh)]).await {
-        Ok(v) => Ok(update(store, &c.id, |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
+        Ok(v) => Ok(update(store, &c.id, c.url.as_deref(), |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
         Err(error) => {
             tracing::warn!(connector = %c.id, error = format!("{error:#}"), "token refresh failed");
-            sign_out(store, &c.id)?;
+            sign_out(store, c)?;
             Err(signed_out())
         }
     }
@@ -359,16 +366,27 @@ mod tests {
         assert_eq!(encode("a b&c=d/+"), "a+b%26c%3Dd%2F%2B");
     }
 
-    #[test]
-    fn unknown_state_is_refused() {
+    /// A sign-in to "notes" at `https://notes.example/mcp`, waiting for its code under `state`.
+    fn pend(state: &str) {
+        let pending = Pending {
+            connector: "notes".into(),
+            verifier: "v".into(),
+            redirect_uri: loopback_uri(1),
+            resource: "https://notes.example/mcp".into(),
+            started: Instant::now(),
+        };
+        PENDING.locked().get_or_insert_with(HashMap::new).insert(state.into(), pending);
+    }
+
+    #[tokio::test]
+    async fn unknown_state_is_refused() {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-        let err = rt.block_on(finish(&store, "nope", Some("code"), None)).unwrap_err();
+        let err = finish(&store, "nope", Some("code"), None).await.unwrap_err();
         assert!(err.to_string().contains("expired"));
     }
 
-    #[test]
-    fn a_connector_replaced_during_sign_in_gets_no_code() {
+    #[tokio::test]
+    async fn a_connector_replaced_during_sign_in_gets_no_code() {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         // Removed while the sign-in page was open, and another server added under the same id.
         let c: Connector = serde_json::from_value(json!({
@@ -377,16 +395,49 @@ mod tests {
         }))
         .unwrap();
         market::save_connectors(&store, &[c]).unwrap();
-        let pending = Pending {
-            connector: "notes".into(),
-            verifier: "v".into(),
-            redirect_uri: loopback_uri(1),
-            resource: "https://notes.example/mcp".into(),
-            started: Instant::now(),
-        };
-        PENDING.locked().get_or_insert_with(HashMap::new).insert("replaced".into(), pending);
-        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-        let err = rt.block_on(finish(&store, "replaced", Some("code"), None)).unwrap_err();
+        pend("replaced");
+        let err = finish(&store, "replaced", Some("code"), None).await.unwrap_err();
         assert_eq!(err.to_string(), "unknown connector");
+    }
+
+    #[tokio::test]
+    async fn the_token_is_saved_only_while_the_connector_is_unchanged() {
+        use axum::{Json, Router, routing};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let store = Arc::new(Store::open(std::path::Path::new(":memory:")).unwrap());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let token_endpoint = format!("http://{}/token", listener.local_addr().unwrap());
+        let original: Connector = serde_json::from_value(json!({
+            "id": "notes", "name": "Notes", "url": "https://notes.example/mcp",
+            "oauth": {"clientId": "ours", "tokenEndpoint": token_endpoint},
+        }))
+        .unwrap();
+        market::save_connectors(&store, &[original]).unwrap();
+        // The second answer comes only after the connector was removed and another added under its id.
+        let shared = store.clone();
+        let answered = Arc::new(AtomicBool::new(false));
+        let router = Router::new().route(
+            "/token",
+            routing::post(move || async move {
+                if answered.swap(true, Ordering::SeqCst) {
+                    let other: Connector = serde_json::from_value(json!({
+                        "id": "notes", "name": "Notes", "url": "https://other.example/mcp",
+                    }))
+                    .unwrap();
+                    market::save_connectors(&shared, &[other]).unwrap();
+                }
+                Json(json!({"access_token": "notes-token"}))
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        pend("unchanged");
+        let saved = finish(&store, "unchanged", Some("code"), None).await.unwrap();
+        assert_eq!(saved.oauth.unwrap().access_token, "notes-token");
+        pend("replaced-mid-request");
+        let err = finish(&store, "replaced-mid-request", Some("code"), None).await.unwrap_err();
+        assert_eq!(err.to_string(), "unknown connector");
+        let left = market::connectors(&store).unwrap();
+        assert_eq!(left[0].url.as_deref(), Some("https://other.example/mcp"));
+        assert!(left[0].oauth.is_none(), "the replacement got the token");
     }
 }

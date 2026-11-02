@@ -19,6 +19,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
     case fr
     case de
     case es
+    case ru
 
     public var catalogName: String { self == .zh ? "zh-Hans" : rawValue }
 
@@ -70,7 +71,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
     public static func usesChinese(preference: AppLanguage, systemIsChinese: Bool) -> Bool {
         switch preference {
         case .zh, .zhHant: true
-        case .en, .ja, .ko, .fr, .de, .es: false
+        case .en, .ja, .ko, .fr, .de, .es, .ru: false
         case .system: systemIsChinese
         }
     }
@@ -80,7 +81,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
         switch preference {
         case .zh: return Locale(identifier: "zh-Hans")
         case .zhHant: return Locale(identifier: "zh-Hant")
-        case .en, .ja, .ko, .fr, .de, .es: return Locale(identifier: preference.rawValue)
+        case .en, .ja, .ko, .fr, .de, .es, .ru: return Locale(identifier: preference.rawValue)
         case .system:
             return Locale(identifier: resolved(preference: .system).catalogName)
         }
@@ -98,6 +99,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
         case .fr: "Français"
         case .de: "Deutsch"
         case .es: "Español"
+        case .ru: "Русский"
         }
     }
 }
@@ -108,7 +110,7 @@ public enum L10n {
 
     private static let hans = load("zh-Hans")
     private static let hant = load("zh-Hant")
-    private static let catalogs = Dictionary(uniqueKeysWithValues: [AppLanguage.ja, .ko, .fr, .de, .es].map { ($0, load($0.catalogName)) })
+    private static let catalogs = Dictionary(uniqueKeysWithValues: [AppLanguage.ja, .ko, .fr, .de, .es, .ru].map { ($0, load($0.catalogName)) })
 
     /// A missing or malformed table is logged and left empty, so the interface stays in English.
     private static func load(_ name: String) -> [String: String] {
@@ -148,7 +150,7 @@ public enum L10n {
         case .zh: return (hans, [:])
         case .zhHant: return (hant, hans)
         case .en: return nil
-        case .ja, .ko, .fr, .de, .es: return (catalogs[preference] ?? [:], [:])
+        case .ja, .ko, .fr, .de, .es, .ru: return (catalogs[preference] ?? [:], [:])
         case .system:
             if !systemIsChinese {
                 let resolved = AppLanguage.resolved(preference: .system, languages: systemLanguages)

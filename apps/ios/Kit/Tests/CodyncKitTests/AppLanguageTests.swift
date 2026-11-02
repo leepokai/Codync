@@ -126,7 +126,7 @@ struct AppLanguageTests {
 
 extension AppLanguageTests {
 @Test func additionalLanguagesResolveRegionsAndLoadBundledCatalogs() {
-    for language in [AppLanguage.ja, .ko, .fr, .de, .es] {
+    for language in [AppLanguage.ja, .ko, .fr, .de, .es, .ru] {
         #expect(AppLanguage.resolved(preference: .system, languages: [language.rawValue + "-XX"]) == language)
         #expect(AppLanguage.resolved(preference: language, languages: ["zh-TW"]) == language)
         let translated = L10n.tr("Settings", preference: language, systemIsChinese: false)
@@ -136,6 +136,7 @@ extension AppLanguageTests {
         #expect(AppLanguage.locale(preference: language, systemIsChinese: true).language.languageCode?.identifier == language.rawValue)
     }
     #expect(AppLanguage.resolved(preference: .system, languages: ["pt-BR"]) == .en)
+    #expect(AppLanguage.resolved(preference: .system, languages: ["ru-RU"]) == .ru)
 }
 
 }

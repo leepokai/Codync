@@ -142,7 +142,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
 
 
 test('each supported locale follows regional system tags and explicit choices win', () => {
-  for (const language of ['ja', 'ko', 'fr', 'de', 'es'] as const) {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'ru'] as const) {
     assert.equal(resolvedLanguage('system', `${language.toUpperCase()}_XX.UTF-8`), language)
     assert.equal(resolvedLanguage(language, 'zh-TW'), language)
     assert.equal(usesChinese(language, 'zh-TW'), false)
@@ -153,7 +153,8 @@ test('each supported locale follows regional system tags and explicit choices wi
     assert.equal(resetLine('resets 3h 20m', language).includes('3h 20m'), true)
     assert.notEqual(languageTitle(language, 'en', 'en'), 'Follow system')
   }
-  assert.equal(new Set(appLanguages).size, 9)
+  assert.equal(new Set(appLanguages).size, 10)
+  assert.equal(resolvedLanguage('system', 'ru-RU'), 'ru')
   assert.equal(resolvedLanguage('system', 'pt-BR'), 'en')
   assert.equal(translate('Settings', 'en', 'ja-JP'), 'Settings')
 })
@@ -162,7 +163,7 @@ test('each supported locale follows regional system tags and explicit choices wi
 test('English reset text remains literal and absolute dates do not become durations', () => {
   assert.equal(resetLine('resets Sep 26 at 12pm', 'en'), 'resets Sep 26 at 12pm')
   assert.equal(resetLine('resets 3h 20m', 'en'), 'resets 3h 20m')
-  for (const language of ['ja', 'ko', 'fr', 'de', 'es'] as const) {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'ru'] as const) {
     assert.equal(resetLine('resets Sep 26 at 12pm', language), `${translate('resets', language)} Sep 26 at 12pm`)
   }
 })

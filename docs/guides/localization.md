@@ -1,7 +1,7 @@
 # Interface languages
 
 Each device can choose Follow system, English, Simplified Chinese, Traditional
-Chinese, Japanese, Korean, French, German or Spanish. Desktop and phone settings
+Chinese, Japanese, Korean, French, German, Spanish or Russian. Desktop and phone settings
 hold the choice; the terminal command palette cycles its own saved preference.
 Regional variants use their language's catalog. Unsupported system languages use
 English. The saved `zh` identifier continues to mean Simplified Chinese.
@@ -17,7 +17,11 @@ Traditional Chinese retains its existing Simplified fallback. Translate an
 interface template before inserting a user's name or text. Conversation content
 is not translated. The desktop catalog test checks key and placeholder parity.
 
-The five additional catalogs began as machine translations of public interface
+The Russian catalog was translated with a fixed glossary (бот, ведущий бот, рутина,
+коннектор, Настройки, Войти/Выйти, разрешить/отклонить) and Apple's Russian names
+for system screens. Russian has three plural forms, so phrases with `{count}`
+use a count-neutral form ("Ботов: {count}"). The five other additional catalogs
+began as machine translations of public interface
 copy, with reviewed overrides for common controls. They have not had a complete
 native-speaker review. Translation improvements should change the canonical
 catalog and run the catalog test, together with the affected client checks.

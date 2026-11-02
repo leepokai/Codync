@@ -23,6 +23,7 @@ enum AppLanguage {
     Fr,
     De,
     Es,
+    Ru,
 }
 
 impl AppLanguage {
@@ -36,6 +37,7 @@ impl AppLanguage {
             "fr" => Self::Fr,
             "de" => Self::De,
             "es" => Self::Es,
+            "ru" => Self::Ru,
             _ => Self::System,
         }
     }
@@ -51,6 +53,7 @@ impl AppLanguage {
             Self::Fr => "fr",
             Self::De => "de",
             Self::Es => "es",
+            Self::Ru => "ru",
         }
     }
 
@@ -64,7 +67,8 @@ impl AppLanguage {
             Self::Ko => Self::Fr,
             Self::Fr => Self::De,
             Self::De => Self::Es,
-            Self::Es => Self::System,
+            Self::Es => Self::Ru,
+            Self::Ru => Self::System,
         }
     }
 }
@@ -97,6 +101,11 @@ static FR: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
 static DE: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/de.json"))
         .expect("de.json is a string map")
+});
+
+static RU: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/ru.json"))
+        .expect("ru.json is a string map")
 });
 
 static ES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
@@ -153,6 +162,7 @@ fn active_phrases() -> Option<&'static HashMap<String, String>> {
         AppLanguage::Fr => Some(&FR),
         AppLanguage::De => Some(&DE),
         AppLanguage::Es => Some(&ES),
+        AppLanguage::Ru => Some(&RU),
         AppLanguage::En | AppLanguage::System => None,
     }
 }
@@ -361,6 +371,7 @@ pub(in crate::tui) fn language_title() -> Cow<'static, str> {
         AppLanguage::Fr => Cow::Borrowed("Français"),
         AppLanguage::De => Cow::Borrowed("Deutsch"),
         AppLanguage::Es => Cow::Borrowed("Español"),
+        AppLanguage::Ru => Cow::Borrowed("Русский"),
         AppLanguage::System => tr("Follow system"),
     }
 }
@@ -391,6 +402,7 @@ mod tests {
             (AppLanguage::Fr, &*super::FR),
             (AppLanguage::De, &*super::DE),
             (AppLanguage::Es, &*super::ES),
+            (AppLanguage::Ru, &*super::RU),
         ] {
             assert_eq!(
                 super::resolved_language(AppLanguage::System, &format!("{}_XX.UTF-8", language.stored())),
@@ -401,6 +413,7 @@ mod tests {
             assert_eq!(super::translate_with("Unknown phrase", table), "Unknown phrase");
         }
         assert_eq!(super::resolved_language(AppLanguage::System, "pt_BR"), AppLanguage::En);
+        assert_eq!(super::resolved_language(AppLanguage::System, "ru_RU.UTF-8"), AppLanguage::Ru);
     }
 
     #[test]
@@ -452,7 +465,8 @@ mod tests {
         assert_eq!(AppLanguage::Zh.next(), AppLanguage::ZhHant);
         assert_eq!(AppLanguage::ZhHant.next(), AppLanguage::En);
         assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
-        assert_eq!(AppLanguage::Es.next(), AppLanguage::System);
+        assert_eq!(AppLanguage::Es.next(), AppLanguage::Ru);
+        assert_eq!(AppLanguage::Ru.next(), AppLanguage::System);
         assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));

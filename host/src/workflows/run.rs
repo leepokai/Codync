@@ -1343,7 +1343,8 @@ fn retry_script(hub: &Hub, row: &StepMeta, run_id: &str, step_id: &str) -> Resul
             "UPDATE workflow_runs SET status = 'running', error = NULL, ended_at = NULL, updated_at = ?2 WHERE id = ?1",
             params![run_id, now],
         )?;
-        // Keep the failed row, but stop the replay from treating it as this call.
+        // Keep the failed row and its request id. Hide it from replay; the new attempt
+        // takes a different request id when it is inserted.
         tx.execute("UPDATE workflow_steps SET node_id = node_id || '#' || id WHERE id = ?1", [step_id])?;
         Ok(())
     })?;

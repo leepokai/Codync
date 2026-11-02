@@ -95,7 +95,9 @@ function ScheduleFields({ node, readOnly, onChange }: { node: Node; readOnly: bo
   const [error, setError] = useState<string | null>(null)
   const request = useRef(0)
   const nodeRef = useRef(node)
+  const onChangeRef = useRef(onChange)
   nodeRef.current = node
+  onChangeRef.current = onChange
 
   useEffect(() => {
     let cancel = false
@@ -109,6 +111,17 @@ function ScheduleFields({ node, readOnly, onChange }: { node: Node; readOnly: bo
         if (!cancel) {
           setDraft({ ...result.draft, kind: 'cron' })
           setPreview(result)
+          const current = nodeRef.current
+          if (current.fields.trigger === 'schedule' && !current.schedule) {
+            const cron = result.triggers.find((trigger) => trigger.type === 'cron')
+            if (cron?.expression && cron.timeZone) {
+              onChangeRef.current({
+                ...current,
+                fields: { ...current.fields, trigger: 'schedule', timezone: cron.timeZone },
+                schedule: { type: 'cron', expression: cron.expression, timeZone: cron.timeZone },
+              })
+            }
+          }
         }
       } catch (cause) {
         if (!cancel) setError(errorText(cause))

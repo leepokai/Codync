@@ -269,14 +269,14 @@ pub fn assemble(previous: &Graph, steps: &[Step]) -> Graph {
     }
     let mut nodes = kept;
     let mut edges = Vec::new();
-    let mut first_args: Option<String> = None;
+    let mut args_nodes: Vec<String> = Vec::new();
     for (id, step, at) in &body {
         nodes.push(node(id.clone(), step.kind, at.x, at.y, step.fields.clone()));
         for input in &step.inputs {
             match input {
                 Input::Args => {
-                    if first_args.is_none() {
-                        first_args = Some(id.clone());
+                    if !args_nodes.contains(id) {
+                        args_nodes.push(id.clone());
                     }
                 }
                 Input::Var(name) => {
@@ -293,9 +293,14 @@ pub fn assemble(previous: &Graph, steps: &[Step]) -> Graph {
             }
         }
     }
-    if let Some(target) = &first_args {
+    // Every step that reads the trigger payload gets that text, not only the first.
+    for target in &args_nodes {
         for trigger in nodes.iter().filter(|n| n.kind == NodeKind::Trigger) {
-            edges.push(edge(&trigger.id, target, None));
+            let linked =
+                edges.iter().any(|edge| edge.from == trigger.id && edge.to == *target && !edge.id.ends_with(":order"));
+            if !linked {
+                edges.push(edge(&trigger.id, target, None));
+            }
         }
     }
     let mut condition: Option<String> = None;

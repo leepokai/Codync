@@ -266,15 +266,14 @@ describe("devices", () => {
     const [hostWs, elsewhereWs] = await Promise.all([hostSocket(host), hostSocket(elsewhere)]);
     const before = Date.now();
     expect((await call("POST", "/v1/devices/sign-out", { token: u.token, key: u.key })).status).toBe(200);
-    const after = Date.now();
     // The account's computers pull now, not at their next poll; another account's hear nothing.
     await hostWs.nextT("cloud.changed");
     await elsewhereWs.none((m) => m.t === "cloud.changed");
     const marks = await signedOut(host);
-    expect(marks).toEqual([{ deviceKey: u.dk, signedOutAt: expect.any(Number) }]);
-    // In ms, as the host's push tickets: it drops the ones that came up to then.
-    expect(marks[0].signedOutAt).toBeGreaterThanOrEqual(before);
-    expect(marks[0].signedOutAt).toBeLessThanOrEqual(after);
+    expect(marks).toEqual([{ deviceKey: u.dk, signedOutAgo: expect.any(Number) }]);
+    // In ms, as the host's push tickets: it drops the ones that came up to then, counted back on its own clock.
+    expect(marks[0].signedOutAgo).toBeGreaterThanOrEqual(0);
+    expect(marks[0].signedOutAgo).toBeLessThanOrEqual(Date.now() - before);
     expect(await signedOut(elsewhere)).toEqual([]);
     // Still in the account, so signing back in needs no new access: registering again clears it.
     expect((await call("POST", "/v1/devices/certificate", { token: u.token, key: u.key })).status).toBe(200);

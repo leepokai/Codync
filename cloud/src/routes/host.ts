@@ -134,8 +134,9 @@ export async function hostState(c: Ctx) {
       created_at: number;
       expires_at: number;
     }>();
-  // The account's phones that signed out, and when: the host drops their push tickets from before then, so a ticket
-  // sent after signing back in survives a pull that lands before the phone's `POST /v1/devices` clears the mark.
+  // The account's phones that signed out, and how long ago (relative, so the host's clock needn't match this one): the
+  // host drops their push tickets from before then, so a ticket sent after signing back in survives a pull that lands
+  // before the phone's `POST /v1/devices` clears the mark.
   const signedOut = comp.owner_user_id
     ? await c.env.DB.prepare(
         "SELECT sign_pub, signed_out_at FROM devices WHERE owner_user_id = ? AND signed_out_at IS NOT NULL AND revoked_at IS NULL",
@@ -145,7 +146,7 @@ export async function hostState(c: Ctx) {
     : { results: [] };
   return {
     owner: owner ? { userId: owner.user_id, email: owner.email } : null,
-    signedOutDevices: signedOut.results.map((d) => ({ deviceKey: d.sign_pub, signedOutAt: d.signed_out_at })),
+    signedOutDevices: signedOut.results.map((d) => ({ deviceKey: d.sign_pub, signedOutAgo: c.now - d.signed_out_at })),
     grants: grants.results.map((g) => ({
       grantId: g.id,
       deviceKey: g.sign_pub,

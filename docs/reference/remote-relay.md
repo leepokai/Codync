@@ -519,9 +519,9 @@ The route table below summarizes the contract. Executable schema and validation 
   {"owner":{"userId":"user_…","email":"a@b.c"} | null,
    "grants":[{"grantId","deviceKey","deviceName","platform","scopes":["control","screen"]}],
    "requests":[{"requestId","deviceKey","deviceName","platform","email","commit","hostNonce"?,"deviceNonce"?,"createdAt","expiresAt"}],
-   "signedOutDevices":[{"deviceKey","signedOutAt"}]}
+   "signedOutDevices":[{"deviceKey","signedOutAgo"}]}
   ```
-  grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。`signedOutDevices` 是電腦所屬帳號裡登出的裝置（未撤銷）與登出時間（ms），host 只刪掉它們在那之前登記的 push tickets，不動裝置列：手機登回來後送來的新 ticket 可能比清掉標記的 `POST /v1/devices` 先到，要留著。
+  grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。`signedOutDevices` 是電腦所屬帳號裡登出的裝置（未撤銷）與登出多久了（ms，相對時間，兩邊時鐘不同步也沒關係），host 從收到回應的時間往回推，只刪掉它們在那之前登記的 push tickets（回應慢時寧可多刪一張剛登記的，手機下次連線會再送），不動裝置列：手機登回來後送來的新 ticket 可能比清掉標記的 `POST /v1/devices` 先到，要留著。
 - `POST /v1/host/access-requests/{id}/nonce` `{"nonce"}` → `{}`（`cloud/src/routes/host.ts`；已設過 → `409`）
 - `POST /v1/host/grants/{grantId}/revoke` `{}` → `{}`（host 在本機撤銷帳號來源裝置時同步 D1，`revoked_reason='owner'`；失敗記錄並存入 `grant_revokes` 重試，本機撤銷已生效）
 - `POST /v1/host/access-requests/{id}/decision` `{"decision":"approve"|"deny"}` → `{"status","grantId"?}`（`cloud/src/routes/host.ts` 的原子更新；request 過期 → `410 requestExpired`；approve 要求 `device_nonce IS NOT NULL`，否則 `409`）

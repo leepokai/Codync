@@ -240,14 +240,14 @@ public final class BotStore {
 
     static let leadChoiceHost = "2.33.0"
 
-    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.34.0
+    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.35.0
     /// (it refuses `markUnread`), "Mark as read".
     public func offersMarkUnread(_ bot: Bot) -> Bool {
         bot.unread == 0 && !bot.keptUnread
             && hostVersion.map { !AppVersion.isBelow($0.version, Self.markUnreadHost) } ?? false
     }
 
-    static let markUnreadHost = "2.34.0"
+    static let markUnreadHost = "2.35.0"
 
     static let sectionsHost = "2.32.0"
 

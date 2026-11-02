@@ -23,7 +23,7 @@ import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 const LEAD_CHOICE_HOST = '2.33.0'
 
 /** The first host with `markUnread`. */
-const MARK_UNREAD_HOST = '2.34.0'
+const MARK_UNREAD_HOST = '2.35.0'
 
 export type Connection =
   | { kind: 'unpaired' }

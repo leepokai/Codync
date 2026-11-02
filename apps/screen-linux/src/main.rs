@@ -10,6 +10,7 @@ mod a11y;
 mod backend;
 mod candidates;
 mod capture;
+mod clipboard;
 mod connection;
 mod input;
 mod link;
@@ -237,6 +238,14 @@ impl Helper {
             _ => Err(anyhow!(
                 "Set up Computer access in Codync on this computer first."
             )),
+        }
+    }
+
+    /// The X display being shared, `None` through the portals or before setup.
+    async fn x11_display(&self) -> Option<String> {
+        match self.portal.lock().await.as_ref() {
+            Some(backend::Backend::X11(x11)) => Some(x11.name().to_owned()),
+            _ => None,
         }
     }
 

@@ -143,3 +143,25 @@ async fn xtest_moves_the_pointer_and_types_symbols_missing_from_the_keymap() {
         "a vanished X server makes the backend inactive"
     );
 }
+
+#[tokio::test]
+async fn paste_goes_to_the_shared_x_display() {
+    if std::process::Command::new("xclip")
+        .arg("-version")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipped: xclip isn't installed");
+        return;
+    }
+    let Some(server) = Xvfb::start() else { return };
+    // The private Xvfb is never the runner's `DISPLAY`, like a display the helper found itself.
+    crate::clipboard::set("pasted é", Some(&server.1))
+        .await
+        .unwrap();
+    let read = std::process::Command::new("xclip")
+        .args(["-display", &server.1, "-selection", "clipboard", "-o"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&read.stdout), "pasted é");
+}

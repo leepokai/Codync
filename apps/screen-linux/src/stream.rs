@@ -5,6 +5,7 @@ use crate::Helper;
 pub use crate::capture::Capture;
 #[cfg(test)]
 use crate::capture::capture_source;
+use crate::clipboard;
 use crate::negotiation::ice_uri;
 use crate::portal::Display;
 use crate::rtp::{payloader, sender};
@@ -113,7 +114,8 @@ impl Session {
                     let reply = match msg["type"].as_str() {
                         Some("view") => Some(view.apply(&msg)),
                         Some("clipboard") => {
-                            set_clipboard(msg["text"].as_str().unwrap_or_default())
+                            let x11 = helper.x11_display().await;
+                            clipboard::set(msg["text"].as_str().unwrap_or_default(), x11.as_deref())
                                 .await
                                 .err()
                                 .as_ref()
@@ -257,32 +259,6 @@ fn send(channels: &Mutex<Vec<gst_webrtc::WebRTCDataChannel>>, msg: &Value) {
     {
         tracing::debug!(%error, "couldn't reply on the data channel");
     }
-}
-
-/// Wayland first, then X11.
-async fn set_clipboard(text: &str) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
-    for (cmd, args) in [
-        ("wl-copy", &[][..]),
-        ("xclip", &["-selection", "clipboard"][..]),
-    ] {
-        let Ok(mut child) = tokio::process::Command::new(cmd)
-            .args(args)
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-        else {
-            continue;
-        };
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(text.as_bytes()).await?;
-        }
-        if child.wait().await?.success() {
-            return Ok(());
-        }
-    }
-    Err(anyhow!(
-        "Install wl-clipboard (or xclip) on this computer to paste from your phone."
-    ))
 }
 
 pub(crate) fn make(name: &str) -> Result<gst::Element> {

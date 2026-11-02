@@ -1,4 +1,3 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
@@ -7,8 +6,7 @@ struct ConnectionRequestCard: View {
     let entry: Entry
     let request: ConnectionRequest
     @Environment(BotStore.self) private var model
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private var signInFlow = ConnectorSignInFlow()
     @State private var app: ComposioApp?
     @State private var item: MarketConnector?
     @State private var agent: Backend?
@@ -67,6 +65,7 @@ struct ConnectionRequestCard: View {
             ComposioConnectSheet(app: app, requestId: entry.id) { self.app = nil }
         }
         .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: true) }
+        .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { value = ""; username = "" }
     }
 
@@ -146,9 +145,8 @@ struct ConnectionRequestCard: View {
                     value = ""
                 } else if let id = request.connectorId {
                     let connectors = try await client.connectors()
-                    if connectors.first(where: { $0.id == id })?.needsSignIn == true {
-                        try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(id)
-                    }
+                    // Cancelled: the card stays pending.
+                    if connectors.first(where: { $0.id == id })?.needsSignIn == true, try await !signInFlow.signIn(id) { return }
                     try await client.finishConnectionRequest(entry.id, connectorId: id)
                 } else if let name = request.registryName {
                     let loaded = try await client.connectorInfo(name)

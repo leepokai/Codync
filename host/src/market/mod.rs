@@ -121,6 +121,8 @@ impl Connector {
                 Some(o) if o.signed_in() => "signedIn",
                 Some(_) => "signedOut",
             },
+            // Set up with a token before Codync could sign in to it (GitHub): it can switch.
+            "canSignIn": self.oauth.is_none() && self.url.as_deref().is_some_and(oauth::offers_sign_in),
         })
     }
 }
@@ -340,9 +342,15 @@ mod tests {
         let remote = c.acp(exe, 1).unwrap();
         assert_eq!(remote["args"][1], "remote", "remote servers go through the proxy");
         assert_eq!(remote["env"], only_data_dir);
+        assert_eq!(c.public()["canSignIn"], false, "only servers Codync has its own app for");
         c.oauth = Some(oauth::OAuth::default());
         assert!(c.acp(exe, 1).is_none(), "not signed in yet");
         assert_eq!(c.public()["auth"], "signedOut");
+        assert_eq!(c.public()["canSignIn"], false, "already signs in");
+        c.url = Some("https://api.githubcopilot.com/mcp/".into());
+        assert_eq!(c.public()["canSignIn"], false, "already signs in");
+        c.oauth = None;
+        assert_eq!(c.public()["canSignIn"], true, "set up with a token: can switch to signing in");
     }
 
     #[tokio::test]

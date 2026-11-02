@@ -182,6 +182,13 @@ private data class Editing<T>(val computerId: String, val draft: T)
         val inline = root == Root.Pairing || showPairing || access != null || creating != null || editor != null || groupEditor != null
         val error = app.error ?: states.firstNotNullOfOrNull { it.error }
         CodyncDialog("Something went wrong", error != null && !inline, accounts::clearError, error, cancel = "OK") { emptyList() }
+        // A connector sign-in with a code (GitHub), from wherever it started: the code, before its page opens.
+        val coding = states.firstOrNull { it.signInCode != null }
+        val codeStore = coding?.let { accounts.store(it.computer.id) }
+        CodyncDialog(coding?.signInCode.orEmpty(), codeStore != null, { codeStore?.dismissSignInCode() },
+            "Paste this code on the sign-in page that opens next.") {
+            listOf(DialogAction("Copy and open") { codeStore?.openSignInCode() })
+        }
     }
 }
 

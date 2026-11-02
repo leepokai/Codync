@@ -92,6 +92,8 @@ data class AppState(
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */
     val unreadable: Boolean = false,
+    /** A sign-in with a code (GitHub): the code, shown before its page opens until Copy and open or Cancel. */
+    val signInCode: String? = null,
     /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
     val hostUpdate: HostUpdate? = null,
     val error: String? = null,

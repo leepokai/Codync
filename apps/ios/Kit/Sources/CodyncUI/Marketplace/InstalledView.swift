@@ -1,12 +1,10 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
 struct InstalledView: View {
     let back: () -> Void
     @Environment(BotStore.self) private var model
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private var signInFlow = ConnectorSignInFlow()
     @State private var removing: Removal?
     @State private var signingIn: String?
     @State private var viewingSkill: SkillRef?
@@ -30,6 +28,7 @@ struct InstalledView: View {
         }
         .background(Palette.background)
         .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
+        .signInCodeDialog(signInFlow.codePrompt)
     }
 
     private var list: some View {
@@ -40,7 +39,8 @@ struct InstalledView: View {
             if !model.installedConnectors.isEmpty {
                 CardSection("Connectors") {
                     ForEach(model.installedConnectors) { c in
-                        InstalledRow(title: c.name, subtitle: c.needsSignIn ? "Sign in so bots can use it" : c.command ?? c.url ?? c.description) {
+                        InstalledRow(title: c.name, subtitle: c.needsSignIn ? "Sign in so bots can use it"
+                            : c.canSignIn == true ? "Sign in instead of using a saved token" : c.command ?? c.url ?? c.description) {
                             if c.kind == "composio" {
                                 AppLogo(url: c.logo, name: c.name, size: 32)
                             } else {
@@ -49,7 +49,7 @@ struct InstalledView: View {
                         } accessory: {
                             if signingIn == c.id {
                                 Spinner()
-                            } else if c.needsSignIn {
+                            } else if c.needsSignIn || c.canSignIn == true {
                                 Button(L10n.tr("Sign in")) { signIn(c.id) }
                                     .buttonStyle(PrimaryButtonStyle())
                                     .controlSize(.small)
@@ -96,7 +96,7 @@ struct InstalledView: View {
         signingIn = id
         Task {
             do {
-                try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(id)
+                try await signInFlow.signIn(id)
             } catch {
                 model.lastError = error.localizedDescription
             }

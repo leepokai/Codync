@@ -71,11 +71,11 @@ export function ScreenThumbnail({ computerId, name, open }: { computerId: string
           <VStack gap={10} align="center" className="screen-notice compact">
             <Icon name="display" size={22} color="var(--secondary)" />
             <Text size="caption" tone="secondary">{tr('Open in a window')}</Text>
-            <Button kind="secondary" onClick={open}>Show</Button>
+            <Button kind="secondary" onClick={open}>{tr('Show')}</Button>
           </VStack>
         ) : notice ? (
           <ScreenNotice compact notice={notice} retry={() => model?.retry()} />
-        ) : !playing ? (
+        ) : !playing && phase !== 'idle' ? (
           <ScreenNotice compact notice={{ text: tr('Connecting to the screen…') }} retry={() => {}} />
         ) : null}
         {playing && !notice ? (

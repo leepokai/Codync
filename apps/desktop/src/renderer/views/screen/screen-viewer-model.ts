@@ -200,7 +200,7 @@ export class ScreenViewerModel extends Observable {
 
   async sendClipboard() {
     const text = await window.codync.app.readClipboardText()
-    if (text) this.session?.pushClipboard(text)
+    if (text && this.interactive) this.session?.pushClipboard(text)
   }
 
   copyFromComputer() {

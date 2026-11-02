@@ -2,7 +2,8 @@
 
 import { parseApp, recordApp } from "../app-versions";
 import { computerIdFor, fromB64url, randomId, utf8, verifyEd25519 } from "../auth";
-import type { CloudMachineRow } from "../cloud-machines";
+import { CERT_TTL_MS, certify } from "../certificate";
+import { machineFor, type CloudMachineRow } from "../cloud-machines";
 import { cloudView } from "./cloud-computers";
 import {
   ApiError,
@@ -69,7 +70,8 @@ export async function registerDevice(c: Ctx) {
     .first<DeviceRow>();
   if (existing?.revoked_at) throw new ApiError("forbidden", "This device key was revoked; create a new one");
   if (existing) {
-    await c.env.DB.prepare("UPDATE devices SET name = ?, platform = ?, last_used_at = ? WHERE id = ?")
+    // Signing in again: its computers may push to it again.
+    await c.env.DB.prepare("UPDATE devices SET name = ?, platform = ?, last_used_at = ?, signed_out_at = NULL WHERE id = ?")
       .bind(name, platform, c.now, existing.id)
       .run();
     return { device: deviceView({ ...existing, name, platform }) };
@@ -104,6 +106,38 @@ export async function listDevices(c: Ctx) {
   return {
     devices: results.map((d) => ({ ...deviceView(d), lastUsedAt: d.last_used_at, revoked: d.revoked_at !== null })),
   };
+}
+
+/** A certificate that this (registered, unrevoked) device key is in the caller's account, for pairing in person. */
+export async function deviceCertificate(c: Ctx) {
+  const u = await user(c);
+  const s = await signed(c);
+  if (!c.env.DEVICE_CERT_KEY) throw new ApiError("notConfigured", "This cloud doesn't issue device certificates");
+  const known = await c.env.DB.prepare("SELECT 1 FROM devices WHERE owner_user_id = ? AND sign_pub = ? AND revoked_at IS NULL")
+    .bind(u.userId, s.kid)
+    .first();
+  if (!known) throw new ApiError("forbidden", "Register this device with the account first");
+  const certificate = await certify(c.env.DEVICE_CERT_KEY, {
+    v: 1,
+    deviceKey: s.kid,
+    userId: u.userId,
+    email: u.email,
+    exp: c.now + CERT_TTL_MS,
+  });
+  return { certificate };
+}
+
+/** Signing out of a phone: it keeps its key and access, but the account's computers drop its push tickets on their
+ * next state pull, told to pull now. Registering the device again (signing back in) undoes it. */
+export async function signOutDevice(c: Ctx) {
+  const u = await user(c);
+  const d = await device(c, u.userId);
+  await c.env.DB.prepare("UPDATE devices SET signed_out_at = ? WHERE id = ?").bind(c.now, d.id).run();
+  const { results } = await c.env.DB.prepare("SELECT id FROM computers WHERE owner_user_id = ?")
+    .bind(u.userId)
+    .all<{ id: string }>();
+  await Promise.all(results.map((r) => notify(c.env, r.id)));
+  return {};
 }
 
 export async function revokeDevice(c: Ctx, [deviceId]: string[]) {
@@ -243,6 +277,8 @@ export async function renameComputer(c: Ctx, [id]: string[]) {
 export async function removeComputer(c: Ctx, [id]: string[]) {
   const u = await user(c);
   await ownedComputer(c, id!, u.userId);
+  // Out of the account, a cloud computer would keep running with nobody to wake, use or delete it.
+  if (await machineFor(c.env, id!)) throw new ApiError("conflict", "Delete the cloud computer in Codync Cloud instead.");
   await unclaim(c.env, id!, u.userId, c.now);
   return {};
 }

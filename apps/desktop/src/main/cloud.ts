@@ -19,11 +19,13 @@ export interface Identity {
 
 const identities = new Map<string, Identity>()
 
+const keyPath = (userId: string) => join(app.getPath('userData'), `device-key-${createHash('sha256').update(userId).digest('hex').slice(0, 16)}.bin`)
+
 /** This install's device key for `userId`'s account, made on first use. */
 export async function identity(userId: string): Promise<Identity> {
   const cached = identities.get(userId)
   if (cached) return cached
-  const path = join(app.getPath('userData'), `device-key-${createHash('sha256').update(userId).digest('hex').slice(0, 16)}.bin`)
+  const path = keyPath(userId)
   let seed: Buffer | null = null
   try {
     const sealed = await fs.readFile(path)
@@ -70,23 +72,15 @@ export interface CloudFailure {
 
 export type CloudResult = { ok: true; value: Record<string, unknown> } | { ok: false; error: CloudFailure }
 
-/** One `/v1` request as the signed-in user; `signed` adds this device's `Codync-Sig`. */
-export async function cloudRequest(account: AccountService, method: string, path: string, body: unknown, signed: boolean): Promise<CloudResult> {
-  const base = account.state.cloudURL
-  const user = account.state.user
-  if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } }
+/** One `/v1` call with `token` (a session JWT), signed with `signer`'s device key when given. */
+async function cloudCall(base: string, token: string, method: string, path: string, body: unknown, signer: string | null, timeoutMs = 20_000): Promise<CloudResult> {
   const url = new URL(path.replace(/^\//, ''), `${base}/`)
   const payload = body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body))
-  const headers: Record<string, string> = { 'Codync-App': appHeader(app.getVersion()) }
-  try {
-    headers.Authorization = `Bearer ${await account.sessionToken()}`
-  } catch (error) {
-    return { ok: false, error: { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } }
-  }
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'Codync-App': appHeader(app.getVersion()) }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  if (signed) headers['Codync-Sig'] = signatureHeader(await identity(user.userId), method, url, payload)
+  if (signer) headers['Codync-Sig'] = signatureHeader(await identity(signer), method, url, payload)
   try {
-    const res = await fetch(url, { method, headers, body: body === undefined ? undefined : payload, signal: AbortSignal.timeout(20_000) })
+    const res = await fetch(url, { method, headers, body: body === undefined ? undefined : payload, signal: AbortSignal.timeout(timeoutMs) })
     const text = await res.text()
     const json = text ? (JSON.parse(text) as Record<string, unknown>) : {}
     if (!res.ok) {
@@ -97,6 +91,39 @@ export async function cloudRequest(account: AccountService, method: string, path
   } catch {
     return { ok: false, error: { status: 0, code: 'unreachable', message: "Can't reach the Codync cloud. Check your connection." } }
   }
+}
+
+/**
+ * Signing out: the account drops this install's device, with its grants and requests (iOS and Android
+ * `revokeThisDevice`). `token` was taken before Clerk signed out: it stays valid until it expires. Best effort, a short wait.
+ */
+export async function revokeThisDevice(base: string, token: string, userId: string) {
+  if (!identities.has(userId) && !(await fs.stat(keyPath(userId)).catch(() => null))) return
+  const publicKey = (await identity(userId)).publicKey
+  const list = await cloudCall(base, token, 'GET', 'v1/devices', undefined, null, 5_000)
+  const devices = list.ok ? ((list.value.devices ?? []) as { deviceId: string; deviceKey: string }[]) : []
+  const device = devices.find((d) => d.deviceKey === publicKey)
+  if (device) await cloudCall(base, token, 'DELETE', `v1/devices/${device.deviceId}`, undefined, null, 5_000)
+}
+
+/** Leaving an account here (signing out, deleting it): its device key goes, since the cloud never takes a revoked key back. */
+export async function dropDeviceKey(userId: string) {
+  identities.delete(userId)
+  await fs.rm(keyPath(userId), { force: true }).catch(() => {})
+}
+
+/** One `/v1` request as the signed-in user; `signed` adds this device's `Codync-Sig`. */
+export async function cloudRequest(account: AccountService, method: string, path: string, body: unknown, signed: boolean): Promise<CloudResult> {
+  const base = account.state.cloudURL
+  const user = account.state.user
+  if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } }
+  let token: string
+  try {
+    token = await account.sessionToken()
+  } catch (error) {
+    return { ok: false, error: { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } }
+  }
+  return cloudCall(base, token, method, path, body, signed ? user.userId : null)
 }
 
 export function registerCloud(account: AccountService) {

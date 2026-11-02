@@ -84,18 +84,20 @@ fn window(buf: &mut Buffer, inner: Rect, y: u16, win: &Value) {
     }
     let pct = win["percent"].as_f64().unwrap_or(0.0).clamp(0.0, 100.0);
     let on = filled(pct, 16);
+    // At most 16 columns each, and never past the sheet's edge on a narrow terminal.
+    let room_from = |x: u16| inner.right().saturating_sub(x).min(16);
     let mut x = put(
         buf,
         inner.x + 21,
         y,
-        16,
+        room_from(inner.x + 21),
         &"▰".repeat(on.min(16)),
         if pct >= 80.0 { t.amber } else { t.text }.patch(t.panel),
     );
-    x = put(buf, x, y, 16, &"▱".repeat(16 - on.min(16)), t.line.patch(t.panel));
+    x = put(buf, x, y, room_from(x), &"▱".repeat(16 - on.min(16)), t.line.patch(t.panel));
     // Said as used: a bare percent reads as what's left.
     let used = tr("{percent}% used").replace("{percent}", &format!("{pct:.0}"));
-    let end = put(buf, x + 1, y, 16, &used, t.text.patch(t.panel));
+    let end = put(buf, x + 1, y, room_from(x + 1), &used, t.text.patch(t.panel));
     let reset = win["resetsAt"]
         .as_i64()
         .map(|ms| format!("resets {}", when_future(ms)))
@@ -106,6 +108,10 @@ fn window(buf: &mut Buffer, inner: Rect, y: u16, win: &Value) {
         .unwrap_or_default();
     // Only in what the reading leaves, so a longer translation never runs into it.
     let room = usize::from(inner.right().saturating_sub(end + 1));
+    if room == 0 {
+        // A lone "…" would land on the reading.
+        return;
+    }
     let reset = truncate(&crate::tui::l10n::reset_line(&reset), room);
     rput(buf, inner.right(), y, &reset, t.dim.patch(t.panel));
 }
@@ -140,5 +146,19 @@ mod tests {
         // 25 lines (each name, three windows, a gap); a 24-row screen shows 18 of them.
         assert_eq!(usage_scroll_max(&app, 24), 7);
         assert_eq!(usage_scroll_max(&app, 60), 0);
+    }
+
+    #[test]
+    fn a_narrow_sheet_keeps_the_reading_inside_its_edge() {
+        use ratatui::{buffer::Buffer, layout::Rect};
+        let mut buf = Buffer::empty(Rect::new(0, 0, 60, 1));
+        // The bar ends at column 37 and "42% used" needs 8 more: a 44-column sheet cuts the reading.
+        let inner = Rect::new(0, 0, 44, 1);
+        let win = json!({"label": "5h", "percent": 42, "resetsText": "Sep 26 at 11:59am"});
+        super::window(&mut buf, inner, 0, &win);
+        let row: String = (0..60).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
+        assert!(row[row.char_indices().nth(38).unwrap().0..].starts_with("42% us"), "{row}");
+        assert!(!row.contains('…'), "no reset squeezed onto the reading: {row}");
+        assert!(row.chars().skip(44).all(|c| c == ' '), "nothing past the edge: {row}");
     }
 }

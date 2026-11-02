@@ -15,7 +15,8 @@ fun systemScript(tag: String): ChineseScript? {
 
 /** The language of this app's own interface. Chats and bots are not translated. `Zh` stays stored as "zh". */
 enum class AppLanguage(val stored: String, val title: String) {
-    System("system", "Follow system"), En("en", "English"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"),
+    // The menu's order, as on the iPhone: Chinese first, then English and the rest.
+    System("system", "Follow system"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"), En("en", "English"),
     Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español");
 
     fun resolved(systemTag: String): AppLanguage {

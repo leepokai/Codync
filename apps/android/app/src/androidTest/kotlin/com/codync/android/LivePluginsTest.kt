@@ -2,7 +2,6 @@ package com.codync.android
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import kotlinx.coroutines.runBlocking
@@ -29,7 +28,7 @@ class LivePluginsTest {
         var connectorId: String? = null; var skillId: String? = null
         val name = "Fixture " + UUID.randomUUID().toString().take(8)
         try {
-            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+            val store = compose.computerStore()
             compose.waitUntil(30_000) { !store.state.value.loading && store.state.value.actualConnection is LinkState.Ready }
             compose.runOnUiThread { store.openBot(null) }
             compose.openExtensions()

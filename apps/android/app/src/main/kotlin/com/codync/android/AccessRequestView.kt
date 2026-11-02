@@ -34,31 +34,40 @@ import com.kyant.shapes.RoundedRectangle
 import com.codync.android.design.*
 import kotlinx.coroutines.delay
 
-private enum class AccessPhase { Renew, Asking, Code, Approved, Ended }
+/** `Failed`: the request didn't reach the computer (try again); `Ended`: the computer showed a code but didn't approve it (ask again). */
+private enum class AccessPhase { Renew, Asking, Code, Approved, Failed, Ended }
 
 /** Asks an account computer for this phone: the code to check on it, until it answers (iOS `AccessRequestView`). */
-@Composable internal fun AccessRequestView(state: AppState, store: AppStore, computer: CloudComputer) {
+@Composable internal fun AccessRequestView(state: AccountContext, store: AccountStore, computer: CloudComputer) {
     val dismiss = LocalDismissModal.current
-    val ticket = state.access?.takeIf { it.computerId == computer.computerId }
+    val ticket = state.access[computer.computerId]
     var requestId by remember { mutableStateOf(ticket?.requestId) }
     var confirmRenewal by remember { mutableStateOf(computer.isGranted && ticket == null) }
     var renewRequest by remember { mutableStateOf(false) }
     val approved = requestId != null && state.approvedAccess[computer.computerId] == requestId
-    LaunchedEffect(ticket?.requestId) { ticket?.requestId?.let { requestId = it; renewRequest = false } }
-    // The request ran and is over without an approval: denied, expired, or it failed.
-    var asked by remember { mutableStateOf("access" in state.busy) }
+    // Whether this request got as far as a code on the computer (iOS `sawTicket`).
+    var sawTicket by remember { mutableStateOf(ticket != null) }
+    LaunchedEffect(ticket?.requestId) { ticket?.requestId?.let { requestId = it; renewRequest = false; sawTicket = true } }
+    // The request ran and is over without an approval: denied or expired after its code, or it failed before one.
+    val asking = "access:${computer.computerId}" in state.busy
+    var asked by remember { mutableStateOf(asking) }
     var ended by remember { mutableStateOf<String?>(null) }
-    val asking = "access" in state.busy
+    var failed by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { if (!asking && !approved && ticket == null && !confirmRenewal) store.requestAccess(computer) }
     LaunchedEffect(asking, approved) {
         if (asking) asked = true
-        else if (asked && !approved) { ended = state.error ?: "${computer.name} didn't approve this request."; store.clearError(); asked = false }
+        else if (asked && !approved) {
+            if (sawTicket) ended = state.error ?: "${computer.name} didn't approve this request."
+            else failed = state.error ?: "Something went wrong"
+            store.clearError(); asked = false
+        }
     }
     LaunchedEffect(approved) { if (approved) { delay(1000); dismiss() } }
     val phase = when {
         confirmRenewal -> AccessPhase.Renew
         approved -> AccessPhase.Approved
         ticket != null -> AccessPhase.Code
+        failed != null -> AccessPhase.Failed
         ended != null -> AccessPhase.Ended
         else -> AccessPhase.Asking
     }
@@ -93,12 +102,16 @@ private enum class AccessPhase { Renew, Asking, Code, Approved, Ended }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Spinner()
                                 Text("Waiting for approval…", style = Type.subheadline, color = Palette.secondary)
-                                IconButton("Cancel request", "xmark.circle.fill") { store.cancelAccess(); dismiss() }
+                                IconButton("Cancel request", "xmark.circle.fill") { store.cancelAccess(computer.computerId); dismiss() }
                             }
+                        }
+                        AccessPhase.Failed -> {
+                            Text(failed.orEmpty(), style = Type.body, color = Palette.danger, textAlign = TextAlign.Center)
+                            SecondaryButton("Try again") { failed = null; store.requestAccess(computer, renew = renewRequest) }
                         }
                         AccessPhase.Ended -> {
                             Text(ended.orEmpty(), style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
-                            SecondaryButton("Ask again") { ended = null; store.requestAccess(computer, renew = renewRequest) }
+                            SecondaryButton("Ask again") { ended = null; sawTicket = false; store.requestAccess(computer, renew = renewRequest) }
                         }
                         AccessPhase.Asking -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Spinner()

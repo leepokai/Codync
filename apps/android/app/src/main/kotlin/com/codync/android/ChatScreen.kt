@@ -87,6 +87,8 @@ import com.kyant.shapes.Capsule
     var connector by remember { mutableStateOf<MarketConnector?>(null) }
     val connect = ConnectionRequestActions({ id, item -> setupEntry = id; app = item }, { id, item -> setupEntry = id; connector = item })
     val startCall = rememberStartVoice(bot.id, state, store) { micDenied = true }
+    // "Talk to Codync" asked for a call here: taken even during a call, so it can't start one after it.
+    LaunchedEffect(state.callRequest) { if (store.takeCallRequest(bot.id) && state.voice == null) startCall() }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -215,7 +217,8 @@ import com.kyant.shapes.Capsule
             // A chat shorter than the screen never scrolls, so showing the row is the trigger.
             LaunchedEffect(Unit) { if ("history" !in state.busy) store.loadHistory() }
         }
-        if (items.isEmpty() && !more) item("intro") { IntroCard(bot, state) }
+        // Shown while earlier messages may still load, as on the iPhone.
+        if (items.isEmpty()) item("intro") { IntroCard(bot, state) }
         items(items, key = { it.id }) { item ->
             when (item) {
                 is ChatItem.Separator -> TimeSeparator(item.at)

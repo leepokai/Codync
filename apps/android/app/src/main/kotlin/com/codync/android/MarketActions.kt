@@ -59,4 +59,4 @@ internal suspend fun AppStore.signInConnector(id: String, requestId: String? = n
 }
 
 /** The computer's own name (its hello), the one everything here installs on. */
-internal val AppState.hostName: String get() = hello?.text("name") ?: computers.firstOrNull()?.name ?: "your computer"
+internal val AppState.hostName: String get() = hello?.text("name") ?: computer.name

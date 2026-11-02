@@ -1,11 +1,23 @@
 export const DMG_FILE = "https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg";
 export const WINDOWS_FILE = "https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe";
+export const LINUX_FILE = "https://github.com/leepokai/Codync/releases/latest/download/codync-linux-x86_64.AppImage";
+export const LINUX_ARM_FILE = "https://github.com/leepokai/Codync/releases/latest/download/codync-linux-arm64.AppImage";
+export const LINUX_DEB_FILE = "https://github.com/leepokai/Codync/releases/latest/download/codync-linux-x86_64.deb";
+export const LINUX_ARM_DEB_FILE = "https://github.com/leepokai/Codync/releases/latest/download/codync-linux-arm64.deb";
+// Installs the host (and the CLI) on Linux; the AppImage desktop app does not include the host.
+export const INSTALL_SH = "curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh";
 // Download buttons open a thank-you page that starts the file and asks for a star.
 export const DMG = "/download/mac";
 export const WINDOWS = "/download/windows";
+export const LINUX = "/download/linux";
+export const LINUX_ARM = "/download/linux-arm64";
 export const APP_STORE = "https://apps.apple.com/app/codync/id6760984418";
+// Android is in closed testing on Google Play: testers sign up here.
+export const ANDROID_TEST = "https://docs.google.com/forms/d/e/1FAIpQLScvtCO7edjgFHKozWbHQ-9dDIJturifAA8znvhLVfCtRzu8cg/viewform";
 export const GITHUB = "https://github.com/leepokai/Codync";
 export const DISCORD = "https://discord.gg/KBAX3Qznxh";
+export const WECHAT = "/wechat";
+export const WECHAT_QR = "/wechat-group.png";
 // Donation page.
 export const KO_FI = "https://ko-fi.com/leepokai";
 export const EMAIL = "kevin@codync.dev";

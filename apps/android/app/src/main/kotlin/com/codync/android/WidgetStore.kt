@@ -10,6 +10,9 @@ import kotlinx.serialization.Serializable
 
 @Serializable internal data class WidgetOwner(val context: String, val scope: String, val epoch: String)
 
+/** One computer's bots for the widgets (null: keep the ones shown); [fresh] when they're caught up with the computer. */
+internal data class WidgetComputer(val computer: Computer, val bots: List<Bot>?, val fresh: Boolean)
+
 /** Every write checks the original account activation, including background responses. */
 internal object WidgetStore {
     val changes = MutableStateFlow(0L)
@@ -32,20 +35,40 @@ internal object WidgetStore {
     @Synchronized fun feed(context: Context): WidgetFeed {
         val active = owner(context) ?: return WidgetFeed()
         val saved = read<WidgetFeed>(feedFile(context, active))
-        val paired = runCatching { LocalStore(context, active.context).computers().firstOrNull()?.id }.getOrNull()
-        return saved?.takeIf { it.scope == active.scope && it.computerId == paired } ?: WidgetFeed(scope = active.scope)
+        val paired = runCatching { LocalStore(context, active.context).computers().map { it.id } }.getOrNull().orEmpty()
+        // A computer forgotten since: its bots and usage go with it.
+        return saved?.takeIf { it.scope == active.scope && (it.computerId == null || it.computerId in paired) }
+            ?.let { it.copy(bots = it.bots.filter { bot -> bot.computerId in paired }) } ?: WidgetFeed(scope = active.scope)
     }
 
-    @Synchronized fun publish(context: Context, expected: WidgetOwner, computer: Computer?, bots: List<Bot>,
-        usage: UsageReport, freshBots: Boolean, freshUsage: Boolean, now: Long = System.currentTimeMillis(),
-        expectedRevision: Long? = null): Boolean {
+    /**
+     * Every computer's bots, and [usage] read on [usageComputer] (the last active one); [freshUsage] when it was
+     * just read. Usage from another computer than before replaces it outright.
+     */
+    @Synchronized fun publish(context: Context, expected: WidgetOwner, computers: List<WidgetComputer>, usageComputer: Computer?,
+        usage: UsageReport, freshUsage: Boolean, now: Long = System.currentTimeMillis(), expectedRevision: Long? = null): Boolean {
         if (owner(context) != expected || expectedRevision != null && changes.value != expectedRevision) return false
         val file = feedFile(context, expected)
-        val previous = read<WidgetFeed>(file)?.takeIf { it.computerId == computer?.id } ?: WidgetFeed(scope = expected.scope)
-        val next = WidgetFeed(expected.scope, computer?.id, computer?.name.orEmpty().take(256), widgetBots(bots),
-            if (freshBots) now else previous.botsAt, usage, if (freshUsage) now else
+        val stored = read<WidgetFeed>(file) ?: WidgetFeed(scope = expected.scope)
+        val previous = stored.takeIf { it.computerId == usageComputer?.id } ?: WidgetFeed(scope = expected.scope, bots = stored.bots, botsAt = stored.botsAt)
+        val shown = stored.readingBots(computers.map { it.computer.id to it.bots }, computers.all { it.fresh }, now)
+        val next = WidgetFeed(expected.scope, usageComputer?.id, usageComputer?.name.orEmpty().take(256), shown.bots, shown.botsAt, usage, if (freshUsage) now else
                 if (usage != previous.usage) usage.providers.mapNotNull { it.updatedAt?.takeIf { time -> time > 0 } }.minOrNull() ?: 0
                 else previous.usageAt)
+        if (previous == next) return true
+        write(file, next)
+        changed()
+        return true
+    }
+
+    /** A usage read that just finished on [computer], keeping the bots as they are. */
+    @Synchronized fun publishUsage(context: Context, expected: WidgetOwner, computer: Computer, usage: UsageReport, fresh: Boolean,
+        now: Long = System.currentTimeMillis()): Boolean {
+        if (owner(context) != expected) return false
+        val file = feedFile(context, expected)
+        val previous = read<WidgetFeed>(file) ?: WidgetFeed(scope = expected.scope)
+        val next = previous.copy(computerId = computer.id, computerName = computer.name.take(256), usage = usage,
+            usageAt = if (fresh) now else previous.usageAt)
         if (previous == next) return true
         write(file, next)
         changed()

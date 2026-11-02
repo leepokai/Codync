@@ -17,6 +17,8 @@ struct AgentModelPicker: View {
     var command: Binding<String?>?
     var installHint: String?
     var restLine: String?
+    /// Retry model list, for the rows that read the same list (Permissions).
+    var onReload: (() -> Void)?
     private enum Stage { case closed, agents, models, settings }
     @State private var stage = Stage.closed
     @State private var query = ""
@@ -210,6 +212,7 @@ struct AgentModelPicker: View {
         ZStack {
             IconButton(failure == nil ? "Refresh model list" : "Retry model list", systemImage: "arrow.clockwise") {
                 retry += 1
+                onReload?()
             }
             .opacity(loading ? 0 : 1)
             .disabled(loading)

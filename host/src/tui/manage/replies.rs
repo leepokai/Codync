@@ -219,6 +219,7 @@ impl App {
                 if v["fastMode"] == true {
                     self.fast_mode.insert(backend.clone());
                 }
+                self.modes.insert(backend.clone(), crate::tui::app::parse_modes(&v));
                 self.models.insert(backend, Some(list));
             }
             Reply::Downloaded => {

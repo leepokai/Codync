@@ -16,6 +16,7 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
+import { devicesLoseAccess } from '../../lib/account-copy'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { CodyncCloudSection } from './CodyncCloudSection'
 import { CodyncVersionRow } from './CodyncVersionRow'
@@ -38,7 +39,8 @@ export function ComputersView() {
   const sshState = useSSH()
   const cloud = useModel(app.cloud)
   const [editing, setEditing] = useState<{ profile: SSHProfile; isNew: boolean } | null>(null)
-  const [removingCopy, setRemovingCopy] = useState<CloudComputer | null>(null)
+  const [removing, setRemoving] = useState<CloudComputer | null>(null)
+  const removingOlder = removing !== null && cloud.isOlderCopy(removing)
   const managed = app.managedStores
   // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
   const others = cloud.computers.filter((c) => c.computerId !== app.local?.computer.id)
@@ -82,7 +84,7 @@ export function ComputersView() {
             <Text as="div" size="callout" tone="secondary">{tr(`No other computers in your account yet.`)}</Text>
           ) : null}
           {others.map((computer) => (
-            <AccountComputerRow key={computer.computerId} computer={computer} olderCopy={cloud.isOlderCopy(computer)} onRemove={() => setRemovingCopy(computer)} />
+            <AccountComputerRow key={computer.computerId} computer={computer} olderCopy={cloud.isOlderCopy(computer)} onRemove={() => setRemoving(computer)} />
           ))}
         </div>
       </VStack>
@@ -91,11 +93,14 @@ export function ComputersView() {
         {editing ? <SSHProfileEditor key={editing.profile.id} profile={editing.profile} isNew={editing.isNew} /> : null}
       </Sheet>
       <Dialog
-        open={removingCopy !== null}
-        title={tr('Remove the older {name}?').replaceAll('{name}', removingCopy?.name ?? 'computer')}
-        message={tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removingCopy?.name ?? 'a computer')}
-        actions={removingCopy ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removingCopy.computerId) }] : []}
-        onClose={() => setRemovingCopy(null)}
+        open={removing !== null}
+        title={tr(removingOlder ? 'Remove the older {name}?' : 'Remove {name} from the account?').replaceAll('{name}', removing?.name ?? 'computer')}
+        message={removingOlder
+          ? tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removing.name)
+          // Offline may only mean asleep: removal unclaims it, and its own app won't add it back by itself.
+          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', removing?.name ?? 'a computer')}`}
+        actions={removing ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removing.computerId) }] : []}
+        onClose={() => setRemoving(null)}
       />
     </div>
   )
@@ -272,7 +277,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       <Dialog
         open={confirmUnclaim}
         title={tr('Remove {name} from the account?').replaceAll('{name}', name)}
-        message={tr('Devices that were approved through the account lose access. Devices paired with a QR code keep it.')}
+        message={devicesLoseAccess(tr, owner?.email)}
         actions={[{ title: 'Remove from account', destructive: true, action: () => run(() => app.cloud.unclaim(store)) }]}
         onClose={() => setConfirmUnclaim(false)}
       />
@@ -281,8 +286,9 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
 }
 
 /**
- * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`).
- * A cloud computer says where it runs, and sleeping isn't offline.
+ * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). An
+ * offline one can be removed: a computer that was reset or given away never comes back under that identity. A
+ * cloud computer says where it runs, sleeping isn't offline, and it is deleted in its own section instead.
  */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
   const tr = useTr()
@@ -302,7 +308,8 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
           <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />
-        {olderCopy ? <IconButton title="Remove from account" icon="trash" onClick={onRemove} /> : null}
+        {/* A cloud computer goes with Delete cloud computer, in its own section. */}
+        {computer.online || computer.cloud ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
       </div>
     </div>
   )
@@ -324,7 +331,7 @@ function PairingPanel({ store }: { store: BotStore }) {
     if (!client) throw new Error(`${store.hostName} isn't connected.`)
     return client.call<PairingInfo>('pairing')
   }, [store])
-  return <PairingCode name={store.hostName} cloudOn={store.cloud?.enabled === true} requestCode={requestCode} />
+  return <PairingCode name={store.hostName} cloud={store.cloud} requestCode={requestCode} />
 }
 
 // MARK: SSH

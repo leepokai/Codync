@@ -39,7 +39,7 @@ class LeadBotTile : TileService() {
     override fun onClick() {
         val feed = WidgetStore.feed(this)
         // No bot at work: Computer management, as the iPhone's control does.
-        val intent = mostUrgentBot(feed.bots)?.let { widgetIntent(this, feed, it.id) }
+        val intent = mostUrgentBot(feed.bots)?.let { widgetIntent(this, feed, it) }
             ?: widgetIntent(this, feed).setData(Uri.parse("${BuildConfig.URL_SCHEME}://computers"))
         // A bot's chat is private: the phone unlocks first.
         unlockAndRun {

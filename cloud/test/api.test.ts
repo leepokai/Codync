@@ -223,6 +223,22 @@ describe("devices", () => {
     expect(revoked.status).toBe(403);
   });
 
+  it("certifies a registered device key for its account, and no other key", async () => {
+    const u = await newUser();
+    const r = await call("POST", "/v1/devices/certificate", { token: u.token, key: u.key });
+    expect(r.status).toBe(200);
+    const { payload, sig } = r.body.certificate as { payload: string; sig: string };
+    const signed = ref.enc.encode(`codync/device-cert/v1\n${payload}`);
+    expect(ref.verify(ref.unb64url(env.TEST_DEVICE_CERT_PUB), ref.unb64url(sig), signed)).toBe(true);
+    const claims = JSON.parse(payload);
+    expect(claims).toMatchObject({ v: 1, deviceKey: u.dk, userId: u.userId, email: `${u.userId}@example.com` });
+    expect(claims.exp).toBeGreaterThan(Date.now() + 6 * 24 * 3600_000);
+    // An unregistered key, and a revoked one, get nothing.
+    expect((await call("POST", "/v1/devices/certificate", { token: u.token, key: ref.signKey() })).status).toBe(403);
+    expect((await call("DELETE", `/v1/devices/${u.deviceId}`, { token: u.token })).status).toBe(200);
+    expect((await call("POST", "/v1/devices/certificate", { token: u.token, key: u.key })).status).toBe(403);
+  });
+
   it("registers the desktop app on every platform, and no unknown one", async () => {
     const u = await newUser();
     for (const platform of ["macos", "linux", "windows"]) {
@@ -236,6 +252,29 @@ describe("devices", () => {
     const userId = uid("nosig");
     const r = await call("POST", "/v1/devices", { token: await clerkToken(userId), body: { name: "x", platform: "ios" } });
     expect(r.status).toBe(401);
+  });
+
+  it("signs a device out: its account's computers drop its notifications until it registers again", async () => {
+    const u = await newUser();
+    const other = await newUser("other");
+    const host = await newHost();
+    const elsewhere = await newHost();
+    expect((await claim(u, host)).status).toBe(200);
+    expect((await claim(other, elsewhere)).status).toBe(200);
+    const signedOut = async (h: TestHost) => (await call("GET", "/v1/host/state", { key: h.sign })).body.signedOut;
+    expect(await signedOut(host)).toEqual([]);
+    const [hostWs, elsewhereWs] = await Promise.all([hostSocket(host), hostSocket(elsewhere)]);
+    expect((await call("POST", "/v1/devices/sign-out", { token: u.token, key: u.key })).status).toBe(200);
+    // The account's computers pull now, not at their next poll; another account's hear nothing.
+    await hostWs.nextT("cloud.changed");
+    await elsewhereWs.none((m) => m.t === "cloud.changed");
+    expect(await signedOut(host)).toEqual([u.dk]);
+    expect(await signedOut(elsewhere)).toEqual([]);
+    // Still in the account, so signing back in needs no new access: registering again clears it.
+    expect((await call("POST", "/v1/devices/certificate", { token: u.token, key: u.key })).status).toBe(200);
+    expect((await call("POST", "/v1/devices", { token: u.token, key: u.key, body: { name: "iPhone", platform: "ios" } })).status).toBe(200);
+    expect(await signedOut(host)).toEqual([]);
+    expect((await call("POST", "/v1/devices/sign-out", { token: u.token, key: ref.signKey() })).status).toBe(404);
   });
 
   it("hides other accounts' devices", async () => {
@@ -474,7 +513,7 @@ describe("revocation reaches the relay", () => {
     await grantAccess(u, host);
     expect((await call("POST", "/v1/host/unclaim", { key: host.sign, body: {} })).status).toBe(200);
     const state = await call("GET", "/v1/host/state", { key: host.sign });
-    expect(state.body).toEqual({ owner: null, grants: [], requests: [] });
+    expect(state.body).toEqual({ owner: null, grants: [], requests: [], signedOut: [] });
     expect((await call("GET", "/v1/computers", { token: u.token })).body.computers).toEqual([]);
   });
 
@@ -543,7 +582,7 @@ describe("Clerk webhook", () => {
     const id = `msg_${ref.b64url(ref.random(8))}`;
     expect((await deliver(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
     expect((await call("GET", "/v1/me", { token: u.token })).body.error.code).toBe("accountDeleted");
-    expect((await call("GET", "/v1/host/state", { key: host.sign })).body).toEqual({ owner: null, grants: [], requests: [] });
+    expect((await call("GET", "/v1/host/state", { key: host.sign })).body).toEqual({ owner: null, grants: [], requests: [], signedOut: [] });
     expect((await deliver(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM processed_events WHERE event_id = ?").bind(id).first<{ n: number }>();
     expect(n?.n).toBe(1);

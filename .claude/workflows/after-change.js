@@ -1,7 +1,7 @@
 export const meta = {
   name: 'after-change',
   description: 'Review, fix and clean up a finished code change in one pass, then end-to-end test it (docs/guides/clean-code.md)',
-  whenToUse: 'After every code change once its tests pass, before commit. Run it from the change\'s worktree. args: {change: what changed and which flows to walk, base?: git ref (default origin/dev), e2e?: "minimal" | "full"}',
+  whenToUse: 'After every code change of our own once its tests pass, before commit (issues and PRs from other people go through review-issue-pr, which runs this on them). Run it from the change\'s worktree. args: {change: what changed and which flows to walk, base?: git ref (default origin/dev), e2e?: "minimal" | "full", dir?: the worktree\'s path when not run from it}',
   phases: [
     { title: 'Review', detail: 'correctness, completeness and refactor reviewers at once, then one verifier that refutes the bug findings' },
     { title: 'Fix', detail: 'one agent: confirmed findings, refactors worth doing and a cleanup pass, one rebuild' },
@@ -13,8 +13,12 @@ const input = typeof args === 'string' ? { change: args } : (args ?? {})
 const change = input.change ?? 'the uncommitted and unpushed change in this worktree'
 const base = input.base ?? 'origin/dev'
 const e2e = input.e2e === 'full' ? 'full' : 'minimal'
+// An agent's working directory resets between shell calls, so a worktree given by path is named in every command.
+const where = input.dir
+  ? `in the change's git worktree ${input.dir}: run every command there (\`cd ${input.dir} && …\` in each call, or \`git -C ${input.dir}\`) and use absolute paths under it`
+  : 'in the current directory (the change\'s git worktree)'
 const scope = `The change: ${change}
-Its diff: \`git diff ${base}\` (committed and uncommitted) plus the new files \`git status --short\` lists, in the current directory (the change's git worktree). Touch nothing outside that worktree and no other agent's work.`
+Its diff: \`git diff ${base}\` (committed and uncommitted) plus the new files \`git status --short\` lists, ${where}. Touch nothing outside that worktree and no other agent's work.`
 
 const FINDING = {
   type: 'object',
@@ -112,7 +116,7 @@ ${JSON.stringify(refactors, null, 2)}
 const walk = (flows, round) => agent(`End-to-end test a code change on the real apps, ${e2e} e2e as CLAUDE.md "End-to-end test every change" defines it (minimal: only this computer's platform; full: also Lima Linux and the UTM Windows VM, skipping and reporting a VM that isn't installed).
 ${scope}
 ${flows}
-Walk each flow once, as a person would, until it clearly passes or fails, and note what you saw; don't explore beyond the listed flows. Keep it quick: short messages to bots, no sleeps or long-running tasks to stretch a turn, and when \`host/\` is unchanged start \`npm run dev\` with \`CODYNC_HOST_BIN\` pointing at an already built host instead of building one (docs/guides/dev-app.md). A failure the change didn't cause (the same without it) is \`preexisting\`, not \`fail\`. Stop the old build before installing the new one. In this worktree \`npm run dev\` in apps/desktop runs an isolated sandbox (docs/guides/dev-app.md#worktree-sandboxes); never stop or replace the shared Codync Dev, the production Codync app or another session's sandbox, and when done leave this worktree's \`npm run dev\` running (it is stopped after the merge) but stop anything else you started. A change with nothing to walk (CI, tools, docs) reports one not_run check saying so.`,
+Walk each flow once, as a person would, until it clearly passes or fails, and note what you saw; don't explore beyond the listed flows. Keep it quick: short messages to bots, no sleeps or long-running tasks to stretch a turn, and when \`host/\` is unchanged start \`npm run dev\` with \`CODYNC_HOST_BIN\` pointing at an already built host instead of building one (docs/guides/dev-app.md). A failure the change didn't cause (the same without it) is \`preexisting\`, not \`fail\`. Stop the old build before installing the new one. In this worktree \`npm run dev\` in apps/desktop runs an isolated sandbox (docs/guides/dev-app.md#worktree-sandboxes); never stop or replace the shared Codync Dev, the production Codync app or another session's sandbox. In a worktree every client signs into the sandbox's Clerk test account, never the maintainer's: the sandbox runs with \`--cloud\`, and the iPhone and Android apps are seeded with \`npm run phone-account -- --ios <udid>\` / \`-- --android <serial>\`, on a simulator or emulator of the worktree's own, never one signed into the maintainer's account (docs/guides/dev-app.md#worktree-sandboxes). When done, leave this worktree's \`npm run dev\` running (it is stopped after the merge) but stop anything else you started. A change with nothing to walk (CI, tools, docs) reports one not_run check saying so.`,
   { label: `e2e:${round}`, phase: 'E2E', schema: CHECKS })
 
 phase('E2E')

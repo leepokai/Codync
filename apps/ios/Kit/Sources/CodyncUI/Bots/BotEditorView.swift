@@ -73,6 +73,8 @@ struct BotSettingsForm: View {
     @State private var pickingFolder = false
     @State private var pickingAvatar = false
     @State private var viewingSkill: SkillRef?
+    /// Retry model list reloads Permissions too: its modes come from the same list.
+    @State private var modelReload = 0
 
     /// The saved bot, as the host has it now.
     private var bot: Bot? { draft.id.flatMap { model.bots[$0] } }
@@ -130,7 +132,7 @@ struct BotSettingsForm: View {
                          agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
                          onAgentChange: { draft.setAgent($0) }, command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.backend)?.line)
+                         restLine: bot?.rest(of: draft.backend)?.line, onReload: { modelReload += 1 })
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -212,11 +214,7 @@ struct BotSettingsForm: View {
                     }
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
                 }
-                ValueRow("Permissions", detail: draft.permission == "auto"
-                         ? "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."
-                         : "You'll get an approval card and a notification whenever the agent asks.") {
-                    ChoicePicker(selection: $draft.permission, options: [("ask", "Ask me"), ("auto", "Approve automatically")])
-                }
+                ApprovalPicker(draft: $draft, reload: modelReload)
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 

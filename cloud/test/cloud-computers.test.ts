@@ -50,13 +50,16 @@ describe("cloud computers", () => {
     const live = await cc("GET", userId);
     expect(live.body.cloudComputer).toMatchObject({ state: "running", computerId: host.cid });
 
+    const token = await clerkToken(userId);
+    expect((await call("DELETE", `/v1/computers/${host.cid}`, { token })).status).toBe(409);
+
     const destroy = boat("cancelled");
     expect((await cc("DELETE", userId)).status).toBe(200);
     const [dUrl, dInit] = destroy.mock.lastCall!;
     expect(dUrl).toBe("https://boat.dev/api/v1/sandboxes/bx_test");
     expect((dInit!.headers as Record<string, string>)["X-Ascii-Confirm-Delete"]).toBe("bx_test");
     expect((await cc("GET", userId)).body.cloudComputer).toBeNull();
-    const list = await call("GET", "/v1/computers", { token: await clerkToken(userId) });
+    const list = await call("GET", "/v1/computers", { token });
     expect(list.body.computers).toEqual([]);
   });
 });

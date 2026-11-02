@@ -95,6 +95,11 @@ class RelayVectorsTest {
         assertFails<IllegalArgumentException> { RelayCrypto.sasCode(ByteArray(31), ByteArray(32), ByteArray(32), ByteArray(32)) }
     }
 
+    @Test fun `the pairing check code matches the host's`() {
+        val pairCheck = fixture.getValue("pairCheck").jsonObject
+        assertEquals(pairCheck.text("code"), RelayCrypto.pairCheck(keys.bytes("deviceSignPub"), keys.bytes("hostSignPub")))
+    }
+
     @Test fun `mailbox key derivation remains compatible with the shared vector`() {
         val mailbox = fixture.getValue("mailbox").jsonObject
         val secret = RelayCrypto.sharedSecret(mailbox.bytes("ephPriv"), keys.bytes("hostBoxPub"))

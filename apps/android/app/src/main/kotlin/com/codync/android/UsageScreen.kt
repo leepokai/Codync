@@ -48,16 +48,17 @@ import kotlin.math.roundToInt
  * Usage limits, opened from the State tab (iOS `UsageSheet` + `UsageView`): one card per
  * provider, the tightest limit as a big bar, every limit listed below. Pull down to refresh.
  */
-@Composable fun UsageScreen(state: AppState, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit) {
+@Composable fun UsageScreen(state: AppState?, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit,
+    trailing: @Composable () -> Unit = {}) {
     val dismiss = LocalDismissModal.current
-    val report = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() ?: UsageReport() }
-    val online = state.actualConnection is LinkState.Ready
+    val report = remember(state?.usage) { state?.let { runCatching { UsageReport.decode(it.usage) }.getOrNull() } ?: UsageReport() }
+    val online = state?.actualConnection is LinkState.Ready
     // Opening Usage asks the computer for a current report (it answers from cache when it can).
     LaunchedEffect(online) { if (online) refresh(false) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(leading = { IconButton("Close", "xmark", action = dismiss) },
-            title = { Text("Usage", style = Type.body.semibold, color = Palette.text) })
-        if (state.computers.isEmpty()) {
+            title = { Text("Usage", style = Type.body.semibold, color = Palette.text) }, trailing = { trailing() })
+        if (state == null) {
             EmptyUsage("No computer yet", "Usage shows up once a computer is connected.")
             return@Column
         }
@@ -70,14 +71,8 @@ import kotlin.math.roundToInt
     }
 }
 
-@Composable private fun EmptyUsage(title: String, message: String) {
-    Column(Modifier.fillMaxWidth().padding(top = 60.dp, start = 24.dp, end = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Symbol("chart.bar", size = 48.dp, tint = Palette.tertiary)
-        Text(tr(title), style = Type.title3.semibold, color = Palette.text, textAlign = TextAlign.Center)
-        Text(tr(message), style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
-    }
-}
+@Composable private fun EmptyUsage(title: String, message: String) =
+    EmptyState("chart.bar", title, Modifier.fillMaxWidth().padding(top = 60.dp), message)
 
 @Composable private fun ProviderCard(provider: UsageProvider) {
     var collapsed by rememberSaveable(provider.id) { mutableStateOf(false) }

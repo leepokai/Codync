@@ -481,7 +481,7 @@ apps show no Codync Cloud section, so shipping the code changes nothing for anyo
 
 1. **Dark merge into `dev`**: the branch split into reviewable commits that pass the pre-commit checks, the
    `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
-   with migrations `0005`/`0006` on the dev D1 and a dev Boat key, then `npm run e2e:cloud` and the iPhone and
+   with migrations `0007`/`0008` on the dev D1 and a dev Boat key, then `npm run e2e:cloud` and the iPhone and
    Android apps against dev.
 2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations, a Boat key
    scoped to `sandbox.create/read/stop/resume/delete` + `snapshot.read/write`, `CLOUD_COMPUTER_USERS` = internal

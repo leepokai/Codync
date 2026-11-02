@@ -30,6 +30,10 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     if b["skills"].is_null() && b["kind"] != "group" {
         b["skills"] = json!(market::Installed::Skills.ids(&hub.store)?);
     }
+    // A bot works in its agent's Auto mode and asks about the rest, unless the client picked how it approves.
+    if b["permission"].is_null() && b["mode"].is_null() && b["kind"] != "group" {
+        b["mode"] = crate::agent::modes::AUTO.into();
+    }
     // And the agent, when the client names none.
     if b["backend"].as_str().is_none_or(str::is_empty) && b["kind"] != "group" {
         let agents = tokio::task::spawn_blocking(super::backends::list).await?;

@@ -95,8 +95,6 @@ import com.kyant.shapes.RoundedRectangle
 
 /** A coding agent's logo by ACP registry id, in its brand color when it has one; a terminal glyph otherwise. */
 @Composable internal fun AgentIcon(registry: String?, size: Dp) {
-    val custom = LocalAgentIconOverrides.current[registry]
-    if (StaticCustomIcon(custom?.dataUrl, custom?.tinted == true, size)) return
     val tint = AGENT_TINTS[registry]?.let { Color(it) } ?: Palette.text
     val res = agentIconRes(registry)
     if (res != null) Image(painterResource(res), null, Modifier.size(size).clearAndSetSemantics {}, colorFilter = ColorFilter.tint(tint))

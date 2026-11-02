@@ -24,6 +24,8 @@ mod fast_mode;
 mod files;
 mod launch;
 mod lifecycle;
+mod modes;
+mod pi_tools;
 mod queue;
 mod session;
 mod tool_entry;
@@ -183,6 +185,9 @@ pub(crate) struct Conn {
     opening: bool,
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
+    /// Each live session's modes, as the agent last listed them, and the sessions already switched to the bot's.
+    modes: HashMap<String, crate::agent::modes::Modes>,
+    mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
     /// Each session's context use and window size at its last `usage_update`.
@@ -348,7 +353,11 @@ impl Actor {
                 Some(done) = done_rx.recv() => {
                     // Updates sent before the prompt response are already queued; apply them first.
                     while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
-                        self.on_incoming(Some(inc)).await;
+                        match inc {
+                            // No agent ends a turn it waits on: a request queued here is for work after it.
+                            Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
+                            inc => self.on_incoming(Some(inc)).await,
+                        }
                     }
                     if let Err(error) = &done && self.fall_back(error, &done_tx).await {
                         continue;
@@ -429,12 +438,15 @@ impl Actor {
     /// `notice` with more fields than its text and style.
     fn notice_data(&self, data: Value) {
         let Some(turn) = self.turn else {
-            let main = Lane::main(&self.cfg.id);
-            let turn = self.hub.store.max_turn(&self.cfg.id);
-            self.hub.add_entry(&main, EntryKind::Notice, turn, &data);
+            self.add_between_turns(EntryKind::Notice, &data);
             return;
         };
         self.add(EntryKind::Notice, turn, data);
+    }
+
+    /// An entry while no turn runs: in the bot's own chat, numbered with its latest turn.
+    fn add_between_turns(&self, kind: EntryKind, data: &Value) -> Option<Entry> {
+        self.hub.add_entry(&Lane::main(&self.cfg.id), kind, self.hub.store.max_turn(&self.cfg.id), data)
     }
 }
 

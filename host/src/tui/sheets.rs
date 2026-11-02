@@ -322,7 +322,6 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
             ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
             SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
-            SetupRow::Icon => ("◈", "Custom icon".to_owned(), "Choose a file or URL, tint, or use default".to_owned()),
         };
         let title = tr(&title);
         let detail = tr(&detail);

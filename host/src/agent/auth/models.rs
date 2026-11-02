@@ -1,11 +1,43 @@
 //! The models an agent offers, read from a session it opens for that alone.
 
 use super::{probe_dir, start, text};
+use crate::LockExt;
 use crate::agent::acp::Incoming;
+use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::OnceCell;
+
+/// Model lists being fetched, by agent: a settings screen asks for one from several places at once (the model
+/// picker, Approvals), and each would otherwise start the agent. An ask after one came fetches afresh.
+#[derive(Default)]
+pub struct InFlight(Mutex<HashMap<String, Slot>>);
+
+/// One fetch's answer, for every ask that came while it ran (a failure as its text).
+type Slot = Arc<OnceCell<Result<Value, String>>>;
+
+impl InFlight {
+    async fn get(&self, agent: &str, fetch: impl Future<Output = Result<Value>>) -> Result<Value> {
+        let slot = self.0.locked().entry(agent.to_owned()).or_default().clone();
+        let answer = slot
+            .get_or_init(|| async {
+                let answer = fetch.await.map_err(|e| format!("{e:#}"));
+                self.0.locked().remove(agent);
+                answer
+            })
+            .await;
+        answer.clone().map_err(anyhow::Error::msg)
+    }
+}
+
+/// [`models`], shared with the asks for the same agent meanwhile.
+pub async fn shared_models(hub: &Hub, backend: &str) -> Result<Value> {
+    hub.model_lists.get(backend, models(&hub.store, backend)).await
+}
 
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
@@ -33,6 +65,8 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
             Value::Null
         };
         let mut catalog = model_catalog(&session, &options);
+        catalog["modes"] =
+            crate::agent::modes::Modes::from_session(&session, backend).map_or(json!([]), |m| m.catalog());
         if backend != "cursor" {
             discover_options(&acp, &session, &mut catalog).await?;
         }
@@ -193,6 +227,26 @@ fn collect_values(options: &Value, out: &mut Vec<Value>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn asks_at_once_start_the_agent_once_and_later_ones_again() {
+        let lists = InFlight::default();
+        let started = std::sync::atomic::AtomicUsize::new(0);
+        let fetch = |ok: bool| {
+            let started = &started;
+            async move {
+                started.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                if ok { Ok(json!({"models": []})) } else { Err(anyhow::anyhow!("signed out")) }
+            }
+        };
+        let (a, b) = tokio::join!(lists.get("claude", fetch(true)), lists.get("claude", fetch(true)));
+        assert_eq!((a.unwrap(), b.unwrap()), (json!({"models": []}), json!({"models": []})));
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(lists.get("claude", fetch(false)).await.unwrap_err().to_string(), "signed out", "a refresh fetches");
+        assert!(lists.get("claude", fetch(true)).await.is_ok());
+        assert_eq!(started.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
 
     #[tokio::test]
     async fn an_unavailable_model_keeps_other_models_and_their_options() {

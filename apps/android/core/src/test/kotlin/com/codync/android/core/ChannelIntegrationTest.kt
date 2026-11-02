@@ -15,7 +15,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -45,7 +47,7 @@ class ChannelIntegrationTest {
     private fun identity(): DeviceIdentity = DeviceIdentity(ByteArray(32) { 3 }, ByteArray(32) { 12 })
 
     private fun enqueueHost(forgeSignature: Boolean = false, holdCalls: Boolean = false, burst: Int = 0, welcomeDelay: Long = 0,
-        snapshotHead: Int = 5, reject: String? = null, screenBurst: Int = 0) {
+        snapshotHead: Int = 5, reject: String? = null, screenBurst: Int = 0, helloUrls: List<String> = emptyList()) {
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             private lateinit var opener: FrameOpener
             private lateinit var sealer: FrameSealer
@@ -104,11 +106,19 @@ class ChannelIntegrationTest {
                         put("type", "bot"); put("rev", 4); put("bot", buildJsonObject { put("id", "bot-1"); put("name", "Reviewer"); put("rev", 4) })
                     }) })
                 } else if (request.text("m") == "pair") {
-                    pairBody.set(request.getValue("b").jsonObject)
-                    send(webSocket, buildJsonObject { put("id", id); put("ok", buildJsonObject { put("computerId", cid); put("name", "Paired computer") }) })
+                    val body = request.getValue("b").jsonObject
+                    pairBody.set(body)
+                    send(webSocket, buildJsonObject { put("id", id); put("ok", buildJsonObject {
+                        put("computerId", cid); put("name", "Paired computer")
+                        // A computer in no account signs the phone's claim.
+                        body["claim"]?.let { put("claim", buildJsonObject { put("computerId", cid); put("sig", "signed") }) }
+                    }) })
                     webSocket.close(4100, "paired")
                 } else {
-                    send(webSocket, buildJsonObject { put("id", id); put("ok", buildJsonObject { put("computerId", cid); put("signKey", hostKey.base64Url()) }) })
+                    send(webSocket, buildJsonObject { put("id", id); put("ok", buildJsonObject {
+                        put("computerId", cid); put("signKey", hostKey.base64Url())
+                        if (helloUrls.isNotEmpty()) put("urls", JsonArray(helloUrls.map { JsonPrimitive(it) }))
+                    }) })
                 }
             }
             private fun send(socket: WebSocket, inner: JsonObject) {
@@ -161,13 +171,27 @@ class ChannelIntegrationTest {
         } finally { channel.close() }
     }
 
+    private val certificate = DeviceCertificate("""{"v":1,"exp":1}""", "sig")
+
     @Test fun `pairing sends the Android platform and returns the pinned computer`() = runBlocking {
         enqueueHost()
         val pinned = computer()
-        val result = withTimeout(5_000) { HostConnector.pair(Pairing(pinned, ByteArray(16) { 8 }.base64Url()), identity(), "Android phone") }
-        assertEquals(cid, result.id)
-        assertEquals("Paired computer", result.name)
-        assertEquals("android", pairBody.get().text("platform"))
+        val result = withTimeout(5_000) { HostConnector.pair(Pairing(pinned, ByteArray(16) { 8 }.base64Url()), identity(), "Android phone", certificate) }
+        assertEquals(cid, result.computer.id)
+        assertEquals("Paired computer", result.computer.name)
+        assertEquals(null, result.claim)
+        val body = pairBody.get()
+        assertEquals("android", body.text("platform"))
+        assertEquals(buildJsonObject { put("payload", certificate.payload); put("sig", "sig") }, body["certificate"])
+        assertEquals(null, body["claim"])
+    }
+
+    @Test fun `pairing sends the claim and returns the one the computer signed`() = runBlocking {
+        enqueueHost()
+        val pairing = Pairing(computer(), ByteArray(16) { 8 }.base64Url())
+        val result = withTimeout(5_000) { HostConnector.pair(pairing, identity(), "Android phone", certificate, PairingClaim("clm_1", "n")) }
+        assertEquals(buildJsonObject { put("claimId", "clm_1"); put("nonce", "n") }, pairBody.get()["claim"])
+        assertEquals("signed", result.claim?.text("sig"))
     }
 
     @Test fun `encrypted RPC and event subscriptions preserve host payloads`() = runBlocking {
@@ -180,6 +204,13 @@ class ChannelIntegrationTest {
             assertEquals("hello", events.first().text("type"))
             assertEquals("Reviewer", HostClient.decodeBot(events.last())?.name)
         } finally { connected.close() }
+    }
+
+    @Test fun `a hello from a computer with many networks keeps its best sixteen addresses`() = runBlocking {
+        val urls = (1..30).map { "http://172.${it + 1}.0.1:19222" }
+        enqueueHost(helloUrls = urls)
+        val connected = withTimeout(5_000) { HostConnector.connect(computer(), identity()) }
+        try { assertEquals(urls.take(16), HostClient.hello(connected, computer()).urls) } finally { connected.close() }
     }
 
     @Test fun `a forged welcome never permits an encrypted request`() = runBlocking {

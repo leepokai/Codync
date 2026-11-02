@@ -56,10 +56,14 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
   useScreenViewed('account')
   const signedIn = user !== null
   const auth: PanelItem[] = signedIn
-    ? [{ title: isBusy ? 'Please wait…' : 'Sign out', icon: 'rectangle.portrait.and.arrow.right', disabled: isBusy, action: () => { onDismiss(); void account.signOut() } }]
+    ? [
+        { title: isBusy ? 'Please wait…' : 'Sign out', icon: 'rectangle.portrait.and.arrow.right', disabled: isBusy, action: () => { onDismiss(); void account.signOut() } },
+        { title: 'Delete account', icon: 'trash', destructive: true, disabled: isBusy, action: () => { onDismiss(); account.askToDelete() } },
+      ]
     : [
         { title: 'Continue with Apple', icon: 'apple.logo', disabled: isBusy, action: () => { onDismiss(); void account.signIn('apple') } },
         { title: 'Continue with Google', icon: 'person.crop.circle.badge.plus', image: googleLogo, disabled: isBusy, action: () => { onDismiss(); void account.signIn('google') } },
+        { title: 'Continue with GitHub', icon: 'github.logo', disabled: isBusy, action: () => { onDismiss(); void account.signIn('github') } },
       ]
   const open = (url: string, link: Link) => {
     onDismiss()

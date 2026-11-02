@@ -46,7 +46,7 @@ The host listens on `0.0.0.0:19222`. The local API (`/api/*`, `/events`, termina
 - **Remote screen and the `computer` tool don't work.** They need a desktop session (portals + GStreamer, `apps/screen-linux/`). The feature turns itself on only while a graphical session is running, so on a server it stays off and nothing else is affected.
 - **No desktop app.** The Linux desktop app (`codync`, AppImage/deb/tar.gz) needs a graphical session; it uses the installed `codync-host`. On a server, use the phone, the desktop app on another computer over SSH, or `codync-host tui`.
 - **Keep-awake is a no-op.** The host tries `systemd-inhibit` while a bot works; VMs don't sleep, and failure only logs a warning.
-- **One computer per account.** A VM counts as the account's computer; multiple computers are future work.
+- **One of the account's computers.** A VM pairs like any other computer; the phones show it beside the rest, under its own heading.
 - **Usage limits** come from the local Claude and Codex installs, same as on a desktop.
 
 ## Verification — 2026-09-26

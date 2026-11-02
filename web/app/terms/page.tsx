@@ -9,14 +9,14 @@ export default function Terms() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Terms of Use</h1>
-        <p className="text-neutral-400 text-sm">Last updated: October 24, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: October 31, 2026</p>
 
         <Section title="1. Acceptance of Terms">
           By using Codync you agree to these terms. If you don&apos;t agree, don&apos;t use the app.
         </Section>
 
         <Section title="2. The service">
-          Codync is free, open-source software (Apache License 2.0) that lets you message AI agents running on your own computer from your iPhone, Android phone, Mac, Windows PC or Linux desktop.
+          Codync is made by Leeporic LLC (&quot;we&quot;, &quot;us&quot;). It is free, open-source software (Apache License 2.0) that lets you message AI agents running on your own computer from your iPhone, Android phone, Mac, Windows PC or Linux desktop.
         </Section>
 
         <Section title="3. Your responsibility">

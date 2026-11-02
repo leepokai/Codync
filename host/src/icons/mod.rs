@@ -1,4 +1,4 @@
-//! Custom agent/bot icons: host validation, local cache and private encrypted R2 storage.
+//! Custom bot icons: host validation, local cache and private encrypted R2 storage.
 mod cleanup;
 mod image;
 pub(crate) use cleanup::run as cleanup_loop;
@@ -55,7 +55,7 @@ fn commit(hub: &Hub, icons: BTreeMap<String, Icon>) -> Result<Snapshot> {
 
 pub(crate) async fn set(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
     let target = b["target"].as_str().context("Icon target is required")?;
-    validate_target(hub, target)?;
+    validate_target(&hub.store, target)?;
     // Bound concurrent decoding and serialize R2 replacements with local commits.
     let _guard = hub.store.icon_lock.try_lock().context("Another icon is being saved; try again shortly")?;
     let mut icons = list(&hub.store)?;
@@ -97,14 +97,15 @@ pub(crate) async fn set(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
     Ok(serde_json::to_value(commit(hub, icons)?)?)
 }
 
-fn validate_target(hub: &Hub, target: &str) -> Result<()> {
+fn validate_target(store: &Store, target: &str) -> Result<()> {
     ensure!(target.len() <= 256, "Invalid icon target");
-    if let Some(id) = target.strip_prefix("bot:") {
-        ensure!(hub.store.bot(id)?.is_some_and(|b| !b.deleted), "Unknown bot");
-    } else if let Some(id) = target.strip_prefix("agent:") {
-        ensure!(crate::agent::backends::list().iter().any(|b| b["id"] == id), "Unknown agent");
-    } else {
-        anyhow::bail!("Choose an agent or bot icon");
-    }
+    ensure!(target.starts_with("bot:"), "Only bots have custom icons");
+    ensure!(live_bot(store, target)?, "Unknown bot");
     Ok(())
+}
+
+/// Whether `target` names an existing, undeleted bot: the only icons the host keeps.
+fn live_bot(store: &Store, target: &str) -> Result<bool> {
+    let Some(id) = target.strip_prefix("bot:") else { return Ok(false) };
+    Ok(store.bot(id)?.is_some_and(|b| !b.deleted))
 }

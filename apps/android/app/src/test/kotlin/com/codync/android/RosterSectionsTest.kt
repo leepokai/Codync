@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.Bot
+import com.codync.android.core.Computer
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -136,7 +137,7 @@ class RosterSectionsTest {
     }
 
     @Test fun sectionControlsWaitForAHostThatKeepsSections() {
-        fun host(version: String?) = AppState(hello = version?.let { buildJsonObject { put("version", it) } })
+        fun host(version: String?) = AppState(Computer("fixture", "Studio", "fixture"), hello = version?.let { buildJsonObject { put("version", it) } })
         assertFalse(host("2.31.2").supportsSections)
         assertTrue(host("2.32.0").supportsSections)
         assertTrue(host("2.32.1-dev").supportsSections)
@@ -144,7 +145,7 @@ class RosterSectionsTest {
     }
 
     @Test fun leadChoiceWaitsForAHostThatLetsTheLeadChange() {
-        fun host(version: String?) = AppState(hello = version?.let { buildJsonObject { put("version", it) } })
+        fun host(version: String?) = AppState(Computer("fixture", "Studio", "fixture"), hello = version?.let { buildJsonObject { put("version", it) } })
         assertFalse(host("2.32.9").supportsLeadChoice)
         assertTrue(host("2.33.0").supportsLeadChoice)
         assertFalse(host(null).supportsLeadChoice)

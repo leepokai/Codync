@@ -49,7 +49,7 @@ async function main() {
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,
     // The machine reaches this cloud at its own 127.0.0.1 (a reverse forward), so the host signs the authority the
     // Worker sees. Idle after 20 s instead of 10 minutes; its events marked `env: dev`.
-    CLOUD_HOST_ENV: `CODYNC_CLOUD_URL=${cloud.url} CODYNC_SLEEP_IDLE_SECS=${IDLE_SECS} CODYNC_ANALYTICS_ENV=dev`,
+    CLOUD_HOST_ENV: `CODYNC_CLOUD_URL=${cloud.url} CODYNC_DEVICE_CERT_KEY=${cloud.certPub} CODYNC_SLEEP_IDLE_SECS=${IDLE_SECS} CODYNC_ANALYTICS_ENV=dev`,
     ...(HOST_LINUX_BIN ? { CLOUD_HOST_BINARY_URL: `http://127.0.0.1:${filesPort}/codync-host` } : {}),
     ...(proxy ? { BOAT_API_URL: `http://127.0.0.1:${proxyPort}` } : {}),
   });

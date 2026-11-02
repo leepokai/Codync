@@ -99,10 +99,10 @@ import com.codync.android.design.*
  * and none when the bot is in one; [move] puts the bot in a section (null: out of its own).
  */
 internal fun sectionMenu(bot: Bot, sections: List<String>, move: (String?) -> Unit, newSection: () -> Unit): MenuItem {
-    val others = sections.filter { it != bot.section }.map { name -> MenuItem(name, verbatim = true) { move(name) } }
-    return MenuItem("Move to section", icon = "arrow.turn.down.right", children = others + listOfNotNull(
-        MenuItem("New section…", icon = "plus", divider = true, action = newSection),
-        if (bot.section != null) MenuItem("Remove from section", icon = "xmark.circle") { move(null) } else null,
+    val others = sections.filter { it != bot.section }.map { name -> MenuItem(name, icon = "tray", verbatim = true) { move(name) } }
+    return MenuItem("Move to section", icon = "tray", children = others + listOfNotNull(
+        MenuItem("New section…", icon = "plus", divider = others.isNotEmpty(), action = newSection),
+        if (bot.section != null) MenuItem("Remove from section", icon = "minus.circle") { move(null) } else null,
     ))
 }
 

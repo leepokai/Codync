@@ -4,7 +4,6 @@ import android.os.Build
 import android.view.KeyEvent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import kotlinx.coroutines.runBlocking
@@ -38,7 +37,7 @@ class LiveSettingsTest {
             clone = bot.id
             val listingResponse = runBlocking { channel.call("listDirs", body("path" to "/tmp")) }
             val listing = WireJson.decodeFromJsonElement<DirListing>(listingResponse)
-            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+            val store = compose.computerStore()
             compose.waitUntil(30_000) { !store.state.value.loading && store.state.value.bots.any { it.id == bot.id } && store.state.value.actualConnection is LinkState.Ready }
             compose.runOnUiThread { store.openBot(null) }
             compose.rosterAction(bot.name, "Edit profile")

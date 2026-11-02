@@ -103,7 +103,7 @@ async fn collect(acp: &Acp, inc: Option<Incoming>, out: &mut String) -> bool {
         }
         Some(Incoming::Request { id, method, .. }) => {
             let _ = if method == "session/request_permission" {
-                acp.respond(id, json!({"outcome": {"outcome": "cancelled"}})).await
+                acp.respond(id, acp::permission_answer(None)).await
             } else {
                 acp.respond_error(id, -32601, "not supported").await
             };

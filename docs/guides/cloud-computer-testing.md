@@ -96,7 +96,7 @@ devices. Its cloud computers stay, so sleep, wake and updates are seen over days
 
 Setup (once, then kept up with `dev`):
 
-1. Apply `cloud/migrations/0005_cloud_machines.sql` and `0006_app_versions.sql` to `codync-dev` (note the restore
+1. Apply `cloud/migrations/0007_cloud_machines.sql` and `0008_app_versions.sql` to `codync-dev` (note the restore
    point; [deployment procedure](environments-and-deployment.md#deployment-procedure)) before deploying Worker code
    that reads them: `/v1/computers` joins `cloud_machines`.
 2. Secrets on `--env dev`: `BOAT_API_KEY` (its own scoped key with the test key's actions, not the test key), `CLOUD_COMPUTER_USERS` (the dev

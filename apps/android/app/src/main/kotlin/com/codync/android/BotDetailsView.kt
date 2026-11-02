@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,13 +34,11 @@ import com.codync.android.core.LinkState
 import com.codync.android.core.ScreenState
 import com.codync.android.core.hasLibrary
 import com.codync.android.design.*
+import java.io.IOException
 import kotlinx.coroutines.delay
 
-/**
- * The details sheet's pages, as on the desktop inspector; no Memory until the read-only memory screen is ported
- * (docs/plans/android-app.md).
- */
-internal enum class DetailsTab(val title: String) { Details("Details"), Library("Library"), Settings("Settings") }
+/** The details sheet's pages, as on the desktop inspector (iOS `BotDetailsView.Tab`). */
+internal enum class DetailsTab(val title: String) { Details("Details"), Library("Library"), Memory("Memory"), Settings("Settings") }
 
 /**
  * What to open the details sheet on (iOS `DetailsRequest`): a page, a routine's editor on the Details page, or another bot's
@@ -61,14 +60,19 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
     var draft by rememberBotDraft(saved, state)
     var template by remember { mutableStateOf<BotDraft?>(null) }
     val online = state.actualConnection is LinkState.Ready
+    // What the last save said, on the page where it was made (iOS `saveError`); one that fails after the page closed
+    // shows over the app instead.
+    var saveError by remember(bot.id) { mutableStateOf<String?>(null) }
+    val shown = remember { mutableStateOf(true) }
+    DisposableEffect(Unit) { onDispose { shown.value = false } }
     // Saves a moment after the last change, like the desktop inspector. Keyed on the saved bot too: an edit made while
     // the previous save was still out (and so skipped) is sent once that save lands.
     LaunchedEffect(draft, online, saved) {
         if (!online || !draft.isValid || draft == saved) return@LaunchedEffect
         delay(600)
-        store.saveSettings(draft)
+        store.saveSettings(draft) { error -> if (shown.value) saveError = error else error?.let { store.showError(IOException(it)) } }
     }
-    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Settings)
+    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Memory, DetailsTab.Settings)
     Box(Modifier.fillMaxSize().background(Palette.background)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
@@ -78,19 +82,21 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
                 Box(Modifier.fillMaxWidth().padding(top = 20.dp)) {
                     when (tab) {
                         DetailsTab.Details -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
-                            BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often)
+                            BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often, error = saveError)
                             state.screen?.let { ComputerCard(it, draft.computer, online) { on -> draft = draft.copy(computer = on) } }
                             RoutinesView(bot, state, store, routineId)
                             LaunchedEffect(Unit) { routineId = null }
                         }
                         DetailsTab.Library -> LibraryView(bot, state, store, openArtifact)
-                        DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, FormPart.Rarely)
+                        DetailsTab.Memory -> MemoryCard(bot.id, state, store)
+                        DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, FormPart.Rarely, error = saveError)
                     }
                 }
             }
         }
         Row(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CornerButton("Create template", "square.and.arrow.up") { template = draft }
+            // The bot as it's saved, as on the iPhone.
+            CornerButton("Create template", "square.and.arrow.up") { template = saved }
             CornerButton("Close details", "xmark", dismiss)
         }
     }

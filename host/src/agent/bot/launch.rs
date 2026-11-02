@@ -7,7 +7,7 @@ use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 /// ACP's `systemPrompt`: the bot's instructions added to the agent's own.
@@ -73,6 +73,12 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
         if answer["configOptions"].is_array() {
             current = answer;
         }
+    }
+    // The older `modes` field comes only with the session (`agent::modes`).
+    if current.get("modes").is_none()
+        && let Some(modes) = res.get("modes")
+    {
+        current["modes"] = modes.clone();
     }
     Ok(current)
 }
@@ -161,6 +167,8 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         started: Instant::now(),
         opening: false,
         fast_options: HashMap::new(),
+        modes: HashMap::new(),
+        mode_set: HashSet::new(),
         reports_compaction: false,
         usage: HashMap::new(),
         renamed: HashMap::new(),

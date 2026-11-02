@@ -25,7 +25,7 @@ await cloud.start(
     CLOUD_COMPUTER_USERS: process.env.CLOUD_COMPUTER_USERS ?? "*",
     CLOUD_AUTO_STOP_SECONDS: "7200",
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,
-    CLOUD_HOST_ENV: [`CODYNC_CLOUD_URL=${cloud.url}`, "CODYNC_ANALYTICS_ENV=dev", ...(idle ? [`CODYNC_SLEEP_IDLE_SECS=${idle}`] : [])].join(" "),
+    CLOUD_HOST_ENV: [`CODYNC_CLOUD_URL=${cloud.url}`, `CODYNC_DEVICE_CERT_KEY=${cloud.certPub}`, "CODYNC_ANALYTICS_ENV=dev", ...(idle ? [`CODYNC_SLEEP_IDLE_SECS=${idle}`] : [])].join(" "),
     ...(HOST_LINUX_BIN ? { CLOUD_HOST_BINARY_URL: `http://127.0.0.1:${filesPort}/codync-host` } : {}),
   },
   { clerk: "dev" },

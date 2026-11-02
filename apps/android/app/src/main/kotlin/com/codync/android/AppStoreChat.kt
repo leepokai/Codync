@@ -1,6 +1,5 @@
 package com.codync.android
 
-import android.app.Application
 import java.io.IOException
 import java.util.UUID
 import com.codync.android.core.*
@@ -10,11 +9,36 @@ import kotlinx.serialization.json.*
 
 // Conversations: opening a bot, history, sending and its retries.
 
+/** Opens a chat on this computer (the account closes any other computer's) or, with null, closes it. */
 fun AppStore.openBot(id: String?) {
-    mutableState.update { it.copy(selectedBot = id, trace = false) }
-    if (id != null) acknowledgeVisible()
+    if (id == null && state.value.selectedBot == null) return
+    // Leaving a chat drops the call "Talk to Codync" asked for there, waiting or not (iOS `cancelVoiceCallRequest`).
+    val leaving = id != state.value.selectedBot
+    if (leaving) callWait?.cancel()
+    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
+    if (id != null) { opened(this); acknowledgeVisible() }
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
+
+/**
+ * Starts a call in [botId]'s open chat once this computer is connected (iOS `requestVoiceCall`); the chat takes it
+ * (`takeCallRequest`). A computer that can't be reached is an error instead.
+ */
+fun AppStore.requestCall(botId: String) {
+    callWait?.cancel()
+    callWait = contextScope.launch {
+        val connected = withTimeoutOrNull(20_000) { state.first { it.actualConnection is LinkState.Ready } }
+        if (connected == null) showError(IOException("Can't reach the computer. Check that it's on, then try again."))
+        else mutableState.update { it.copy(callRequest = botId) }
+    }
+}
+
+/** Once: a chat that already has a call takes it too, so it can't start one later. */
+fun AppStore.takeCallRequest(botId: String): Boolean {
+    if (state.value.callRequest != botId) return false
+    mutableState.update { it.copy(callRequest = null) }
+    return true
+}
 
 /** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
 internal val AppState.readingChats: List<String> get() = listOfNotNull(selectedBot)
@@ -113,10 +137,10 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()
         val bot = state.value.bots.firstOrNull { it.id == send.botId }
-        if (bot != null && PushPreferences.tasks(getApplication()) && getApplication<Application>().getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) {
-            val watch = withContext(Dispatchers.IO) { TaskFeed(local.directory).start(bot) }
-            NotificationDisplay.task(getApplication(), local.referenceId, state.value.computers.first().id, watch)
-            syncPush(); PushDelivery.schedule(getApplication())
+        if (bot != null && PushPreferences.tasks(application) && application.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) {
+            val watch = withContext(Dispatchers.IO) { feed.start(bot) }
+            NotificationDisplay.task(application, local.referenceId, id, watch)
+            syncPush(); PushDelivery.schedule(application)
         }
     } catch (error: CancellationException) {
         withContext(NonCancellable) { savePending(send.copy(status = SendStatus.Failed, error = "Sending was interrupted. Retry uses the same message ID.")) }
@@ -138,3 +162,13 @@ fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + ent
     active.call("respondPermission", body("entryId" to entry.id, "optionId" to option))
     delay(2_000)
 }
+
+/** Carries on with the bot's current conversation instead of the handoff. */
+internal fun AppStore.keepConversation(entry: Entry) = command("keepConversation", body("entryId" to entry.id), "handoff:" + entry.id)
+
+/** Saves the user's version of a handoff that hasn't been sent; whether it did (its error shows). */
+internal suspend fun AppStore.editHandoff(entry: Entry, text: String): Boolean = try {
+    hostCall("editHandoff", body("entryId" to entry.id, "text" to text), 30_000)
+    true
+} catch (cancelled: CancellationException) { throw cancelled }
+catch (error: Exception) { showError(error); false }

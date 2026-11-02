@@ -7,9 +7,17 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.33.6
+## 2.36.0
 ### zh-Hant
-- 「網路」功能換上 Codync Network 自己的圖示，在電腦頁、電腦選單與網路畫面中都一樣。
+- Codync 現在需要用 Apple、Google 或 GitHub 登入。以前沒登入就配對的電腦，第一次登入時會一起移進你的賬戶，不用再掃一次。
+- 登出後，這支手機不再收到通知，但會保留它的電腦，重新登入不用再掃描。
+- 可以在 App 裡刪除賬戶：點 Bots 分頁左上角的賬戶按鈕，再點「刪除賬戶」。
+- 配對會確認賬戶：在別人賬戶裡的電腦會告訴你它在誰的賬戶；還不在任何賬戶的電腦，會先在電腦上問一聲，再加入你的賬戶。
+- 也可以輸入 `codync-host pair` 印出的短代碼來配對，不用掃 QR code。
 
 ### en-US
-- Network now has its own Codync Network icon on the Computers screen, in the computer menu and on the Network screen.
+- Codync now asks you to sign in with Apple, Google or GitHub. Computers you paired before come along, no new scan.
+- Signing out stops notifications and keeps your computers: sign back in, no scan.
+- Delete your account in the app: account button (top left of Bots), then Delete account.
+- Pairing checks your account: a computer in another account says whose; one in no account asks first, then joins yours.
+- Or type the short code `codync-host pair` prints instead of scanning.

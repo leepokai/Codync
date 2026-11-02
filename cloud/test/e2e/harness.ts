@@ -49,6 +49,9 @@ const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 20
 // @clerk/backend strips PEM armor itself; a single line survives `--var`.
 const oneLine = (pem: string) => pem.replace(/-----[A-Z ]+-----|\s/g, "");
 const jwtKey = oneLine(publicKey.export({ type: "spki", format: "pem" }).toString());
+// The cloud signs device certificates with the private half (DEVICE_CERT_KEY); hosts check them with the public
+// half (CODYNC_DEVICE_CERT_KEY), as a self-hosted cloud's hosts do.
+const certKey = generateKeyPairSync("ed25519");
 
 /** The dev Clerk instance's issuer and public key, so a local cloud accepts real apps signed in to Codync Dev. */
 async function devClerk(): Promise<Record<string, string>> {
@@ -106,6 +109,8 @@ export class LocalCloud {
   readonly persist = join(this.tmp, "wrangler");
   readonly port: number;
   readonly url: string;
+  /** For hosts of this cloud: `CODYNC_DEVICE_CERT_KEY`. */
+  readonly certPub = certKey.publicKey.export({ format: "jwk" }).x!;
   private readonly children: ChildProcess[] = [];
 
   constructor(port: number) {
@@ -132,7 +137,8 @@ export class LocalCloud {
     });
     if (migrate.status !== 0) throw new Error(`migrations failed: ${migrate.stderr}`);
     const clerk = o.clerk === "dev" ? await devClerk() : { CLERK_JWT_KEY: jwtKey };
-    const varArgs = Object.entries({ ...clerk, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
+    const cert = { DEVICE_CERT_KEY: JSON.stringify(certKey.privateKey.export({ format: "jwk" })) };
+    const varArgs = Object.entries({ ...clerk, ...cert, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
     // `--test-scheduled`: `cron()` runs the Worker's cron jobs on demand.
     this.run(WRANGLER, ["dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(this.port), "--persist-to", this.persist, "--test-scheduled", ...varArgs]);
     await waitFor("cloud /v1/health", () => fetch(`${this.url}/v1/health`).then((r) => r.ok || undefined).catch(() => undefined), 60_000);

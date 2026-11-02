@@ -19,7 +19,11 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if !onboardingCompleted && accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
+            if mustSignIn {
+                // Computers paired before sign-in was required wait in the signed-out context.
+                WelcomeView(signedOutComputers: accounts.computers.count) {}
+                    .transition(.opacity)
+            } else if !onboardingCompleted && accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
                 if !welcomed && !account.isSignedIn {
                     WelcomeView { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = true } }
                         .transition(.move(edge: .leading).combined(with: .opacity))
@@ -102,6 +106,12 @@ struct RootView: View {
         case .state: .state
         case .settings: .settings
         }
+    }
+
+    /// Every build with accounts requires sign-in. While Clerk restores, the last signed-in account's context
+    /// stays on screen, so an offline launch still reaches its computers.
+    private var mustSignIn: Bool {
+        account.isConfigured && !account.isSignedIn && (account.isReady || accounts.accountId == nil)
     }
 
     /// Once per setup (Start over begins a new one): the first computer reached, or Skip.

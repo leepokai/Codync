@@ -3,7 +3,6 @@ package com.codync.android
 import android.view.KeyEvent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import kotlinx.coroutines.runBlocking
@@ -30,7 +29,7 @@ class LiveManagementTest {
             val result = runBlocking { channel.call("createBot", BotDraft.from(parent).copy(id = null, name = name, permission = "auto").body()) }
             val member = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
             created.add(member.id)
-            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+            val store = compose.computerStore()
             compose.waitUntil(30_000) { store.state.value.bots.any { it.id == member.id } }
             compose.runOnUiThread { store.openBot(null) }
             compose.onNodeWithContentDescription("New").performClick()

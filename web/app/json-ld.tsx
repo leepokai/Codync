@@ -15,7 +15,8 @@ const graph = {
     {
       "@type": "Organization",
       "@id": `${SITE}/#org`,
-      name: "Codync",
+      name: "Leeporic LLC",
+      brand: { "@type": "Brand", name: "Codync" },
       url: SITE,
       logo: `${SITE}/icon.png`,
       email: EMAIL,

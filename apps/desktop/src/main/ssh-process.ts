@@ -31,14 +31,14 @@ export const lastLine = (text: string) => text.split(/\r?\n/).filter(Boolean).po
 
 interface Result { status: number; stdout: string; stderr: string }
 
-/** Runs a tool with hidden Windows consoles while draining both output pipes; one that hangs is killed after 30 s. */
-export function run(bin: string, args: string[], input?: string): Promise<Result> {
+/** Runs a tool with hidden Windows consoles while draining both output pipes; one that hangs is killed after `timeout` ms. */
+export function run(bin: string, args: string[], input?: string, timeout = 30_000): Promise<Result> {
   return new Promise((resolve) => {
     let stdout = ''
     let stderr = ''
     let child: ChildProcess
     try {
-      child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 30_000 })
+      child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true, timeout })
     } catch (error) {
       return resolve({ status: -1, stdout, stderr: String(error) })
     }
@@ -72,7 +72,16 @@ function powershell(script: string) {
 
 export function listenerCommand(pid: number, port: number) {
   if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid listener')
-  return `Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.OwningProcess -eq ${pid} } | ForEach-Object { $_.OwningProcess }`
+  // Some Windows builds misreport listening sockets' State. Verify the owner of
+  // an actual loopback connection using its exact reverse tuple instead.
+  return `$ErrorActionPreference='Stop'
+$client = [System.Net.Sockets.TcpClient]::new()
+try {
+  $client.Connect('127.0.0.1', ${port})
+  $peer = $client.Client.LocalEndPoint.Port
+  Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort ${port} -RemoteAddress 127.0.0.1 -RemotePort $peer -ErrorAction Stop |
+    Where-Object { $_.OwningProcess -eq ${pid} } | ForEach-Object { $_.OwningProcess }
+} finally { $client.Dispose() }`
 }
 
 /** Never send the host token until the listener is owned by the exact ssh child. */

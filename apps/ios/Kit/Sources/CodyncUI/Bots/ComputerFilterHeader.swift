@@ -28,20 +28,12 @@ public struct ComputerFilterHeader: View {
             Toggle(isOn: Binding(get: { selection.shown.count == accounts.computers.count }, set: { _ in update("") })) {
                 Label(L10n.tr("All computers"), systemImage: "desktopcomputer")
             }
+            .menuActionDismissBehavior(.disabled)
             ForEach(accounts.computers) { computer in
                 Toggle(isOn: Binding(get: { selection.shown.contains(computer.id) }, set: { _ in update(selection.toggling(computer.id)) })) {
                     Label { Text(computerTitle(computer)) } icon: { ComputerBadge(computer, size: 28) }
                 }
                 .menuActionDismissBehavior(.disabled)
-            }
-            if accounts.computers.count > 1 {
-                Menu(L10n.tr("Show only")) {
-                    ForEach(accounts.computers) { computer in
-                        Button { update(selection.only(computer.id)) } label: {
-                            Label { Text(computer.name) } icon: { ComputerBadge(computer, size: 28) }
-                        }
-                    }
-                }
             }
             Divider()
             Button(L10n.tr("Reconnect"), systemImage: "arrow.clockwise", action: reconnect)

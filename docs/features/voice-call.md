@@ -88,7 +88,12 @@ on-device (its window doesn't reach the host).
   `Thread/DictationEngineMenu.swift`, dots shared with the call bar in `LevelDots.swift`):
   `SFSpeechRecognizer` on device; with no microphone route (some simulators) the mic does nothing.
   A provider's errors (no key, no connection) show in a dialog.
-- Android has no composer mic yet.
+- Android (`Dictation.kt`, pill and engine menu in `DictationControls.kt`, dots shared with the call
+  bar): Android's on-device recognizer (Android 12+) in the call's language. Where the phone has none,
+  or it lacks the language, the phone's own recognizer listens instead, and that one may send the
+  audio to its provider (Google on most phones). A provider records through `AndroidMic`; the key
+  check, microphone and transcription sit behind `DictationService`, so `DictationTest` runs on the JVM.
+  A missing key opens Voice chat settings, with a card for a dictation-only provider.
 - The terminal UI has no microphone, so no mic.
 
 ### Voice input shortcut
@@ -439,4 +444,4 @@ voice).
 
 ### Missing dictation keys
 
-Desktop and iPhone dictation open Voice chat settings when the selected provider has no key, before opening the microphone. Connection failures still show an error. Keys can be edited through local or SSH-loopback connections; paired remote connections show instructions to add the key on that computer. Windows and Linux hide On device in both engine pickers; old dictation preferences use OpenAI, while calls keep their configured-provider fallback. macOS keeps its on-device option. Android has voice calls but no composer dictation engine picker; the terminal UI has no microphone input, so this dictation change does not apply to either.
+Desktop and iPhone dictation open Voice chat settings when the selected provider has no key, before opening the microphone. Connection failures still show an error. Keys can be edited through local or SSH-loopback connections; paired remote connections show instructions to add the key on that computer. Windows and Linux hide On device in both engine pickers; old dictation preferences use OpenAI, while calls keep their configured-provider fallback. macOS keeps its on-device option. Android does the same and always offers On device. The terminal UI has no microphone input, so this dictation change does not apply to it.

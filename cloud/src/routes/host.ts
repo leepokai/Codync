@@ -155,8 +155,17 @@ export async function hostState(c: Ctx) {
       created_at: number;
       expires_at: number;
     }>();
+  // The account's phones that signed out: the host drops their push tickets.
+  const signedOut = comp.owner_user_id
+    ? await c.env.DB.prepare(
+        "SELECT sign_pub FROM devices WHERE owner_user_id = ? AND signed_out_at IS NOT NULL AND revoked_at IS NULL",
+      )
+        .bind(comp.owner_user_id)
+        .all<{ sign_pub: string }>()
+    : { results: [] };
   return {
     owner: owner ? { userId: owner.user_id, email: owner.email } : null,
+    signedOut: signedOut.results.map((d) => d.sign_pub),
     grants: grants.results.map((g) => ({
       grantId: g.id,
       deviceKey: g.sign_pub,

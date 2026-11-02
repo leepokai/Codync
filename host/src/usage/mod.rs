@@ -6,9 +6,9 @@
 //! `kiro-cli /usage`, a `kimi` screen, Antigravity's language server, OpenCode's
 //! database, Vibe's session logs, and the `JetBrains` IDE quota file.
 //!
-//! Cursor has no local report. The host reads the token the Cursor app saved
-//! and asks `cursor.com/api/usage-summary`. That is the only provider call, and
-//! the token is never logged.
+//! Cursor's saved CLI or app login reads the dashboard service's weekly unified
+//! allowance, or the website's usage summary for legacy monthly plans. These are
+//! the only provider requests, and the token is never logged.
 
 mod amp;
 mod antigravity;

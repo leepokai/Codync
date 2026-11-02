@@ -113,7 +113,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
             json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
         }
-        "agentModels" => crate::agent::auth::models(&hub.store, str_arg(&b, "backend")?).await?,
+        "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
         "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
             let backend = str_arg(&b, "backend")?;
             let status = match method {

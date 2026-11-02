@@ -37,13 +37,14 @@ standing instructions: it doesn't share your conversation. The user may approve 
 when they deny one, don't retry it unasked. Deleting bots is the user's.";
 
 /// The setup a manager sets, by wire name, with its label on approval cards and notices.
-const FIELDS: [(&str, &str); 11] = [
+const FIELDS: [(&str, &str); 12] = [
     ("name", "Name"),
     ("backend", "Agent"),
     ("model", "Model"),
     ("fallbacks", "Fallbacks"),
     ("cwd", "Folder"),
     ("permission", "Approvals"),
+    ("mode", "Mode"),
     ("manageTeam", "Manage the team"),
     ("avatarColor", "Color"),
     ("avatarShape", "Shape"),
@@ -144,12 +145,23 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     // A bot's bots act as freely as it does, no more: they manage the team too, under Ask they ask, and they reach
     // only the connectors and skills it does.
     fields.insert("permission".into(), json!(source.permission));
+    fields.insert("mode".into(), json!(source.mode));
     fields.insert("manageTeam".into(), true.into());
     let mut body = Value::Object(fields.clone());
     body["connectors"] = json!(source.connectors);
     body["skills"] = json!(source.skills);
     body["createdBy"] = source.id.clone().into();
     let cfg = crate::agent::new_bot::with_defaults(hub, body).await?;
+    // A mode is its agent's: on another agent, the new bot would work in that one's default, which may ask less.
+    if cfg.backend != source.backend
+        && let Some(mode) = source.mode.as_deref().filter(|m| *m != crate::agent::modes::AUTO)
+    {
+        bail!(
+            "you work in your agent's {mode} mode, which {} may not have: create this bot on {}, or ask the user to",
+            crate::agent::fallback::name(&cfg.backend),
+            source.backend
+        );
+    }
     crate::hub::validate(&cfg)?;
     fields.insert("backend".into(), cfg.backend.clone().into());
     let name = cfg.name.clone();
@@ -231,7 +243,7 @@ fn setup(hub: &Hub, cfg: &BotConfig) -> Value {
     json!({
         "id": cfg.id, "name": cfg.name, "instructions": cfg.description, "agent": cfg.backend, "model": cfg.model,
         "modelOptions": cfg.model_options, "fallbacks": crate::chat::fallbacks::wire(&cfg.fallbacks), "avatarColor": cfg.avatar_color, "avatarShape": cfg.avatar_shape,
-        "folder": folder, "hidden": cfg.hidden, "approvals": cfg.permission, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
+        "folder": folder, "hidden": cfg.hidden, "approvals": cfg.permission, "mode": cfg.mode, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
         "routines": hub.routines.list(&cfg.id)["routines"],
     })
 }

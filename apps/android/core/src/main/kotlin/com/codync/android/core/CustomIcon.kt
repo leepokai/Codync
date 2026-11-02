@@ -11,5 +11,5 @@ fun decodeCustomIcons(value: JsonElement): Map<String, CustomIcon> = WireJson.de
 /** Apply the current image snapshot, including removals, without replacing fresh bot metadata. */
 fun List<Bot>.withCustomIcons(icons: Map<String, CustomIcon>): List<Bot> = map { it.copy(customIcon = icons["bot:${it.id}"]) }
 
-/** 128 normalized images plus the existing 512 KiB summary allowance. */
-const val MAX_WIDGET_FEED_BYTES = 128 * 65_558 + 512 * 1024
+/** A normalized image for each of the feed's 256 bots (every computer's), plus the 512 KiB summary allowance. */
+const val MAX_WIDGET_FEED_BYTES = 256 * 65_558 + 512 * 1024

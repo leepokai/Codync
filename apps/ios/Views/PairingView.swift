@@ -212,6 +212,8 @@ private struct ScanPage: View {
     @State private var pairing = false
     @State private var pasted = ""
     @State private var error: String?
+    /// The phone couldn't reach the computer (not a refusal from it or the cloud): the network hint helps.
+    @State private var unreachable = false
     /// Bumped after a failed pair so the scanner starts looking again.
     @State private var attempt = 0
     @State private var tailscaleOn = Tailscale.isConnected
@@ -235,7 +237,7 @@ private struct ScanPage: View {
                 viewfinder
 
                 HStack {
-                    TextField(L10n.tr("Or paste a {scheme}://pair link").replacingOccurrences(of: "{scheme}", with: AppEnvironment.current.urlScheme), text: $pasted)
+                    TextField(L10n.tr("Pairing link or code"), text: $pasted)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
@@ -250,12 +252,12 @@ private struct ScanPage: View {
 
                 if let error {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                         // The usual cause: the phone has no road to the computer yet.
-                        Label(L10n.tr("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."),
+                        if unreachable { Label(L10n.tr("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."),
                               systemImage: "wifi.exclamationmark")
                             .font(.footnote)
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(Palette.secondary) }
                     }
                     .transition(.opacity)
                 }
@@ -315,28 +317,37 @@ private struct ScanPage: View {
                 .background(Palette.surface)
             }
             if pairing {
-                Palette.background.opacity(0.7)
-                Spinner(size: 28)
+                Palette.background
+                VStack(spacing: 16) {
+                    Spinner(size: 28)
+                    // A computer in no account asks its user first, showing the same code.
+                    if let code = app.accounts.pairingCheck {
+                        Text(L10n.tr("If the computer asks, check it shows {code}.")
+                            .replacingOccurrences(of: "{code}", with: "\(code.prefix(3))\u{00A0}\(code.suffix(3))"))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(Palette.text)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .transition(.opacity)
+                    }
+                }
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .animation(Motion.fade, value: pairing)
+        .animation(Motion.fade, value: app.accounts.pairingCheck)
     }
 
     private func pair(_ text: String) {
-        let p: Pairing
-        do {
-            p = try app.pairing(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
-        } catch {
-            show(error)
-            return
-        }
+        // A short code works once: Return pressed again while it resolves mustn't spend it twice.
+        guard !pairing else { return }
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { error = nil }
         pairing = true
         Task {
             defer { pairing = false }
             do {
+                let p = try await app.pairing(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
                 _ = try await app.pair(p, via: .qr)
                 pasted = ""
                 paired()
@@ -348,7 +359,11 @@ private struct ScanPage: View {
 
     private func show(_ error: Error) {
         attempt += 1
-        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = error.localizedDescription }
+        let reason = AnalyticsEvent.PairingFailure(error)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+            self.error = error.localizedDescription
+            unreachable = reason == .unreachable || reason == .timeout
+        }
     }
 }
 

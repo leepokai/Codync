@@ -1,6 +1,6 @@
 ---
 name: after-change
-description: Review, fix, clean up, and end-to-end test a finished Codync code change before commit. Use after affected tests pass or when explicitly asked to run the after-change workflow.
+description: Review, fix, clean up, and end-to-end test a finished Codync code change of our own before commit (issues and PRs from other people follow docs/guides/issue-pr-review.md). Use after affected tests pass or when explicitly asked to run the after-change workflow.
 ---
 
 # After change

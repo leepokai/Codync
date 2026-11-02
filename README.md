@@ -23,6 +23,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/KBAX3Qznxh)
+[![WeChat China](https://img.shields.io/badge/WeChat-China_community-07C160?logo=wechat&logoColor=white)](#community)
 [![Release](https://img.shields.io/github/v/release/leepokai/Codync?color=black)](https://github.com/leepokai/Codync/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 <br>
@@ -163,6 +164,7 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 | `codync-host install` / `uninstall` | background service (launchd on macOS, systemd `--user` on Linux, the sign-in Run key on Windows) |
 | `codync-host tui [--url … --token …]` | message your bots from a terminal (this computer by default; SSH-friendly) |
 | `codync-host send --bot <id-or-name> [--wait] [--json] <text>...` | send from a script, optionally waiting for the final reply |
+| `codync-host import <file> [--dry-run] [--only a,b] [--skill]` | import bots from another app's export file; `--skill` prints the skill that writes one |
 | `codync-host pair [--json]` | pairing QR code / link |
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |
@@ -199,7 +201,7 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 
 **Where does my data go?** Bots, chats and memory stay on your computer. The phone reaches it directly on the same network, or through an end-to-end encrypted relay that can't read your messages.
 
-**Do I need an account?** No. Pair your phone by scanning a QR code. Signing in with Apple or Google is optional.
+**Do I need an account?** Yes, a free one: the apps ask you to sign in with Apple, Google or GitHub. An account alone never unlocks a computer: you still pair by scanning a QR code, or approve a 6-digit code on the computer.
 
 **Which computers can run it?** A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host.
 
@@ -241,10 +243,18 @@ For release-by-release changes, see [GitHub Releases](https://github.com/leepoka
 
 Clients and the host each name the oldest version of the other they still work with (`minApp` in the host's `hello`, `minHost` in each client), so an app can meet an older or newer host. Details: [compatibility](docs/reference/compatibility.md).
 
+## Community
+
+| Discord | WeChat · China community |
+| --- | --- |
+| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | A community for Codync users in China to share tips, ask questions and give feedback. Scan with regular WeChat; WeCom is not required. |
+| | <img src="web/public/wechat-group.png" width="200" alt="QR code to join the Codync WeChat community for users in China"> |
+| | [Download the QR code](web/public/wechat-group.png) · [WeChat community page](https://www.codync.dev/wechat) |
+
 ## Contact
 
 - Email: [kevin@codync.dev](mailto:kevin@codync.dev)
-- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues) or [Discord](https://discord.gg/KBAX3Qznxh)
+- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [WeChat (China)](#community)
 - Security issues: report privately as described in [SECURITY.md](SECURITY.md) (GitHub private reporting or email)
 - Community rules: [Code of Conduct](CODE_OF_CONDUCT.md)
 

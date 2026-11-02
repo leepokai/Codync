@@ -126,6 +126,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::ConnectorInstalled
         }
         "importConnectors" => Event::ConnectorsImported,
+        "importBots" => Event::BotsImported,
         "removeConnector" => Event::ConnectorRemoved,
         "connectorSignIn" => Event::ConnectorSigninStarted,
         "installSkill" => {
@@ -202,13 +203,21 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
     Some((event, p))
 }
 
-/// What only the answer tells: how many connectors an import added, whether a Composio app is
+/// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), and whether a published
 /// artifact's card went into its bot's chat. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
             p.insert("count".into(), answer["items"].as_array().map_or(0, Vec::len).into());
+        }
+        // The file names its app: only the ones Codync reads leave the computer.
+        Event::BotsImported => {
+            let source = answer["source"].as_str().filter(|s| matches!(*s, "grok-bot" | "openbot"));
+            p.insert("source".into(), source.unwrap_or("other").into());
+            for key in ["bots", "groups"] {
+                p.insert(key.into(), answer[key].as_array().map_or(0, Vec::len).into());
+            }
         }
         // A routine run, a room or a bot request gets no card (`card` says why).
         Event::ArtifactPublished => {

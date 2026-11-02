@@ -1,13 +1,5 @@
-import { useContext, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { validIcon, type CustomIcon as IconData } from '@shared/custom-icons'
-import { StoreContext } from '../store/context'
-import { useModel } from '../lib/observable'
-
-export function useAgentIcon(registry?: string | null) {
-  const store = useModel(useContext(StoreContext))
-  const backend = store?.hello?.backends.find((b) => b.id === registry || b.registry === registry)
-  return store?.icons[`agent:${backend?.id ?? registry}`]
-}
 
 /** Static normalized image, including when the bot is working. */
 export function CustomIcon({ icon, size, color = 'currentColor', fallback }: {

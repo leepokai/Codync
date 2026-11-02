@@ -1,23 +1,27 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
 mod analytics;
+mod approvals;
 mod bot;
 mod editor;
 mod events;
 mod exchange;
 mod fallbacks;
 mod forms;
+mod group_form;
 mod input;
 mod model;
 mod navigate;
 mod new_bot;
 mod overlay_keys;
+mod pair;
 mod roster;
 mod section_order;
 mod slash;
 mod steps;
 mod ui;
 
+pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
@@ -68,6 +72,10 @@ pub struct App {
     pub screen: Value,
     /// This computer's network (`networkView`'s shape); null on hosts without one.
     pub network: Value,
+    /// The host's account and relay (`cloudStatus`, `cloud` events): null until the pair sheet asks.
+    pub cloud: Value,
+    /// Phones waiting for this computer to let them in (`pairingRequests`), oldest first.
+    pub pairing_requests: Vec<Value>,
     pub backends: Vec<Value>,
     pub custom_icons: bool,
     pub selected: Option<String>,
@@ -125,6 +133,8 @@ pub struct App {
     pub models: HashMap<String, Option<Vec<AgentModel>>>,
     /// Agents whose model list came with Fast mode.
     pub fast_mode: HashSet<String>,
+    /// The modes each agent's model list came with.
+    pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
@@ -164,6 +174,8 @@ impl App {
             usage: Value::Null,
             screen: Value::Null,
             network: Value::Null,
+            cloud: Value::Null,
+            pairing_requests: vec![],
             backends: vec![],
             custom_icons: false,
             selected: None,
@@ -200,6 +212,7 @@ impl App {
             plugins: (vec![], vec![]),
             models: HashMap::new(),
             fast_mode: HashSet::new(),
+            modes: HashMap::new(),
             shell: None,
             reading: HashSet::new(),
             history_busy: HashSet::new(),

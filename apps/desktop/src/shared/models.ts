@@ -21,8 +21,11 @@ export interface Bot {
   cwd: string
   /** Host-allocated personal workspace rather than a user-selected project. */
   managedWorkspace: boolean
-  /** `ask` or `auto`. */
+  /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
+  /** The agent mode it works in (Claude's Manual / Plan / Auto…): the agent's id, or `auto` for its Auto mode under
+   *  any id. Null keeps the agent's default. */
+  mode: string | null
   model?: string | null
   /** The model's own settings (effort, fast…): agent option id → value. */
   modelOptions: Record<string, string>
@@ -96,7 +99,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     command: raw.command ?? null,
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
-    permission: raw.permission ?? 'auto',
+    permission: raw.permission ?? 'ask',
+    mode: raw.mode ?? null,
     model: raw.model ?? null,
     modelOptions: raw.modelOptions ?? {},
     fastMode: raw.fastMode ?? false,
@@ -525,6 +529,18 @@ export interface AccessRequest {
   expiresAt?: number | null
 }
 
+/** A signed-in phone that scanned a computer in no account, waiting to be let in (loopback `pairingRequests`). */
+export interface PairingRequest {
+  requestId: string
+  deviceName: string
+  platform?: string | null
+  /** The phone's account, which the computer joins. */
+  email?: string | null
+  /** The 6 digits the phone shows too. */
+  code: string
+  expiresAt?: number | null
+}
+
 /** A device the host authorized (loopback `devices`). */
 export interface AuthorizedDevice {
   key: string
@@ -561,6 +577,8 @@ export interface CloudStatus {
   relay?: 'codync' | 'private' | null
   /** The user's cloud assistant may message this computer's bots (`setAssistants`). */
   assistants?: boolean | null
+  /** In no account while it could join one: a signed-in phone that pairs asks to bring it into its account. Absent from older hosts. */
+  canJoinAccount?: boolean | null
 }
 
 export interface ClaimSignature {
@@ -597,6 +615,8 @@ export interface BotDraft {
   command?: string | null
   cwd: string
   permission: string
+  /** Null for the agent's default: sent as is, so the host clears it. */
+  mode?: string | null
   model?: string | null
   modelOptions?: Record<string, string>
   fastMode?: boolean
@@ -628,6 +648,7 @@ export function draftOf(bot: Bot): BotDraft {
     command: bot.command ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
+    mode: bot.mode,
     model: bot.model ?? null,
     modelOptions: bot.modelOptions,
     fastMode: bot.fastMode,

@@ -8,6 +8,8 @@ import { aclMessage, b64url, boxKey, computerId, enc, signKey, signRequest, type
 export interface TestEnv extends Env {
   TEST_MIGRATIONS: D1Migration[];
   TEST_CLERK_PRIVATE_JWK: string;
+  /** The device certificate key's public half, b64url. */
+  TEST_DEVICE_CERT_PUB: string;
 }
 
 export const env = rawEnv as unknown as TestEnv;

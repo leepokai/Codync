@@ -102,6 +102,25 @@ async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
 }
 
 #[tokio::test]
+async fn a_fallback_without_the_bots_mode_doesnt_take_the_turn() {
+    let host = Host::start().await;
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mode_agent.py");
+    let bot = json!({"name": "Moded", "backend": "custom", "command": common::python_agent(&script),
+        "connectors": [], "notify": false, "permission": "ask", "mode": "read-only"});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": bot, "fallbacks": [{"backend": "codex", "command": agent("standin")}]})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("limit"), "").unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests"})).await;
+    let failed = wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
+    let text = failed["data"]["text"].as_str().unwrap();
+    assert!(text.contains("Codex doesn't have read-only, the mode this bot works in"), "{text}");
+    let standin = host.log(&bot, "standin.jsonl");
+    assert!(!standin.iter().any(|r| r["method"] == "session/prompt"), "the fallback never works in its own mode");
+}
+
+#[tokio::test]
 async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_started_over() {
     let host = Host::start().await;
     let bot =

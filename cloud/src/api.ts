@@ -13,6 +13,7 @@ export * from "./routes/assistant";
 export * from "./routes/cloud-computers";
 export * from "./routes/cloud-host";
 export * from "./routes/host";
+export * from "./routes/pairing-codes";
 export * from "./routes/relay";
 export * from "./routes/webhooks";
 

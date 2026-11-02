@@ -1,15 +1,14 @@
-//! Putting this computer in a Codync account: the signed claim, and the one-time ticket a cloud
-//! computer Codync runs for a signed-in user finds on its first boot (`managed.json` in the data
+//! Putting a cloud computer in its Codync account: the one-time ticket a cloud computer Codync runs
+//! for a signed-in user finds on its first boot (`managed.json` in the data
 //! folder, written by the provider before the machine starts). The ticket names the claim; the
-//! host signs it and completes it itself, then deletes the file.
+//! host signs it (`owner::sign_claim`) and completes it itself, then deletes the file.
 
 use crate::hub::Hub;
 use crate::remote::cloud::{self, Approval, CloudError};
-use crate::remote::crypto;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use reqwest::Method;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -25,29 +24,6 @@ struct Ticket {
     user_id: String,
     #[serde(default)]
     approval: Option<Approval>,
-}
-
-/// The fields of a claim signed by this computer, for `/v1/claims/{id}/complete` or `/v1/host/claim`.
-pub async fn payload(hub: &Arc<Hub>, claim_id: &str, nonce: &str, user_id: &str) -> Result<Value> {
-    for (k, v) in [("claimId", claim_id), ("nonce", nonce), ("userId", user_id)] {
-        // Fields are newline-separated in the signed string: a newline would forge another field.
-        if v.is_empty() || v.contains('\n') {
-            bail!("`{k}` is invalid");
-        }
-    }
-    let computer_id = hub.identity.computer_id();
-    let box_key = hub.identity.box_pub_b64();
-    let input = crypto::claim_input(claim_id, nonce, user_id, &computer_id, &box_key);
-    Ok(json!({
-        "computerId": computer_id,
-        "signKey": hub.identity.sign_pub_b64(),
-        "boxKey": box_key,
-        "name": crate::service::host_name(),
-        "platform": std::env::consts::OS,
-        "device": tokio::task::spawn_blocking(crate::service::device).await?,
-        "version": env!("CARGO_PKG_VERSION"),
-        "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
-    }))
 }
 
 fn ticket_path() -> PathBuf {
@@ -116,7 +92,7 @@ pub async fn run_ticket(hub: Arc<Hub>) {
 
 /// `POST /v1/host/claim`: the cloud checks the claim and this computer's signature, then sets the owner.
 async fn complete(hub: &Arc<Hub>, ticket: &Ticket) -> Result<()> {
-    let mut body = payload(hub, &ticket.claim_id, &ticket.nonce, &ticket.user_id).await?;
+    let mut body = super::owner::sign_claim(hub, &ticket.claim_id, &ticket.nonce, &ticket.user_id).await?;
     body["claimId"] = json!(ticket.claim_id);
     body["userId"] = json!(ticket.user_id);
     let base = cloud::codync_url(hub)?;

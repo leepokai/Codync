@@ -59,6 +59,18 @@ internal object PlatformSpeech {
     fun name(tag: String): String = ULocale.forLanguageTag(tag).getDisplayName(ULocale.getDefault()).ifEmpty { tag }
 }
 
+/** Android's recognizer asked for free-form speech in [language], the words as it hears them, on the phone where it can. */
+internal fun recognizerIntent(language: String): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+    .putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
+    .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+    .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+
+/** The recognizer's best guess in [results], Chinese in the reader's script. */
+internal fun recognizedText(results: Bundle?, language: String): String =
+    results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+        .let { if (VoiceLanguages.base(Locale.forLanguageTag(language)) == "zh") inReadersScript(it) else it }
+
 /**
  * One utterance at a time through Android's on-device recognizer: the microphone's PCM is written to
  * it, so the level meter and echo cancelling are the call's own. What it hears so far is reported as
@@ -75,11 +87,7 @@ internal class PlatformSpeechInput(private val context: Context, private val lan
         val (read, write) = ParcelFileDescriptor.createPipe()
         source = read
         val output = ParcelFileDescriptor.AutoCloseOutputStream(write).also { sink = it }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
-            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        val intent = recognizerIntent(language)
             .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, read)
             .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
             .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
@@ -114,8 +122,7 @@ internal class PlatformSpeechInput(private val context: Context, private val lan
         /** The stretches finished so far in this utterance. */
         private var heard = ""
 
-        private fun text(results: Bundle?) = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-            .let { if (VoiceLanguages.base(Locale.forLanguageTag(language)) == "zh") inReadersScript(it) else it }
+        private fun text(results: Bundle?) = recognizedText(results, language)
 
         override fun onPartialResults(partial: Bundle?) {
             events(VoiceInput.Text(generation, VoiceLanguages.join(heard, text(partial)), false))

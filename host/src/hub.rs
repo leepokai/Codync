@@ -103,6 +103,8 @@ pub struct Hub {
     /// change so open channels re-check their device (and the ACL is republished).
     pub auth: watch::Sender<u64>,
     pub pairing: Mutex<Pairing>,
+    /// Phones waiting for this computer to let them in and join their account.
+    pub pairing_requests: crate::remote::pairing_requests::PairingRequests,
     /// Device key -> open channels that have exchanged at least one frame.
     pub connected: Mutex<HashMap<String, usize>>,
     /// The cloud's `/v1/host/state` was applied on the current relay connection;
@@ -112,6 +114,8 @@ pub struct Hub {
     pub screen: Arc<Screen>,
     /// Setup terminals (installs, sign-ins).
     pub terms: Arc<crate::agent::term::Terms>,
+    /// Model lists being fetched (`agentModels`).
+    pub model_lists: crate::agent::auth::InFlight,
 }
 
 impl Hub {
@@ -145,11 +149,13 @@ impl Hub {
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
             pairing: Mutex::default(),
+            pairing_requests: crate::remote::pairing_requests::PairingRequests::default(),
             connected: Mutex::default(),
             cloud_synced: AtomicBool::new(false),
             cloud: crate::remote::cloud::Cloud::default(),
             screen,
             terms: Arc::default(),
+            model_lists: crate::agent::auth::InFlight::default(),
         })
     }
 

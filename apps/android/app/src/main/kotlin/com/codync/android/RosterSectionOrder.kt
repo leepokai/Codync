@@ -1,6 +1,11 @@
 package com.codync.android
 
 import android.content.Context
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
 import androidx.core.content.edit
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -22,12 +27,11 @@ internal fun renamedSectionOrder(order: List<String>, from: String, to: String?)
 
 internal object SectionOrders {
     fun key(account: String, computer: String): String = "sectionOrder:$account:$computer"
-    private fun prefs(context: Context) = context.getSharedPreferences("codync-roster", Context.MODE_PRIVATE)
     fun load(context: Context, key: String): List<String> = try {
-        Json.parseToJsonElement(prefs(context).getString(key, "[]") ?: "[]").jsonArray.map { it.jsonPrimitive.content }
+        Json.parseToJsonElement(rosterPrefs(context).getString(key, "[]") ?: "[]").jsonArray.map { it.jsonPrimitive.content }
     } catch (_: IllegalArgumentException) { emptyList() } // A malformed local preference starts with the default order.
     fun save(context: Context, key: String, names: List<String>) {
-        prefs(context).edit { putString(key, JsonArray(names.map(::JsonPrimitive)).toString()) }
+        rosterPrefs(context).edit { putString(key, JsonArray(names.map(::JsonPrimitive)).toString()) }
     }
 }
 
@@ -74,3 +78,7 @@ internal class SectionReorder {
         }, end = { finish(true) }, cancel = { finish(false) })
     }
 }
+
+/** A heading [reorder] drags by [name]: its height for the swaps, lifted above the rest while held, otherwise sliding into place. */
+internal fun LazyItemScope.reorderable(reorder: SectionReorder, name: String): Modifier = Modifier.onSizeChanged { reorder.heights[name] = it.height }
+    .then(if (reorder.dragged == name) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.translation(name) } else Modifier.animateItem())

@@ -25,6 +25,8 @@ Source review, a passing build, local integration tests and production acceptanc
 | Set up accounts, approvals or desktop SSH | [Accounts and SSH](guides/accounts-and-ssh.md) |
 | Check connectors against live services | [Connector verification](guides/connector-verification.md) |
 | Change transport or cryptography | [Remote protocol](reference/remote-relay.md) and [shared vectors](reference/fixtures/README.md) |
+| Review an issue or pull request | [Issue and PR review](guides/issue-pr-review.md) (the `review-issue-pr` workflow) and its [security check](guides/security-check.md) |
+| Patch around an agent adapter's bug, or check whether upstream fixed one | [ACP adapter workarounds](reference/acp-adapter-workarounds.md) |
 | Look into errors or failed turns users hit | [Usage analytics](features/analytics.md), [iPhone crash tracing](guides/iphone-crash-tracing.md), [investigations](#investigations) |
 
 ## Features
@@ -40,6 +42,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Bot memory and compaction](design/bot-memory.md) (design; storage, gate and dreaming built, compaction to come)
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
 - [Bot workspaces](features/bot-workspaces.md)
+- [Bot import](features/bot-import.md) (agents from a Grok Bot export file become bots)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
 - [Voice calls](features/voice-call.md)
@@ -82,7 +85,7 @@ docs/
 ├── design/                    # UI rules, system integration and design write-ups for larger features
 │   └── reference/             # Reference screenshots the designs follow
 ├── guides/                    # Build, configuration, testing and deployment steps
-├── reference/                 # Wire contracts and shared executable fixtures
+├── reference/                 # Wire contracts, shared executable fixtures, adapter workarounds
 │   └── fixtures/
 ├── plans/                     # Work planned or in progress, not released yet
 ├── investigations/            # Dated root-cause records of production errors

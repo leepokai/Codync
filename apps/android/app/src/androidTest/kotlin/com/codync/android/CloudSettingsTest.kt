@@ -23,13 +23,15 @@ class CloudSettingsTest {
         accounts = listOf(SavedAccount("fixture", "fixture-session", "alex@example.test", null)))
     private fun machine(state: String, computerId: String? = "cloud") = CloudMachine("boat", "Boat", "EU", state, "cm_1", computerId)
     private fun cloudComputer(state: String) = CloudComputer("cloud", "Cloud computer", "key", online = false, access = "none", cloud = machine(state))
-    private fun fixture(offer: CloudOffer?, computers: List<CloudComputer> = emptyList()) = AppState(loading = false, setupComplete = true,
+    private fun fixture(offer: CloudOffer?, computers: List<CloudComputer> = emptyList()) = AccountContext(loading = false, setupComplete = true,
         account = account, contextId = "cloud-fixture", cloudOffer = offer, cloudComputers = computers)
+    /** The cloud computer as this phone uses it. */
+    private fun used(state: String) = AppState(Computer("cloud", "Cloud computer", "key"), loading = false, cloudHosting = machine(state))
 
     @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
 
     @Test fun aSleepingCloudComputerShowsItsProviderAndCanBeDeleted() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("stopped"), true), listOf(cloudComputer("stopped"))), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("stopped"), true), listOf(cloudComputer("stopped"))), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Codync Cloud · Boat · EU").assertIsDisplayed()
         compose.onNodeWithText("Sleeping · wakes when you message").assertIsDisplayed()
         compose.onNodeWithText("Runs on Boat · EU").performScrollTo().assertIsDisplayed()
@@ -42,33 +44,32 @@ class CloudSettingsTest {
     }
 
     @Test fun aNewCloudComputerIsPreparedUntilItJoinsTheAccount() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("starting", computerId = null), true)), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("starting", computerId = null), true)), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Preparing your cloud computer…").performScrollTo().assertIsDisplayed()
         snapshot("preparing")
     }
 
     @Test fun onlyAnAccountThatMayHaveOneCanCreateIt() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true)), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true)), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Create cloud computer").performScrollTo().assertIsDisplayed()
         snapshot("create")
     }
 
     @Test fun aCloudOffForThisAccountIsHidden() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = false)), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = false)), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Create cloud computer").assertDoesNotExist()
         compose.onNodeWithText("Codync Cloud").assertDoesNotExist()
     }
 
     @Test fun aCloudComputerBehindThisAppUpdatesItself() {
-        val state = fixture(null, listOf(cloudComputer("running"))).copy(computers = listOf(Computer("cloud", "Cloud computer", "key")),
-            connection = LinkState.Ready(HostRoute.Relay), hello = buildJsonObject { put("version", "2.0.0") })
+        val state = used("running").copy(connection = LinkState.Ready(HostRoute.Relay), hello = buildJsonObject { put("version", "2.0.0") })
         compose.setContent { Hosted { UpdateNeededCard(state, requireNotNull(state.mismatch), {}) } }
         compose.onNodeWithText("Your cloud computer is updating…").assertIsDisplayed()
         snapshot("updating")
     }
 
     @Test fun theCloudTurningThisAppAwayShowsItsReason() {
-        val state = fixture(null).copy(appFloor = "Update Codync to keep using it: this version has a security problem.")
+        val state = used("running").copy(appFloor = "Update Codync to keep using it: this version has a security problem.")
         compose.setContent { Hosted { UpdateNeededCard(state, requireNotNull(state.mismatch), {}) } }
         compose.onNodeWithText("Update this app").assertIsDisplayed()
         compose.onNodeWithText("Update Codync to keep using it: this version has a security problem.").assertIsDisplayed()

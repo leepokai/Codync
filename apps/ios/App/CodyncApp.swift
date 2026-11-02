@@ -118,6 +118,8 @@ struct WorkflowDeepLink: Equatable {
     var computerId: ComputerID
     var workflowId: String?
     var runId: String?
+    var nodeId: String?
+    var stepId: String?
     /// A new value each time a link should open. The list claims it once.
     var token = UUID()
 }
@@ -189,10 +191,10 @@ final class AppStore {
     }
 
     /// Opens the Workflows tab on one computer, and one workflow when `workflowId` is set.
-    func showWorkflows(on computerId: ComputerID, workflowId: String? = nil, runId: String? = nil) {
+    func showWorkflows(on computerId: ComputerID, workflowId: String? = nil, runId: String? = nil, nodeId: String? = nil, stepId: String? = nil) {
         accounts.selection = nil
         workflowComputer = computerId
-        pendingWorkflow = WorkflowDeepLink(computerId: computerId, workflowId: workflowId, runId: runId)
+        pendingWorkflow = WorkflowDeepLink(computerId: computerId, workflowId: workflowId, runId: runId, nodeId: nodeId, stepId: stepId)
         workflowEpoch += 1
         tab = .workflows
     }
@@ -408,6 +410,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let botId = info["botId"] as? String
         let workflowId = info["workflowId"] as? String
         let runId = info["runId"] as? String
+        let nodeId = info["nodeId"] as? String
+        let stepId = info["stepId"] as? String
         let kind = AnalyticsEvent.NotificationKind(category: response.notification.request.content.categoryIdentifier)
         // UIKit saves application state from this completion. The async delegate
         // bridge can complete off the main thread even after MainActor.run.
@@ -420,7 +424,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             guard ctx == accounts.storage.id, accounts.store(for: computerId) != nil else { return }
             if let workflowId, !workflowId.isEmpty {
                 let run = runId?.isEmpty == false ? runId : nil
-                AppStore.shared.showWorkflows(on: computerId, workflowId: workflowId, runId: run)
+                let node = nodeId?.isEmpty == false ? nodeId : nil
+                let step = stepId?.isEmpty == false ? stepId : nil
+                AppStore.shared.showWorkflows(on: computerId, workflowId: workflowId, runId: run, nodeId: node, stepId: step)
                 return
             }
             guard let botId else { return }

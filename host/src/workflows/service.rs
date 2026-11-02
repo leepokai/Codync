@@ -311,15 +311,20 @@ pub fn start(hub: &Arc<Hub>) {
 
 fn decide_locked(hub: &Hub, step_id: &str, approved: bool) -> Result<Option<String>> {
     let now = now_ms();
-    let run_id: Option<String> = hub.store.with_immediate(|tx| {
+    let placed: Option<(Option<String>, String)> = hub.store.with_immediate(|tx| {
         if approved {
             tx.execute(
                 "UPDATE workflow_steps SET status = 'done', output = input, ended_at = ?2, updated_at = ?2 WHERE id = ?1 AND status = 'approval'",
                 params![step_id, now],
             )?;
         }
-        Ok(tx.query_row("SELECT run_id FROM workflow_steps WHERE id = ?1", [step_id], |r| r.get::<_, Option<String>>(0))?)
+        Ok(tx
+            .query_row("SELECT run_id, workflow_id FROM workflow_steps WHERE id = ?1", [step_id], |r| {
+                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?))
+            })
+            .optional()?)
     })?;
+    let Some((run_id, workflow)) = placed else { bail!("This step was deleted") };
     let Some(run_id) = run_id else {
         if !approved {
             hub.store.with_immediate(|tx| {
@@ -329,6 +334,10 @@ fn decide_locked(hub: &Hub, step_id: &str, approved: bool) -> Result<Option<Stri
                 )?)
             })?;
         }
+        hub.emit_workflow(json!({
+            "type": "workflow", "change": "step",
+            "workflowId": workflow, "runId": Value::Null, "stepId": step_id,
+        }));
         return Ok(None);
     };
     if !approved {

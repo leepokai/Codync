@@ -39,14 +39,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-@Composable internal fun WorkflowEditorView(state: AppState, store: AppStore, id: String, back: () -> Unit) {
+@Composable internal fun WorkflowEditorView(state: AppState, store: AppStore, id: String, openNode: String? = null, openStep: String? = null, back: () -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.WorkflowEditor))
     var detail by remember(id) { mutableStateOf<WorkflowDetail?>(null) }
     var graph by remember(id) { mutableStateOf<Graph?>(null) }
     var revision by remember(id) { mutableLongStateOf(0L) }
     var error by remember(id) { mutableStateOf<String?>(null) }
     var conditionNote by remember(id) { mutableStateOf(false) }
-    var sheet by remember(id) { mutableStateOf<String?>(null) }
+    var sheet by remember(id) { mutableStateOf(openNode) }
     val kicks = remember(id) { Channel<Unit>(Channel.CONFLATED) }
     val scope = rememberCoroutineScope()
     fun apply(next: Graph) {
@@ -138,12 +138,13 @@ import kotlinx.serialization.json.put
     }
     val editing = current?.nodes?.firstOrNull { it.id == sheet }
     val shownGraph = current
-    CodyncSheet(editing != null && mode != EditMode.ReadOnly, { sheet = null }) {
+    val decision = openNode != null && editing?.id == openNode
+    CodyncSheet(editing != null && (mode != EditMode.ReadOnly || decision), { sheet = null }) {
         if (editing != null && shownGraph != null) {
             val (selection, options) = sourceChoices(shownGraph, editing.id, state::workflowBotName)
             WorkflowStepSheet(store, state, id, editing, detail?.webhooks.orEmpty(), selection, options, onSource = { token ->
                 shownGraph.withSource(editing.id, token)?.let(::apply)
-            }) { updated ->
+            }, pendingStepId = if (editing.id == openNode) openStep else null) { updated ->
                 apply(shownGraph.copy(nodes = shownGraph.nodes.map { node -> if (node.id == updated.id) updated else node }))
             }
         }

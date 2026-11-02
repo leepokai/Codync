@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 
 @Composable internal fun WorkflowStepSheet(store: AppStore, state: AppState, workflowId: String, node: WorkflowNode, webhooks: List<WorkflowWebhook>,
     sourceSelection: String = "", sourceOptions: List<Pair<String, String>> = emptyList(), onSource: (String) -> Unit = {},
-    onChange: (WorkflowNode) -> Unit) {
+    pendingStepId: String? = null, onChange: (WorkflowNode) -> Unit) {
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader(title = {
             Text(stepHeading(node, state::workflowBotName), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -70,7 +70,7 @@ import kotlinx.coroutines.launch
                 else -> Text(tr("Update Codync on this computer to edit this workflow."), style = Type.callout, color = Palette.secondary)
             }
             if (workflowId.isNotEmpty() && node.kind in setOf(NodeKind.Agent, NodeKind.Condition, NodeKind.Approval, NodeKind.Output)) {
-                SoloRun(store, workflowId, node.id)
+                SoloRun(store, workflowId, node.id, pendingStepId)
             }
         }
     }
@@ -269,12 +269,43 @@ import kotlinx.coroutines.launch
     }
 }
 
-@Composable private fun SoloRun(store: AppStore, workflowId: String, nodeId: String) {
+@Composable private fun SoloRun(store: AppStore, workflowId: String, nodeId: String, pendingStepId: String?) {
     var step by remember(nodeId) { mutableStateOf<WorkflowStep?>(null) }
+    var approvalId by remember(nodeId) { mutableStateOf(pendingStepId) }
     var error by remember(nodeId) { mutableStateOf<String?>(null) }
     var busy by remember(nodeId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     error?.let { Text(tr(it), style = Type.caption, color = Palette.danger) }
+    val approval = approvalId
+    if (approval != null) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PrimaryButton("Approve", Modifier.weight(1f), enabled = !busy) {
+                scope.launch {
+                    busy = true
+                    try {
+                        store.decideWorkflowStep(approval, true)
+                        approvalId = null
+                        error = null
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) { error = failure.message }
+                    finally { busy = false }
+                }
+            }
+            SecondaryButton("Reject", Modifier.weight(1f), enabled = !busy) {
+                scope.launch {
+                    busy = true
+                    try {
+                        store.decideWorkflowStep(approval, false)
+                        approvalId = null
+                        error = null
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) { error = failure.message }
+                    finally { busy = false }
+                }
+            }
+        }
+        return
+    }
     val running = step?.status == "running"
     PrimaryButton(if (running) "Stop" else "Run", Modifier.fillMaxWidth(), enabled = !busy, action = {
         scope.launch {
@@ -284,7 +315,11 @@ import kotlinx.coroutines.launch
                 if (current?.status == "running") {
                     store.stopWorkflowStep(current.id)
                     step = current.copy(status = "stopped")
-                } else step = store.runWorkflowStep(workflowId, nodeId)
+                } else {
+                    val started = store.runWorkflowStep(workflowId, nodeId)
+                    step = started
+                    if (started.status == "approval") approvalId = started.id
+                }
                 error = null
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { error = failure.message }

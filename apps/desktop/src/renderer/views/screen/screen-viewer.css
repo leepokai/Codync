@@ -125,7 +125,7 @@
   white-space: nowrap;
   transition: background-color var(--hover), color var(--hover);
 }
-.screen-mode-option:hover:not(:disabled) { color: #fff; }
+.screen-mode-option:hover:not(:disabled):not(.on) { color: #fff; }
 .screen-mode-option.on { background: rgba(255, 255, 255, 0.92); color: #000; }
 .screen-mode-option:disabled { opacity: 0.4; cursor: default; }
 

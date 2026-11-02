@@ -344,3 +344,21 @@ import Testing
     try await Task.sleep(for: .milliseconds(100))
     #expect(await fake.calls.filter { $0 == "respondPermission" }.count == 1)
 }
+
+@MainActor @Test func markAsUnreadWaitsForAMarkAsReadStillRetrying() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":2}}"#)
+    #expect(await until { store.connection == .online && store.bots["b1"]?.unread == 2 })
+    await fake.fail("markRead", times: 2)
+    store.markAllRead("b1")
+    store.markUnread("b1")
+    #expect(await until { await fake.calls.contains("markUnread") })
+    let calls = await fake.calls.filter { $0 == "markRead" || $0 == "markUnread" }
+    #expect(calls == ["markRead", "markRead", "markRead", "markUnread"])
+}

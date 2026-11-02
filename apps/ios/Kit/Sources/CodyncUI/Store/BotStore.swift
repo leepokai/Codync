@@ -145,6 +145,8 @@ public final class BotStore {
     @ObservationIgnored var readingViews: [UUID: String] = [:]
     /// Mark as unread sent but not yet seen in a bot event: one from before it mustn't drop the hold.
     @ObservationIgnored var markingUnread: [String: PendingUnread] = [:]
+    /// Mark as read sent but not yet settled, retries included: a mark as unread after it waits, so the read can't land last.
+    @ObservationIgnored var markingRead: [String: Task<Void, Never>] = [:]
     /// Chats opened before the host's state arrived: a hold it shows then was still the user's to read.
     @ObservationIgnored var openedEarly: Set<String>? = []
     /// This stream's catch-up events still to come (its `hello`'s `catchUp`): at zero, `openedEarly` is settled.

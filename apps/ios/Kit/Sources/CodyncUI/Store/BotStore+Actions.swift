@@ -175,11 +175,16 @@ extension BotStore {
         bots[botId]?.unread = 0
         bots[botId]?.keptUnread = false
         // A refused read gives the hold back, so the chat isn't read on screen behind the error.
-        Task {
-            await attempt(replay: true, undo: { self.bots[botId]?.keptUnread = bot.keptUnread }) {
+        let reading = Task {
+            _ = await attempt(replay: true, undo: { self.bots[botId]?.keptUnread = bot.keptUnread }) {
                 _ = await marking?.value
                 try await $0.markRead(botId)
             }
+        }
+        markingRead[botId] = reading
+        Task {
+            await reading.value
+            if markingRead[botId] == reading { markingRead[botId] = nil }
         }
     }
 
@@ -188,7 +193,9 @@ extension BotStore {
     public func markUnread(_ botId: String) {
         guard bots[botId] != nil else { return }
         openedEarly?.remove(botId)
+        let reading = markingRead[botId]
         let sent = Task {
+            await reading?.value
             var from: Int64?
             let accepted = await attempt(replay: true) { from = try await $0.markUnread(botId) }
             return accepted ? from : nil

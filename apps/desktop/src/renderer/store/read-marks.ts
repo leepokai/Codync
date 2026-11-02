@@ -16,6 +16,8 @@ export class ReadMarks {
   private perform: Perform
   /** Mark as Unread sent but not yet seen in a bot event: one from before it mustn't drop the hold. */
   private marking = new Map<string, Marking>()
+  /** Mark as read sent but not yet settled, retries included: a Mark as Unread after it waits, so the read can't land last. */
+  private reading = new Map<string, Promise<boolean>>()
   /** Chats opened before the host's state arrived: a hold it shows then was still the user's to read. */
   private openedEarly: Set<string> | null = new Set()
   constructor(bots: () => Map<string, Bot>, changed: () => void, perform: Perform) {
@@ -42,17 +44,23 @@ export class ReadMarks {
     if (!bot || (bot.unread <= 0 && !this.held(botId))) return
     this.marking.delete(botId)
     this.patch(botId, { unread: 0, keptUnread: false })
-    void this.perform(async (c) => {
+    const sent = this.perform(async (c) => {
       await marking
       return c.call('markRead', { botId })
     }, () => this.patch(botId, { keptUnread: bot.keptUnread }))
+    this.reading.set(botId, sent)
+    void sent.then(() => {
+      if (this.reading.get(botId) === sent) this.reading.delete(botId)
+    })
   }
 
   markUnread(botId: string) {
     if (!this.bots().has(botId)) return
     this.openedEarly?.delete(botId)
+    const reading = this.reading.get(botId)
     let held: Bot | undefined
     const sent = this.perform(async (c) => {
+      if (reading) await reading
       held = (await c.call<{ bot?: Bot }>('markUnread', { botId })).bot
     }, () => {})
     const marking: Marking = { sent }

@@ -143,3 +143,15 @@ test('marking a chat unread before the host caught up drops its earlier open', a
   assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
   assert.deepEqual([reads.held('a'), bot().keptUnread], [true, true])
 })
+
+test('mark as unread after a mark as read still retrying waits for it, so the read lands first', async () => {
+  const { reads, sent, answer } = computer({ unread: 2 })
+  reads.markRead('a')
+  reads.markUnread('a')
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
+  answer(0, true)
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.deepEqual(sent, [['markRead', { botId: 'a' }], ['markUnread', { botId: 'a' }]])
+  assert.equal(reads.held('a'), true)
+})

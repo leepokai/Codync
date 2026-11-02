@@ -9,8 +9,9 @@ import kotlinx.serialization.json.*
 
 /** [onFailure] runs when the computer didn't take it (unreachable or refused, before the error shows) or it never went (still loading, or [key] under way). */
 fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), key: String = method, onFailure: () -> Unit = {},
-    onSuccess: () -> Unit = {}) {
+    onSuccess: () -> Unit = {}, after: Job? = null) {
     val started = action(key) {
+        after?.join()
         val response = try { ready().call(method, body) }
             catch (error: CancellationException) { throw error }
             catch (error: Exception) { onFailure(); throw error }

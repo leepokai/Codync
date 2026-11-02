@@ -43,6 +43,8 @@ pub enum After {
     /// The pair sheet's `cloudStatus` and `pairingRequests`.
     Cloud,
     PairingRequests,
+    /// The pair sheet's answer to a waiting phone.
+    PairingDecided,
     Backends,
     Update,
     Saved,

@@ -4,7 +4,6 @@
 //! SAS. Which cloud this host uses lives in `cloud_url`, the relay socket in `relay`.
 
 use crate::LockExt;
-use crate::chat::team::assistant;
 use crate::hub::Hub;
 use crate::remote::crypto::{self, b64};
 use crate::store::{Device, DeviceSource, Scope, Store, now_ms};
@@ -116,6 +115,8 @@ pub struct Cloud {
     requests: Mutex<Vec<Request>>,
     /// One state pull at a time.
     pulling: tokio::sync::Mutex<()>,
+    /// Held while the account changes and while pairing saves a phone against it (`owner::while_unchanged`).
+    pub(super) account: Mutex<()>,
     /// Bumped when the cloud is turned on or off or pointed elsewhere: the relay restarts.
     pub config: watch::Sender<u64>,
 }
@@ -126,6 +127,7 @@ impl Default for Cloud {
             status: Mutex::default(),
             requests: Mutex::default(),
             pulling: tokio::sync::Mutex::new(()),
+            account: Mutex::default(),
             config: watch::Sender::new(0),
         }
     }
@@ -343,13 +345,8 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
         s.owner = state.owner;
         s.last_error = None;
     });
-    // Out of an account, cloud assistants go off and the 6-digit check comes back on: the account
-    // this computer joins next is asked again.
-    if !in_account && assistant::enabled(&hub.store) {
-        assistant::set_enabled(hub, false)?;
-    }
-    if !in_account && approval(&hub.store) == Approval::Auto {
-        set_approval(hub, Approval::Code)?;
+    if !in_account {
+        super::owner::out_of_account(hub)?;
     }
     sync_requests(hub, base, state.requests).await;
     if approval(&hub.store) == Approval::Auto {
@@ -646,6 +643,7 @@ pub fn set_approval(hub: &Hub, approval: Approval) -> Result<CloudStatus> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+    use crate::chat::team::assistant;
     use crate::remote::identity::Identity;
 
     fn temp_hub() -> Arc<Hub> {

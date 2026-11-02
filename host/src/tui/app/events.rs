@@ -167,7 +167,7 @@ impl App {
             self.network_reply(n, r);
             return;
         }
-        if matches!(after, After::Pairing | After::Cloud | After::PairingRequests) {
+        if matches!(after, After::Pairing | After::Cloud | After::PairingRequests | After::PairingDecided) {
             self.pair_reply(&after, r);
             return;
         }
@@ -218,7 +218,8 @@ impl App {
             | After::Connection(_, _)
             | After::Pairing
             | After::Cloud
-            | After::PairingRequests => {}
+            | After::PairingRequests
+            | After::PairingDecided => {}
             After::Installed => {
                 self.error = None;
                 self.flash("Host installed; connecting…");

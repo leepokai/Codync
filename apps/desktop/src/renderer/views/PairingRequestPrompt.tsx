@@ -4,7 +4,6 @@ import { pairingAskText } from '../lib/account-copy'
 import { useModel, useModels } from '../lib/observable'
 import { useTr } from '../lib/use-language'
 import { useApp } from '../store/context'
-import { errorText } from './settings/parts'
 
 /**
  * A signed-in phone scanned a computer this app manages that is in no account: let it in, and the computer joins
@@ -23,7 +22,7 @@ export function PairingRequestPrompt() {
 
   const decide = (approve: boolean) => {
     if (!ask) return
-    app.decidePairing(ask, approve).catch((error: unknown) => app.setError(errorText(error)))
+    void app.decidePairing(ask, approve)
   }
   const text = ask ? pairingAskText(tr, ask.request) : null
   return (

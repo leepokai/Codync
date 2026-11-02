@@ -22,12 +22,13 @@ import Testing
         local.composerDrafts = [v.computer.id: ["b1": "draft"]]
         let cache = URL.cachesDirectory.appending(path: "codync-mirror-tests-\(local.id)-\(v.computer.id).json")
         try Data("unsent".utf8).write(to: cache)
+        let movedCache = URL.cachesDirectory.appending(path: "codync-mirror-tests-\(account.id)-\(v.computer.id).json")
+        try Data("stale".utf8).write(to: movedCache)
 
         #expect(account.adopt(from: local) == .init(computers: 1, keys: .moved))
         #expect(account.computers == [v.computer])
         #expect(account.composerDrafts[v.computer.id]?["b1"] == "draft")
-        let movedCache = URL.cachesDirectory.appending(path: "codync-mirror-tests-\(account.id)-\(v.computer.id).json")
-        #expect(try Data(contentsOf: movedCache) == Data("unsent".utf8), "unsent messages come along")
+        #expect(try Data(contentsOf: movedCache) == Data("unsent".utf8), "unsent messages come along, over a stale cache")
         #expect(!FileManager.default.fileExists(atPath: cache.path()))
         let moved = try DeviceIdentity.load(context: account)
         #expect(moved.publicKey == key.publicKey, "hosts see the same device")

@@ -2,6 +2,8 @@ import CryptoKit
 import Foundation
 import os
 
+private let log = Logger(subsystem: "com.pokai.Codync", category: "Account")
+
 /// Values shared between the app, its widgets and its notification extension through the App Group,
 /// one namespace per account context so a signed-out account's data never shows in another.
 public enum SharedStore {
@@ -149,19 +151,30 @@ public extension SharedStore.Context {
             do {
                 try DeviceIdentity.move(from: local, to: self)
             } catch {
-                Logger(subsystem: "com.pokai.Codync", category: "Account").error("Cannot move the device key: \(error.localizedDescription)")
+                log.error("Cannot move the device key: \(error.localizedDescription)")
                 return merge(moving)
             }
             for name in Self.names { defaults.set(local.defaults.object(forKey: local.key(name)), forKey: key(name)) }
-            // Unsent and failed messages live only in the mirror caches: they come along rather than go with `erase()`.
-            for file in local.mirrorCaches() {
-                let name = file.lastPathComponent
-                guard let marker = name.range(of: "-\(local.id)-") else { continue }
-                try? FileManager.default.moveItem(at: file, to: file.deletingLastPathComponent().appending(path: name.replacingCharacters(in: marker, with: "-\(id)-")))
-            }
+            moveMirrorCaches(from: local)
             return Adoption(computers: moving.count, keys: .moved)
         }
         return merge(moving)
+    }
+
+    /// Unsent and failed messages live only in the mirror caches: they come along rather than go with `erase()`.
+    /// A rename in one folder: only a cache left at the account's name (it has no computers yet) is in the way.
+    private func moveMirrorCaches(from local: Self) {
+        for file in local.mirrorCaches() {
+            let name = file.lastPathComponent
+            guard let marker = name.range(of: "-\(local.id)-") else { continue }
+            let moved = file.deletingLastPathComponent().appending(path: name.replacingCharacters(in: marker, with: "-\(id)-"))
+            do {
+                if FileManager.default.fileExists(atPath: moved.path()) { try FileManager.default.removeItem(at: moved) }
+                try FileManager.default.moveItem(at: file, to: moved)
+            } catch {
+                log.error("Cannot move unsent messages: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func merge(_ moving: [Computer]) -> Adoption {

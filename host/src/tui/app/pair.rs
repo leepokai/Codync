@@ -37,7 +37,13 @@ impl App {
             }
             (After::Cloud, Ok(v)) => self.cloud = v,
             (After::PairingRequests, Ok(v)) => self.pairing_requests = requests(&v),
-            // Hosts before accounts have neither: the sheet shows the code alone.
+            // The host may not have the answer: its list brings the phone back while it still waits.
+            (After::PairingDecided, Err(e)) => {
+                self.flash(&e);
+                self.call("pairingRequests", json!({}), After::PairingRequests);
+            }
+            // An answer the host took (its event follows), or a host before accounts, which has neither list: the
+            // sheet shows the code alone.
             _ => {}
         }
     }
@@ -54,7 +60,8 @@ impl App {
         }
         // Off the sheet at once; the host's event follows.
         let request = self.pairing_requests.remove(0);
-        self.call("decidePairing", json!({"requestId": request["requestId"], "approve": approve}), After::Nothing);
+        let answer = json!({"requestId": request["requestId"], "approve": approve});
+        self.call("decidePairing", answer, After::PairingDecided);
     }
 
     /// Known to be in no account while it could join one (the host's `canJoinAccount`): a signed-in phone that
@@ -87,6 +94,8 @@ mod tests {
         app.decide_pairing(true);
         assert_eq!(app.pairing_requests.len(), 1, "an answered phone leaves the sheet at once");
         assert_eq!(app.pairing_requests[0]["requestId"], "b");
+        app.pair_reply(&After::PairingDecided, Err("The host took too long to answer.".into()));
+        assert!(app.hint.is_some(), "a failed answer says why, and the host's list comes again");
         app.pair_reply(&After::PairingRequests, Err("unknown method".into()));
         assert_eq!(app.pairing_requests.len(), 1, "an older host's refusal changes nothing");
         app.pairing_requests_changed(&json!({"requests": []}));

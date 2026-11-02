@@ -2,8 +2,10 @@
 //! even with the cloud unreachable, and a change of account drops the old account's devices
 //! (docs/architecture/connections.md: "the host changed its account").
 
-use super::cloud::{Owner, RelayKind};
+use super::cloud::{self, Approval, Owner, RelayKind};
 use super::crypto;
+use crate::LockExt;
+use crate::chat::team::assistant;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Result, bail};
@@ -14,7 +16,7 @@ const OWNER: &str = "account_owner";
 /// The account as last seen from the cloud; `None` when the computer isn't in one (or never heard yet), and
 /// with the Codync cloud off or a private relay, where it is in no account either (as its status says).
 pub fn owner(store: &Store) -> Option<Owner> {
-    super::cloud::current(store).filter(|address| address.kind == RelayKind::Codync)?;
+    cloud::current(store).filter(|address| address.kind == RelayKind::Codync)?;
     store.kv_get(OWNER).and_then(|v| serde_json::from_str::<Option<Owner>>(&v).ok()).flatten()
 }
 
@@ -24,6 +26,7 @@ pub fn owner(store: &Store) -> Option<Owner> {
 /// leaves the old account recorded and the next pull tries again.
 pub fn remember(hub: &Hub, now: Option<&Owner>) -> Result<()> {
     let saved = serde_json::to_string(&now)?;
+    let _change = hub.cloud.account.locked();
     let before = hub.store.kv_get(OWNER);
     if before.as_deref() == Some(saved.as_str()) {
         return Ok(());
@@ -45,10 +48,29 @@ pub fn remember(hub: &Hub, now: Option<&Owner>) -> Result<()> {
     hub.store.kv_set(OWNER, &saved)
 }
 
+/// Runs `f` while the account can't change (`remember` waits), so a phone `f` saves against the account it reads
+/// can't come in after a change of account dropped the other accounts' devices.
+pub fn while_unchanged<T>(hub: &Hub, f: impl FnOnce() -> T) -> T {
+    let _change = hub.cloud.account.locked();
+    f()
+}
+
+/// Out of an account, cloud assistants go off and the 6-digit check comes back on: the account this computer
+/// joins next is asked again.
+pub fn out_of_account(hub: &Hub) -> Result<()> {
+    if assistant::enabled(&hub.store) {
+        assistant::set_enabled(hub, false)?;
+    }
+    if cloud::approval(&hub.store) == Approval::Auto {
+        cloud::set_approval(hub, Approval::Code)?;
+    }
+    Ok(())
+}
+
 /// Signs this computer into an account claim (§4.2 A) for a signed-in app to complete: the desktop app's
 /// Add to account, or a phone pairing with a computer in no account.
 pub async fn sign_claim(hub: &Hub, claim_id: &str, nonce: &str, user_id: &str) -> Result<Value> {
-    super::cloud::require_accounts(&hub.store)?;
+    cloud::require_accounts(&hub.store)?;
     for (k, v) in [("claimId", claim_id), ("nonce", nonce), ("userId", user_id)] {
         // Fields are newline-separated in the signed string: a newline would forge another field.
         if v.is_empty() || v.contains('\n') {

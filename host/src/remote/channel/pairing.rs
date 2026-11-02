@@ -10,6 +10,16 @@ use crate::remote::{owner, pairing_requests};
 const PROTOCOL: CloseWith = (close::PROTOCOL, "protocolError");
 const EXPIRED: &str = "This pairing code expired. Show a new one on the computer.";
 
+/// Why `let_in` left the phone out.
+enum Kept {
+    /// The computer is in no account and hasn't asked its user yet.
+    Unasked,
+    /// Turned away: the message and the close reason.
+    Out(String, &'static str),
+    /// Let in, but it couldn't be saved.
+    Unsaved,
+}
+
 impl Channel {
     pub(super) async fn pair(
         &mut self,
@@ -28,19 +38,74 @@ impl Channel {
             return PROTOCOL;
         };
         let code = b["code"].as_str().unwrap_or_default();
-        let (account, owner) = match self.admit(id, &b, code, source).await {
-            Ok(admitted) => admitted,
+        let account = match self.admit(id, &b, code, source).await {
+            Ok(account) => account,
             Err(close) => return close,
         };
-        if owner.is_none()
-            && let Err(close) = self.ask(id, name, platform, account.email.as_deref(), incoming).await
-        {
-            return close;
+        let mut let_in = owner::while_unchanged(&self.hub, || self.let_in(&account, false, code, name, platform));
+        if matches!(let_in, Err(Kept::Unasked)) {
+            if let Err(close) = self.ask(id, name, platform, account.email.as_deref(), incoming).await {
+                return close;
+            }
+            let_in = owner::while_unchanged(&self.hub, || self.let_in(&account, true, code, name, platform));
         }
-        // Spent only now: a phone turned away leaves the code to the right one, and while the computer asks the
-        // relay keeps the offer, and with it this socket.
+        let owner = match let_in {
+            Ok(owner) => owner,
+            Err(Kept::Out(message, reason)) => return self.refuse(id, &message, reason).await,
+            // `Unasked` only comes before the computer asked.
+            Err(Kept::Unsaved | Kept::Unasked) => {
+                self.send(err(id, 500, "couldn't save this device")).await;
+                return (close::NORMAL, "");
+            }
+        };
+        tracing::info!(device = self.key, platform, "device paired");
+        crate::analytics::device_paired(&self.hub, crate::analytics::Via::Qr, platform, false);
+        let mut ok = json!({"computerId": self.hub.identity.computer_id(), "name": crate::service::host_name()});
+        if owner.is_none() {
+            // Joining the phone's account: the computer signs the claim the phone made; the phone, which holds
+            // the account's session, completes it with the cloud.
+            ok["claim"] = self.claim(&b["claim"], &account.user_id).await;
+        }
+        self.send(json!({"id": id, "ok": ok})).await;
+        (close::PAIRED, "paired")
+    }
+
+    /// Before anything about this computer's account reaches the phone: a live code, then the phone's account.
+    async fn admit(&self, id: u64, b: &Value, code: &str, source: &str) -> Result<Certified, CloseWith> {
+        if !self.hub.pairing.locked().attempt(source) {
+            return Err(self.reject(RejectCode::RateLimited).await);
+        }
+        if !self.hub.pairing.locked().valid(code) {
+            return Err(self.refuse(id, EXPIRED, "unauthorized").await);
+        }
+        match certificate::check(&b["certificate"], &self.key, now_ms()) {
+            Ok(account) => Ok(account),
+            Err(Refusal::Missing) => Err(self.reject(RejectCode::UnsupportedVersion).await),
+            Err(Refusal::Invalid) => {
+                let message = "Couldn't confirm your Codync account. Sign in again, then scan a new code.";
+                Err(self.refuse(id, message, "unauthorized").await)
+            }
+        }
+    }
+
+    /// Run under `owner::while_unchanged`, so the account the phone is checked against is the one it is saved
+    /// under: a computer in an account lets in phones of that account only, one in no account only once it asked
+    /// (`asked`). Returns this computer's account. The code is spent only now: a phone turned away leaves it to the
+    /// right one, and while the computer asks the relay keeps the offer, and with it this socket.
+    fn let_in(
+        &self,
+        account: &Certified,
+        asked: bool,
+        code: &str,
+        name: &str,
+        platform: &str,
+    ) -> Result<Option<Owner>, Kept> {
+        let owner = self.owner_for(account).map_err(|message| Kept::Out(message, "otherAccount"))?;
+        if owner.is_none() && !asked {
+            return Err(Kept::Unasked);
+        }
         if !self.hub.pairing.locked().redeem(code) {
-            return self.refuse(id, EXPIRED, "unauthorized").await;
+            return Err(Kept::Out(EXPIRED.into(), "unauthorized"));
         }
         let device = Device {
             key: self.key.clone(),
@@ -56,55 +121,22 @@ impl Channel {
         };
         if let Err(e) = self.hub.store.put_device(&device) {
             tracing::error!(error = format!("{e:#}"), "couldn't save a paired device");
-            self.send(err(id, 500, "couldn't save this device")).await;
-            return (close::NORMAL, "");
+            return Err(Kept::Unsaved);
         }
-        tracing::info!(device = self.key, platform, "device paired");
-        crate::analytics::device_paired(&self.hub, crate::analytics::Via::Qr, platform, false);
-        let mut ok = json!({"computerId": self.hub.identity.computer_id(), "name": crate::service::host_name()});
-        if owner.is_none() {
-            // Joining the phone's account: the computer signs the claim the phone made; the phone, which holds
-            // the account's session, completes it with the cloud.
-            ok["claim"] = self.claim(&b["claim"], &account.user_id).await;
-        }
-        self.send(json!({"id": id, "ok": ok})).await;
-        (close::PAIRED, "paired")
+        Ok(owner)
     }
 
-    /// Who may come in, before the code is spent: a live code first, so nothing about this computer's account
-    /// reaches a phone without one; then the phone's account, which must be this computer's when it is in one.
-    /// Returns the phone's account and this computer's.
-    async fn admit(
-        &self,
-        id: u64,
-        b: &Value,
-        code: &str,
-        source: &str,
-    ) -> Result<(Certified, Option<Owner>), CloseWith> {
-        if !self.hub.pairing.locked().attempt(source) {
-            return Err(self.reject(RejectCode::RateLimited).await);
-        }
-        if !self.hub.pairing.locked().valid(code) {
-            return Err(self.refuse(id, EXPIRED, "unauthorized").await);
-        }
-        let account = match certificate::check(&b["certificate"], &self.key, now_ms()) {
-            Ok(account) => account,
-            Err(Refusal::Missing) => return Err(self.reject(RejectCode::UnsupportedVersion).await),
-            Err(Refusal::Invalid) => {
-                let message = "Couldn't confirm your Codync account. Sign in again, then scan a new code.";
-                return Err(self.refuse(id, message, "unauthorized").await);
-            }
-        };
+    /// This computer's account, or what to tell a phone of another account.
+    fn owner_for(&self, account: &Certified) -> Result<Option<Owner>, String> {
         let owner = owner::owner(&self.hub.store);
         if let Some(owner) = owner.as_ref().filter(|o| o.user_id != account.user_id) {
             let whose =
                 owner.email.as_deref().map_or_else(|| "another".into(), |e| format!("{}'s", certificate::masked(e)));
-            let message = format!(
+            return Err(format!(
                 "This computer is in {whose} account. Move it to your account in Codync on that computer, or sign in with that account."
-            );
-            return Err(self.refuse(id, &message, "otherAccount").await);
+            ));
         }
-        Ok((account, owner))
+        Ok(owner)
     }
 
     /// A computer in no account asks its user before the phone comes in; a phone that leaves meanwhile takes the

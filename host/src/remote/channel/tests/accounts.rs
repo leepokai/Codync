@@ -9,6 +9,15 @@ async fn pairing_phone(hub: &Arc<Hub>) -> (Phone, String) {
     (p, code)
 }
 
+/// Sends `pair` to a computer in no account and waits for it to ask: the question on its screens.
+async fn asked(hub: &Hub, p: &mut Phone, body: Value) -> Value {
+    p.send(json!({"id": 1, "m": "pair", "b": body})).await;
+    while hub.pairing_requests.json().is_empty() {
+        tokio::task::yield_now().await;
+    }
+    hub.pairing_requests.json()[0].clone()
+}
+
 #[tokio::test]
 async fn an_app_without_a_certificate_is_told_to_update_and_the_code_stays() {
     let hub = temp_hub();
@@ -50,10 +59,8 @@ async fn without_a_live_code_a_phone_learns_nothing_about_the_account() {
 async fn a_phone_that_leaves_while_the_computer_asks_is_not_let_in() {
     let hub = unowned_hub();
     let (mut p, code) = pairing_phone(&hub).await;
-    p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "Pixel", "android", "user_2")})).await;
-    while hub.pairing_requests.json().is_empty() {
-        tokio::task::yield_now().await;
-    }
+    let body = pair_body(&p, &code, "Pixel", "android", "user_2");
+    asked(&hub, &mut p, body).await;
     // The computer still has the offer while it asks: the relay keeps the phone's socket.
     assert!(hub.pairing.locked().open());
     let dk = p.dk();
@@ -72,11 +79,7 @@ async fn a_computer_in_no_account_asks_then_joins_the_phones() {
         let (mut p, code) = pairing_phone(&hub).await;
         let mut body = pair_body(&p, &code, "Pixel", "android", "user_2");
         body["claim"] = json!({"claimId": "clm_1", "nonce": "n1"});
-        p.send(json!({"id": 1, "m": "pair", "b": body})).await;
-        while hub.pairing_requests.json().is_empty() {
-            tokio::task::yield_now().await;
-        }
-        let request = hub.pairing_requests.json()[0].clone();
+        let request = asked(&hub, &mut p, body).await;
         assert_eq!(request["email"], "user_2@example.com");
         let device_key = crypto::unb64_n::<32>(&p.dk()).unwrap();
         let expected = crypto::pair_check_code(&device_key, &hub.identity.sign_pub());
@@ -97,4 +100,22 @@ async fn a_computer_in_no_account_asks_then_joins_the_phones() {
             assert!(hub.store.device(&p.dk()).is_none());
         }
     }
+}
+
+#[tokio::test]
+async fn a_phone_let_in_after_the_computer_joined_another_account_stays_out() {
+    let hub = unowned_hub();
+    hub.store.kv_set("test_cloud_url", "https://dev-api.codync.dev").unwrap();
+    let (mut p, code) = pairing_phone(&hub).await;
+    let body = pair_body(&p, &code, "Pixel", "android", "user_2");
+    let request = asked(&hub, &mut p, body).await;
+    // While the computer asks, another phone brings it into user_3's account.
+    let owner = crate::remote::cloud::Owner { user_id: "user_3".into(), email: Some("ann@example.com".into()) };
+    crate::remote::owner::remember(&hub, Some(&owner)).unwrap();
+    crate::remote::pairing_requests::decide(&hub, request["requestId"].as_str().unwrap(), true).unwrap();
+    let reply = p.recv().await.unwrap();
+    assert_eq!(reply["err"]["status"], 403);
+    assert!(reply["err"]["message"].as_str().unwrap().contains("a•••@example.com's account"));
+    assert!(hub.store.device(&p.dk()).is_none(), "user_2's phone stays out of user_3's computer");
+    assert!(hub.pairing.locked().valid(&code), "a refused phone leaves the code");
 }

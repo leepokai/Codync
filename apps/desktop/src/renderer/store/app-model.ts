@@ -3,6 +3,7 @@ import type { HostSnapshot, LocalHost } from '@shared/ipc'
 import type { AccessRequest, Bot, Computer, PairingRequest } from '@shared/models'
 import { HostError, LoopbackTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
+import { undoOnFailure } from '../lib/undo-on-failure'
 import { account } from './account'
 import { analytics } from './analytics'
 import { BotStore } from './bot-store'
@@ -241,11 +242,15 @@ export class AppModel extends Observable {
       .filter((ask) => !this.answeredPairings.has(ask.id))
   }
 
-  async decidePairing(ask: PairingAsk, approve: boolean) {
+  decidePairing(ask: PairingAsk, approve: boolean) {
     this.answeredPairings.add(ask.id)
     this.changed()
-    const client = await ask.store.ready()
-    await client.call('decidePairing', { requestId: ask.request.requestId, approve }, 30_000)
+    const answer = ask.store.ready().then((client) => client.call('decidePairing', { requestId: ask.request.requestId, approve }, 30_000))
+    // The host may not have the answer: the question comes back.
+    return undoOnFailure(answer, () => {
+      this.answeredPairings.delete(ask.id)
+      this.changed()
+    }, (message) => this.setError(message))
   }
 
   get needsAttention() {

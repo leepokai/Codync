@@ -55,6 +55,26 @@ The phone finds and pairs every computer itself. A computer the phone hasn't pai
 - A QR pairing records the phone's account on the computer. When a host changes the account it belongs to, it drops every device of the old account, QR-paired ones too.
 - Joining an account on the first scan is how a headless computer "signs in": there is no `codync-host login`. A computer may also join through a manager's **Add to account**, which uses the manager app's account.
 
+## Accounts on a phone
+
+Decided 2026-11-02. A computer is in one account at most; a phone may know several, each with its own device key, push key, computers and drafts (iOS `SharedStore.Context`, Android `LocalStore`), so a computer never sees the phone's other accounts. One account is selected at a time.
+
+| What happens | On the phone | Computers and cloud |
+| --- | --- | --- |
+| The Clerk session ends on its own (expired, revoked elsewhere) | The sign-in screen; the account's key, computers and drafts stay. Signing in to the same account connects as before: no scan, no 6-digit check | Unchanged |
+| **Sign out** | The key is handed back and the account's data erased | The computers it reaches drop the phone (`forgetDevice`), the cloud revokes the device, push stops |
+| Using another account | Only after signing out: both Clerk instances stay single-session (`single_session_mode`) | As signing out. Back on the first account, each computer takes a scan (same account, no question) or **Ask for access** with the 6-digit check |
+
+Signing out hands the key back because it is the phone's one "this phone is done" button (selling, lending, someone else's account), and a key left behind keeps the computers pushing to it. Considered and not taken: a sign-out that keeps the key and only stops push, so the same account comes back without a check. The computers would keep listing a phone that left, and its key would stay on a phone that may have changed hands.
+
+**Multi-session stays off.** Turned on in Clerk, a phone would keep several accounts and switch without handing a key back. The apps already show the switcher and **Add account** then (iOS `authConfig.singleSessionMode`, Android `multiSessionModeIsEnabledFlow`), but no instance has run it. Before turning it on:
+
+- **Only the selected account's notifications show, the same on iOS and Android.** Signed in to B, nothing from A's computers. Android already drops them (`PushService.receive`: `ctx` isn't the active account). iOS shows them, text included: the Notification Service Extension opens any account's push with that account's key, and an extension can't drop a visible notification without Apple's filtering entitlement (`com.apple.developer.usernotifications.filtering`). Get the entitlement and drop it there when `ctx` isn't the active context. Unregistering the old account's push tickets at each switch (`unregisterDevice`) would miss computers offline at that moment.
+- Tapping another account's notification keeps doing nothing (iOS checks `ctx` in `userNotificationCenter(_:didReceive:)`); none should show anyway.
+- End to end with two accounts on the iOS Simulator and the Android emulator: add one, switch, switch back without a check, notifications only from the selected one.
+
+**Open:** after a session ends on its own no account is selected, so Android drops that account's notifications while iOS still shows them with their text.
+
 ## When the app and its computer disagree
 
 The desktop app runs on a computer with its own host, so its account and the computer's can differ.

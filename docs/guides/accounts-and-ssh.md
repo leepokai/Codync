@@ -198,8 +198,10 @@ instance with bundle ID `com.pokai.Codync.ios` and its own callback
 `apps/shared/Config/<env>.plist`. The repository configuration does not prove
 that the corresponding Clerk Dashboard registration has been completed.
 
-To retain several accounts at once, enable multi-session support in the Clerk
-instance. The UI reads `authConfig.singleSessionMode`: with multi-session enabled,
+Both Clerk instances stay single-session: why, and what has to change before
+multi-session is turned on, is in
+[accounts on a phone](../architecture/connections.md#accounts-on-a-phone).
+The UI reads `authConfig.singleSessionMode`: with multi-session enabled,
 it lists active SDK sessions and switches with `auth.setActive(sessionId:)`; with
 single-session enabled, it asks the user to sign out before using another account.
 Signing out passes the current session ID, rather than signing out all accounts.

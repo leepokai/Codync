@@ -44,12 +44,13 @@ import kotlinx.coroutines.CancellationException
 @Composable internal fun WorkflowsView(state: AppState, store: AppStore, computers: List<AppState>, bottomInset: Dp, selectComputer: (String) -> Unit) {
     val route = state.workflow ?: return
     var editOn by rememberSaveable { mutableStateOf<String?>(null) }
-    var openedNode by rememberSaveable { mutableStateOf<String?>(null) }
+    var openedStep by rememberSaveable { mutableStateOf<String?>(null) }
     var runsOn by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(route.id, route.nodeId, route.runId) {
-        val node = route.nodeId
-        if (!node.isNullOrBlank() && route.runId.isNullOrBlank() && openedNode != node) {
-            openedNode = node
+    LaunchedEffect(route.id, route.nodeId, route.stepId, route.runId) {
+        val node = route.nodeId?.takeIf { it.isNotBlank() }
+        val step = route.stepId?.takeIf { it.isNotBlank() } ?: node
+        if (node != null && route.runId.isNullOrBlank() && step != null && openedStep != step) {
+            openedStep = step
             editOn = route.id
         }
     }

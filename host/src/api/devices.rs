@@ -53,6 +53,7 @@ const LOCAL_ONLY: &[&str] = &[
     "manageCall",
     "memoryCall",
     "routineCall",
+    "workflowCall",
     "composioCall",
     "connectorTarget",
     "connectorRuntime",

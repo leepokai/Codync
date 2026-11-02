@@ -243,6 +243,8 @@ public struct Hello: Codable, Sendable {
     public var canUpdate: Bool?
     /// The latest release the computer found; nil while unknown (development builds, older hosts).
     public var latestVersion: String?
+    /// This host serves workflows. Missing on older hosts, which is the same as false.
+    public var workflows: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

@@ -90,6 +90,17 @@ internal suspend fun AccountStore.activated(): AccountContext = state.first { cu
     (current.account.ready || !current.account.configured || current.account.error != null) &&
     current.contextId == LocalStore.referenceId(current.account.userId ?: "local") }
 
+/** Opens the Workflows tab on one computer, and one workflow when [id] is set. */
+internal fun AccountStore.focusWorkflows(computerId: String, id: String? = null, runId: String? = null) {
+    openBot(null)
+    stores.value.forEach { store ->
+        if (store.id == computerId) {
+            if (id == null) store.openWorkflows() else store.showWorkflow(id, runId)
+        } else store.closeWorkflows()
+    }
+    mutableState.update { it.copy(error = null, navigationRequest = it.navigationRequest + 1, navigationPage = LinkPage.Workflows) }
+}
+
 /** Closes what's open, then shows [page] over the roster. */
 private fun AccountStore.navigate(page: LinkPage) {
     openBot(null)

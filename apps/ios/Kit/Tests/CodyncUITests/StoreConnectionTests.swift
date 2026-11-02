@@ -155,15 +155,17 @@ import Testing
         return made == 1 ? down : up
     }
     defer { store.retire() }
+    // Listen before the link exists, so a reconnect that finishes before this
+    // test resumes is still recorded.
+    let subscriptions = await up.checkpoints()
+    let calls = await up.checkpoints()
     store.setActive(true)
     let offline = await waitForObservedCondition { store.connection == .offline("Can't reach") }
     try #require(offline)
     store.stop("b1")
-    let subscriptions = await up.checkpoints()
     let subscribed = await waitForTestEvent(subscriptions, matching: { $0 == .eventsSubscribed })
     try #require(subscribed)
     await up.emit(botEvent("b1", name: "Bot", rev: 1))
-    let calls = await up.checkpoints()
     let stopped = await waitForTestEvent(calls, matching: { $0 == .called("stop") })
     try #require(stopped)
     let downCalls = await down.calls

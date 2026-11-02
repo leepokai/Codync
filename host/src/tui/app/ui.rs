@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::super::manage::{
     AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Gear, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
-    RoutineList, SkillSheet,
+    RoutineList, SkillSheet, WorkflowSheet,
 };
 use super::{Editor, Mark};
 
@@ -109,6 +109,8 @@ pub enum ConfirmAct {
     RotateRoutineKey(String, String),
     RemoveConnector(String),
     RemoveSkill(String),
+    DeleteWorkflow(String),
+    RejectWorkflowStep(String),
 }
 
 pub struct Confirm {
@@ -341,6 +343,7 @@ pub enum Overlay {
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
+    Workflows(Box<WorkflowSheet>),
 }
 
 pub struct Toast {

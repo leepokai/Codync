@@ -190,6 +190,7 @@
     "event:hello.network.networks": "array",
     "event:hello.rev": "number",
     "event:hello.type": "string",
+    "event:hello.workflows": "bool",
     "event:icons": "object",
     "event:icons.icons": "object",
     "event:icons.iconsRevision": "number",
@@ -211,6 +212,7 @@
     "hello.os": "string",
     "hello.rev": "number",
     "hello.signKey": "string",
-    "hello.version": "string"
+    "hello.version": "string",
+    "hello.workflows": "bool"
   }
 }

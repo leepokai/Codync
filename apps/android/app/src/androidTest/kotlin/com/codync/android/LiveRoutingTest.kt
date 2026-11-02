@@ -74,8 +74,9 @@ class LiveRoutingTest {
                         reject(link(id = "absent-" + UUID.randomUUID()), "bot is no longer available")
                         reject(Uri.parse(link().toString() + "&scope=local"), "invalid destination")
                         val parent = saved.getValue("parent").jsonPrimitive.content
-                        // Usage opens from the State tab.
-                        compose.onNode(hasText("State") and isSelectable()).performClick()
+                        // Usage opens from State, which Settings shows.
+                        compose.onNode(hasText("Settings") and isSelectable()).performClick()
+                        compose.onNodeWithText("Show status").performClick()
                         compose.onNodeWithContentDescription("Usage limits").performClick()
                         val usage = hasText("Usage") and isHeading()
                         compose.waitUntil(10_000) { compose.onAllNodes(usage).fetchSemanticsNodes().size == 1 }

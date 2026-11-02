@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -32,22 +33,28 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.design.*
 
-internal enum class AppTab { Bots, State, Settings }
+internal enum class AppTab { Bots, Workflows, Settings }
 
 /**
- * The system tab bar over Bots, State and Settings, as iOS `RootView.tabs`: every tab stays alive, the bar
- * floats as glass over their content and hides while a conversation is open.
+ * The system tab bar over Bots, Workflows and Settings, as iOS `RootView.tabs`: every tab stays alive, the bar
+ * floats as glass over their content and hides while a conversation or a workflow step is open.
  */
 @Composable internal fun MainTabs(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
-    usage: () -> Unit, newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit,
-    tab: AppTab, onTab: (AppTab) -> Unit, covered: Boolean, chat: @Composable (AppState) -> Unit) {
+    newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit,
+    tab: AppTab, onTab: (AppTab) -> Unit, covered: Boolean, status: () -> Unit, chat: @Composable (AppState) -> Unit) {
     // The open chat, on whichever computer it lives (one at a time).
     val open = states.firstOrNull { it.selectedBot != null }
+    val workflowDetail = tab == AppTab.Workflows && states.any { it.workflow?.id != null }
     // Opening a bot (notification, widget, link) always lands on the Bots tab.
     if (open != null && tab != AppTab.Bots) onTab(AppTab.Bots)
+    LaunchedEffect(tab) {
+        if (tab != AppTab.Workflows || states.any { it.workflow != null }) return@LaunchedEffect
+        val id = app.currentComputerId ?: states.firstOrNull()?.computer?.id ?: return@LaunchedEffect
+        accounts.store(id)?.openWorkflows()
+    }
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(when (tab) {
         AppTab.Bots -> AnalyticsScreen.Bots
-        AppTab.State -> AnalyticsScreen.State
+        AppTab.Workflows -> AnalyticsScreen.Workflows
         AppTab.Settings -> AnalyticsScreen.Settings
     }))
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -55,7 +62,7 @@ internal enum class AppTab { Bots, State, Settings }
     GlassStage(Modifier.fillMaxSize(), chrome = {
         // Access requests still waiting after their sheet closed: the code to check, until the computer answers.
         val tickets = app.access.values.sortedBy { it.requestId }
-        AnimatedVisibility(tickets.isNotEmpty() && open == null, Modifier.align(Alignment.BottomCenter).padding(bottom = barSpace - 16.dp),
+        AnimatedVisibility(tickets.isNotEmpty() && open == null && !workflowDetail, Modifier.align(Alignment.BottomCenter).padding(bottom = barSpace - 16.dp),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (ticket in tickets) key(ticket.computerId) {
@@ -65,13 +72,13 @@ internal enum class AppTab { Bots, State, Settings }
                 }
             }
         }
-        AnimatedVisibility(open == null, Modifier.align(Alignment.BottomCenter),
+        AnimatedVisibility(open == null && !workflowDetail, Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it / 2 },
             exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it / 2 }) {
             Box(contentAlignment = Alignment.BottomCenter) {
                 ScrollEdge(Edge.Bottom, barSpace)
                 GlassTabBar(tab, listOf(TabItem(AppTab.Bots, "Bots", "bubble.left.and.bubble.right.fill", 33.dp),
-                    TabItem(AppTab.State, "State", "rectangle.stack.fill"), TabItem(AppTab.Settings, "Settings", "gearshape")),
+                    TabItem(AppTab.Workflows, "Workflows", "flowchart"), TabItem(AppTab.Settings, "Settings", "gearshape")),
                     onTab, Modifier.padding(bottom = maxOf(bottom - 4.dp, 12.dp)))
             }
         }
@@ -80,19 +87,28 @@ internal enum class AppTab { Bots, State, Settings }
             // A chat's entry names its computer and bot; it keeps its state while sliding away.
             var shown by remember { mutableStateOf<AppState?>(null) }
             if (open != null) shown = open
-            NavStack(listOfNotNull("roster", open?.let { "${it.computer.id}/${it.selectedBot}" } ?: REMOVED_CHAT.takeIf { app.removedChat }),
-                key = { it }, pop = { accounts.openBot(null) }) { entry ->
-                when (entry) {
-                    "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace)
-                    REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
+            NavStack(listOfNotNull(
+                "roster",
+                open?.let { "${it.computer.id}/${it.selectedBot}" } ?: REMOVED_CHAT.takeIf { app.removedChat },
+            ), key = { it }, pop = {
+                if (open != null || app.removedChat) accounts.openBot(null)
+            }) { entry ->
+                when {
+                    entry == "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace)
+                    entry == REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
                     else -> (states.firstOrNull { "${it.computer.id}/${it.selectedBot}" == entry } ?: shown)?.let { chat(it) }
                 }
             }
         }
-        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.State)) {
-            StateScreen(app, states.firstOrNull { it.computer.id == app.currentComputerId }?.usage, accounts, usage, barSpace, active = tab == AppTab.State)
+        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Workflows)) {
+            val shown = states.firstOrNull { it.workflow != null }
+                ?: states.firstOrNull { it.computer.id == app.currentComputerId }
+                ?: states.firstOrNull()
+            val store = shown?.let { accounts.store(it.computer.id) }
+            if (shown != null && store != null) WorkflowsView(shown, store, states, barSpace) { accounts.focusWorkflows(it) }
+            else EmptyState("flowchart", "No computer yet", Modifier.fillMaxSize().statusBarsPadding())
         }
-        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Settings)) { SettingsView(app, states, accounts, barSpace) }
+        Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Settings)) { SettingsView(app, states, accounts, barSpace, status) }
     }
 }
 

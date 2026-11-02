@@ -20,7 +20,7 @@
   z-index: -1;
   inset: 0 0 -18px;
   pointer-events: none;
-  background: linear-gradient(to bottom, var(--surface) 50%, transparent);
+  background: linear-gradient(to bottom, var(--background) 50%, transparent);
   backdrop-filter: blur(16px);
   -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent);
   mask-image: linear-gradient(to bottom, black 65%, transparent);

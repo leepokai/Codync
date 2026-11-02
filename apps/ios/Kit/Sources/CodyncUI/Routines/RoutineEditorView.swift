@@ -219,7 +219,7 @@ struct RoutineEditorView: View {
         case "daily", "weekdays":
             timeField
         case "weekly":
-            Field("On") {
+            Field("Weekday") {
                 // Monday first; the host counts 0 = Sunday … 6 = Saturday, like cron.
                 ChoicePicker(selection: $schedule.weekday,
                              options: [1, 2, 3, 4, 5, 6, 0].map { (id: $0, label: Calendar.current.standaloneWeekdaySymbols[$0]) })
@@ -275,9 +275,9 @@ struct RoutineEditorView: View {
                 .fixedSize(horizontal: false, vertical: true)
         } else if let preview {
             VStack(alignment: .leading, spacing: 2) {
-                Text(preview.summary).font(.caption.weight(.medium))
+                Text(preview.draft.spoken).font(.caption.weight(.medium))
                 if let next = preview.nextRunAt {
-                    Text(L10n.tr("Next \(Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened))"))
+                    Text(scheduleNextLine(next))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 if let warning = preview.warning {
@@ -368,6 +368,31 @@ struct RoutineEditorView: View {
             } catch { self.error = error.localizedDescription }
         }
     }
+}
+
+extension RoutineScheduleDraft {
+    /// The editor's line. The host's cron sentence stays English, so this uses the same words as the fields.
+    var spoken: String {
+        let time = String(format: "%02d:%02d", hour, minute)
+        let minuteText = String(format: "%02d", minute)
+        switch calendarStyle {
+        case "hourly": return "\(L10n.tr("Hourly")) · :\(minuteText) · \(zone)"
+        case "daily": return "\(L10n.tr("Daily")) · \(time) · \(zone)"
+        case "weekdays": return "\(L10n.tr("Weekdays")) · \(time) · \(zone)"
+        case "weekly":
+            let names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            let day = names.indices.contains(weekday) ? L10n.tr(names[weekday]) : L10n.tr("Mon")
+            return "\(L10n.tr("Weekly")) · \(day) · \(time) · \(zone)"
+        default:
+            let written = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+            return written.isEmpty ? zone : "\(written) · \(zone)"
+        }
+    }
+}
+
+func scheduleNextLine(_ at: Int64) -> String {
+    let when = Date(milliseconds: at).formatted(date: .abbreviated, time: .shortened)
+    return L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when)
 }
 
 private extension View {

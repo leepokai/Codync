@@ -66,15 +66,15 @@ import Testing
 }
 
 @Test(.timeLimit(.minutes(1))) @MainActor func screenRecoveryWaitsForAReadyRouteWithoutSpendingAttempts() async throws {
-    let transport = LateSignalingFailureTransport(gateRecovery: true)
+    let transport = LateSignalingFailureTransport(gateRecovery: true, failUploadOnInstall: true)
+    // The route is down before the upload fails, so recovery waits instead of preparing again.
+    await transport.setRoute(.connecting)
     let session = ScreenSession(client: HostClient(transport: transport), display: nil)
     defer { session.close() }
     await session.start()
     let installations = await transport.answerInstalled("late-1")
     let installed = await waitForTestEvent(installations, matching: { $0 })
     try #require(installed)
-    await transport.setRoute(.connecting)
-    await transport.failSignaling("late-1")
     let waiting = await waitForTestEvent(transport.routeSubscribed, matching: { $0 })
     try #require(waiting)
     for state in [LinkState.failed("No network"), .connecting, .hostOffline(lastSeen: nil), .connecting] {

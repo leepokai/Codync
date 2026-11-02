@@ -216,7 +216,7 @@ impl Routines {
                 && let Some(kind) = kind
                 && let Some(bot) = hub.store.bot(&run.bot_id)?.filter(|b| !b.deleted)
             {
-                crate::remote::push::notify(hub, &bot.config, None, &bot.config.name, &text, kind);
+                crate::remote::push::notify(hub, &bot.config, None, &bot.config.name, &text, kind, None);
             }
         }
         Ok(())

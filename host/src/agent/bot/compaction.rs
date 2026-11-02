@@ -58,6 +58,7 @@ impl Actor {
         self.lane.chat == self.cfg.id
             && self.active_group.is_none()
             && self.active_routine.is_none()
+            && self.active_workflow.is_none()
             && self.active_request.is_none()
             && self.turn_session.is_some()
             && self.turn_session == self.session_id

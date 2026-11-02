@@ -19,6 +19,10 @@ export type Screen =
   | 'computer_access'
   | 'library'
   | 'artifact'
+  | 'workflows'
+  | 'workflow'
+  | 'workflowRun'
+  | 'workflowEditor'
 
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'

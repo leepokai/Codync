@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compiledCron, durationText, repeatChoice, runLabel, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
+import { compiledCron, durationText, emptyDraft, repeatChoice, runLabel, scheduleCaption, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
 import { matchZones, timeZoneOptions, zoneOffset } from './time-zones.ts'
 
 test('time zones match like the phones: name start, word starts, inside, letters in order', () => {
@@ -46,6 +46,17 @@ test('styles the editor has no choice for open as Custom', () => {
   assert.equal(repeatChoice('weekdays'), 'weekdays')
   assert.equal(repeatChoice('hourly'), 'hourly')
   for (const style of ['minutes', 'days', 'monthly', 'custom']) assert.equal(repeatChoice(style), 'custom')
+})
+
+test('the editor line uses the draft, so it can be translated', () => {
+  const tr = (key: string) => ({ Hourly: '每小时', Daily: '每天', Weekdays: '工作日', Weekly: '每周', Mon: '周一' })[key] ?? key
+  const base = { ...emptyDraft(), zone: 'Asia/Shanghai', hour: 9, minute: 0 }
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'weekly', weekday: 1 }, tr), '每周 · 周一 · 09:00 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'daily' }, tr), '每天 · 09:00 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'hourly', minute: 5 }, tr), '每小时 · :05 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'weekdays' }, tr), '工作日 · 09:00 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'custom', expression: '0 9 * * 1' }, tr), '0 9 * * 1 · Asia/Shanghai')
+  assert.equal(scheduleCaption({ ...base, calendarStyle: 'weekly', weekday: 9 }, tr), '每周 · 周一 · 09:00 · Asia/Shanghai')
 })
 
 test('Custom starts from the cron the host compiled', () => {

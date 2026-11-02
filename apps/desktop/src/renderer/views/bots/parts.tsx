@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObjec
 import { createPortal } from 'react-dom'
 import { CharacterAvatar } from '../../components/Avatar'
 import { RowLabel, Switch } from '../../components/Controls'
-import { anchorPlacement, useEscape, usePresence } from '../../components/Overlay'
+import { anchorPlacement, useEscape, usePresence, useSuspendWindowDrag } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
 import { useTr } from '../../lib/use-language'
 import { AVATAR_COLORS, AVATAR_SHAPES } from '../../lib/theme'
@@ -77,6 +77,7 @@ export function AvatarPicker({ shape, color, onShape, onColor }: { shape: string
 /** A floating panel next to `anchor` that a click anywhere else closes (kit `AnchoredPanel`). */
 export function AnchoredPanel({ open, onClose, anchor, children }: { open: boolean; onClose: () => void; anchor: RefObject<HTMLElement | null>; children: ReactNode }) {
   const { mounted, shown } = usePresence(open, 120)
+  useSuspendWindowDrag(mounted)
   const [rect, setRect] = useState<DOMRect | null>(null)
   useLayoutEffect(() => {
     if (open && anchor.current) setRect(anchor.current.getBoundingClientRect())

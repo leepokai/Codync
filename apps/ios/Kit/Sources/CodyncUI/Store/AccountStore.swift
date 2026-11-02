@@ -240,36 +240,50 @@ public final class AccountStore {
         let previous = asks[id]
         accessPolls[id]?.cancel()
         if renew { previous?.cancel() }
-        let ask = Task {
-            // Finish cancellation cleanup before revoking and creating the replacement.
-            if renew, let previous { _ = await previous.result }
-            try Task.checkCancellation()
-            if renew { try await cloud.revokeDeviceAccess(id) }
-            return try await cloud.requestAccess(id, signKey: target.signKey)
+        let signKey = target.signKey
+        let ref = AccessStoreRef(self)
+        // Detached from the sheet's task. A caller that is already cancelled would otherwise
+        // cancel this work at birth, so closing the sheet can commit a request and then a
+        // second one when the sheet opens again.
+        let ask = Task.detached {
+            try await Self.negotiateAccess(renew: renew, previous: previous, cloud: cloud, id: id, signKey: signKey)
         }
         asks[id] = ask
-        accessPolls[id] = Task { [weak self] in
+        accessPolls[id] = Task.detached {
             await withTaskCancellationHandler {
                 let result = await ask.result
-                guard let self else { return }
-                if self.asks[id] == ask { self.asks[id] = nil }
-                let ticket: AccessTicket
-                do {
-                    ticket = try result.get()
-                } catch {
-                    // With the sheet closed nothing else sees it; an open sheet shows it too.
-                    log.info("access request failed: \(error.localizedDescription, privacy: .public)")
-                    return
-                }
-                guard !self.retired, !Task.isCancelled else { return }
-                Analytics.shared.capture(.accessRequested)
-                self.setPending(id, ticket)
-                await self.awaitApproval(ticket, target: target, cloud: cloud)
+                await ref.publish(result, ask: ask, id: id, target: target, cloud: cloud)
             } onCancel: {
                 ask.cancel()
             }
         }
         _ = try await ask.value
+    }
+
+    /// The cloud exchange for one access request. Runs off the sheet's task, so the sheet
+    /// closing does not cancel it.
+    private static func negotiateAccess(renew: Bool, previous: Task<AccessTicket, any Error>?, cloud: CloudClient, id: ComputerID, signKey: String) async throws -> AccessTicket {
+        // Finish cancellation cleanup before revoking and creating the replacement.
+        if renew, let previous { _ = await previous.result }
+        try Task.checkCancellation()
+        if renew { try await cloud.revokeDeviceAccess(id) }
+        return try await cloud.requestAccess(id, signKey: signKey)
+    }
+
+    fileprivate func publishAccess(_ result: Result<AccessTicket, any Error>, ask: Task<AccessTicket, any Error>, id: ComputerID, target: CloudComputer, cloud: CloudClient) async {
+        if asks[id] == ask { asks[id] = nil }
+        let ticket: AccessTicket
+        do {
+            ticket = try result.get()
+        } catch {
+            // With the sheet closed nothing else sees it; an open sheet shows it too.
+            log.info("access request failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard !retired, !Task.isCancelled else { return }
+        Analytics.shared.capture(.accessRequested)
+        setPending(id, ticket)
+        await awaitApproval(ticket, target: target, cloud: cloud)
     }
 
     /// An offline account computer named like one this device uses or sees online: most likely the same
@@ -471,5 +485,15 @@ public final class AccountStore {
     private func rosterChanged() {
         guard !retired else { return }
         onRosterChanged?(roster)
+    }
+}
+
+/// Lets the access request keep running after the sheet's task is gone.
+private final class AccessStoreRef: Sendable {
+    @MainActor weak var store: AccountStore?
+    @MainActor init(_ store: AccountStore) { self.store = store }
+
+    @MainActor func publish(_ result: Result<AccessTicket, any Error>, ask: Task<AccessTicket, any Error>, id: ComputerID, target: CloudComputer, cloud: CloudClient) async {
+        await store?.publishAccess(result, ask: ask, id: id, target: target, cloud: cloud)
     }
 }

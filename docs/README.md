@@ -48,6 +48,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
 - [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)
+- [Workflows](features/workflows.md)
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)

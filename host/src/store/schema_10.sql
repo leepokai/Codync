@@ -1,0 +1,4 @@
+BEGIN;
+ALTER TABLE workflow_versions ADD COLUMN source TEXT NOT NULL DEFAULT '';
+INSERT INTO kv(k, v) VALUES('schema', '12') ON CONFLICT(k) DO UPDATE SET v = '12';
+COMMIT;

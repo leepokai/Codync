@@ -88,6 +88,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "canJoinAccount": crate::remote::owner::can_join(hub),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
+                "workflows": true,
             })
         }
         "refreshBackends" => {

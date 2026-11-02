@@ -71,7 +71,7 @@ class ComputerRosterTest {
         // The account's own state, as the app shows it: Back clears it there.
         compose.setContent {
             val live by accounts.state.collectAsState()
-            Hosted { MainTabs(live, listOf(state(mac, "Mac bot")), accounts, {}, {}, {}, {}, {}, { _, _ -> }, {}, AppTab.Bots, {}, covered = true) {} }
+            Hosted { MainTabs(live, listOf(state(mac, "Mac bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, AppTab.Bots, {}, covered = true, status = {}) {} }
         }
         compose.onNodeWithText("This computer was removed").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()

@@ -264,6 +264,8 @@ public struct Hello: Codable, Sendable {
     public var latestVersion: String?
     /// The computer could join an account: a signed-in phone may offer to add it (`HostClient.joinAccount`).
     public var canJoinAccount: Bool?
+    /// This host serves workflows. Missing on older hosts, which is the same as false.
+    public var workflows: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

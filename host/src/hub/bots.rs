@@ -79,6 +79,7 @@ impl Hub {
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         self.routines.disable_bot(&self.store, id)?;
+        crate::workflows::clear_bot(self, id);
         self.team.end_turn(id);
         crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);

@@ -171,19 +171,21 @@ export function anchorPlacement(rect: DOMRect) {
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
+export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, children, className }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
-  items: () => MenuItem[]
+  items?: () => MenuItem[]
   reactions?: ReactionPick
+  children?: ReactNode
+  className?: string
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const frozen = useRef<MenuItem[]>([])
   const layer = useRef<HTMLDivElement>(null)
-  if (open) frozen.current = items()
+  if (open && items) frozen.current = items()
   useLayoutEffect(() => {
     if (!open) return
     if (point) setRect(new DOMRect(point.x, point.y, 0, 0))
@@ -194,8 +196,8 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
     <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
+      <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width }}>
+        {children ?? <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />}
       </div>
     </div>,
     document.body,

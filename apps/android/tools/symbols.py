@@ -96,6 +96,7 @@ MAP = {
     "eye": "visibility",
     "eye.slash": "visibility_off",
     "figure.run": "directions_run",
+    "flowchart": "flowchart",
     "film": "movie",
     "folder": "folder",
     "function": "function",

@@ -78,6 +78,7 @@ impl AgentStep {
 pub struct Hub {
     pub analytics: crate::analytics::Analytics,
     pub routines: crate::routines::Routines,
+    pub workflows: crate::workflows::Workflows,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
@@ -135,6 +136,7 @@ impl Hub {
         Arc::new(Self {
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
+            workflows: crate::workflows::Workflows::default(),
             team: crate::chat::team::Requests::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
@@ -181,6 +183,7 @@ impl Hub {
         }
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
+        crate::workflows::start(self);
         crate::analytics::start(self);
         Ok(())
     }
@@ -303,7 +306,9 @@ impl Hub {
 
     pub(crate) fn update_keep_awake(&self) {
         let busy = self.runtime.locked().values().any(|r| r.status == BotStatus::Working);
-        self.keep_awake.locked().set(busy || self.routines.keeps_awake());
+        self.keep_awake
+            .locked()
+            .set(busy || self.routines.keeps_awake() || crate::workflows::Workflows::keeps_awake(&self.store));
     }
 
     // MARK: entries
@@ -327,6 +332,11 @@ impl Hub {
                 None
             }
         }
+    }
+
+    pub(crate) fn emit_workflow(&self, body: Value) {
+        let _guard = self.emit_lock.locked();
+        let _ = self.events.send(body);
     }
 
     pub fn add_entry_once(

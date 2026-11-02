@@ -95,8 +95,8 @@ struct CodyncApp: App {
                     if let s = ProcessInfo.processInfo.environment["CODYNC_PAIR_URL"], let p = Pairing(string: s) {
                         _ = try? await app.pair(p, via: .link)
                     }
-                    if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .state; app.showUsage = true }
-                    if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .state }
+                    if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .settings; app.showStatus = true; app.showUsage = true }
+                    if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .settings; app.showStatus = true }
                     // Screenshots: CODYNC_OPEN_URL=codync://bot/<botId>?scope=local&computer=<id>, without the system prompt.
                     if let s = ProcessInfo.processInfo.environment["CODYNC_OPEN_URL"], let url = URL(string: s) {
                         try? await Task.sleep(for: .seconds(1))
@@ -113,7 +113,16 @@ struct CodyncApp: App {
     }
 }
 
-enum AppTab: Hashable { case bots, state, settings }
+enum AppTab: Hashable { case bots, workflows, settings }
+
+/// A workflow a notification asked to open on the Workflows tab.
+struct WorkflowDeepLink: Equatable {
+    var computerId: ComputerID
+    var workflowId: String?
+    var runId: String?
+    /// A new value each time a link should open. The list claims it once.
+    var token = UUID()
+}
 
 /// One `AccountStore` per account context: switching accounts retires the old one so
 /// in-flight work can't land on another user's screen or storage.
@@ -130,12 +139,20 @@ final class AppStore {
     private(set) var generation = 0
     var tab = AppTab.bots
     var showComputers = false
-    /// The usage limits sheet over the State tab.
+    /// State (widgets, Live Activity, Dynamic Island), opened from Settings.
+    var showStatus = false
+    /// The usage limits sheet over State.
     var showUsage = false
+    /// The computer the Workflows tab shows. Nil follows the last active computer.
+    var workflowComputer: ComputerID?
+    /// Bumped so the Workflows tab shows `pendingWorkflow` from the list again.
+    var workflowEpoch = 0
     /// The computer whose marketplace is open.
     var marketplace: ComputerID?
     /// While an account is being left: its stores stay open until its computers have been told.
     var leaving = false
+    /// A notification that should open a workflow once the chat is out of the way.
+    var pendingWorkflow: WorkflowDeepLink?
 
     private init() {
         let session = AccountSession()
@@ -166,6 +183,15 @@ final class AppStore {
         accounts.storage.lastComputerId.flatMap(accounts.store(for:)) ?? accounts.computers.first.flatMap { accounts.store(for: $0.id) }
     }
 
+    /// Opens the Workflows tab on one computer, and one workflow when `workflowId` is set.
+    func showWorkflows(on computerId: ComputerID, workflowId: String? = nil, runId: String? = nil) {
+        accounts.selection = nil
+        workflowComputer = computerId
+        pendingWorkflow = WorkflowDeepLink(computerId: computerId, workflowId: workflowId, runId: runId)
+        workflowEpoch += 1
+        tab = .workflows
+    }
+
     func switchAccount(to userID: String?) {
         let storage = SharedStore.Context(accountID: userID)
         guard storage.id != contextID, !leaving else { return }
@@ -179,6 +205,7 @@ final class AppStore {
         tab = .bots
         showComputers = false
         marketplace = nil
+        pendingWorkflow = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         BotsWidgetFeed.reset()
         WidgetCenter.shared.reloadAllTimelines()
@@ -201,8 +228,10 @@ final class AppStore {
         SharedStore.activeAccountID = nil
         UserDefaults.standard.set(false, forKey: "onboardingCompleted")
         showComputers = false
+        showStatus = false
         account.showSwitcher = false
         marketplace = nil
+        pendingWorkflow = nil
         tab = .bots
         contextID = storage.id
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
@@ -263,7 +292,8 @@ final class AppStore {
             marketplace = currentStore?.computer.id
         case "usage":
             accounts.selection = nil
-            tab = .state
+            tab = .settings
+            showStatus = true
             showUsage = true
         case "computers":
             accounts.selection = nil
@@ -271,6 +301,12 @@ final class AppStore {
             showComputers = true
         case "screen":
             currentStore?.screenRequest = ScreenRequest()
+        case "workflows":
+            let path = url.path(percentEncoded: false).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let computer = accounts.computers.first { accounts.store(for: $0.id)?.connection == .online }?.id
+                ?? accounts.computers.first?.id
+            guard let computer else { return }
+            showWorkflows(on: computer, workflowId: path.isEmpty ? nil : path)
         default:
             break
         }
@@ -375,16 +411,24 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let ctx = info["ctx"] as? String
         let computerId = info["computerId"] as? String
         let botId = info["botId"] as? String
+        let workflowId = info["workflowId"] as? String
+        let runId = info["runId"] as? String
         let kind = AnalyticsEvent.NotificationKind(category: response.notification.request.content.categoryIdentifier)
         // UIKit saves application state from this completion. The async delegate
         // bridge can complete off the main thread even after MainActor.run.
         Task { @MainActor in
             defer { completionHandler() }
             if let kind { Analytics.shared.capture(.notificationOpened(kind)) }
-            guard let ctx, let computerId, let botId else { return }
+            guard let ctx, let computerId else { return }
             // Only open it in the account it was sent to, on a computer that account still has.
             let accounts = AppStore.shared.accounts
             guard ctx == accounts.storage.id, accounts.store(for: computerId) != nil else { return }
+            if let workflowId, !workflowId.isEmpty {
+                let run = runId?.isEmpty == false ? runId : nil
+                AppStore.shared.showWorkflows(on: computerId, workflowId: workflowId, runId: run)
+                return
+            }
+            guard let botId else { return }
             AppStore.shared.tab = .bots
             accounts.selection = BotReference(accountId: accounts.accountId, computerId: computerId, botId: botId)
         }

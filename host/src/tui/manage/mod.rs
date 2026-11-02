@@ -22,6 +22,10 @@ mod replies;
 mod routines;
 mod skill;
 mod when;
+mod workflow_edit;
+mod workflow_outline;
+mod workflow_sync;
+mod workflows;
 
 pub use analytics::AnalyticsSheet;
 pub use fields::{handoff_fields, section_fields};
@@ -35,6 +39,9 @@ pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use skill::SkillSheet;
 pub use when::complete_zone;
+pub(in crate::tui) use workflow_edit::{Lane, step_rows};
+pub(in crate::tui) use workflow_outline::{add_kinds, feeds, field_rows, kind_name};
+pub use workflows::{WorkflowAdd, WorkflowDetail, WorkflowEdit, WorkflowPage, WorkflowRun, WorkflowSheet};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
@@ -89,6 +96,26 @@ pub enum Reply {
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
+    /// A workflow sheet's command.
+    Workflow(WorkflowReply),
+}
+
+/// Which workflow command the reply belongs to.
+#[derive(Clone)]
+pub enum WorkflowReply {
+    List,
+    /// `id` empty: the workflow just created.
+    Open {
+        id: String,
+        edit: bool,
+    },
+    Refresh(String),
+    Runs(String),
+    Saved(String),
+    Started,
+    Run(String),
+    Deleted,
+    Versions(String),
 }
 
 /// A read-only conversation between `bot` and `peer`, scrolled from the bottom.

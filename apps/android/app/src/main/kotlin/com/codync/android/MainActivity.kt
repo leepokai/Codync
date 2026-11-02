@@ -143,7 +143,12 @@ class MainActivity : ComponentActivity() {
             accounts.pair(uri.toString(), PairedVia.Link)
         }
         // Retain the scoped, non-secret destination for Activity/process restoration.
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) accounts.openLink(uri)
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) {
+            val workflowId = intent.getStringExtra(NotificationDisplay.WORKFLOW_ID) ?: uri.getQueryParameter("workflow")
+            val runId = intent.getStringExtra(NotificationDisplay.RUN_ID) ?: uri.getQueryParameter("run")
+            if (uri.host == "bot" && !workflowId.isNullOrBlank()) accounts.openWorkflowLink(uri, workflowId, runId)
+            else accounts.openLink(uri)
+        }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; accounts.finishConnectorSignIn(uri) }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; accounts.openScreenLink() }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; accounts.openPage(LinkPage.Computers) }

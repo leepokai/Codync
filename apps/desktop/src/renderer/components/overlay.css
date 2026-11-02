@@ -198,12 +198,19 @@
 }
 
 /* Floating layers cover the title bar's drag regions (sidebar header, thread chrome), which
-   would turn clicks on them into window drags. A menu takes the whole window, so a click
-   anywhere closes it; sheets and dialogs only their card, so the window still moves. */
+   would turn clicks on them into window drags. Those strips are not ancestors of a portal, so
+   a no-drag on the card does not cancel them. `overlay-open` is set while a sheet, dialog, or
+   menu is mounted and takes the strips down for that time. */
 .anchored,
+.modal-card,
 .modal-content,
+.dialog,
 .dialog-card {
   -webkit-app-region: no-drag;
+}
+html.overlay-open,
+html.overlay-open * {
+  -webkit-app-region: no-drag !important;
 }
 
 /* Menus */
@@ -278,6 +285,13 @@
   overflow-wrap: anywhere;
 }
 .menu-title.with-detail { display: flex; flex-direction: column; gap: 2px; }
+.menu-title.with-detail.beside {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.menu-title.with-detail.beside .menu-detail { white-space: nowrap; }
 .menu-detail { font-size: var(--text-caption); color: var(--secondary); }
 
 .reaction-button {

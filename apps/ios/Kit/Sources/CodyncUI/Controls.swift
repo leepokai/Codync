@@ -131,15 +131,18 @@ public struct ChoicePicker<ID: Hashable>: View {
     let options: [(id: ID, label: String)]
     var fill: Color
     var fitsAvailableWidth: Bool
+    /// A full-width row on `surface`, with the chevron at the trailing edge. Step sheets use this.
+    var wide: Bool
     /// A picture before each label, in the menu and on the pill (an agent's logo).
     var image: ((ID) -> Image?)?
 
     public init(selection: Binding<ID>, options: [(id: ID, label: String)], fill: Color = .clear, fitsAvailableWidth: Bool = false,
-                image: ((ID) -> Image?)? = nil) {
+                wide: Bool = false, image: ((ID) -> Image?)? = nil) {
         _selection = selection
         self.options = options
         self.fill = fill
         self.fitsAvailableWidth = fitsAvailableWidth
+        self.wide = wide
         self.image = image
     }
 
@@ -149,21 +152,29 @@ public struct ChoicePicker<ID: Hashable>: View {
                 MenuItem(option.label, image: image?(option.id), selected: option.id == selection) { selection = option.id }
             }
         } label: {
-            HStack(spacing: 6) {
+            let row = HStack(spacing: 6) {
                 if let picture = image?(selection) {
                     picture.resizable().scaledToFit().frame(width: 16, height: 16)
                 }
                 Text(L10n.tr(options.first { $0.id == selection }?.label ?? "Choose")).lineLimit(1)
+                if wide { Spacer(minLength: 12) }
                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
             }
             .font(.body)
             .foregroundStyle(Palette.text)
-            .pill(fill: fill)
-            .overlay {
-                if fill == .clear { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.border) }
+            if wide {
+                row.padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            } else {
+                row.pill(fill: fill)
+                    .overlay {
+                        if fill == .clear { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Palette.border) }
+                    }
             }
         }
-        .fixedSize(horizontal: !fitsAvailableWidth, vertical: true)
+        .fixedSize(horizontal: !fitsAvailableWidth && !wide, vertical: true)
         .help(L10n.tr(options.first { $0.id == selection }?.label ?? "Choose"))
     }
 }

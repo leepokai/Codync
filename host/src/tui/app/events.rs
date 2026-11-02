@@ -37,6 +37,7 @@ impl App {
             Msg::Connected { since } => {
                 self.stream_since = since;
                 self.floors.clear();
+                self.reload_workflows();
             }
             Msg::Event(v) => self.on_event(&v),
             Msg::Reply(after, r) => self.on_reply(after, r),
@@ -57,10 +58,13 @@ impl App {
             Some("hello") => {
                 self.snapshot_floors();
                 self.network = v["network"].clone();
+                self.workflows = v["workflows"].as_bool().unwrap_or(false);
                 if !v["usage"].is_null() {
                     self.usage = v["usage"].clone();
                 }
             }
+            // Not a rev event. An open workflow page loads again; every other screen ignores it.
+            Some("workflow") => self.on_workflow_event(v),
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
@@ -232,6 +236,7 @@ impl App {
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
+                self.workflows = v["workflows"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),

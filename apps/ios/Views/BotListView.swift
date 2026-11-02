@@ -14,6 +14,8 @@ struct BotListView: View {
     @State private var editing: EditTarget?
     @State private var editingGroup: GroupTarget?
     @State private var confirmDelete: RosterItem?
+    /// Bumped when a pin changes, so the rows reread this phone's list.
+    @State private var pinRevision = 0
     /// What the section name dialog names while it's open.
     @State private var naming: SectionNaming?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
@@ -116,8 +118,13 @@ struct BotListView: View {
     /// folded), then the bots in no section (under the "Bots" label when there are sections).
     private func sectionLines(_ store: BotStore) -> [RosterLine] {
         let id = store.computer.id
+        let _ = pinRevision
         let items = accounts.roster.filter { $0.ref.computerId == id }
-        return RosterSection.lines(items, folded: foldedSections, order: sectionOrder.saved(on: id)) { $0.bot }.map { line -> RosterLine in
+        let pins = PinnedWorkflows.ids(id).compactMap { workflowId -> RosterLine? in
+            guard store.workflows.contains(where: { $0.id == workflowId }) else { return nil }
+            return .workflow(workflowId, id, store)
+        }
+        return pins + RosterSection.lines(items, folded: foldedSections, order: sectionOrder.saved(on: id)) { $0.bot }.map { line -> RosterLine in
             switch line {
             case let .header(section): .section(section, id, store)
             case .label: .label(id)
@@ -164,6 +171,12 @@ struct BotListView: View {
                         // row stays, empty: taking it out would move the lifted heading's place in
                         // the list, and the system then drops the drag.
                         if movingComputer || movingSection == item.ref.computerId { Color.clear.frame(height: 0) } else { row(item, store: store) }
+                    case let .workflow(id, computerId, store):
+                        if movingComputer || movingSection == computerId {
+                            Color.clear.frame(height: 0)
+                        } else {
+                            workflowRow(id, store: store).moveDisabled(true)
+                        }
                     }
                 }
                 .onMove(perform: moveLines)
@@ -251,6 +264,25 @@ struct BotListView: View {
             }]
         }
         .sectionNameDialog($naming)
+        .onAppear { pinRevision += 1 }
+    }
+
+    private func workflowRow(_ id: String, store: BotStore) -> some View {
+        let workflow = store.workflows.first { $0.id == id }
+        return Button {
+            app.showWorkflows(on: store.computer.id, workflowId: id)
+        } label: {
+            if let workflow {
+                WorkflowSummaryLine(workflow: workflow)
+            }
+        }
+        .buttonStyle(.plain)
+        .contextActions {
+            [MenuItem("Unpin", icon: "pin.slash") {
+                PinnedWorkflows.remove(id, computer: store.computer.id)
+                pinRevision += 1
+            }]
+        }
     }
 
     /// A row the system's reordering dropped. A heading moves its computer and its bots (an order
@@ -269,6 +301,8 @@ struct BotListView: View {
             withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { accounts.move(id, to: old[to]) }
         case let .bot(item, store):
             store.drop(item.bot.id, in: after.compactMap { $0.botId(on: item.ref.computerId) })
+        case .workflow:
+            break
         case .section, .label:
             guard let computer = before[from].sectionComputer else { return }
             let names = after.compactMap { $0.sectionName(on: computer) }
@@ -292,7 +326,9 @@ struct BotListView: View {
             // Not synced while it needs an update: "No bots yet" wouldn't be true.
             ComputerSection(store: store, empty: store.mismatch == nil && !roster.contains { $0.ref.computerId == id },
                             collapsed: folded || collapsedIDs.contains(id), toggle: { toggleCollapsed(id) }, move: move,
-                            extensions: store.connection == .online && store.mismatch == nil ? { app.marketplace = id } : nil)
+                            extensions: store.connection == .online && store.mismatch == nil ? { app.marketplace = id } : nil,
+                            workflows: store.connection == .online && store.hello?.workflows == true
+                                ? { app.showWorkflows(on: id) } : nil)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleCollapsed(id) }
             updateCard(store)

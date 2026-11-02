@@ -112,7 +112,8 @@ host answers and sends it once the host is up.
 | `screen` | iOS / Android | Desktop | Terminal UI |
 |---|---|---|---|
 | `bots` | Bots tab | — (always shown) | — |
-| `state` | State tab | — | — |
+| `workflows` | Workflows tab | — | — |
+| `state` | State, opened from Settings | — | — |
 | `chat` | a conversation opened | a conversation opened | a conversation opened |
 | `trace` | full conversation | full conversation | full trace |
 | `bot_details` | bot details | details panel | settings page |

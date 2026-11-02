@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -59,7 +60,7 @@ val LocalDismissModal = staticCompositionLocalOf<() -> Unit> { {} }
  * drags down to close (also from content scrolled to its top). Content titles itself with
  * `ModalHeader` and closes with `LocalDismissModal`.
  */
-@Composable fun CodyncSheet(isPresented: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+@Composable fun CodyncSheet(isPresented: Boolean, onDismiss: () -> Unit, fitted: Boolean = false, content: @Composable () -> Unit) {
     val shown = remember { Animatable(0f) }
     var mounted by remember { mutableStateOf(isPresented) }
     LaunchedEffect(isPresented) {
@@ -74,7 +75,7 @@ val LocalDismissModal = staticCompositionLocalOf<() -> Unit> { {} }
     if (!mounted) return
     val dismiss by rememberUpdatedState(onDismiss)
     BackHandler(isPresented) { dismiss() }
-    Overlay { SheetFrame(shown.value, { dismiss() }, content) }
+    Overlay { SheetFrame(shown.value, fitted, { dismiss() }, content) }
 }
 
 /** `.codyncSheet(item:)`: keeps showing the last item while the sheet slides away. */
@@ -84,7 +85,7 @@ val LocalDismissModal = staticCompositionLocalOf<() -> Unit> { {} }
     CodyncSheet(item != null, onDismiss) { last?.let { content(it) } }
 }
 
-@Composable private fun SheetFrame(shown: Float, dismiss: () -> Unit, content: @Composable () -> Unit) {
+@Composable private fun SheetFrame(shown: Float, fitted: Boolean, dismiss: () -> Unit, content: @Composable () -> Unit) {
     val dark = LocalDark.current
     val scope = rememberCoroutineScope()
     val drag = remember { Animatable(0f) }
@@ -122,10 +123,13 @@ val LocalDismissModal = staticCompositionLocalOf<() -> Unit> { {} }
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (if (dark) 0.48f else 0.2f) * shown))
             .clickable(remember { MutableInteractionSource() }, null, onClick = dismiss))
         val offset = (1f - shown) * height + drag.value
-        Column(Modifier.fillMaxSize()) {
-            Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-            Spacer(Modifier.height(10.dp))
-            Box(Modifier.fillMaxSize()
+        Column(Modifier.fillMaxSize(), verticalArrangement = if (fitted) Arrangement.Bottom else Arrangement.Top) {
+            if (!fitted) {
+                Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+                Spacer(Modifier.height(10.dp))
+            }
+            Box(Modifier.fillMaxWidth()
+                .then(if (fitted) Modifier else Modifier.fillMaxSize())
                 .offset { IntOffset(0, offset.roundToInt()) }
                 .graphicsLayer { shadowElevation = if (dark) 0f else 24f; shape = SheetShape; clip = true }
                 .background(Palette.background)
@@ -134,7 +138,8 @@ val LocalDismissModal = staticCompositionLocalOf<() -> Unit> { {} }
                     Orientation.Vertical, onDragStopped = { velocity -> release(velocity) })
                 .nestedScroll(pull)) {
                 CompositionLocalProvider(LocalDismissModal provides dismiss) {
-                    GlassStage(Modifier.fillMaxSize().navigationBarsPadding().imePadding()) { content() }
+                    if (fitted) Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) { content() }
+                    else GlassStage(Modifier.fillMaxSize().navigationBarsPadding().imePadding()) { content() }
                 }
                 Box(Modifier.fillMaxWidth().padding(top = 5.dp), contentAlignment = Alignment.TopCenter) {
                     Box(Modifier.size(36.dp, 5.dp).clip(Capsule()).background(if (dark) Color(0xFF5A5A5A) else Color(0xFFC6C6C6)))

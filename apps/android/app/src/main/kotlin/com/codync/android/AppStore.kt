@@ -66,6 +66,10 @@ class AppStore internal constructor(
     internal var pluginsRefreshAgain = false
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
+    /** Workflow ids whose graph the phone has edited and not saved. Events must not replace those graphs. */
+    internal val dirtyWorkflows = mutableSetOf<String>()
+    /** The unsaved graph, so Run can finish the save before it starts. */
+    internal var heldWorkflow: HeldWorkflow? = null
 
     /** Opens the mirror and the drafts this phone keeps for the computer; nothing connects yet. */
     internal suspend fun open() {
@@ -112,6 +116,8 @@ class AppStore internal constructor(
         pendingSectionMoves.clear(); mirrorBots = emptyList()
         pluginsRefreshAgain = false
         rewoundFor = null
+        dirtyWorkflows.clear()
+        heldWorkflow = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }

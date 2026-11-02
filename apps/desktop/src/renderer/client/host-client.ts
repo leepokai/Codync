@@ -67,7 +67,7 @@ export class LoopbackTransport implements HostTransport {
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }
   /** `network` is null from hosts before the network view. */
-  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons }
+  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; workflows: boolean; icons?: import('@shared/custom-icons').CustomIcons }
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
@@ -83,6 +83,8 @@ export type HostEvent =
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
   | { type: 'call'; cue: CallCue }
   | { type: 'resync' }
+  /** A workflow change. It carries no `rev` and never means the event stream is unreadable. */
+  | { type: 'workflow'; change: 'graph' | 'enabled' | 'run' | 'step' | 'deleted'; workflowId: string; runId: string | null; enabled?: boolean }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
 
@@ -105,6 +107,7 @@ export function parseEvent(line: string): HostEvent | null {
         usage: (raw.usage as Usage) ?? { providers: [] },
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
+        workflows: raw.workflows === true,
         icons: raw.icons as import('@shared/custom-icons').CustomIcons | undefined,
       }
     case 'bot': {
@@ -142,6 +145,13 @@ export function parseEvent(line: string): HostEvent | null {
     }
     case 'resync':
       return { type }
+    case 'workflow': {
+      const change = raw.change
+      const workflowId = raw.workflowId
+      if (typeof workflowId !== 'string') return null
+      if (change !== 'graph' && change !== 'enabled' && change !== 'run' && change !== 'step' && change !== 'deleted') return null
+      return { type, change, workflowId, runId: typeof raw.runId === 'string' ? raw.runId : null, enabled: typeof raw.enabled === 'boolean' ? raw.enabled : undefined }
+    }
     default:
       return null
   }
@@ -181,7 +191,7 @@ export class HostClient {
   }
 
   hello() {
-    return this.call<Hello>('hello').then((h) => ({ ...h, backends: h.backends ?? [], screen: normalizeScreen(h.screen) ?? undefined }))
+    return this.call<Hello>('hello').then((h) => ({ ...h, backends: h.backends ?? [], screen: normalizeScreen(h.screen) ?? undefined, workflows: h.workflows === true }))
   }
 
   async history(botId: string, beforeSeq: number, limit = 100) {

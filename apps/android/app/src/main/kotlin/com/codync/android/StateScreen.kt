@@ -72,10 +72,12 @@ private enum class Surface { Widget, LiveUpdate, StatusBar }
  * widgets, Live updates (Android's Live Activity) and the status bar chip (its Dynamic Island).
  * Usage limits open from the header.
  */
-@Composable internal fun StateScreen(app: AccountContext, report: JsonObject?, accounts: AccountStore?, usage: () -> Unit, bottomInset: Dp, active: Boolean = true) {
+@Composable internal fun StateScreen(app: AccountContext, report: JsonObject?, accounts: AccountStore?, usage: () -> Unit, bottomInset: Dp, active: Boolean = true,
+    close: () -> Unit) {
     var surface by rememberSaveable { mutableStateOf(Surface.Widget) }
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
-        ScreenHeader(title = { Text("State", style = Type.body.semibold, color = Palette.text) },
+        ScreenHeader(leading = { IconButton("Close", "xmark", action = close) },
+            title = { Text(tr("State"), style = Type.body.semibold, color = Palette.text) },
             trailing = { IconButton("Usage limits", "chart.bar", action = usage) })
         SegmentedChoice(surface, listOf(Surface.Widget to "Widget", Surface.LiveUpdate to "Live update", Surface.StatusBar to "Status bar"),
             { surface = it }, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))

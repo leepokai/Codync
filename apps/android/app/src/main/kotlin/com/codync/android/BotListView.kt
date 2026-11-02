@@ -91,6 +91,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
     var naming by remember { mutableStateOf<SectionNaming?>(null) }
     val context = LocalContext.current
     var folded by remember { mutableStateOf(FoldedSections.load(context)) }
+    var pins by remember { mutableStateOf(0) }
     var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
     var collapsed by remember { mutableStateOf(RosterComputers.folded(context)) }
     val listState = rememberLazyListState()
@@ -166,6 +167,15 @@ private class ComputerRoster(private val context: Context, val key: String) {
                         extensions = { extensions(id) })
                 }
                 if (grouped && (movingComputer || id in collapsed)) continue
+                if (state.offersWorkflows) {
+                    val pinned = pinnedWorkflows(context, state).let { if (pins < 0) emptyList() else it }
+                    items(pinned, key = { "workflow:$id:${it.id}" }) { workflow ->
+                        PinnedWorkflowRow(workflow, pinned = true, onOpen = { accounts.focusWorkflows(id, workflow.id) }) {
+                            WorkflowPins.toggle(context, id, workflow.id)
+                            pins++
+                        }
+                    }
+                }
                 botLines(state, store, roster, folded, grouped, RosterActions(toggleSection,
                     rename = { name -> naming = SectionNaming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },

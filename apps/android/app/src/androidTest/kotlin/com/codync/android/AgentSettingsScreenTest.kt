@@ -15,27 +15,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class AgentSettingsScreenTest {
     @get:Rule val compose = createComposeRule()
-    private val online = AppState(loading = false, computers = listOf(Computer("fixture", "Fixture computer", "fixture")),
+    private val online = AppState(previewComputer, loading = false,
         actualConnection = LinkState.Ready(HostRoute.Direct))
-    private val model = hasContentDescription("Model:", substring = true)
 
     @Composable private fun Picker(state: AppState, backend: String, selected: String?, choose: (String?) -> Unit, load: suspend (String) -> AgentModels) =
         AgentModelPicker(state, load, backend, selected, emptyMap(), false, null, { id, _ -> choose(id) }, {})
+
+    private fun showing(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
 
     @Test fun hostModelsRetainAnUnknownOverrideAndFoldTheRecommendedDefault() {
         var selected by mutableStateOf<String?>("old-model")
         compose.setContent { Hosted { Picker(online, "agent", selected, { selected = it }) {
             AgentModels(listOf(AgentModel("auto", "Default (recommended)"), AgentModel("host-model", "Host model", "From this agent")))
         } } }
-        compose.waitUntil { compose.onAllNodes(model).fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithContentDescription("Model: old-model").performClick()
+        // The picker is one summary row ("agent · model") that unfolds into the model list.
+        compose.onNodeWithText("agent · old-model").assertIsDisplayed().performClick()
+        compose.waitUntil { showing("Host model") }
         compose.onAllNodesWithText("Default (recommended)").assertCountEquals(1)
         compose.onNodeWithText("Default (recommended)").performClick()
         assertNull(selected)
-        compose.onNodeWithContentDescription("Model: Default (recommended)").performClick()
+        compose.onNodeWithText("Default").performClick()
+        compose.onNodeWithContentDescription("Refresh model list").assertIsDisplayed()
         compose.onNodeWithText("Host model").performClick()
         assertEquals("host-model", selected)
-        compose.onNodeWithContentDescription("Refresh model list").assertIsDisplayed()
     }
 
     @Test fun aLateCancelledModelDiscoveryCannotReplaceAnotherAgentsCatalog() {
@@ -50,11 +52,32 @@ class AgentSettingsScreenTest {
         } } }
         compose.waitUntil { started.get() }
         compose.onNodeWithText("Switch agent").performClick()
-        compose.waitUntil { compose.onAllNodes(model).fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithText("new · Default").performClick()
+        compose.waitUntil { showing("new advertised model") }
         compose.waitUntil(3_000) { returned.get() }
-        compose.onNode(model).performClick()
+        compose.waitForIdle()
         compose.onNodeWithText("new advertised model").assertIsDisplayed()
         compose.onNodeWithText("old advertised model").assertDoesNotExist()
+    }
+
+    @Test fun retryModelListAlsoFillsThePermissionsModes() {
+        val failing = AtomicBoolean(true)
+        val load: suspend (String) -> AgentModels = {
+            if (failing.get()) throw java.io.IOException("Agent not ready")
+            AgentModels(emptyList(), modes = listOf(AgentMode("auto", "Auto"), AgentMode("plan", "Plan")))
+        }
+        compose.setContent { Hosted { Column {
+            var reload by remember { mutableIntStateOf(0) }
+            AgentModelPicker(online, load, "agent", null, emptyMap(), false, null, { _, _ -> }, {}, onReload = { reload++ })
+            ApprovalRow(online, load, BotDraft(backend = "agent", mode = "plan"), {}, reload)
+        } } }
+        compose.onNodeWithText("agent · Default").performClick()
+        compose.waitUntil { compose.onAllNodesWithContentDescription("Retry model list").fetchSemanticsNodes().isNotEmpty() }
+        // Until the list loads, Permissions shows the bot's mode by its id.
+        compose.onNodeWithText("Plan").assertDoesNotExist()
+        failing.set(false)
+        compose.onNodeWithContentDescription("Retry model list").performClick()
+        compose.waitUntil { showing("Plan") }
     }
 
     @Test fun anOfflineModelOverrideRemainsEditableWithoutInventingAProviderList() {
@@ -62,9 +85,9 @@ class AgentSettingsScreenTest {
         compose.setContent { Hosted { Picker(online.copy(actualConnection = LinkState.Connecting), "agent", selected, { selected = it }) {
             fail("Offline must not query models"); AgentModels(emptyList())
         } } }
+        compose.onNodeWithText("agent · my-model").performClick()
         compose.onNodeWithText("Connect to this computer to load its models. You can still enter a model ID.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Retry model list").assertIsDisplayed()
-        compose.onNode(model).assertDoesNotExist()
         compose.onNode(hasSetTextAction() and hasText("my-model")).performTextReplacement("saved-model")
         assertEquals("saved-model", selected)
     }

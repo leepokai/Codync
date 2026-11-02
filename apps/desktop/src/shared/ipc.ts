@@ -54,7 +54,6 @@ export const TRAY_SYMBOLS = [
   'list.bullet.rectangle',
   'person.crop.circle.badge.checkmark',
   'display',
-  'point.3.connected.trianglepath.dotted',
   'gearshape',
   'power',
 ] as const
@@ -73,6 +72,8 @@ export interface TraySummary {
   } | null
   /** This computer's networks (codync-network), lines already translated; null on hosts without them. */
   networks: { title: string; computers: { label: string; dot: TrayImage | null }[] }[] | null
+  /** The Network row's codync-network mark (SF Symbols has none), drawn on every platform; a template image on macOS. */
+  networkIcon: TrayImage | null
   /** Windows and Linux: the actions' symbols drawn by the renderer (macOS menus draw SF Symbols); null on macOS. */
   symbols: Partial<Record<TraySymbol, TrayImage>> | null
   needsAttention: boolean
@@ -247,6 +248,8 @@ export interface CodyncBridge {
     copy(text: string): void
     /** Files picked in the system dialog: name and bytes. */
     pickFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
+    pickExport(): Promise<string | null>
     readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
     setTraySummary(summary: TraySummary): void
     onCommand(cb: (command: WindowCommand) => void): () => void

@@ -5,7 +5,6 @@ import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import kotlinx.coroutines.*
@@ -77,7 +76,7 @@ class LiveTerminalTest {
             } } }
         } }
         try {
-            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+            val store = compose.computerStore()
             compose.waitUntil(30_000) { !store.state.value.loading && store.state.value.actualConnection is LinkState.Ready }
             compose.runOnUiThread { store.openBot(null); store.refreshBackends() }
             compose.waitUntil(15_000) { store.state.value.hello?.get("backends")?.jsonArray?.any { it.jsonObject["id"]?.jsonPrimitive?.content == "android-setup-fixture" } == true }

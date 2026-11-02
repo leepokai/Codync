@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.Bot
+import com.codync.android.core.Computer
 import com.codync.android.core.Entry
 import com.codync.android.core.MirrorEvent
 import kotlinx.serialization.json.buildJsonObject
@@ -13,8 +14,8 @@ class ReadingTest {
         MirrorEvent.EntryChanged(Entry("e", 1, bot, 1, kind, data = buildJsonObject { put("text", "hi") }))
 
     @Test fun `the chat stays read under Full conversation`() {
-        assertEquals(listOf("bot"), AppState(selectedBot = "bot", trace = true).readingChats)
-        assertEquals(emptyList<String>(), AppState().readingChats)
+        assertEquals(listOf("bot"), AppState(Computer("fixture", "Studio", "fixture"), selectedBot = "bot", trace = true).readingChats)
+        assertEquals(emptyList<String>(), AppState(Computer("fixture", "Studio", "fixture")).readingChats)
     }
 
     @Test fun `a message is read where it lands, and a bot counting unread reads all it shows`() {

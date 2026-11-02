@@ -113,6 +113,8 @@ pub struct Hub {
     pub screen: Arc<Screen>,
     /// Setup terminals (installs, sign-ins).
     pub terms: Arc<crate::agent::term::Terms>,
+    /// Model lists being fetched (`agentModels`).
+    pub model_lists: crate::agent::auth::InFlight,
 }
 
 impl Hub {
@@ -151,6 +153,7 @@ impl Hub {
             cloud: crate::remote::cloud::Cloud::default(),
             screen,
             terms: Arc::default(),
+            model_lists: crate::agent::auth::InFlight::default(),
         })
     }
 

@@ -4,7 +4,7 @@ import { restLine, restOf, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
-import { CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
+import { CardSection, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
@@ -12,6 +12,7 @@ import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
 import { AgentModelPicker } from './AgentModelPicker'
+import { ApprovalRow } from './ApprovalRow'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
@@ -235,23 +236,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               </Pill>
             </DropdownMenu>
           </ValueRow>
-          <ValueRow
-            label="Permissions"
-            detail={
-              draft.permission === 'auto'
-                ? "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."
-                : "You'll get an approval card and a notification whenever the agent asks."
-            }
-          >
-            <ChoicePicker
-              selection={draft.permission}
-              options={[
-                { id: 'ask', label: 'Ask me' },
-                { id: 'auto', label: 'Approve automatically' },
-              ]}
-              onChange={(id) => set('permission', id)}
-            />
-          </ValueRow>
+          <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
         </CardSection>
 
         <CardSection title="Activity">

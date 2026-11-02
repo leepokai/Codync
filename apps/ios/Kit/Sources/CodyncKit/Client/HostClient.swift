@@ -33,14 +33,13 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model }
+    private enum CodingKeys: String, CodingKey { case model, mode }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
-        if draft.model == nil {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encodeNil(forKey: .model)
-        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if draft.model == nil { try container.encodeNil(forKey: .model) }
+        if draft.mode == nil { try container.encodeNil(forKey: .mode) }
     }
 }
 

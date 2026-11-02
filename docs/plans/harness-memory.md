@@ -47,7 +47,7 @@ Claude Code sessions in the terminal. The choice adds an off switch for Codync's
 
 The draft (`chat::memory::on`, the `history`-only memory server, the skipped dreaming, the restart with a fresh
 session) was written as a one-or-the-other `MemoryOwner`; rebase it as a Codync on/off beside `harnessMemory`, then
-do the apps (iPhone, desktop, terminal; Android once its memory screen is ported), the docs, a minor release and a
+do the apps (iPhone, desktop, terminal, Android), the docs, a minor release and a
 Mac e2e.
 
 ## Open questions

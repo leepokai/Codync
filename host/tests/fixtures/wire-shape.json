@@ -1,5 +1,5 @@
 {
-  "minApp": "2.21.0",
+  "minApp": "2.34.0",
   "shapes": {
     "event:bot": "object",
     "event:bot.bot": "object",
@@ -34,6 +34,7 @@
     "event:bot.bot.managedWorkspace": "bool",
     "event:bot.bot.members": "array",
     "event:bot.bot.memoryRev": "number",
+    "event:bot.bot.mode": "string",
     "event:bot.bot.model": "null",
     "event:bot.bot.modelOptions": "object",
     "event:bot.bot.name": "string",

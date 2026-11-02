@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
+import { once } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
+import { createConnection, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -88,4 +89,23 @@ test('listener ownership accepts the listening process and rejects another proce
   } finally { await new Promise<void>((resolve) => server.close(() => resolve())) }
   assert.throws(() => listenerCommand(123, -1))
   assert.throws(() => listenerCommand(NaN, 19222))
+})
+
+test('listener ownership rejects an outgoing socket and a closed port', async () => {
+  const server = createServer((socket) => socket.resume())
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  assert.ok(address && typeof address === 'object')
+  const client = createConnection({ host: '127.0.0.1', port: address.port })
+  try {
+    await once(client, 'connect')
+    assert.ok(client.localPort)
+    const outgoing = await sshListens(process.pid, client.localPort)
+    assert.equal(outgoing, false)
+  } finally {
+    client.destroy()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+  const closed = await sshListens(process.pid, address.port)
+  assert.equal(closed, false)
 })

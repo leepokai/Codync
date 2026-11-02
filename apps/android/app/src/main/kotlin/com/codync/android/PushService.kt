@@ -83,7 +83,7 @@ object PushDelivery {
         if (!BuildConfig.PUSH_CONFIGURED) return
         if (PushPreferences.retired(context) || local.contextId != (PushPreferences.activeUser(context) ?: "local")) return
         val permitted = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
-        val feed = TaskFeed(local.directory)
+        val feed = TaskFeed(local.directory, computer.id)
         if (!PushPreferences.tasks(context) || !permitted) {
             feed.all().forEach { active.call("unregisterActivity", body("botId" to it.botId)) }
             feed.clear()
@@ -122,18 +122,25 @@ object PushDelivery {
         withContext(Dispatchers.IO) { PushPreferences.splitSwitch(context) }
         val local = LocalStore(context, PushPreferences.activeUser(context) ?: "local")
         val computers = withContext(Dispatchers.IO) { local.computers() }
-        val computer = computers.firstOrNull() ?: return@withLock
-        if (!local.hasIdentity()) return@withLock
-        var active: EncryptedChannel? = null
-        try {
-            withTimeout(45_000) {
-                val identity = withContext(Dispatchers.IO) { local.identity() }
-                val connected = HostConnector.connect(computer, identity)
-                active = connected
-                connected.state.firstReady()
-                syncLocked(context, local, computer, connected)
-            }
-        } finally { active?.close() }
+        if (computers.isEmpty() || !local.hasIdentity()) return@withLock
+        // Every computer gets its turn; the first failure is reported once all were tried.
+        var failure: Exception? = null
+        for (computer in computers) {
+            var active: EncryptedChannel? = null
+            try {
+                withTimeout(45_000) {
+                    val identity = withContext(Dispatchers.IO) { local.identity() }
+                    val connected = HostConnector.connect(computer, identity)
+                    active = connected
+                    connected.state.firstReady()
+                    syncLocked(context, local, computer, connected)
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                failure = failure ?: error
+            } finally { active?.close() }
+        }
+        failure?.let { throw it }
     }
 
     const val WORK_NAME = "codync-push-registration"
@@ -185,7 +192,7 @@ class PushService : FirebaseMessagingService() {
                 NotificationDisplay.channels(context)
                 if (data["kind"] == "task") {
                     if (!PushPreferences.tasks(context)) return
-                    val watch = TaskFeed(local.directory).remote(data, botId) ?: return
+                    val watch = TaskFeed(local.directory, computerId).remote(data, botId) ?: return
                     NotificationDisplay.task(context, scope, computerId, watch)
                     return
                 }
@@ -276,9 +283,7 @@ internal object NotificationDisplay {
             .setProgressSegments(List(4) { Notification.ProgressStyle.Segment(25).setColor(tint) })
             .setProgress(filled * 25)
         val custom = notificationIcons(context, scope, computer)["bot:${watch.botId}"]
-        val face = com.codync.android.design.customAvatarBitmap(custom?.dataUrl, custom?.tinted == true, 128,
-            com.codync.android.design.AvatarPalette.colors[watch.avatarColor]?.toInt() ?: 0xFF1084FE.toInt())
-            ?: com.codync.android.design.characterAvatarBitmap(watch.avatarShape, watch.avatarColor, 128, 0xFF141414.toInt())
+        val face = notificationFace(watch.avatarShape, watch.avatarColor, custom)
         val open = builder(context, scope, computer, watch.botId, TASKS).build().contentIntent
         val notification = Notification.Builder(context, TASKS).setSmallIcon(R.drawable.ic_notification).setContentTitle(watch.name).setContentText(text)
             .setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(face)).setContentIntent(open).setStyle(style)
@@ -292,8 +297,9 @@ internal object NotificationDisplay {
         return notification.build()
     }
 
-    fun cancel(context: Context, id: Int) {
+    /** Notifications of one kind ([id]); with [prefix], only those whose tag starts with it (one computer's). */
+    fun cancel(context: Context, id: Int, prefix: String = "") {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.activeNotifications.filter { it.id == id }.forEach { manager.cancel(it.tag, it.id) }
+        manager.activeNotifications.filter { it.id == id && it.tag.orEmpty().startsWith(prefix) }.forEach { manager.cancel(it.tag, it.id) }
     }
 }

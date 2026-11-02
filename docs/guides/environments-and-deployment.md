@@ -22,6 +22,7 @@ The environment is chosen when building, never stored: the host compiles in its 
 - **Production:** `main.plist` targets `https://api.codync.dev` with the Clerk production instance (`clerk.codync.dev`, Google sign-in through the `codync-auth` Google Cloud project, published). The root Worker is deployed with D1 `codync`, `CLERK_SECRET_KEY` and `CLERK_WEBHOOK_SECRET` (Clerk webhook endpoint `https://api.codync.dev/v1/webhooks/clerk`, `user.deleted`), and `RELEASE_GATE_TOKEN` (dispatches the release gate; renewal in the [cloud README](../../cloud/README.md)).
 - **Cloud assistants (MCP connector):** the Worker also serves `mcp.codync.dev` (main) and `dev-mcp.codync.dev` (dev), deployed 2026-10-26. Each Clerk instance lists its URL under Agents → MCP server (public checks pass) with CIMD on and DCR off, and the zone's "no Browser Integrity Check" rule covers both hosts ([cloud assistants](../features/cloud-assistants.md)).
 - **Local:** Wrangler's `local` environment supports the isolated integration test and its test issuer. It is not a real Google sign-in test.
+- **Host names:** a dev host is the production name with a `dev-` prefix (`api` → `dev-api`, `mcp` → `dev-mcp`), never a `-dev` suffix: the suffix position is for regions (`relay-na`, so its dev host is `dev-relay-na`). Keep every host one level under `codync.dev` (a hyphen, not `dev.api.codync.dev`) so Cloudflare's universal certificate for `*.codync.dev` covers it.
 
 ## Troubleshooting: a running host appears offline on another computer
 
@@ -59,6 +60,16 @@ Production also needs completed Apple native application registrations in Clerk 
 
 A migration that changes what the database accepts goes out before the Worker code that relies on it, in each environment: dev first, then main. `wrangler d1 migrations list <db> --remote` shows what an environment still lacks. Before applying one to main, note the restore point (`wrangler d1 time-travel info codync`) and compare the live schema with `cloud/migrations/`.
 
+## Releasing cloud changes
+
+CI only tests `cloud/`; nothing deploys it. A dev → main PR that changes `cloud/` (routes, bindings, migrations) goes out in this order:
+
+1. Before the PR merges: create any new binding in dev (R2 bucket, rate limit, D1 migration), `npm run deploy:dev`, and test the changed flows end to end against `dev-api.codync.dev` with the dev apps.
+2. Right after the merge into `main`, before or with the release tag: create the same bindings for main (`wrangler.toml` names them, e.g. `codync-icons` beside `codync-icons-dev`; keep R2 buckets private), apply migrations, `npm run deploy:main`.
+3. Check main: each new route on `api.codync.dev` answers (401 without credentials, not 404), and `npx wrangler deployments list` shows the new version.
+
+Clients and host that call a new route must not reach users before step 2. In 2026-10, custom icons shipped in v2.33.2 while production cloud was days old and its R2 bucket missing, so every upload failed.
+
 ## Secrets audit
 
 The repository is public, so its whole history counts as published. Last scan: 2026-10-07 (`gitleaks git .` plus pattern grep over `git log -p --all`).
@@ -75,8 +86,11 @@ The repository is public, so its whole history counts as published. Last scan: 2
 | `0001_init.sql` | applied | applied | — |
 | `0002_windows_computers.sql` | 2026-10-07 | 2026-10-07 | dev `00000b79-00000000-000050fc-e6cb8fa431592b1c3d7824f3cf64afb9`, main `0000041d-0000085c-000050fc-fda9fcdf91e3498c08fa7c332a989e24` |
 | `0003_desktop_devices.sql` | 2026-10-07 | 2026-10-07 | dev `00000cb2-00000002-000050fd-8600044ac4775783e20c8ff9b4d5fa14`, main `00000420-000012d2-000050fd-12871b6db16548f336c1c9221d28c556` |
+| `0004_android_devices.sql` | 2026-11-01 | 2026-11-01 | dev `00003428-00000000-00005115-cc5e0e1311eab7918b2c9470a0e71611`, main `00000509-00063149-00005115-8caa0ba65c5566a0616c65bafa82e27f` |
 
 `0002` lets `computers.platform` be `windows` (Windows hosts register with `std::env::consts::OS`). SQLite can't change a CHECK, so it rebuilds `computers` together with `access_requests` and `grants`, the tables that reference it: dropping a referenced table while foreign keys are enforced would count every referencing row as a violation. Live schemas matched `0001` beforehand; row counts were unchanged afterwards (dev 24 computers, 8 grants, 14 access requests; main 101, 38, 48) with no orphaned rows. A signed `POST /v1/host/register` with `platform: "windows"` returned 200 on both (the probe rows were deleted). Main's Worker answered with the previous version for about 20 seconds after `deploy`.
+
+`0004` lets `devices.platform` be `android`, rebuilding `devices` with `grants` and `access_requests` the same way. Until it ran, every signed-in Android phone's `POST /v1/devices` failed with a CHECK constraint (`internal`), so it saw no account computers. On dev the live schema matched `0003` beforehand. Afterwards the row counts were unchanged (70 devices, 12 grants, 22 access requests, 232 computers), with no orphaned rows and a clean `foreign_key_check`. An Android emulator then registered, was approved and revoked through the account. On main (right after the 2.34.0 merge) the live schema also matched `0003`, and the counts were unchanged (1968 devices, 435 grants, 627 access requests, 2687 computers) with a clean `foreign_key_check`.
 
 The Worker accepting `windows` was deployed to both environments from the `windows` branch on 2026-10-07, ahead of its merge; its cloud code differed from `main` only in that platform list.
 

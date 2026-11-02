@@ -10,7 +10,7 @@ import type { BotStore } from '../../store/bot-store'
 import { network } from '../../store/network'
 import { errorText } from './parts'
 
-const NETWORK_ICON = 'point.3.connected.trianglepath.dotted'
+const NETWORK_ICON = 'codync.network'
 
 function Field({ label, value, set, placeholder, mono = false }: { label: string; value: string; set: (v: string) => void; placeholder: string; mono?: boolean }) {
   const tr = useTr()

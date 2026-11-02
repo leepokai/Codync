@@ -9,7 +9,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import com.codync.android.design.AvatarPalette
@@ -25,6 +24,7 @@ import java.io.File
 /** Read-only UI fixtures for the bot settings and the New bot / New group chat dialogs: no test taps Save or Create, so production bots are never changed. */
 class BotEditorTest {
     @get:Rule val compose = createComposeRule()
+    private val store = previewStore(Computer("fixture", "Fixture computer", "fixture-key"))
     private val scout = BotDraft(id = "fixture", name = "Scout", avatarShape = "blob", avatarColor = "blue")
 
     @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
@@ -34,6 +34,8 @@ class BotEditorTest {
         render(scout, close = { closed = true })
         compose.onNodeWithText("Settings").assertIsDisplayed()
         compose.onNodeWithContentDescription("Save").assertIsEnabled()
+        // The Avatar row unfolds the picker.
+        compose.onNodeWithContentDescription("Edit Bot avatar").performClick()
         compose.onNodeWithContentDescription("blob shape").assertIsSelected()
         compose.onNodeWithContentDescription("cloud shape").performClick().assertIsSelected()
         compose.onNodeWithContentDescription("blob shape").assertIsNotSelected()
@@ -42,21 +44,26 @@ class BotEditorTest {
         snapshot("bot-editor-settings-preview.png")
         name.performTextReplacement("")
         compose.onNodeWithContentDescription("Save").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Agent: Claude").performScrollTo().performClick()
+        // The agent row ("Claude · Default") unfolds into the model list; the agent's name opens the agents.
+        compose.onNodeWithText("Claude · Default").performScrollTo().performClick()
+        compose.onNodeWithText("Claude").performScrollTo().performClick()
+        // The agent list scrolls on its own; bring the picker's last line, under it, into the form's view.
+        compose.onNodeWithText("Changing the model starts a new agent session. Chat history is kept.").performScrollTo()
         compose.onNodeWithText("Codex (not installed)").assertIsDisplayed()
         compose.onNodeWithText("Custom command").performClick()
         compose.onNode(hasSetTextAction() and hasText("ACP command", substring = true)).performScrollTo().performTextInput("my-agent --acp")
         compose.onNodeWithText("my-agent --acp").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Agent: Custom command").performClick()
+        compose.onNodeWithText("Custom command").performScrollTo().performClick()
+        compose.onNodeWithText("Changing the model starts a new agent session. Chat history is kept.").performScrollTo()
         compose.onNodeWithText("Codex (not installed)").performClick()
-        compose.onNodeWithText("Install Codex on your computer.").assertIsDisplayed()
+        compose.onNodeWithText("Install Codex on your computer.").performScrollTo().assertIsDisplayed()
         compose.onNode(hasSetTextAction() and hasText("ACP command", substring = true)).assertDoesNotExist()
         compose.onNodeWithContentDescription("Close").performClick()
         assertTrue(closed)
     }
 
     @Test fun aNewBotIsItsFaceAndAnOptionalName() {
-        compose.setContent { Hosted { NewBotView(fixture(), viewModel()) } }
+        compose.setContent { Hosted { NewBotView(fixture(), store) } }
         compose.onNodeWithText("New bot").assertIsDisplayed()
         compose.onNode(hasSetTextAction() and hasText("Name your bot")).assertIsDisplayed().assertIsFocused()
         compose.onNodeWithContentDescription("Create").assertIsEnabled()
@@ -70,14 +77,14 @@ class BotEditorTest {
     }
 
     @Test fun anOfflineNewBotCannotBeCreated() {
-        compose.setContent { Hosted { NewBotView(fixture().copy(actualConnection = LinkState.Connecting), viewModel()) } }
+        compose.setContent { Hosted { NewBotView(fixture().copy(actualConnection = LinkState.Connecting), store) } }
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
         compose.onNodeWithText("Connect this computer to create the bot.").assertIsDisplayed()
     }
 
     @Test fun aNewGroupIsNamedAfterThePickedBotsUntilNamed() {
         val bots = listOf(Bot("a", "Scout", avatarShape = "blob"), Bot("b", "Reviewer", avatarShape = "hex"))
-        compose.setContent { Hosted { NewGroupView(fixture().copy(bots = bots), viewModel()) } }
+        compose.setContent { Hosted { NewGroupView(fixture().copy(bots = bots), store) } }
         compose.onNodeWithText("New group chat").assertIsDisplayed()
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
         compose.onNode(hasSetTextAction() and hasText("Name your group")).assertIsDisplayed()
@@ -90,7 +97,7 @@ class BotEditorTest {
     }
 
     @Test fun aNewGroupWithoutBotsSaysToCreateOneFirst() {
-        compose.setContent { Hosted { NewGroupView(fixture(), viewModel()) } }
+        compose.setContent { Hosted { NewGroupView(fixture(), store) } }
         compose.onNodeWithText("No bots yet. Create a bot first.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
     }
@@ -103,22 +110,40 @@ class BotEditorTest {
         compose.onNodeWithContentDescription("Workspace").performClick()
         compose.onNodeWithText("Personal workspace").performClick()
         compose.onNodeWithText("This bot has its own space for files. It can work in other folders when you ask.").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Permissions: Approve automatically").performScrollTo().performClick()
+        // A new bot works in the agent's Auto mode; while the agent's modes load, Auto, Ask me and Approve automatically.
+        compose.onNodeWithText("The agent decides what's safe and asks you about the rest.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Permissions: Auto").performClick()
+        compose.onNodeWithText("Approve automatically").assertIsDisplayed()
         compose.onNodeWithText("Ask me").performClick()
         compose.onNodeWithText("You'll get an approval card and a notification whenever the agent asks.").assertIsDisplayed()
         toggle("Notifications").performScrollTo().assertIsOn().performClick().assertIsOff()
         toggle("Use the computer").performScrollTo().assertIsOff()
-        toggle("GitHub").performScrollTo().assertIsOn().performClick().assertIsOff()
+        // Connectors start off until picked, as on the iPhone.
+        toggle("GitHub").performScrollTo().assertIsOff().performClick().assertIsOn()
         toggle("Review changes").performScrollTo().assertIsOff().performClick().assertIsOn()
         compose.onNodeWithContentDescription("Workspace").performScrollTo().performClick()
         compose.onNodeWithText("Choose project folder…").performClick()
-        compose.onNodeWithText("Folders").assertIsDisplayed()
+        compose.onNodeWithText("Choose workspace").assertIsDisplayed()
+    }
+
+    @Test fun permissionsListTheAgentsOwnModesWithTheirWords() {
+        val claude = AgentModels(emptyList(), modes = listOf(AgentMode("auto", "Auto", "Claude handles permission decisions"),
+            AgentMode("default", "Manual", "Always ask before making changes"), AgentMode("plan", "Plan")))
+        var draft by mutableStateOf(scout)
+        compose.setContent { Hosted { ApprovalRow(fixture(), { claude }, draft, { draft = it }) } }
+        compose.onNodeWithText("Claude handles permission decisions", substring = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Permissions: Auto").performClick()
+        compose.onNodeWithText("Approve automatically").assertIsDisplayed()
+        compose.onNodeWithText("Manual").performClick()
+        compose.onNodeWithText("Always ask before making changes", substring = true).assertIsDisplayed()
+        assertEquals("ask" to "default", draft.permission to draft.mode)
     }
 
     @Test fun offlineSettingsDisableSavingButKeepTheModelEditable() {
         render(scout.copy(model = "old-model"), fixture().copy(actualConnection = LinkState.Connecting))
         compose.onNodeWithContentDescription("Save").assertIsNotEnabled()
         compose.onNodeWithText("Reconnect to this computer to save settings.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Claude · old-model").performScrollTo().performClick()
         compose.onNodeWithText("Connect to this computer to load its models. You can still enter a model ID.").performScrollTo().assertIsDisplayed()
         compose.onNode(hasSetTextAction() and hasText("old-model")).performTextReplacement("my-model")
         compose.onNode(hasSetTextAction() and hasText("my-model")).assertIsDisplayed()
@@ -136,20 +161,19 @@ class BotEditorTest {
     }
 
     private fun render(draft: BotDraft, state: AppState = fixture(), close: () -> Unit = {}) {
-        compose.setContent { Hosted { CompositionLocalProvider(LocalDismissModal provides close) { BotEditor(state, draft, viewModel()) } } }
+        compose.setContent { Hosted { CompositionLocalProvider(LocalDismissModal provides close) { BotEditor(state, draft, store) } } }
     }
 
     private fun toggle(title: String) = compose.onNode(hasText(title) and isToggleable())
 
-    private fun fixture(): AppState = AppState(loading = false, setupComplete = true,
-        actualConnection = LinkState.Ready(HostRoute.Direct), plugins = PluginListing(emptyList(), emptyList()),
-        computers = listOf(Computer("fixture", "Fixture computer", "fixture-key")), hello = buildJsonObject {
+    private fun fixture(): AppState = AppState(Computer("fixture", "Fixture computer", "fixture-key"), loading = false,
+        actualConnection = LinkState.Ready(HostRoute.Direct), plugins = PluginListing(emptyList(), emptyList()), hello = buildJsonObject {
             put("backends", buildJsonArray {
                 add(buildJsonObject { put("id", "claude"); put("name", "Claude"); put("available", true) })
                 add(buildJsonObject { put("id", "codex"); put("name", "Codex"); put("available", false); put("installHint", "Install Codex on your computer.") })
             })
             put("screen", buildJsonObject { put("enabled", true) })
-        })
+        }, screen = ScreenState(enabled = true, computerUse = true))
 
     private fun snapshot(name: String) {
         if (InstrumentationRegistry.getArguments().getString("layoutSnapshots") != "true") return

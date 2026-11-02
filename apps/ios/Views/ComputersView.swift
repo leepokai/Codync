@@ -169,7 +169,7 @@ private struct ComputerRows: View {
                     .buttonStyle(.plain)
             }
             if showsNetwork {
-                Button { networkSheet = true } label: { RowLabel("Network", systemImage: Self.networkIcon, chevron: true) }
+                Button { networkSheet = true } label: { RowLabel("Network", image: .codyncNetwork, chevron: true) }
                     .buttonStyle(.plain)
             }
         }
@@ -217,7 +217,7 @@ private struct ComputerRows: View {
                 items.append(MenuItem("Screen", icon: "display", action: openScreen))
             }
             if store.connection == .online, showsNetwork {
-                items.append(MenuItem("Network", icon: Self.networkIcon) { networkSheet = true })
+                items.append(MenuItem("Network", image: .codyncNetwork) { networkSheet = true })
             }
             if let revoke {
                 items.append(MenuItem("Revoke this iPhone's access", icon: "lock.slash", destructive: true, divider: true, action: revoke))
@@ -273,8 +273,6 @@ private struct ComputerRows: View {
     }
 
     private var preference: ConnectionRoute { store.computer.route ?? .automatic }
-
-    private static let networkIcon = "point.3.connected.trianglepath.dotted"
 
     /// In a network of the user's computers, or cloud assistants on (hosts before it say nothing).
     private var showsNetwork: Bool { store.network?.hasContent == true }

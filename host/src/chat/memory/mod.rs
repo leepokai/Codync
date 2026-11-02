@@ -16,7 +16,7 @@ pub mod turns;
 pub use api::call;
 pub use dates::ymd;
 pub use dream::{DreamEvent, spawn_dreamer};
-pub use import::import_old_memory;
+pub use import::{add_facts, import_old_memory};
 pub use tools::{INSTRUCTIONS, call as tool_call, tools};
 
 use crate::hub::Hub;

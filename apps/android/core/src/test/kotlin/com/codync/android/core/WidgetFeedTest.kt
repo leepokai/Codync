@@ -8,7 +8,27 @@ class WidgetFeedTest {
         val bots = listOf(Bot("idle", "Idle"), Bot("hidden", "Hidden", hidden = true),
             Bot("deleted", "Deleted", deleted = true), Bot("working", "Working", status = "working"),
             Bot("approval", "Approval", status = "needsInput"))
-        assertEquals(listOf("approval", "working", "idle"), widgetBots(bots).map { it.id })
+        assertEquals(listOf("approval", "working", "idle"), widgetBots(mapOf("mac" to bots)).map { it.id })
+    }
+
+    @Test fun `every computer's bots share one order and keep the computer they live on`() {
+        val bots = widgetBots(mapOf("mac" to listOf(Bot("a", "Mac idle"), Bot("b", "Mac working", status = "working")),
+            "linux" to listOf(Bot("a", "Linux approval", status = "needsInput"))))
+        assertEquals(listOf("linux/a", "mac/b", "mac/a"), bots.map { it.key })
+        // The same bot ID on two computers stays two spots.
+        assertEquals(listOf("mac/a", "linux/a", "mac/b", null), teamSlots(bots, listOf("mac/a", null, null, null)).map { it?.key })
+        // A pick saved before several computers (a bare bot ID) still holds its spot.
+        assertEquals(listOf("mac/b", "linux/a", "mac/a", null), teamSlots(bots, listOf("b", null, null, null)).map { it?.key })
+    }
+
+    @Test fun `an unreachable computer keeps the bots it showed and a forgotten one takes its bots along`() {
+        val shown = WidgetFeed(bots = listOf(WidgetBot("a", "Old", "idle", computerId = "mac"), WidgetBot("b", "Gone", "idle", computerId = "old"),
+            WidgetBot("c", "Stale", "idle", computerId = "linux")), botsAt = 5)
+        val next = shown.readingBots(listOf("mac" to null, "linux" to listOf(Bot("d", "New", status = "working"))), fresh = false, now = 9)
+        assertEquals(listOf("linux/d", "mac/a"), next.bots.map { it.key })
+        assertEquals(5L, next.botsAt)
+        assertEquals(9L, shown.readingBots(listOf("linux" to emptyList()), fresh = true, now = 9).botsAt)
+        assertTrue(shown.readingBots(emptyList(), fresh = true, now = 9).let { it.bots.isEmpty() && it.botsAt == 5L })
     }
 
     @Test fun `team spots keep picks, skip deleted ones and fill the rest in feed order`() {
@@ -35,5 +55,8 @@ class WidgetFeedTest {
         assertEquals("a", mostUrgentBot(bots)?.id)
         assertEquals("b", mostUrgentBot(bots.drop(1))?.id)
         assertNull(mostUrgentBot(bots.drop(2)))
+        // Two bots that need you equally: the most recent, pinned or not (iOS `mostUrgent`).
+        val tie = listOf(WidgetBot("pinned", "P", "needsInput", lastAt = 1), WidgetBot("recent", "R", "needsInput", lastAt = 2))
+        assertEquals("recent", mostUrgentBot(tie)?.id)
     }
 }

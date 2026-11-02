@@ -28,6 +28,7 @@ Key facts:
 - [codync-mem](https://www.codync.dev/codync-mem): the open-source Rust crate behind the bots' memory (Markdown files the bot keeps, and the rules for who may change them)
 - [Source code on GitHub](https://github.com/leepokai/Codync): README, install guide and docs
 - [Discord](https://discord.gg/KBAX3Qznxh): community, help and feedback
+- [WeChat community for China](https://www.codync.dev/wechat): Chinese-language discussion, help and feedback; join with regular WeChat by scanning the QR code
 - [User manual](https://www.codync.dev/docs): how to set up and use Codync, page by page
 - [Getting started](https://www.codync.dev/docs/getting-started)
 - [Bots](https://www.codync.dev/docs/bots) and [agents](https://www.codync.dev/docs/agents)

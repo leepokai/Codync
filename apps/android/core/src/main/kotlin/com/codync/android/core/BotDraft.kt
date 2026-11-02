@@ -18,7 +18,8 @@ data class BotDraft(
     val backend: String = "claude",
     val command: String? = null,
     val cwd: String = "",
-    val permission: String = "auto",
+    /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
+    val permission: String = "ask",
     val model: String? = null,
     val modelOptions: Map<String, String> = emptyMap(),
     val fastMode: Boolean? = null,
@@ -36,12 +37,16 @@ data class BotDraft(
     /** Null where the host has none, or on a new bot, so it isn't sent. */
     val offeredToNetwork: Boolean? = null,
     val reachableByAssistants: Boolean? = null,
+    /** The agent mode it works in ([AgentMode]); null, sent as null, keeps the agent's default. */
+    val mode: String? = AgentMode.AUTO,
 ) {
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
     fun toggleNotifications(): BotDraft = copy(notify = !(notify ?: true))
     /** On agent [id]: its model starts over, and it leaves the fallbacks (each agent appears once in the chain). */
-    fun withAgent(id: String): BotDraft = copy(backend = id, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id })
+    fun withAgent(id: String): BotDraft = copy(backend = id, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id },
+        // A picked mode becomes the new agent's Auto mode (or, without one, asking).
+        mode = mode?.let { AgentMode.AUTO })
     fun body(): JsonObject {
         val normalized = if (backend == "custom") this else copy(command = null)
         // updateBot merges a patch: null clears model, command or the connector choice, but an unset
@@ -75,6 +80,6 @@ data class BotDraft(
         fun from(bot: Bot): BotDraft = BotDraft(bot.id, bot.name, bot.description, bot.avatarColor, bot.avatarShape,
             bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.model,
             bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.manageTeam ?: false, bot.fallbacks, bot.selfFallbacks,
-            bot.offeredToNetwork, bot.reachableByAssistants)
+            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode)
     }
 }

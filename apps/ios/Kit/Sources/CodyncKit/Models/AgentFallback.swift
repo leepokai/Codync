@@ -88,6 +88,8 @@ public extension BotDraft {
         self.backend = backend
         model = nil
         modelOptions = [:]
+        // A picked mode becomes the new agent's Auto mode (or, without one, asking).
+        if mode != nil { mode = AgentMode.auto }
         fallbacks?.removeAll { $0.backend == backend }
     }
 }

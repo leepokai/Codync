@@ -23,12 +23,9 @@ extension AppStore {
 
     /// Waits for Clerk to restore the account first: an intent can run before the scene's userID observer.
     private func shortcutTarget(_ bot: ShortcutBotEntity) async throws -> (BotReference, BotStore) {
-        let deadline = ContinuousClock.now + .seconds(10)
-        while !account.isReady {
-            guard ContinuousClock.now < deadline else { throw HostError.unreachable }
-            try await Task.sleep(for: .milliseconds(100))
-        }
+        let ready = await account.waitUntilReady(timeout: .seconds(10))
         try Task.checkCancellation()
+        guard ready else { throw HostError.unreachable }
         switchAccount(to: account.userID)
         guard let ref = bot.reference(in: storage), let store = accounts.store(for: ref.computerId) else {
             throw ShortcutError.botUnavailable

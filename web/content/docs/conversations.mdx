@@ -32,6 +32,8 @@ If a message fails to send, it shows **Failed to send** with buttons to resend o
 
 On iPhone, sending clears the message box so you can type your next message. You can add text with dictation or switch to another chat's saved draft.
 
+**From another app (Android):** share text to Codync, pick a bot, and its chat opens with the text in the message box, after anything you had typed there. Nothing is sent until you send it.
+
 **From Shortcuts (iPhone):** Codync's **Send Text to Bot** action sends a message without typing it in the chat. Pick a **Bot** and fill in **Text**. **Open Chat** is off by default, so the message goes out in the background; turn it on to open the chat. The action finishes when the computer accepts the message, or reports it queued when the computer is offline. The iPhone has to be unlocked, also from Siri ("Send text with Codync"). Only the current account's visible bots are listed.
 
 ## Files
@@ -44,7 +46,7 @@ Use the **+** button left of the message box.
 
 A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's personal workspace, or in Codync's data folder for a bot that works in a project folder. The agent gets your message with the path of each file and reads them with its own tools.
 
-Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. To save a file:
+Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window. This also applies to images you send. To save a file:
 
 - **Desktop:** saves through the system Save dialog.
 - **iPhone:** opens the share sheet, including Save to Files.
@@ -56,7 +58,7 @@ A report or a tracker you'll come back to can come as an [artifact](/docs/artifa
 
 ## Approval cards
 
-When a bot's **Permissions** setting is **Ask me** and its agent wants to run a command, change files or use another tool, an approval card appears in the chat. It says what the agent wants ("Wants to run a command", "Wants to change files"…), the computer and folder it runs in, and **Details** with the command or the diff.
+When a bot's agent asks to run a command, change files or use another tool, an approval card appears in the chat, unless the bot's **Permissions** are **Approve automatically**. In the agent's Auto mode it asks only about what it won't decide on its own. It says what the agent wants ("Wants to run a command", "Wants to change files"…), the computer and folder it runs in, and **Details** with the command or the diff.
 
 The answers come from the agent, usually:
 
@@ -71,7 +73,7 @@ In the terminal UI, press `y` to allow once, `a` to always allow, `n` to reject,
 
 The agent waits for your answer. If the turn ends before you answer, for example because you stopped it, the card reads **Expired — the agent moved on**.
 
-With **Approve automatically**, no cards appear: Codync allows each request for you. Your agent's own permission rules still apply under either setting. To change the setting, see [Bots](/docs/bots#permissions-ask-me-or-approve-automatically).
+With **Approve automatically**, no cards appear: Codync allows each request for you. Your agent's own permission rules still apply under any setting. To change the setting, see [Bots](/docs/bots#permissions).
 
 ## Stopping a turn
 
@@ -150,7 +152,7 @@ When you send a message from the iPhone, a Live Activity for that bot appears on
 
 ## Usage limits
 
-Codync reads plan limits from the agents installed on your computer. Claude Code uses its usage report and status line. The signed-in Codex CLI reports current account limits without starting a conversation or model turn. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read the same way, from a command, a local database or an IDE file. Cursor has no usage command: Codync uses the sign-in Cursor saved on this computer and asks cursor.com for the summary. Nothing else is sent with an agent's login. To see them:
+Codync reads plan limits from the agents installed on your computer. Claude Code uses its usage report and status line. The signed-in Codex CLI reports current account limits without starting a conversation or model turn. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read the same way, from a command, a local database or an IDE file. Cursor has no usage command: Codync uses the sign-in saved by the Cursor app or CLI on this computer and asks Cursor's dashboard service for unified-plan usage, or cursor.com for a legacy-plan summary. Nothing else is sent with an agent's login. To see them:
 
 - **iPhone:** the **State** tab, then **Usage limits**. There's also a Usage widget.
 - **Desktop:** the menu bar or tray menu, or **Usage** in the account menu at the bottom of the sidebar.

@@ -85,7 +85,7 @@ internal object LiveUpdates {
  * The Live update and Status bar pages: one switch (the chip shows the same Live update), a
  * sample task in any phase, and what each presentation shows.
  */
-@Composable internal fun LiveUpdateGallery(state: AppState, store: AppStore?, chip: Boolean) {
+@Composable internal fun LiveUpdateGallery(app: AccountContext, accounts: AccountStore?, chip: Boolean) {
     val context = LocalContext.current
     val notifications = rememberOnResume { notificationsAllowed(context) }
     val promoted = rememberOnResume { LiveUpdates.promoted(context) }
@@ -93,7 +93,7 @@ internal object LiveUpdates {
     val started = remember { System.currentTimeMillis() - 154_000 }
     Column(Modifier.fillMaxWidth().clip(RoundedRectangle(20.dp)).background(Palette.surface).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        CodyncSwitch(state.tasks, { store?.taskNotifications(it) }) {
+        CodyncSwitch(app.tasks, { accounts?.taskNotifications(it) }) {
             Text(if (chip) "Show in the status bar" else "Show Live updates", style = Type.subheadline.medium, color = Palette.text)
         }
         Text(if (chip) "The status bar chip shows the same Live update as the Lock Screen, so this switch turns off both."

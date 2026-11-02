@@ -9,10 +9,10 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: October 26, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: October 31, 2026</p>
 
         <Section title="Overview">
-          Codync lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
+          Codync is made by Leeporic LLC (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
         </Section>
 
         <Section title="What stays on your devices">

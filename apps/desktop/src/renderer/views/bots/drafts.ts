@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { rebase } from '@shared/draft-rebase'
+import { AUTO_MODE } from '@shared/approvals'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { AVATAR_COLORS, AVATAR_SHAPES } from '../../lib/theme'
 import type { BotStore } from '../../store/bot-store'
@@ -28,9 +29,9 @@ export interface Plugins {
 
 const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)]!
 
-/** A fresh draft: a random look, Claude, a personal workspace, automatic approvals. */
+/** A fresh draft: a random look, Claude, a personal workspace, the agent's Auto mode asking about the rest. */
 export function newDraft(): BotDraft {
-  return { name: '', description: '', avatarColor: pick(AVATAR_COLORS).id, avatarShape: pick(AVATAR_SHAPES), backend: 'claude', cwd: '', permission: 'auto' }
+  return { name: '', description: '', avatarColor: pick(AVATAR_COLORS).id, avatarShape: pick(AVATAR_SHAPES), backend: 'claude', cwd: '', permission: 'ask', mode: AUTO_MODE }
 }
 
 /** A saved bot keeps a name; only a new one may go without (the host names it after its first conversations). */

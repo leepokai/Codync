@@ -4,6 +4,7 @@
 //! SAS. Which cloud this host uses lives in `cloud_url`, the relay socket in `relay`.
 
 use crate::LockExt;
+use crate::chat::team::assistant;
 use crate::hub::Hub;
 use crate::remote::crypto::{self, b64};
 use crate::store::{Device, DeviceSource, Scope, Store, now_ms};
@@ -331,11 +332,16 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
+    let in_account = state.owner.is_some();
     // A pull that works also settles an earlier failed one.
     update_status(hub, |s| {
         s.owner = state.owner;
         s.last_error = None;
     });
+    // Out of an account, cloud assistants go off: the account this computer joins next is asked again.
+    if !in_account && assistant::enabled(&hub.store) {
+        assistant::set_enabled(hub, false)?;
+    }
     sync_requests(hub, base, state.requests).await;
     if approval(&hub.store) == Approval::Auto {
         // The SAS exchange still runs (the device's commit must match); only the user's comparison is skipped.
@@ -784,6 +790,19 @@ mod tests {
         update_status(&hub, |s| s.last_error = Some("couldn't get the cloud state".into()));
         pull(&hub, &base).await.unwrap();
         assert_eq!(hub.cloud.status().last_error, None, "Settings stops showing a relay error that's gone");
+    }
+
+    #[tokio::test]
+    async fn leaving_the_account_turns_cloud_assistants_off() {
+        let hub = temp_hub();
+        let fake = Arc::new(FakeCloud::default());
+        let base = fake_cloud(fake.clone()).await;
+        *fake.state.lock().unwrap() = json!({"owner": {"userId": "user_1"}, "grants": [], "requests": []});
+        pull(&hub, &base).await.unwrap();
+        assistant::set_enabled(&hub, true).unwrap();
+        *fake.state.lock().unwrap() = json!({"owner": null, "grants": [], "requests": []});
+        pull(&hub, &base).await.unwrap();
+        assert!(!assistant::enabled(&hub.store) && !hub.cloud.status().assistants, "the next account is asked again");
     }
 
     #[tokio::test]

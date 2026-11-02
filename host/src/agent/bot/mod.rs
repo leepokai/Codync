@@ -24,6 +24,7 @@ mod fast_mode;
 mod files;
 mod launch;
 mod lifecycle;
+mod modes;
 mod queue;
 mod session;
 mod tool_entry;
@@ -183,6 +184,9 @@ pub(crate) struct Conn {
     opening: bool,
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
+    /// Each live session's modes, as the agent last listed them, and the sessions already switched to the bot's.
+    modes: HashMap<String, crate::agent::modes::Modes>,
+    mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
     /// Each session's context use and window size at its last `usage_update`.

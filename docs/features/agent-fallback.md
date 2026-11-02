@@ -45,7 +45,9 @@ What their issues taught, and the answer here:
 - Each agent appears once, the bot's own included. Making a fallback the bot's own agent drops it from the list
   (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode
-  where the step's agent has it (`fallback::effective`).
+  where the step's agent has it (`fallback::effective`). Its mode too ([agent modes](marketplace.md#agent-modes)):
+  `auto` is each step's own Auto mode, and a step whose agent lacks any other mode fails the turn rather than work in
+  its default.
 
 ## When the bot moves on (`fallback::reason`)
 

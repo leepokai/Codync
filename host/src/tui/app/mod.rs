@@ -1,12 +1,14 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
 mod analytics;
+mod approvals;
 mod bot;
 mod editor;
 mod events;
 mod exchange;
 mod fallbacks;
 mod forms;
+mod group_form;
 mod input;
 mod model;
 mod navigate;
@@ -18,6 +20,7 @@ mod slash;
 mod steps;
 mod ui;
 
+pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
@@ -125,6 +128,8 @@ pub struct App {
     pub models: HashMap<String, Option<Vec<AgentModel>>>,
     /// Agents whose model list came with Fast mode.
     pub fast_mode: HashSet<String>,
+    /// The modes each agent's model list came with.
+    pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
@@ -202,6 +207,7 @@ impl App {
             plugins: (vec![], vec![]),
             models: HashMap::new(),
             fast_mode: HashSet::new(),
+            modes: HashMap::new(),
             shell: None,
             reading: HashSet::new(),
             shown_chat: None,

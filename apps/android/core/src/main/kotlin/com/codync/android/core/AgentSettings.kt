@@ -8,8 +8,10 @@ import kotlinx.serialization.Serializable
 }
 @Serializable data class ModelOptionValue(val id: String, val name: String)
 @Serializable data class AgentModel(val id: String, val name: String, val description: String? = null, val options: List<ModelOption>? = null, val optionsError: String? = null)
-/** `fastMode`: the agent offers Fast mode (absent on older hosts). */
-@Serializable data class AgentModels(val models: List<AgentModel>, val currentModelId: String? = null, val fastMode: Boolean? = null, val defaultModelOptions: Boolean? = null) {
+/** `fastMode`: the agent offers Fast mode (absent on older hosts). `modes`: its modes, Auto first and listed as `auto`
+ *  (absent on older hosts). */
+@Serializable data class AgentModels(val models: List<AgentModel>, val currentModelId: String? = null, val fastMode: Boolean? = null, val defaultModelOptions: Boolean? = null,
+    val modes: List<AgentMode>? = null) {
     val agentDefault: AgentModel? get() = models.firstOrNull { it.name.lowercase().startsWith("default") }
     fun options(selected: String?): List<ModelChoice> {
         val default = agentDefault

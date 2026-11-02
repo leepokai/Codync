@@ -76,7 +76,7 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 - **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own.
 - **One thing at a time.** A bot runs one routine at a time, and routine runs take turns with your conversation. A message you send during a run waits until the run ends.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
-- **Approvals.** If the bot's **Permissions** are **Ask me**, a run that needs approval waits for you on a card in the chat, within its timeout.
+- **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.
 
 ## Failed runs and retries
 

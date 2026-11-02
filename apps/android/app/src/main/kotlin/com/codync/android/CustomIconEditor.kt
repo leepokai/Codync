@@ -15,31 +15,24 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.*
 import com.codync.android.design.*
 
-internal val LocalAgentIconOverrides = staticCompositionLocalOf<Map<String, CustomIcon>> { emptyMap() }
-
-internal fun agentIconOverrides(state: AppState): Map<String, CustomIcon> = buildMap {
-    for (agent in agentBackends(state)) state.icons["agent:${agent.id}"]?.let { icon ->
-        put(agent.id, icon)
-        agent.registry?.let { put(it, icon) }
-    }
-}
-
 @Composable internal fun CustomIconEditor(target: String, state: AppState, store: AppStore) {
     if (state.hello?.containsKey("icons") != true) return
     var needsSignIn by remember { mutableStateOf(false) }
-    val requireAccount: (() -> Unit) -> Unit = { action -> if (state.account.userId != null) action() else needsSignIn = true }
+    val accounts = LocalAccounts.current
+    val account = accounts?.state?.collectAsState()?.value
+    val requireAccount: (() -> Unit) -> Unit = { action -> if (account?.account?.userId != null) action() else needsSignIn = true }
     var url by remember(target) { mutableStateOf("") }
     var showURL by remember(target) { mutableStateOf(false) }
     val icon = state.icons[target]
     val busy = "icon:$target" in state.busy
-    val enabled = !busy && state.account.ready && "session" !in state.busy && state.actualConnection is LinkState.Ready
+    val enabled = !busy && account?.account?.ready == true && "session" !in account.busy && state.actualConnection is LinkState.Ready
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { requireAccount { store.setIcon(target, file = it) } }
     }
     CodyncDialog("Sign in required", needsSignIn, { needsSignIn = false }, message = "Sign in to use custom images.") {
         listOf(
-            DialogAction("Continue with Apple") { store.signIn(SignInProvider.Apple) },
-            DialogAction("Continue with Google") { store.signIn(SignInProvider.Google) },
+            DialogAction("Continue with Apple") { accounts?.signIn(SignInProvider.Apple) },
+            DialogAction("Continue with Google") { accounts?.signIn(SignInProvider.Google) },
         )
     }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {

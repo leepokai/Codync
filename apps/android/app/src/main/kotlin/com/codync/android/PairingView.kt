@@ -75,7 +75,7 @@ private enum class ComputerOS { Mac, Linux }
  * Pair with a computer running codync-host, one thing per page: install it, then scan its code
  * (iOS `PairingView`). In a sheet it has a close button and closes once paired.
  */
-@Composable internal fun PairingView(state: AppState, store: AppStore, inModal: Boolean = false, onSkip: () -> Unit = {},
+@Composable internal fun PairingView(state: AccountContext, store: AccountStore, inModal: Boolean = false, onSkip: () -> Unit = {},
     leading: @Composable RowScope.() -> Unit = {}) {
     var step by rememberSaveable { mutableStateOf(Step.Install) }
     var os by rememberSaveable { mutableStateOf(ComputerOS.Mac) }
@@ -192,7 +192,7 @@ private enum class ComputerOS { Mac, Linux }
 
 // MARK: - Scan
 
-@Composable private fun ScanPage(state: AppState, store: AppStore, os: ComputerOS, paired: () -> Unit) {
+@Composable private fun ScanPage(state: AccountContext, store: AccountStore, os: ComputerOS, paired: () -> Unit) {
     val uri = LocalUriHandler.current
     var pasted by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }

@@ -2,6 +2,9 @@ package com.codync.android
 
 import android.net.Uri
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.codync.android.core.*
@@ -17,6 +20,18 @@ fun AppStore.editDraft(botId: String, text: String) {
     if (current?.text == text || current == null && text.isEmpty()) return
     try { updateDraft((current ?: ComposerDraft(botId)).copy(text = text)) }
     catch (error: Exception) { showError(error) }
+}
+
+/** Puts [text] after what's in [botId]'s message box (text shared from another app), as much of it as the box holds. */
+fun AppStore.appendDraft(botId: String, text: String) = editDraft(botId, sharedDraft(state.value.drafts[botId]?.text.orEmpty(), text))
+
+/** [shared] after [before], cut at a character's edge to the most a draft holds (`DraftBook.TEXT_BYTES` of UTF-8). */
+internal fun sharedDraft(before: String, shared: String): String {
+    val joined = DictationText.join(before, shared)
+    val input = CharBuffer.wrap(joined)
+    // The encoder stops before the first character that doesn't fit, never inside one; a lone surrogate counts as the '?' it's saved as.
+    Charsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPLACE).encode(input, ByteBuffer.allocate(DraftBook.TEXT_BYTES), true)
+    return joined.substring(0, input.position())
 }
 
 fun AppStore.addDraftFiles(botId: String, files: List<OutgoingFile>) {

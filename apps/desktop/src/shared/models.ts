@@ -21,8 +21,11 @@ export interface Bot {
   cwd: string
   /** Host-allocated personal workspace rather than a user-selected project. */
   managedWorkspace: boolean
-  /** `ask` or `auto`. */
+  /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
+  /** The agent mode it works in (Claude's Manual / Plan / Auto…): the agent's id, or `auto` for its Auto mode under
+   *  any id. Null keeps the agent's default. */
+  mode: string | null
   model?: string | null
   /** The model's own settings (effort, fast…): agent option id → value. */
   modelOptions: Record<string, string>
@@ -98,7 +101,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     command: raw.command ?? null,
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
-    permission: raw.permission ?? 'auto',
+    permission: raw.permission ?? 'ask',
+    mode: raw.mode ?? null,
     model: raw.model ?? null,
     modelOptions: raw.modelOptions ?? {},
     fastMode: raw.fastMode ?? false,
@@ -600,6 +604,8 @@ export interface BotDraft {
   command?: string | null
   cwd: string
   permission: string
+  /** Null for the agent's default: sent as is, so the host clears it. */
+  mode?: string | null
   model?: string | null
   modelOptions?: Record<string, string>
   fastMode?: boolean
@@ -631,6 +637,7 @@ export function draftOf(bot: Bot): BotDraft {
     command: bot.command ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
+    mode: bot.mode,
     model: bot.model ?? null,
     modelOptions: bot.modelOptions,
     fastMode: bot.fastMode,

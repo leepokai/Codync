@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ["/free-ai-agent-app", 0.9],
     ...agentPages.map((a): [string, number] => [`/${a.slug}`, 0.8]),
     ["/codync-mem", 0.7],
+    ["/wechat", 0.5],
     ["/docs", 0.8],
     ...docPages.map((p): [string, number] => [`/docs/${p.slug}`, 0.6]),
     ["/privacy", 0.2],

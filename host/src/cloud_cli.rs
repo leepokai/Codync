@@ -1,6 +1,6 @@
 //! `codync-host cloud`: the relay this computer uses, its registration token and account approval.
 
-use crate::local_call;
+use crate::local_api::local_call;
 use anyhow::Result;
 use serde_json::json;
 
@@ -20,7 +20,7 @@ pub struct CloudArgs {
     approval: Option<String>,
     /// Whether the cloud assistant (ChatGPT, Claude…) you connect to Codync through
     /// mcp.codync.dev may message this computer's bots: `on` or `off` (the default). Its calls
-    /// reach this computer through the cloud unencrypted.
+    /// reach this computer through the cloud unencrypted. `on` needs this computer in a Codync account.
     #[arg(long, value_parser = ["on", "off"])]
     assistants: Option<String>,
     /// Cloud base URL for this computer. `https://…`, or `http://127.0.0.1` / `localhost` for a relay on this machine.
@@ -53,14 +53,15 @@ pub async fn run(args: CloudArgs) -> Result<()> {
         }
         status = Some(local_call(port, "setCloudUrl", body).await?);
     }
+    // Before the account settings, so a refused one doesn't keep the cloud from turning on.
+    if enable || disable {
+        status = Some(local_call(port, "setCloud", json!({"enabled": !disable})).await?);
+    }
     if let Some(approval) = approval {
         status = Some(local_call(port, "setApproval", json!({ "approval": approval })).await?);
     }
     if let Some(assistants) = assistants {
         status = Some(local_call(port, "setAssistants", json!({ "enabled": assistants == "on" })).await?);
-    }
-    if enable || disable {
-        status = Some(local_call(port, "setCloud", json!({"enabled": !disable})).await?);
     }
     let status = match status {
         Some(status) => status,

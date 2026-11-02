@@ -89,11 +89,15 @@ impl Actor {
                     || memory_changed;
                 // Live sessions switch before their next turn (see `fast_mode`).
                 let fast_changed = cfg.fast_mode != self.cfg.fast_mode;
+                let mode_changed = cfg.mode != self.cfg.mode;
                 // Name, description and skill changes reach the agent as a profile update
                 // on the next message (see `context`).
                 self.cfg = cfg;
                 if fast_changed {
                     self.fast_mode_changed();
+                }
+                if mode_changed {
+                    self.mode_changed();
                 }
                 if memory_changed {
                     // Claude Code's notes come or go on the memory screen.

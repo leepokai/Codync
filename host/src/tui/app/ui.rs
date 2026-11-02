@@ -232,7 +232,9 @@ pub struct Form {
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
     pub cwd: String,
+    /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
+    pub mode: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// `None`: the host has no Manage the team.

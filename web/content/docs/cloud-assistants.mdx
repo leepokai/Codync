@@ -8,7 +8,7 @@ Cloud assistants are off on every computer until you turn them on there, at the 
 - **Terminal UI:** `N` opens the network sheet; `a` switches **Cloud assistants** (shown once the computer is in your Codync account).
 - **Command line:** `codync-host cloud --assistants on` (`off` turns it off; `codync-host cloud` shows it as `assistants: on`). On a Mac where you installed the app from the disk image rather than with Homebrew, `codync-host` is inside the app: `/Applications/Codync.app/Contents/Resources/codync-host`.
 
-The switch carries the same warning as [Privacy](#privacy) below: Codync's cloud can read these calls. Phones show whether it's on (**Network** on the computer's card in **Manage computers**) but can't change it. The computer has to be in your Codync account (signed in) and use the Codync relay.
+The switch carries the same warning as [Privacy](#privacy) below: Codync's cloud can read these calls. Phones show whether it's on (**Network** on the computer's card in **Manage computers**) but can't change it. The switch turns on only while the computer is in your Codync account (signed in) and uses the Codync relay, and it turns off if the computer leaves the account.
 
 To keep one bot away from cloud assistants while they're on, turn off **Reachable by cloud assistants** in its settings.
 
@@ -37,7 +37,7 @@ In the bot's chat, the request shows as a row saying **Message from Cloud assist
 
 - **The computer needs Codync 2.28.0 or later.** An older one doesn't answer the assistant.
 - **Turned on at the computer.** The desktop app, the terminal UI or `codync-host` changes it; phones only show it.
-- **Only through computers in your Codync account that use the Codync relay.** A computer that uses your own relay can't be reached directly. Through one that can, the assistant also reaches the bots your other computers offer in your [network of computers](/docs/teamwork#bots-on-your-other-computers), as `name@computer`; each of those computers decides with its own rules, its Cloud assistants switch and each bot's **Reachable by cloud assistants** whether it takes the message.
+- **Only through computers in your Codync account that use the Codync relay.** A computer that uses your own relay can't be reached directly. Through one that can, the assistant also reaches the bots your other computers offer in your [network of computers](/docs/teamwork#bots-on-your-other-computers), as `name@computer`; each of those computers decides with its own rules, its Cloud assistants switch and each bot's **Reachable by cloud assistants** whether it takes the message, so it has to be in your Codync account too.
 - **No hidden bots or group chats.** The assistant sees the same bots another bot can message.
 - **It can't be told when a reply is ready.** A hosted assistant only acts when you write to it, so ask it to check on the task later.
 - **Replies don't last.** The computer keeps the newest 50 requests, at most 16 of them running at once, and forgets them all when Codync restarts.

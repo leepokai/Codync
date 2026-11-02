@@ -99,6 +99,7 @@ const bridge: CodyncBridge = {
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
     pickFiles: async () => [],
+    pickExport: async () => null,
     readClipboardFiles: async () => [],
     setTraySummary() {},
     onCommand: none,

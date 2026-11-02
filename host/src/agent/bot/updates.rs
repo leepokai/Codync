@@ -39,6 +39,11 @@ impl Actor {
                 {
                     self.note_options(sid, &params["update"], Listing::Update);
                 } else if method == "session/update"
+                    && params["update"]["sessionUpdate"] == "current_mode_update"
+                    && let Some(sid) = params["sessionId"].as_str()
+                {
+                    self.note_current_mode(sid, params["update"]["currentModeId"].as_str());
+                } else if method == "session/update"
                     && params["sessionId"].as_str() == self.turn_session.as_deref()
                     && self.turn.is_some()
                 {

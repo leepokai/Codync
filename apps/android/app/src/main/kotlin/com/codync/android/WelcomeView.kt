@@ -54,7 +54,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.sin
 
 /** First launch, before any setup: who the bots are, a glimpse of talking to one, one way forward (iOS `WelcomeView`). */
-@Composable internal fun WelcomeView(state: AppState, store: AppStore, start: () -> Unit) {
+@Composable internal fun WelcomeView(state: AccountContext, store: AccountStore, start: () -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Welcome))
     val still = reduceMotion()
     // 0 = nothing yet … 4 = everything shown. Each beat enters in turn.
@@ -158,7 +158,7 @@ private val CREW = listOf(
 }
 
 /** Equal access to both account providers at every sign-in entry point (iOS `SignInButtons`). */
-@Composable internal fun SignInButtons(state: AppState, store: AppStore) {
+@Composable internal fun SignInButtons(state: AccountContext, store: AccountStore) {
     val busy = "session" in state.busy
     val enabled = state.account.ready && !busy
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {

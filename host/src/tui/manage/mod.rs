@@ -183,7 +183,6 @@ pub struct AgentSetup {
 }
 
 pub enum SetupRow {
-    Icon,
     Install,
     Node,
     Login,

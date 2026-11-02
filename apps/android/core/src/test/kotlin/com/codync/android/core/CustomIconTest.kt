@@ -10,7 +10,7 @@ class CustomIconTest {
         val event = MirrorEvent.decode(WireJson.parseToJsonElement("""{"type":"icons","icons":{"bot:b":{"dataUrl":"data:image/png;base64,iVBORw0KGgo=","tinted":false}}}""").jsonObject) as MirrorEvent.Icons
         val icon = event.icons.getValue("bot:b")
         assertFalse(icon.tinted)
-        val bots = widgetBots(listOf(Bot("b", "Scout", customIcon = icon)))
+        val bots = widgetBots(mapOf("mac" to listOf(Bot("b", "Scout", customIcon = icon))))
         assertEquals(icon, bots.single().customIcon)
         val cleared = MirrorEvent.decode(WireJson.parseToJsonElement("""{"type":"icons","icons":{}}""").jsonObject) as MirrorEvent.Icons
         assertTrue(cleared.icons.isEmpty())
@@ -31,7 +31,7 @@ class CustomIconTest {
     @Test fun widgetFeedBudgetAcceptsAll128MaximumIconsAnd256BotSummaries() {
         val maximum = CustomIcon("data:image/png;base64," + "A".repeat(65_536), true)
         val bots = (0 until 256).map { Bot("bot-$it", "n".repeat(256), customIcon = maximum.takeIf { _ -> it < 128 }) }
-        val bytes = WireJson.encodeToString(WidgetFeed(bots = widgetBots(bots))).toByteArray()
+        val bytes = WireJson.encodeToString(WidgetFeed(bots = widgetBots(mapOf("mac" to bots)))).toByteArray()
         assertTrue("The old limit would reject supported icons", bytes.size > 512 * 1024)
         assertTrue("All supported icons must fit", bytes.size <= MAX_WIDGET_FEED_BYTES)
     }

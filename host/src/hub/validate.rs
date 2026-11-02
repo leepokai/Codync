@@ -22,5 +22,9 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
     {
         bail!("unknown backend {}", cfg.backend);
     }
+    // An id the agent listed (`agent::modes`), sent back to it as is.
+    if cfg.mode.as_deref().is_some_and(|m| m.trim().is_empty() || m.len() > 64) {
+        bail!("mode must be one of the agent's mode ids, or null for its default");
+    }
     crate::agent::fallback::check(cfg)
 }

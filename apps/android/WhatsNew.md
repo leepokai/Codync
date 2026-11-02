@@ -7,9 +7,25 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.33.5
+## 2.34.0
 ### zh-Hant
-- 用量上限現在標示已用比例，例如「已用 62%」，不會再誤以為是剩餘量。Antigravity 的 Gemini 上限改名為「Gemini 5h」與「Gemini 7d」。
+- 可以配對多台電腦：Bots 每台電腦一個標題，頂端選單可篩選要顯示的電腦。
+- Bot 詳情新增「記憶」頁。
+- 訊息框加入聽寫：裝置上辨識，或用你自己的 OpenAI／Gemini 金鑰轉錄。
+- 新對話交接卡片可以保留原對話或編輯交接內容。
+- 通話以來電樣式通知，可直接掛斷或靜音；新增 Claude Code、Codex 用量小工具。
+- 設定加入「在 Google Play 評分」與「回報問題」；有新版本時會提醒。
+- 長按 App 圖示選「Talk to Codync」直接和 lead bot 通話；從其他 App 分享文字可送到 bot 的訊息框。
+- 掃描配對 QR code 更容易對焦。
+- 自訂圖示現在只用在 bot 上；只用 Cursor CLI 登入時也能看到 Cursor 用量。
+- 「權限」列出代理程式自己的模式；新 bot 預設 Auto，安全的直接做，其餘才問你。
 
 ### en-US
-- Usage limits now say how much is used, such as "62% used", so they no longer read as what's left. Antigravity's Gemini limits are now named "Gemini 5h" and "Gemini 7d".
+- Pair several computers, each with a heading in Bots.
+- Bot details gain a Memory page; keep or edit a new chat's handoff.
+- Dictate on device or with your own OpenAI or Gemini key.
+- Android-style calls; Claude Code and Codex usage widgets.
+- Talk to Codync (icon shortcut) calls your lead; share text to bots.
+- Rate the app, report issues, update notes; easier QR focus.
+- Custom icons are for bots only; Cursor usage shows with a CLI sign-in.
+- New bots start in your agent's Auto mode.

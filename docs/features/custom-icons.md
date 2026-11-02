@@ -1,13 +1,19 @@
-# Custom agent and bot icons
+# Custom bot icons
 
 Issue: [#114](https://github.com/leepokai/Codync/issues/114).
 
 The host owns image import and persistence (`host/src/icons/`). Clients send `setIcon`
-with `target: "agent:<backend-id>"` or `"bot:<bot-id>"` and either standard-base64
+with `target: "bot:<bot-id>"` and either standard-base64
 `data`, an HTTPS `url`, a `tinted` flag, or `remove: true`. Changes save immediately;
 they are separate from a bot's draft settings. Authorized control devices may use it;
 pairing-only and screen-only devices may not. The terminal reads its local file before
 calling the API; remote clients cannot make the host read a local path.
+
+Agents keep their bundled logos: the host rejects any other target, and the cleanup loop
+removes icons that 2.33.2–2.33.6 saved for agents. Their R2 slot is deleted when the cloud
+allows it; the local entry goes either way (the slot is overwritten when reused). Clients from
+2.33.2–2.33.6 still show an agent Custom icon card, whose changes would fail with "Only bots have
+custom icons", so 2.34.0 raises `MIN_APP` to 2.34.0 ([floor history](../reference/compatibility.md#floor-history)).
 
 ## Limits and validation
 
@@ -37,8 +43,8 @@ and reconnect use the persistent host cache and do not make R2 GET requests.
 Snapshots carry a monotonic revision; clients ignore delayed older replies/events before updating their local caches.
 
 An R2 write must succeed before replacing the local icon. Failed imports keep the previous
-cache; color-only changes need no R2 write. Removal deletes R2 first. Deleted bots' slots
-are swept in small batches, retrying failed cleanup each minute. Account deletion revokes device access and blocks
+cache; color-only changes need no R2 write. Removal deletes R2 first. Slots whose target is no longer
+a live bot are swept in small batches, retrying failed cleanup each minute. Account deletion revokes device access and blocks
 new writes before removing encrypted images, then finishes unclaiming computers; an R2 error
 leaves ownership available for webhook retry. Unclaiming alone retains the encrypted cache
 for the same computer identity; it cannot read/write R2 while unclaimed.

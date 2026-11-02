@@ -99,6 +99,15 @@ function dotIcon(online: boolean) {
   })
 }
 
+/** The Network row's codync-network mark: black for a macOS template image, else the menu's text color. */
+function networkIcon() {
+  return canvasImage('network', 16, 16, (ctx) => {
+    ctx.scale(16 / 24, 16 / 24)
+    ctx.fillStyle = !isMac && isDark() ? '#FFFFFF' : '#000000'
+    ctx.fill(fallbackPath('codync.network'))
+  })
+}
+
 /** The actions' icons for Windows and Linux menus, from the same fallbacks the app's icons use there. */
 function symbolIcons(): TraySummary['symbols'] {
   if (isMac) return null
@@ -189,6 +198,7 @@ export function useTraySummary(app: AppModel) {
             }
           : null,
         networks: networkLines(local?.network),
+        networkIcon: networkIcon(),
         symbols: symbolIcons(),
         needsAttention: app.needsAttention,
         textSize,

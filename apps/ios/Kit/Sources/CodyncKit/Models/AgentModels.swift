@@ -33,4 +33,6 @@ public struct AgentModels: Decodable, Sendable {
     /// The agent offers Fast mode (absent on older hosts).
     public let fastMode: Bool?
     public let defaultModelOptions: Bool?
+    /// The agent's modes, its Auto mode first and listed as `auto` (nil from older hosts).
+    public let modes: [AgentMode]?
 }

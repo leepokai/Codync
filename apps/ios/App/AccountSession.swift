@@ -39,6 +39,14 @@ final class AccountSession {
     /// Clerk restores the persisted Keychain session during configuration. Don't offer a fresh sign-in
     /// until that restore has completed, or an update can briefly look like a signed-out install.
     var isReady: Bool { clerk?.isLoaded ?? true }
+    /// Waits up to `timeout` for that restore; false when it didn't finish in time or the task was cancelled.
+    func waitUntilReady(timeout: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while !isReady, !Task.isCancelled, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return isReady
+    }
     /// The Codync cloud (accounts and the encrypted relay); nil in builds without one.
     let cloudURL: URL?
     var isSignedIn: Bool { userID != nil }
@@ -66,6 +74,21 @@ final class AccountSession {
             telemetryEnabled: false,
             redirectConfig: .init(redirectUrl: "\(scheme)://callback", callbackUrlScheme: scheme)
         ))
+        if key.hasPrefix("pk_test_"), let ticket = env["CODYNC_DEV_SIGN_IN_TICKET"], !ticket.isEmpty {
+            Task { await signInForDevelopment(ticket: ticket) }
+        }
+    }
+
+    /// A worktree's simulator signs into its sandbox's Clerk test account with a one-time token from
+    /// `npm run phone-account`, as the desktop sandbox does; only against Clerk's development instance, and only while signed out.
+    private func signInForDevelopment(ticket: String) async {
+        guard let clerk, await waitUntilReady(timeout: .seconds(20)), !isSignedIn else { return }
+        do {
+            let signIn = try await clerk.auth.signInWithTicket(ticket)
+            if let session = signIn.createdSessionId { try await clerk.auth.setActive(sessionId: session) }
+        } catch {
+            errorMessage = "Couldn't sign in to the test account: \(error.localizedDescription)"
+        }
     }
 
     /// The signed-in session's JWT for the Codync cloud (Clerk caches it for a minute).

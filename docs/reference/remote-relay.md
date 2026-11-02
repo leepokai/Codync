@@ -88,7 +88,7 @@ See [architecture](../architecture/overview.md) and [file structure](../architec
 - 桌面 App（`apps/desktop/src/main/cloud.ts`）：每個帳號一把 Ed25519 device key，seed 以 Electron `safeStorage`（OS keychain）加密後存在 app 的 userData 目錄；只用於雲端 `/v1` API 的 `Codync-Sig`。
 - iOS App、Widgets、NotificationService 共用 access group `$(AppIdentifierPrefix)com.pokai.Codync`（`project.yml` 對這三個 target 加 `keychain-access-groups` entitlement；`CodyncKit` 從 Info.plist `CodyncKeychainGroup` 讀 group，缺值則不設 group）。
 - 私鑰永不離開 Keychain／process；雲端只存公鑰。
-- 帳號登出：先在 Clerk 登出（失敗就什麼都不變）。成功後只停通知、保留金鑰：連得到的電腦呼叫 `unregisterDevice` 刪掉 push tickets；雲端 `POST /v1/devices/sign-out`（用登出前先取的 session token）標記這台裝置已登出，帳號的其他電腦下次拉 `/v1/host/state` 時依 `signedOut` 刪掉它的 push tickets。各自最多數秒、失敗不擋登出。該 context 的 device key、computers、草稿都留著，同一帳號登回來直接連上（`POST /v1/devices` 清掉標記）。**Start over**／刪除帳號才交還金鑰：連得到的電腦呼叫 `forgetDevice`（舊版 host 改呼叫 `unregisterDevice`），雲端 `DELETE /v1/devices/{id}`（刪除帳號由 `user.deleted` webhook 處理），再刪除 device key、computers 快取、mailbox 草稿、widget snapshot；Start over 連這支手機上登出過的帳號一起刪。刪除帳號先在 Clerk 刪除使用者，成功後才交還給電腦。
+- 帳號登出：先在 Clerk 登出（失敗就什麼都不變）。成功後只停通知、保留金鑰：連得到的電腦呼叫 `unregisterDevice` 刪掉 push tickets；雲端 `POST /v1/devices/sign-out`（用登出前先取的 session token）標記這台裝置已登出，帳號的其他電腦下次拉 `/v1/host/state` 時依 `signedOutDevices` 刪掉它在登出前登記的 push tickets。各自最多數秒、失敗不擋登出。該 context 的 device key、computers、草稿都留著，同一帳號登回來直接連上（`POST /v1/devices` 清掉標記）。**Start over**／刪除帳號才交還金鑰：連得到的電腦呼叫 `forgetDevice`（舊版 host 改呼叫 `unregisterDevice`），雲端 `DELETE /v1/devices/{id}`（刪除帳號由 `user.deleted` webhook 處理），再刪除 device key、computers 快取、mailbox 草稿、widget snapshot；Start over 連這支手機上登出過的帳號一起刪。刪除帳號先在 Clerk 刪除使用者，成功後才交還給電腦。
 - 有 Clerk 的 build 一律要求登入（[require sign-in](../plans/require-sign-in.md)）：`local` context 只留給沒有 Clerk 的 build，以及登入前遷移的來源。某個帳號 context 第一次使用時，若 `local` 有電腦或金鑰：該 context 在這支手機上是新的（沒有金鑰、沒有電腦）就整包搬過去，金鑰一起搬，電腦不用重新掃；已有自己的金鑰就只合併電腦清單，那些電腦會顯示需要重新配對。之後清掉 `local`（iOS `SharedStore.Context.adopt(from:)`、Android `LocalStore.adopt`）。
 
 ### 3.3 Per-(device, host) E2E 金鑰
@@ -519,9 +519,9 @@ The route table below summarizes the contract. Executable schema and validation 
   {"owner":{"userId":"user_…","email":"a@b.c"} | null,
    "grants":[{"grantId","deviceKey","deviceName","platform","scopes":["control","screen"]}],
    "requests":[{"requestId","deviceKey","deviceName","platform","email","commit","hostNonce"?,"deviceNonce"?,"createdAt","expiresAt"}],
-   "signedOut":["<deviceKey>"]}
+   "signedOutDevices":[{"deviceKey","signedOutAt"}]}
   ```
-  grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。`signedOut` 是電腦所屬帳號裡登出的裝置（未撤銷），host 刪掉它們的 push tickets，不動裝置列。
+  grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。`signedOutDevices` 是電腦所屬帳號裡登出的裝置（未撤銷）與登出時間（ms），host 只刪掉它們在那之前登記的 push tickets，不動裝置列：手機登回來後送來的新 ticket 可能比清掉標記的 `POST /v1/devices` 先到，要留著。
 - `POST /v1/host/access-requests/{id}/nonce` `{"nonce"}` → `{}`（`cloud/src/routes/host.ts`；已設過 → `409`）
 - `POST /v1/host/grants/{grantId}/revoke` `{}` → `{}`（host 在本機撤銷帳號來源裝置時同步 D1，`revoked_reason='owner'`；失敗記錄並存入 `grant_revokes` 重試，本機撤銷已生效）
 - `POST /v1/host/access-requests/{id}/decision` `{"decision":"approve"|"deny"}` → `{"status","grantId"?}`（`cloud/src/routes/host.ts` 的原子更新；request 過期 → `410 requestExpired`；approve 要求 `device_nonce IS NOT NULL`，否則 `409`）

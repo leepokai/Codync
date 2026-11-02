@@ -303,7 +303,14 @@ struct State {
     requests: Vec<StateRequest>,
     /// The account's phones that signed out: they keep their access, but get no alerts until they sign back in.
     #[serde(default)]
-    signed_out: Vec<String>,
+    signed_out_devices: Vec<SignedOut>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignedOut {
+    device_key: String,
+    signed_out_at: i64,
 }
 
 #[derive(Deserialize)]
@@ -341,8 +348,10 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
-    for device in &state.signed_out {
-        hub.store.remove_push_tickets(device)?;
+    // Only tickets from before signing out: the phone sends a new one on signing back in, which can arrive before
+    // the cloud hears of it.
+    for device in &state.signed_out_devices {
+        hub.store.remove_push_tickets_until(&device.device_key, device.signed_out_at)?;
     }
     super::owner::remember(hub, state.owner.as_ref())?;
     let in_account = state.owner.is_some();
@@ -815,11 +824,20 @@ mod tests {
         let base = fake_cloud(fake.clone()).await;
         hub.store.add_push_ticket("t1", "signed out", None, Some("ctx"), "iPhone").unwrap();
         hub.store.add_push_ticket("t2", "still in", None, Some("ctx"), "Pixel").unwrap();
-        *fake.state.lock().unwrap() =
-            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [], "signedOut": ["signed out"]});
+        let state = |at: i64| {
+            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [],
+                   "signedOutDevices": [{"deviceKey": "signed out", "signedOutAt": at}]})
+        };
+        *fake.state.lock().unwrap() = state(now_ms());
         pull(&hub, &base).await.unwrap();
-        let tickets: Vec<String> = hub.store.push_tickets().into_iter().map(|t| t.ticket).collect();
-        assert_eq!(tickets, ["t2"]);
+        let tickets = || hub.store.push_tickets().into_iter().map(|t| t.ticket).collect::<Vec<_>>();
+        assert_eq!(tickets(), ["t2"]);
+        // Signing back in: the new ticket can reach this computer before the cloud clears the mark.
+        let signed_out_at = now_ms() - 1;
+        hub.store.add_push_ticket("t3", "signed out", None, Some("ctx"), "iPhone").unwrap();
+        *fake.state.lock().unwrap() = state(signed_out_at);
+        pull(&hub, &base).await.unwrap();
+        assert_eq!(tickets(), ["t2", "t3"], "a ticket sent after signing out keeps its alerts");
     }
 
     #[tokio::test]

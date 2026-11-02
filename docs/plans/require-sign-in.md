@@ -49,7 +49,7 @@ Built in 2.35.0 as handing the key back; changed before release (2026-11-02) to 
 
 1. **Clerk:** sign out first. When that fails nothing below runs. The cloud call below needs a session token, so one is taken before (`CloudClient.pinningToken()`); it stays valid until it expires. The account's stores stay open until the steps below finish (`AppStore.leaving` on iOS, `transitions` on Android).
 2. **Computers this phone can reach:** `unregisterDevice` drops its push tickets (Android: closing each computer's store does it, `AppStore.retire`). The device stays.
-3. **Cloud:** `POST /v1/devices/sign-out` (Clerk + `Codync-Sig`) marks the device signed out and tells the account's computers to pull their state, whose `signedOut` lists it: each drops its push tickets. `POST /v1/devices`, which the phone sends with every refresh of the account's computers (opening the account, coming back to the foreground), clears the mark, so a failed one is retried. `CloudClient.signOutThisDevice()` and its Android twin.
+3. **Cloud:** `POST /v1/devices/sign-out` (Clerk + `Codync-Sig`) marks the device signed out and tells the account's computers to pull their state, whose `signedOutDevices` lists it with its sign-out time: each drops the push tickets registered up to then (a ticket sent after signing back in can arrive before `POST /v1/devices` clears the mark). The phone stops registering push before this call (iOS `PushRegistrar.deactivate()`, Android `PushDelivery.retire`), so no ticket from the phone that is signing out comes later. `POST /v1/devices`, which the phone sends with every refresh of the account's computers (opening the account, coming back to the foreground), clears the mark, so a failed one is retried. `CloudClient.signOutThisDevice()` and its Android twin.
 4. Switch context. The account's key, computers and drafts stay on the phone.
 
 The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable.
@@ -152,7 +152,7 @@ After either case the signed-out context is erased (on iOS except a mirror cache
 | Fresh install | The welcome shows only sign-in. Signing in leads to pairing, and a QR pair works |
 | Upgrade | With the previous build signed out, pair by QR. Install this build: the gate counts the computer. Sign in: the computer is there and connects without scanning, and push still arrives |
 | Merge case | Unit tests only: with sign-in required, a phone can't pair signed out any more, so this only happens to someone who was signed in on an older build and had also paired signed out (the older builds can't take the test sign-in ticket) |
-| Sign out | The computer keeps the phone but has no push ticket for it; the cloud's host state lists it in `signedOut`. Sign back in: it connects without a scan and registers push again |
+| Sign out | The computer keeps the phone but has no push ticket for it; the cloud's host state lists it in `signedOutDevices`. Sign back in: it connects without a scan and registers push again |
 | Delete account | The test user is gone in Clerk, and the computers leave the account (`--prune` cleans up) |
 | Desktop | Signed out shows the welcome with no skip. Sign out returns to it. Signed in to a second test account, the footer notice shows and reopens the move choice |
 

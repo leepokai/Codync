@@ -22,6 +22,10 @@ extension AppStore {
         leaving = true
         await account.signOut()
         if hasLeft(userID) {
+            // No push ticket goes out from here: a computer keeps one that reaches it after the account marks this
+            // iPhone signed out, taking it for one sent on signing back in.
+            accounts.onConnected = nil
+            PushRegistrar.shared.deactivate()
             await tell(computers: { try await $0.unregisterDevice() }, cloud: cloud, account: { try await $0.signOutThisDevice() })
         }
         finishLeaving()

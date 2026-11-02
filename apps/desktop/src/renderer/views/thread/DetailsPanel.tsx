@@ -13,6 +13,7 @@ import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { BotSettingsPanel } from '../bots/BotEditorView'
 import { BotAppsCard } from '../bots/BotAppsView'
+import { SkillProposalsCard } from '../bots/SkillProposalsCard'
 import { MemoryCard } from '../bots/MemoryView'
 import { DocumentsCard } from '../bots/DocumentsView'
 import { ComputerPanel } from '../bots/ComputerPanel'
@@ -78,7 +79,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
               ) : tab === 'library' ? (
                 <LibraryView botId={botId} openArtifact={openArtifact} />
               ) : tab === 'memory' ? (
-                <MemoryCard botId={botId} />
+                <><MemoryCard botId={botId} />{bot && !group ? <SkillProposalsCard botId={botId} /> : null}</>
               ) : tab === 'computer' ? (
                 <ComputerPanel key={`${store.contextId}:${store.computer.id}:${botId}`} botId={botId} />
               ) : tab === 'documents' && bot ? (

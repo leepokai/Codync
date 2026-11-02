@@ -29,7 +29,7 @@ card (desktop and Android), `SETUP_PROMPT.md`.
 | 11 | Computer health | done | see `git log` (`feat(host): computer health`) | real sampler and runaway-agent stop only tested with simulated readings; no screen seen; "ask before an expensive turn" not done (documented); iOS skipped; see `computer-health-report.md` |
 | 12 | Import agents | written, NOT compiled or run | see `git log` (`feat: import an agent`) | desktop only (phones cannot browse the agent's folder); a new small importer, not a copy of the 14 files; archives not read; gates pending; see `agent-import-report.md` |
 | 13 | Memory as beliefs | written, NOT compiled or run | see `git log` (`feat: memory as beliefs`) | per-note header only; terminal has no Undo button on the line; bot-tool test is weak; iOS skipped; gates pending; see `memory-beliefs-report.md` |
-| 14 | Proposed skills inbox | pending | | |
+| 14 | Proposed skills inbox | written, NOT compiled or run | see `git log` (`feat: proposed skills inbox`) | no real agent drafted one; count only in the inbox title; the terminal cannot edit a draft; iOS skipped; gates pending; see `skill-proposals-report.md` |
 | 15 | Demo mode | pending | | |
 | 16 | Branch close | pending | | |
 

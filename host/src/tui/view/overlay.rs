@@ -152,6 +152,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Rules(s) => super::rules::rules(buf, area, s),
         Overlay::Channels(s) => super::channels::channels(buf, area, s),
         Overlay::Beliefs(s) => super::beliefs::beliefs(buf, area, s),
+        Overlay::Proposals(s) => super::proposals::proposals(buf, area, s),
         Overlay::Always(s) => super::rules::always(buf, area, s),
     }
 }

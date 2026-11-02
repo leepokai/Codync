@@ -156,6 +156,16 @@ impl Store {
         logged("max turn", n).unwrap_or(0)
     }
 
+    /// The kind and title of every tool call of `turn` in `bot_id`'s conversations (any lane), in order.
+    pub fn tools_in_turn(&self, bot_id: &str, turn: i64) -> Result<Vec<(String, String)>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(
+            "SELECT COALESCE(json_extract(data, '$.toolKind'), 'other'), COALESCE(json_extract(data, '$.title'), '')
+             FROM entries WHERE bot_id = ?1 AND turn = ?2 AND kind = 'tool' ORDER BY seq",
+        )?;
+        Ok(st.query_map(params![bot_id, turn], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Whether the agent used a tool in `turn` of `bot_id`'s chat that may have changed something:
     /// reading, searching, fetching and thinking don't count (ACP tool kinds).
     pub fn acted_in_turn(&self, bot_id: &str, turn: i64) -> Result<bool> {

@@ -184,6 +184,7 @@ impl App {
                     After::Tracked | After::Week | After::RuleTest | After::Profiles | After::Health => {}
                     After::Channels | After::ChannelsSlack => self.flash(&format!("Channels: {e}")),
                     After::Beliefs | After::BeliefsChanged => self.flash(&format!("Memory: {e}")),
+                    After::Proposals => self.flash(&format!("Skills: {e}")),
                     After::RulesSaved => self.rules_saved(Err(e)),
                     After::Proposal(entry, option) => self.always_proposed(entry, option, Err(e)),
                     After::History(id) => {
@@ -273,6 +274,7 @@ impl App {
             After::Profiles => self.profiles = v["profiles"].as_array().cloned().unwrap_or_default(),
             After::Channels => self.channels_loaded(&v),
             After::ChannelsSlack => self.channels_slack_loaded(v),
+            After::Proposals => self.proposals_loaded(&v),
             After::Beliefs => self.beliefs_loaded(&v),
             After::BeliefsChanged => self.beliefs_changed(),
             After::Proposal(entry, option) => self.always_proposed(entry, option, Ok(v)),

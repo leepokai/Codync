@@ -21,6 +21,7 @@ mod help;
 mod lead_agent;
 mod network;
 mod network_rules;
+mod proposals;
 mod new_bot;
 mod overlay;
 mod pair;

@@ -100,6 +100,25 @@ import kotlinx.coroutines.launch
     var error by remember(node.id) { mutableStateOf<String?>(null) }
     var choosingZone by remember(node.id) { mutableStateOf(false) }
     fun edit(next: RoutineScheduleDraft) { touched = true; draft = next }
+    // Choosing Schedule with nothing saved yet: write a valid default, as the iPhone does.
+    // Waiting for another field edit leaves the save with no schedule.
+    LaunchedEffect(node.id) {
+        if (node.schedule != null) return@LaunchedEffect
+        val zone = node.fields.field("timezone")?.takeIf { it.isNotBlank() } ?: ZoneId.systemDefault().id
+        try {
+            val preview = store.routineSchedule(emptyList(), zone)
+            ensureActive()
+            val cron = preview.triggers.firstOrNull { it.field("type") == "cron" } ?: return@LaunchedEffect
+            val expression = cron.field("expression").orEmpty()
+            val timeZone = cron.field("timeZone").orEmpty().ifBlank { zone }
+            if (expression.isBlank() || timeZone.isBlank()) return@LaunchedEffect
+            draft = preview.draft.forMobileEditor().copy(zone = timeZone)
+            val next = node.copy(schedule = cron, fields = node.fields.withField("trigger", "schedule").withField("timezone", timeZone))
+            if (next.schedule != node.schedule || next.fields.field("timezone") != node.fields.field("timezone")) onChange(next)
+            error = null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { error = failure.message ?: "Couldn't check this schedule." }
+    }
     LaunchedEffect(draft) {
         if (!touched) return@LaunchedEffect
         try {

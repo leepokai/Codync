@@ -427,6 +427,27 @@ mod tests {
     }
 
     #[test]
+    fn every_call_that_reads_the_trigger_receives_it() {
+        let script = "export const meta = { name: \"N\", description: \"\" }\nexport default async function ({ agent, args }) {\n  const a = await agent(\"a\", args.input);\n  const b = await agent(\"b\", args.input);\n  return \"\"\n}\n";
+        let graph = Graph { nodes: vec![manual("t")], edges: Vec::new(), strokes: Vec::new() };
+        let applied = prepare(script, &graph, "", &|_| BotState::Ok).unwrap();
+        let trigger = applied.graph.nodes.iter().find(|node| node.kind == NodeKind::Trigger).unwrap();
+        let agents: Vec<_> = applied.graph.nodes.iter().filter(|node| node.kind == NodeKind::Agent).collect();
+        assert_eq!(agents.len(), 2);
+        for agent in agents {
+            assert!(
+                applied
+                    .graph
+                    .edges
+                    .iter()
+                    .any(|edge| { edge.from == trigger.id && edge.to == agent.id && !edge.id.ends_with(":order") }),
+                "{:?}",
+                applied.graph.edges
+            );
+        }
+    }
+
+    #[test]
     fn one_output_can_follow_another() {
         let script = "export const meta = { name: \"N\", description: \"\" }\nexport default async function ({ agent, output }) {\n  const a = await agent(\"a\", \"first\");\n  await output({ target: \"notify\", text: a });\n  await output({ target: \"notify\", text: a });\n  return \"\"\n}\n";
         let graph = Graph { nodes: vec![manual("t")], edges: Vec::new(), strokes: Vec::new() };

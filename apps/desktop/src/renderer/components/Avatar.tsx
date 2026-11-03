@@ -288,11 +288,16 @@ export function GroupAvatar({ members, size = 40, animated = true }: { members: 
   return <div aria-hidden className="avatar-frame" style={{ width: size, height: size }}>{content}</div>
 }
 
+/** A bot's character, or a group's members (Android `BotAvatar`). */
+export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true }: { bot: Bot; members?: Bot[]; size?: number; animated?: boolean }) {
+  return isGroup(bot) && !bot.customIcon ? <GroupAvatar members={members} size={size} animated={animated} /> : <BotAvatar bot={bot} size={size} animated={animated} />
+}
+
 /** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members. */
 export function AvatarWithStatus({ bot, members = [], size = 44 }: { bot: Bot; members?: Bot[]; size?: number }) {
   return (
     <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
-      {isGroup(bot) && !bot.customIcon ? <GroupAvatar members={members} size={size} /> : <BotAvatar bot={bot} size={size} />}
+      <BotOrGroupAvatar bot={bot} members={members} size={size} />
       {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
       {needsInput(bot) ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>

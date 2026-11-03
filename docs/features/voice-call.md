@@ -17,7 +17,8 @@ way open with a sentence or two, read aloud like any reply and part of the call 
 - UI follows Grok Bot: a floating capsule over the top of the chat (`ThreadView` overlay), and the
   chat stays readable and usable underneath. Left to right: the bot's avatar (pulses while
   speaking; tap it to interrupt), a dotted level line (your voice while listening, a ripple while
-  the bot speaks, a slow breath while it works; while the engine connects, an indeterminate progress
+  the bot speaks, a slow breath while it works, a still row otherwise, always in the text color so a dark bot's line
+  doesn't vanish on the dark bar; while the engine connects, an indeterminate progress
   line instead: a short segment gliding back and forth along a faint track, easing at both ends
   (white in dark mode, black in light), still at the left under Reduce Motion, fading back to the dots
   once the call is really connected), gear (call settings), mic (mute), red ✕ (end). Connected means
@@ -307,8 +308,10 @@ carries audio and talks to these methods:
   across a reconnect; an ended call can't start again. The call's actors (a group's members) hear `CallEnded`. A one-shot of the bot's harness (`chat::oneshot`) titles it from the conversation, in the user's
   language, into the notice's `text` ("Voice chat" until then, or when there's nothing to sum up); older apps
   show the title too. The line shows a waveform, the title and the length; tapping it opens the conversation
-  (iPhone and Android sheets, the desktop `Sheet`, `o` in the terminal): the user's lines, the voice's lines, what
-  it relayed and the bot's messages, in order. The chat an app holds may not reach back to an older call (the
+  (iPhone and Android sheets, the desktop `Sheet`, `o` in the terminal): under a header with the bot's avatar and name,
+  the line's time and the call's length (not in the terminal), the user's lines, the voice's lines, what it relayed and
+  the bot's messages, in order; a short call reads from the top, a long one opens at its end, and each time you speak
+  after the other side starts an exchange with more room above it. The chat an app holds may not reach back to an older call (the
   desktop mirror keeps the newest 200 entries), so opening the conversation fetches the call's own messages,
   `callEntries {botId, callId}` → the newest 500, and merges them with the loaded chat, each entry once; it shows
   a spinner until they arrive and the error if they can't. `logCall` stays for older apps.

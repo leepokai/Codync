@@ -14,10 +14,11 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
 - 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
 - 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
+- 語音通話的對話紀錄更好讀，通話列在 bot 沒說話時也會顯示一排靜止的點。
 
 ### en-US
 - Fixed a crash when the connection to your computer dropped.
 - A one-off speech recognition error in a voice call now sends what was heard and keeps listening, instead of ending the call.
-- Choose Português (Brasil) in Settings, or follow your Portuguese system language.
-- Choose Русский in Settings, or follow your Russian system language.
-- A computer you pair with a QR code that couldn't join your account at the time (the phone couldn't reach the Codync cloud, or the computer's cloud was off, say) joins it the next time it connects.
+- Choose Português (Brasil) or Русский in Settings, or follow your system language.
+- A computer you pair by QR code that couldn't join your account at the time joins it when it next connects.
+- A call's conversation is easier to read, and the call bar shows a still row of dots while the bot isn't talking.

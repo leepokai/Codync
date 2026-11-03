@@ -14,7 +14,7 @@ import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
-import { relativeTime } from './chat-items'
+import { callLength, relativeTime } from './chat-items'
 import { MarkdownText } from './Markdown'
 import { PermissionCard } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
@@ -206,11 +206,10 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
 export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: () => void }) {
   const text = entry.data.text ?? ''
   if (entry.data.callSeconds !== undefined) {
-    const s = entry.data.callSeconds
     return (
       <HStack justify="center" gap={6}>
         <Icon name="waveform" size={10} color="var(--secondary)" />
-        <Text size="footnote" tone="secondary" tabular>{`${text} · ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`}</Text>
+        <Text size="footnote" tone="secondary" tabular>{text + callLength(entry.data.callSeconds)}</Text>
       </HStack>
     )
   }

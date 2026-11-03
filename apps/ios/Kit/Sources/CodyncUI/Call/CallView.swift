@@ -33,7 +33,6 @@ struct CallView: View {
 
     private var bot: Bot? { model.bots[botId] }
     private var call: String { callID.uuidString }
-    private var color: Color { bot.map { AvatarPalette.color($0.avatarColor) } ?? Palette.accent }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -185,7 +184,7 @@ struct CallView: View {
             avatar
             LevelDots(level: session?.level ?? 0, speaking: session?.phase == .speaking,
                       working: bot?.isWorking == true, connecting: session?.phase.isConnecting ?? true,
-                      color: color, reduceMotion: reduceMotion)
+                      reduceMotion: reduceMotion)
                 .frame(minWidth: Self.dotsWidth, maxWidth: Self.dotsMaxWidth, minHeight: Self.dotsHeight, maxHeight: Self.dotsHeight)
                 .accessibilityLabel(statusText)
             // Audio leaves the phone: say where.

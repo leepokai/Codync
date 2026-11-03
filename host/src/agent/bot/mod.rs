@@ -140,8 +140,10 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy)]
 struct SessionCaps {
-    /// `session/load`: resume a session after a restart.
+    /// `session/load`, or `session/resume` (see `resume`): reopen a session after a restart.
     load: bool,
+    /// The agent reopens sessions with `session/resume`: it has no `session/load` (`dsh-acp`).
+    resume: bool,
     /// `session/close`: an idle session can be released while the agent keeps running.
     close: bool,
     /// ACP `systemPrompt`: instructions on `session/new` and `load` that the agent keeps at system level.

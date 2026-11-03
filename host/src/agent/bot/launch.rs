@@ -152,8 +152,11 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
             return Err(acp::Failure::error(acp::FailureKind::Timeout, message));
         }
     };
+    let load = init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false);
+    let resume = !load && init["agentCapabilities"]["sessionCapabilities"]["resume"].is_object();
     let sessions = SessionCaps {
-        load: init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false),
+        load: load || resume,
+        resume,
         close: init["agentCapabilities"]["sessionCapabilities"]["close"].is_object(),
         system_prompt: init["agentCapabilities"]["sessionCapabilities"]["systemPrompt"].is_object(),
         additional_directories: init["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"].is_object(),

@@ -231,7 +231,9 @@ impl Actor {
             if instructions == Instructions::SystemPrompt {
                 params["systemPrompt"] = system_prompt(&self.snapshot(&sid).await?.system);
             }
-            let res = self.session_request("session/load", params).await;
+            let reopen =
+                if self.conn.as_ref().is_some_and(|c| c.sessions.resume) { "session/resume" } else { "session/load" };
+            let res = self.session_request(reopen, params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             // The agent replays history as session/update before answering; drop it.
             while let Ok(inc) = conn.rx.try_recv() {
@@ -299,7 +301,7 @@ impl Actor {
     /// would otherwise hold the bot, and its Stop, forever.
     pub(super) async fn session_request(&mut self, method: &str, params: Value) -> Result<Value> {
         let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
-        conn.opening = matches!(method, "session/new" | "session/load");
+        conn.opening = matches!(method, "session/new" | "session/load" | "session/resume");
         let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.acp.request(method, params)).await;
         conn.opening = false;
         if let Ok(result) = answered {

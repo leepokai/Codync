@@ -404,6 +404,25 @@ async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
 }
 
 #[tokio::test]
+async fn an_agent_without_session_load_closes_and_resumes_its_sessions() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Resumed", "tests/fixtures/resumed_session_agent.py").await;
+    host.call("send", json!({"botId": bot, "text": "hello"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["kind"] == "agent" && e["data"]["text"] == "pong").await;
+    host.call("send", json!({"botId": bot, "text": "end-this-session"})).await;
+    host.wait_for(&bot, Duration::from_secs(30), |e| {
+        e["kind"] == "notice" && e["data"]["text"].as_str().is_some_and(|t| t.contains("session has ended"))
+    })
+    .await;
+    // Only a close and a `session/resume` revive it: the agent refuses `session/load`.
+    host.call("send", json!({"botId": bot, "text": "still there?"})).await;
+    host.wait_for(&bot, Duration::from_secs(30), |e| e["kind"] == "agent" && e["data"]["text"] == "still here").await;
+}
+
+#[tokio::test]
 async fn reasoning_is_per_bot_and_applies_with_default_and_legacy_models() {
     if python_missing() {
         return;

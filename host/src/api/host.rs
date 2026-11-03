@@ -77,6 +77,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "backends": backends::list(),
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
+                "automan": hub.automan.state(),
                 "analytics": hub.analytics.state(),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
@@ -202,6 +203,32 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "setScreenEnabled" => {
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
             hub.screen.state()
+        }
+        "automanStatus" => hub.automan.state(),
+        "automanStart" => {
+            hub.automan.enable(&hub.store)?;
+            hub.automan.state()
+        }
+        "automanStop" => {
+            hub.automan.stop().await;
+            hub.automan.state()
+        }
+        "setAutomanEnabled" => {
+            if b["enabled"].as_bool().context("`enabled` must be a boolean")? {
+                hub.automan.enable(&hub.store)?;
+            } else {
+                hub.automan.disable(&hub.store).await?;
+            }
+            hub.automan.state()
+        }
+        "setAutomanPath" => {
+            hub.automan.set_path(&hub.store, str_arg(&b, "path")?).await?;
+            hub.automan.state()
+        }
+        "setAutomanPort" => {
+            let port = b["port"].as_u64().context("`port` is required")?;
+            hub.automan.set_port(&hub.store, u16::try_from(port).context("`port` must be 1024 or higher")?).await?;
+            hub.automan.state()
         }
         "computerTools" => crate::screen::computer_tools(hub).await,
         "computerCall" => {

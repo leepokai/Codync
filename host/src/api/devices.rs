@@ -81,6 +81,12 @@ const LOCAL_ONLY: &[&str] = &[
     "networkRecover",
     // Who may write to this computer's bots is decided at the computer, like who is in.
     "setNetworkRules",
+    // The Automations instance runs on the computer; phones only see its state.
+    "automanStart",
+    "automanStop",
+    "setAutomanEnabled",
+    "setAutomanPath",
+    "setAutomanPort",
 ];
 const SCREEN: &[&str] =
     &["screenPrepare", "screenOffer", "screenClose", "screenTakeover", "screenCandidate", "screenCandidates"];

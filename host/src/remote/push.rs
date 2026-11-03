@@ -131,6 +131,8 @@ pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body:
         secret["from"] = from.into();
     }
     secret["faces"] = faces(hub, bot, from).into();
+    // The phone adds its other computers' counts and badges the app icon with the sum.
+    secret["unread"] = hub.store.total_unread().into();
     let secret = secret.to_string();
     let computer_id = hub.identity.computer_id();
     let mut notifications = Vec::new();

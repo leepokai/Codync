@@ -105,7 +105,8 @@ The TUI connects to one host at a time, so it keeps its single roster.
 - **Other computers in the account** that approved this install open through the account's relay
   over the end-to-end encrypted channel (`main/account-channel.ts`, `main/channel-crypto.ts`, checked
   against the shared relay vectors; `RelayTransport` in the renderer), unless an SSH tunnel
-  already reaches them. *Ask for access* runs the phones' 6-digit access request; every offline row
+  already reaches them; a computer that refuses this install reads *No access* and stops retrying,
+  and a computer's channel closes when its store goes. *Ask for access* runs the phones' 6-digit access request; every offline row
   has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
   *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate

@@ -77,6 +77,7 @@ type Sender = { isDestroyed(): boolean; send(...args: unknown[]): void }
 type Handlers = {
   'remote:call': (e: object, c: typeof computer, method: string, body: unknown, timeoutMs: number) => Promise<CallResult>
   'remote:stream:open': (e: { sender: Sender }, id: string, c: typeof computer, kind: string, body: unknown) => void
+  'remote:close': (e: object, computerId: string) => void
 }
 const handlers = new Map<string, Function>()
 const handler = <K extends keyof Handlers>(name: K) => handlers.get(name) as Handlers[K]
@@ -133,11 +134,47 @@ test('a computer whose key changed is refused before any request goes out', asyn
   assert.equal(socket.sent.filter((m) => m.t === 'f').length, 0)
 })
 
-test("a computer that doesn't let this device in ends its calls with 403", async () => {
+test("a computer that doesn't let this device in ends its calls with 401, so nothing retries; a lapsed lease stays retryable", async () => {
+  const refused = await connect('hello')
+  refused.socket.receive({ t: 'reject', code: 'unauthorized' })
+  const answer = await refused.result
+  assert.ok(!answer.ok)
+  assert.equal(answer.error.status, 401)
+
+  const lapsed = await connect('hello')
+  lapsed.socket.receive({ t: 'reject', code: 'leaseExpired' })
+  const retry = await lapsed.result
+  assert.ok(!retry.ok)
+  assert.equal(retry.error.status, 0)
+  closeAccountChannels()
+})
+
+test('a computer that restarts mid-link fails its calls; the next one opens a fresh channel', async () => {
   const { socket, result } = await connect('hello')
-  socket.receive({ t: 'reject', code: 'unauthorized' })
+  host(socket)
+  socket.receive({ t: 'presence', online: true })
   const answer = await result
   assert.ok(!answer.ok)
-  assert.equal(answer.error.status, 403)
+  assert.match(answer.error.message, /restarted/)
+  const next = await connect('hello')
+  assert.notEqual(next.socket, socket)
   closeAccountChannels()
+  await next.result
+})
+
+test('concurrent first calls share one socket, which closes when its computer is let go', async () => {
+  FakeSocket.last = null
+  const first = handler('remote:call')({}, computer, 'hello', {}, 5_000)
+  const second = handler('remote:call')({}, computer, 'bots', {}, 5_000)
+  await settle()
+  const socket = FakeSocket.last!
+  socket.receive({ t: 'presence', online: true })
+  const h = host(socket)
+  await settle()
+  assert.deepEqual(h.inbox().map((r) => r.m), ['hello', 'bots'])
+
+  handler('remote:close')({}, computer.id)
+  await settle()
+  assert.equal(socket.readyState, 3)
+  assert.deepEqual((await Promise.all([first, second])).map((a) => a.ok), [false, false])
 })

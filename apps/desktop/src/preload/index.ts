@@ -120,6 +120,7 @@ const bridge: CodyncBridge = {
   remote: {
     call: (computer, method, body, timeoutMs) => invoke('remote:call', computer, method, body, timeoutMs),
     stream: (computer, kind, body, onData, onEnd) => openStream('remote', [computer, kind, body], onData, onEnd),
+    close: (computerId) => ipcRenderer.send('remote:close', computerId),
   },
   updates: {
     state: () => ipcRenderer.invoke('updates:state'),

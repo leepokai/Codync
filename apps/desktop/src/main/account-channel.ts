@@ -57,11 +57,11 @@ class AccountChannel {
   private receive(wire: Wire) {
     switch (wire.t) {
       case 'presence':
-        // Online (again): a host that came back has none of this link's keys, so start over.
-        if (wire.online && !this.sealer) {
+        if (!wire.online) this.fail({ status: 0, message: 'The computer is offline.' })
+        else if (!this.handshake && !this.sealer) {
           this.handshake = new Handshake(this.signKey, this.device)
           this.socket.send(JSON.stringify(this.handshake.hello()))
-        } else this.fail({ status: 0, message: 'The computer is offline.' })
+        } else this.fail({ status: 0, message: 'The computer restarted. Connecting again…' })
         return
       case 'welcome': {
         if (!this.handshake || !wire.ek || !wire.sig) throw new Error('Unexpected host welcome')
@@ -76,7 +76,7 @@ class AccountChannel {
       case 'reject':
         return this.fail(wire.code === 'leaseExpired'
           ? { status: 0, message: wire.message ?? "The computer can't confirm this device's access right now. Try again shortly." }
-          : { status: wire.code === 'unsupportedVersion' ? 426 : 403, message: wire.message ?? "This computer doesn't let this device in. Ask it for access again." })
+          : wire.code === 'unsupportedVersion' ? { status: 426, message: 'Update Codync to connect to this computer.' } : refused(wire.message))
       case 'f': {
         if (!this.opener || wire.c === undefined || !wire.d) throw new Error('Encrypted frame arrived before the handshake')
         const message = this.opener.open(wire.c, wire.d)
@@ -155,9 +155,14 @@ class AccountChannel {
   }
 }
 
+/** The computer doesn't let this device in (revoked, never approved): a 401, so callers stop retrying. */
+function refused(message?: string): CallError {
+  return { status: 401, message: message || "This computer doesn't let this device in. Ask it for access again." }
+}
+
 /** What the host's close code means for the person (host `RejectCode::close_code`). */
 function closeError(code: number, reason: string): CallError {
-  if (code === 4001 || code === 4003 || code === 4410) return { status: 403, message: reason || "This computer doesn't let this device in. Ask it for access again." }
+  if (code === 4001 || code === 4003 || code === 4410) return refused(reason)
   if (code === 4400) return { status: 426, message: 'Update Codync to connect to this computer.' }
   return unreachable
 }
@@ -170,26 +175,36 @@ export interface RelaySigner {
   sign(url: URL): Promise<string>
 }
 
-const channels = new Map<string, AccountChannel>()
+/** Per computer: its channel, or the one being opened, so concurrent first calls share one socket. */
+const channels = new Map<string, Promise<AccountChannel>>()
 
-async function channel(signer: RelaySigner, computer: AccountComputer): Promise<AccountChannel> {
+async function open(signer: RelaySigner, computer: AccountComputer): Promise<AccountChannel> {
   const base = signer.relay()
   if (!base) throw { status: 401, message: 'Sign in again to reach your account.' } satisfies CallError
-  if (computerId(computer.signKey) !== computer.id) throw { status: 403, message: "This computer's key doesn't match its ID." } satisfies CallError
   const url = new URL(`v1/relay/device/${computer.id}?v=1`, `${base}/`)
   const [device, signature] = await Promise.all([signer.device(), signer.sign(url)])
-  const key = `${base}|${device.publicKey}|${computer.id}|${computer.signKey}`
-  const open = channels.get(key)
-  if (open && !open.failure) return open
-  const made = new AccountChannel(url.href.replace(/^http/, 'ws'), signature, computer.signKey, device)
-  channels.set(key, made)
-  return made
+  return new AccountChannel(url.href.replace(/^http/, 'ws'), signature, computer.signKey, device)
+}
+
+async function channel(signer: RelaySigner, computer: AccountComputer): Promise<AccountChannel> {
+  if (computerId(computer.signKey) !== computer.id) throw { status: 403, message: "This computer's key doesn't match its ID." } satisfies CallError
+  const cached = channels.get(computer.id)
+  if (cached && !(await cached.then((c) => c.failure, () => true))) return cached
+  if (channels.get(computer.id) !== cached) return channel(signer, computer)
+  const opening = open(signer, computer)
+  channels.set(computer.id, opening)
+  return opening
+}
+
+/** Forgets `computerId`'s channel and closes it, including one still opening. */
+function drop(computerId: string, error: CallError) {
+  void channels.get(computerId)?.then((c) => c.fail(error), () => {})
+  channels.delete(computerId)
 }
 
 /** Signing out or into another account: every channel of the old one closes. */
 export function closeAccountChannels() {
-  for (const c of channels.values()) c.fail({ status: 401, message: 'Signed out.' })
-  channels.clear()
+  for (const id of [...channels.keys()]) drop(id, { status: 401, message: 'Signed out.' })
 }
 
 export function registerAccountChannels(signer: RelaySigner) {
@@ -219,4 +234,5 @@ export function registerAccountChannels(signer: RelaySigner) {
     streams.get(id)?.()
     streams.delete(id)
   })
+  ipcMain.on('remote:close', (_e, computerId: string) => drop(computerId, { status: 0, message: 'Closed.' }))
 }

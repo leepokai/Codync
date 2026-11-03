@@ -99,6 +99,7 @@ const bridge: CodyncBridge = {
       onEnd({ status: 503, message: DEMO_UNAVAILABLE })
       return () => {}
     },
+    close() {},
   },
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
   artifacts: { show: async () => {}, openInBrowser: unavailable },

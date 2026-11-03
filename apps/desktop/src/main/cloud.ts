@@ -2,7 +2,7 @@ import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage } from 'electron'
-import type { AccessTicket, AccountComputer } from '../shared/ipc'
+import type { AccessTicket, AccountComputer, CallError } from '../shared/ipc'
 import type { AccountService } from './account'
 import { closeAccountChannels, registerAccountChannels } from './account-channel'
 import { computerId, sasCode, sasCommit, signingKey, type DeviceKey } from './channel-crypto'
@@ -160,12 +160,13 @@ export function registerCloud(account: AccountService) {
     user = account.state.user?.userId
     closeAccountChannels()
   })
+  const device = () => {
+    const userId = account.state.user?.userId
+    return userId ? identity(userId) : Promise.reject({ status: 401, message: 'Sign in again to reach your account.' } satisfies CallError)
+  }
   registerAccountChannels({
     relay: () => (account.state.user ? account.state.cloudURL : null),
-    device: () => {
-      const userId = account.state.user?.userId
-      return userId ? identity(userId) : Promise.reject({ status: 401, message: 'Sign in again to reach your account.' })
-    },
-    sign: async (url) => signatureHeader(await identity(account.state.user?.userId ?? ''), 'GET', url, Buffer.alloc(0)),
+    device,
+    sign: async (url) => signatureHeader(await device(), 'GET', url, Buffer.alloc(0)),
   })
 }

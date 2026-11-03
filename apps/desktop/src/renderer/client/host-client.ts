@@ -45,9 +45,9 @@ export interface HostTransport {
   stream(sub: HostStream, onData: (line: string) => void, onEnd: (error: HostError | null) => void): () => void
 }
 
-/** A `CallError` from the main process as a `HostError`; `denied` words a 401/403, which the host gives a device it no longer lets in. */
-function hostError(error: CallError, denied: number) {
-  return new HostError(error.status ?? 0, error.status === denied ? "This device isn't allowed on that computer anymore." : error.message)
+/** A `CallError` from the main process as a `HostError`; a 401 means the computer no longer lets this device in. */
+function hostError(error: CallError) {
+  return new HostError(error.status ?? 0, error.status === 401 ? "This device isn't allowed on that computer anymore." : error.message)
 }
 
 export class LoopbackTransport implements HostTransport {
@@ -60,7 +60,7 @@ export class LoopbackTransport implements HostTransport {
     try {
       return await window.codync.host.call(this.baseURL, this.token, method, body, timeoutMs)
     } catch (e) {
-      throw hostError(e as CallError, 401)
+      throw hostError(e as CallError)
     }
   }
 
@@ -78,13 +78,13 @@ export class RelayTransport implements HostTransport {
     try {
       return await window.codync.remote.call(this.computer, method, body, timeoutMs)
     } catch (e) {
-      throw hostError(e as CallError, 403)
+      throw hostError(e as CallError)
     }
   }
 
   stream(sub: HostStream, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
     const { kind, ...body } = sub
-    return window.codync.remote.stream(this.computer, kind, body, onData, (error) => onEnd(error && hostError(error, 403)))
+    return window.codync.remote.stream(this.computer, kind, body, onData, (error) => onEnd(error && hostError(error)))
   }
 }
 

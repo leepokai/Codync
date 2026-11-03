@@ -246,6 +246,8 @@ export interface CodyncBridge {
     call(computer: AccountComputer, method: string, body: unknown, timeoutMs: number): Promise<unknown>
     /** A subscription (`events`, `term`): each event as a JSON line, then `onEnd`. */
     stream(computer: AccountComputer, kind: string, body: unknown, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
+    /** Closes the computer's channel, once nothing here uses it. */
+    close(computerId: string): void
   }
   updates: {
     state(): Promise<UpdateState>

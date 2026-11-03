@@ -35,7 +35,10 @@ export class AccountComputers extends Observable {
     try {
       const plan = relayPlan(this.app.cloud.computers, this.app.local?.computer.id ?? null, this.attached, (id) => this.app.store(id))
       this.attached = plan.kept
-      for (const id of plan.detach) this.app.detach(id)
+      for (const id of plan.detach) {
+        this.app.detach(id)
+        window.codync.remote.close(id)
+      }
       for (const c of plan.attach) {
         const cached = this.app.computers.find((x) => x.id === c.computerId)
         const computer: Computer = { id: c.computerId, name: c.name, signKey: c.signKey, urls: [], cloud: account.cloudURL, device: c.device ?? null, color: cached?.color ?? null }
@@ -54,9 +57,12 @@ export class AccountComputers extends Observable {
     const asking: Asking = { ticket: null }
     this.set(id, asking)
     try {
-      asking.ticket = await window.codync.cloud.requestAccess({ id, signKey: computer.signKey })
+      const ticket = await window.codync.cloud.requestAccess({ id, signKey: computer.signKey })
+      // Withdrawn while the computer was still answering: take it off its screen too.
+      if (this.asking.get(id) !== asking) return withdraw(ticket)
+      asking.ticket = ticket
       this.changed()
-      if (await this.awaitDecision(id, asking.ticket)) await this.app.cloud.refresh()
+      if (await this.awaitDecision(id, ticket)) await this.app.cloud.refresh()
     } catch (error) {
       if (this.asking.get(id) === asking) this.app.setError(error instanceof Error ? error.message : (error as { message: string }).message)
     } finally {
@@ -68,7 +74,7 @@ export class AccountComputers extends Observable {
   cancel(computerId: string) {
     const ticket = this.asking.get(computerId)?.ticket
     this.set(computerId, null)
-    if (ticket) void request('DELETE', `v1/access-requests/${ticket.requestId}`, undefined, true).catch(() => {})
+    if (ticket) withdraw(ticket)
   }
 
   /** True once approved; false when withdrawn here; throws when the computer declined or the request ran out. */
@@ -92,4 +98,8 @@ export class AccountComputers extends Observable {
     else this.asking.delete(computerId)
     this.changed()
   }
+}
+
+function withdraw(ticket: AccessTicket) {
+  void request('DELETE', `v1/access-requests/${ticket.requestId}`, undefined, true).catch(() => {})
 }

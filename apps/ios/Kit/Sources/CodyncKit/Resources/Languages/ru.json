@@ -1497,6 +1497,7 @@
   "Starting codync-host…": "Запускаем codync-host…",
   "Couldn't install codync-host on {name}.": "Не удалось установить codync-host на {name}.",
   "codync-host isn't installed on {name}.": "codync-host не установлен на {name}.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "Установите приложение Codync на {name} и откройте его один раз: codync-host входит в него.",
   "To keep codync-host running on {name} after you log out, run this there:": "Чтобы codync-host продолжал работать на {name} после выхода из системы, выполните там:",
   "Copy command": "Скопировать команду",
   "Delete account": "Удалить аккаунт",

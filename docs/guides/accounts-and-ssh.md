@@ -272,6 +272,17 @@ processes and terminates only tunnels whose executable and quoted known-hosts
 path match this app. It uses Windows' OpenSSH Client feature and the device's
 existing SSH config and agent.
 
+The remote shell decides the command lines. Before asking for the identity, the app sends one probe,
+`echo %OS% $env:OS`, that `cmd.exe`, PowerShell and a POSIX shell all accept and answer differently
+(`remoteShell` in `main/ssh-command.ts`), and keeps the answer per profile until the address changes.
+A Mac or Linux computer gets `sh -lc 'codync-host info …'`. A Windows computer (OpenSSH Server: `cmd.exe`
+by default, PowerShell when the admin changed it) gets the same `codync-host info --json --port N` with
+`%LOCALAPPDATA%\Programs\codync-desktop\resources` appended to its PATH, because the desktop app's
+installer puts `codync-host.exe` there but not on PATH; a missing host exits 127 there too. The tunnel runs no
+remote command, so it is the same `-L` forward everywhere. Codync has no installer to run over SSH on
+Windows (the host ships inside the desktop app), so its card says to install the Codync app there and open
+it once, instead of *Install*.
+
 A computer without the host shows *Install* on its card (production app only; there is no
 released development host): two SSH commands from `main/ssh-command.ts`, the released
 host into `~/.local/bin` (`packaging/install.sh --host-only`), then `codync-host install`

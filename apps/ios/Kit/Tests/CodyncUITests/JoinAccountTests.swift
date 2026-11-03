@@ -52,9 +52,8 @@ private final class ClaimCloudStub: URLProtocol {
     }
 }
 
-/// The account finishes the join its `hello` asks for once (claim, the computer's signature, completion) and notes it
-/// on the computer, so the same computer asking again later (taken out before it heard of the join) stays out.
-@MainActor @Test func theAccountFinishesTheJoinOnceAndDoesNotBringTheComputerBack() async throws {
+/// The account finishes the join its `hello` asks for: a claim, the computer's signature, then the completion.
+@MainActor @Test func theAccountFinishesTheJoinTheComputerAsksFor() async throws {
     let suite = "JoinAccountTests.\(UUID().uuidString)"
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let config = URLSessionConfiguration.ephemeral
@@ -62,8 +61,7 @@ private final class ClaimCloudStub: URLProtocol {
     let cloud = CloudClient(baseURL: URL(string: "https://cloud.test")!, identity: DeviceIdentity(signing: .init(), push: .init()),
                             session: URLSession(configuration: config)) { "token" }
     let storage = SharedStore.Context(accountID: "account", suite: suite)
-    let computer = randomComputer("Mac")
-    storage.computers = [computer]
+    storage.computers = [randomComputer("Mac")]
     let remote = FakeRemote(.ready(.direct))
     await remote.setHello(askingHello)
     let accounts = AccountStore(storage: storage, cloud: cloud) { computer in
@@ -71,16 +69,7 @@ private final class ClaimCloudStub: URLProtocol {
     }
     defer { accounts.retire() }
 
-    #expect(await until { storage.computers.first?.joinedAccount == true })
-    #expect(ClaimCloudStub.created.withLock { $0 } == 1)
-    #expect(ClaimCloudStub.completed.withLock { $0 } == 1)
-    #expect(await remote.calls.filter { $0 == "joinAccount" }.count == 1)
-
-    let store = try #require(accounts.store(for: computer.id))
-    #expect(store.computer.joinedAccount == true)
-    store.restartStream()
-    #expect(await until { await remote.calls.filter { $0 == "hello" }.count >= 2 })
-    try await Task.sleep(for: .milliseconds(100))
+    #expect(await until { ClaimCloudStub.completed.withLock { $0 } == 1 })
     #expect(ClaimCloudStub.created.withLock { $0 } == 1)
     #expect(await remote.calls.filter { $0 == "joinAccount" }.count == 1)
 }

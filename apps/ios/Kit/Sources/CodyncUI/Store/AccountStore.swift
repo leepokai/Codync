@@ -123,8 +123,6 @@ public final class AccountStore {
         guard !retired else { throw CancellationError() }
         var computer = paired.computer
         if let previous = saved.first(where: { $0.id == computer.id }) { computer.keepDevicePicks(from: previous) }
-        // Pairing again may bring it into the account again.
-        computer.joinedAccount = nil
         save(computer)
         open(computer)
         if let claim, let signed = paired.claim {
@@ -161,8 +159,7 @@ public final class AccountStore {
 
     /// The computer signs this account's claim (`sign`: while letting this phone in, or later through
     /// `joinAccount` when its `hello` asks), and the phone, which holds the account's session, completes it.
-    /// One at a time per computer; a join that fails here is tried again on the next connection, and one that
-    /// worked is noted on the computer (`Computer.joinedAccount`).
+    /// One at a time per computer; the computer decides whether a join that failed here is asked for again.
     private func joinAccount(_ id: ComputerID, sign: @escaping @MainActor (CloudClient) async throws -> (CloudClaim, Data)) {
         guard let cloud, !retired, joining.insert(id).inserted else { return }
         Task {
@@ -175,7 +172,6 @@ public final class AccountStore {
                 return
             }
             guard !retired else { return }
-            updateSaved(id) { $0.joinedAccount = true }
             await refreshCloud()
         }
     }

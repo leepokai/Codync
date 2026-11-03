@@ -95,6 +95,11 @@ async fn a_computer_in_no_account_asks_then_joins_the_phones() {
                 crypto::claim_input("clm_1", "n1", "user_2", &hub.identity.computer_id(), &hub.identity.box_pub_b64());
             let sig = crypto::unb64_n::<64>(claim["sig"].as_str().unwrap()).unwrap();
             crypto::verify(&hub.identity.sign_pub(), input.as_bytes(), &sig).unwrap();
+            // Taken out again before it pulled that it joined: a state pull that still says no account brings no
+            // later join for the account it signed for.
+            hub.cloud_synced.store(true, std::sync::atomic::Ordering::Release);
+            crate::remote::owner::remember(&hub, None).unwrap();
+            assert_eq!(crate::remote::owner::joinable_by(&hub, &p.dk()).unwrap(), None);
         } else {
             assert_eq!(reply["err"]["status"], 403);
             assert!(hub.store.device(&p.dk()).is_none());
@@ -140,9 +145,9 @@ async fn a_phone_let_in_without_joining_finishes_the_join_later() {
     let sig = crypto::unb64_n::<64>(claim["ok"]["sig"].as_str().unwrap()).unwrap();
     crypto::verify(&hub.identity.sign_pub(), input.as_bytes(), &sig).unwrap();
 
-    // Once it is in the account, there is nothing left to join.
-    let owner = crate::remote::cloud::Owner { user_id: "user_2".into(), email: None };
-    crate::remote::owner::remember(&hub, Some(&owner)).unwrap();
+    // Signed once: whether that claim completed (and the computer was taken out again) or not, a state pull that
+    // still says no account brings no second join.
+    crate::remote::owner::remember(&hub, None).unwrap();
     assert_eq!(p.call(3, "hello", json!({})).await["ok"]["joinAccount"], false);
     assert!(p.call(4, "joinAccount", json!({"claimId": "clm_3", "nonce": "n3"})).await["err"].is_object());
 }

@@ -111,7 +111,7 @@ fun AppStore.connect() {
                                 // Dropped chats page their earlier messages again.
                                 mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
                                 noteHello(hello)
-                                if (asksToJoinAccount(hello, state.value.computer)) joinAccount { claim ->
+                                if (asksToJoinAccount(hello)) joinAccount { claim ->
                                     active.call("joinAccount", claim.json).jsonObject
                                 }
                                 // The event catch-up is ordered by revision; bot revisions can
@@ -229,12 +229,8 @@ private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
     it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
 }
 
-/**
- * The computer's [hello] asks this phone to finish bringing it into the account, and this phone hasn't brought it in
- * before: one it did was taken out since, and stays out (iOS `BotStore.refreshHello`).
- */
-internal fun asksToJoinAccount(hello: JsonObject, computer: Computer): Boolean =
-    hello["joinAccount"]?.jsonPrimitive?.booleanOrNull == true && !computer.joinedAccount
+/** The computer's [hello] asks this phone to finish bringing it into the account (iOS `BotStore.refreshHello`). */
+internal fun asksToJoinAccount(hello: JsonObject): Boolean = hello["joinAccount"]?.jsonPrimitive?.booleanOrNull == true
 
 private fun AppStore.showConnection(link: LinkState) {
     mutableState.update { it.copy(actualConnection = link) }

@@ -33,9 +33,8 @@ internal fun AccountStore.pair(text: String, via: PairedVia) {
             // Without a claim a computer in no account still lets the phone in; it joins the account on a later connection.
             val claim = client?.let { bestEffort("start a claim") { it.createClaim() } }
             val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100), certificate, claim)
-            // Picked on this phone: pairing again keeps them, and may bring the computer into the account again
-            // (iOS `AccountStore.pair`).
-            val computer = paired.computer.keepingDevicePicks(old).copy(joinedAccount = false)
+            // Picked on this phone: pairing again keeps them (iOS `AccountStore.pair`).
+            val computer = paired.computer.keepingDevicePicks(old)
             transitions.withLock { addComputer(computer) }
             withContext(Dispatchers.IO) { local.completeSetup() }
             mutableState.update { it.copy(setupComplete = true) }
@@ -79,8 +78,8 @@ private const val NO_PROOF = "Connect to the internet to pair, so Codync can con
 /**
  * The computer signs this account's claim ([sign]: while letting this phone in, or later through `joinAccount` when its
  * hello asks), and the phone, which holds the account's session, completes it in the background (iOS
- * `AccountStore.joinAccount`). One at a time per computer; a join that fails here is tried again on the next connection,
- * and one that worked is noted on the computer ([Computer.joinedAccount]).
+ * `AccountStore.joinAccount`). One at a time per computer; the computer decides whether a join that failed here is asked
+ * for again.
  */
 internal fun AccountStore.joinAccount(id: String, sign: suspend (CloudClient) -> Pair<PairingClaim, JsonObject>) {
     val client = cloud ?: return
@@ -91,10 +90,7 @@ internal fun AccountStore.joinAccount(id: String, sign: suspend (CloudClient) ->
                 val (claim, signed) = sign(client)
                 client.completeClaim(claim.claimId, signed)
             }
-            if (joined != null) {
-                store(id)?.changeComputer { it.copy(joinedAccount = true) }
-                refreshCloud()
-            }
+            if (joined != null) refreshCloud()
         } finally { joining.remove(id) }
     }
 }

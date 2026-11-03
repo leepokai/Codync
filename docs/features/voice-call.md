@@ -86,8 +86,11 @@ on-device (its window doesn't reach the host).
   the window that lost it (`stopped`) and ignores that window's stop.
 - iPhone (`Thread/Dictation.swift`, pill in `Thread/RecordingPill.swift`, menu in
   `Thread/DictationEngineMenu.swift`, dots shared with the call bar in `LevelDots.swift`):
-  `SFSpeechRecognizer` on device; with no microphone route (some simulators) the mic does nothing.
-  A provider's errors (no key, no connection) show in a dialog.
+  `SFSpeechRecognizer` on device, set up as the call sets it up (`Call/OnDeviceSpeech.swift`). Why it couldn't
+  start or stopped early shows in the *Couldn't dictate* dialog: a denied permission, no microphone route (some
+  simulators), no recognizer for the language, a recognizer error ("Couldn't hear you. Check the microphone and
+  Speech Recognition in Settings."), and a provider's errors (no key, no connection). A pause with nothing said ends
+  it without a dialog, as on Android.
 - Android (`Dictation.kt`, pill and engine menu in `DictationControls.kt`, dots shared with the call
   bar): Android's on-device recognizer (Android 12+) in the call's language. Where the phone has none,
   or it lacks the language, the phone's own recognizer listens instead, and that one may send the
@@ -365,6 +368,12 @@ carries audio and talks to these methods:
   resume." (as Android does). Route changes (AirPods) restart the iPhone's audio engine (`AVAudioEngineConfigurationChange`);
   the desktop restarts the microphone (and moves OpenAI's track) on `devicechange`. The desktop's on-device engine
   uses the speech helper's own microphone and isn't restarted.
+- On-device recognition that stops with an error mid-call sends what was heard and listens again. The iPhone
+  (`OnDeviceEngine`, counted by `RecognitionFailures`) and Android (`VoiceSession`) fail the call with the error
+  (iPhone: "Couldn't hear you. Check the microphone and Speech Recognition in Settings.", `provider`) after three in
+  a row that each failed within 2 s of listening (no speech assets, Siri and Dictation off); words heard, or a
+  recognition that ran longer, start the count over. The desktop's on-device engine fails when the speech helper gives
+  up again within 1 s of its last restart.
 - After the voice's turn, playback that reports no progress for 4 s returns the call to listening, so a stuck player
   (#214) can't hold the bot's replies back (`onStall`, counted as stuck `speaking`).
 - Each engine of a call sends one `voice_call_quality` when it's replaced or the call ends: milliseconds until ready,

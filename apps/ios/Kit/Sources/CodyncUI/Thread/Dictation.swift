@@ -47,7 +47,8 @@ final class Dictation {
     private(set) var startedAt = Date.now
     /// The microphone's level while listening, 0…1.
     private(set) var level: Float = 0
-    /// Why the last dictation ended early (no network or microphone access), until the next.
+    /// Why the last dictation didn't start or ended early (a permission, the microphone, the network, the recognizer),
+    /// until the next.
     var failure: String?
     var needsKey = false
     @ObservationIgnored private lazy var engine = AVAudioEngine()
@@ -148,17 +149,29 @@ final class Dictation {
     }
 
     private func recognize(generation: Int, edit: @escaping ((String) -> String) -> Void) async {
-        guard await AVAudioApplication.requestRecordPermission(), await Self.authorized(), generation == self.generation else { return }
-        let recognizer = UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey)
-            .flatMap { $0.isEmpty ? nil : SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
-        guard let recognizer, recognizer.isAvailable else { return }
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        request.addsPunctuation = true
-        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+        let micAllowed = await AVAudioApplication.requestRecordPermission()
+        guard generation == self.generation else { return }
+        guard micAllowed else {
+            failure = "Allow microphone access in Settings to dictate."
+            return
+        }
+        let speechAllowed = await OnDeviceSpeech.authorized()
+        guard generation == self.generation else { return }
+        guard speechAllowed else {
+            failure = "Allow Speech Recognition in Settings to dictate."
+            return
+        }
+        guard let recognizer = OnDeviceSpeech.recognizer(), recognizer.isAvailable else {
+            failure = OnDeviceSpeech.unavailable
+            return
+        }
+        let request = OnDeviceSpeech.request(for: recognizer)
         guard Self.openMic(engine, bufferSize: 1024, tap: { _ in OnDeviceEngine.tap(request) { [weak self] level in
             Task { @MainActor in if self?.listening == true { self?.level = level } }
-        } }) else { return }
+        } }) else {
+            failure = "The microphone isn't available."
+            return
+        }
         self.edit = edit
         self.request = request
         startedAt = .now
@@ -263,17 +276,15 @@ final class Dictation {
         { result, error in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal ?? false
+            // Silence just ends it; any other failure says why instead of ending without a word.
+            let failure = error.flatMap { OnDeviceSpeech.isSilence($0) ? nil : OnDeviceSpeech.unheard }
             let failed = error != nil
             Task { @MainActor in
                 if let text { dictation.recognized(text, final: final, generation: generation) }
-                if failed, generation == dictation.generation { dictation.stop() }
+                guard failed, generation == dictation.generation else { return }
+                dictation.failure = failure
+                dictation.stop()
             }
-        }
-    }
-
-    private nonisolated static func authorized() async -> Bool {
-        await withCheckedContinuation { done in
-            SFSpeechRecognizer.requestAuthorization { done.resume(returning: $0 == .authorized) }
         }
     }
 }

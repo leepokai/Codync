@@ -1,7 +1,7 @@
 # Interface languages
 
 Each device can choose Follow system, English, Simplified Chinese, Traditional
-Chinese, Japanese, Korean, French, German, Spanish, Brazilian Portuguese or Russian.
+Chinese, Japanese, Korean, French, German, Spanish, Brazilian Portuguese, Russian or Italian.
 Desktop and phone settings hold the choice; the terminal command palette cycles
 its own saved preference. Regional variants use their language's catalog.
 Portuguese system tags (`pt`, `pt-BR`, `pt_BR.UTF-8`, `pt-PT`) use `pt-BR`, shown
@@ -23,6 +23,9 @@ Russian system locales (including `ru-RU` and `ru_RU.UTF-8`) use `ru`, shown
 as **Русский** after Brazilian Portuguese. The Russian catalog uses a fixed
 glossary (бот, ведущий агент, рутина, коннектор) and count-neutral phrases such
 as «Ботов: {count}» so every number remains grammatical.
+
+Italian system locales (including `it-IT` and `it_CH.UTF-8`) use `it`, shown
+as **Italiano** after Russian.
 
 The five additional catalogs began as machine translations of public interface
 copy, with reviewed overrides for common controls. They have not had a complete

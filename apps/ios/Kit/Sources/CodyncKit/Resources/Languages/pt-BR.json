@@ -1519,5 +1519,17 @@
   "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "Código {code} copiado. Cole na página de login e depois pressione Enter para verificar. Ctrl+X cancela.",
   "Sign in instead of using a saved token": "Entrar em vez de usar um token salvo",
   "↵ sign in instead of the token": "↵ entrar em vez de usar o token",
-  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "Código {code} copiado: cole em {url} e depois pressione Enter para verificar. Ctrl+X cancela."
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "Código {code} copiado: cole em {url} e depois pressione Enter para verificar. Ctrl+X cancela.",
+  "Open in a window": "Abrir em uma janela",
+  "Show": "Mostrar",
+  "Take control": "Assumir o controle",
+  "View": "Ver",
+  "{name} screen": "Tela de {name}",
+  "Send my clipboard": "Enviar minha área de transferência",
+  "Copy from computer": "Copiar do computador",
+  "Hand back to bots": "Devolver aos bots",
+  "Take over": "Assumir",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Não foi possível conectar à tela remota. Verifique a conexão do computador e tente novamente.",
+  "Couldn't reconnect to the remote screen.": "Não foi possível reconectar à tela remota.",
+  "Couldn't reach the computer.": "Não foi possível acessar o computador."
 }

@@ -12,7 +12,7 @@ export default function Privacy() {
         <p className="text-neutral-400 text-sm">Last updated: November 2, 2026</p>
 
         <Section title="Overview">
-          Codync is made by Leeporic LLC (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
+          Codync is an independent open-source project by leepokai (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
         </Section>
 
         <Section title="What stays on your devices">

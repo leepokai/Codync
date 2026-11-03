@@ -163,7 +163,10 @@ one, so app and host always match, plus the Codync Screen helper (`tools/native-
 `dist:mac:dev` builds only what this Mac runs: the app folder for its architecture
 (`dist/mac-arm64/Codync Dev.app` on Apple silicon), the host for that architecture in the faster
 `dev-app` profile, and signatures without Apple's timestamp server (only notarized builds need it;
-asking it for every file adds about 5 minutes). Extra electron-builder flags go after `--`. The speech
+asking it for every file adds about 5 minutes). `CODYNC_HOST_PROFILE` (`dev-app` or `release`)
+overrides the host's profile: the release workflow's Windows dry runs on PRs into `dev` build
+`dev-app`, since nothing they make ships (its macOS job keeps `release`, the profile its cache holds).
+Extra electron-builder flags go after `--`. The speech
 helper at the top of `electron-builder.yml` doesn't depend on the environment; place it first
 (the release workflow, `.github/workflows/release-desktop.yml`, shows how).
 `dist:mac:dev` signs with the team 7FUM8A8H72 development certificate (`CSC_NAME` in

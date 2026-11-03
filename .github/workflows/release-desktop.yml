@@ -18,6 +18,12 @@ on:
 permissions:
   contents: write
 
+# The bundled host's Cargo profile (tools/native-host.mjs). Dry runs on PRs into dev build `dev-app`:
+# release minus thin LTO and the single codegen unit, which cost about 6 minutes per architecture.
+# Tags and release PRs into main build the `release` profile that ships.
+env:
+  CODYNC_HOST_PROFILE: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' && 'dev-app' || 'release' }}
+
 # A newer push to the same PR supersedes the run in progress; tag runs always finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

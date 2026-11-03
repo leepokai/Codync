@@ -1,4 +1,5 @@
 import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
+import { mixesAgents } from '@shared/fallbacks'
 import {
   type AccessRequest,
   type Bot,
@@ -192,6 +193,12 @@ export class BotMirror extends Observable {
   /** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
   get roster(): Bot[] {
     return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
+  }
+
+  /** The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+   * `hello`: it names the logos, and without it every badge would be the same generic one. */
+  get mixesAgents(): boolean {
+    return this.hello !== null && mixesAgents([...this.bots.values()].filter((b) => !b.hidden))
   }
 
   get hiddenBots(): Bot[] {

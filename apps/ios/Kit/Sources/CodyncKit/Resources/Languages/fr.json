@@ -1513,5 +1513,15 @@
   "This computer isn't in an account: it uses a private relay": "Cet ordinateur n'est dans aucun compte : il utilise un relais privé",
   "This computer isn't in your account": "Cet ordinateur n'est pas dans votre compte",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Cet iPhone ne reçoit plus les notifications du compte et garde ses ordinateurs : en vous reconnectant, rien à scanner. Pour le retirer de ces ordinateurs, utilisez plutôt « Recommencer » dans Réglages.",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Ce téléphone ne reçoit plus les notifications du compte et garde ses ordinateurs : en vous reconnectant, rien à scanner. Pour le retirer de ces ordinateurs, utilisez plutôt « Recommencer » dans Réglages."
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Ce téléphone ne reçoit plus les notifications du compte et garde ses ordinateurs : en vous reconnectant, rien à scanner. Pour le retirer de ces ordinateurs, utilisez plutôt « Recommencer » dans Réglages.",
+  "Paste this code on the sign-in page that opens next.": "Collez ce code sur la page de connexion qui s’ouvre ensuite.",
+  "Copy and open": "Copier et ouvrir",
+  "Code {code} copied: paste it on the page that opened, then ^r refreshes": "Code {code} copié : collez-le sur la page ouverte, puis ^r pour actualiser",
+  "Code {code} copied: paste it at {url}, then ^r refreshes": "Code {code} copié : collez-le sur {url}, puis ^r pour actualiser",
+  "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "Code {code} copié. Collez-le sur la page de connexion, puis Entrée pour vérifier. Ctrl+X pour annuler.",
+  "Sign in instead of using a saved token": "Se connecter au lieu d’utiliser un jeton enregistré",
+  "↵ sign in instead of the token": "↵ se connecter au lieu du jeton",
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "Code {code} copié : collez-le sur {url}, puis Entrée pour vérifier. Ctrl+X pour annuler.",
+  "Show agent logos": "Afficher les logos des agents",
+  "Marks each bot with its agent's logo when your bots use more than one agent.": "Indique le logo de l'agent de chaque bot lorsque vos bots utilisent plusieurs agents."
 }

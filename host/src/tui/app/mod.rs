@@ -435,6 +435,10 @@ pub fn mismatch_text(m: &crate::compat::Mismatch, host: &str) -> String {
 
 /// OSC 52: the terminal puts it on the clipboard, over SSH too.
 pub fn copy(text: &str) {
+    // Tests run in the developer's terminal: leave its clipboard alone.
+    if cfg!(test) {
+        return;
+    }
     let mut out = std::io::stdout();
     let _ = write!(out, "\x1b]52;c;{}\x07", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, text));
     let _ = out.flush();

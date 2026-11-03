@@ -64,7 +64,6 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 /** One row of a conversation, as iOS `ChatItem` builds them. */
 internal sealed interface ChatItem {
     val id: String
@@ -334,12 +333,12 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 /** A line from the computer. `addFallback`, on a failure the bot's fallbacks could have carried, opens them. */
 @Composable private fun NoticeRow(entry: Entry, addFallback: (() -> Unit)?) {
     val text = entry.text
-    val seconds = entry.data["callSeconds"]?.jsonPrimitive?.longOrNull
+    val length = callLength(entry)
     when {
-        seconds != null -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        length.isNotEmpty() -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             Symbol("waveform", size = 15.dp, tint = Palette.secondary)
             Spacer(Modifier.width(6.dp))
-            Text("$text · %02d:%02d".format(seconds / 60, seconds % 60), style = Type.footnote.monospacedDigit, color = Palette.secondary)
+            Text(text + length, style = Type.footnote.monospacedDigit, color = Palette.secondary)
         }
         entry.data.text("style") == "error" -> Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp))
             .background(Palette.danger.copy(alpha = 0.12f)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1513,5 +1513,15 @@
   "This computer isn't in an account: it uses a private relay": "这台电脑不在任何账户里：它用私人中继",
   "This computer isn't in your account": "这台电脑不在你的账户里",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "这台 iPhone 不再收到这个账户的通知，但会保留它的电脑，重新登录后不用再扫码。要把它从那些电脑上移除，请改用设置里的“重新开始”。",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "这台手机不再收到这个账户的通知，但会保留它的电脑，重新登录后不用再扫码。要把它从那些电脑上移除，请改用设置里的“重新开始”。"
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "这台手机不再收到这个账户的通知，但会保留它的电脑，重新登录后不用再扫码。要把它从那些电脑上移除，请改用设置里的“重新开始”。",
+  "Paste this code on the sign-in page that opens next.": "把这组代码粘贴到接下来打开的登录页。",
+  "Copy and open": "复制并打开",
+  "Code {code} copied: paste it on the page that opened, then ^r refreshes": "代码 {code} 已复制：粘贴到刚打开的页面，然后按 ^r 刷新",
+  "Code {code} copied: paste it at {url}, then ^r refreshes": "代码 {code} 已复制：到 {url} 粘贴，然后按 ^r 刷新",
+  "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "代码 {code} 已复制。粘贴到登录页后，按 Enter 检查。Ctrl+X 取消。",
+  "Sign in instead of using a saved token": "改用登录，不再用已存的 token",
+  "↵ sign in instead of the token": "↵ 改用登录，不再用 token",
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "代码 {code} 已复制：到 {url} 粘贴后，按 Enter 检查。Ctrl+X 取消。",
+  "Show agent logos": "显示智能体标志",
+  "Marks each bot with its agent's logo when your bots use more than one agent.": "当你的 bot 使用不止一种智能体时，在每个 bot 上标出它的智能体标志。"
 }

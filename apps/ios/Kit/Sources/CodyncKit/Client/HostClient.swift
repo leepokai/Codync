@@ -158,6 +158,12 @@ public extension HostClient {
         let _: Empty = try await call("installHostUpdate")
     }
 
+    /// The computer signs `claim` for the account this phone paired from (`Hello.joinAccount`), as JSON to
+    /// pass on to `CloudClient.completeClaim` as it came.
+    func joinAccount(_ claim: CloudClaim) async throws -> Data {
+        try await transport.call("joinAccount", body: try Self.encoder.encode(claim), timeout: 20)
+    }
+
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
         struct Body: Encodable { var botId: String; var beforeSeq: Int64; var limit: Int }
         struct Res: Decodable { var entries: [Entry] }

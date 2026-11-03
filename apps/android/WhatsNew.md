@@ -7,17 +7,20 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.36.0
+## 2.38.1
 ### zh-Hant
-- Codync 現在需要用 Apple、Google 或 GitHub 登入。以前沒登入就配對的電腦，第一次登入時會一起移進你的賬戶，不用再掃一次。
-- 登出後，這支手機不再收到通知，但會保留它的電腦，重新登入不用再掃描。
-- 可以在 App 裡刪除賬戶：點 Bots 分頁左上角的賬戶按鈕，再點「刪除賬戶」。
-- 配對會確認賬戶：在別人賬戶裡的電腦會告訴你它在誰的賬戶；還不在任何賬戶的電腦，會先在電腦上問一聲，再加入你的賬戶。
-- 也可以輸入 `codync-host pair` 印出的短代碼來配對，不用掃 QR code。
+- bot 用了不只一種智慧體時，列表會在頭像左下角標出各自的智慧體標誌，可在「設定 › 外觀」關閉。
+- 修正與電腦的連線中斷時，app 可能閃退的問題。
+- 語音通話中語音辨識偶爾出錯時，會送出已聽到的內容並繼續聆聽，不再直接結束通話。
+- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
+- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
+- 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
+- 語音通話的對話紀錄更好讀，通話列在 bot 沒說話時也會顯示一排靜止的點。
 
 ### en-US
-- Codync now asks you to sign in with Apple, Google or GitHub. Computers you paired before come along, no new scan.
-- Signing out stops notifications and keeps your computers: sign back in, no scan.
-- Delete your account in the app: account button (top left of Bots), then Delete account.
-- Pairing checks your account: a computer in another account says whose; one in no account asks first, then joins yours.
-- Or type the short code `codync-host pair` prints instead of scanning.
+- When bots use different agents, the bot list shows each one's logo (off in Settings › Appearance).
+- Fixed a crash when the connection to your computer dropped.
+- A one-off speech recognition error no longer ends a voice call.
+- Choose Português (Brasil) or Русский in Settings, or follow your system language.
+- A QR-paired computer that couldn't join your account joins it when it next connects.
+- Calls read more clearly, and the call bar shows still dots while the bot is quiet.

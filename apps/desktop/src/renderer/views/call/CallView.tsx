@@ -8,7 +8,6 @@ import { LevelDots } from '../../components/LevelDots'
 import { Sheet } from '../../components/Overlay'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
-import { avatarColor } from '../../lib/theme'
 import { analytics } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
@@ -77,7 +76,6 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   const engineName = useRef<VoiceCallEngine>('on_device')
   const counted = useRef(false)
   const bot = store.bots.get(botId)
-  const color = bot ? avatarColor(bot.avatarColor) : null
   /** The call on the computer, which runs it. */
   const link = useRef<CallLink | null>(null)
   link.current ??= new CallLink(store, botId, crypto.randomUUID())
@@ -247,7 +245,6 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
         </button>
         <LevelDots
           sample={() => ({ level: session?.level ?? 0, speaking: session?.phase === 'speaking', working, connecting: connecting && !blocked })}
-          color={color}
           width={120}
           label={statusText(phase, muted, working)}
           className="call-dots"

@@ -58,6 +58,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "hello" => {
             let port = hub.port;
             let icons = crate::icons::snapshot(&hub.store)?;
+            let join_account = crate::remote::owner::joinable_by(hub, caller.device_key()).unwrap_or_else(|e| {
+                tracing::warn!(error = format!("{e:#}"), "couldn't check whether this phone can finish joining");
+                None
+            });
             json!({
                 "hostId": hub.host_id,
                 "computerId": hub.identity.computer_id(),
@@ -80,6 +84,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // This phone paired without the computer joining its account: it calls `joinAccount` to finish.
+                "joinAccount": join_account.is_some(),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
             })

@@ -54,6 +54,7 @@ The phone finds and pairs every computer itself. A computer the phone hasn't pai
 - Only a signed-in phone scans, and the host checks the phone's account from a proof the cloud signed, never from what the phone says. The check works offline (a signature), so computers with the cloud off or on a private relay still pair in person.
 - A QR pairing records the phone's account on the computer. When a host changes the account it belongs to, it drops every device of the old account, QR-paired ones too.
 - Joining an account on the first scan is how a headless computer "signs in": there is no `codync-host login`. A computer may also join through a manager's **Add to account**, which uses the manager app's account.
+- A phone let in without the host signing a claim for its account (the phone couldn't start one, or the cloud was off or a private relay) finishes the join on a later connection: the host's `hello` says `joinAccount: true` while it is in no account on the Codync cloud (this connection's state pulled), the phone recorded an account, no device of another account is on it, and the host signed no claim for that account since its own account last changed; the phone then makes a claim, the host's `joinAccount` signs it for that recorded account, and the phone completes it (`owner::joinable_by`). The host notes every account it signs a claim for (`owner::note_signed`, any path: pairing, `joinAccount`, the desktop's Add to account) until its account changes, because a claim may complete and the computer be taken out again before it pulls its state, which then still says no account. So a computer taken out never comes back this way: one seen leaving dropped every device, and one taken out before it heard it had joined signed for that account. The cost: a claim the host signed that then failed to complete isn't retried; pairing again joins.
 
 ## Accounts on a phone
 
@@ -95,7 +96,7 @@ A computer with only the host (SSH-only server, VPS) never signs in. It joins an
 - A manager's desktop app adds it over SSH: add the SSH computer, install the host in one click, then it joins the manager app's account on its own.
 - A signed-in phone scans `codync-host pair` (or types its short code) and the terminal confirms.
 
-`codync-host cloud` says which account the computer is in, or how to add it to one; the terminal UI's pair sheet says when a scanning phone would bring it into its account.
+`codync-host cloud` says which account the computer is in, or how to add it to one, and `--leave` takes it out (`unclaim`, after a yes in a terminal); the terminal UI's pair sheet says when a scanning phone would bring it into its account.
 
 ### Using a Linux VPS
 

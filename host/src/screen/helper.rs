@@ -1,7 +1,6 @@
-//! The screen helper's socket: accepting helpers, JSON-RPC requests to them, and the Linux helper process.
-//! Windows has no screen helper yet, so nothing listens there.
+//! The screen helper's socket (a named pipe on Windows): accepting helpers, JSON-RPC requests to them,
+//! and the Linux and Windows helper process.
 
-#[cfg(unix)]
 use super::protocol::HelperStatus;
 use super::{HELPER_TIMEOUT, Screen};
 use crate::LockExt;
@@ -11,10 +10,13 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Starts the helper without a console window (`CREATE_NO_WINDOW`).
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 #[cfg(unix)]
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-#[cfg(unix)]
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixListener;
 use tokio::sync::{mpsc, oneshot};
 
 pub(super) type Pending = Mutex<HashMap<i64, oneshot::Sender<Result<Value, String>>>>;
@@ -51,8 +53,48 @@ impl Link {
     }
 }
 
+/// Accepts screen helpers on a named pipe. Its random name is published in `~/.codync/screen.pipe`
+/// (readable only through this user's profile); only this process may create instances of the name,
+/// and remote clients are refused.
 #[cfg(windows)]
-pub async fn serve_helpers(_screen: Arc<Screen>) {}
+pub async fn serve_helpers(screen: Arc<Screen>) {
+    use tokio::net::windows::named_pipe::ServerOptions;
+    let name = format!(r"\\.\pipe\codync-screen-{}", uuid::Uuid::new_v4().simple());
+    let path = crate::service::data_dir().join("screen.pipe");
+    let mut options = ServerOptions::new();
+    options.first_pipe_instance(true).reject_remote_clients(true);
+    let mut server = match options.create(&name) {
+        Ok(server) => server,
+        Err(error) => {
+            tracing::error!(%error, "can't listen for the screen helper");
+            return;
+        }
+    };
+    if let Err(error) = std::fs::write(&path, &name) {
+        tracing::error!(%error, path = %path.display(), "can't publish the screen helper pipe");
+        return;
+    }
+    options.first_pipe_instance(false);
+    loop {
+        match server.connect().await {
+            Ok(()) => {
+                let connected = server;
+                server = match options.create(&name) {
+                    Ok(next) => next,
+                    Err(error) => {
+                        tracing::error!(%error, "can't keep listening for the screen helper");
+                        return;
+                    }
+                };
+                tokio::spawn(run_link(screen.clone(), connected));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "screen helper accept failed");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+}
 
 /// Accepts screen helpers on `~/.codync/screen.sock`. The newest connection wins.
 #[cfg(unix)]
@@ -90,9 +132,10 @@ pub(super) fn graphical_session() -> bool {
     true
 }
 
+/// The host runs in the signed-in user's session, which has the desktop.
 #[cfg(windows)]
 pub(super) fn graphical_session() -> bool {
-    false
+    true
 }
 
 /// A Wayland socket in this user's runtime dir, or a running X server.
@@ -106,18 +149,23 @@ pub(super) fn graphical_session() -> bool {
         || has(std::path::Path::new("/tmp/.X11-unix"), "X")
 }
 
-/// Linux: the host runs `codync-screen` itself while Remote screen is on (on macOS
+/// Linux and Windows: the host runs `codync-screen` itself while Remote screen is on (on macOS
 /// launchd runs Codync Screen for the app). Restarts it if it exits; stops it when turned off.
-#[cfg(target_os = "linux")]
-pub async fn supervise_linux_helper(screen: Arc<Screen>) {
-    let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("codync-screen")));
-    let program = exe.filter(|p| p.is_file()).unwrap_or_else(|| "codync-screen".into());
+#[cfg(any(target_os = "linux", windows))]
+pub async fn supervise_helper(screen: Arc<Screen>) {
+    let name = if cfg!(windows) { "codync-screen.exe" } else { "codync-screen" };
+    let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name)));
+    let program = exe.filter(|p| p.is_file()).unwrap_or_else(|| name.into());
     let mut child: Option<tokio::process::Child> = None;
     let mut backoff = Duration::from_secs(1);
     loop {
         let running = child.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
         if screen.enabled() && !running {
-            match tokio::process::Command::new(&program).kill_on_drop(true).spawn() {
+            let mut command = tokio::process::Command::new(&program);
+            command.kill_on_drop(true);
+            #[cfg(windows)]
+            command.creation_flags(CREATE_NO_WINDOW);
+            match command.spawn() {
                 Ok(c) => child = Some(c),
                 Err(error) => tracing::warn!(%error, program = %program.display(), "can't start codync-screen"),
             }
@@ -137,10 +185,9 @@ pub async fn supervise_linux_helper(screen: Arc<Screen>) {
     }
 }
 
-#[cfg(unix)]
-async fn run_link(screen: Arc<Screen>, stream: UnixStream) {
+async fn run_link(screen: Arc<Screen>, stream: impl AsyncRead + AsyncWrite + Send + 'static) {
     let mut generation = screen.helper_generation.subscribe();
-    let (rd, mut wr) = stream.into_split();
+    let (rd, mut wr) = tokio::io::split(stream);
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let link = Arc::new(Link {
         id: screen.next_link.fetch_add(1, Ordering::Relaxed),
@@ -205,7 +252,6 @@ async fn run_link(screen: Arc<Screen>, stream: UnixStream) {
 }
 
 /// Applies one message from the helper; true when clients should hear about the change.
-#[cfg(unix)]
 fn handle_message(screen: &Screen, link: &Link, msg: &Value) -> bool {
     match (msg["method"].as_str(), msg["id"].as_i64()) {
         (None, Some(id)) => {
@@ -253,7 +299,6 @@ fn handle_message(screen: &Screen, link: &Link, msg: &Value) -> bool {
     }
 }
 
-#[cfg(unix)]
 impl Screen {
     /// Nothing from a previous helper carries over to the next one.
     fn reset_helper_state(&self) {
@@ -263,5 +308,5 @@ impl Screen {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests;

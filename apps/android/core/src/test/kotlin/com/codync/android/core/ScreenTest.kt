@@ -19,6 +19,8 @@ class ScreenTest {
         assertEquals(ScreenState(), ScreenState.decode(buildJsonObject {}))
         assertTrue(ScreenState(enabled = true, connected = true, platform = "linux", capture = true).accessGuidance.startsWith("Choose a screen"))
         assertTrue(ScreenState(platform = "windows", computerUse = true).controlReady)
+        assertTrue(ScreenState(enabled = true, connected = true, platform = "windows").accessGuidance.contains("find a screen to share"))
+        assertEquals("Computer access is ready.", ScreenState(enabled = true, connected = true, platform = "windows", capture = true, input = true).accessGuidance)
         assertTrue(ScreenState().accessGuidance.startsWith("Remote screen is off."))
     }
 

@@ -1,0 +1,57 @@
+<!doctype html><meta charset=utf-8><title>screen test</title>
+<body style="font:13px monospace;background:#222;color:#ddd">
+<video id=v autoplay muted playsinline style="max-width:60vw;max-height:80vh;background:#000"></video>
+<pre id=log></pre>
+<script>
+const log = (...a) => { document.getElementById('log').textContent += a.join(' ') + '\n'; };
+const api = async (m, b) => { const r = await fetch('/api/' + m, {method: 'POST', body: JSON.stringify(b || {})}); const t = await r.text(); if (!r.ok) throw new Error(m + ' ' + r.status + ' ' + t); return JSON.parse(t); };
+let pc, input, fast;
+window.start = async (opts = {}) => {
+  const prep = await api('screenPrepare', {relay: false, trickle: false});
+  log('prepared', prep.session);
+  pc = new RTCPeerConnection({});
+  pc.addTransceiver('video', {direction: 'recvonly'});
+  input = pc.createDataChannel('input'); fast = pc.createDataChannel('input-fast', {ordered: false, maxRetransmits: 0});
+  input.onmessage = e => log('reply', e.data);
+  input.onopen = () => log('input open');
+  pc.ontrack = e => { document.getElementById('v').srcObject = e.streams[0] || new MediaStream([e.track]); log('track', e.track.kind); };
+  pc.oniceconnectionstatechange = () => log('ice', pc.iceConnectionState);
+  pc.onconnectionstatechange = () => log('conn', pc.connectionState);
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise(r => { if (pc.iceGatheringState === 'complete') r(); pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r(); setTimeout(r, 4000); });
+  const ans = await api('screenOffer', {session: prep.session, sdp: pc.localDescription.sdp, ...opts});
+  log('answered');
+  await pc.setRemoteDescription({type: 'answer', sdp: ans.sdp});
+  window.session = prep.session;
+};
+window.stats = async () => { const s = await pc.getStats(); let o = []; s.forEach(r => { if (r.type === 'inbound-rtp' && r.kind === 'video') o.push(`${r.frameWidth}x${r.frameHeight} frames=${r.framesDecoded} bytes=${r.bytesReceived} fps=${r.framesPerSecond} codec=${r.codecId}`); }); return o.join('|'); };
+window.send = (m, ch) => (ch === 'fast' ? fast : input).send(JSON.stringify(m));
+window.stop = () => api('screenClose', {session: window.session});
+window.report = async (name, extra = {}) => {
+  const v = document.getElementById('v'); let png = null;
+  try { const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0); png = c.toDataURL('image/png'); } catch (e) { log('canvas', e); }
+  await fetch('/report', {method: 'POST', body: JSON.stringify({name, log: document.getElementById('log').textContent, stats: await window.stats().catch(String), video: [v.videoWidth, v.videoHeight], png, ...extra})});
+};
+const q = new URLSearchParams(location.search);
+if (q.get('auto')) (async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  try {
+    await window.start();
+    await sleep(6000);
+    await window.report('auto-1');
+    if (q.get('input')) {
+      window.send({type: 'move', x: 300, y: 600}, 'fast'); await sleep(500);
+      window.send({type: 'move', x: 310, y: 610}, 'fast'); await sleep(1500);
+      await window.report('auto-2', {note: 'after move'});
+    }
+    if (q.get('view')) {
+      window.send({type: 'view', crop: [100, 100, 500, 800], long: 640, short: 400}); await sleep(3000);
+      await window.report('auto-3', {note: 'zoomed'});
+      window.send({type: 'view'}); await sleep(3000);
+      await window.report('auto-4', {note: 'reset'});
+    }
+    await window.stop();
+  } catch (e) { log('FAILED', e); await window.report('auto-failed'); }
+})();
+window.onerror = (m) => log('error', m);
+</script>

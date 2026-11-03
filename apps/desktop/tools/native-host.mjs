@@ -3,7 +3,7 @@
 // environment is never shipped. macOS: build/native/codync-host (universal; Codync Dev: this Mac's
 // architecture only, since it never leaves the Mac that built it). Windows:
 // build/native/codync-host.exe and codync-hostw.exe (runs it at sign-in), plus the computer-use
-// driver the host starts from beside itself. Linux apps use the installed host, so there's
+// driver and screen helper (codync-screen.exe) the host starts from beside itself. Linux apps use the installed host, so there's
 // nothing to do there.
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -27,11 +27,15 @@ const profile = process.env.CODYNC_HOST_PROFILE ?? (env === 'dev' ? 'dev-app' : 
 if (!['dev-app', 'release'].includes(profile)) throw new Error(`unknown host profile ${profile}`)
 const build = (target) => run(cargo, ['build', '--profile', profile, '--manifest-path', join(host, 'Cargo.toml'), '--target', target])
 const built = (target, name) => join(host, 'target', target, profile, name)
+const screen = join(root, '../screen-windows')
 mkdirSync(out, { recursive: true })
 if (process.platform === 'win32') {
   const target = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
   build(target)
   for (const exe of ['codync-host.exe', 'codync-hostw.exe']) copyFileSync(built(target, exe), join(out, env === 'dev' && exe === 'codync-hostw.exe' ? 'codync-dev-hostw.exe' : exe))
+  // Remote screen's capture and input helper (apps/screen-windows); it shares the host's profile names.
+  run(cargo, ['build', '--profile', profile, '--manifest-path', join(screen, 'Cargo.toml'), '--target', target])
+  copyFileSync(join(screen, 'target', target, profile, 'codync-screen.exe'), join(out, 'codync-screen.exe'))
   // The pinned driver has no Windows ARM64 build; Windows 11 runs these x64 helpers through Prism.
   run(process.execPath, [join(root, '../../packaging/cua-driver/fetch.mjs'), 'windows-x86_64', out])
 } else {

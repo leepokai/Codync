@@ -4,6 +4,7 @@
 #   build/native/codync-host.exe    Windows: the host, and codync-hostw.exe that runs it at sign-in
 #   build/native/codync-speech      macOS on-device speech helper
 #   build/native/CodyncScreen.app   macOS screen helper (Xcode `Screen` target, with cua-driver inside)
+#   build/native/codync-screen.exe  Windows: the Remote screen helper (apps/screen-windows)
 #   build/native/cua-driver.exe     Windows: the computer-use driver and its UI Automation helper
 beforePack: tools/verify-build.cjs
 afterPack: tools/windows-archive.cjs
@@ -100,6 +101,9 @@ win:
     - from: build/native/codync-hostw.exe
       to: codync-hostw.exe
     # The computer-use driver bots act through; the host starts it from beside itself.
+    # Remote screen's capture and input helper; the host starts it from beside itself.
+    - from: build/native/codync-screen.exe
+      to: codync-screen.exe
     - from: build/native/cua-driver.exe
       to: cua-driver.exe
     - from: build/native/cua-driver-uia.exe

@@ -13,7 +13,7 @@ During first setup, use the capsule above the content to switch between steps. O
 
 - **macOS:** press **Enable Codync Screen**. If macOS asks, allow Codync to run in the background in Login Items. Then allow **Screen recording** and **Control apps**. In System Settings, look for **Codync Screen**; depending on your macOS version, control is listed under **Accessibility** or **Device Control and Data Access**. Come back to Codync after granting, and let the helper restart if asked.
 - **Linux:** press **Choose screen and allow control**. The system's screen-sharing dialog asks you to pick a screen and allow mouse and keyboard access. If Codync Screen restarts, open Computer access again to share the screen once more.
-- **Windows:** bots can use apps without extra permissions. Viewing the screen from your phone isn't available on Windows yet.
+- **Windows:** bots can use apps and your phone can view the screen without extra permissions. The first time Remote screen runs, Windows Defender Firewall asks about `codync-screen.exe`: choose **Allow** on the computer. Over a Codync relay (when the computer has no direct path), Windows needs UDP to reach the relay; networks that block UDP only work directly. While the lock screen or a Windows permission prompt is in front, the picture pauses and resumes when you're back on your desktop. Windows ignores taps and keys for windows running as administrator.
 
 The iPhone app and the terminal UI show whether access is set up and point you to Computer access on the computer; they can't grant it.
 

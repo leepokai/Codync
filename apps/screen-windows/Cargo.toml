@@ -1,0 +1,71 @@
+[package]
+name = "codync-screen"
+version = "0.1.0"
+edition = "2024"
+description = "Codync Remote screen helper for Windows: DXGI Desktop Duplication + Media Foundation H.264 + WebRTC"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+bytes = "1"
+dirs = "7"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rtc = { version = "0.21", default-features = false }
+webrtc = "0.21"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+too_many_lines = "allow"
+doc_markdown = "allow"
+unwrap_used = "warn"
+# Win32 and COM calls take out-parameters and raw pointers everywhere.
+borrow_as_ptr = "allow"
+ref_as_ptr = "allow"
+# The Direct3D 11 and Media Foundation names are long and numerous; their prefixes keep them unambiguous.
+wildcard_imports = "allow"
+similar_names = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# The desktop app's Codync Dev build (apps/desktop/tools/native-host.mjs): quick to rebuild.
+[profile.dev-app]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

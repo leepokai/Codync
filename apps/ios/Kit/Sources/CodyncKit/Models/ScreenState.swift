@@ -55,12 +55,11 @@ public struct ScreenDisplay: Codable, Hashable, Identifiable, Sendable {
 extension ScreenState {
     /// Remote clients explain setup; only the computer itself can request OS permissions.
     public var accessGuidance: String {
-        if platform == "windows" {
-            return "Remote screen viewing is not available on Windows yet. Bots can still use apps on that computer."
-        }
         let setup = "On the computer, open Codync → Settings → Computer access. Permissions are set separately on each computer."
         if !enabled { return "Remote screen is off. \(setup)" }
         if !connected { return "Codync Screen is not running. \(setup)" }
+        // Windows asks for no grants: it only lacks a screen when none is attached or the user isn't signed in.
+        if platform == "windows" && !(capture && input) { return "Codync can't find a screen to share on this computer. Sign in on it and try again." }
         if !capture || (platform == "linux" && !input) {
             if platform == "linux" { return "Choose a screen and allow control in the system sharing dialog. \(setup)" }
             return "Allow screen recording for \(permissionApp ?? "Codync Screen"). \(setup)"

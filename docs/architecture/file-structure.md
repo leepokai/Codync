@@ -56,7 +56,8 @@ Codync/
 │   │   └── tools/             # symbols.py (SF Symbol stand-ins), launcher_icon.py, agent_icons.py
 │   ├── screen-macos/          # macOS screen helper (Xcode Screen target)
 │   ├── screen-macos-tests/    # Swift package testing the helper's socket lifecycle and candidate rules
-│   └── screen-linux/          # Linux portal/GStreamer screen helper
+│   ├── screen-linux/          # Linux portal/GStreamer screen helper
+│   └── screen-windows/        # Windows Desktop Duplication/Media Foundation screen helper
 ├── cloud/                     # Account API + encrypted relay Worker and Durable Object
 │   ├── src/
 │   ├── migrations/            # D1 migrations
@@ -81,6 +82,7 @@ Codync/
 - `Screen` (`apps/screen-macos/`) — Codync Screen: capture, input and WebRTC for Remote screen, embedded in the macOS desktop app (`Contents/Library/LoginItems`); starts the computer-use driver it carries in `Contents/Helpers`
 - `apps/screen-macos-tests/` — native helper tests: socket lifecycle and candidate rules (`swift test --package-path apps/screen-macos-tests --scratch-path build/dd/screen-macos-tests`)
 - `apps/screen-linux/` — `codync-screen` (Rust, GStreamer + xdg portals), the Linux Remote screen helper
+- `apps/screen-windows/` — `codync-screen.exe` (Rust, DXGI Desktop Duplication + Media Foundation + `webrtc-rs` + `SendInput`), the Windows Remote screen helper; the desktop build bundles it beside the host
 - `Widgets` (`apps/ios/Widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
 - `apps/android/` — Android app (`com.pokai.Codync.android`, Dev `.dev`; Gradle modules `app`, `core`, `design`; CI `.github/workflows/android.yml`)
 - `CodyncKit` (`apps/ios/Kit/`) — the iPhone app's Swift package: `CodyncKit` + `CodyncUI` libraries (tests: `xcodebuild test -scheme CodyncKit-Package` on an iOS simulator)

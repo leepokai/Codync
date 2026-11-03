@@ -40,12 +40,13 @@ data class ScreenState(
 
     /** Remote clients explain setup; only the computer itself can request OS permissions. */
     val accessGuidance: String get() {
-        if (platform == "windows") return "Remote screen viewing is not available on Windows yet. Bots can still use apps on that computer."
         val setup = "On the computer, open Codync → Settings → Computer access. Permissions are set separately on each computer."
         val app = permissionApp ?: "Codync Screen"
         return when {
             !enabled -> "Remote screen is off. $setup"
             !connected -> "Codync Screen is not running. $setup"
+            // Windows asks for no grants: it only lacks a screen when none is attached or the user isn't signed in.
+            platform == "windows" && !(capture && input) -> "Codync can't find a screen to share on this computer. Sign in on it and try again."
             platform == "linux" && (!capture || !input) -> "Choose a screen and allow control in the system sharing dialog. $setup"
             !capture -> "Allow screen recording for $app. $setup"
             !input -> "Allow computer control for $app. macOS may call this Device Control and Data Access or Accessibility. $setup"

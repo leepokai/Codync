@@ -40,6 +40,9 @@ win:
       to: codync-host.exe
     - from: build/native/codync-dev-hostw.exe
       to: codync-dev-hostw.exe
+    # Remote screen's capture and input helper; the host starts it from beside itself.
+    - from: build/native/codync-screen.exe
+      to: codync-screen.exe
     - from: build/native/cua-driver.exe
       to: cua-driver.exe
     - from: build/native/cua-driver-uia.exe

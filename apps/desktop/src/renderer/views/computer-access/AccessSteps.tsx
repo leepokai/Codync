@@ -20,7 +20,7 @@ export function AccessSteps({ access, selection }: { access: ComputerAccess; sel
   )
   return (
     <>
-      {windows ? <AccessRow large={selection !== undefined} title="Computer control" icon="cursorarrow.motionlines" detail="Bots can use apps on this computer. Remote screen viewing from your phone isn’t available on Windows yet." done={ready} /> : <>
+      {windows ? <AccessRow large={selection !== undefined} title="Computer control" icon="cursorarrow.motionlines" detail="Bots can use apps on this computer, and your phone can view and control its screen." done={ready} /> : <>
         {(!selection || selection === 'helper') ? <AccessRow large={selection !== undefined} title="Codync Screen" icon="desktopcomputer" detail="Runs in the background to share your screen and connect your controls." done={helperReady} active={['enable', 'helper', 'background'].includes(step)} status={step === 'background' ? 'Needs approval' : undefined}>
           {['enable', 'helper'].includes(step) ? <Button disabled={busy !== null} onClick={() => void access.enable()}>{busy === 'enable' ? <><Spinner /> {tr('Starting…')}</> : step === 'helper' ? 'Start again' : 'Enable Codync Screen'}</Button> : null}
           {step === 'background' ? <><p className="computer-access-inline-note">{tr('Allow Codync to run in the background in Login Items.')}</p><Button onClick={() => access.openSettings('background')}>{tr('Open Login Items')} <Icon name="arrow.up.right.square" size={10} /></Button></> : null}

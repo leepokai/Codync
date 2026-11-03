@@ -110,7 +110,7 @@ Unlock the phone when required. Build, install, launch, and visual inspection ar
 
 ### Rust toolchain
 
-`host/rust-toolchain.toml` and `apps/screen-linux/rust-toolchain.toml` each pin the Rust version for their own crates (`host/crates/*` follow the host's). The two files must name the same version: when you bump one, bump the other, run clippy on both and commit them together. CI steps that install Rust run inside the crate's folder so rustup finds its file.
+`host/rust-toolchain.toml`, `apps/screen-linux/rust-toolchain.toml` and `apps/screen-windows/rust-toolchain.toml` each pin the Rust version for their own crates (`host/crates/*` follow the host's). The three files must name the same version: when you bump one, bump the other, run clippy on all three and commit them together. CI steps that install Rust run inside the crate's folder so rustup finds its file.
 
 ### Pre-commit checks
 

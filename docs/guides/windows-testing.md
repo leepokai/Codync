@@ -49,6 +49,14 @@ Windows architectures without requiring Mac signing secrets or running Linux pac
   minutes). NVMe must be the first drive and both ISOs detached afterwards, or Windows reinstalls on
   every boot.
 
+## Remote screen
+
+`apps/screen-windows` builds on Windows (MSVC) in CI and cross-checks from a Mac with `rustup target add x86_64-pc-windows-gnu` and Homebrew's `mingw-w64` (`cargo clippy --all-targets --target x86_64-pc-windows-gnu`; strip the host and helper with `x86_64-w64-mingw32-strip` before `scp`). Everything that touches the desktop must run in the signed-in session: from SSH (session 0) `EnumOutputs` fails with `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`, so start test processes with `schtasks /create … /it` and `schtasks /run`, as for GUI apps.
+
+Test without touching the computer's own Codync: a host built without `CODYNC_ENV` is the Dev build (its own data folder and port), so run it from a scratch folder with `CODYNC_HOME` and another port, started by a `.cmd` in the signed-in session: `codync-host.exe analytics off --port 19377`, then `codync-host.exe serve --port 19377 --bind 127.0.0.1`, with `codync-screen.exe` beside it (the host starts it). Note that a fresh data folder registers an anonymous computer with the dev cloud.
+
+There is no phone in a VM, so `apps/screen-windows/tools/viewer/` is a browser viewer for the local API: `proxy.py <token file> http://127.0.0.1:<port>` serves `viewer.html` and forwards `/api/*` with the token; the page runs the non-trickle `screenPrepare` / `screenOffer` exchange, shows the video, and with `?auto=1&input=1&view=1` posts stats, screenshots and the host's replies to `/report`. Reach the proxy from an Edge (`msedge --headless=new --user-data-dir=… http://127.0.0.1:8099/?auto=1`) on the Windows computer through `ssh -R 8099:127.0.0.1:8099`: ICE then runs on the machine itself, which the firewall does not filter. A browser elsewhere needs the first-run firewall prompt answered for `codync-screen.exe`: the prompt cannot be answered over SSH, and its default is a **Block** rule per program path (delete test rules with `netsh advfirewall firewall delete rule name="codync-screen.exe" program=<path>`). The trickle path (`screenCandidates`) exists only on the end-to-end channel, so exercise it from a phone or the Simulator.
+
 ## Installing a release
 
 1. Download the installer on the Mac and copy it in under a new name (`scp` can't overwrite a file

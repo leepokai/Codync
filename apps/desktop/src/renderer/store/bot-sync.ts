@@ -224,7 +224,7 @@ export class BotSync extends BotMirror {
         this.usage = event.usage
         this.screen = event.screen
         this.network = event.network
-        this.automan = event.automan
+        this.n8n = event.n8n
         if (event.rev < this.rev) this.rev = 0
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
@@ -260,8 +260,8 @@ export class BotSync extends BotMirror {
       case 'screen':
         this.screen = event.screen
         break
-      case 'automan':
-        this.automan = event.automan
+      case 'n8n':
+        this.n8n = event.n8n
         break
       case 'accessRequests':
         this.accessRequests = event.requests
@@ -310,7 +310,7 @@ export class BotSync extends BotMirror {
     this.historyComplete = new Set()
     this.floors = new Map()
     this.screen = null
-    this.automan = null
+    this.n8n = null
     this.saveCache()
   }
 

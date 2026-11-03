@@ -3,7 +3,6 @@
 mod agent;
 mod analytics;
 mod api;
-mod automan;
 mod background;
 #[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
 mod browser;
@@ -22,6 +21,7 @@ mod external;
 mod hub;
 mod market;
 mod mcp;
+mod n8n;
 mod network;
 mod network_cli;
 mod proactive;

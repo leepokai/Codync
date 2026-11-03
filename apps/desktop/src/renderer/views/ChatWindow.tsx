@@ -260,7 +260,7 @@ function ChatSplitView() {
         if (c.kind === 'search') setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
-        if (c.kind === 'openAutomationsSettings') setSettings('automations')
+        if (c.kind === 'openN8nSettings') setSettings('n8n')
         if (c.kind === 'voiceKey') {
           // No chat open: talk to the top bot in the sidebar.
           if (c.key === 'double' && !app.selection) app.select((roster.navigable[0] ?? roster.items[0])?.ref ?? null)
@@ -411,7 +411,7 @@ function ChatSplitView() {
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
-            <IconButton title="Automations" icon="point.3.connected.trianglepath.dotted" size={36} onClick={() => void window.codync.automan.open()} />
+            <IconButton title="n8n" icon="point.3.connected.trianglepath.dotted" size={36} onClick={() => void window.codync.n8n.open()} />
             <UpdateBadge size={32} />
             <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
               <ProfileAvatar />
@@ -423,7 +423,7 @@ function ChatSplitView() {
             accountOpen={showAccount}
             onAccount={() => setShowAccount((s) => !s)}
             onExtensions={roster.grouped ? undefined : openMarketplace}
-            onAutomations={() => void window.codync.automan.open()}
+            onN8n={() => void window.codync.n8n.open()}
           />
         )}
       </aside>

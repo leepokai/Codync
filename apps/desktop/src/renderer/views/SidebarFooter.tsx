@@ -1,4 +1,4 @@
-import type { AutomanState } from '@shared/models'
+import type { N8nState } from '@shared/models'
 import { useTr } from '../lib/use-language'
 import { Icon } from '../components/Icon'
 import { useApp } from '../store/context'
@@ -10,14 +10,14 @@ import drive from '../assets/google-drive.png'
 import './sidebar-footer.css'
 
 /** Account and app connections float above the scrolling roster; Extensions only when given. */
-export function SidebarFooter({ accountOpen, onAccount, onExtensions, onAutomations }: {
+export function SidebarFooter({ accountOpen, onAccount, onExtensions, onN8n }: {
   accountOpen: boolean
   onAccount: () => void
   onExtensions?: () => void
-  onAutomations: () => void
+  onN8n: () => void
 }) {
   const app = useApp()
-  const automan = app.local?.automan ?? null
+  const n8n = app.local?.n8n ?? null
   const tr = useTr()
   return (
     <div className="sidebar-footer">
@@ -25,13 +25,13 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions, onAutomati
       {onExtensions ? (
         <>
           <button
-            className="automations"
-            title={tr('Automations: the n8n editor, run by this computer')}
-            onClick={onAutomations}
+            className="n8n"
+            title={tr('n8n: the workflow editor, run by this computer')}
+            onClick={onN8n}
           >
             <Icon name="point.3.connected.trianglepath.dotted" size={13} />
-            <span>{tr('Automations')}</span>
-            <span className={`automan-dot ${dotState(automan)}`} aria-hidden />
+            <span>{tr('n8n')}</span>
+            <span className={`n8n-dot ${dotState(n8n)}`} aria-hidden />
           </button>
           <div className="sidebar-footer-row">
             <button
@@ -57,9 +57,9 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions, onAutomati
   )
 }
 
-function dotState(automan: AutomanState | null): string {
-  if (automan?.state === 'running') return 'running'
-  if (automan?.state === 'starting') return 'starting'
-  if (automan?.state === 'error') return 'error'
+function dotState(n8n: N8nState | null): string {
+  if (n8n?.state === 'running') return 'running'
+  if (n8n?.state === 'starting') return 'starting'
+  if (n8n?.state === 'error') return 'error'
   return 'off'
 }

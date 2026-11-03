@@ -62,10 +62,10 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
           "Have a bot do work on a schedule or when a webhook arrives: set it up in the routine editor or by asking the bot.",
       },
       {
-        slug: "automations",
-        title: "Automations",
+        slug: "n8n",
+        title: "n8n",
         description:
-          "Run an n8n-compatible workflow instance on your computer: set up the install folder and port in the Automations settings, then build flows in its editor.",
+          "Run an n8n instance on your computer: set up the install folder and port in the n8n settings, then build flows in its editor.",
       },
       {
         slug: "artifacts",

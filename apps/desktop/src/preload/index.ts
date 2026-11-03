@@ -154,10 +154,10 @@ const bridge: CodyncBridge = {
     open: (target) => ipcRenderer.invoke('screen:open', target),
     target: (computerId) => ipcRenderer.invoke('screen:target', computerId),
   },
-  automan: {
-    open: () => ipcRenderer.invoke('automan:open'),
-    gotoEditor: () => ipcRenderer.invoke('automan:gotoEditor'),
-    openSettings: () => ipcRenderer.send('automan:openSettings'),
+  n8n: {
+    open: () => ipcRenderer.invoke('n8n:open'),
+    gotoEditor: () => ipcRenderer.invoke('n8n:gotoEditor'),
+    openSettings: () => ipcRenderer.send('n8n:openSettings'),
   },
 }
 

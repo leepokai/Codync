@@ -111,8 +111,8 @@ pub struct Hub {
     pub cloud_synced: AtomicBool,
     pub cloud: crate::remote::cloud::Cloud,
     pub screen: Arc<Screen>,
-    /// The Automations instance (an n8n-compatible Automan) this computer runs.
-    pub automan: Arc<crate::automan::Automan>,
+    /// The n8n instance this computer runs.
+    pub n8n: Arc<crate::n8n::N8n>,
     pub computer: crate::computer::Access,
     /// Setup terminals (installs, sign-ins).
     pub terms: Arc<crate::agent::term::Terms>,
@@ -129,7 +129,7 @@ impl Hub {
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
-        let automan = Arc::new(crate::automan::Automan::new(&store, events.clone()));
+        let n8n = Arc::new(crate::n8n::N8n::new(&store, events.clone()));
         Arc::new(Self {
             computer: crate::computer::Access::default(),
             analytics: crate::analytics::Analytics::load(&store),
@@ -158,7 +158,7 @@ impl Hub {
             cloud_synced: AtomicBool::new(false),
             cloud: crate::remote::cloud::Cloud::default(),
             screen,
-            automan,
+            n8n,
             terms: Arc::default(),
             external: crate::external::External::default(),
         })
@@ -185,8 +185,8 @@ impl Hub {
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
-        // The Automations instance starts with the host when its service is on.
-        self.automan.start();
+        // The n8n instance starts with the host when its service is on.
+        self.n8n.start();
         Ok(())
     }
 
@@ -211,7 +211,7 @@ impl Hub {
         if tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks)).await.is_err() {
             tracing::warn!("some bots didn't stop within 5 s");
         }
-        self.automan.stop().await;
+        self.n8n.stop().await;
         self.keep_awake.locked().set(false);
     }
 

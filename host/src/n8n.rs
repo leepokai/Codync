@@ -1,7 +1,7 @@
-//! Automations: an n8n-compatible instance (Automan) that runs on this computer under the
-//! host's control. The desktop app embeds its editor; its data lives next to the host's.
+//! n8n: the n8n instance this computer runs under the host's control. The desktop app
+//! embeds its editor; its data lives next to the host's.
 //!
-//! The installation is the user's own folder (a built Automan monorepo). The host finds
+//! The installation is the user's own folder (a built n8n monorepo). The host finds
 //! Node.js on the computer, starts `packages/cli/bin/automan` in it, and waits for the
 //! instance's `/healthz` endpoint.
 
@@ -20,16 +20,19 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::broadcast;
 
-/// The oldest Node.js major that runs an Automan install.
+/// The oldest Node.js major that runs an n8n install.
 const NODE_MAJOR: u32 = 24;
 /// The first start runs database setup and migrations, so the wait is patient.
 const READY_TIMEOUT: Duration = Duration::from_secs(180);
 const DEFAULT_PORT: u16 = 5678;
 const LOG_CAP: usize = 16 * 1024;
 
-const KV_PATH: &str = "automan.path";
-const KV_PORT: &str = "automan.port";
-const KV_ENABLED: &str = "automan.enabled";
+const KV_PATH: &str = "n8n.path";
+const KV_PORT: &str = "n8n.port";
+const KV_ENABLED: &str = "n8n.enabled";
+/// The settings' keys under the pre-rename name, read once and moved to the new keys.
+const LEGACY_KV: [(&str, &str); 3] =
+    [("automan.path", KV_PATH), ("automan.port", KV_PORT), ("automan.enabled", KV_ENABLED)];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum State {
@@ -56,8 +59,8 @@ struct Settings {
     enabled: bool,
 }
 
-/// The Automan service: its settings, the child process, and the state clients display.
-pub struct Automan {
+/// The n8n service: its settings, the child process, and the state clients display.
+pub struct N8n {
     settings: Mutex<Settings>,
     state: Mutex<State>,
     process: tokio::sync::Mutex<Option<Process>>,
@@ -69,12 +72,12 @@ pub struct Automan {
     events: broadcast::Sender<Value>,
 }
 
-impl Automan {
+impl N8n {
     pub fn new(store: &Store, events: broadcast::Sender<Value>) -> Self {
         let settings = Settings {
-            path: store.kv_get(KV_PATH).map(PathBuf::from),
-            port: store.kv_get(KV_PORT).and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_PORT),
-            enabled: store.kv_get(KV_ENABLED).as_deref() == Some("1"),
+            path: kv(store, KV_PATH).map(PathBuf::from),
+            port: kv(store, KV_PORT).and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_PORT),
+            enabled: kv(store, KV_ENABLED).as_deref() == Some("1"),
         };
         Self {
             settings: Mutex::new(settings),
@@ -114,7 +117,7 @@ impl Automan {
 
     /// The clients' view of the service: the settings, the state, and where the editor runs.
     fn broadcast(&self) {
-        let _ = self.events.send(json!({ "type": "automan", "automan": self.state() }));
+        let _ = self.events.send(json!({ "type": "n8n", "n8n": self.state() }));
     }
 
     fn active(&self) -> bool {
@@ -220,16 +223,16 @@ impl Automan {
     async fn launch(self: &Arc<Self>, generation: u64) -> Result<()> {
         let (path, port) = {
             let s = self.settings.locked();
-            let path = s.path.clone().context("no Automations folder set yet")?;
+            let path = s.path.clone().context("no n8n folder set yet")?;
             (path, s.port)
         };
         let bin = path.join("packages/cli/bin/automan");
-        ensure!(bin.exists(), "that folder isn't an Automations install (missing packages/cli/bin/automan)");
-        let node = tokio::task::spawn_blocking(|| node_at_least(NODE_MAJOR))
-            .await?
-            .context("Node.js for the Automations instance")?;
-        let user_folder = service::data_dir().join("automan");
-        tokio::fs::create_dir_all(&user_folder).await.context("preparing the Automations data folder")?;
+        ensure!(bin.exists(), "that folder isn't an n8n install (missing packages/cli/bin/automan)");
+        let node =
+            tokio::task::spawn_blocking(|| node_at_least(NODE_MAJOR)).await?.context("Node.js for the n8n instance")?;
+        let user_folder = service::data_dir().join("n8n");
+        migrate_data_dir(&user_folder).await?;
+        tokio::fs::create_dir_all(&user_folder).await.context("preparing the n8n data folder")?;
 
         let mut command = Command::new(&node);
         command
@@ -244,7 +247,7 @@ impl Automan {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         Process::prepare(&mut command);
-        let mut child = command.spawn().with_context(|| format!("starting Automan on port {port}"))?;
+        let mut child = command.spawn().with_context(|| format!("starting n8n on port {port}"))?;
         self.pump(child.stdout.take());
         self.pump(child.stderr.take());
         let process = Process::new(child)?;
@@ -258,13 +261,13 @@ impl Automan {
                 return Ok(()); // a stop or new start took over
             }
             if self.exited().await? {
-                bail!("Automan stopped before it was ready{}", tail_hint(&self.log_tail()));
+                bail!("n8n stopped before it was ready{}", tail_hint(&self.log_tail()));
             }
             if health(&url).await {
                 break;
             }
             if tokio::time::Instant::now() > deadline {
-                bail!("Automan didn't come up within three minutes{}", tail_hint(&self.log_tail()));
+                bail!("n8n didn't come up within three minutes{}", tail_hint(&self.log_tail()));
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -284,7 +287,7 @@ impl Automan {
             }
             // A stop already set the state; only a crash needs a message.
             if self.generation.load(Ordering::SeqCst) == generation && *self.state.locked() == State::Running {
-                self.set_state(State::Error(format!("Automan stopped unexpectedly{}", tail_hint(&self.log_tail()))));
+                self.set_state(State::Error(format!("n8n stopped unexpectedly{}", tail_hint(&self.log_tail()))));
             }
         });
     }
@@ -330,6 +333,31 @@ impl Automan {
     }
 }
 
+/// A renamed settings key: the new value if stored, else the pre-rename one, which is
+/// moved to the new key so this only happens once.
+fn kv(store: &Store, key: &str) -> Option<String> {
+    if let Some(v) = store.kv_get(key) {
+        return Some(v);
+    }
+    let legacy = LEGACY_KV.iter().find(|(_, new)| *new == key)?.0;
+    let value = store.kv_get(legacy)?;
+    if store.kv_set(key, &value).is_ok() {
+        let _ = store.kv_delete(legacy);
+    }
+    Some(value)
+}
+
+/// The instance's data folder under its pre-rename name is moved to the new one, once.
+async fn migrate_data_dir(dir: &Path) -> Result<()> {
+    let legacy = dir.with_file_name("automan");
+    if legacy.is_dir() && !dir.exists() {
+        tokio::fs::rename(&legacy, dir)
+            .await
+            .with_context(|| format!("moving {} to {}", legacy.display(), dir.display()))?;
+    }
+    Ok(())
+}
+
 /// `message — what the instance last printed`, when there is a print to cite.
 fn with_tail(message: String, tail: &str) -> String {
     if tail.is_empty() { message } else { format!("{message} — {tail}") }
@@ -346,7 +374,7 @@ fn node_at_least(min_major: u32) -> Result<PathBuf> {
     let out = std::process::Command::new(&node).arg("--version").output().context("checking Node.js's version")?;
     let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     let major: u32 = version.trim_start_matches('v').split('.').next().unwrap_or_default().parse().unwrap_or(0);
-    ensure!(major >= min_major, "Automan needs Node.js {min_major} or newer; this computer has {version}");
+    ensure!(major >= min_major, "n8n needs Node.js {min_major} or newer; this computer has {version}");
     Ok(node)
 }
 
@@ -354,7 +382,7 @@ fn node_at_least(min_major: u32) -> Result<PathBuf> {
 fn check_install(path: &Path) -> Result<()> {
     ensure!(
         path.join("packages/cli/bin/automan").exists(),
-        "that folder isn't an Automations install (missing packages/cli/bin/automan)"
+        "that folder isn't an n8n install (missing packages/cli/bin/automan)"
     );
     Ok(())
 }
@@ -370,7 +398,7 @@ mod tests {
     use crate::store::Store;
 
     fn temp_store() -> Store {
-        let dir = std::env::temp_dir().join(format!("automan-test-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("n8n-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         Store::open(&dir.join("codync.db")).unwrap()
     }
@@ -379,7 +407,7 @@ mod tests {
     fn settings_default_to_off_and_the_usual_port() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = Automan::new(&store, events);
+        let a = N8n::new(&store, events);
         let s = a.state();
         assert_eq!(s["enabled"], false);
         assert_eq!(s["state"], "stopped");
@@ -391,9 +419,9 @@ mod tests {
     fn the_path_must_be_an_install() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = Arc::new(Automan::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events));
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let bad = std::env::temp_dir().join(format!("automan-not-{}", uuid::Uuid::new_v4()));
+        let bad = std::env::temp_dir().join(format!("n8n-not-{}", uuid::Uuid::new_v4()));
         rt.block_on(a.set_path(&store, &bad.to_string_lossy())).unwrap_err();
         std::fs::create_dir_all(bad.join("packages/cli/bin")).unwrap();
         std::fs::write(bad.join("packages/cli/bin/automan"), "").unwrap();
@@ -406,7 +434,7 @@ mod tests {
     fn the_port_stays_in_the_user_range() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = Arc::new(Automan::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events));
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(a.set_port(&store, 80)).unwrap_err();
         rt.block_on(a.set_port(&store, 5679)).unwrap();
@@ -417,21 +445,21 @@ mod tests {
     fn a_settings_change_reaches_the_clients() {
         let store = temp_store();
         let (events, mut rx) = broadcast::channel(8);
-        let a = Arc::new(Automan::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events));
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let good = std::env::temp_dir().join(format!("automan-good-{}", uuid::Uuid::new_v4()));
+        let good = std::env::temp_dir().join(format!("n8n-good-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(good.join("packages/cli/bin")).unwrap();
         std::fs::write(good.join("packages/cli/bin/automan"), "").unwrap();
         rt.block_on(async {
             a.set_path(&store, &good.to_string_lossy()).await.unwrap();
             let ev = rx.recv().await.unwrap();
-            assert_eq!(ev["type"], "automan");
-            assert_eq!(ev["automan"]["path"], good.to_string_lossy().to_string());
-            assert_eq!(ev["automan"]["url"], format!("http://127.0.0.1:{DEFAULT_PORT}"));
+            assert_eq!(ev["type"], "n8n");
+            assert_eq!(ev["n8n"]["path"], good.to_string_lossy().to_string());
+            assert_eq!(ev["n8n"]["url"], format!("http://127.0.0.1:{DEFAULT_PORT}"));
             a.set_port(&store, 5679).await.unwrap();
             let ev = rx.recv().await.unwrap();
-            assert_eq!(ev["automan"]["port"], 5679);
-            assert_eq!(ev["automan"]["url"], "http://127.0.0.1:5679");
+            assert_eq!(ev["n8n"]["port"], 5679);
+            assert_eq!(ev["n8n"]["url"], "http://127.0.0.1:5679");
         });
     }
 
@@ -439,7 +467,7 @@ mod tests {
     fn enabling_persists_and_reflects() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = Arc::new(Automan::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events));
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             a.enable(&store).unwrap();
@@ -447,5 +475,26 @@ mod tests {
             a.disable(&store).await.unwrap();
             assert_eq!(store.kv_get(KV_ENABLED).as_deref(), Some("0"));
         });
+    }
+
+    #[test]
+    fn settings_under_the_old_name_come_along_and_are_moved() {
+        let store = temp_store();
+        store.kv_set("automan.path", "C:\\n8n-install").unwrap();
+        store.kv_set("automan.port", "5679").unwrap();
+        store.kv_set("automan.enabled", "1").unwrap();
+        let (events, _) = broadcast::channel(8);
+        let a = N8n::new(&store, events);
+        let s = a.state();
+        assert_eq!(s["path"], "C:\\n8n-install");
+        assert_eq!(s["port"], 5679);
+        assert_eq!(s["enabled"], true);
+        // The move is one-time: the new keys hold the values, the old ones are gone.
+        assert_eq!(store.kv_get(KV_PATH).as_deref(), Some("C:\\n8n-install"));
+        assert_eq!(store.kv_get(KV_PORT).as_deref(), Some("5679"));
+        assert_eq!(store.kv_get(KV_ENABLED).as_deref(), Some("1"));
+        assert!(store.kv_get("automan.path").is_none());
+        assert!(store.kv_get("automan.port").is_none());
+        assert!(store.kv_get("automan.enabled").is_none());
     }
 }

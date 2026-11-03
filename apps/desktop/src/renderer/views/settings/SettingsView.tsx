@@ -25,13 +25,13 @@ import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
 import { FormSheet } from '../marketplace/pieces'
 import { AnalyticsSheet } from './AnalyticsSheet'
-import { AutomationsSettings } from './AutomationsSettings'
+import { N8nSettings } from './N8nSettings'
 import { DiagnosticsView } from './DiagnosticsView'
 import { ResearchSettingsSection } from './ResearchSettingsSection'
 import { HiddenBotsSection } from './HiddenBotsSection'
 
 /** The chat window's Settings: pages in a sidebar, ChatGPT's settings layout. */
-export type SettingsPage = 'general' | 'computers' | 'network' | 'access' | 'voice' | 'usage' | 'updates' | 'diagnostics' | 'automations'
+export type SettingsPage = 'general' | 'computers' | 'network' | 'access' | 'voice' | 'usage' | 'updates' | 'diagnostics' | 'n8n'
 
 const thisComputer = isMac ? 'This Mac' : 'This computer'
 const pages: { id: SettingsPage; title: string; label?: string; group: string; icon: string }[] = [
@@ -43,11 +43,11 @@ const pages: { id: SettingsPage; title: string; label?: string; group: string; i
   { id: 'usage', title: 'Usage', group: 'Personal', icon: 'gauge.with.dots.needle.33percent' },
   { id: 'updates', title: 'Updates', group: thisComputer, icon: 'arrow.down.circle' },
   { id: 'diagnostics', title: 'System diagnostics', label: 'Diagnostics', group: thisComputer, icon: 'stethoscope' },
-  { id: 'automations', title: 'Automations', group: thisComputer, icon: 'point.3.connected.trianglepath.dotted' },
+  { id: 'n8n', title: 'n8n', group: thisComputer, icon: 'point.3.connected.trianglepath.dotted' },
 ]
 
 /** Each page as `screen_viewed` names it; Computer access and Voice chat report themselves. */
-const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', network: 'settings', usage: 'usage', access: null, voice: null, diagnostics: null, automations: null }
+const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', network: 'settings', usage: 'usage', access: null, voice: null, diagnostics: null, n8n: null }
 
 /** `page` is the window's: a command (the menu bar's network rows) can turn the open sheet to another page. */
 export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (page: SettingsPage) => void }) {
@@ -125,8 +125,8 @@ function PageContent({ page }: { page: SettingsPage }) {
       return <DiagnosticsView />
     case 'updates':
       return <UpdateSettings />
-    case 'automations':
-      return <AutomationsSettings />
+    case 'n8n':
+      return <N8nSettings />
   }
 }
 

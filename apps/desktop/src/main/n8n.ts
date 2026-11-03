@@ -1,10 +1,10 @@
 import { BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
-import type { AutomanState } from '../shared/models'
+import type { N8nState } from '../shared/models'
 import type { HostController } from './host-controller'
 
 /**
- * The Automations window: one BrowserWindow that shows this window's start page while the
+ * The n8n window: one BrowserWindow that shows this window's start page while the
  * host brings the n8n instance up, then the editor itself. The instance belongs to the
  * host, so this module only decides what the window displays.
  */
@@ -12,15 +12,15 @@ let window: BrowserWindow | null = null
 /** Set once the editor is loaded: navigation stays inside the instance. */
 let editorOrigin: string | null = null
 
-export function registerAutoman(host: HostController, rendererURL: (page: string) => string, chatWindow: () => BrowserWindow | null, openSettings: () => void) {
+export function registerN8n(host: HostController, rendererURL: (page: string) => string, chatWindow: () => BrowserWindow | null, openSettings: () => void) {
   const chatLocation = new URL(rendererURL('chat'))
-  const pageLocation = new URL(rendererURL('automan'))
+  const pageLocation = new URL(rendererURL('n8n'))
 
   /** The host's view of the instance; null while this computer's host isn't answering. */
-  async function status(): Promise<AutomanState | null> {
+  async function status(): Promise<N8nState | null> {
     if (!host.local) return null
     try {
-      return await host.call<AutomanState>('automanStatus')
+      return await host.call<N8nState>('n8nStatus')
     } catch {
       return null
     }
@@ -43,7 +43,7 @@ export function registerAutoman(host: HostController, rendererURL: (page: string
       height: 820,
       minWidth: 720,
       minHeight: 480,
-      title: 'Automations',
+      title: 'n8n',
       show: false,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#0A0A0A' : '#FFFFFF',
       webPreferences: {
@@ -68,7 +68,7 @@ export function registerAutoman(host: HostController, rendererURL: (page: string
     window.webContents.on('will-redirect', (event, destination) => {
       if (!allowed(destination)) event.preventDefault()
     })
-    // The taskbar keeps "Automations" while the editor sets its own document title.
+    // The taskbar keeps "n8n" while the editor sets its own document title.
     window.webContents.on('page-title-updated', (event) => event.preventDefault())
     return window
   }
@@ -91,16 +91,16 @@ export function registerAutoman(host: HostController, rendererURL: (page: string
     }
   }
 
-  ipcMain.handle('automan:open', (event) => {
+  ipcMain.handle('n8n:open', (event) => {
     const chat = chatWindow()
     if (!chat || chat.isDestroyed() || event.sender !== chat.webContents ||
         event.senderFrame !== chat.webContents.mainFrame || new URL(event.senderFrame.url).href !== chatLocation.href) {
-      throw new Error('This window cannot open Automations.')
+      throw new Error('This window cannot open n8n.')
     }
     return open()
   })
 
-  ipcMain.on('automan:openSettings', (event) => {
+  ipcMain.on('n8n:openSettings', (event) => {
     const win = window
     if (!win || win.isDestroyed() || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
       return
@@ -109,15 +109,15 @@ export function registerAutoman(host: HostController, rendererURL: (page: string
   })
 
   // The start page calls it once the host reports the instance running.
-  ipcMain.handle('automan:gotoEditor', async (event) => {
+  ipcMain.handle('n8n:gotoEditor', async (event) => {
     const win = window
     if (!win || win.isDestroyed() || event.sender !== win.webContents ||
         event.senderFrame !== win.webContents.mainFrame || editorOrigin !== null ||
         new URL(event.senderFrame.url).href !== pageLocation.href) {
-      throw new Error('This window cannot load the Automations editor.')
+      throw new Error('This window cannot load the n8n editor.')
     }
     const s = await status()
-    if (!s || s.state !== 'running' || !s.url) throw new Error('The Automations instance is not running yet.')
+    if (!s || s.state !== 'running' || !s.url) throw new Error('The n8n instance is not running yet.')
     if (win.isDestroyed()) return
     editorOrigin = new URL(s.url).origin
     await win.loadURL(s.url)

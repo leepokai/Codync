@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client'
 import './styles/theme.css'
 import { ChatWindow } from './views/ChatWindow'
 import { ScreenWindow } from './views/screen/ScreenWindow'
-import { AutomationsWindow } from './views/automations/AutomationsWindow'
+import { N8nWindow } from './views/n8n/N8nWindow'
 import { PairingWindow } from './views/PairingWindow'
 import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
@@ -27,9 +27,9 @@ const root = createRoot(document.getElementById('root')!)
 
 if (page === 'screen') {
   root.render(<ScreenWindow />)
-} else if (page === 'automan') {
+} else if (page === 'n8n') {
   // The start page: it talks to the host itself, no mirror of the bots.
-  root.render(<AutomationsWindow />)
+  root.render(<N8nWindow />)
 } else if (page === 'island') {
   // The island only draws what the chat window sends it: no host connection of its own.
   const island = new IslandModel()

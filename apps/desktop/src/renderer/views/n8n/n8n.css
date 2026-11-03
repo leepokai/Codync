@@ -1,12 +1,12 @@
-html[data-window='automan'],
-html[data-window='automan'] body,
-html[data-window='automan'] #root {
+html[data-window='n8n'],
+html[data-window='n8n'] body,
+html[data-window='n8n'] #root {
   height: 100%;
   margin: 0;
 }
 
 /* The start page: a centered status while the host brings the instance up. */
-.automan-window {
+.n8n-window {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,7 +14,7 @@ html[data-window='automan'] #root {
   user-select: none;
 }
 
-.automan-status {
+.n8n-status {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -24,7 +24,7 @@ html[data-window='automan'] #root {
   text-align: center;
 }
 
-.automan-icon {
+.n8n-icon {
   display: grid;
   place-items: center;
   width: 56px;
@@ -34,13 +34,13 @@ html[data-window='automan'] #root {
   color: var(--text);
 }
 
-.automan-title {
+.n8n-title {
   font-size: 20px;
   font-weight: 600;
   margin-top: 6px;
 }
 
-.automan-detail {
+.n8n-detail {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
@@ -49,11 +49,11 @@ html[data-window='automan'] #root {
   word-break: break-word;
 }
 
-.automan-detail.automan-error {
+.n8n-detail.n8n-error {
   color: var(--danger);
 }
 
-.automan-actions {
+.n8n-actions {
   display: flex;
   gap: 8px;
   margin-top: 6px;

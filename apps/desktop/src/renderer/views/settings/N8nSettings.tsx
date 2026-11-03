@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AutomanState } from '@shared/models'
+import type { N8nState } from '@shared/models'
 import { Button, CardForm, CardSection, Spinner, Switch, ValueRow } from '../../components/Controls'
 import { FolderPicker } from '../../components/FolderPicker'
 import { Sheet } from '../../components/Overlay'
@@ -10,40 +10,40 @@ import { useTr } from '../../lib/use-language'
 import { StoreContext, useApp, useStore } from '../../store/context'
 import { errorText, thisMac } from './parts'
 
-/** The Automations (n8n) instance this computer runs: where it lives, and whether it's on. */
-export function AutomationsSettings() {
+/** The n8n instance this computer runs: where it lives, and whether it's on. */
+export function N8nSettings() {
   const app = useApp()
   const store = app.local
   const tr = useTr()
   if (!store) {
     return (
       <CardForm>
-        <Text tone="secondary">{tr(`Automations is kept by ${thisMac}'s host, which isn't running.`)}</Text>
+        <Text tone="secondary">{tr(`n8n is kept by ${thisMac}'s host, which isn't running.`)}</Text>
       </CardForm>
     )
   }
   return (
     <StoreContext.Provider value={store}>
-      <AutomationsSettingsBody />
+      <N8nSettingsBody />
     </StoreContext.Provider>
   )
 }
 
-function AutomationsSettingsBody() {
+function N8nSettingsBody() {
   const store = useStore()
   const tr = useTr()
 
   // The store's copy comes from the events stream; the calls' answers cover the
   // settings that don't change the instance's state.
-  const [live, setLive] = useState<AutomanState | null>(store.automan)
+  const [live, setLive] = useState<N8nState | null>(store.n8n)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
-  const [port, setPort] = useState<string>(String(store.automan?.port ?? 5679))
+  const [port, setPort] = useState<string>(String(store.n8n?.port ?? 5679))
 
   useEffect(() => {
-    setLive(store.automan)
-  }, [store.automan])
+    setLive(store.n8n)
+  }, [store.n8n])
 
   const online = store.connection.kind === 'online'
 
@@ -52,7 +52,7 @@ function AutomationsSettingsBody() {
       setBusy(true)
       setError(null)
       try {
-        setLive(await client.call<AutomanState>(method, body, 60_000))
+        setLive(await client.call<N8nState>(method, body, 60_000))
       } catch (e) {
         setError(errorText(e))
       } finally {
@@ -67,20 +67,20 @@ function AutomationsSettingsBody() {
   return (
     <CardForm>
       <CardSection
-        title="Automations"
+        title="n8n"
         footer="An n8n instance run by this computer's host. Its editor opens in a window of Codync."
       >
         <Switch
           on={live?.enabled ?? false}
-          onChange={(on) => void act('setAutomanEnabled', { enabled: on })}
+          onChange={(on) => void act('setN8nEnabled', { enabled: on })}
           disabled={busy || !online}
-          label="Automations"
+          label="n8n"
         >
-          {tr('Run Automations with this computer')}
+          {tr('Run n8n with this computer')}
         </Switch>
         <div className="settings-row">
           <HStack gap={8} grow className="settings-stack">
-            <span className={`automan-dot ${dot}`} />
+            <span className={`n8n-dot ${dot}`} />
             <VStack grow>
               <Text truncate>{tr(stateLabel(live?.state ?? null))}</Text>
               {live?.error ? <Text size="caption" tone="danger" truncate>{live.error}</Text> : null}
@@ -88,15 +88,15 @@ function AutomationsSettingsBody() {
           </HStack>
           <HStack gap={6}>
             {running || starting ? (
-              <Button kind="secondary" disabled={busy} onClick={() => void act('automanStop', {})}>
+              <Button kind="secondary" disabled={busy} onClick={() => void act('n8nStop', {})}>
                 {tr('Stop')}
               </Button>
             ) : (
-              <Button disabled={busy || !online || live === null} onClick={() => void act('automanStart', {})}>
+              <Button disabled={busy || !online || live === null} onClick={() => void act('n8nStart', {})}>
                 {starting ? tr('Starting…') : tr('Start')}
               </Button>
             )}
-            <Button kind="secondary" disabled={live === null} onClick={() => void window.codync.automan.open()}>
+            <Button kind="secondary" disabled={live === null} onClick={() => void window.codync.n8n.open()}>
               {tr('Open')}
             </Button>
           </HStack>
@@ -120,7 +120,7 @@ function AutomationsSettingsBody() {
               disabled={busy}
               onChange={(e) => setPort(e.target.value)}
             />
-            <Button kind="secondary" disabled={busy || port === String(live?.port)} onClick={() => void act('setAutomanPort', { port: Number(port) })}>
+            <Button kind="secondary" disabled={busy || port === String(live?.port)} onClick={() => void act('setN8nPort', { port: Number(port) })}>
               {tr('Save')}
             </Button>
           </HStack>
@@ -139,7 +139,7 @@ function AutomationsSettingsBody() {
           start={live?.path ?? store.hello?.home ?? null}
           onPick={(path) => {
             setPicking(false)
-            void act('setAutomanPath', { path })
+            void act('setN8nPath', { path })
           }}
         />
       </Sheet>

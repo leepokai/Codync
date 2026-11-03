@@ -122,7 +122,7 @@ const bridge: CodyncBridge = {
     open: async () => {},
     target: async () => null,
   },
-  automan: {
+  n8n: {
     open: async () => {},
     gotoEditor: async () => {},
     openSettings() {},

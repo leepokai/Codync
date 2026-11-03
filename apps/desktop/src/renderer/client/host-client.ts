@@ -3,7 +3,7 @@ import {
   normalizeBot,
   normalizeScreen,
   type AccessRequest,
-  type AutomanState,
+  type N8nState,
   type Bot,
   type CloudStatus,
   type Entry,
@@ -65,8 +65,8 @@ export class LoopbackTransport implements HostTransport {
 }
 
 export type HostEvent =
-  /** `network` and `automan` are null from hosts before those views. */
-  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; automan: AutomanState | null }
+  /** `network` and `n8n` are null from hosts before those views. */
+  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; n8n: N8nState | null }
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
@@ -74,7 +74,7 @@ export type HostEvent =
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
   | { type: 'screen'; screen: ScreenState }
-  | { type: 'automan'; automan: AutomanState }
+  | { type: 'n8n'; n8n: N8nState }
   | { type: 'accessRequests'; requests: AccessRequest[] }
   | { type: 'cloud'; cloud: CloudStatus }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
@@ -102,7 +102,7 @@ export function parseEvent(line: string): HostEvent | null {
         usage: (raw.usage as Usage) ?? { providers: [] },
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
-        automan: normalizeAutoman(raw.automan as AutomanState | undefined),
+        n8n: normalizeN8n(raw.n8n as N8nState | undefined),
       }
     case 'bot': {
       const bot = raw.bot as (Bot & { deleted?: boolean }) | undefined
@@ -127,9 +127,9 @@ export function parseEvent(line: string): HostEvent | null {
     }
     case 'accessRequests':
       return { type, requests: (raw.requests as AccessRequest[]) ?? [] }
-    case 'automan': {
-      const automan = normalizeAutoman(raw.automan as AutomanState | undefined)
-      return automan ? { type, automan } : null
+    case 'n8n': {
+      const n8n = normalizeN8n(raw.n8n as N8nState | undefined)
+      return n8n ? { type, n8n } : null
     }
     case 'cloud':
       return raw.cloud ? { type, cloud: raw.cloud as CloudStatus } : null
@@ -146,8 +146,8 @@ export function parseEvent(line: string): HostEvent | null {
   }
 }
 
-/** The host's Automations (n8n) state; null on a host that predates it. */
-export function normalizeAutoman(raw: AutomanState | undefined): AutomanState | null {
+/** The host's n8n state; null on a host that predates it. */
+export function normalizeN8n(raw: N8nState | undefined): N8nState | null {
   if (!raw || typeof raw.state !== 'string' || !['stopped', 'starting', 'running', 'error'].includes(raw.state)) return null
   return {
     enabled: raw.enabled ?? false,

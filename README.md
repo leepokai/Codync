@@ -262,6 +262,10 @@ Clients and the host each name the oldest version of the other they still work w
 
 The desktop notch island's design is inspired by the work of [@novra.design](https://www.instagram.com/novra.design/).
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org), for the Windows releases once SignPath Foundation accepts the project (earlier releases are unsigned). What is signed and who approves it: [code signing policy](https://www.codync.dev/code-signing).
+
 ## License
 
 Apache 2.0 for the code (see [NOTICE](NOTICE)); versions up to 2.11.0 were MIT. The Codync name, logo and the Codync Cloud relay are not covered, and hosted or multi-tenant services must run their own relay and accounts: see [TRADEMARK.md](TRADEMARK.md).

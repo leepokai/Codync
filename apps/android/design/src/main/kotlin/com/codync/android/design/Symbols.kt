@@ -86,6 +86,7 @@ import androidx.annotation.DrawableRes
     "eye.slash" -> R.drawable.sf_eye_slash
     "figure.run" -> R.drawable.sf_figure_run
     "film" -> R.drawable.sf_film
+    "flowchart" -> R.drawable.sf_flowchart
     "folder" -> R.drawable.sf_folder
     "function" -> R.drawable.sf_function
     "gearshape" -> R.drawable.sf_gearshape

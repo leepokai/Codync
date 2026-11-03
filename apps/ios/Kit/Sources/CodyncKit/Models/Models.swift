@@ -245,6 +245,8 @@ public struct Hello: Codable, Sendable {
     public var latestVersion: String?
     /// This phone paired without the computer joining its account: it calls `joinAccount` to finish (older hosts: nil).
     public var joinAccount: Bool?
+    /// This host serves workflows. Missing on older hosts, which is the same as false.
+    public var workflows: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

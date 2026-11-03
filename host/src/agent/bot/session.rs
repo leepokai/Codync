@@ -16,7 +16,10 @@ impl Actor {
     /// Which session the running turn uses: a routine run has one of its own (by its slot); everything else uses
     /// the main one.
     pub(super) fn slot(&self) -> Option<String> {
-        self.active_routine.as_deref().map(crate::routines::session_slot)
+        self.active_workflow
+            .as_deref()
+            .map(crate::workflows::session_slot)
+            .or_else(|| self.active_routine.as_deref().map(crate::routines::session_slot))
     }
 
     pub(super) fn session_for(&mut self, slot: Option<&str>) -> Option<String> {
@@ -113,6 +116,7 @@ impl Actor {
             self.cfg.manage_team.then_some("manage"),
             Some("memory"),
             Some("routines"),
+            Some("workflows"),
             self.cfg.computer.then_some("computer"),
             composio.then_some("composio"),
         ];

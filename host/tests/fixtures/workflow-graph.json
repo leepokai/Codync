@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    {
+      "id": "trigger",
+      "kind": "trigger",
+      "at": { "x": 80, "y": 80 },
+      "fields": { "trigger": "manual" }
+    },
+    {
+      "id": "prompt",
+      "kind": "prompt",
+      "at": { "x": 80, "y": 300 },
+      "fields": { "text": "Hello from the workflow" }
+    },
+    {
+      "id": "output",
+      "kind": "output",
+      "at": { "x": 480, "y": 180 },
+      "fields": { "target": "notify" }
+    }
+  ],
+  "edges": [
+    { "id": "trigger>output:text", "from": "trigger", "to": "output", "type": "text" },
+    { "id": "prompt>output:text", "from": "prompt", "to": "output", "type": "text" }
+  ]
+}

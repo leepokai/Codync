@@ -83,6 +83,7 @@ pub fn events_stream(
         "network": crate::network::status(hub),
         // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
         "catchUp": catch_up.len(),
+        "workflows": true,
     });
     catch_up.insert(0, hello);
 

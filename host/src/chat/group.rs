@@ -212,7 +212,7 @@ async fn answer_later(
 /// The "done" push for `name`'s reply in the group.
 fn alert(hub: &Hub, group_id: &str, from: &str, name: &str, text: &str) -> Result<()> {
     if let Some(group) = hub.store.bot(group_id)?.map(|r| r.config) {
-        push::notify(hub, &group, Some(from), &format!("{name} in {}", group.name), text, AlertKind::Done);
+        push::notify(hub, &group, Some(from), &format!("{name} in {}", group.name), text, AlertKind::Done, None);
     }
     Ok(())
 }

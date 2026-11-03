@@ -263,7 +263,10 @@ export class AppModel extends Observable {
 
   get errorMessage(): string | null {
     if (this.lastError) return this.lastError
-    for (const store of this.stores.values()) if (store.lastError) return store.lastError
+    for (const store of this.stores.values()) {
+      if (store.quietError) continue
+      if (store.lastError) return store.lastError
+    }
     return null
   }
 

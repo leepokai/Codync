@@ -37,8 +37,10 @@ extension AppStore {
         for store in accounts.stores.values { store.screenRequest = nil }
         account.showSwitcher = false
         showComputers = false
+        showStatus = false
         showUsage = false
         marketplace = nil
+        pendingWorkflow = nil
         tab = .bots
         accounts.selection = ref
         accounts.setActive(true)

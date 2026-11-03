@@ -249,6 +249,7 @@ impl Actor {
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,
+            None,
         );
     }
 
@@ -304,7 +305,7 @@ impl Actor {
                 "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there {LATER}"
             );
         }
-        if self.active_group.is_some() || self.active_routine.is_some() {
+        if self.active_group.is_some() || self.active_routine.is_some() || self.active_workflow.is_some() {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();
@@ -322,7 +323,7 @@ impl Actor {
         anyhow::ensure!(!self.stop_requested, "the user stopped you: send nothing until they write again");
         self.add_between_turns(EntryKind::Agent, &json!({"text": text, "final": true, "author": self.cfg.id}))
             .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
-        push::notify(&self.hub, &self.cfg, None, &self.cfg.name, text, AlertKind::Done);
+        push::notify(&self.hub, &self.cfg, None, &self.cfg.name, text, AlertKind::Done, None);
         Ok(())
     }
 

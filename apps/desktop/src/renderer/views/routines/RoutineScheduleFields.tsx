@@ -3,7 +3,7 @@ import { CardSection, ChipChoice, ChoicePicker } from '../../components/Controls
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
-import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { compiledCron, repeatChoice, repeatChoices, scheduleCaption, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
 
@@ -45,7 +45,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
         <ChipChoice label="Repeat" selection={repeat} options={repeatChoices} onChange={choose} />
       </LabeledRow>
       {repeat === 'weekly' ? (
-        <LabeledRow key="On" label="On">
+        <LabeledRow key="Weekday" label="Weekday">
           <ChipChoice label="Day" selection={schedule.weekday} options={weekdays} onChange={(weekday) => update({ weekday })} />
         </LabeledRow>
       ) : null}
@@ -91,9 +91,10 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
 
 /** A row of the routine editor's groups (`CardSection`): its label in a fixed column, then the field; `top` for a tall one. */
 export function LabeledRow({ label, top = false, className, children }: { label: string; top?: boolean; className?: string; children: ReactNode }) {
+  const tr = useTr()
   return (
     <HStack align={top ? 'flex-start' : 'center'} className={`labeled-row${top ? ' top' : ''}${className ? ` ${className}` : ''}`}>
-      <Text size="callout" weight="medium" tone="secondary" className="labeled-row-label">{label}</Text>
+      <Text size="callout" weight="medium" tone="secondary" className="labeled-row-label">{tr(label)}</Text>
       {children}
     </HStack>
   )
@@ -108,10 +109,10 @@ function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview |
       {preview ? (
         <>
           <HStack gap={8} wrap>
-            <Text size="callout" weight="medium" tone="text">{preview.summary}</Text>
+            <Text size="callout" weight="medium" tone="text">{scheduleCaption(preview.draft, tr)}</Text>
             {preview.nextRunAt ? (
               <Text size="callout" tone="secondary">
-                {tr('Next')} {new Date(preview.nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                {tr('Next {when}').replace('{when}', new Date(preview.nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}
               </Text>
             ) : null}
           </HStack>

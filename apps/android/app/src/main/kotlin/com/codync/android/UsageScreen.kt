@@ -45,7 +45,7 @@ import java.time.format.FormatStyle
 import kotlin.math.roundToInt
 
 /**
- * Usage limits, opened from the State tab (iOS `UsageSheet` + `UsageView`): one card per
+ * Usage limits, opened from State (iOS `UsageSheet` + `UsageView`): one card per
  * provider, the tightest limit as a big bar, every limit listed below. Pull down to refresh.
  */
 @Composable fun UsageScreen(state: AppState?, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit,

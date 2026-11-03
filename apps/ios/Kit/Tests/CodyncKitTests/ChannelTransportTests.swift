@@ -127,11 +127,23 @@ private func fakeDialer() -> (Dialer, AsyncStream<FakeSocket>) {
     }, sockets)
 }
 
+/// These tests answer the handshake themselves. A direct address gets 1.5 s in the app; on a
+/// busy runner the test is not scheduled in time, the attempt is cancelled, and the test waits
+/// until its limit.
+private func testChannel(_ computer: Computer, pairingCode: String? = nil, dial: @escaping Dialer) -> ChannelTransport {
+    ChannelTransport(computer: computer, identity: v.identity, pairingCode: pairingCode, dial: dial,
+                     directBudget: .seconds(20), watchesNetwork: false)
+}
+
 private func helloBody() -> [String: Any] { [
     "hostId": "h1", "name": "Studio", "version": "3.0.0", "os": "macos", "backends": [], "rev": 0,
     "computerId": v.str("keys", "computerId"), "signKey": v.str("keys", "hostSignPub"), "boxKey": v.str("keys", "hostBoxPub"),
     "urls": ["http://10.0.0.2:19222"], "cloud": "https://cloud.example.dev", "device": "macstudio",
 ] }
+
+extension ChannelTransport {
+    fileprivate func hasComputerObserver() -> Bool { !computerObservers.isEmpty }
+}
 
 private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> Bool) async -> LinkState? {
     for await s in states where match(s) { return s }
@@ -143,7 +155,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     var computer = v.computer
     computer.boxKey = nil
     computer.urls = ["http://127.0.0.1:1"]
-    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    let t = testChannel(computer, dial: dial)
     let a = t.states()
     let b = t.states()
     let updates = t.computerUpdates()
@@ -163,9 +175,21 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     // The transport asks for hello by itself and merges what it learns.
     let first = try await host.receive()
     #expect(first["m"] as? String == "hello")
+    // Subscribe before answering. The merge is yielded once; a listener that
+    // attaches after the actor has already applied hello never sees it, and the
+    // test then sits until its time limit. On a busy runner that lost the race
+    // every retry.
+    let waiter = Task {
+        var iterator = updates.makeAsyncIterator()
+        return await iterator.next()
+    }
+    let subscribed = ContinuousClock.now + .seconds(5)
+    while await !t.hasComputerObserver() {
+        try #require(ContinuousClock.now < subscribed)
+        await Task.yield()
+    }
     try await host.send(["id": first["id"] ?? 0, "ok": helloBody()])
-    var updated = updates.makeAsyncIterator()
-    let merged = try #require(await updated.next())
+    let merged = try #require(await waiter.value)
     #expect(merged.boxKey == v.str("keys", "hostBoxPub"))
     #expect(merged.urls == ["http://10.0.0.2:19222"])
     #expect(merged.cloud?.absoluteString == "https://cloud.example.dev")
@@ -222,7 +246,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     let (dial, sockets) = fakeDialer()
     var computer = v.computer
     computer.urls = ["http://127.0.0.1:1"]
-    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    let t = testChannel(computer, dial: dial)
     await t.start()
     var it = sockets.makeAsyncIterator()
     var host = HostSide(try #require(await it.next()))
@@ -252,7 +276,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     let (dial, sockets) = fakeDialer()
     var computer = v.computer
     computer.urls = ["http://127.0.0.1:1"]
-    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    let t = testChannel(computer, dial: dial)
     await t.start()
     var it = sockets.makeAsyncIterator()
     var host = HostSide(try #require(await it.next()))
@@ -266,7 +290,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     var computer = v.computer
     computer.urls = ["http://192.168.1.20:19222"]
     computer.cloud = URL(string: "https://cloud.example.dev")
-    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    let t = testChannel(computer, dial: dial)
     await t.start()
     let screenRoute = Task { try await t.screenRelayRequired() }
     var it = sockets.makeAsyncIterator()
@@ -292,7 +316,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
 
     computer.route = .cloudflareFirst
     let (dial, sockets) = fakeDialer()
-    let first = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    let first = testChannel(computer, dial: dial)
     await first.start()
     var it = sockets.makeAsyncIterator()
     let socket = try #require(await it.next())
@@ -301,7 +325,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
 
     computer.route = .directOnly
     let (dial2, sockets2) = fakeDialer()
-    let second = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial2, watchesNetwork: false)
+    let second = testChannel(computer, dial: dial2)
     await second.start()
     var it2 = sockets2.makeAsyncIterator()
     let stranger = HostSide(try #require(await it2.next()))
@@ -317,7 +341,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     var computer = v.computer
     computer.urls = []
     computer.cloud = URL(string: "https://cloud.example.dev")
-    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    let t = testChannel(computer, dial: dial)
     let mailbox = t.mailboxEvents()
     await t.start()
     var it = sockets.makeAsyncIterator()
@@ -395,7 +419,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     var computer = v.computer
     computer.urls = ["http://127.0.0.1:1"]
     let code = v.str("pairing", "code")
-    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: code, dial: dial, watchesNetwork: false)
+    let t = testChannel(computer, pairingCode: code, dial: dial)
     await t.start()
     var it = sockets.makeAsyncIterator()
     let socket = try #require(await it.next())

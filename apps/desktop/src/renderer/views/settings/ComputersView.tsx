@@ -15,7 +15,7 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
-import { devicesLoseAccess } from '../../lib/account-copy'
+import { devicesLoseAccess, spacedCode } from '../../lib/account-copy'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
@@ -310,11 +310,22 @@ function CodyncVersionRow({ store }: { store: BotStore }) {
 }
 
 /**
- * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). An
- * offline one can be removed: a computer that was reset or given away never comes back under that identity.
+ * An account computer this app reaches through the relay once it's approved there (Open), asks for access to
+ * (with the code the computer shows), or uses under an earlier identity (`olderCopy`). An offline one can be
+ * removed: a computer that was reset or given away never comes back under that identity.
  */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
   const tr = useTr()
+  const app = useApp()
+  const dismiss = useDismiss()
+  const access = useModel(app.accountComputers)
+  const asking = access.asking.get(computer.computerId)
+  const store = app.store(computer.computerId)
+  const open = () => {
+    const bot = store?.roster[0]
+    if (bot) app.select({ computerId: computer.computerId, botId: bot.id })
+    dismiss()
+  }
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
@@ -326,8 +337,22 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
           <Text size="caption" tone={olderCopy ? 'tertiary' : 'secondary'}>{tr(accountComputerStatus(computer, olderCopy))}</Text>
         </div>
         <Spacer />
+        {store && !store.isLoopback ? <Button onClick={open}>{tr('Open')}</Button>
+          : asking ? <Button onClick={() => access.cancel(computer.computerId)}>{tr('Cancel request')}</Button>
+          : computer.online && !olderCopy && computer.access !== 'granted' ? <Button onClick={() => void access.ask(computer)}>{tr('Ask for access')}</Button>
+          : null}
         {computer.online ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
       </div>
+      <Reveal show={asking !== undefined}>
+        <div className="settings-row">
+          {asking?.ticket ? (
+            <VStack grow className="settings-stack">
+              <Text as="div" size={28} weight="semibold" mono tone="text" className="selectable" aria-label={`Code ${asking.ticket.code.split('').join(' ')}`}>{spacedCode(asking.ticket.code)}</Text>
+              <Text size="caption" tone="secondary">{tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in.")}</Text>
+            </VStack>
+          ) : <Spinner />}
+        </div>
+      </Reveal>
     </div>
   )
 }

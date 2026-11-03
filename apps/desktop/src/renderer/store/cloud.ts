@@ -41,7 +41,7 @@ export class CloudError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
   const res = await window.codync.cloud.request(method, path, body, signed)
   if (!res.ok) throw new CloudError(res.error.status, res.error.code, res.error.message)
   return res.value as T

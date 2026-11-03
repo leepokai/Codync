@@ -71,7 +71,7 @@ export class BotSync extends BotMirror {
     if (this.connection.kind !== 'online') this.setConnection({ kind: 'connecting' })
     const transport = this.makeTransport()
     this.client = new HostClient(transport)
-    this.hostRoute = this.isLoopback ? 'loopback' : null
+    this.hostRoute = this.isLoopback ? 'loopback' : 'relay'
     this.runEvents(this.client)
   }
 

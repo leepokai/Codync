@@ -31,3 +31,10 @@ root cause and fixed in 2.38.1. Method as in the [2026-10-19 triage](posthog-err
   window that reloads keeps reporting each crash.
 - 4: the cause is inferred and the rate-changing path never runs on a simulator (input and hardware
   are both 48 kHz there; `MicTapTests` covers it): watch issue `01a19565` after 2.38.1.
+- Not traced: a desktop renderer `TypeError` (issue `01a1a14b`), one Windows user on 2.34.2, four
+  times in two minutes while a group chat was answering (each a few seconds after a message to the
+  group). Its innermost frame is `DestinationComposer` at a line of the 2.34.2 bundle that sits
+  inside the `@`-mention parser's inner function, which can't throw there and would have its own
+  frame, so the position doesn't match the code. The report has no message (by design). Since
+  2.38.1 the window shows *Something went wrong* with *Try again* instead of going blank; look again
+  if it comes back with mechanism `react`.

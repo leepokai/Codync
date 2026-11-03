@@ -227,9 +227,10 @@ A simulator build verifies compilation, not the Dashboard settings or OAuth flow
 ## Desktop: computers, approvals and SSH
 
 The desktop app attaches this computer's host and its SSH computers over loopback; they
-follow into whichever account is active. The account's other computers are not reached
-directly (the encrypted channel wasn't ported to the desktop app), so their
-"Ask for access" rows show status only. An older copy of a computer the app uses shows
+follow into whichever account is active. The account's other computers that approved this
+install open through the relay over the encrypted channel, as on the phones, with their bots in the
+sidebar (an SSH tunnel to the same computer wins); *Ask for access* on an online row runs the
+phones' access request and shows its 6-digit code. An older copy of a computer the app uses shows
 *Older copy · last seen …*. Every offline row has *Remove from account* (`DELETE /v1/computers/{id}`,
 confirmed first), so a computer that was reset or given away can be cleaned up even when its
 name changed. Offline may only mean asleep, so the dialog says what removal does: account-approved

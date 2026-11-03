@@ -102,9 +102,10 @@ The TUI connects to one host at a time, so it keeps its single roster.
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
-- **Other computers in the account** are reached through this computer's own host and SSH
-  tunnels only. The encrypted channel to account computers (`ChannelTransport`) wasn't ported:
-  the product targets one computer, so "Ask for access" rows show status only. Every offline row
+- **Other computers in the account** that approved this install open through the account's relay
+  over the end-to-end encrypted channel (`main/account-channel.ts`, `main/channel-crypto.ts`, checked
+  against the shared relay vectors; `RelayTransport` in the renderer), unless an SSH tunnel
+  already reaches them. *Ask for access* runs the phones' 6-digit access request; every offline row
   has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
   *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate

@@ -42,11 +42,11 @@ class ReadingTest {
     }
 
     @Test fun `mark as unread is offered for a read chat on a host that has it`() {
-        val host = AppState(hello = buildJsonObject { put("version", "2.37.0") })
+        val host = AppState(hello = buildJsonObject { put("version", "2.39.0") })
         assertEquals(true, host.offersMarkUnread(Bot("bot")))
         assertEquals(false, host.offersMarkUnread(Bot("bot", unread = 1)))
         assertEquals(false, host.offersMarkUnread(Bot("bot", keptUnread = true)))
-        assertEquals(false, AppState(hello = buildJsonObject { put("version", "2.36.0") }).offersMarkUnread(Bot("bot")))
+        assertEquals(false, AppState(hello = buildJsonObject { put("version", "2.38.1") }).offersMarkUnread(Bot("bot")))
         assertEquals(false, AppState().offersMarkUnread(Bot("bot")))
     }
 }

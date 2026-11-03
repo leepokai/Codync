@@ -1,7 +1,8 @@
 import { normalizeScreen, type ScreenDisplay, type ScreenState } from '@shared/models'
 import { Observable } from '../../lib/observable'
 import { screenAvailable } from './screen-access'
-import { ScreenInput } from './screen-input'
+import { ScreenControl } from './screen-control'
+import { closeViewerSession, ScreenInput } from './screen-input'
 import { ScreenLink } from './screen-link'
 import { openingMode, type ViewerMode } from './screen-mode'
 import { messageOf } from './screen-recovery'
@@ -24,30 +25,43 @@ export class ScreenViewerModel extends Observable {
   /** The last status call failed: the computer can't be reached. */
   unreachable = false
   session: ScreenSession | null = null
-  /** This window controls the computer (bots may still look). */
-  interactive = false
-  /** The mode the user chose, kept across reconnects; null until the first session picks the opening one. */
-  private preferred: ViewerMode | null = null
   private readonly viewOnly: boolean
   private readonly insets: Insets
   readonly input: ScreenInput
   private link: ScreenLink
-  private tookOver = false
+  private readonly control: ScreenControl
   private selected: number | null = null
   private viewSize: Size = { width: 0, height: 0 }
   private pixelRatio = 1
   private timer: ReturnType<typeof setInterval> | null = null
   private stopped = false
   private refreshing = false
+  private wasLive = false
 
   constructor(computerId: string, { viewOnly = false, insets = NO_INSETS }: ScreenViewerOptions = {}) {
     super()
     this.viewOnly = viewOnly
     this.insets = insets
     this.link = new ScreenLink(computerId)
+    this.control = new ScreenControl({
+      canControl: () => this.screen?.input === true && this.session !== null,
+      hasSession: () => this.session !== null,
+      takeover: (on) => this.link.callNow('screenTakeover', { on }).then(() => {}),
+      update: () => {
+        this.input.interactive = this.control.interactive
+        this.changed()
+      },
+      refresh: () => void this.refresh(),
+      fail: (error) => console.info(`screen takeover failed: ${messageOf(error) ?? error}`),
+    })
     this.input = new ScreenInput((message) => this.session?.send(message), new ScreenViewport({ width: 0, height: 0 }, { width: 0, height: 0 }, insets))
     // Nothing is sent until a mode allows it.
     this.input.interactive = false
+  }
+
+  /** This window controls the computer (bots may still look). */
+  get interactive(): boolean {
+    return this.control.interactive
   }
 
   get mode(): ViewerMode {
@@ -96,6 +110,7 @@ export class ScreenViewerModel extends Observable {
     if (this.screen && !this.screen.input && this.interactive) this.setMode('view')
     if (!screenAvailable(this.screen)) this.endSession()
     else if (!this.session) this.beginSession()
+    else if (this.screen) this.control.sync(this.screen.userControl)
     this.syncViewport()
     this.changed()
   }
@@ -108,56 +123,40 @@ export class ScreenViewerModel extends Observable {
     // A session that was replaced reports late: only the current one (or the end of the last) reaches the main process.
     session.onSession = (id) => { if (this.session === session || (id === null && this.session === null)) this.reportSession(id) }
     this.session = session
+    this.wasLive = false
     session.subscribe(() => this.sessionChanged(session))
     session.start()
     // A window looks while a bot works on the screen and drives otherwise; the choice then outlives reconnects.
-    this.preferred ??= this.viewOnly ? 'view' : openingMode(this.screen)
-    this.setInteractive(this.preferred === 'control')
+    this.control.preferred ??= this.viewOnly ? 'view' : openingMode(this.screen)
+    this.control.set(this.control.preferred === 'control')
     this.syncViewport()
   }
 
   private endSession() {
-    const session = this.session
-    if (!session) return
-    this.session = null
-    this.input.releaseAll()
-    session.close()
-    this.setInteractive(false)
+    if (!closeViewerSession(this, this.input)) return
+    this.control.set(false)
     this.changed()
   }
 
   /** A failed session closed on the computer, which gave control back to the bots. */
   private sessionChanged(session: ScreenSession) {
-    if (session === this.session && session.phase.kind === 'failed' && this.tookOver) {
-      this.tookOver = false
-      this.interactive = false
-      this.input.interactive = false
-    }
+    if (session === this.session && session.phase.kind === 'failed') this.control.sessionFailed()
+    // Control the host dropped while the connection was lost is asked for again as soon as the video is back.
+    const live = session.phase.kind === 'live'
+    if (live && !this.wasLive && session === this.session) void this.refresh()
+    this.wasLive = live
     this.changed()
   }
 
   retry() {
     this.session?.start()
-    this.setInteractive(this.preferred === 'control')
+    this.control.set(this.control.preferred === 'control')
   }
 
   /** The window's View / Take control switch. A preview ignores it. */
   setMode(mode: ViewerMode) {
     if (this.viewOnly) return
-    this.preferred = mode
-    this.setInteractive(mode === 'control')
-  }
-
-  /** Control needs the computer's input permission; without it the window only looks. */
-  private setInteractive(on: boolean) {
-    const allowed = on && this.screen?.input === true && this.session !== null
-    this.interactive = allowed
-    this.input.interactive = allowed
-    if (allowed !== this.tookOver) {
-      this.tookOver = allowed
-      this.link.callNow('screenTakeover', { on: allowed }).then(() => this.refresh(), (error) => console.info(`screen takeover failed: ${messageOf(error) ?? error}`))
-    }
-    this.changed()
+    this.control.setMode(mode)
   }
 
   switchDisplay(display: ScreenDisplay) {

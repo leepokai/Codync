@@ -154,3 +154,17 @@ export class ScreenInput {
     this.send({ type: 'up', ...at, button: held.button, count: held.count, modifiers })
   }
 }
+
+/**
+ * Ends a viewer's session: whatever the input holds is lifted first, through the session that is still
+ * there (the helper keeps a held button after its session closes), then the session is let go and closed.
+ * Returns false when there is no session: nothing to lift or close.
+ */
+export function closeViewerSession(viewer: { session: { close(): void } | null }, input: Pick<ScreenInput, 'releaseAll'>): boolean {
+  const session = viewer.session
+  if (!session) return false
+  input.releaseAll()
+  viewer.session = null
+  session.close()
+  return true
+}

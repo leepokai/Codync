@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ScreenInput, textChunks, type InputMessage, type PointerInfo } from './screen-input.ts'
+import { closeViewerSession, ScreenInput, textChunks, type InputMessage, type PointerInfo } from './screen-input.ts'
 import { ScreenViewport } from './screen-viewport.ts'
 
 // A 1000×500 display in a 1000×250 view: the video is 500 wide at x 250…750, scale 0.5.
@@ -143,4 +143,28 @@ test('pasted text goes out in chunks that never split a character', () => {
   const { sent, input } = setup()
   input.text('x'.repeat(9000))
   assert.deepEqual(sent.map((m) => (m as { text: string }).text.length), [4000, 4000, 1000])
+})
+
+test('closing the viewer mid-drag sends the mouse-up through the session before it is let go', () => {
+  const sent: InputMessage[] = []
+  const log: string[] = []
+  const viewer = { session: { send: (m: InputMessage) => { sent.push(m) }, close: () => { log.push('close') } } as { send(m: InputMessage): void; close(): void } | null }
+  // The model's wiring: input reaches whatever session the viewer holds at that moment.
+  const input = new ScreenInput((m) => viewer.session?.send(m), new ScreenViewport({ width: 1000, height: 500 }, { width: 1000, height: 250 }))
+  input.pointerDown(pointer(500, 125))
+  input.pointerMove(pointer(600, 125))
+  sent.length = 0
+  assert.ok(closeViewerSession(viewer, input))
+  assert.deepEqual(sent.map((m) => m.type), ['up'])
+  assert.equal(input.pressed, false)
+  assert.equal(viewer.session, null)
+  assert.deepEqual(log, ['close'])
+})
+
+test('closing a viewer that has no session sends nothing and does not throw', () => {
+  const { sent, input } = setup()
+  input.pointerDown(pointer(500, 125))
+  sent.length = 0
+  assert.equal(closeViewerSession({ session: null }, input), false)
+  assert.deepEqual(sent, [], 'a held button is left for whoever ends the session')
 })

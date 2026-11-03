@@ -78,6 +78,7 @@ type Handlers = {
   'remote:call': (e: object, c: typeof computer, method: string, body: unknown, timeoutMs: number) => Promise<CallResult>
   'remote:stream:open': (e: { sender: Sender }, id: string, c: typeof computer, kind: string, body: unknown) => void
   'remote:close': (e: object, computerId: string) => void
+  'remote:stream:close': (e: object, id: string) => void
 }
 const handlers = new Map<string, Function>()
 const handler = <K extends keyof Handlers>(name: K) => handlers.get(name) as Handlers[K]
@@ -177,4 +178,19 @@ test('concurrent first calls share one socket, which closes when its computer is
   await settle()
   assert.equal(socket.readyState, 3)
   assert.deepEqual((await Promise.all([first, second])).map((a) => a.ok), [false, false])
+})
+
+test('a stream closed while its channel is still opening never subscribes', async () => {
+  FakeSocket.last = null
+  const sender = { sent: [] as unknown[][], isDestroyed: () => false, send: (...args: unknown[]) => sender.sent.push(args) }
+  handler('remote:stream:open')({ sender }, 's2', computer, 'events', { since: 0, client: 'desktop' })
+  handler('remote:stream:close')({}, 's2')
+  await settle()
+  const socket = FakeSocket.last!
+  socket.receive({ t: 'presence', online: true })
+  const h = host(socket)
+  await settle()
+  assert.deepEqual(h.inbox(), [])
+  assert.deepEqual(sender.sent, [])
+  closeAccountChannels()
 })

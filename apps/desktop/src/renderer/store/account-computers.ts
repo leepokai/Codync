@@ -35,10 +35,8 @@ export class AccountComputers extends Observable {
     try {
       const plan = relayPlan(this.app.cloud.computers, this.app.local?.computer.id ?? null, this.attached, (id) => this.app.store(id))
       this.attached = plan.kept
-      for (const id of plan.detach) {
-        this.app.detach(id)
-        window.codync.remote.close(id)
-      }
+      for (const id of plan.detach) this.app.detach(id)
+      for (const id of plan.close) window.codync.remote.close(id)
       for (const c of plan.attach) {
         const cached = this.app.computers.find((x) => x.id === c.computerId)
         const computer: Computer = { id: c.computerId, name: c.name, signKey: c.signKey, urls: [], cloud: account.cloudURL, device: c.device ?? null, color: cached?.color ?? null }

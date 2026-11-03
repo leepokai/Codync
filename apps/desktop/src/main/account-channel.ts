@@ -1,4 +1,4 @@
-import { ipcMain, type WebContents } from 'electron'
+import { ipcMain } from 'electron'
 import type { AccountComputer, CallError } from '../shared/ipc'
 import { computerId, FrameOpener, FrameSealer, Handshake, type DeviceKey } from './channel-crypto'
 
@@ -216,19 +216,22 @@ export function registerAccountChannels(signer: RelaySigner) {
         (error: CallError) => ({ ok: false, error }),
       ),
   )
+  /** Each open stream's cancel; registered at once, so a close that comes while the channel opens still counts. */
   const streams = new Map<string, () => void>()
   ipcMain.on('remote:stream:open', (e, id: string, computer: AccountComputer, kind: string, body: unknown) => {
-    const send = (sender: WebContents, channelName: string, payload: unknown) => {
-      if (!sender.isDestroyed()) sender.send(channelName, id, payload)
+    const send = (channelName: string, payload: unknown) => {
+      if (!e.sender.isDestroyed()) e.sender.send(channelName, id, payload)
     }
     const onEnd = (error: CallError | null) => {
       streams.delete(id)
-      send(e.sender, 'host:stream:end', error)
+      send('host:stream:end', error)
     }
-    channel(signer, computer).then(
-      (c) => streams.set(id, c.subscribe(kind, body, { onEvent: (event) => send(e.sender, 'host:stream:data', JSON.stringify(event)), onEnd })),
-      onEnd,
-    )
+    const pending = () => {}
+    streams.set(id, pending)
+    channel(signer, computer).then((c) => {
+      if (streams.get(id) !== pending) return
+      streams.set(id, c.subscribe(kind, body, { onEvent: (event) => send('host:stream:data', JSON.stringify(event)), onEnd }))
+    }, (error: CallError) => streams.get(id) === pending && onEnd(error))
   })
   ipcMain.on('remote:stream:close', (_e, id: string) => {
     streams.get(id)?.()

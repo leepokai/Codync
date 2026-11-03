@@ -97,8 +97,11 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
   analytics task), and `reportError`, loopback only, for the computer's apps. Process `host`.
 - **Terminal UI**: its panics, through `reportError` from the panic hook. Process `tui`.
 - **Desktop** (`apps/desktop/src/main/error-reports.ts`, `shared/error-report.ts`): uncaught
-  errors and rejections in the main process and every window, and windows or helpers that
-  crashed (`RendererGone`, `GPUGone`, … with Electron's reason), through `reportError`. Not
+  errors and rejections in the main process and every window, errors a view threw while
+  rendering (mechanism `react`: the chat and pairing windows show *Something went wrong* with
+  *Try again* instead of going blank), and windows or helpers that crashed (`RendererGone`,
+  `GPUGone`, … with Electron's reason), through `reportError`. A window whose page crashed loads
+  it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute. Not
   reported: error events that carry no error (the ResizeObserver loop notice), and helpers that
   exited normally or were ended from outside (`clean-exit`, `killed`: logout, shutdown, an update),
   and a GPU process that couldn't launch (the app goes on with software rendering).

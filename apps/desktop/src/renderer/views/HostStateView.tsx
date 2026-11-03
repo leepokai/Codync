@@ -51,14 +51,14 @@ function HostBot({ compact, mood }: { compact: boolean; mood: Mood }) {
   )
 }
 
-/** A quiet placeholder for an empty screen: icon (an SF Symbol name or artwork), title, a line of help and an optional action. */
-export function EmptyState({ icon, title, message, action, compact = false }: { icon: string | ReactElement; title: string; message: string; action?: [string, () => void]; compact?: boolean }) {
+/** A quiet placeholder for an empty screen: icon (an SF Symbol name or artwork), title, an optional line of help and an optional action. */
+export function EmptyState({ icon, title, message, action, compact = false }: { icon: string | ReactElement; title: string; message?: string; action?: [string, () => void]; compact?: boolean }) {
   const tr = useTr()
   return (
     <div className={`empty-state ${compact ? 'local-recovery' : ''}`}>
       {typeof icon === 'string' ? <Icon name={icon} size={compact ? 22 : 36} weight="light" color="var(--tertiary)" /> : icon}
       <Text as="div" size={compact ? 'callout' : 'title3'} weight="semibold" tone="text">{tr(title)}</Text>
-      <Text as="div" size="callout" tone="secondary" className="empty-state-message">{tr(message)}</Text>
+      {message ? <Text as="div" size="callout" tone="secondary" className="empty-state-message">{tr(message)}</Text> : null}
       {action ? (
         <Button kind={compact ? 'secondary' : 'primary'} onClick={action[1]} className="empty-state-action">
           {action[0]}

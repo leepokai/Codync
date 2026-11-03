@@ -3,7 +3,7 @@ import type { ScreenDisplay } from '@shared/models'
 import type { InputMessage } from './screen-input'
 import type { ScreenLink } from './screen-link'
 import {
-  CONNECT_TIMEOUT_MS, DISCONNECTED_GRACE_MS, messageOf, recover, ROUTE_TIMEOUT_MS, statusOf, terminalStatuses, Unreachable,
+  CONNECT_TIMEOUT_MS, connectTimedOut, DISCONNECTED_GRACE_MS, messageOf, recover, ROUTE_TIMEOUT_MS, statusOf, terminalStatuses, Unreachable,
   type Failure, type Recovery,
 } from './screen-recovery'
 import {
@@ -121,7 +121,7 @@ export class ScreenSession extends Observable {
     })
     this.connectTimer = this.later(CONNECT_TIMEOUT_MS, () => {
       if (!current() || this.phase.kind === 'live') return
-      this.fail({ reason: 'connect', detail: null })
+      connectTimedOut(this.phase.kind === 'reconnecting', { retry: () => this.startRecovery(0), fail: (failure) => this.fail(failure) })
     })
   }
 

@@ -43,6 +43,15 @@ export function retryDelay(attempts: number): number {
   return Math.min(Math.max(1, attempts) * 2_000, 10_000)
 }
 
+/**
+ * A connection that isn't live in time. The first connection fails (Try again); a reconnect hands over to the
+ * next attempt, which fails only when the attempts are spent (`recover` counts them).
+ */
+export function connectTimedOut(reconnecting: boolean, r: { retry(): void; fail(failure: Failure): void }) {
+  if (reconnecting) r.retry()
+  else r.fail({ reason: 'connect', detail: null })
+}
+
 export interface Recovery {
   /** The session is still reconnecting (not closed, not live again). */
   active(): boolean

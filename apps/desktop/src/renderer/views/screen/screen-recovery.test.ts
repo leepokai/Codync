@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { maxRecoveryAttempts, recover, retryDelay, Unreachable, type Failure, type Recovery } from './screen-recovery.ts'
+import { connectTimedOut, maxRecoveryAttempts, recover, retryDelay, Unreachable, type Failure, type Recovery } from './screen-recovery.ts'
 
 function harness(reconnect: () => Promise<void>, route: () => Promise<void> = async () => {}) {
   const log: string[] = []
@@ -83,4 +83,35 @@ test('closing the viewer mid-recovery stops it without an error', async () => {
 
 test('waits grow with each attempt and stop at ten seconds', () => {
   assert.deepEqual([0, 1, 2, 3, 5, 9].map(retryDelay), [2_000, 2_000, 4_000, 6_000, 10_000, 10_000])
+})
+
+test('a reconnect that answers but never goes live starts the next attempt, and fails only when the attempts are spent', async () => {
+  const log: string[] = []
+  const state = { attempts: 0, failed: null as Failure | null, open: true }
+  const r: Recovery = {
+    active: () => state.failed === null,
+    route: async () => {},
+    reconnect: async () => { log.push('reconnect') },
+    sleep: async () => {},
+    fail: (failure) => { state.failed = failure },
+  }
+  // The session's wiring: every reconnect answers, then the connect timer fires because ICE never connects.
+  let again = true
+  let rounds = 0
+  while (again && rounds++ < 10) {
+    again = false
+    await recover(r, state, 0, () => null)
+    if (state.failed === null) connectTimedOut(true, { retry: () => { again = true }, fail: (failure) => { state.failed = failure } })
+  }
+  assert.equal(log.filter((l) => l === 'reconnect').length, maxRecoveryAttempts)
+  assert.equal(rounds, maxRecoveryAttempts + 1, 'three hung attempts, then the exhausted one fails')
+  assert.deepEqual(state.failed, { reason: 'reconnect', detail: null })
+})
+
+test('the first connection that never goes live fails at once; a reconnect never fails on the timeout itself', () => {
+  const calls: string[] = []
+  const r = { retry: () => { calls.push('retry') }, fail: (f: Failure) => { calls.push(`fail ${f.reason}`) } }
+  connectTimedOut(false, r)
+  connectTimedOut(true, r)
+  assert.deepEqual(calls, ['fail connect', 'retry'])
 })

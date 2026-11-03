@@ -16,13 +16,18 @@ npm run e2e            # in a second shell: e2e/*.spec.ts against that sandbox
 
 ## Phones: Maestro
 
-One flow in `apps/maestro/` serves both phones: it launches the iPhone or Android Dev app by platform (`runFlow` with `when: platform`) and asserts the same copy, since the apps match screen for screen. Run every phone in one Maestro process:
+One flow in `apps/maestro/` serves both phones: it launches the iPhone or Android Dev app by platform (`runFlow` with `when: platform`) and asserts the same copy, since the apps match screen for screen. Run every phone in one Maestro process, with the tags [the check needs](#what-each-e2e-check-runs):
 
 ```sh
-maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 apps/maestro
+maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags smoke,<area> apps/maestro
 ```
 
 The devices are the worktree's own simulator `Codync <sandbox name>` and the shared `codync_worktree` emulator, under its lock ([worktree sandboxes](dev-app.md#worktree-sandboxes)). Install the worktree's builds first: `xcodebuild … -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd` for the simulator, `./gradlew :app:assembleDebug` for the emulator.
+
+Two things that look like failures but aren't the app's:
+
+- A tag no flow carries yet makes Maestro stop with "Include / Exclude tags did not match any Flows" and exit 1. Leave out area tags that have no flows.
+- Right after a cold boot the emulator can cover the app with "Pixel Launcher isn't responding", and the flow fails on its first assertion. Each run keeps a screenshot of the failure in `~/.maestro/tests/<run>/`: when a system dialog covers the app, clear it with `adb -s <serial> shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS` and run again. It happened twice in a row on 2026-11-03 until the dialog was cleared.
 
 **One Maestro process per Mac.** Two at once break each other: with Maestro 2.1.0, an iPhone run beside an Android run made the Android driver refuse connections on port 7001 in three of three tries, and two runs starting in the same second removed each other's log folder in `~/Library/Logs/maestro`. Shard inside one run instead. Across worktrees, take the lock folder `/private/tmp/claude-$(id -u)/maestro.lock` the way the emulator lock works: `mkdir` it (it fails while another run holds it), write your worktree's path into `owner`, `rm -r` it when done; one older than an hour, or whose worktree is gone, is stale.
 
@@ -35,11 +40,28 @@ Computer Use (cluadex, in the background) checks only these steps. Tag them `@na
 
 **Covered by none of them**, so check on a physical device and say so in the report: microphone and voice-call audio, and real APNs delivery (a simulator only simulates it with `xcrun simctl push`).
 
-## Rules
+## What each e2e check runs
 
-- Each changed flow names the tool that covers it, and a changed flow that Playwright or Maestro can express gets a spec or flow in the same change.
+| Tool | In every `after-change` e2e | Why |
+| --- | --- | --- |
+| Playwright | The whole suite: `npm run e2e` | Each spec takes under a second, and each worktree has its own sandbox, so worktrees run it in parallel without waiting on each other. It is the regression net for host and shared-component changes, which reach every client. |
+| Maestro | Only the flows tagged `smoke` plus the tags of the areas the change touches: `--include-tags smoke,<area>,…` | A flow takes 6–12 s and the Maestro lock lets one run at a time on the Mac, so a long run holds up every other worktree. |
+| Maestro, whole suite | Not run anywhere for now | Decided on 2026-11-03 (see [Decisions](#decisions)). |
+| Computer Use | Only the changed flows' native steps | The slowest, and it holds the one screen and cursor. |
+
+Every Maestro flow carries `tags` in its header: one tag per area, named after the feature (`onboarding`, `pairing`, `composer`, …), and `smoke` on the few flows that guard the core path. The agent picks the area tags from the diff; a change it can't map to an area runs `smoke` only and says so in its report.
+
+## Writing and changing tests
+
+- A changed flow that Playwright or Maestro can express gets its spec or flow in the same change. Each changed flow names the tool that covers it.
+- Add or update only the tests for the flows this change touches. Leave every other test alone.
+- Editing an existing test needs a reason that matches the behavior the change says it changes. List each such edit and its reason in the e2e report. When no such reason exists, the failing test found a regression: fix the code, not the test.
 - Computer Use never runs two tasks at once. Playwright and the one Maestro run go beside it.
 - Report every check that didn't run and why.
+
+## Decisions
+
+- **2026-11-03: no full Maestro suite for now.** Every `after-change` runs the whole Playwright suite but only the `smoke` and changed-area Maestro flows; no other step (release, nightly) runs every Maestro flow yet. The cost is that a phone regression outside the tagged areas can go unnoticed until someone walks that flow. Decide again with the maintainer before adding a full run, for example at the `dev` → `main` release once the suite has grown.
 
 ## Why these tools
 

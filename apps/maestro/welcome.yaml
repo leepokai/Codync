@@ -1,7 +1,10 @@
 # A fresh install opens on the welcome screen with every sign-in choice.
 # One flow for iPhone and Android; run it on both at once (docs/guides/test-stack.md):
-#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 apps/maestro
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags smoke apps/maestro
 appId: com.pokai.Codync.ios.dev
+tags:
+  - smoke
+  - onboarding
 ---
 - runFlow:
     when:

@@ -28,12 +28,14 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import coil3.ImageLoader
+import com.codync.android.core.Autolink
 import com.codync.android.core.MarkdownBlocks
 import com.codync.android.core.MarkdownBlocks.Block
 import com.codync.android.design.*
@@ -109,11 +111,12 @@ val LocalNetworkImages = staticCompositionLocalOf<ImageLoader> { error("Missing 
 
 private val inlineParser = Parser.builder().extensions(listOf(StrikethroughExtension.create())).build()
 
-/** Inline Markdown: links underlined (the theme is monochrome), inline code on a soft tint. */
+/** Inline Markdown: links (bare addresses too) underlined, as the theme is monochrome; inline code on a soft tint. */
 internal fun inline(source: String, codeTint: Color): AnnotatedString {
     // Inline only: indentation would otherwise read as a code block.
     val document = inlineParser.parse(source.lines().joinToString("\n") { it.trimStart() })
     return buildAnnotatedString {
+        var inLink = false
         fun visit(node: Node) {
             val style = when (node) {
                 is StrongEmphasis -> SpanStyle(fontWeight = FontWeight.SemiBold)
@@ -124,9 +127,9 @@ internal fun inline(source: String, codeTint: Color): AnnotatedString {
             }
             if (style != null) pushStyle(style)
             val link = (node as? Link)?.destination?.takeIf { it.startsWith("https://") || it.startsWith("http://") || it.startsWith("mailto:") }
-            if (link != null) pushLink(LinkAnnotation.Url(link, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))))
+            if (link != null) { pushLink(linkAnnotation(link)); inLink = true }
             when (node) {
-                is org.commonmark.node.Text -> append(node.literal)
+                is org.commonmark.node.Text -> if (inLink) append(node.literal) else appendLinked(node.literal)
                 is Code -> append(node.literal)
                 is SoftLineBreak, is HardLineBreak -> append("\n")
                 is HtmlInline -> append(node.literal)
@@ -135,13 +138,29 @@ internal fun inline(source: String, codeTint: Color): AnnotatedString {
                 is Image -> children(node).forEach(::visit)
                 else -> children(node).forEach(::visit)
             }
-            if (link != null) pop()
+            if (link != null) { pop(); inLink = false }
             if (style != null) pop()
         }
         // Paragraphs of a multi-line block keep their line breaks.
         children(document).forEachIndexed { index, paragraph -> if (index > 0) append("\n\n"); visit(paragraph) }
     }
 }
+
+private fun linkAnnotation(url: String) = LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline)))
+
+/** Text with its bare web addresses as links. */
+private fun AnnotatedString.Builder.appendLinked(text: String) {
+    var from = 0
+    for (found in Autolink.find(text)) {
+        append(text.substring(from, found.range.first))
+        withLink(linkAnnotation(found.url)) { append(text.substring(found.range)) }
+        from = found.range.last + 1
+    }
+    append(text.substring(from))
+}
+
+/** Plain text (a message the user wrote) with its bare web addresses as links. */
+internal fun linked(text: String): AnnotatedString = buildAnnotatedString { appendLinked(text) }
 
 private fun children(node: Node): List<Node> = buildList {
     var child = node.firstChild

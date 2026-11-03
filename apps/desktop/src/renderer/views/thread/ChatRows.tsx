@@ -15,7 +15,7 @@ import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/c
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
 import { relativeTime } from './chat-items'
-import { MarkdownText } from './Markdown'
+import { MarkdownText, PlainText } from './Markdown'
 import { PermissionCard } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
 import { AgentSwitchNotice, HandoffNotice } from './HandoffNotice'
@@ -139,7 +139,7 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
             ]}
           >
             {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
-            {entry.data.text}
+            {entry.data.text ? <PlainText text={entry.data.text} /> : null}
           </Bubble>
         ) : null}
         {status && status !== 'sent' ? <UserStatus entry={entry} botWorking={botWorking} hovering={hovering} /> : null}

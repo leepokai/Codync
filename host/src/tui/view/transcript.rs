@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
+use super::super::autolink;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
@@ -98,6 +99,8 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
         };
         out.lines.push(Line::from(line));
     }
+    let links = autolink::hits(&out.lines, width);
+    out.buttons.extend(links.into_iter().map(|(line, x, w, url)| (line, x, w, Click::Link(url))));
     out
 }
 
@@ -162,7 +165,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 vec![]
             } else {
                 md::wrap(
-                    &[Span::styled(e.text().to_owned(), t.text)],
+                    &autolink::underline(e.text(), t.text),
                     width.saturating_sub(1),
                     &[Span::raw(" › ")],
                     &[Span::raw("   ")],

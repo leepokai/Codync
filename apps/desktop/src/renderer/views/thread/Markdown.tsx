@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react'
 import { parseMarkdown, type Block } from './markdown-blocks.ts'
+import { splitURLs, urlHref, urlLength, urlStart } from './autolink.ts'
 import { Hairline } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -8,7 +9,7 @@ import './markdown.css'
 // The Mac's Markdown for messages: the blocks from `markdown-blocks.ts`, with inline styling like
 // `AttributedString(markdown:)`.
 
-/** Inline Markdown: `code` (tinted), **bold**, *italic*, ~~strike~~, [links](url). */
+/** Inline Markdown: `code` (tinted), **bold**, *italic*, ~~strike~~, [links](url), bare addresses. */
 export function inline(text: string, key = 'i'): ReactNode[] {
   const out: ReactNode[] = []
   // Code spans first: nothing inside them is styled.
@@ -24,8 +25,12 @@ export function inline(text: string, key = 'i'): ReactNode[] {
   return out
 }
 
-const pattern = /\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*\n]+)\*|(?<![\w])_([^_\n]+)_(?![\w])/
-function emphasis(text: string, key: string): ReactNode[] {
+const pattern = new RegExp(
+  String.raw`\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*\n]+)\*|(?<![\w])_([^_\n]+)_(?![\w])|(${urlStart.source})`,
+  'iu',
+)
+/** Emphasis and links; `links` is false inside a link's label, which can't hold another link. */
+function emphasis(text: string, key: string, links = true): ReactNode[] {
   const out: ReactNode[] = []
   let rest = text
   let n = 0
@@ -37,19 +42,36 @@ function emphasis(text: string, key: string): ReactNode[] {
     }
     if (m.index > 0) out.push(rest.slice(0, m.index))
     const k = `${key}${n++}`
-    if (m[1] !== undefined) {
-      const url = m[2]!
-      out.push(
-        <a key={k} href={url} title={url} className="md-link" onClick={(e) => { e.preventDefault(); window.codync.app.openExternal(url) }}>
-          {emphasis(m[1], `${k}-`)}
-        </a>,
-      )
-    } else if (m[3] !== undefined || m[4] !== undefined) out.push(<strong key={k} className="md-strong">{emphasis(m[3] ?? m[4]!, `${k}-`)}</strong>)
-    else if (m[5] !== undefined) out.push(<s key={k}>{emphasis(m[5], `${k}-`)}</s>)
-    else out.push(<em key={k}>{emphasis(m[6] ?? m[7]!, `${k}-`)}</em>)
+    if (m[8] !== undefined) {
+      const length = links ? urlLength(rest.slice(m.index)) : 0
+      const url = rest.slice(m.index, m.index + (length || m[0].length))
+      out.push(length ? <Link key={k} url={urlHref(url)}>{url}</Link> : url)
+      rest = rest.slice(m.index + url.length)
+      continue
+    }
+    if (m[1] !== undefined) out.push(<Link key={k} url={m[2]!}>{emphasis(m[1], `${k}-`, false)}</Link>)
+    else if (m[3] !== undefined || m[4] !== undefined) out.push(<strong key={k} className="md-strong">{emphasis(m[3] ?? m[4]!, `${k}-`, links)}</strong>)
+    else if (m[5] !== undefined) out.push(<s key={k}>{emphasis(m[5], `${k}-`, links)}</s>)
+    else out.push(<em key={k}>{emphasis(m[6] ?? m[7]!, `${k}-`, links)}</em>)
     rest = rest.slice(m.index + m[0].length)
   }
   return out
+}
+
+/** A link that opens in the browser, not in the app's window. */
+function Link({ url, children }: { url: string; children: ReactNode }) {
+  return (
+    <a href={url} title={url} className="md-link" onClick={(e) => { e.preventDefault(); window.codync.app.openExternal(url) }}>
+      {children}
+    </a>
+  )
+}
+
+/** Plain text (a message the user wrote) with its bare addresses as links. */
+export function PlainText({ text }: { text: string }) {
+  return splitURLs(text).map((piece, i) =>
+    typeof piece === 'string' ? piece : <Link key={i} url={piece.href}>{piece.url}</Link>,
+  )
 }
 
 const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {

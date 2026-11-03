@@ -78,6 +78,7 @@ const footerLinks: [label: string, href: string][] = [
   ["codync-mem", "/codync-mem"],
   ["Terms", "/terms"],
   ["Privacy", "/privacy"],
+  ["Code signing policy", "/code-signing"],
   ["Discord", DISCORD],
   ["WeChat (China)", WECHAT],
   ["Ko-fi", KO_FI],

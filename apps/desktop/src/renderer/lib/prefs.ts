@@ -2,24 +2,32 @@ import type { AppLanguage } from './l10n'
 import { useSyncExternalStore } from 'react'
 import type { StarAsk } from './star-ask'
 
+/** A stored value, or the fallback when it's missing, unreadable or of another kind (a `null` where a string
+ * belongs crashed the chat window). A `null` fallback takes any value. */
+function stored<T>(raw: string | null, fallback: T): T {
+  if (raw === null) return fallback
+  try {
+    const value: unknown = JSON.parse(raw)
+    const sameKind = value !== null && typeof value === typeof fallback && Array.isArray(value) === Array.isArray(fallback)
+    return fallback === null || sameKind ? (value as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
 /** A per-window preference in localStorage (kit's `@AppStorage`), observable by views. */
 export function pref<T>(key: string, fallback: T) {
   const listeners = new Set<() => void>()
   let value: T = (() => {
     try {
-      const raw = localStorage.getItem(key)
-      return raw === null ? fallback : (JSON.parse(raw) as T)
+      return stored(localStorage.getItem(key), fallback)
     } catch {
       return fallback
     }
   })()
   window.addEventListener('storage', (e) => {
     if (e.key !== key) return
-    try {
-      value = e.newValue === null ? fallback : (JSON.parse(e.newValue) as T)
-    } catch {
-      value = fallback
-    }
+    value = stored(e.newValue, fallback)
     for (const l of listeners) l()
   })
   return {

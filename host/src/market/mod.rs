@@ -269,6 +269,10 @@ pub fn update_connectors<T>(
 
 fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
     update_connectors(store, |all| {
+        if c.registry_name.is_none() {
+            // Recheck under the write lock: another install may have finished during OAuth discovery.
+            custom::ensure_name_available(&c.name, all)?;
+        }
         // A registry server is installed once: installing it again replaces it under the id the bots know.
         if let Some(name) = c.registry_name.as_deref()
             && let Some(existing) = all.iter_mut().find(|x| x.registry_name.as_deref() == Some(name))

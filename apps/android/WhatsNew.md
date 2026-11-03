@@ -7,11 +7,9 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.37.0
+## 2.38.0
 ### zh-Hant
-- GitHub 聯結器可以直接用 GitHub 帳號登入了：Codync 會顯示一組代碼，點「複製並開啟」，到 GitHub 頁面貼上並授權就完成，不用再自己建立 token。
-- 之前用 token 加入 GitHub 的話，聯結器清單會提示「改用登入」，登入後就不用再管 token 過期。
+- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
 
 ### en-US
-- The GitHub connector now signs in with your GitHub account: Codync shows a short code, tap Copy and open, paste it on GitHub's page and authorize. No token to create.
-- Added GitHub with a token before? Your connector list now offers to sign in instead, so the connector no longer breaks when the token expires.
+- Choose Português (Brasil) in Settings, or follow your Portuguese system language.

@@ -1,10 +1,12 @@
 # Interface languages
 
 Each device can choose Follow system, English, Simplified Chinese, Traditional
-Chinese, Japanese, Korean, French, German or Spanish. Desktop and phone settings
-hold the choice; the terminal command palette cycles its own saved preference.
-Regional variants use their language's catalog. Unsupported system languages use
-English. The saved `zh` identifier continues to mean Simplified Chinese.
+Chinese, Japanese, Korean, French, German, Spanish or Brazilian Portuguese.
+Desktop and phone settings hold the choice; the terminal command palette cycles
+its own saved preference. Regional variants use their language's catalog.
+Portuguese system tags (`pt`, `pt-BR`, `pt_BR.UTF-8`, `pt-PT`) use `pt-BR`, shown
+as **Português (Brasil)** after Spanish. Unsupported system languages use English.
+The saved `zh` identifier continues to mean Simplified Chinese.
 
 The canonical UTF-8 JSON catalogs live in
 `apps/ios/Kit/Sources/CodyncKit/Resources/Languages/`. iOS bundles them, desktop

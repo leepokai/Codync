@@ -1523,5 +1523,13 @@
   "Take over": "제어권 가져오기",
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "원격 화면에 연결하지 못했습니다. 컴퓨터의 연결을 확인한 뒤 다시 시도하세요.",
   "Couldn't reconnect to the remote screen.": "원격 화면에 다시 연결하지 못했습니다.",
-  "Couldn't reach the computer.": "컴퓨터에 연결하지 못했습니다."
+  "Couldn't reach the computer.": "컴퓨터에 연결하지 못했습니다.",
+  "Paste this code on the sign-in page that opens next.": "다음에 열리는 로그인 페이지에 이 코드를 붙여 넣으세요.",
+  "Copy and open": "복사하고 열기",
+  "Code {code} copied: paste it on the page that opened, then ^r refreshes": "코드 {code} 복사됨: 열린 페이지에 붙여 넣은 뒤 ^r로 새로고침",
+  "Code {code} copied: paste it at {url}, then ^r refreshes": "코드 {code} 복사됨: {url}에 붙여 넣은 뒤 ^r로 새로고침",
+  "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "코드 {code} 복사됨. 로그인 페이지에 붙여 넣은 뒤 Enter로 확인. Ctrl+X로 취소.",
+  "Sign in instead of using a saved token": "저장된 토큰 대신 로그인하세요",
+  "↵ sign in instead of the token": "↵ 토큰 대신 로그인",
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "코드 {code} 복사됨: {url}에 붙여 넣은 뒤 Enter로 확인. Ctrl+X로 취소."
 }

@@ -52,6 +52,7 @@ class AppStore internal constructor(
     internal val setupTerminals = mutableMapOf<String, SetupTerminalSession>()
     internal val appConnections = mutableMapOf<String, AppConnectionSession>()
     internal var oauthRequestId: String? = null
+    internal val signInCodeAnswer = SignInCodeAnswer()
     internal var voiceBinding: VoiceBinding? = null
     internal var voiceGeneration: Int? = null
     /** A "Talk to Codync" call waiting for the link (`requestCall`). */

@@ -1,8 +1,10 @@
 //! Replies to the sheets' commands.
 
 use serde_json::{Value, json};
+use std::time::{Duration, Instant};
 
 use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle, rename_fold};
+use super::super::l10n::tr;
 use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
@@ -188,11 +190,24 @@ impl App {
             }
             Reply::SignIn => {
                 let url = s(&v, "url");
-                super::super::app::copy(&url);
-                if open_browser(&url, &self.url) {
-                    self.flash("Finish in the browser, then ^r refreshes");
+                let opened = open_browser(&url, &self.url);
+                // A sign-in with a code (GitHub): the code is what to paste, and it stays up meanwhile.
+                if let Some(code) = v["code"].as_str() {
+                    super::super::app::copy(code);
+                    let text = if opened {
+                        tr("Code {code} copied: paste it on the page that opened, then ^r refreshes")
+                    } else {
+                        tr("Code {code} copied: paste it at {url}, then ^r refreshes")
+                    };
+                    let text = text.replace("{code}", code).replace("{url}", &url);
+                    self.hint = Some((text, Instant::now() + Duration::from_mins(2)));
                 } else {
-                    self.flash("Sign-in link copied: open it on this computer, then ^r refreshes");
+                    super::super::app::copy(&url);
+                    self.flash(if opened {
+                        "Finish in the browser, then ^r refreshes"
+                    } else {
+                        "Sign-in link copied: open it on this computer, then ^r refreshes"
+                    });
                 }
             }
             Reply::Models(backend) => {

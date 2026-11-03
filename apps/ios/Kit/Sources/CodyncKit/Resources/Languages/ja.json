@@ -1523,5 +1523,13 @@
   "Take over": "操作を引き継ぐ",
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "リモート画面に接続できませんでした。コンピュータの接続を確認して、もう一度お試しください。",
   "Couldn't reconnect to the remote screen.": "リモート画面に再接続できませんでした。",
-  "Couldn't reach the computer.": "コンピュータに接続できませんでした。"
+  "Couldn't reach the computer.": "コンピュータに接続できませんでした。",
+  "Paste this code on the sign-in page that opens next.": "このコードを、次に開くサインイン ページに貼り付けてください。",
+  "Copy and open": "コピーして開く",
+  "Code {code} copied: paste it on the page that opened, then ^r refreshes": "コード {code} をコピーしました: 開いたページに貼り付けてから ^r で更新",
+  "Code {code} copied: paste it at {url}, then ^r refreshes": "コード {code} をコピーしました: {url} に貼り付けてから ^r で更新",
+  "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "コード {code} をコピーしました。サインイン ページに貼り付けてから Enter で確認。Ctrl+X でキャンセル。",
+  "Sign in instead of using a saved token": "保存したトークンの代わりにサインイン",
+  "↵ sign in instead of the token": "↵ トークンの代わりにサインイン",
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "コード {code} をコピーしました: {url} に貼り付けてから Enter で確認。Ctrl+X でキャンセル。"
 }

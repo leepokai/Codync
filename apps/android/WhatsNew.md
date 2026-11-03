@@ -7,17 +7,11 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.36.0
+## 2.37.0
 ### zh-Hant
-- Codync 現在需要用 Apple、Google 或 GitHub 登入。以前沒登入就配對的電腦，第一次登入時會一起移進你的賬戶，不用再掃一次。
-- 登出後，這支手機不再收到通知，但會保留它的電腦，重新登入不用再掃描。
-- 可以在 App 裡刪除賬戶：點 Bots 分頁左上角的賬戶按鈕，再點「刪除賬戶」。
-- 配對會確認賬戶：在別人賬戶裡的電腦會告訴你它在誰的賬戶；還不在任何賬戶的電腦，會先在電腦上問一聲，再加入你的賬戶。
-- 也可以輸入 `codync-host pair` 印出的短代碼來配對，不用掃 QR code。
+- GitHub 聯結器可以直接用 GitHub 帳號登入了：Codync 會顯示一組代碼，點「複製並開啟」，到 GitHub 頁面貼上並授權就完成，不用再自己建立 token。
+- 之前用 token 加入 GitHub 的話，聯結器清單會提示「改用登入」，登入後就不用再管 token 過期。
 
 ### en-US
-- Codync now asks you to sign in with Apple, Google or GitHub. Computers you paired before come along, no new scan.
-- Signing out stops notifications and keeps your computers: sign back in, no scan.
-- Delete your account in the app: account button (top left of Bots), then Delete account.
-- Pairing checks your account: a computer in another account says whose; one in no account asks first, then joins yours.
-- Or type the short code `codync-host pair` prints instead of scanning.
+- The GitHub connector now signs in with your GitHub account: Codync shows a short code, tap Copy and open, paste it on GitHub's page and authorize. No token to create.
+- Added GitHub with a token before? Your connector list now offers to sign in instead, so the connector no longer breaks when the token expires.

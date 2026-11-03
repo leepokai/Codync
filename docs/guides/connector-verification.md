@@ -29,6 +29,27 @@ do not split a command line. `env` merges entries, with `null` removing a key.
 The host saves a valid edit before verification; a failed handshake does not
 roll back that edit. Bot tool refresh occurs only after verification succeeds.
 
+## Editing a custom remote connector
+
+`updateConnector` also accepts `name`, `description`, `url` and `headers` for a
+custom URL connector. Omitted fields stay unchanged. At the same URL, headers
+merge case-insensitively and `null` removes a header; OAuth sign-in is retained.
+OAuth manages the Authorization header while a sign-in configuration exists.
+
+Changing the URL requires an explicit `headers` object, which replaces all old
+headers (`{}` clears them). The host clears OAuth registration and tokens,
+invalidates pending sign-ins and refreshes, and checks the new endpoint's sign-in
+requirements using only the newly supplied headers. Even changing away and back
+requires fresh sign-in. Existing proxies refuse further requests when the endpoint
+revision changes, so an old SSE posting URL or HTTP session never receives the
+replacement credentials. A fresh tool process uses the edited endpoint. HTTPS is required except for parsed loopback HTTP hosts;
+URLs with user information or fragments and invalid headers are refused.
+
+Discovery never overwrites a concurrent edit or credential refresh: the caller
+must reread and retry. As with local edits, valid remote changes are saved before
+verification; a failed check leaves them saved without refreshing bots. Registry
+connectors are still managed through reinstall, pending the registry-input work.
+
 ## Recorded result: 2026-10-05, macOS
 
 `python3 tools/check-connectors.py --network --slow`: **15/15 passed**.

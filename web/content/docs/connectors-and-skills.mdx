@@ -64,8 +64,26 @@ clear them. Unlike adding a connector, this method does not split a command line
 The host saves the edit and checks that the connector starts and lists its tools.
 If that check fails, the edit remains saved: correct it and try again. After a
 successful check, bots using the connector are notified to refresh their tools.
-This method does not edit registry-installed or URL connectors, and there is no
-edit form in the apps yet.
+Registry-installed connectors still use the reinstall path. There is no edit
+form in the apps yet.
+
+### Edit a custom URL connector through the API
+
+Use `POST /api/updateConnector` with the connector's `id` and the fields to change:
+`name`, `description`, `url` or `headers`. The ID and bot assignments stay in place.
+At the same URL, omitted headers are kept, supplied values replace them, and
+`null` removes a header. Header names are compared without regard to case.
+An existing OAuth sign-in is retained and manages its own Authorization header.
+
+To change the endpoint, supply both `url` and a complete replacement `headers`
+object. Use `headers: {}` to send no saved headers. Previous headers and OAuth
+sign-in are cleared so their credentials cannot follow the connector to another
+server. If the new server requires sign-in, sign in again and retry verification.
+Changing back to the old URL also requires a fresh sign-in.
+
+Only HTTPS and local loopback HTTP URLs are accepted. A valid edit remains saved
+if verification fails; correct it or sign in, then retry. Successful verification
+refreshes tools only for bots using this connector.
 
 ## Apps through Composio
 

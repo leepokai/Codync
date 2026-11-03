@@ -272,3 +272,17 @@ fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
     );
     assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
 }
+
+#[test]
+fn connector_edits_report_outcomes_without_configuration_or_credentials() {
+    let body = json!({"id":"private-id", "name":"private-name", "url":"https://private.example/secret",
+                     "headers":{"Authorization":"private-token"},"env":{"KEY":"private-key"}});
+    let (event, properties) = observe(&Caller::Local, "updateConnector", &body).unwrap();
+    assert_eq!(event, Event::ConnectorUpdated);
+    assert_eq!(Value::Object(properties.clone()), json!({"client":"local"}));
+    let success = answered(event, properties.clone(), &json!({"connector":body,"verify":{"status":"ready"}})).unwrap();
+    assert_eq!(Value::Object(success), json!({"client":"local","outcome":"ready"}));
+    let (event, failure) = failed(event, properties).unwrap();
+    assert_eq!(event, Event::ConnectorUpdated);
+    assert_eq!(Value::Object(failure), json!({"client":"local","outcome":"failed","error":"edit_or_verify"}));
+}

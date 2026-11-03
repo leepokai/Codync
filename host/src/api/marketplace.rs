@@ -141,7 +141,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "updateConnector" => {
             let id = str_arg(&b, "id")?.trim().to_owned();
-            let connector = market::update_custom_connector(&hub.store, &b)?;
+            let connector = market::update_connector(&hub.store, &b).await?;
             // Same contract as a credential change: prove the edited definition starts, then
             // let the bots that have it turned on rebuild their tools for the next turn.
             let verify = market::verify::verify(&hub.store, &id, hub.port).await?;

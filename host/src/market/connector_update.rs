@@ -62,7 +62,7 @@ pub fn update_custom_connector(store: &crate::store::Store, b: &Value) -> Result
 }
 
 /// A present text field: `None` when it isn't there, an error when it isn't a string.
-fn text(b: &Value, key: &str) -> Result<Option<String>> {
+pub(super) fn text(b: &Value, key: &str) -> Result<Option<String>> {
     match b.get(key) {
         None => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.trim().to_owned())),

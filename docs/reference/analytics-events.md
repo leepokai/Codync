@@ -88,6 +88,7 @@ host answers and sends it once the host is up.
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
 | `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included) | — |
 | `screen_taken_over` | host | `screenTakeover` (taking control, not handing it back) | — |
+| `connector_updated` | host | `updateConnector`, including rejected edits or failed verification | `outcome` (`ready` or `failed`); failure `error` (`edit_or_verify`). No connector IDs, URLs, fields or values. |
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
 | `connectors_imported` | host | `importConnectors` | `count` |
 | `connector_removed` | host | `removeConnector` | — |

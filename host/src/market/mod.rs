@@ -29,12 +29,13 @@ pub mod verify;
 mod connector_update;
 mod install;
 mod registry;
+mod remote_update;
 mod skills;
 mod updates;
 
-pub use connector_update::update_custom_connector;
 pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
+pub use remote_update::update_connector;
 pub use skills::{
     add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,
     skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
@@ -85,6 +86,9 @@ pub struct Connector {
     /// Remote servers that want sign-in; see `oauth`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<oauth::OAuth>,
+    /// Changes when a remote endpoint is edited, invalidating in-flight sign-ins.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub auth_revision: String,
 }
 
 impl Connector {
@@ -331,6 +335,7 @@ mod tests {
             url: None,
             headers: BTreeMap::new(),
             oauth: None,
+            auth_revision: String::new(),
         };
         let exe = std::path::Path::new("/bin/codync-host");
         let config = c.acp(exe, 1).unwrap();

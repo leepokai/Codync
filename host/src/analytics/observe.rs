@@ -125,6 +125,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("connector".into(), "composio".into());
             Event::ConnectorInstalled
         }
+        "updateConnector" => Event::ConnectorUpdated,
         "importConnectors" => Event::ConnectorsImported,
         "importBots" => Event::BotsImported,
         "removeConnector" => Event::ConnectorRemoved,
@@ -208,6 +209,9 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 /// artifact's card went into its bot's chat. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
+        Event::ConnectorUpdated => {
+            p.insert("outcome".into(), "ready".into());
+        }
         Event::ConnectorsImported => {
             p.insert("count".into(), answer["items"].as_array().map_or(0, Vec::len).into());
         }
@@ -236,6 +240,11 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
 /// `action`) as `network_failed` with `stage` `action`; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>) -> Option<(Event, Map<String, Value>)> {
+    if event == Event::ConnectorUpdated {
+        p.insert("outcome".into(), "failed".into());
+        p.insert("error".into(), "edit_or_verify".into());
+        return Some((event, p));
+    }
     matches!(event, Event::NetworkJoined | Event::NetworkChanged).then(|| {
         p.insert("stage".into(), "action".into());
         (Event::NetworkFailed, p)

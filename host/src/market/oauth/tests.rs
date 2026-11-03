@@ -12,6 +12,7 @@ fn pend(state: &str) {
         verifier: "v".into(),
         redirect_uri: loopback_uri(1),
         resource: "https://notes.example/mcp".into(),
+        revision: String::new(),
         started: Instant::now(),
     };
     PENDING.locked().get_or_insert_with(HashMap::new).insert(state.into(), pending);
@@ -196,4 +197,45 @@ async fn the_token_is_saved_only_while_the_connector_is_unchanged() {
     let left = market::connectors(&store).unwrap();
     assert_eq!(left[0].url.as_deref(), Some("https://other.example/mcp"));
     assert!(left[0].oauth.is_none(), "the replacement got the token");
+}
+
+#[tokio::test]
+async fn returning_to_an_old_url_does_not_revive_a_pending_sign_in() {
+    let store = notes("http://127.0.0.1:1/token", 1);
+    pend("edited-away-and-back");
+    market::update_connectors(&store, |all| {
+        all[0].auth_revision = "new-endpoint-revision".into();
+        all[0].oauth = Some(OAuth::default());
+        Ok(())
+    })
+    .unwrap();
+    let before = store.kv_get("connectors");
+    let error = finish(&store, "edited-away-and-back", Some("old-code"), None).await.unwrap_err();
+    assert_eq!(error.to_string(), "unknown connector");
+    assert_eq!(store.kv_get("connectors"), before);
+}
+
+#[tokio::test]
+async fn a_delayed_refresh_cannot_restore_tokens_after_an_endpoint_edit() {
+    use axum::{Json, Router, routing};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let store = Arc::new(notes(&format!("http://{}/token", listener.local_addr().unwrap()), 1));
+    let edited = store.clone();
+    let app = Router::new().route(
+        "/token",
+        routing::post(move || {
+            market::update_connectors(&edited, |all| {
+                all[0].auth_revision = "changed-away-and-back".into();
+                all[0].oauth = Some(OAuth::default());
+                Ok(())
+            })
+            .unwrap();
+            async { Json(json!({"access_token":"stale-response", "refresh_token":"stale-refresh"})) }
+        }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    assert!(target(&store, "notes", false).await.is_err());
+    assert_eq!(saved(&store), OAuth::default());
+    server.abort();
+    let _ = server.await;
 }

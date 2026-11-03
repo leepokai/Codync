@@ -2,6 +2,7 @@
 
 mod agent;
 mod analytics;
+mod analytics_cli;
 mod api;
 mod background;
 mod chat;
@@ -119,6 +120,8 @@ enum Sub {
     },
     /// Show or change the Codync cloud (reach this computer from anywhere).
     Cloud(cloud_cli::CloudArgs),
+    /// Turn this computer's usage analytics on or off, as Settings does (the Windows installer asks with it).
+    Analytics(analytics_cli::AnalyticsArgs),
     /// Your other computers: create a network, invite them, see who is around.
     Network(network_cli::NetworkArgs),
     /// Import bots from another app's export file (`--skill` prints the skill that writes one in Grok Bot).
@@ -371,6 +374,7 @@ async fn main() -> Result<()> {
         },
         Sub::Access { port, action } => pair_cli::access(port, action.unwrap_or(pair_cli::AccessAction::List)).await,
         Sub::Cloud(args) => cloud_cli::run(args).await,
+        Sub::Analytics(args) => analytics_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
         Sub::Install { port } => {
             open_store()?;

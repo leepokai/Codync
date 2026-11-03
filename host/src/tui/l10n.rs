@@ -23,6 +23,8 @@ enum AppLanguage {
     Fr,
     De,
     Es,
+    PtBr,
+    Ru,
 }
 
 impl AppLanguage {
@@ -36,6 +38,8 @@ impl AppLanguage {
             "fr" => Self::Fr,
             "de" => Self::De,
             "es" => Self::Es,
+            "pt-BR" => Self::PtBr,
+            "ru" => Self::Ru,
             _ => Self::System,
         }
     }
@@ -51,6 +55,8 @@ impl AppLanguage {
             Self::Fr => "fr",
             Self::De => "de",
             Self::Es => "es",
+            Self::PtBr => "pt-BR",
+            Self::Ru => "ru",
         }
     }
 
@@ -64,7 +70,9 @@ impl AppLanguage {
             Self::Ko => Self::Fr,
             Self::Fr => Self::De,
             Self::De => Self::Es,
-            Self::Es => Self::System,
+            Self::Es => Self::PtBr,
+            Self::PtBr => Self::Ru,
+            Self::Ru => Self::System,
         }
     }
 }
@@ -104,6 +112,16 @@ static ES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
         .expect("es.json is a string map")
 });
 
+static PT_BR: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/pt-BR.json"))
+        .expect("pt-BR.json is a string map")
+});
+
+static RU: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/ru.json"))
+        .expect("ru.json is a string map")
+});
+
 static PREFERENCE: LazyLock<Mutex<AppLanguage>> = LazyLock::new(|| Mutex::new(read_preference()));
 
 const FILE: &str = "tui-language";
@@ -137,10 +155,17 @@ fn resolved_language(preference: AppLanguage, locale: &str) -> AppLanguage {
     match system_script_of(locale) {
         Some(ChineseScript::Hans) => AppLanguage::Zh,
         Some(ChineseScript::Hant) => AppLanguage::ZhHant,
-        None => match AppLanguage::parse(locale.to_ascii_lowercase().split(['-', '_', '.']).next().unwrap_or("en")) {
-            AppLanguage::System => AppLanguage::En,
-            language => language,
-        },
+        None => {
+            let locale = locale.to_ascii_lowercase();
+            let language = locale.split(['-', '_', '.']).next().unwrap_or("en");
+            match language {
+                "pt" => AppLanguage::PtBr,
+                _ => match AppLanguage::parse(language) {
+                    AppLanguage::System => AppLanguage::En,
+                    language => language,
+                },
+            }
+        }
     }
 }
 
@@ -153,6 +178,8 @@ fn active_phrases() -> Option<&'static HashMap<String, String>> {
         AppLanguage::Fr => Some(&FR),
         AppLanguage::De => Some(&DE),
         AppLanguage::Es => Some(&ES),
+        AppLanguage::PtBr => Some(&PT_BR),
+        AppLanguage::Ru => Some(&RU),
         AppLanguage::En | AppLanguage::System => None,
     }
 }
@@ -361,6 +388,8 @@ pub(in crate::tui) fn language_title() -> Cow<'static, str> {
         AppLanguage::Fr => Cow::Borrowed("Français"),
         AppLanguage::De => Cow::Borrowed("Deutsch"),
         AppLanguage::Es => Cow::Borrowed("Español"),
+        AppLanguage::PtBr => Cow::Borrowed("Português (Brasil)"),
+        AppLanguage::Ru => Cow::Borrowed("Русский"),
         AppLanguage::System => tr("Follow system"),
     }
 }
@@ -380,6 +409,10 @@ pub(in crate::tui) fn cycle_language() -> Cow<'static, str> {
 }
 
 #[cfg(test)]
+#[path = "l10n_tests.rs"]
+mod registration_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{AppLanguage, translate};
 
@@ -391,6 +424,7 @@ mod tests {
             (AppLanguage::Fr, &*super::FR),
             (AppLanguage::De, &*super::DE),
             (AppLanguage::Es, &*super::ES),
+            (AppLanguage::Ru, &*super::RU),
         ] {
             assert_eq!(
                 super::resolved_language(AppLanguage::System, &format!("{}_XX.UTF-8", language.stored())),
@@ -400,7 +434,7 @@ mod tests {
             assert_ne!(super::translate_with("Settings", table), "Settings");
             assert_eq!(super::translate_with("Unknown phrase", table), "Unknown phrase");
         }
-        assert_eq!(super::resolved_language(AppLanguage::System, "pt_BR"), AppLanguage::En);
+        assert_eq!(super::resolved_language(AppLanguage::System, "nl_NL"), AppLanguage::En);
     }
 
     #[test]
@@ -452,7 +486,9 @@ mod tests {
         assert_eq!(AppLanguage::Zh.next(), AppLanguage::ZhHant);
         assert_eq!(AppLanguage::ZhHant.next(), AppLanguage::En);
         assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
-        assert_eq!(AppLanguage::Es.next(), AppLanguage::System);
+        assert_eq!(AppLanguage::Es.next(), AppLanguage::PtBr);
+        assert_eq!(AppLanguage::PtBr.next(), AppLanguage::Ru);
+        assert_eq!(AppLanguage::Ru.next(), AppLanguage::System);
         assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));

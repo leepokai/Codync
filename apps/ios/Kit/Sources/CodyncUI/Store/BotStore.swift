@@ -101,6 +101,8 @@ public final class BotStore {
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
+    /// Its `hello` says this phone paired without the computer joining the account (`Hello.joinAccount`).
+    var onJoinAccount: (@MainActor (HostClient) -> Void)?
 
     public let storage: SharedStore.Context
     /// Opens a channel to the computer as it is now: its route, and the addresses and keys merged since.

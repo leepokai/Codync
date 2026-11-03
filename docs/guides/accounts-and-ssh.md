@@ -234,8 +234,8 @@ directly (the encrypted channel wasn't ported to the desktop app), so their
 confirmed first), so a computer that was reset or given away can be cleaned up even when its
 name changed. Offline may only mean asleep, so the dialog says what removal does: account-approved
 devices lose access, and the computer's own app doesn't add it back by itself. The phones have no
-such action: adding a computer to the account or removing it is desktop-only, and phones manage
-only their own access (pair or forget, revoke, ask). See [desktop app](../architecture/desktop-app.md).
+such action: removing a computer from the account takes the desktop app (or `codync-host cloud --leave`
+on that computer), and phones manage only their own access (pair or forget, revoke, ask). See [desktop app](../architecture/desktop-app.md).
 
 **Computers & devices** (Settings) shows, for this computer and each SSH computer:
 *Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud),

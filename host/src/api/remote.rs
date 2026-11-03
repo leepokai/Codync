@@ -127,6 +127,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (claim_id, nonce, user_id) = (str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, str_arg(&b, "userId")?);
             crate::remote::owner::sign_claim(hub, claim_id, nonce, user_id).await?
         }
+        // A phone finishing a join its pairing didn't complete (hello's `joinAccount`).
+        "joinAccount" => {
+            let user_id = crate::remote::owner::joinable_by(hub, caller.device_key())?
+                .ok_or_else(|| anyhow!("This computer can't join this phone's account now."))?;
+            crate::remote::owner::sign_claim(hub, str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, &user_id).await?
+        }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
 }

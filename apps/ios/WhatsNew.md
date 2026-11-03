@@ -8,6 +8,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 
 ## 2.38.1
 ### zh-Hant
+- bot 用了不只一種智慧體時，列表會在頭像左下角標出各自的智慧體標誌，可在「設定 › 外觀」關閉。
 - 修正語音通話中，bot 唸完回覆、要再聽你說話時 app 可能閃退的問題。
 - 語音通話的對話紀錄更好讀：最上方顯示是跟哪個 bot、什麼時候、通話多久，語音說的話也更清楚。
 - 通話列在 bot 沒說話時會顯示一排靜止的點，深色頭像的 bot 也看得到。
@@ -17,6 +18,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
 
 ### en-US
+- When your bots use more than one agent, the bot list marks each avatar with its agent's logo. Turn it off in Settings › Appearance.
 - Fixed a crash in voice calls when the bot finished reading a reply and started listening again.
 - A call's conversation is easier to read: the bot, when the call ended and how long it lasted sit at the top, and the voice's words are clearer.
 - The call bar shows a still row of dots while the bot isn't talking, for dark bots too.

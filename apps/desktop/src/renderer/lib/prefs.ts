@@ -73,6 +73,8 @@ export const prefs = {
   rosterSectionOrder: pref<Record<string, string[]>>('rosterSectionOrder', {}),
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
+  /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
+  agentLogos: pref('showAgentLogos', true),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),

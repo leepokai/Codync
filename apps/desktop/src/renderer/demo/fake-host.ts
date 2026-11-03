@@ -1,5 +1,5 @@
 import type { CallError } from '@shared/ipc'
-import { isChat, isReplyable, normalizeBot, quoteOf, type Bot, type BotDraft, type Entry, type GroupDraft } from '@shared/models'
+import { isChat, isReplyable, normalizeBot, quoteOf, type AutomanState, type Bot, type BotDraft, type Entry, type GroupDraft } from '@shared/models'
 import * as story from './story'
 
 // An in-memory codync-host for the website demo: the methods the renderer calls, with the
@@ -21,6 +21,7 @@ export class FakeHost {
   private nextReply = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
   private analytics = true
+  private automan: AutomanState = { enabled: false, state: 'stopped', error: null, url: null, port: 5679, path: null }
 
   constructor(
     readonly version: string,
@@ -44,7 +45,7 @@ export class FakeHost {
       ...[...this.bots.values()].filter((b) => b.rev > since).map((b) => ({ rev: b.rev, line: { type: 'bot', rev: b.rev, bot: this.botJSON(b) } })),
       ...this.entries.filter((e) => e.rev > since).map((e) => ({ rev: e.rev, line: { type: 'entry', rev: e.rev, entry: e } })),
     ].sort((a, b) => a.rev - b.rev)
-    const hello = { type: 'hello', hostId: this.hostId, computerId: story.COMPUTER_ID, rev: this.rev, usage: story.usage(Date.now()), screen: null }
+    const hello = { type: 'hello', hostId: this.hostId, computerId: story.COMPUTER_ID, rev: this.rev, usage: story.usage(Date.now()), screen: null, automan: this.automan }
     let open = true
     const listener = (line: string) => open && onData(line)
     setTimeout(() => {
@@ -61,6 +62,10 @@ export class FakeHost {
   private emit(event: object) {
     const line = JSON.stringify(event)
     for (const l of this.listeners) l(line)
+  }
+
+  private emitAutoman() {
+    this.emit({ type: 'automan', automan: this.automan })
   }
 
   private emitBot(bot: Bot) {
@@ -168,6 +173,7 @@ export class FakeHost {
         return {
           hostId: this.hostId, computerId: story.COMPUTER_ID, signKey: '', boxKey: '', cloud: null, name: story.HOST_NAME,
           version: this.version, minApp: this.version, os: 'macos', device: 'MacBookPro', home: '/Users/demo', rev: this.rev, analytics: this.analytics,
+          automan: this.automan,
           urls: [], backends: [
             { id: 'claude', name: 'Claude Code', available: true, installed: true, signedIn: true, command: 'claude', installHint: '' },
             { id: 'codex', name: 'Codex', available: true, installed: true, signedIn: true, command: 'codex', installHint: '' },
@@ -294,6 +300,44 @@ export class FakeHost {
         return { enabled: this.analytics }
       case 'track':
         return {}
+      case 'automanStatus':
+        return this.automan
+      case 'automanStart': {
+        if (this.automan.state !== 'stopped') return this.automan
+        this.automan = { ...this.automan, enabled: true, state: 'starting', error: null, url: this.automan.path ? `http://127.0.0.1:${this.automan.port}` : null }
+        this.emitAutoman()
+        setTimeout(() => {
+          if (this.automan.state !== 'starting') return
+          this.automan = { ...this.automan, state: 'running' }
+          this.emitAutoman()
+        }, 1200)
+        return this.automan
+      }
+      case 'automanStop': {
+        this.automan = { ...this.automan, state: 'stopped', error: null }
+        this.emitAutoman()
+        return this.automan
+      }
+      case 'setAutomanEnabled': {
+        this.automan = { ...this.automan, enabled: b.enabled === true }
+        if (b.enabled === true) void this.call('automanStart', {})
+        else this.automan = { ...this.automan, state: 'stopped', error: null }
+        this.emitAutoman()
+        return this.automan
+      }
+      case 'setAutomanPath': {
+        const path = str('path') || null
+        this.automan = { ...this.automan, path, url: path ? `http://127.0.0.1:${this.automan.port}` : null }
+        this.emitAutoman()
+        return this.automan
+      }
+      case 'setAutomanPort': {
+        const port = Number(b.port)
+        if (!Number.isInteger(port) || port < 1024) throw fail('Port must be 1024 or higher')
+        this.automan = { ...this.automan, port, url: this.automan.path ? `http://127.0.0.1:${port}` : null }
+        this.emitAutoman()
+        return this.automan
+      }
       default:
         throw fail(DEMO_UNAVAILABLE)
     }

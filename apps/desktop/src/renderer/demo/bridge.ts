@@ -122,6 +122,11 @@ const bridge: CodyncBridge = {
     open: async () => {},
     target: async () => null,
   },
+  automan: {
+    open: async () => {},
+    gotoEditor: async () => {},
+    openSettings() {},
+  },
 }
 
 // Every visit starts from the story: no mirror cache or drafts from a previous visit, onboarding done,

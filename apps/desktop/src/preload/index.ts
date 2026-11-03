@@ -154,6 +154,11 @@ const bridge: CodyncBridge = {
     open: (target) => ipcRenderer.invoke('screen:open', target),
     target: (computerId) => ipcRenderer.invoke('screen:target', computerId),
   },
+  automan: {
+    open: () => ipcRenderer.invoke('automan:open'),
+    gotoEditor: () => ipcRenderer.invoke('automan:gotoEditor'),
+    openSettings: () => ipcRenderer.send('automan:openSettings'),
+  },
 }
 
 contextBridge.exposeInMainWorld('codync', bridge)

@@ -538,6 +538,16 @@ export function normalizeScreen(raw: Partial<ScreenState> | undefined | null): S
   }
 }
 
+/** The Automations (n8n) instance the host runs; `url` is set once its folder is. */
+export interface AutomanState {
+  enabled: boolean
+  state: 'stopped' | 'starting' | 'running' | 'error'
+  error: string | null
+  url: string | null
+  port: number
+  path: string | null
+}
+
 export interface Hello {
   hostId: string
   name: string
@@ -548,6 +558,7 @@ export interface Hello {
   backends: Backend[]
   rev: number
   screen?: ScreenState
+  automan?: AutomanState
   urls?: string[]
   computerId?: string
   signKey?: string

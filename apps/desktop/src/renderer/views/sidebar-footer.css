@@ -1,6 +1,6 @@
 .sidebar:not(.compact) .roster {
-  padding-bottom: 72px;
-  scroll-padding-bottom: 72px;
+  padding-bottom: 112px;
+  scroll-padding-bottom: 112px;
 }
 
 .sidebar-footer {
@@ -10,10 +10,18 @@
   left: 0;
   right: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   padding: 10px 14px 14px;
   isolation: isolate;
+}
+
+.sidebar-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .sidebar-footer-fade {
@@ -53,7 +61,8 @@
 .sidebar-account:hover,
 .sidebar-account.active { background: var(--bubble-agent); }
 
-.extensions {
+.extensions,
+.automations {
   flex: 1;
   min-width: 0;
   height: 34px;
@@ -69,9 +78,28 @@
   border: 1px solid var(--chrome-stroke);
   transition: background-color var(--hover), transform var(--hover);
 }
-.extensions:hover { background: rgba(var(--text-rgb), 0.05); }
+.extensions:hover,
+.automations:hover { background: rgba(var(--text-rgb), 0.05); }
 .extensions:active,
+.automations:active,
 .sidebar-account:active { transform: scale(.97); }
+.automations { flex: none; }
+.automations > span:first-of-type { overflow: hidden; text-overflow: ellipsis; }
+.automations .automan-dot { margin-left: auto; }
+.automations svg { flex: none; color: var(--secondary); }
+
+/* The instance's state: quiet until it needs a look. */
+.automan-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tertiary);
+}
+.automan-dot.running { background: var(--accent); }
+.automan-dot.starting { background: var(--warning); animation: automan-dot 1.2s ease-in-out infinite; }
+.automan-dot.error { background: var(--danger); }
+@keyframes automan-dot { 50% { opacity: .35; } }
 .extensions-logos { display: flex; flex: none; }
 .extensions-logos img { width: 14px; height: 16px; padding: 1px; background: #fff; border-radius: 3px; object-fit: contain; }
 .extensions-logos > * + * { margin-left: -3px; }
@@ -93,8 +121,9 @@
 @keyframes update-badge-in { from { opacity: 0; transform: scale(.6); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .extensions:active, .sidebar-account:active, .update-badge:active:not(:disabled) { transform: none; }
+  .extensions:active, .automations:active, .sidebar-account:active, .update-badge:active:not(:disabled) { transform: none; }
   .update-badge { animation: none; }
+  .automan-dot.starting { animation: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .sidebar-footer-fade { background: var(--surface); inset: 0; }

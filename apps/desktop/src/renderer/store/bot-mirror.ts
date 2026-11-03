@@ -2,6 +2,7 @@ import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
 import {
   isInternalEntry,
   type AccessRequest,
+  type AutomanState,
   type Bot,
   type CloudStatus,
   type Computer,
@@ -43,6 +44,8 @@ export class BotMirror extends Observable {
   entries = new Map<string, Entry[]>()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
+  /** This computer's Automations (n8n) instance; null on a host that predates it. */
+  automan: AutomanState | null = null
   accessRequests: AccessRequest[] = []
   cloud: CloudStatus | null = null
   /** This computer's network; null until known, and on hosts without `networkView`. */

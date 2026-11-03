@@ -96,6 +96,12 @@
   min-width: 0;
   text-align: right;
 }
+/* The Automations port: a short number field beside its Save. */
+.port-field {
+  flex: none;
+  width: 84px;
+  text-align: right;
+}
 .settings-code {
   font-family: var(--mono);
   font-size: var(--text-caption);

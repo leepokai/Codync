@@ -1,0 +1,60 @@
+html[data-window='automan'],
+html[data-window='automan'] body,
+html[data-window='automan'] #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* The start page: a centered status while the host brings the instance up. */
+.automan-window {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  user-select: none;
+}
+
+.automan-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  padding: 24px;
+  text-align: center;
+}
+
+.automan-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--chrome-fill);
+  color: var(--text);
+}
+
+.automan-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.automan-detail {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.automan-detail.automan-error {
+  color: var(--danger);
+}
+
+.automan-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}

@@ -91,6 +91,8 @@ export type WindowCommand =
   | { kind: 'voiceKey'; key: VoiceKey }
   /** The chat window was shown again after being hidden (`window_opened`). */
   | { kind: 'windowOpened' }
+  /** The Automations window's start page asks for its Settings page. */
+  | { kind: 'openAutomationsSettings' }
 
 /** The app's own updates (electron-updater, release builds only). */
 export interface UpdateState {
@@ -264,5 +266,14 @@ export interface CodyncBridge {
     open(target: ScreenWindowTarget): Promise<void>
     /** The computer this screen window was opened for. Null when the window is stale. */
     target(computerId: string): Promise<ScreenView | null>
+  }
+  /** The Automations window: the n8n editor, or this window's start page while the host brings it up. */
+  automan: {
+    /** Opens (or focuses) the window, from the chat window. */
+    open(): Promise<void>
+    /** The start page calls it once the instance runs: the window then loads the editor. */
+    gotoEditor(): Promise<void>
+    /** The start page's "Open settings": the chat window shows Settings → Automations. */
+    openSettings(): void
   }
 }

@@ -71,36 +71,6 @@ textarea.field-box {
   border-radius: var(--radius-s);
 }
 
-/* Folder picker (FolderPicker). */
-.folder-back {
-  padding-left: 10px;
-}
-.folder-title {
-  flex: 1;
-  min-width: 0;
-}
-.folder-levels {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.folder-level-content {
-  gap: 14px;
-}
-.folder-use {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-body);
-  font-weight: 700;
-  color: var(--accent);
-}
-.folder-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .avatar-button {
   padding: 12px;
   background: var(--bubble-agent);
@@ -198,23 +168,6 @@ textarea.field-box {
 }
 .create-footer {
   padding: 12px 20px 20px;
-}
-
-/* Folder levels slide in from the side they were opened toward. */
-.level-slide {
-  animation: level-in var(--layout) both;
-}
-.level-slide.from-trailing {
-  --from: 40px;
-}
-.level-slide.from-leading {
-  --from: -40px;
-}
-@keyframes level-in {
-  from {
-    opacity: 0;
-    transform: translateX(var(--from));
-  }
 }
 
 /* Create template (BotTemplateView). */

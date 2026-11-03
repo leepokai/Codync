@@ -20,6 +20,7 @@ import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
 import { registerScreenViewer } from './screen-viewer'
+import { registerAutoman } from './automan'
 import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
@@ -260,6 +261,7 @@ if (yieldsToInstall()) {
     const screenTarget = registerSSH(() => BrowserWindow.getAllWindows())
     registerScreenViewer(rendererURL, () => chat, screenTarget)
     registerSSHConfig()
+    registerAutoman(host, rendererURL, () => chat, () => send({ kind: 'openAutomationsSettings' }))
     // Calls use the microphone (realtime voice); nothing else asks for permissions.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())

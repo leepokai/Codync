@@ -97,6 +97,4 @@ export function useFollowSaved(bot: Bot | undefined, change: (update: (d: BotDra
   }, [saved])
 }
 
-export const lastPathComponent = (path: string) => path.split('/').filter(Boolean).pop() ?? path
-
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

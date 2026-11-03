@@ -9,7 +9,7 @@ import org.junit.Test
 
 class AppLanguageTest {
     @Test fun additionalLanguagesResolveRegionsAndKeepExplicitChoices() {
-        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es)) {
+        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es, AppLanguage.Ru)) {
             assertEquals(language, AppLanguage.System.resolved(language.stored + "-XX"))
             assertEquals(language, language.resolved("zh-TW"))
             assertEquals(language, AppLanguage.fromStored(language.stored))
@@ -17,7 +17,52 @@ class AppLanguageTest {
             assertEquals("Unknown", translate("Unknown", language, true, phrases))
             assertFalse(language.usesChinese(true))
         }
-        assertEquals(AppLanguage.En, AppLanguage.System.resolved("pt-BR"))
+    }
+
+    @Test fun brazilianPortuguesePersistsAndAppearsAfterSpanish() {
+        val language = AppLanguage.fromStored("pt-BR")
+        assertEquals("pt-BR", AppLanguage.stored(language))
+        assertEquals("Português (Brasil)", language.title)
+        assertEquals(AppLanguage.Ru, AppLanguage.entries[AppLanguage.entries.indexOf(language) + 1])
+        assertEquals(AppLanguage.Es, AppLanguage.entries[AppLanguage.entries.indexOf(language) - 1])
+        assertEquals("Português (Brasil)", AppLanguage.menuTitle(language, AppLanguage.En, false, emptyMap()))
+        assertEquals(language, language.resolved("zh-TW"))
+        assertEquals(language, language.resolved("en-US"))
+        assertFalse(language.usesChinese(true))
+        assertEquals("Configurações", translate("Settings", language, false, mapOf("Settings" to "Configurações")))
+        assertEquals("Unknown", translate("Unknown", language, false, emptyMap()))
+    }
+
+    @Test fun portugueseSystemLocalesUseBrazilianPortuguese() {
+        val language = AppLanguage.fromStored("pt-BR")
+        for (tag in listOf("pt", "pt-BR", "pt_BR.UTF-8", "PT-br", "pt-PT", "pt-AO", "pt-MZ", "pt-CV", "pt-GW", "pt-ST", "pt-TL", "pt-MO")) {
+            assertEquals(tag, language, AppLanguage.System.resolved(tag))
+        }
+    }
+
+    @Test fun existingSystemLocalesKeepTheirCatalogs() {
+        val locales = mapOf(
+            "en-US" to AppLanguage.En,
+            "ru-RU" to AppLanguage.Ru,
+            "zh-CN" to AppLanguage.Zh,
+            "zh_Hans.UTF-8" to AppLanguage.Zh,
+            "zh-TW" to AppLanguage.ZhHant,
+            "zh-HK" to AppLanguage.ZhHant,
+            "zh-MO" to AppLanguage.ZhHant,
+            "zh-Hant" to AppLanguage.ZhHant,
+        )
+        for ((tag, language) in locales) {
+            assertEquals(tag, language, AppLanguage.System.resolved(tag))
+        }
+    }
+
+    @Test fun unsupportedLanguagesKeepTheirFallbacks() {
+        for (tag in listOf("nl-NL", "it-IT", "unknown", "")) {
+            assertEquals(tag, AppLanguage.En, AppLanguage.System.resolved(tag))
+        }
+        assertEquals(AppLanguage.System, AppLanguage.fromStored("unknown"))
+        assertEquals(AppLanguage.System, AppLanguage.fromStored(null))
+        assertEquals(AppLanguage.Zh, AppLanguage.fromStored("zh-Hans"))
     }
 
     private val phrases = mapOf("Pair a computer" to "配对一台电脑", "Follow system" to "跟随系统")

@@ -193,11 +193,22 @@ enum MicTap {
         var errorDescription: String? { "no microphone is available right now" }
     }
 
-    /// The microphone's format. With no usable input (no microphone, a route change, an
-    /// interruption) it's 0 Hz, and a tap on it raises an exception that ends the app: throws instead.
+    /// The microphone's format for a tap: the node's, at the hardware's rate (the node's input side, which the
+    /// tap is checked against). A tap at any other rate raises an exception that ends the app, and after the route
+    /// changed (the speaker, AirPods) while the engine was stopped, the node's output side still names the old
+    /// rate. With no usable input (no microphone, a route change, an interruption) it's 0 Hz: throws instead.
     static func format(of input: AVAudioInputNode) throws -> AVAudioFormat {
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { throw Unavailable() }
+        try format(node: input.outputFormat(forBus: 0), hardwareRate: input.inputFormat(forBus: 0).sampleRate)
+    }
+
+    static func format(node: AVAudioFormat, hardwareRate: Double) throws -> AVAudioFormat {
+        guard node.sampleRate > 0, node.channelCount > 0, hardwareRate > 0 else { throw Unavailable() }
+        guard node.sampleRate != hardwareRate else { return node }
+        var description = node.streamDescription.pointee
+        description.mSampleRate = hardwareRate
+        guard let format = AVAudioFormat(streamDescription: &description, channelLayout: node.channelLayout) else {
+            throw Unavailable()
+        }
         return format
     }
 

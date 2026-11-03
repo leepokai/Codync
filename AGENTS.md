@@ -36,7 +36,7 @@ Keep only the latest build: in this checkout, Apple builds go to `build/dd` only
 
 ## End-to-end test every change
 
-After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Computer Use, and the iPhone app on an iOS Simulator through Device Hub (Xcode's `DeviceHub.app`). Report any check that could not run and why. The target split (Playwright for desktop, Maestro for phones, Computer Use only for `@native` gaps) is in [test stack](docs/guides/test-stack.md); until its harness is checked in, the Computer Use route above stays.
+After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Playwright (`npm run e2e` against the sandbox) and the iPhone app (iOS Simulator) and Android app (emulator) with one Maestro run (`apps/maestro`); Computer Use only for the native steps they can't reach: [test stack](docs/guides/test-stack.md). Report any check that could not run and why.
 - **Minimal e2e** (default): only the platform of the computer you test on (on the Mac: macOS).
 - **Full e2e** (large changes: platform code, packaging, the desktop main process; or when asked): macOS, Linux (Lima `codync-linux`) and Windows (UTM, [Windows testing](docs/guides/windows-testing.md)). A platform whose VM isn't installed is skipped and reported, not set up.
 

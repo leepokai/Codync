@@ -225,7 +225,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     // A cloud engine that can't start or drops mid-call hands over to on-device voice.
     if (phase === 'failed' && session.provider && onDeviceAvailable()) {
       countCloudMinutes()
-      setNotice(tr("{name} isn't available ({reason}). Using on-device voice.").replaceAll('{name}', providerName(session.provider)).replaceAll('{reason}', String(session.failure)))
+      setNotice(tr("{name} isn't available ({reason}). Using on-device voice.").replaceAll('{name}', providerName(session.provider)).replaceAll('{reason}', tr(String(session.failure))))
       begin(null)
     }
   }, [session, phase])
@@ -278,7 +278,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       </div>
       {failure ? (
         <Text as="div" key="failure" tone="danger" className="call-line">
-          {failure}
+          {tr(failure)}
         </Text>
       ) : notice ? (
         <Text as="div" key={notice} tone="secondary" className="call-line">

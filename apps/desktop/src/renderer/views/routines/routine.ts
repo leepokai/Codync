@@ -127,11 +127,11 @@ export interface RoutineSchedulePreview {
  * style (every few minutes, several days, monthly) opens as Custom, its cron as written.
  */
 export const repeatChoices = [
-  { id: 'hourly', label: trNow('Hourly') },
-  { id: 'daily', label: trNow('Daily') },
-  { id: 'weekdays', label: trNow('Weekdays') },
+  { id: 'hourly', label: 'Hourly' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'weekdays', label: 'Weekdays' },
   { id: 'weekly', label: 'Weekly' },
-  { id: 'custom', label: trNow('Custom') },
+  { id: 'custom', label: 'Custom' },
 ] as const
 
 export type RepeatChoice = (typeof repeatChoices)[number]['id']

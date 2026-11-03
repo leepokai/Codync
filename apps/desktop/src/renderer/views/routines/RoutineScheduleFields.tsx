@@ -6,17 +6,16 @@ import { TimeZonePicker } from './TimeZonePicker'
 import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
-import { trNow } from '../../lib/l10n.ts'
 
 
 const weekdays = [
-  { id: 1, label: trNow('Mon'), title: trNow('Monday') },
-  { id: 2, label: trNow('Tue'), title: trNow('Tuesday') },
-  { id: 3, label: trNow('Wed'), title: trNow('Wednesday') },
-  { id: 4, label: trNow('Thu'), title: trNow('Thursday') },
-  { id: 5, label: trNow('Fri'), title: trNow('Friday') },
-  { id: 6, label: trNow('Sat'), title: trNow('Saturday') },
-  { id: 0, label: trNow('Sun'), title: trNow('Sunday') },
+  { id: 1, label: 'Mon', title: 'Monday' },
+  { id: 2, label: 'Tue', title: 'Tuesday' },
+  { id: 3, label: 'Wed', title: 'Wednesday' },
+  { id: 4, label: 'Thu', title: 'Thursday' },
+  { id: 5, label: 'Fri', title: 'Friday' },
+  { id: 6, label: 'Sat', title: 'Saturday' },
+  { id: 0, label: 'Sun', title: 'Sunday' },
 ]
 const pad = (n: number) => String(n).padStart(2, '0')
 const minutes = Array.from({ length: 60 }, (_, m) => ({ id: m, label: `:${pad(m)}` }))

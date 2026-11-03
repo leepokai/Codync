@@ -66,7 +66,7 @@ export function AvatarPicker({ shape, color, onShape, onColor }: { shape: string
       </div>
       <div className="swatch-row">
         {AVATAR_COLORS.map((c) => (
-          <button key={c.id} className={`swatch ${c.id === color ? 'on' : ''}`} aria-label={c.label} aria-pressed={c.id === color} onClick={() => onColor(c.id)}>
+          <button key={c.id} className={`swatch ${c.id === color ? 'on' : ''}`} aria-label={tr(c.label)} aria-pressed={c.id === color} onClick={() => onColor(c.id)}>
             <span className="swatch-color" style={{ background: c.hex }} />
           </button>
         ))}

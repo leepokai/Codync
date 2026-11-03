@@ -10,7 +10,7 @@ import { prefs, usePref } from '../lib/prefs'
 import { dueStarAsk } from '../lib/star-ask'
 import { useStarAsk } from '../lib/use-star-ask'
 import { useApp } from '../store/context'
-import { trNow } from '../lib/l10n.ts'
+import { useTr } from '../lib/use-language'
 import './star-prompt.css'
 
 const copy = {
@@ -20,7 +20,7 @@ const copy = {
   },
   second: {
     title: 'Enjoying Codync?',
-    message: trNow("You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it."),
+    message: "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.",
   },
 }
 
@@ -30,6 +30,7 @@ const copy = {
  * Starring ends it.
  */
 export function StarPrompt() {
+  const tr = useTr()
   const app = useApp()
   const local = useModel(app.local)
   const [onboarded] = usePref(prefs.onboardingDone)
@@ -54,7 +55,7 @@ export function StarPrompt() {
           onClose={null}
         />
         <VStack gap={16} className="star-prompt-body">
-          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{text.message}</Text>
+          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{tr(text.message)}</Text>
           <HStack gap={10}>
             <img src={appIcon} alt="" className="star-prompt-app-icon" draggable={false} />
             <Text size="callout" tone="secondary">github.com/leepokai/Codync</Text>

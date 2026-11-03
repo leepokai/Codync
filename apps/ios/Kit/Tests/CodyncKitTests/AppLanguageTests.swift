@@ -185,4 +185,13 @@ extension AppLanguageTests {
         #expect(AppLanguage.preference(in: store) == .ja)
         store.removeObject(forKey: AppLanguage.storageKey)
     }
+
+    @Test func botRoutineAndMessageSlotsKeepWhatTheUserWrote() {
+        func ru(_ text: String) -> String { L10n.tr(text, preference: .ru, systemIsChinese: false) }
+        #expect(ru("Created bot connected") == "Создан бот connected")
+        #expect(ru("Created bot Reviewer").hasSuffix("Reviewer"))
+        #expect(ru("Routine · Проверка почты") == "Рутина · Проверка почты")
+        #expect(ru("Routine · Settings") == "Рутина · Settings")
+        #expect(ru("Message from Reviewer: Settings") == "Сообщение от Reviewer: Settings")
+    }
 }

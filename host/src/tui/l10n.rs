@@ -315,7 +315,9 @@ fn templated_at(text: &str, table: &HashMap<String, String>, depth: u8) -> Optio
         let Some(phrase) = phrase_of(table, &template.key) else { continue };
         let mut result = phrase.clone();
         for (token, value) in caps {
-            let shown = if let Some(hit) = phrase_of(table, &value) {
+            let shown = if VERBATIM.contains(&token.as_str()) {
+                value
+            } else if let Some(hit) = phrase_of(table, &value) {
                 hit.clone()
             } else if depth == 0 {
                 templated_at(&value, table, 1).unwrap_or(value)
@@ -328,6 +330,9 @@ fn templated_at(text: &str, table: &HashMap<String, String>, depth: u8) -> Optio
     }
     None
 }
+
+/// Slots that hold what a person wrote (a bot or routine name, a message): inserted as written, never translated.
+const VERBATIM: [&str; 3] = ["{bot}", "{routine}", "{message}"];
 
 fn captures(text: &str, pieces: &[Piece]) -> Option<Vec<(String, String)>> {
     let mut pos = 0;

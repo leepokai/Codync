@@ -98,6 +98,9 @@ private fun parseTemplate(template: String): List<Piece>? {
     return if (pieces.any { it.token != null }) pieces else null
 }
 
+/** Slots that hold what a person wrote (a bot or routine name, a message): inserted as written, never translated. */
+private val VERBATIM = setOf("{bot}", "{routine}", "{message}")
+
 private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map<String, String>, depth: Int): String? {
     var pos = 0
     val caps = linkedMapOf<String, String>()
@@ -118,7 +121,7 @@ private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map
     if (pos != text.length) return null
     var result = phrase
     for ((token, value) in caps) {
-        val inner = phrases[value] ?: if (depth == 0) templated(value, phrases, 1) else null
+        val inner = if (token in VERBATIM) null else phrases[value] ?: if (depth == 0) templated(value, phrases, 1) else null
         result = result.replace(token, inner ?: value)
     }
     return result

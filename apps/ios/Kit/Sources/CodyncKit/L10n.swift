@@ -211,6 +211,9 @@ public enum L10n {
         return nil
     }
 
+    /// Slots that hold what a person wrote (a bot or routine name, a message): inserted as written, never translated.
+    private static let verbatim: Set<String> = ["{bot}", "{routine}", "{message}"]
+
     private static func fill(
         _ text: String,
         pieces: [Piece],
@@ -242,7 +245,7 @@ public enum L10n {
         guard pos == text.endIndex else { return nil }
         var result = phrase
         for (token, value) in caps {
-            let inner = primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value
+            let inner = verbatim.contains(token) ? value : primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value
             result = result.replacingOccurrences(of: token, with: inner)
         }
         return result

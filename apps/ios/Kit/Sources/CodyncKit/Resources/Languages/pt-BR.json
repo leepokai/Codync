@@ -1226,7 +1226,7 @@
   "{name} (not installed)": "{name} (não instalado)",
   "Copy template": "Copiar modelo",
   "Siri and Dictation are disabled": "A Siri e o Ditado estão desativados",
-  "the Codync cloud refused ({status} {code}): {message}": "a nuvem do Codync recusou ({status} {code}): {message}",
+  "the Codync cloud refused ({status} {code}): {reason}": "a nuvem do Codync recusou ({status} {code}): {reason}",
   "forbidden": "acesso negado",
   "Sign in on the computer to use remote screen relay.": "Entre na sua conta no computador para usar o relay de tela remota.",
   "Remote screen relay is not configured on this cloud.": "O relay de tela remota não está configurado nesta nuvem.",

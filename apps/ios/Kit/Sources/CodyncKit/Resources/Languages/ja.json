@@ -1226,7 +1226,7 @@
   "{name} (not installed)": "{name} (未インストール)",
   "Copy template": "テンプレートをコピー",
   "Siri and Dictation are disabled": "Siri とディクテーションが無効になっています",
-  "the Codync cloud refused ({status} {code}): {message}": "Codync クラウドが拒否しました ({status} {code}): {message}",
+  "the Codync cloud refused ({status} {code}): {reason}": "Codync クラウドが拒否しました ({status} {code}): {reason}",
   "forbidden": "アクセス禁止",
   "Sign in on the computer to use remote screen relay.": "リモート画面リレーを使用するには、コンピューターにサインインします。",
   "Remote screen relay is not configured on this cloud.": "このクラウドではリモート画面リレーが構成されていません。",
@@ -1769,11 +1769,12 @@
   "Composio didn't return an auth config": "Composio から認証設定が返されませんでした",
   "Composio didn't return the connection": "Composio から接続が返されませんでした",
   "connector storage is busy": "コネクタのストレージが使用中です。もう一度お試しください",
-  "Updated routine: {name}": "ルーティンを更新しました：{name}",
-  "Created routine: {name}": "ルーティンを作成しました：{name}",
-  "Created bot {name}": "ボット {name} を作成しました",
-  "Updated {name}: {changes}": "{name} を更新しました：{changes}",
-  "Message from {name}: {message}": "{name} からのメッセージ：{message}",
+  "Updated routine: {routine}": "ルーティンを更新しました：{routine}",
+  "Created routine: {routine}": "ルーティンを作成しました：{routine}",
+  "Created bot {bot}": "ボット {bot} を作成しました",
+  "Updated {bot}: {changes}": "{bot} を更新しました：{changes}",
+  "Message from {bot}: {message}": "{bot} からのメッセージ：{message}",
   "Could not start routine: {error}": "ルーティンを開始できませんでした：{error}",
-  "Could not queue routine: {error}": "ルーティンをキューに追加できませんでした：{error}"
+  "Could not queue routine: {error}": "ルーティンをキューに追加できませんでした：{error}",
+  "Routine · {routine}": "ルーチン · {routine}"
 }

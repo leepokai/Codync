@@ -1226,7 +1226,7 @@
   "{name} (not installed)": "{name} (no instalado)",
   "Copy template": "Copiar plantilla",
   "Siri and Dictation are disabled": "Siri y Dictado están desactivados",
-  "the Codync cloud refused ({status} {code}): {message}": "la nube de Codync rechazó la solicitud ({status} {code}): {message}",
+  "the Codync cloud refused ({status} {code}): {reason}": "la nube de Codync rechazó la solicitud ({status} {code}): {reason}",
   "forbidden": "prohibido",
   "Sign in on the computer to use remote screen relay.": "Inicia sesión en la computadora para usar el relé de pantalla remota.",
   "Remote screen relay is not configured on this cloud.": "El relé de pantalla remota no está configurado en esta nube.",
@@ -1769,11 +1769,12 @@
   "Composio didn't return an auth config": "Composio no devolvió una configuración de autenticación",
   "Composio didn't return the connection": "Composio no devolvió la conexión",
   "connector storage is busy": "El almacenamiento de conectores está ocupado, inténtalo de nuevo",
-  "Updated routine: {name}": "Rutina actualizada: {name}",
-  "Created routine: {name}": "Rutina creada: {name}",
-  "Created bot {name}": "Bot {name} creado",
-  "Updated {name}: {changes}": "{name} actualizado: {changes}",
-  "Message from {name}: {message}": "Mensaje de {name}: {message}",
+  "Updated routine: {routine}": "Rutina actualizada: {routine}",
+  "Created routine: {routine}": "Rutina creada: {routine}",
+  "Created bot {bot}": "Bot {bot} creado",
+  "Updated {bot}: {changes}": "{bot} actualizado: {changes}",
+  "Message from {bot}: {message}": "Mensaje de {bot}: {message}",
   "Could not start routine: {error}": "No se pudo iniciar la rutina: {error}",
-  "Could not queue routine: {error}": "No se pudo poner en cola la rutina: {error}"
+  "Could not queue routine: {error}": "No se pudo poner en cola la rutina: {error}",
+  "Routine · {routine}": "Rutina · {routine}"
 }

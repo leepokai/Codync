@@ -83,3 +83,12 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
         assert_eq!(resolved_language(AppLanguage::System, locale), expected, "{locale}");
     }
 }
+
+#[test]
+fn bot_routine_and_message_slots_keep_what_the_user_wrote() {
+    assert_eq!(translate("Created bot connected", true), "已创建机器人 connected");
+    assert!(translate("Created bot Reviewer", true).ends_with("Reviewer"));
+    assert_eq!(translate("Routine · Settings", true), "例行任务 · Settings");
+    assert_eq!(translate("Message from Reviewer: Settings", true), "来自 Reviewer 的消息：Settings");
+    assert_eq!(translate("Runs the official installer on this Mac.", true), "在 这台 Mac 上运行官方安装程序。");
+}

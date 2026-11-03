@@ -98,6 +98,9 @@ function hit(key: string, primary: Record<string, string>, fallback: Record<stri
   return primary[key] ?? fallback[key]
 }
 
+/** Slots that hold what a person wrote (a bot or routine name, a message): inserted as written, never translated. */
+const VERBATIM = new Set(['{bot}', '{routine}', '{message}'])
+
 function fill(text: string, pieces: Piece[], phrase: string, primary: Record<string, string>, fallback: Record<string, string>, depth: number): string | undefined {
   let pos = 0
   const caps = new Map<string, string>()
@@ -118,10 +121,7 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
   if (pos !== text.length) return undefined
   let result = phrase
   for (const [token, value] of caps) {
-    // `{name}` holds what the user named (a bot, routine or computer): it stays as written. Lowercase
-    // fillers ("this Mac") are app text and still translate.
-    // ponytail: casing heuristic; a lowercase bot named like a catalog phrase would still translate.
-    const inner = token === '{name}' && !/^[a-z]/.test(value) ? value : hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
+    const inner = VERBATIM.has(token) ? value : hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
     result = result.replaceAll(token, inner)
   }
   return result

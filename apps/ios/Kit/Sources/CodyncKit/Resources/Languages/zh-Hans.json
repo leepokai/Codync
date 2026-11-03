@@ -1226,7 +1226,7 @@
   "{name} (not installed)": "{name}（未安装）",
   "Copy template": "复制模板",
   "Siri and Dictation are disabled": "Siri 和听写已关闭",
-  "the Codync cloud refused ({status} {code}): {message}": "Codync 云拒绝了（{status} {code}）：{message}",
+  "the Codync cloud refused ({status} {code}): {reason}": "Codync 云拒绝了（{status} {code}）：{reason}",
   "forbidden": "禁止",
   "Sign in on the computer to use remote screen relay.": "请先在电脑上登录，才能使用远程屏幕中继。",
   "Remote screen relay is not configured on this cloud.": "这台云没有配置远程屏幕中继。",
@@ -1769,11 +1769,12 @@
   "Composio didn't return an auth config": "Composio 未返回认证配置",
   "Composio didn't return the connection": "Composio 未返回连接",
   "connector storage is busy": "连接器存储正忙，请重试",
-  "Updated routine: {name}": "已更新例行任务：{name}",
-  "Created routine: {name}": "已创建例行任务：{name}",
-  "Created bot {name}": "已创建机器人 {name}",
-  "Updated {name}: {changes}": "已更新 {name}：{changes}",
-  "Message from {name}: {message}": "来自 {name} 的消息：{message}",
+  "Updated routine: {routine}": "已更新例行任务：{routine}",
+  "Created routine: {routine}": "已创建例行任务：{routine}",
+  "Created bot {bot}": "已创建机器人 {bot}",
+  "Updated {bot}: {changes}": "已更新 {bot}：{changes}",
+  "Message from {bot}: {message}": "来自 {bot} 的消息：{message}",
   "Could not start routine: {error}": "无法启动例行任务：{error}",
-  "Could not queue routine: {error}": "无法将例行任务加入队列：{error}"
+  "Could not queue routine: {error}": "无法将例行任务加入队列：{error}",
+  "Routine · {routine}": "例行任务 · {routine}"
 }

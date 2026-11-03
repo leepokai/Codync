@@ -1226,7 +1226,7 @@
   "{name} (not installed)": "{name} (non installé)",
   "Copy template": "Copier le modèle",
   "Siri and Dictation are disabled": "Siri et Dictée sont désactivés",
-  "the Codync cloud refused ({status} {code}): {message}": "le cloud Codync a refusé ({status} {code}) : {message}",
+  "the Codync cloud refused ({status} {code}): {reason}": "le cloud Codync a refusé ({status} {code}) : {reason}",
   "forbidden": "interdit",
   "Sign in on the computer to use remote screen relay.": "Connectez-vous sur l’ordinateur pour utiliser le relais d’écran distant.",
   "Remote screen relay is not configured on this cloud.": "Le relais d’écran distant n’est pas configuré sur ce cloud.",
@@ -1769,11 +1769,12 @@
   "Composio didn't return an auth config": "Composio n’a pas renvoyé de configuration d’authentification",
   "Composio didn't return the connection": "Composio n’a pas renvoyé la connexion",
   "connector storage is busy": "Le stockage des connecteurs est occupé, réessayez",
-  "Updated routine: {name}": "Routine mise à jour : {name}",
-  "Created routine: {name}": "Routine créée : {name}",
-  "Created bot {name}": "Bot {name} créé",
-  "Updated {name}: {changes}": "{name} mis à jour : {changes}",
-  "Message from {name}: {message}": "Message de {name} : {message}",
+  "Updated routine: {routine}": "Routine mise à jour : {routine}",
+  "Created routine: {routine}": "Routine créée : {routine}",
+  "Created bot {bot}": "Bot {bot} créé",
+  "Updated {bot}: {changes}": "{bot} mis à jour : {changes}",
+  "Message from {bot}: {message}": "Message de {bot} : {message}",
   "Could not start routine: {error}": "Impossible de lancer la routine : {error}",
-  "Could not queue routine: {error}": "Impossible de mettre la routine en file d’attente : {error}"
+  "Could not queue routine: {error}": "Impossible de mettre la routine en file d’attente : {error}",
+  "Routine · {routine}": "Routine · {routine}"
 }

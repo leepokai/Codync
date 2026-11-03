@@ -1,4 +1,4 @@
-use super::{AppLanguage, PREFERENCE, language_title, resolved_language, tr};
+use super::{AppLanguage, HANS, PREFERENCE, language_title, resolved_language, tr, translate_with};
 use crate::LockExt;
 
 #[test]
@@ -86,9 +86,9 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
 
 #[test]
 fn bot_routine_and_message_slots_keep_what_the_user_wrote() {
-    assert_eq!(translate("Created bot connected", true), "已创建机器人 connected");
-    assert!(translate("Created bot Reviewer", true).ends_with("Reviewer"));
-    assert_eq!(translate("Routine · Settings", true), "例行任务 · Settings");
-    assert_eq!(translate("Message from Reviewer: Settings", true), "来自 Reviewer 的消息：Settings");
-    assert_eq!(translate("Runs the official installer on this Mac.", true), "在 这台 Mac 上运行官方安装程序。");
+    assert_eq!(translate_with("Created bot connected", &HANS), "已创建机器人 connected");
+    assert!(translate_with("Created bot Reviewer", &HANS).ends_with("Reviewer"));
+    assert_eq!(translate_with("Routine · Settings", &HANS), "例行任务 · Settings");
+    assert_eq!(translate_with("Message from Reviewer: Settings", &HANS), "来自 Reviewer 的消息：Settings");
+    assert_eq!(translate_with("Runs the official installer on this Mac.", &HANS), "在 这台 Mac 上运行官方安装程序。");
 }

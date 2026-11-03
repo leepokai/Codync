@@ -19,7 +19,8 @@ export function dictationPlatform(host: (() => Promise<HostClient>) | null = nul
   }
   return {
     speech: window.codync.speech.available ? window.codync.speech : null,
-    noSpeech: onDeviceUnavailableReason(),
+    // Read when shown, so a language change since the window opened applies.
+    get noSpeech() { return onDeviceUnavailableReason() },
     host: host !== null,
     language: () => VoiceSettings.language() || null,
     provider: VoiceSettings.dictationProvider,

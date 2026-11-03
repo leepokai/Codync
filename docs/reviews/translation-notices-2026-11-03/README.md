@@ -18,6 +18,8 @@ PR #287, based on dev `054edeff890e12c51804b9e709d6846dd41fb33a`, reviewed and r
 - Android: 217 core tests (one skipped), 90 app tests, debug APK and lint passed.
 - User docs: 18 pages and 105 links checked.
 
+The first remote iPhone run timed out while UIKit initialization waited on SpringBoard. A rerun timed out in another screen-recovery test while the diagnostic reported cooperative/dispatch thread exhaustion; its other 359 tests passed. The same head passed all 361 tests locally, including the initially reported test alone. CI now waits for the selected simulator to finish booting and disables parallel test simulators. Its complete boot-and-test command passed all 361 tests locally from a shut-down task simulator, with retries enabled and no tests skipped. This CI-only adjustment changes no shipped app behavior; the app walkthroughs below remain applicable. Remote confirmation is required by the merge gate.
+
 ## Real-app E2E
 
 All clients connected to this worktree's real host. A local deterministic ACP fixture produced a routine named `Plan`, a generic `Tool`, a custom tool named `Plan`, and a plan item named `Plan`. A real composer submission queued `Standby` while the routine was busy. Releasing the fixture completed both turns; no external AI call or mocked client bridge was used.

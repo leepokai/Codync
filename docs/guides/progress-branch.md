@@ -31,7 +31,7 @@ card (desktop and Android), `SETUP_PROMPT.md`.
 | 13 | Memory as beliefs | written, NOT compiled or run | see `git log` (`feat: memory as beliefs`) | per-note header only; terminal has no Undo button on the line; bot-tool test is weak; iOS skipped; gates pending; see `memory-beliefs-report.md` |
 | 14 | Proposed skills inbox | written, NOT compiled or run | see `git log` (`feat: proposed skills inbox`) | no real agent drafted one; count only in the inbox title; the terminal cannot edit a draft; iOS skipped; gates pending; see `skill-proposals-report.md` |
 | 15 | Demo mode | written, NOT compiled or run | see `git log` (`feat: demo mode`) | isolation tests read source files, not a run; device-wide settings still save; iOS skipped; gates pending; see `demo-mode-report.md` |
-| 16 | Branch close | pending | | |
+| 16 | Branch close | partly done | see `git log` | release notes written (`release-notes-branch.md`, proposed 2.30.0, not applied) and the branch is pushed; the full gates, the signed APK, the Windows installer and the phone install were NOT done (the user asked not to compile) |
 
 ## Not touched on purpose
 

@@ -59,6 +59,7 @@ Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and
 ## Clean code
 
 - Keep code modular and clean on every change: reuse before writing (existing code first, then a mature, long-maintained external library over reinventing it, see [prefer ready-made](docs/guides/clean-code.md#modules)), one responsibility per file/type, no new code appended to files past ~500 lines (split first), views/components hold no I/O or logic, short single-purpose functions, enums over flags, no dead code, no swallowed errors. Full rules: [docs/guides/clean-code.md](docs/guides/clean-code.md).
+- Every new feature or module adds its PostHog events in the same change (use, outcome, failure category; feature use only, never content), so bugs can be traced later: [adding a feature](docs/features/analytics.md#adding-a-feature).
 - After every code change of our own (tests green, before commit): review → fix, refactor and cleanup → end-to-end test (issues and PRs from other people follow the issue and PR review below instead). In Codex, use the [after-change skill](.agents/skills/after-change/SKILL.md); in Claude Code, use the `after-change` workflow: [after every change](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
 
 ## Cross-platform UI changes

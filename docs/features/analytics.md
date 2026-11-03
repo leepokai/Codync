@@ -45,6 +45,23 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
 - `env` is `main` or `dev`; filter dev out in PostHog. Debug host builds (`cargo test`, `cargo run`)
   send nothing: every e2e test starts a fresh host that would count as a new user.
 
+## Adding a feature
+
+Every new feature or module ships with its PostHog events in the same change, so a later bug
+can be traced from the events around it:
+
+- **Use**: an event when it is used. A host method gets it from `api::dispatch`
+  (`analytics::observe_call` in `analytics/observe.rs`); an app-only action from its client
+  (`track` on the desktop and terminal UI, added to `analytics::Reported`; the analytics client
+  on the iPhone and Android, both alike).
+- **Outcome**: how it ended, as `turn_finished` does: `outcome` (`done`, `failed`, …) and, for a
+  failure, its category in `error`. Never the error's message.
+- **Errors**: failures that should never happen go to *Error tracking* below (`reportError` on
+  the host, desktop and terminal UI); crashes are already caught.
+- The *Rules* above apply: feature use only, never content. List each new event and property in
+  [analytics events](../reference/analytics-events.md), and check they arrive in PostHog
+  (`env = dev`) during the change's e2e test.
+
 ## Where events come from
 
 - **Host** (`host/src/analytics.rs`, `analytics/`): `api::dispatch` maps successful API calls to

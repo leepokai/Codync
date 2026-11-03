@@ -1,8 +1,11 @@
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage } from 'electron'
+import type { AccessTicket, AccountComputer } from '../shared/ipc'
 import type { AccountService } from './account'
+import { closeAccountChannels, registerAccountChannels } from './account-channel'
+import { computerId, sasCode, sasCommit, signingKey, type DeviceKey } from './channel-crypto'
 
 /**
  * The Codync cloud's user-facing `/v1` API (§8.4) with this install's device key (§3.2): an
@@ -11,16 +14,11 @@ import type { AccountService } from './account'
 
 const b64url = (b: Buffer) => b.toString('base64url')
 
-interface Identity {
-  key: KeyObject
-  publicKey: string
-}
-
-const identities = new Map<string, Identity>()
+const identities = new Map<string, DeviceKey>()
 
 const keyPath = (userId: string) => join(app.getPath('userData'), `device-key-${createHash('sha256').update(userId).digest('hex').slice(0, 16)}.bin`)
 
-async function identity(userId: string): Promise<Identity> {
+async function identity(userId: string): Promise<DeviceKey> {
   const cached = identities.get(userId)
   if (cached) return cached
   const path = keyPath(userId)
@@ -29,32 +27,20 @@ async function identity(userId: string): Promise<Identity> {
     const sealed = await fs.readFile(path)
     seed = Buffer.from(safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(sealed) : sealed.toString('utf8'), 'base64url')
   } catch {}
-  let key: KeyObject
-  if (seed?.length === 32) {
-    key = createPrivateKey({ key: { kty: 'OKP', crv: 'Ed25519', d: b64url(seed), x: publicFromSeed(seed) }, format: 'jwk' })
-  } else {
-    key = generateKeyPairSync('ed25519').privateKey
-    const d = (key.export({ format: 'jwk' }) as { d: string }).d
-    const raw = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(d) : Buffer.from(d)
+  if (seed?.length !== 32) {
+    const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
+    seed = Buffer.from(jwk.d ?? '', 'base64url')
+    const raw = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(b64url(seed)) : Buffer.from(b64url(seed))
     await fs.mkdir(app.getPath('userData'), { recursive: true })
     await fs.writeFile(path, raw, { mode: 0o600 })
   }
-  const publicKey = (key.export({ format: 'jwk' }) as { x: string }).x
-  const made = { key, publicKey }
+  const made = signingKey(seed)
   identities.set(userId, made)
   return made
 }
 
-/** The raw Ed25519 public key (b64url) of a 32-byte seed. */
-function publicFromSeed(seed: Buffer) {
-  // PKCS#8 wrapping of an Ed25519 seed: the fixed 16-byte prefix + the seed.
-  const der = Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed])
-  const pub = createPublicKey(createPrivateKey({ key: der, format: 'der', type: 'pkcs8' }))
-  return (pub.export({ format: 'jwk' }) as { x: string }).x
-}
-
 /** `Codync-Sig: v=1,kid,ts,nonce,sig` over method, authority, path and the body's hash. */
-function signatureHeader(id: Identity, method: string, url: URL, body: Buffer) {
+function signatureHeader(id: DeviceKey, method: string, url: URL, body: Buffer) {
   const ts = Date.now()
   const nonce = b64url(randomBytes(16))
   const input = ['codync-sig-v1', method.toUpperCase(), url.host.toLowerCase(), `${url.pathname || '/'}${url.search}`, String(ts), nonce, b64url(createHash('sha256').update(body).digest())].join('\n')
@@ -110,17 +96,76 @@ export async function dropDeviceKey(userId: string) {
   await fs.rm(keyPath(userId), { force: true }).catch(() => {})
 }
 
+/**
+ * Asks `computer` to let this install in through the account (iOS and Android `requestAccess`): commits to
+ * a nonce, waits for the computer's, reveals ours, and returns the 6-digit code both sides show.
+ */
+async function requestAccess(call: (method: string, path: string, body?: unknown) => Promise<CloudResult>, device: DeviceKey, computer: AccountComputer): Promise<AccessTicket> {
+  if (computerId(computer.signKey) !== computer.id) throw new Error("This computer's key doesn't match its ID.")
+  const nonce = randomBytes(32)
+  const created = await call('POST', `v1/computers/${computer.id}/access-requests`, { commit: sasCommit(device.publicKey, nonce) })
+  if (!created.ok) throw new Error(created.error.message ?? "The computer didn't take the request.")
+  const requestId = String(created.value.requestId)
+  const expiresAt = Number(created.value.expiresAt)
+  try {
+    for (;;) {
+      if (Date.now() >= expiresAt) throw new Error('The request expired. Ask again.')
+      const status = await call('GET', `v1/access-requests/${requestId}`)
+      if (status.ok && status.value.status !== 'pending') throw new Error("The computer didn't take the request.")
+      if (status.ok && typeof status.value.hostNonce === 'string') {
+        const revealed = await call('POST', `v1/access-requests/${requestId}/reveal`, { nonce: b64url(nonce) })
+        if (!revealed.ok) throw new Error(revealed.error.message ?? "The computer didn't take the request.")
+        return { requestId, expiresAt, code: sasCode(computer.signKey, device.publicKey, nonce, status.value.hostNonce) }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+    }
+  } catch (error) {
+    // A failed nonce exchange leaves no invisible request waiting at the computer.
+    await call('DELETE', `v1/access-requests/${requestId}`)
+    throw error
+  }
+}
+
 export function registerCloud(account: AccountService) {
-  ipcMain.handle('cloud:request', async (_e, method: string, path: string, body: unknown, signed: boolean): Promise<CloudResult> => {
+  const session = async () => {
     const base = account.state.cloudURL
     const user = account.state.user
-    if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } }
-    let token: string
+    if (!base || !user) throw { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } satisfies CloudFailure
     try {
-      token = await account.sessionToken()
+      return { base, userId: user.userId, token: await account.sessionToken() }
     } catch (error) {
-      return { ok: false, error: { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } }
+      throw { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } satisfies CloudFailure
     }
-    return cloudCall(base, token, method, path, body, signed ? user.userId : null)
+  }
+  ipcMain.handle('cloud:request', async (_e, method: string, path: string, body: unknown, signed: boolean): Promise<CloudResult> => {
+    try {
+      const { base, userId, token } = await session()
+      return await cloudCall(base, token, method, path, body, signed ? userId : null)
+    } catch (error) {
+      return { ok: false, error: error as CloudFailure }
+    }
+  })
+  ipcMain.handle('cloud:requestAccess', async (_e, computer: AccountComputer) => {
+    try {
+      const { base, userId, token } = await session()
+      const call = (method: string, path: string, body?: unknown) => cloudCall(base, token, method, path, body, userId)
+      return { ok: true, value: await requestAccess(call, await identity(userId), computer) }
+    } catch (error) {
+      return { ok: false, error: { status: 0, message: error instanceof Error ? error.message : (error as CloudFailure).message ?? 'Sign in again.' } }
+    }
+  })
+  let user = account.state.user?.userId
+  account.on('change', () => {
+    if (account.state.user?.userId === user) return
+    user = account.state.user?.userId
+    closeAccountChannels()
+  })
+  registerAccountChannels({
+    relay: () => (account.state.user ? account.state.cloudURL : null),
+    device: () => {
+      const userId = account.state.user?.userId
+      return userId ? identity(userId) : Promise.reject({ status: 401, message: 'Sign in again to reach your account.' })
+    },
+    sign: async (url) => signatureHeader(await identity(account.state.user?.userId ?? ''), 'GET', url, Buffer.alloc(0)),
   })
 }

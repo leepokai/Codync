@@ -37,6 +37,19 @@ export interface CallError {
   message: string
 }
 
+/** A computer in the account, as the encrypted channel needs it: its ID and pinned signing key. */
+export interface AccountComputer {
+  id: string
+  signKey: string
+}
+
+/** An access request the computer has seen: approve it there only if it shows `code`. */
+export interface AccessTicket {
+  requestId: string
+  expiresAt: number
+  code: string
+}
+
 /** A menu image as PNG data URLs drawn for 1x and 2x screens; each screen shows its own. */
 export interface TrayImage {
   x1: string
@@ -224,6 +237,15 @@ export interface CodyncBridge {
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {
     request(method: string, path: string, body: unknown, signed: boolean): Promise<{ ok: true; value: unknown } | { ok: false; error: { status: number; code: string; message: string | null } }>
+    /** Asks the computer to let this install in; resolves once it shows the code. Rejects with a `CallError`. */
+    requestAccess(computer: AccountComputer): Promise<AccessTicket>
+  }
+  /** An account computer's host API over the end-to-end encrypted channel, through the account's relay. */
+  remote: {
+    /** One call (host `POST /api/<method>`). Rejects with a `CallError`. */
+    call(computer: AccountComputer, method: string, body: unknown, timeoutMs: number): Promise<unknown>
+    /** A subscription (`events`, `term`): each event as a JSON line, then `onEnd`. */
+    stream(computer: AccountComputer, kind: string, body: unknown, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
   }
   updates: {
     state(): Promise<UpdateState>

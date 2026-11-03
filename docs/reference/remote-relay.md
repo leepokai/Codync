@@ -63,7 +63,7 @@ Shared deterministic [vectors](fixtures/remote-relay-vectors.json) and their [ge
 | Swift transports / identity | `apps/ios/Kit/Sources/CodyncKit/Client/` |
 | Account and per-computer state | `apps/ios/Kit/Sources/CodyncUI/` |
 | iOS account integration | `apps/ios/App/AccountSession.swift` |
-| Desktop account, device key, cloud API | `apps/desktop/src/main/account.ts`, `cloud.ts` |
+| Desktop account, device key, cloud API, device channel | `apps/desktop/src/main/account.ts`, `cloud.ts`, `account-channel.ts`, `channel-crypto.ts` |
 
 See [architecture](../architecture/overview.md) and [file structure](../architecture/file-structure.md). Application/host compatibility follows mutual minimum versions ([compatibility](compatibility.md)); channel `v`, QR version and Worker package version are separate values.
 
@@ -85,7 +85,7 @@ See [architecture](../architecture/overview.md) and [file structure](../architec
 - 每個 `SharedStore.Context.id`（帳號 namespace，`local` 或 hash(userID)）一把，避免跨帳號關聯。
 - 另有一把 X25519 **push key**（`Curve25519.KeyAgreement.PrivateKey`），同樣每 context 一把，只用於解開推播（§6.7）。
 - Keychain：`kSecClassGenericPassword`，`kSecAttrService = "com.pokai.Codync.device-key"`（push key 用 `"com.pokai.Codync.push-key"`），`kSecAttrAccount = context.id`，值 = 32-byte `rawRepresentation`，`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`，`kSecAttrSynchronizable = false`。
-- 桌面 App（`apps/desktop/src/main/cloud.ts`）：每個帳號一把 Ed25519 device key，seed 以 Electron `safeStorage`（OS keychain）加密後存在 app 的 userData 目錄；只用於雲端 `/v1` API 的 `Codync-Sig`。
+- 桌面 App（`apps/desktop/src/main/cloud.ts`）：每個帳號一把 Ed25519 device key，seed 以 Electron `safeStorage`（OS keychain）加密後存在 app 的 userData 目錄；用於雲端 `/v1` API 與 relay `/v1/relay/device/{computerId}` 連線的 `Codync-Sig`、channel `hello` 的 `sig`（`main/account-channel.ts`、`main/channel-crypto.ts`），access request 的 `commit` 也綁定它的公鑰。
 - iOS App、Widgets、NotificationService 共用 access group `$(AppIdentifierPrefix)com.pokai.Codync`（`project.yml` 對這三個 target 加 `keychain-access-groups` entitlement；`CodyncKit` 從 Info.plist `CodyncKeychainGroup` 讀 group，缺值則不設 group）。
 - 私鑰永不離開 Keychain／process；雲端只存公鑰。
 - 帳號登出：先在 Clerk 登出（失敗就什麼都不變）。成功後只停通知、保留金鑰：連得到的電腦呼叫 `unregisterDevice` 刪掉 push tickets；雲端 `POST /v1/devices/sign-out`（用登出前先取的 session token）標記這台裝置已登出，帳號的其他電腦下次拉 `/v1/host/state` 時依 `signedOutDevices` 刪掉它在登出前登記的 push tickets。各自最多數秒、失敗不擋登出。該 context 的 device key、computers、草稿都留著，同一帳號登回來直接連上（`POST /v1/devices` 清掉標記）。**Start over**／刪除帳號才交還金鑰：連得到的電腦呼叫 `forgetDevice`（舊版 host 改呼叫 `unregisterDevice`），雲端 `DELETE /v1/devices/{id}`（刪除帳號由 `user.deleted` webhook 處理），再刪除 device key、computers 快取、mailbox 草稿、widget snapshot；Start over 連這支手機上登出過的帳號一起刪。刪除帳號先在 Clerk 刪除使用者，成功後才交還給電腦。
@@ -547,7 +547,7 @@ The route table below summarizes the contract. Executable schema and validation 
 
 ## 10. iOS Swift integration
 
-`CodyncKit/Client` (`apps/ios/Kit/`) owns transport, crypto, identity and cloud API models. `CodyncUI` owns account/per-computer stores and presentation. The desktop app doesn't use the device channel; it reaches its own host and SSH computers over loopback. Consumers must retain account and computer scope when handling asynchronous responses, links and cached widget data. See [file structure](../architecture/file-structure.md).
+`CodyncKit/Client` (`apps/ios/Kit/`) owns transport, crypto, identity and cloud API models. `CodyncUI` owns account/per-computer stores and presentation. The desktop app reaches its own host and SSH computers over loopback, and opens the account computers that approved it over the device channel (`apps/desktop/src/main/account-channel.ts`, `channel-crypto.ts`). Consumers must retain account and computer scope when handling asynchronous responses, links and cached widget data. See [file structure](../architecture/file-structure.md).
 
 ## 11. Apps and SSH
 

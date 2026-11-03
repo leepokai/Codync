@@ -51,6 +51,8 @@ For these agents, Codync knows the command it looks for, how to install it and h
 | Poolside | `pool` | `pool login` |
 | DeepSeek Harness | `dsh` | run `dsh web` and save your DeepSeek API key under **Settings → Models** |
 
+A Pi bot gets Codync's tools (messages, memory, routines, connectors, managing the team) through pi's own MCP support, so it needs pi 0.99 or later. With an older pi the bot still runs, but without those tools until you update pi. If your pi `mcp.json` has a server with the same name as one of Codync's, such as `memory`, Codync's is called `codync-memory` for that bot, so the bot has both.
+
 Signing in to Google Antigravity with `agy` in a terminal doesn't sign in the part Codync runs, so use the sign-in option in Codync's setup sheet for it.
 
 WorkBuddy is separate from CodeBuddy Code. Codync runs the CLI bundled in the WorkBuddy app: `WorkBuddy AI.app` (from workbuddy.ai) or `WorkBuddy.app` (from codebuddy.cn) on macOS, or its install folder on Windows (`%LOCALAPPDATA%\Programs\WorkBuddy AI` or `WorkBuddy`). That CLI only ships WorkBuddy's lite build, so Codync starts it the way the app does. It runs on Node.js: if the computer has none, Codync offers to add its own. Codync does not install WorkBuddy, and there is no Linux build, so Codync on Linux doesn't list it. Sign in from Codync: the WorkBuddy app's login stays in the app, so this CLI asks again and opens a browser. A `codebuddy` command on your `PATH` stays CodeBuddy Code.

@@ -89,7 +89,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
 - **On-device speech** is macOS only; Linux calls use OpenAI or Gemini on the user's key.
 - **Host**: the Mac app bundles `codync-host` in `Contents/Resources`; Linux uses the installed
   host (an AppImage's mount path changes on every launch, so a service can't point into it).
-- **Windows** (x64, per-user NSIS install, unsigned for now so SmartScreen warns once) bundles
+- **Windows** (x64 or ARM64, per-user NSIS install, unsigned for now so SmartScreen warns once) bundles
   `codync-host.exe` and `codync-hostw.exe` in `resources/`. `codync-host install` writes the
   per-user Run key (`HKCU\…\Run\CodyncHost`), which starts `codync-hostw.exe` at sign-in: a
   windowless launcher that runs the host with a hidden console (the agents share it, so none
@@ -104,8 +104,9 @@ The TUI connects to one host at a time, so it keeps its single roster.
   as an SMAppService agent; Linux starts its helper from the host, as before.
 - **Other computers in the account** are reached through this computer's own host and SSH
   tunnels only. The encrypted channel to account computers (`ChannelTransport`) wasn't ported:
-  the product targets one computer, so "Ask for access" rows show status only. An older copy of a
-  computer the app uses shows *Older copy · last seen …* with *Remove from account* (confirmed first).
+  the product targets one computer, so "Ask for access" rows show status only. Every offline row
+  has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
+  *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate
   (`tools/release-gate.py`) sets that mark
   ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).

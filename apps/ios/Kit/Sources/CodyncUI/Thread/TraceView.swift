@@ -145,9 +145,10 @@ struct ToolRow: View {
     }
 
     private var label: some View {
-        HStack(spacing: 8) {
+        let title = data.title ?? "Tool"
+        return HStack(spacing: 8) {
             Image(systemName: icon).frame(width: 18).foregroundStyle(Palette.secondary)
-            Text(data.title ?? L10n.tr("Tool")).font(.subheadline).foregroundStyle(Palette.text).lineLimit(2)
+            Text(title == "Tool" ? L10n.tr("Tool") : title).font(.subheadline).foregroundStyle(Palette.text).lineLimit(2)
             Spacer(minLength: 4)
             switch data.status {
             case "completed": Image(systemName: "checkmark").foregroundStyle(Palette.accent)

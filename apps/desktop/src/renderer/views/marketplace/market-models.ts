@@ -18,14 +18,17 @@ export interface InstalledConnector {
   logo?: string | null
   /** Remote servers: `none`, `signedOut` (waits for sign-in; bots don't get it yet) or `signedIn`. */
   auth?: string | null
+  /** Set up with a saved token where signing in works now (GitHub): offer the sign-in. Older hosts omit it. */
+  canSignIn?: boolean
 }
 
 export const needsSignIn = (c: InstalledConnector) => c.auth === 'signedOut'
 
-/** Where a connector's sign-in page is and who catches its return: `app` or `host`. */
+/** Where a connector's sign-in page is and who catches its return: `app` or `host`; `code`: what to type there (GitHub). */
 export interface ConnectorSignIn {
   url: string
   callback: string
+  code?: string | null
 }
 
 export interface ComposioStatus {
@@ -194,7 +197,8 @@ export const market = {
     (await c.call<{ connector: InstalledConnector }>('installConnector', body, s(45))).connector,
   /** Adds every server in a pasted MCP config (`mcpServers` / `servers` JSON, or one server's entry). */
   importConnectors: async (c: HostClient, config: string) => (await c.call<{ items: InstalledConnector[] }>('importConnectors', { config }, s(60))).items,
-  connectorSignIn: (c: HostClient, id: string) => c.call<ConnectorSignIn>('connectorSignIn', { id }, s(60)),
+  // `showsCode`: this app shows a device sign-in's code, so the host may answer with one.
+  connectorSignIn: (c: HostClient, id: string) => c.call<ConnectorSignIn>('connectorSignIn', { id, showsCode: true }, s(60)),
   finishConnectorSignIn: async (c: HostClient, state: string, code: string | null, error: string | null) =>
     (await c.call<{ connector: InstalledConnector }>('connectorSignInFinish', { state, code, error }, s(60))).connector,
   removeConnector: (c: HostClient, id: string) => c.call('removeConnector', { id }),

@@ -220,7 +220,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         "delivering" -> "Delivered to the computer"
         else -> null
     }
-    if (text != null) Text(text, style = Type.caption2, color = Palette.tertiary)
+    if (text != null) Text(tr(text), style = Type.caption2, color = Palette.tertiary)
 }
 
 /** A message this phone is still delivering: the same bubble, with how far it got. */

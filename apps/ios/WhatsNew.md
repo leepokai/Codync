@@ -6,9 +6,15 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.34.1
+## 2.38.0
 ### zh-Hant
-- 電腦選單可以連續勾選多台電腦，選完才關閉；移除了「只顯示」子選單。
+- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
+
+- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
+
+- 排隊狀態、例行任務和執行紀錄會跟隨介面語言，名稱與訊息保留原文。
 
 ### en-US
-- The computer menu stays open while you pick several computers; the Show only submenu is gone.
+- Choose Português (Brasil) in Settings, or follow your Portuguese system language.
+- Choose Русский in Settings, or follow your Russian system language.
+- Queue status, routine notices and trace labels follow your language; names and messages stay as written.

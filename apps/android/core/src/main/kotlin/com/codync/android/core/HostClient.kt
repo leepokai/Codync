@@ -113,7 +113,7 @@ object HostClient {
         val updated = computer.copy(
             name = hello.text("name")?.takeIf(String::isNotBlank) ?: computer.name,
             boxKey = hello.text("boxKey") ?: computer.boxKey,
-            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.filter(::isDirectUrl) ?: computer.urls,
+            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.let(::directUrls) ?: computer.urls,
             cloud = hello.text("cloud"),
         )
         updated.validate()

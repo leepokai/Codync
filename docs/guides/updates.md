@@ -145,6 +145,9 @@ after the app archives they point at. Installs read the release GitHub marks *la
 which only the release gate sets: once every feed is up and the App Store has an iPhone
 app the release serves
 ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
+`latest.yml` lists both Windows installers (x64 and ARM64), and electron-updater picks the
+one matching the installed app; it is published only after both Windows builds succeed, so a
+failed ARM64 build holds the whole release until it is re-run.
 macOS build versions follow the marketing version; the iOS build counter is independent.
 Installs of the SwiftUI Mac app that preceded the desktop app still read the Sparkle
 appcast; the release workflow generates one for the desktop zip, so those installs move

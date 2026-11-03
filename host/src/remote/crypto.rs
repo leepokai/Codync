@@ -283,9 +283,17 @@ pub fn sas_commit(dk: &[u8; 32], device_nonce: &[u8; 32]) -> [u8; 32] {
 
 /// The 6-digit code both screens show.
 pub fn sas_code(host_sign_pub: &[u8; 32], dk: &[u8; 32], device_nonce: &[u8; 32], host_nonce: &[u8; 32]) -> String {
-    let h = sha256(&[b"codync/sas/v2", host_sign_pub, dk, device_nonce, host_nonce]);
-    let n = u32::from_be_bytes([h[0], h[1], h[2], h[3]]) % 1_000_000;
-    format!("{n:06}")
+    six_digits(&sha256(&[b"codync/sas/v2", host_sign_pub, dk, device_nonce, host_nonce]))
+}
+
+/// The code a pairing phone and a computer in no account both show while the computer asks: a phone that
+/// isn't the one in the user's hand shows another code.
+pub fn pair_check_code(dk: &[u8; 32], host_sign_pub: &[u8; 32]) -> String {
+    six_digits(&sha256(&[b"codync/pair-check/v1", dk, host_sign_pub]))
+}
+
+fn six_digits(h: &[u8; 32]) -> String {
+    format!("{:06}", u32::from_be_bytes([h[0], h[1], h[2], h[3]]) % 1_000_000)
 }
 
 /// The ACL `offers[].id` (and relay `pair=`) for a pairing code.
@@ -494,6 +502,7 @@ mod tests {
         let (nd, nh) = (b32(&s["deviceNonce"]), b32(&s["hostNonce"]));
         assert_eq!(b64(&sas_commit(&dk, &nd)), s["commit"]);
         assert_eq!(sas_code(k.host.verifying_key().as_bytes(), &dk, &nd, &nh), s["code"]);
+        assert_eq!(pair_check_code(&dk, k.host.verifying_key().as_bytes()), v["pairCheck"]["code"]);
 
         let p = &v["pairing"];
         assert_eq!(offer_id(&unb64_n(p["code"].as_str().unwrap()).unwrap()), p["offerId"]);

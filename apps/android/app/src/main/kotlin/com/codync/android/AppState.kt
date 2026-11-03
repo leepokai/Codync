@@ -27,6 +27,10 @@ data class AccountContext(
     val setupComplete: Boolean = false,
     val loading: Boolean = true,
     val pairing: Boolean = false,
+    /** While pairing, the code the computer shows if it asks whether to let this phone in. */
+    val pairingCheck: String? = null,
+    /** The last pairing failed because the phone couldn't reach the computer (not a refusal): the network hint helps. */
+    val pairingUnreachable: Boolean = false,
     /** This phone's computers, in the order it shows them. */
     val computers: List<Computer> = emptyList(),
     /** The computer whose lead "Talk to Codync" calls; null is Automatic (iOS `shortcutLeadComputer`). */
@@ -88,6 +92,8 @@ data class AppState(
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */
     val unreadable: Boolean = false,
+    /** A sign-in with a code (GitHub): the code, shown before its page opens until Copy and open or Cancel. */
+    val signInCode: String? = null,
     /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
     val hostUpdate: HostUpdate? = null,
     val error: String? = null,

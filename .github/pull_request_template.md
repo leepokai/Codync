@@ -9,6 +9,8 @@ Required: run the change end to end locally (a real host plus every client it to
 and describe what you tried. Builds and unit tests alone aren't enough.
 If you made the change with Claude Code, also run the `after-change` workflow
 (`.claude/workflows/after-change.js`) from the change's worktree and paste its final report.
+A PR merges once CI passes and Greptile's confidence score on its latest commit is 4/5 or more.
+For a feature, reaching that score is part of the PR.
 -->
 
 ## What's New: iPhone

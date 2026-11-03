@@ -52,6 +52,7 @@ class AppStore internal constructor(
     internal val setupTerminals = mutableMapOf<String, SetupTerminalSession>()
     internal val appConnections = mutableMapOf<String, AppConnectionSession>()
     internal var oauthRequestId: String? = null
+    internal val signInCodeAnswer = SignInCodeAnswer()
     internal var voiceBinding: VoiceBinding? = null
     internal var voiceGeneration: Int? = null
     /** A "Talk to Codync" call waiting for the link (`requestCall`). */
@@ -114,6 +115,19 @@ class AppStore internal constructor(
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
+    }
+
+    /**
+     * Deleting the account or starting over: the computer drops this device (`forgetDevice`; one older than that only stops its alerts).
+     * Best effort, three seconds at most: the key is erased right after, so a row left behind can't be used.
+     */
+    internal suspend fun forgetDevice() {
+        val ready = channel?.takeIf { it.state.value is LinkState.Ready } ?: return
+        withTimeoutOrNull(3_000) {
+            for (method in listOf("forgetDevice", "unregisterDevice")) try { ready.call(method); return@withTimeoutOrNull }
+                catch (error: CancellationException) { throw error }
+                catch (_: Exception) { }
+        }
     }
 
     /** Saves the computer's latest copy (`changeComputer`), then shows it. */

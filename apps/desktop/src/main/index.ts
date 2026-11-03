@@ -184,6 +184,10 @@ function registerIPC(tray: Tray) {
   })
   ipcMain.handle('app:clipboardFiles', () => readClipboardFiles())
   ipcMain.on('app:traySummary', (_e, summary) => tray.update(summary))
+  ipcMain.on('app:showWindow', () => {
+    openChat()
+    if (isMac) app.focus({ steal: true })
+  })
   ipcMain.handle('app:showInDock', () => showInDock())
   ipcMain.handle('app:setShowInDock', (_e, on: boolean) => {
     const visible = setShowInDock(on)

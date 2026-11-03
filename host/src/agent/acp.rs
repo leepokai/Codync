@@ -340,6 +340,14 @@ pub async fn stopped() {
     futures::future::join_all(tasks).await;
 }
 
+/// The result for a `session/request_permission`: the option picked, or `cancelled` without one.
+pub fn permission_answer(option_id: Option<&str>) -> Value {
+    match option_id {
+        Some(id) => json!({"outcome": {"outcome": "selected", "optionId": id}}),
+        None => json!({"outcome": {"outcome": "cancelled"}}),
+    }
+}
+
 /// Plain-text rendering of an ACP content block list / tool-call content list.
 pub fn content_text(v: &Value) -> String {
     match v {

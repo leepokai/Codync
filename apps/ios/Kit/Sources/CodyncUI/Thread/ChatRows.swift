@@ -157,7 +157,7 @@ struct UserBubble: View {
         case "sending":
             Text(L10n.tr("Sending…")).font(.caption2).foregroundStyle(Palette.tertiary)
         case "queued":
-            Text(botWorking ? "Queued until this response finishes" : "Queued")
+            Text(L10n.tr(botWorking ? "Queued until this response finishes" : "Queued"))
                 .font(.caption2)
                 .foregroundStyle(Palette.tertiary)
         case "failed":

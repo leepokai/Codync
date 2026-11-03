@@ -3,11 +3,13 @@ import koPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages
 import frPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/fr.json' with { type: 'json' }
 import dePhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/de.json' with { type: 'json' }
 import esPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/es.json' with { type: 'json' }
+import ruPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/ru.json' with { type: 'json' }
+import ptBRPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/pt-BR.json' with { type: 'json' }
 import hansPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hans.json' with { type: 'json' }
 import hantPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json' with { type: 'json' }
 
 /** This app's interface language. `zh` is Simplified, kept so a saved choice still means that. */
-export const appLanguages = ['system', 'en', 'zh', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es'] as const
+export const appLanguages = ['system', 'en', 'zh', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru'] as const
 export type AppLanguage = typeof appLanguages[number]
 
 /** Traditional is its own table. A boolean `true` from older callers means Simplified. */
@@ -51,11 +53,12 @@ export function resolvedLanguage(preference: AppLanguage, system: string | boole
   const tag = languageTag(system).toLowerCase().replaceAll('_', '-').split('.')[0]
   const base = tag.split('-')[0]
   if (base === 'zh') return systemScript(tag) === 'hant' ? 'zh-Hant' : 'zh'
-  return ['ja', 'ko', 'fr', 'de', 'es'].includes(base) ? base as 'ja' | 'ko' | 'fr' | 'de' | 'es' : 'en'
+  if (base === 'pt') return 'pt-BR'
+  return ['ja', 'ko', 'fr', 'de', 'es', 'ru'].includes(base) ? base as 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' : 'en'
 }
 
 const catalogs: Record<Exclude<AppLanguage, 'system'>, Record<string, string>> = {
-  en: {}, zh: hans, 'zh-Hant': hant, ja: jaPhrases, ko: koPhrases, fr: frPhrases, de: dePhrases, es: esPhrases,
+  en: {}, zh: hans, 'zh-Hant': hant, ja: jaPhrases, ko: koPhrases, fr: frPhrases, de: dePhrases, es: esPhrases, 'pt-BR': ptBRPhrases, ru: ruPhrases,
 }
 
 /** One piece of a phrase key such as "Runs the official installer on {name}." */
@@ -64,7 +67,7 @@ interface Piece { literal?: string; token?: string }
 /**
  * Phrase keys that already contain `{token}` slots, longest fixed text first.
  * A filled sentence ("Runs the official installer on this Mac.") matches the key,
- * and a slot that is itself a known phrase (a setup hint) is translated too.
+ * while only app-owned hints recurse; names and free text stay as written.
  */
 const templates: Array<{ key: string; pieces: Piece[]; literal: number }> = Object.keys(hans).flatMap((key) => {
   const pieces = parseTemplate(key)
@@ -95,6 +98,8 @@ function hit(key: string, primary: Record<string, string>, fallback: Record<stri
   return primary[key] ?? fallback[key]
 }
 
+const localizableSlots = new Set(['{hint}', '{error}', '{setup}', '{kind}', '{when}', '{status}', '{reason}', '{shortcut}'])
+
 function fill(text: string, pieces: Piece[], phrase: string, primary: Record<string, string>, fallback: Record<string, string>, depth: number): string | undefined {
   let pos = 0
   const caps = new Map<string, string>()
@@ -113,12 +118,13 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
     pos = end
   }
   if (pos !== text.length) return undefined
-  let result = phrase
   for (const [token, value] of caps) {
-    const inner = hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
-    result = result.replaceAll(token, inner)
+    // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+    const localizable = localizableSlots.has(token)
+    const inner = localizable ? hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value : value
+    caps.set(token, inner)
   }
-  return result
+  return phrase.replace(/\{[A-Za-z0-9]+\}/g, (token) => caps.get(token) ?? token)
 }
 
 /** A sentence the host or a view already filled in, matched back to its `{token}` phrase. */
@@ -180,7 +186,7 @@ function compactTime(time: string, tr: (key: string) => string): string | null {
 }
 
 const nativeNames: Record<Exclude<AppLanguage, 'system'>, string> = {
-  en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español',
+  en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', 'pt-BR': 'Português (Brasil)', ru: 'Русский',
 }
 
 export function languageTitle(language: AppLanguage, preference: AppLanguage, system: string | boolean): string {

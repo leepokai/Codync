@@ -6,6 +6,7 @@ import {
   type Computer,
   type Entry,
   type Hello,
+  type PairingRequest,
   type ScreenState,
   type Usage,
 } from '@shared/models'
@@ -79,6 +80,7 @@ export class BotMirror extends Observable {
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
+  pairingRequests: PairingRequest[] = []
   cloud: CloudStatus | null = null
   /** This computer's network; null until known, and on hosts without `networkView`. */
   network: NetworkView | null = null

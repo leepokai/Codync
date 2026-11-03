@@ -3,6 +3,7 @@ package com.codync.android
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.codync.android.core.Computer
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -11,10 +12,35 @@ import org.junit.Test
 class OnboardingTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun signedOutWithAccountsTheWelcomeOnlySignsInAndCountsTheWaitingComputers() {
+        compose.mainClock.autoAdvance = false
+        val signedOut = AccountContext(loading = false, account = AccountState(ready = true, configured = true),
+            computers = listOf(Computer("waiting-computer-000001", "Mac mini", "fixture-key"), Computer("waiting-computer-000002", "Linux", "fixture-key")))
+        compose.setContent { Hosted { CodyncApp(signedOut, emptyMap(), viewModel()) } }
+        step()
+        compose.onNodeWithText("Continue with Apple").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Continue with Google").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Sign in to keep using your 2 computers", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Get started").assertDoesNotExist()
+    }
+
+    @Test fun aFailedRestoreOffersTryAgainWhileSignInWaits() {
+        compose.mainClock.autoAdvance = false
+        val failed = AccountContext(loading = false,
+            account = AccountState(ready = false, configured = true, error = "Couldn't restore sign-in. Check your connection and retry."))
+        compose.setContent { Hosted { CodyncApp(failed, emptyMap(), viewModel()) } }
+        step()
+        // Below the fold: scrolling would wait on a clock this test holds still.
+        compose.onNodeWithText("Couldn't restore sign-in. Check your connection and retry.").assertExists()
+        compose.onNodeWithContentDescription("Try again").assertIsEnabled()
+        compose.onNodeWithText("Continue with Apple").assertIsNotEnabled()
+    }
+
     @Test fun welcomeLeadsToInstallAndBackReturnsToWelcome() {
         // The welcome crew never stops moving: step the clock by hand so the test can settle.
         compose.mainClock.autoAdvance = false
-        compose.setContent { Hosted { CodyncApp(AccountContext(loading = false), emptyMap(), viewModel()) } }
+        // Only builds without accounts pair signed out.
+        compose.setContent { Hosted { CodyncApp(AccountContext(loading = false, account = AccountState(ready = true, configured = false)), emptyMap(), viewModel()) } }
         step()
         compose.onNodeWithText("Your coding agents", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Get started").performClick()
@@ -41,7 +67,7 @@ class OnboardingTest {
         compose.onNodeWithText("Scan the pairing code").assertIsDisplayed()
         compose.onNodeWithContentDescription("Step 2 of 2").assertIsDisplayed()
         compose.onNodeWithText("codync-host pair").assertIsDisplayed()
-        compose.onNodeWithText("Or paste a ${BuildConfig.URL_SCHEME}://pair link").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Pairing link or code").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Pair").assertIsNotEnabled()
         compose.onNode(hasSetTextAction()).performTextInput("draft-link")
         compose.onNodeWithContentDescription("Pair").assertIsEnabled()

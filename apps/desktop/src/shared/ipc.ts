@@ -80,7 +80,7 @@ export interface TraySummary {
   textSize: number
   usageIconStyle: 'character' | 'original'
   /** The menu bar is a system menu, so the main process translates its labels from this. */
-  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es'
+  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru'
 }
 
 /** Things the tray menu (or the app menu) asks the window to do. */
@@ -143,6 +143,9 @@ export type SpeechEvent =
   | { type: 'stopped' }
   | { type: 'error'; message: string }
 
+/** A dropped, pasted or picked file: its name and bytes. */
+export type PickedFile = { name: string; data: Uint8Array }
+
 export interface CodyncBridge {
   platform: 'darwin' | 'linux' | 'win32'
   appName: string
@@ -171,6 +174,8 @@ export interface CodyncBridge {
     /** Why it ended without an account; null once signed in (or while another sign-in runs). */
     signIn(provider: SignInProvider): Promise<SignInFailure | null>
     signOut(): Promise<void>
+    /** Deletes the signed-in Codync account in Clerk; false when it couldn't (nothing changed). */
+    deleteAccount(): Promise<boolean>
     /** The signed-in session's JWT for the Codync cloud. */
     token(): Promise<string>
   }
@@ -247,11 +252,13 @@ export interface CodyncBridge {
     openExternal(url: string): void
     copy(text: string): void
     /** Files picked in the system dialog: name and bytes. */
-    pickFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    pickFiles(): Promise<PickedFile[]>
     /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
     pickExport(): Promise<string | null>
-    readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    readClipboardFiles(): Promise<PickedFile[]>
     setTraySummary(summary: TraySummary): void
+    /** Brings the chat window forward (a phone waits for this computer to let it in). */
+    showWindow(): void
     onCommand(cb: (command: WindowCommand) => void): () => void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>

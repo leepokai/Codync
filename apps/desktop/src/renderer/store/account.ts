@@ -53,6 +53,19 @@ export class AccountSession extends Observable {
     await window.codync.account.signOut()
   }
 
+  /** The account menu's Delete account, waiting for the user to confirm (`DeleteAccountPrompt`). */
+  confirmingDelete = false
+
+  askToDelete(ask = true) {
+    this.confirmingDelete = ask
+    this.changed()
+  }
+
+  /** Deletes the signed-in account; false when it couldn't, and nothing changed. */
+  deleteAccount() {
+    return window.codync.account.deleteAccount()
+  }
+
   sessionToken() {
     return window.codync.account.token()
   }

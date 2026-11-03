@@ -75,6 +75,8 @@ The agent waits for your answer. If the turn ends before you answer, for example
 
 With **Approve automatically**, no cards appear: Codync allows each request for you. Your agent's own permission rules still apply under any setting. To change the setting, see [Bots](/docs/bots#permissions).
 
+Some agents keep working after their reply, for example a background helper that finishes a long job. With **Approve automatically**, what that work asks is allowed too, unless you stopped the bot's latest reply; under any other setting it's declined, since no card can wait for you. Once the bot is idle there's no **Stop**: to stop approving that work, switch the bot to **Ask me**. When that work is done, the bot can still send you its result as a message in its chat, unless you stopped its latest reply.
+
 ## Stopping a turn
 
 - **Desktop and iPhone:** while the bot works and the box is empty, the send button turns into **Stop**.

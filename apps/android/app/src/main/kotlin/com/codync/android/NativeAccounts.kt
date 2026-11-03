@@ -10,6 +10,7 @@ import com.clerk.api.network.serialization.errorMessage
 import com.clerk.api.session.Session
 import com.clerk.api.sso.OAuthProvider
 import com.clerk.api.sso.SSOCancellationException
+import com.clerk.api.user.delete
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +28,10 @@ internal class SignInError(val reason: SignInFailure, message: String, cause: Th
 data class SavedAccount(val userId: String, val sessionId: String, val email: String, val avatar: String?)
 data class AccountState(val ready: Boolean = false, val configured: Boolean = NativeAccounts.configured,
     val userId: String? = null, val accounts: List<SavedAccount> = emptyList(),
-    val multiple: Boolean = false, val error: String? = null)
+    val multiple: Boolean = false, val error: String? = null) {
+    /** Clerk is still restoring the saved sign-in: the launch layer and the root wait, rather than show the welcome. */
+    val restoring: Boolean get() = configured && !ready && error == null
+}
 
 /** Clerk owns browser authentication, encrypted credentials and session restoration. */
 object NativeAccounts {
@@ -56,9 +60,16 @@ object NativeAccounts {
 
     private fun Session.usableUserId(): String? = takeIf { it.status == Session.SessionStatus.ACTIVE && it.expireAt > System.currentTimeMillis() }?.user?.id
 
-    suspend fun signIn(apple: Boolean) {
+    internal suspend fun signIn(provider: SignInProvider) = when (provider) {
+        SignInProvider.Apple -> oauthSignIn(OAuthProvider.APPLE)
+        SignInProvider.Google -> oauthSignIn(OAuthProvider.GOOGLE)
+        SignInProvider.GitHub -> oauthSignIn(OAuthProvider.GITHUB)
+        SignInProvider.Hosted -> hostedSignIn()
+    }
+
+    private suspend fun oauthSignIn(provider: OAuthProvider) {
         require(Clerk.isInitialized.value) { "Wait for sign-in to finish loading." }
-        val result = Clerk.auth.signInWithOAuth(if (apple) OAuthProvider.APPLE else OAuthProvider.GOOGLE)
+        val result = Clerk.auth.signInWithOAuth(provider)
         when (result) {
             is ClerkResult.Failure -> throw signInError(result)
             is ClerkResult.Success -> {
@@ -88,7 +99,7 @@ object NativeAccounts {
         }
     }
 
-    suspend fun hostedSignIn() {
+    private suspend fun hostedSignIn() {
         val result = Clerk.auth.startHostedAuth()
         if (result is ClerkResult.Failure) throw signInError(result)
     }
@@ -112,6 +123,12 @@ object NativeAccounts {
         // An explicit session keeps local credentials intact if the server rejects logout.
         val result = Clerk.auth.signOut(sessionId)
         requireSuccess(result)
+    }
+
+    /** Deletes the signed-in user; Clerk's `user.deleted` then takes the account's computers and devices off the cloud. */
+    suspend fun deleteUser() {
+        val user = requireNotNull(Clerk.activeUser) { "Sign in again to delete your account." }
+        requireSuccess(user.delete())
     }
 
     suspend fun reset() {

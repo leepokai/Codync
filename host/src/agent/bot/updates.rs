@@ -51,14 +51,21 @@ impl Actor {
                 }
             }
             Some(Incoming::Request { id, method, params }) => {
-                let Some(conn) = &self.conn else { return };
-                let acp = conn.acp.clone();
                 if method == "session/request_permission" && self.turn.is_some() {
                     self.on_permission(id, params).await;
                 } else {
-                    let _ = acp.respond_error(id, -32601, &format!("{method} is not supported by Codync")).await;
+                    self.answer_outside_turn(id, &method, &params).await;
                 }
             }
+        }
+    }
+
+    /// A request no turn handles: a permission gets `answer_background`, anything else isn't supported.
+    pub(super) async fn answer_outside_turn(&self, rpc_id: Value, method: &str, params: &Value) {
+        if method == "session/request_permission" {
+            self.answer_background(rpc_id, params).await;
+        } else if let Some(conn) = &self.conn {
+            let _ = conn.acp.respond_error(rpc_id, -32601, &format!("{method} is not supported by Codync")).await;
         }
     }
 
@@ -159,18 +166,11 @@ impl Actor {
     pub(super) async fn on_permission(&mut self, rpc_id: Value, params: Value) {
         let options = params["options"].as_array().cloned().unwrap_or_default();
         let tool = &params["toolCall"];
-        if self.cfg.permission == Permission::Auto {
-            let pick = ["allow_once", "allow_always"]
-                .iter()
-                .find_map(|k| options.iter().find(|o| o["kind"] == *k))
-                .or_else(|| options.first());
-            if let (Some(o), Some(conn)) = (pick, &self.conn) {
-                let _ = conn
-                    .acp
-                    .respond(rpc_id, json!({"outcome": {"outcome": "selected", "optionId": o["optionId"]}}))
-                    .await;
-                return;
-            }
+        if self.cfg.permission == Permission::Auto
+            && let (Some(option), Some(conn)) = (auto_pick(&options), &self.conn)
+        {
+            let _ = conn.acp.respond(rpc_id, acp::permission_answer(Some(option))).await;
+            return;
         }
         let title = tool["title"]
             .as_str()
@@ -199,6 +199,20 @@ impl Actor {
             "selected": Value::Null,
         });
         self.show_card(&title, data, Answer::Agent(rpc_id));
+    }
+
+    /// A permission request from work the agent goes on with after its turn ended (a background subagent): no turn
+    /// shows a card for it, so it gets what a turn would answer without asking, under the bot's Approve automatically,
+    /// for one of this bot's own sessions, unless the user stopped its last turn. Anything else is declined.
+    pub(super) async fn answer_background(&self, rpc_id: Value, params: &Value) {
+        let Some(conn) = &self.conn else { return };
+        let own = params["sessionId"].as_str().is_some_and(|sid| conn.loaded.contains_key(sid));
+        let options = params["options"].as_array().cloned().unwrap_or_default();
+        let pick = (self.cfg.permission == Permission::Auto && own && !self.stop_requested)
+            .then(|| auto_pick(&options))
+            .flatten();
+        tracing::info!(bot = %self.id(), approved = pick.is_some(), title = params["toolCall"]["title"].as_str(), "permission asked outside a turn");
+        let _ = conn.acp.respond(rpc_id, acp::permission_answer(pick)).await;
     }
 
     /// `Cmd::Approve`: Allow or Deny on a card, with what the tool will do in its details.
@@ -256,12 +270,8 @@ impl Actor {
         let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
         match answer {
             Answer::Agent(rpc_id) => {
-                let outcome = match &option_id {
-                    Some(o) => json!({"outcome": {"outcome": "selected", "optionId": o}}),
-                    None => json!({"outcome": {"outcome": "cancelled"}}),
-                };
                 if let Some(conn) = &self.conn {
-                    let _ = conn.acp.respond(rpc_id, outcome).await;
+                    let _ = conn.acp.respond(rpc_id, acp::permission_answer(option_id.as_deref())).await;
                 }
             }
             Answer::Codync(reply) => {
@@ -287,20 +297,32 @@ impl Actor {
     /// A `send_message`: the user's next bubble, in the turn's lane, right away. Only in the
     /// bot's own chat; a room, a bot request or a routine reads the turn's reply.
     pub(super) fn send_to_user(&mut self, text: String) -> anyhow::Result<()> {
-        let Some(turn) = self.turn else { anyhow::bail!("no turn is running") };
+        let Some(turn) = self.turn else { return self.send_between_turns(&text) };
+        // A background result can't be told from this turn's own send (no session in the call): it may try again later.
         if self.active_request.is_some() {
             anyhow::bail!(
-                "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there"
+                "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there {LATER}"
             );
         }
         if self.active_group.is_some() || self.active_routine.is_some() {
-            anyhow::bail!("send_message isn't available in this turn: write your answer as your reply");
+            anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();
         self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}))
             .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         self.sent.push(text);
         self.set_activity("Working…");
+        Ok(())
+    }
+
+    /// A `send_message` from work the agent goes on with after its turn ended (a background subagent's result): a
+    /// message in the bot's own chat, with the alert a finished turn sends, unless the user stopped its last turn.
+    fn send_between_turns(&self, text: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(self.conn.is_some(), "no turn is running");
+        anyhow::ensure!(!self.stop_requested, "the user stopped you: send nothing until they write again");
+        self.add_between_turns(EntryKind::Agent, &json!({"text": text, "final": true, "author": self.cfg.id}))
+            .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+        push::notify(&self.hub, &self.cfg, None, &self.cfg.name, text, AlertKind::Done);
         Ok(())
     }
 
@@ -380,3 +402,15 @@ impl Actor {
         self.seg = Seg::None;
     }
 }
+
+/// The option Approve automatically picks for a permission request: allow once, else allow always, else its first.
+fn auto_pick(options: &[Value]) -> Option<&str> {
+    ["allow_once", "allow_always"]
+        .iter()
+        .find_map(|k| options.iter().find(|o| o["kind"] == *k))
+        .or_else(|| options.first())?["optionId"]
+        .as_str()
+}
+
+/// Told with a `send_message` refused in a room, request or routine turn, in case it came from earlier work.
+const LATER: &str = "(a result of earlier background work: send it again once this turn ends)";

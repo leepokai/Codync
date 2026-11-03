@@ -58,8 +58,8 @@ text. Deleting a bot removes its drafts.
 
 Desktop stores text in a versioned localStorage record per account context and
 computer, independently of transcript caches. iOS uses its account-scoped
-SharedStore defaults with a separate map per computer. Signing out on iOS erases
-these values with the rest of the account data. Retired desktop/iOS stores cannot
+SharedStore defaults with a separate map per computer. Start over and Delete account on iOS erase
+these values with the rest of the account data; signing out keeps them. Retired desktop/iOS stores cannot
 write late edits over a newly opened store.
 
 The terminal saves text under `CODYNC_HOME` (normally `~/.codync`), in a private,

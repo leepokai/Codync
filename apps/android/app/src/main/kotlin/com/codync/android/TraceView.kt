@@ -118,10 +118,11 @@ internal fun workingSteps(entries: List<Entry>): List<Entry> {
         "edit" -> ThinkingOrbState.Shaping; else -> ThinkingOrbState.Working }
     val diffs = (d["diffs"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
     val output = d.text("output").orEmpty()
+    val title = d.text("title") ?: "Tool"
     val label: @Composable () -> Unit = {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.width(18.dp), contentAlignment = Alignment.Center) { Symbol(icon, size = 15.dp, tint = Palette.secondary) }
-            Text(d.text("title") ?: tr("Tool"), Modifier.weight(1f), style = Type.subheadline, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(if (title == "Tool") tr("Tool") else title, Modifier.weight(1f), style = Type.subheadline, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             when (d.text("status")) {
                 "completed" -> Symbol("checkmark", size = 14.dp, tint = Palette.accent)
                 "failed" -> Symbol("xmark", size = 14.dp, tint = Palette.danger)

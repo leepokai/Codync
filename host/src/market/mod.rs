@@ -26,12 +26,14 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
+mod custom;
 mod install;
 mod registry;
 mod skills;
 mod updates;
 
-pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
+pub use custom::add_custom_connector;
+pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
 pub use skills::{
     add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,

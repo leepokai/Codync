@@ -14,6 +14,7 @@ test('all shipped catalogs have the same keys and preserve interpolation tokens'
     for (const [key, value] of Object.entries(catalog)) {
       assert.ok(value.trim(), `${locale}: ${key}`)
       assert.deepEqual((value.match(/\{[A-Za-z0-9]+\}/g) ?? []).sort(), (key.match(/\{[A-Za-z0-9]+\}/g) ?? []).sort(), `${locale}: ${key}`)
+      assert.equal((value.match(/%d/g) ?? []).length, (key.match(/%d/g) ?? []).length, `${locale}: ${key} (%d)`)
       assert.doesNotMatch(value, /ZXQ\d|QXZ/, `${locale}: ${key}`)
     }
   }

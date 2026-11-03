@@ -114,7 +114,7 @@ export function MarketplaceView() {
               <ServiceLogo key={c.id} name={c.name} registryName={c.registryName} size={26} />
             ))}
             {installedSkillPreview.map((s) => (
-              <div key={s.id} className="market-logo market-installed-skill" style={{ width: 26, height: 26, borderRadius: 26 * 0.26 }}>
+              <div key={s.id} className="market-logo market-installed-skill">
                 <SkillGlyph />
               </div>
             ))}

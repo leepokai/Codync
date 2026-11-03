@@ -489,6 +489,11 @@ textarea.market-field {
 .market-installed-logos > * + * {
   margin-left: -8px;
 }
+.market-installed-skill {
+  width: 26px;
+  height: 26px;
+  border-radius: 6.76px;
+}
 .market-installed-skill .market-tile {
   width: 100%;
   height: 100%;

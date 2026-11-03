@@ -102,6 +102,19 @@ OVERRIDES: dict[str, str] = {
     "See the Privacy Policy for details: ": "Consulta l'Informativa sulla privacy per i dettagli: ",
     "Connectors & skills": "Connettori e skill",
     "{count} installed": "{count} installati",
+    "%d connected": "%d collegati",
+    "%d offline": "%d non in linea",
+    "%d/%d connected": "%d/%d collegati",
+    "Sign in": "Accedi",
+    "Sign out": "Esci",
+    "Sign in required": "Accesso richiesto",
+    "Signed in": "Accesso effettuato",
+    "Signed in.": "Accesso effettuato.",
+    "Revoke access": "Revoca accesso",
+    "Install goose and run `goose configure`.": "Installa goose ed esegui `goose configure`.",
+    "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and save your DeepSeek API key in `dsh web` under Settings → Models, or as DEEPSEEK_API_KEY in ~/.dsh/.env.": (
+        "Installa DeepSeek Harness (npm install -g @deepseek-ai/dsh) e salva la tua chiave API DeepSeek in `dsh web` sotto Settings → Models, oppure come DEEPSEEK_API_KEY in ~/.dsh/.env."
+    ),
 }
 
 PLACEHOLDER_FIXES: dict[str, str] = {
@@ -178,16 +191,15 @@ def main() -> int:
     ensure_argos()
     keys = json.loads(SOURCE.read_text(encoding="utf-8"))
     catalog: dict[str, str] = {}
+    tmp = OUT.with_suffix(".json.tmp")
     for index, key in enumerate(sorted(keys), start=1):
         catalog[key] = translate_key(key)
-        if index % 200 == 0 or index == len(keys):
-            OUT.write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        if index % 200 == 0:
             print(f"{index}/{len(keys)}", flush=True)
 
-    OUT.write_text(
-        json.dumps(catalog, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    payload = json.dumps(catalog, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(OUT)
     print(f"Wrote {OUT} ({len(catalog)} entries)")
     return 0 if len(catalog) == len(keys) else 1
 

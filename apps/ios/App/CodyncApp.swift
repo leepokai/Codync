@@ -180,6 +180,7 @@ final class AppStore {
         marketplace = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -206,6 +207,7 @@ final class AppStore {
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         generation += 1
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -285,6 +287,7 @@ final class AppStore {
         accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
         accounts.onRosterChanged = { roster in
             BotsWidgetFeed.update(roster, storage: storage)
+            IconBadge.show(IconBadge.count(roster.map(\.bot)))
             if roster.isEmpty {
                 LiveActivities.shared.endAll()
                 WidgetCenter.shared.reloadAllTimelines()

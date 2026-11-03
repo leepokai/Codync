@@ -23,7 +23,9 @@ struct ScreenAccessTests {
         state.platform = "linux"
         #expect(state.accessGuidance.contains("system sharing dialog"))
         state.platform = "windows"
-        #expect(state.accessGuidance.contains("not available on Windows"))
+        #expect(state.accessGuidance.contains("find a screen to share"))
+        state.input = true
+        #expect(state.accessGuidance == "Computer access is ready.")
         state.computerUse = true
         #expect(state.controlReady)
     }

@@ -4,6 +4,7 @@ use super::*;
 use crate::screen::tests::retina;
 use crate::screen::viewer::{IceConfig, IceServer};
 use std::sync::mpsc as sync_mpsc;
+use tokio::io::DuplexStream;
 use tokio::sync::broadcast;
 
 fn screen() -> Arc<Screen> {
@@ -16,8 +17,8 @@ fn status_line(params: &Value) -> String {
 }
 
 /// Connects a fake helper that reports `status`, once the host has applied it.
-async fn connect_helper(screen: &Arc<Screen>, status: &Value) -> UnixStream {
-    let (link, mut peer) = UnixStream::pair().unwrap();
+async fn connect_helper(screen: &Arc<Screen>, status: &Value) -> DuplexStream {
+    let (link, mut peer) = tokio::io::duplex(1 << 16);
     tokio::spawn(run_link(screen.clone(), link));
     let sent = peer.write_all(status_line(status).as_bytes()).await;
     sent.unwrap();
@@ -91,7 +92,7 @@ async fn helper_roundtrip_over_the_socket() {
     let (observed_tx, mut observed_rx) = mpsc::unbounded_channel();
     // Fake helper records the host's ICE configuration.
     tokio::spawn(async move {
-        let (rd, mut wr) = peer.into_split();
+        let (rd, mut wr) = tokio::io::split(peer);
         let mut lines = BufReader::new(rd).lines();
         while let Ok(Some(l)) = lines.next_line().await {
             let m: Value = serde_json::from_str(&l).unwrap();
@@ -165,17 +166,16 @@ async fn replacing_a_helper_ends_its_socket_and_private_signaling() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn helper_replacement_cannot_overtake_an_in_progress_status_update() {
-    use std::io::Write as _;
     let screen = screen();
     let first_peer = connect_helper(&screen, &json!({"capture": true, "trickle": true})).await;
     let old_id = screen.link().unwrap().id;
-    let (second, mut second_peer) = UnixStream::pair().unwrap();
+    let (second, mut second_peer) = tokio::io::duplex(1 << 16);
     let sent = second_peer.write_all(status_line(&json!({"capture": true, "trickle": true})).as_bytes()).await;
     sent.unwrap();
-    let mut first_peer = first_peer.into_std().unwrap();
-    first_peer.set_nonblocking(false).unwrap();
+    let mut first_peer = first_peer;
     let status_lock = hold_status_lock(&screen);
-    first_peer.write_all(status_line(&json!({"capture": false, "trickle": false})).as_bytes()).unwrap();
+    let sent = first_peer.write_all(status_line(&json!({"capture": false, "trickle": false})).as_bytes()).await;
+    sent.unwrap();
     let protected = status_lock.link_was_held();
     tokio::spawn(run_link(screen.clone(), second));
     status_lock.release();
@@ -190,7 +190,7 @@ async fn preparing_a_viewer_uses_one_helper_generation_and_its_capabilities() {
     let screen = screen();
     let _first_peer = connect_helper(&screen, &json!({"capture": true, "trickle": true})).await;
     let old_id = screen.link().unwrap().id;
-    let (second, mut second_peer) = UnixStream::pair().unwrap();
+    let (second, mut second_peer) = tokio::io::duplex(1 << 16);
     let sent = second_peer.write_all(status_line(&json!({"capture": true, "trickle": false})).as_bytes()).await;
     sent.unwrap();
     let status_lock = hold_status_lock(&screen);

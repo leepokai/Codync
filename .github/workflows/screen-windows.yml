@@ -1,0 +1,30 @@
+name: Windows screen helper
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths: ["apps/screen-windows/**", ".github/workflows/screen-windows.yml"]
+
+jobs:
+  test:
+    timeout-minutes: 20
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/screen-windows
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (rust-toolchain.toml)
+        run: |
+          rustup set default-host x86_64-pc-windows-msvc
+          rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/screen-windows
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test

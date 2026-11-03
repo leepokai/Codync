@@ -8,14 +8,15 @@ pub(super) fn status(screen: &Value, online: bool) -> &'static str {
     if screen.is_null() {
         return "Checking computer access";
     }
-    if screen["platform"] == "windows" {
-        return "Control ready; remote viewing unavailable";
-    }
     if screen["enabled"] != true {
         return "Computer access is off";
     }
     if screen["connected"] != true {
         return "Start Codync Screen";
+    }
+    // Windows asks for no grants: it only lacks a screen when none is attached or nobody is signed in.
+    if screen["platform"] == "windows" && (screen["capture"] != true || screen["input"] != true) {
+        return "No screen to share";
     }
     if screen["platform"] == "linux" && (screen["capture"] != true || screen["input"] != true) {
         return "Allow screen sharing and control";
@@ -44,6 +45,8 @@ mod tests {
         state["input"] = true.into();
         assert_eq!(status(&state, true), "Computer access ready");
         state["platform"] = "windows".into();
-        assert_eq!(status(&state, true), "Control ready; remote viewing unavailable");
+        assert_eq!(status(&state, true), "Computer access ready");
+        state["capture"] = false.into();
+        assert_eq!(status(&state, true), "No screen to share");
     }
 }

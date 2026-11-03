@@ -15,7 +15,7 @@ The desktop setup uses a compact device header and one outlined permission group
 - macOS: explicitly enable the background helper, then request Screen Recording and computer control. Depending on macOS, control is listed as **Device Control and Data Access** or **Accessibility**. Setup identifies the exact helper name. Codync Screen includes the Codync icon for system permission lists. A fresh installation registers the helper only when enabled; existing registrations are maintained across updates.
 - Opening setup, starting the macOS helper and returning from System Settings only check grants. Native prompts require an explicit setup action through local-only `requestScreenPermission`. The helper refuses to start the embedded driver until both grants are present. Newly granted screen recording triggers the existing helper restart mechanism.
 - Linux: setup opens the system screen-sharing portal for a display, mouse and keyboard. Helper startup never opens a chooser. The session survives host reconnections; after the helper itself restarts, reopen setup to restore sharing explicitly. Denied or partial grants can be retried.
-- Windows: computer-use bots need no macOS-style grants. Setup explains that phone screen viewing is not yet supported.
+- Windows: computer-use bots and phone screen viewing need no macOS-style grants. Setup shows one availability row; the only prompt is Windows Defender Firewall's, the first time `codync-screen.exe` listens, which the user allows on the computer.
 - iPhone: pair through QR / Ask Access, with no SSH configuration. The viewer explains missing permissions and points to setup on the computer. Capture-only access allows viewing; takeover remains disabled until input is allowed, and revoking input exits takeover.
 - Terminal UI: the bot editor shows current helper/permission status and points to **Computer access**. System Settings, background-service registration and portal choosers require the graphical desktop, so the terminal does not issue those prompts. Status follows host events.
 
@@ -36,7 +36,7 @@ The tools come from [cua-driver](https://github.com/trycua/cua) (MIT), which wor
 
 On macOS, windows on another Space have no accessibility tree, so background actions there are refused; the driver says so and suggests `delivery_mode: "foreground"`.
 
-Computer use needs Remote screen on where Codync Screen takes part (macOS, Linux); on Windows it is always available. The host's screen state says which (`computerUse`), and the bot editor's toggle explains it.
+Computer use needs Remote screen on where Codync Screen takes part (macOS, Linux); on Windows it is always available, whether or not the screen helper runs (the helper serves the phone's viewer only). The host's screen state says which (`computerUse`), and the bot editor's toggle explains it.
 
 ## Tools
 
@@ -51,7 +51,7 @@ Descriptions come from the running driver, so they match the platform; when it c
 `packaging/cua-driver/driver.json` pins the release and the SHA-256 of each archive; `fetch.mjs <target> <dir>` downloads, checks and copies the executables with `cua-driver.LICENSE`:
 
 - macOS: the `Screen` target's *Embed cua-driver* build phase puts it in `CodyncScreen.app/Contents/Helpers/`. electron-builder leaves its Developer ID signature alone (`mac.signIgnore`).
-- Windows: `tools/native-host.mjs` puts `cua-driver.exe` and `cua-driver-uia.exe` next to the host in `resources/`.
+- Windows: `tools/native-host.mjs` puts `cua-driver.exe` and `cua-driver-uia.exe` next to the host in `resources/`, and builds `codync-screen.exe` (Remote screen's helper, `apps/screen-windows`) there too.
 - Linux: the host release archive carries `cua-driver` (needs libX11, libXi and libxkbcommon); `install.sh`, Homebrew and `codync-host update` put it next to the host.
 
 Updating the driver: change `driver.json` (version, tag, assets and sums from the release's `SHA256SUMS`), run `node packaging/cua-driver/tools.mjs <path to the new cua-driver>`, check the tool list diff, and run the checks below.

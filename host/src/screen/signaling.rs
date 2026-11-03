@@ -76,13 +76,11 @@ enum Offer {
 }
 
 pub(super) struct Signaling {
-    #[cfg(any(unix, test))]
     tx: mpsc::Sender<Value>,
     rx: Option<mpsc::Receiver<Value>>,
     failure: watch::Sender<Option<String>>,
     offer: Offer,
     incoming: Progress,
-    #[cfg(any(unix, test))]
     outgoing: Progress,
     uploading: bool,
     detached: bool,
@@ -92,18 +90,13 @@ pub(super) struct Signaling {
 impl Signaling {
     pub(super) fn new() -> Self {
         let (tx, rx) = mpsc::channel(MAX_CANDIDATES + 1);
-        // Windows has no helper socket to produce candidates yet.
-        #[cfg(not(any(unix, test)))]
-        drop(tx);
         let (failure, _) = watch::channel(None);
         Self {
-            #[cfg(any(unix, test))]
             tx,
             rx: Some(rx),
             failure,
             offer: Offer::Prepared,
             incoming: Progress::default(),
-            #[cfg(any(unix, test))]
             outgoing: Progress::default(),
             uploading: false,
             detached: false,
@@ -237,7 +230,6 @@ impl Screen {
         viewer.signaling()?.check()
     }
 
-    #[cfg(any(unix, test))]
     pub(super) fn helper_candidate(&self, session: &str, candidate: Value) {
         let mut sessions = self.sessions.locked();
         let Some(viewer) = sessions.get_mut(session) else { return };
@@ -267,10 +259,7 @@ impl Screen {
     fn signaling_disconnected(&self, session: &str) -> bool {
         let mut sessions = self.sessions.locked();
         let Some(viewer) = sessions.get_mut(session) else { return false };
-        #[cfg(any(unix, test))]
         let connected = viewer.media_connected();
-        #[cfg(not(any(unix, test)))]
-        let connected = false;
         let Some(signaling) = viewer.signaling.as_mut() else { return false };
         if viewer.state != ViewerState::Failed && (connected || signaling.complete()) {
             signaling.detached = true;

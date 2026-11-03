@@ -2,9 +2,11 @@
 //! bots operate it through the built-in `computer` MCP server (`mcp.rs`, `computer.rs`).
 //!
 //! Capture, encoding and the phone's input live in a separate *screen helper*
-//! that connects to `~/.codync/screen.sock` — on macOS `CodyncScreen.app`
+//! that connects to `~/.codync/screen.sock` (on Windows the named pipe published in
+//! `~/.codync/screen.pipe`) — on macOS `CodyncScreen.app`
 //! (a signed bundle, so Screen Recording / Accessibility grants stick), on
-//! Linux `codync-screen` (xdg portals + `GStreamer`). The host stays the only
+//! Linux `codync-screen` (xdg portals + `GStreamer`), on Windows `codync-screen.exe`
+//! (Desktop Duplication + Media Foundation + `webrtc-rs`). The host stays the only
 //! network-facing process: it relays WebRTC signaling, gates access (on by
 //! default where there is a desktop, toggled only from this computer) and arbitrates control between
 //! the user and bots. Bots act through the computer-use driver (`cua.rs`), which Codync Screen
@@ -44,8 +46,8 @@ mod viewer;
 
 pub use computer::{computer, computer_tools};
 pub use helper::serve_helpers;
-#[cfg(target_os = "linux")]
-pub use helper::supervise_linux_helper;
+#[cfg(any(target_os = "linux", windows))]
+pub use helper::supervise_helper;
 pub use viewer::{IceConfig, watch_viewer};
 
 use crate::LockExt;
@@ -86,7 +88,6 @@ impl Control {
 enum ViewerState {
     Prepared,
     Started,
-    #[cfg(any(unix, test))]
     Connected,
     Failed,
 }
@@ -105,7 +106,6 @@ impl Viewer {
         !matches!(self.state, ViewerState::Prepared | ViewerState::Failed)
     }
 
-    #[cfg(any(unix, test))]
     fn media_connected(&self) -> bool {
         self.state == ViewerState::Connected
     }
@@ -126,9 +126,7 @@ pub struct Screen {
     control: Mutex<Control>,
     sessions: Mutex<HashMap<String, Viewer>>,
     driver: cua::Driver,
-    #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
     next_link: AtomicU64,
-    #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
     helper_generation: watch::Sender<u64>,
 }
 
@@ -212,7 +210,7 @@ impl Screen {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

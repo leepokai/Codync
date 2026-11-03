@@ -27,6 +27,6 @@ pub fn start(hub: &Arc<Hub>) {
     tokio::spawn(update::release_watch());
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));
     tokio::spawn(relay::run(hub.clone()));
-    #[cfg(target_os = "linux")]
-    tokio::spawn(screen::supervise_linux_helper(hub.screen.clone()));
+    #[cfg(any(target_os = "linux", windows))]
+    tokio::spawn(screen::supervise_helper(hub.screen.clone()));
 }

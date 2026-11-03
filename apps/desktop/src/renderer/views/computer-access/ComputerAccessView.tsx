@@ -30,7 +30,7 @@ export function ComputerAccessView({ onContinue }: { onContinue?: (ready: boolea
             <div><span>{tr('This computer')}</span><strong>{access.computerName}</strong></div>
           </div>
           <h1>{ready ? tr('Your computer is ready') : tr('Computer access')}</h1>
-          <p>{tr(windows ? 'Let a bot work in your apps. You choose which bots can use this computer.' : 'Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.')}</p>
+          <p>{tr('Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.')}</p>
         </header>
         {step === 'host' ? <AccessNotice title="Waiting for your computer" icon="desktopcomputer">
           Start or restart the host from Codync’s menu to continue. We’ll check again automatically.

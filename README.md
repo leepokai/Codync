@@ -170,7 +170,7 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 | `codync-host serve [--port 19222]` | run in the foreground |
 | `codync-host statusline [-- <your command>]` | Claude Code status line command (wraps yours) |
 | `codync-host reset-token` | rotate the local loopback bearer token |
-| `codync-host cloud [--assistants on\|off]` | cloud enablement, URL and status; whether ChatGPT, Claude and other connected assistants may message this computer's bots |
+| `codync-host cloud [--assistants on\|off] [--leave]` | cloud enablement, URL and status; whether ChatGPT, Claude and other connected assistants may message this computer's bots; `--leave` takes this computer out of its account |
 | `codync-host network` | codync-network, your computers' network: create, invite, join, status, promote, remove, recover |
 | `codync-host devices` | list/revoke authorized remote devices |
 | `codync-host access` | review device access requests |

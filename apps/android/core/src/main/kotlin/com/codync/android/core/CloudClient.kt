@@ -44,7 +44,10 @@ data class DeviceCertificate(val payload: String, val sig: String) {
 }
 
 /** What a computer that joins this phone's account by pairing signs, so the account takes it in. */
-data class PairingClaim(val claimId: String, val nonce: String)
+data class PairingClaim(val claimId: String, val nonce: String) {
+    /** As the host reads it (`pair`'s `claim`, `joinAccount`). */
+    val json: JsonObject get() = buildJsonObject { put("claimId", claimId); put("nonce", nonce) }
+}
 
 class CloudError(val status: Int, val code: String, detail: String? = null) : IOException(when (code) {
     "requestExpired" -> "The request expired. Ask again."

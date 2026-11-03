@@ -66,6 +66,8 @@ extension BotStore {
         hello = h
         applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
+        // One this phone brought in before was taken out since: it stays out.
+        if h.joinAccount == true, computer.joinedAccount != true { onJoinAccount?(client) }
     }
 
     private func noteHostVersion(_ new: HostVersion) {

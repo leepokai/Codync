@@ -65,6 +65,8 @@ public final class AccountStore {
     private var asks: [ComputerID: Task<AccessTicket, any Error>] = [:]
     /// The account's word for this device's key, kept in memory for this context.
     private var certificate: DeviceCertificate?
+    /// Computers joining this account (`joinAccount`).
+    private var joining: Set<ComputerID> = []
     private var isActive = true
     private var retired = false
 
@@ -108,7 +110,7 @@ public final class AccountStore {
         let identity = try DeviceIdentity.load(context: storage)
         guard let cloud else { throw Self.noCertificate }
         let certificate = try await pairingCertificate(cloud, deviceName: deviceName, platform: platform)
-        // Without a claim the computer still pairs; it just doesn't join the account.
+        // Without a claim the computer still pairs; it joins the account on a later connection (`Hello.joinAccount`).
         let claim: CloudClaim?
         do { claim = try await cloud.createClaim() } catch {
             log.info("pairing without a claim: \(error.localizedDescription, privacy: .public)")
@@ -121,10 +123,12 @@ public final class AccountStore {
         guard !retired else { throw CancellationError() }
         var computer = paired.computer
         if let previous = saved.first(where: { $0.id == computer.id }) { computer.keepDevicePicks(from: previous) }
+        // Pairing again may bring it into the account again.
+        computer.joinedAccount = nil
         save(computer)
         open(computer)
         if let claim, let signed = paired.claim {
-            Task { await joinAccount(claimId: claim.claimId, signed: signed, cloud: cloud) }
+            joinAccount(computer.id) { _ in (claim, signed) }
         }
         return computer
     }
@@ -155,16 +159,25 @@ public final class AccountStore {
         }
     }
 
-    /// The computer signed this account's claim while letting this phone in: the phone, which holds the
-    /// account's session, completes it. Best effort: without it the computer stays paired, outside the account.
-    private func joinAccount(claimId: String, signed: Data, cloud: CloudClient) async {
-        do {
-            try await cloud.completeClaim(claimId: claimId, claim: signed)
-        } catch {
-            log.error("paired computer didn't join the account: \(error.localizedDescription, privacy: .public)")
-            return
+    /// The computer signs this account's claim (`sign`: while letting this phone in, or later through
+    /// `joinAccount` when its `hello` asks), and the phone, which holds the account's session, completes it.
+    /// One at a time per computer; a join that fails here is tried again on the next connection, and one that
+    /// worked is noted on the computer (`Computer.joinedAccount`).
+    private func joinAccount(_ id: ComputerID, sign: @escaping @MainActor (CloudClient) async throws -> (CloudClaim, Data)) {
+        guard let cloud, !retired, joining.insert(id).inserted else { return }
+        Task {
+            defer { joining.remove(id) }
+            do {
+                let (claim, signed) = try await sign(cloud)
+                try await cloud.completeClaim(claimId: claim.claimId, claim: signed)
+            } catch {
+                log.error("paired computer didn't join the account: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            guard !retired else { return }
+            updateSaved(id) { $0.joinedAccount = true }
+            await refreshCloud()
         }
-        await refreshCloud()
     }
 
     public func forget(_ id: ComputerID) {
@@ -432,6 +445,12 @@ public final class AccountStore {
         }
         store.onComputerChanged = { [weak self] computer in self?.computerChanged(computer) }
         store.onRosterChanged = { [weak self] in self?.rosterChanged() }
+        store.onJoinAccount = { [weak self] client in
+            self?.joinAccount(id) { cloud in
+                let claim = try await cloud.createClaim()
+                return (claim, try await client.joinAccount(claim))
+            }
+        }
         stores[id] = store
         if isActive { store.setActive(true) }
     }

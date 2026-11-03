@@ -119,3 +119,30 @@ async fn a_phone_let_in_after_the_computer_joined_another_account_stays_out() {
     assert!(hub.store.device(&p.dk()).is_none(), "user_2's phone stays out of user_3's computer");
     assert!(hub.pairing.locked().valid(&code), "a refused phone leaves the code");
 }
+
+#[tokio::test]
+async fn a_phone_let_in_without_joining_finishes_the_join_later() {
+    let hub = unowned_hub();
+    hub.store.kv_set("test_cloud_url", "https://dev-api.codync.dev").unwrap();
+    // Paired without a claim: the phone couldn't start one, so the computer stayed out of the account.
+    let (mut p, code) = pairing_phone(&hub).await;
+    let body = pair_body(&p, &code, "Pixel", "android", "user_2");
+    let request = asked(&hub, &mut p, body).await;
+    crate::remote::pairing_requests::decide(&hub, request["requestId"].as_str().unwrap(), true).unwrap();
+    assert!(p.recv().await.unwrap()["ok"]["claim"].is_null());
+    hub.cloud_synced.store(true, std::sync::atomic::Ordering::Release);
+
+    let mut p = Phone::direct(&hub, p.key.clone());
+    assert!(matches!(p.hello(&hub, false).await, Out::Msg(v) if v["t"] == "welcome"));
+    assert_eq!(p.call(1, "hello", json!({})).await["ok"]["joinAccount"], true);
+    let claim = p.call(2, "joinAccount", json!({"claimId": "clm_2", "nonce": "n2"})).await;
+    let input = crypto::claim_input("clm_2", "n2", "user_2", &hub.identity.computer_id(), &hub.identity.box_pub_b64());
+    let sig = crypto::unb64_n::<64>(claim["ok"]["sig"].as_str().unwrap()).unwrap();
+    crypto::verify(&hub.identity.sign_pub(), input.as_bytes(), &sig).unwrap();
+
+    // Once it is in the account, there is nothing left to join.
+    let owner = crate::remote::cloud::Owner { user_id: "user_2".into(), email: None };
+    crate::remote::owner::remember(&hub, Some(&owner)).unwrap();
+    assert_eq!(p.call(3, "hello", json!({})).await["ok"]["joinAccount"], false);
+    assert!(p.call(4, "joinAccount", json!({"claimId": "clm_3", "nonce": "n3"})).await["err"].is_object());
+}

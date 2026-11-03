@@ -16,10 +16,19 @@ data class Computer(
     val color: String? = null,
     /** Whether this computer sends push alerts to this phone, switched on its card. */
     val notifications: Boolean = true,
+    /**
+     * This phone brought the computer into its account (it completed the claim). One taken out of the account before
+     * it heard of that join still asks to join (`hello`'s `joinAccount`); this phone leaves it out.
+     */
+    val joinedAccount: Boolean = false,
 ) {
-    /** Keeps what this phone picked (color, route, push) over a newer copy from pairing or the account (iOS `keepDevicePicks`). */
-    fun keepingDevicePicks(previous: Computer?): Computer =
-        previous?.let { copy(color = it.color, route = it.route, notifications = it.notifications) } ?: this
+    /**
+     * Keeps what this phone picked (color, route, push) or did ([joinedAccount]) over a newer copy from pairing or the
+     * account (iOS `keepDevicePicks`).
+     */
+    fun keepingDevicePicks(previous: Computer?): Computer = previous?.let {
+        copy(color = it.color, route = it.route, notifications = it.notifications, joinedAccount = it.joinedAccount)
+    } ?: this
 
     fun validate() {
         require(RelayCrypto.computerId(signKey.decodeBase64Url(32)) == id) { "This computer's identity changed. Pair it again." }

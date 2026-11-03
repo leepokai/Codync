@@ -23,6 +23,9 @@ public struct Computer: Codable, Hashable, Sendable, Identifiable {
     public var route: ConnectionRoute?
     /// Whether the computer sends push alerts to this device, picked per computer; nil = on.
     public var notifications: Bool?
+    /// This device brought the computer into its account (it completed the claim); nil = it never did. One taken out
+    /// of the account before it heard of that join still asks to join (`Hello.joinAccount`); this device leaves it out.
+    public var joinedAccount: Bool?
 
     public init(id: ComputerID, name: String, signKey: String, boxKey: String? = nil, urls: [String] = [],
                 cloud: URL? = nil, device: String? = nil, color: String? = nil) {
@@ -36,11 +39,13 @@ public struct Computer: Codable, Hashable, Sendable, Identifiable {
         self.color = color
     }
 
-    /// Keeps what this device picked (color, route, push) over a newer copy from pairing, the account or `hello`.
+    /// Keeps what this device picked (color, route, push) or did (`joinedAccount`) over a newer copy from pairing,
+    /// the account or `hello`.
     public mutating func keepDevicePicks(from previous: Computer) {
         color = previous.color
         route = previous.route
         notifications = previous.notifications
+        joinedAccount = previous.joinedAccount
     }
 
     /// `true` when `id` really is the computer ID of `signKey`.

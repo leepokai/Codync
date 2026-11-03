@@ -10,6 +10,7 @@ use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
+use std::sync::atomic::Ordering;
 
 const OWNER: &str = "account_owner";
 
@@ -67,8 +68,21 @@ pub fn out_of_account(hub: &Hub) -> Result<()> {
     Ok(())
 }
 
+/// The account the device `key` may bring this computer into (`joinAccount`), when a pairing let the phone in
+/// without the computer joining its account (the claim failed or never went out). Only on the Codync cloud, with
+/// this connection's state pulled and no account yet, for the account the phone paired from, and only when no
+/// device of another account would lose access by it.
+pub fn joinable_by(hub: &Hub, key: &str) -> Result<Option<String>> {
+    if cloud::codync_url(hub).is_err() || !hub.cloud_synced.load(Ordering::Acquire) || owner(&hub.store).is_some() {
+        return Ok(None);
+    }
+    let Some(account) = hub.store.device(key).and_then(|d| d.account) else { return Ok(None) };
+    let devices = hub.store.devices()?;
+    Ok(devices.iter().all(|d| d.account.as_ref().is_none_or(|a| *a == account)).then_some(account))
+}
+
 /// Signs this computer into an account claim (§4.2 A) for a signed-in app to complete: the desktop app's
-/// Add to account, or a phone pairing with a computer in no account.
+/// Add to account, a phone pairing with a computer in no account, or a phone finishing that join later.
 pub async fn sign_claim(hub: &Hub, claim_id: &str, nonce: &str, user_id: &str) -> Result<Value> {
     cloud::require_accounts(&hub.store)?;
     for (k, v) in [("claimId", claim_id), ("nonce", nonce), ("userId", user_id)] {
@@ -165,6 +179,31 @@ mod tests {
         device(&hub, "theirs", Some("user_b"));
         remember(&hub, Some(&account("user_a"))).unwrap();
         assert_eq!(keys(&hub), ["legacy", "mine"]);
+    }
+
+    #[test]
+    fn a_phone_brings_a_computer_in_no_account_into_the_account_it_paired_from() {
+        let hub = hub();
+        device(&hub, "mine", Some("user_a"));
+        device(&hub, "legacy", None);
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "not before this connection's state pull");
+        hub.cloud_synced.store(true, Ordering::Release);
+        assert_eq!(joinable_by(&hub, "mine").unwrap().as_deref(), Some("user_a"));
+        assert_eq!(
+            joinable_by(&hub, "legacy").unwrap(),
+            None,
+            "a phone that paired before devices recorded their account"
+        );
+        assert_eq!(joinable_by(&hub, "local").unwrap(), None);
+        device(&hub, "theirs", Some("user_b"));
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "another account's phone would lose access");
+        hub.store.remove_device("theirs").unwrap();
+        remember(&hub, Some(&account("user_a"))).unwrap();
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "already in an account");
+        remember(&hub, None).unwrap();
+        device(&hub, "mine", Some("user_a"));
+        hub.store.kv_set("cloud_enabled", "false").unwrap();
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "no account with the cloud off");
     }
 
     #[test]

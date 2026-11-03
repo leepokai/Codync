@@ -155,6 +155,8 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 4. host 先驗憑證與帳號，再花掉 code（[require sign-in](../plans/require-sign-in.md#phase-2-same-account-pairing)）：沒有憑證 → `reject unsupportedVersion`；憑證不是這把 device key 的 → 403；電腦在別的帳號 → 403，訊息帶 owner 遮罩過的 email；電腦在手機的帳號 → 直接放行；電腦不在任何帳號 → 在電腦上問（loopback 的 `pairingRequests` 事件／方法、`decidePairing`，最多 2 分鐘，兩邊顯示同一組 6 位數 `sha256("codync/pair-check/v1" ‖ dk ‖ hostSignKey)`），同意後 host 簽手機的 claim，回應帶 `claim`，手機自己 `POST /v1/claims/{id}/complete`。接著驗 code（常數時間比較、未過期、未用過）→ 刪除該 code → 新增裝置列（`source=local`，`grant_id=NULL`，`account=<userId>`，`scopes=["control","screen"]`，無 lease）→ 回 `{"id":1,"ok":{"computerId":"…","name":"…","claim":{…}|null}}` → **關閉這條 channel，close code `4100 paired`**（中繼：host 依序送 `data`（回應）→ `close {link, code:4100}` → 新 ACL（移除 offer、加入 dk）；同一條 host socket 保序，所以回應一定先到）。
 5. client 收到 `4100` 立即以一般模式重連（§7.5，不帶 `pair`）。直連與中繼行為相同；DO 不需要「升級」pairing socket。
 
+**之後補完加入帳號**：手機進來了但電腦沒加入帳號（手機沒拿到 claim、host 簽 claim 失敗、`complete` 失敗，或當時雲端關著／用 private relay）時，host 之後回給這台裝置的 `hello` 帶 `joinAccount: true`，條件是 `owner::joinable_by`：用 Codync 雲端（不是 private relay）、這次連線已拉過 state（`cloud_synced`）、電腦不在任何帳號、這台裝置記了帳號（`devices.account`），而且電腦上沒有別的帳號的裝置。手機接著 `POST /v1/claims`，呼叫 control scope 的 `joinAccount {claimId, nonce}`；host 再查一次同樣的條件，替這台裝置記的帳號簽 claim（`owner::sign_claim`，回傳內容與 `claimSign` 相同），手機再 `POST /v1/claims/{id}/complete`。手機完成後在自己存的電腦上記 `joinedAccount`（重新 QR 配對時清掉）：電腦被移出帳號時若還沒拉到自己加入過，它之後仍會問，這支手機不會再把它加回去。
+
 `Caller::Pairing` 的 channel 只接受 `pair`：第一個 inner 訊息不是 `pair`、或 `pair` 之後還有任何訊息 → 關閉 `4002 protocolError`。
 
 錯誤與限流：
@@ -170,6 +172,8 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
    `sig = Ed25519_host("codync/claim/v1\n" + claimId + "\n" + nonce + "\n" + userId + "\n" + computerId + "\n" + boxKey)`（UTF-8，**無結尾換行**；向量 `claim`）。Worker 以此 `boxKey` 建立或更新 `computers.box_pub`，不接受 client 另給的值。
 3. 桌面 App `POST /v1/claims/{claimId}/complete`（Clerk）帶上 host 回傳的內容。Worker 驗 Clerk、claim、簽章，原子化設定 owner。
 4. Worker 通知 DO `cloud.changed` → host 拉 state 得知 owner。
+
+手機也會讓 host 簽 claim：配對時（§4.1 第 4 步），以及配對沒加入帳號時之後的 control scope `joinAccount`（§4.1「之後補完加入帳號」）。
 
 **B. 手機取得存取權**（commit-then-reveal SAS，ZRTP／BLE numeric comparison 同型）：
 1. 手機登入後 `POST /v1/devices`（Clerk + 該 device key 的 `Codync-Sig`）。
@@ -321,7 +325,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 | loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `pairingRequests`, `decidePairing`, `pairingCodeOpen`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token）；`pairingRequests` 事件也只送給 loopback |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenPrepare`, `screenOffer`, `screenCandidate`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
-| control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `renameSection`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `forgetDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
+| control scope | 其餘所有既有方法（`hello`, `joinAccount`, `history`, `createBot`, `updateBot`, `renameSection`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `forgetDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
 
 The `screenCandidates` subscription also requires `screen` scope and belongs to its device’s screen session. It carries ordered candidates and completion separately from chat events; see [remote screen](../features/remote-screen.md).
 

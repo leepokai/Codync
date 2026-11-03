@@ -31,7 +31,7 @@ object HostConnector {
                 channel.call("pair", buildJsonObject {
                     put("code", pairing.code); put("name", deviceName); put("platform", "android")
                     put("certificate", certificate.json)
-                    claim?.let { put("claim", buildJsonObject { put("claimId", it.claimId); put("nonce", it.nonce) }) }
+                    claim?.let { put("claim", it.json) }
                 }, timeoutMillis = 150_000)
             } catch (error: HostError) {
                 // Hosts from before Android support turn the platform down: say what to do, not the wire error.

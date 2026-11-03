@@ -231,6 +231,13 @@ def main():
             local = install({"name": "Credential fixture", "command": "python3", "args": [str(ROOT / "host/tests/fixtures/credential_mcp.py")], "env": {"API_KEY": "wrong"}})
             check("wrong local credential is rejected", lambda: api("connectorVerify", {"id": local}, ok=False))
             check("credential correction verifies without reinstall", lambda: api("credentialUpdateConnector", {"id": local, "fields": {"API_KEY": "test-private-key"}}))
+            def edit_in_place():
+                edited = api("updateConnector", {"id": local, "args": ["-u", str(ROOT / "host/tests/fixtures/credential_mcp.py")]})
+                assert edited["connector"]["id"] == local, "an update keeps the id bots point at"
+                assert edited["verify"]["status"] == "ready", edited
+                assert api("connectorRuntime", {"id": local})["args"][0] == "-u", "the new command line is what runs"
+                assert [c["id"] for c in api("connectors")["items"]] == [local], "an update adds nothing"
+            check("updateConnector edits the command line in place and verifies it", edit_in_place)
             def local_proxy():
                 with proxy(env, port, local, "local") as rpc:
                     assert rpc("tools/list")["tools"] == []

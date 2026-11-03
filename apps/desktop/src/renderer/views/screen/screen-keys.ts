@@ -36,8 +36,12 @@ export function modifierNames(e: Pick<KeyInfo, 'metaKey' | 'altKey' | 'ctrlKey' 
   return [e.metaKey && 'cmd', e.altKey && 'option', e.ctrlKey && 'ctrl', e.shiftKey && 'shift'].filter((m): m is string => !!m)
 }
 
-/** The key's name without modifiers: the physical letter or digit (a Cyrillic layout's Cmd+С is still C), else its character. */
+/**
+ * The key's name without modifiers: the layout's Latin letter (AZERTY's Cmd+A is `a`, though it sits on `KeyQ`),
+ * else the physical letter (a Cyrillic layout's Cmd+С is still C), the digit, or the character.
+ */
 function baseCharacter(e: KeyInfo): string | null {
+  if (/^[A-Za-z]$/.test(e.key)) return e.key.toLowerCase()
   const letter = /^Key([A-Z])$/.exec(e.code)
   if (letter) return letter[1].toLowerCase()
   const digit = /^Digit([0-9])$/.exec(e.code)

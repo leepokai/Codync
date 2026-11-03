@@ -22,6 +22,13 @@ test('Cmd+C is a shortcut with the physical letter, even on a Cyrillic layout', 
   assert.deepEqual(keyCommand(key('c', 'KeyC', { ctrlKey: true }), 'linux'), { type: 'key', key: 'c', modifiers: ['ctrl'] })
 })
 
+test('a shortcut names the layout letter, not the key position (AZERTY Cmd+A sits on KeyQ)', () => {
+  assert.deepEqual(keyCommand(key('a', 'KeyQ', { metaKey: true }), 'darwin'), { type: 'key', key: 'a', modifiers: ['cmd'] })
+  assert.deepEqual(keyCommand(key('Z', 'KeyW', { metaKey: true, shiftKey: true }), 'darwin'), { type: 'key', key: 'z', modifiers: ['cmd', 'shift'] })
+  // Option rewrites the character (Option+A is å): the physical letter is the fallback.
+  assert.deepEqual(keyCommand(key('å', 'KeyA', { metaKey: true, altKey: true }), 'darwin'), { type: 'key', key: 'a', modifiers: ['cmd', 'option'] })
+})
+
 test('modifiers keep the phones order: cmd, option, ctrl, shift', () => {
   const all = key('a', 'KeyA', { metaKey: true, altKey: true, ctrlKey: true, shiftKey: true })
   assert.deepEqual(keyCommand(all, 'darwin'), { type: 'key', key: 'a', modifiers: ['cmd', 'option', 'ctrl', 'shift'] })

@@ -3,23 +3,34 @@ import Foundation
 
 /// Wait for a recorded fixture event, allowing the store's real action deadline.
 /// Cancelling the losing stream iterator also removes its fixture subscription.
+///
+/// The race runs off the main actor. A task group created there queues its children
+/// behind the wait, so a checkpoint that has not already arrived never wakes the
+/// test and the runner kills it at the one-minute limit.
 @MainActor
 func waitForTestEvent<Event: Sendable>(_ events: AsyncStream<Event>, matching: @escaping @Sendable (Event) -> Bool) async -> Bool {
     let timeout = BotStore.actionPatience
-    return await withTaskGroup(of: Bool.self) { group in
-        group.addTask {
-            for await event in events {
-                if matching(event) { return true }
+    let winner = Task.detached {
+        await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                for await event in events {
+                    if matching(event) { return true }
+                }
+                return false
             }
-            return false
+            group.addTask {
+                do { try await Task.sleep(for: timeout) } catch { return false }
+                return false
+            }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
         }
-        group.addTask {
-            do { try await Task.sleep(for: timeout) } catch { return false }
-            return false
-        }
-        let result = await group.next()
-        group.cancelAll()
-        return result ?? false
+    }
+    return await withTaskCancellationHandler {
+        await winner.value
+    } onCancel: {
+        winner.cancel()
     }
 }
 

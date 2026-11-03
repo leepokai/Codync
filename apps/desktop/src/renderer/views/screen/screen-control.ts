@@ -6,7 +6,6 @@ import type { ViewerMode } from './screen-mode.ts'
 export interface ControlHost {
   /** The computer allows control and a session is open. */
   canControl(): boolean
-  /** A session is open. */
   /** The session is live (not connecting or reconnecting): only then may control be asked for. */
   hasSession(): boolean
   /** `screenTakeover`. */
@@ -48,11 +47,13 @@ export class ScreenControl {
     this.host.update()
   }
 
-  /** A failed session closed on the computer, which gave control back to the bots. */
+  /** The session failed: control goes back to the bots. The host keeps `userControl` while another viewer (a phone)
+   * stays connected, so it is handed back explicitly before the takeover is forgotten. */
   sessionFailed() {
     if (!this.held) return
     this.held = false
     this.interactive = false
+    this.host.takeover(false).catch(() => {})
     this.host.update()
   }
 

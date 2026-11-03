@@ -114,14 +114,17 @@ test('a session that is reconnecting gets no takeover; once live it gets exactly
   assert.deepEqual(calls, [true])
 })
 
-test('a failed session handed control back: the window looks, and Retry asks again', async () => {
+test('a failed session hands control back to the bots: the window looks, and Retry asks again', async () => {
   const { control, calls } = setup()
   control.setMode('control')
   await settle()
   control.sessionFailed()
   assert.equal(control.interactive, false)
+  assert.deepEqual(calls, [true, false], 'control is released even if a phone keeps the host session open')
+  control.sessionFailed()
+  assert.deepEqual(calls, [true, false], 'a second failure sends nothing more')
   control.set(control.preferred === 'control')
   await settle()
-  assert.deepEqual(calls, [true, true])
+  assert.deepEqual(calls, [true, false, true])
   assert.equal(control.interactive, true)
 })

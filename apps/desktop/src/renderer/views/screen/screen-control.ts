@@ -7,6 +7,7 @@ export interface ControlHost {
   /** The computer allows control and a session is open. */
   canControl(): boolean
   /** A session is open. */
+  /** The session is live (not connecting or reconnecting): only then may control be asked for. */
   hasSession(): boolean
   /** `screenTakeover`. */
   takeover(on: boolean): Promise<void>
@@ -55,6 +56,11 @@ export class ScreenControl {
     this.host.update()
   }
 
+  /** The video came back: a chosen control that was lost (a refused takeover) is asked for again. */
+  resume() {
+    if (!this.held && this.preferred === 'control') this.set(true)
+  }
+
   /** With each status from the host: control it dropped on its own is asked for again, and the window only looks until it is back. */
   sync(userControl: boolean) {
     if (!this.held || userControl || this.pending > 0 || !this.host.hasSession()) return
@@ -71,10 +77,9 @@ export class ScreenControl {
       if (on && this.held && this.pending === 0) {
         if (ok) this.interactive = this.preferred === 'control' && this.host.canControl()
         else {
-          // Control isn't ours and can't be had now: look, with the switch showing it.
+          // Control isn't ours and can't be had now: look. The choice stays; `resume` asks again once the video is back.
           this.held = false
           this.interactive = false
-          this.preferred = 'view'
         }
         this.host.update()
       }

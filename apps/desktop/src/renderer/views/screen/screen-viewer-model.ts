@@ -45,7 +45,8 @@ export class ScreenViewerModel extends Observable {
     this.link = new ScreenLink(computerId)
     this.control = new ScreenControl({
       canControl: () => this.screen?.input === true && this.session !== null,
-      hasSession: () => this.session !== null,
+      // Not while reconnecting: a takeover then outlives a recovery that fails and closes the old id.
+      hasSession: () => this.session?.phase.kind === 'live',
       takeover: (on) => this.link.callNow('screenTakeover', { on }).then(() => {}),
       update: () => {
         this.input.interactive = this.control.interactive
@@ -143,7 +144,10 @@ export class ScreenViewerModel extends Observable {
     if (session === this.session && session.phase.kind === 'failed') this.control.sessionFailed()
     // Control the host dropped while the connection was lost is asked for again as soon as the video is back.
     const live = session.phase.kind === 'live'
-    if (live && !this.wasLive && session === this.session) void this.refresh()
+    if (live && !this.wasLive && session === this.session) {
+      this.control.resume()
+      void this.refresh()
+    }
     this.wasLive = live
     this.changed()
   }

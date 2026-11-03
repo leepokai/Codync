@@ -4,10 +4,10 @@ import { ScreenControl, type ControlHost } from './screen-control.ts'
 
 function setup(takeover: (on: boolean) => Promise<void> = async () => {}) {
   const calls: boolean[] = []
-  const state = { session: true, input: true, refreshes: 0 }
+  const state = { session: true, live: true, input: true, refreshes: 0 }
   const host: ControlHost = {
     canControl: () => state.input && state.session,
-    hasSession: () => state.session,
+    hasSession: () => state.session && state.live,
     takeover: (on) => { calls.push(on); return takeover(on) },
     update: () => {},
     refresh: () => { state.refreshes++ },
@@ -78,7 +78,7 @@ test('no session: nothing is restored', async () => {
   assert.deepEqual(calls, [])
 })
 
-test('a restore the host refuses leaves the window looking, with the switch on View', async () => {
+test('a restore the host refuses leaves the window looking, keeps the choice, and asks again only when the video is back', async () => {
   let fail = false
   const { control, calls } = setup(() => (fail ? Promise.reject(new Error('down')) : Promise.resolve()))
   control.setMode('control')
@@ -88,10 +88,30 @@ test('a restore the host refuses leaves the window looking, with the switch on V
   await settle()
   assert.deepEqual(calls, [true, true])
   assert.equal(control.interactive, false)
-  assert.equal(control.preferred, 'view')
+  assert.equal(control.preferred, 'control')
   control.sync(false)
   await settle()
-  assert.equal(calls.length, 2, 'it does not keep asking')
+  assert.equal(calls.length, 2, 'it does not keep asking on every status')
+  fail = false
+  control.resume()
+  await settle()
+  assert.equal(calls.length, 3)
+  assert.equal(control.interactive, true)
+})
+
+test('a session that is reconnecting gets no takeover; once live it gets exactly one', async () => {
+  const { control, calls, state } = setup()
+  control.setMode('control')
+  await settle()
+  calls.length = 0
+  state.live = false
+  control.sync(false)
+  control.sync(false)
+  assert.deepEqual(calls, [])
+  state.live = true
+  control.sync(false)
+  control.sync(false)
+  assert.deepEqual(calls, [true])
 })
 
 test('a failed session handed control back: the window looks, and Retry asks again', async () => {

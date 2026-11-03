@@ -4,7 +4,6 @@ import type { AgentMode } from '@shared/approvals'
 import { errorText } from './drafts'
 import { trNow } from '../../lib/l10n.ts'
 
-
 /** A model's own setting (effort, fast…) and the values the agent accepts. */
 export interface ModelOption {
   id: string

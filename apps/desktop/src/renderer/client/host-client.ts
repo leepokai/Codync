@@ -16,7 +16,6 @@ import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
 import { trNow } from '../lib/l10n.ts'
 
-
 /** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
 export type HostRoute = 'loopback' | 'direct' | 'relay'
 

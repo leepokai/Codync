@@ -1776,5 +1776,8 @@
   "Message from {bot}: {message}": "Nachricht von {bot}: {message}",
   "Could not start routine: {error}": "Routine konnte nicht gestartet werden: {error}",
   "Could not queue routine: {error}": "Routine konnte nicht eingereiht werden: {error}",
-  "Routine · {routine}": "Routine · {routine}"
+  "Routine · {routine}": "Routine · {routine}",
+  "Queued": "In Warteschlange",
+  "Retrying at {time}": "Neuer Versuch um {time}",
+  "Last run {status}": "Letzter Lauf: {status}"
 }

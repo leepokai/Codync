@@ -485,7 +485,7 @@ function ChatSplitView() {
       </Sheet>
       <Dialog
         open={confirmDelete !== null}
-        title={tr('Delete {name}?').replaceAll('{name}', confirmDelete?.bot.name ?? 'bot')}
+        title={tr('Delete {name}?').replaceAll('{name}', () => confirmDelete?.bot.name ?? 'bot')}
         message={tr('Files it changed on your computer stay as they are.')}
         actions={confirmDelete ? [{ title: 'Delete bot and its conversation', destructive: true, action: () => confirmDelete.store.delete(confirmDelete.bot) }] : []}
         onClose={() => setConfirmDelete(null)}

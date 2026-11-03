@@ -93,7 +93,7 @@ export function ComputersView() {
         message={removingOlder
           ? tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removing.name)
           // Offline may only mean asleep: removal unclaims it, and its own app won't add it back by itself.
-          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', removing?.name ?? tr('a computer'))}`}
+          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', () => removing?.name ?? tr('a computer'))}`}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removing.computerId) }] : []}
         onClose={() => setRemoving(null)}
       />

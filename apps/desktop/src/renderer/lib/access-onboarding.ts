@@ -2,7 +2,6 @@ import type { ComputerAccessStep } from '../../shared/computer-access'
 import type { ScreenState } from '../../shared/models'
 import { trNow } from './l10n.ts'
 
-
 export type AccessPage = 'helper' | 'capture' | 'input' | 'portal' | 'control' | 'star'
 
 export function accessPageReady(page: AccessPage, step: ComputerAccessStep, screen: ScreenState | null): boolean {

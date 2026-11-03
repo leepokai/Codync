@@ -259,8 +259,8 @@ export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick
             key={emoji}
             className={`reaction-button ${chosen ? 'chosen' : ''}`}
             style={{ width: size, height: size, borderRadius: size * 0.28 }}
-            title={chosen ? tr('Remove {emoji}').replaceAll('{emoji}', emoji) : tr('React {emoji}').replaceAll('{emoji}', emoji)}
-            aria-label={chosen ? tr('Remove reaction {emoji}').replaceAll('{emoji}', emoji) : tr('React {emoji}').replaceAll('{emoji}', emoji)}
+            title={chosen ? tr('Remove {emoji}').replaceAll('{emoji}', () => emoji) : tr('React {emoji}').replaceAll('{emoji}', () => emoji)}
+            aria-label={chosen ? tr('Remove reaction {emoji}').replaceAll('{emoji}', () => emoji) : tr('React {emoji}').replaceAll('{emoji}', () => emoji)}
             onClick={() => {
               dismiss?.()
               pick.toggle(emoji)

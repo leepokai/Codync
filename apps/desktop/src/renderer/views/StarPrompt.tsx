@@ -51,7 +51,7 @@ export function StarPrompt() {
       <VStack className="star-prompt">
         <ModalHeader
           icon={<Icon name="star.fill" size={22} className="star-prompt-symbol" />}
-          title={text.title}
+          title={tr(text.title)}
           onClose={null}
         />
         <VStack gap={16} className="star-prompt-body">

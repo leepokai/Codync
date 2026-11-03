@@ -43,9 +43,9 @@ export function ApprovalSheet({ approval }: { approval: Approval }) {
         <Icon name={deviceIcon(request.platform)} size={40} weight="light" color="var(--secondary)" />
         <VStack align="center" gap={4}>
           <Text as="div" size="title3" weight="semibold" className="settings-centered">
-            {tr('{name} wants to use {other}').replaceAll('{name}', request.deviceName).replaceAll('{other}', approval.store.hostName)}
+            {tr('{name} wants to use {other}').replaceAll('{name}', () => request.deviceName).replaceAll('{other}', () => approval.store.hostName)}
           </Text>
-          {request.email ? <Text as="div" size="callout" tone="secondary">{tr('Signed in as {email}').replaceAll('{email}', request.email)}</Text> : null}
+          {request.email ? <Text as="div" size="callout" tone="secondary">{tr('Signed in as {email}').split('{email}').join(request.email)}</Text> : null}
         </VStack>
         {request.code ? (
           <>
@@ -53,13 +53,13 @@ export function ApprovalSheet({ approval }: { approval: Approval }) {
               {spacedCode(request.code)}
             </Text>
             <Text as="div" size="callout" tone="secondary" className="settings-centered">
-              {tr("Approve only if {name} shows exactly this code. If it doesn't, deny: someone may be trying to get in.").replaceAll('{name}', request.deviceName)}
+              {tr("Approve only if {name} shows exactly this code. If it doesn't, deny: someone may be trying to get in.").replaceAll('{name}', () => request.deviceName)}
             </Text>
           </>
         ) : (
           <>
             <Spinner />
-            <Text as="div" size="callout" tone="secondary">{tr('Waiting for {name} to show its code…').replaceAll('{name}', request.deviceName)}</Text>
+            <Text as="div" size="callout" tone="secondary">{tr('Waiting for {name} to show its code…').replaceAll('{name}', () => request.deviceName)}</Text>
           </>
         )}
         <Reveal show={error !== null}>

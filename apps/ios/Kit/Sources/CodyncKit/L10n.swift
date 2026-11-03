@@ -243,11 +243,22 @@ public enum L10n {
             pos = end
         }
         guard pos == text.endIndex else { return nil }
-        var result = phrase
-        for (token, value) in caps {
-            let inner = verbatim.contains(token) ? value : primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value
-            result = result.replacingOccurrences(of: token, with: inner)
+        // One pass over the phrase, so a slot whose text looks like `{token}` is never filled twice.
+        var result = ""
+        var rest = phrase[...]
+        while let open = rest.firstIndex(of: "{") {
+            result += rest[..<open]
+            rest = rest[open...]
+            if let (token, value) = caps.first(where: { rest.hasPrefix($0.key) }) {
+                let inner = verbatim.contains(token) ? value : primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value
+                result += inner
+                rest = rest.dropFirst(token.count)
+            } else {
+                result += "{"
+                rest = rest.dropFirst()
+            }
         }
+        result += rest
         return result
     }
 

@@ -122,7 +122,7 @@ function Header({ model, mode }: { model: IslandModel; mode: IslandMode }) {
         </button>
       </div>
       <div className="island-tabs">
-        {count ? <span className="island-count">{tr('{count} working').replaceAll('{count}', String(count))}</span> : null}
+        {count ? <span className="island-count">{tr('{count} working').replaceAll('{count}', () => String(count))}</span> : null}
         <UsageMeter model={model} />
         <button className="island-tab" title="Open Codync" aria-label="Open Codync" onClick={() => model.openApp()}>
           <Icon name="arrow.up.right.square" size={13} scaled={false} />

@@ -3,7 +3,6 @@ import { browserPorts, type CallOutput, type GeminiPorts, type LiveSocket } from
 import { errorMessage, fromBase64, onDevicesChanged, PROGRESS_TAG, reconnect, toBase64, VoiceEngine } from './voice'
 import { trNow } from '../../lib/l10n.ts'
 
-
 const URL_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained'
 const OPEN = 1
 

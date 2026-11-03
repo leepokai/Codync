@@ -1776,5 +1776,8 @@
   "Message from {bot}: {message}": "Mensaje de {bot}: {message}",
   "Could not start routine: {error}": "No se pudo iniciar la rutina: {error}",
   "Could not queue routine: {error}": "No se pudo poner en cola la rutina: {error}",
-  "Routine · {routine}": "Rutina · {routine}"
+  "Routine · {routine}": "Rutina · {routine}",
+  "Queued": "En cola",
+  "Retrying at {time}": "Reintentando a las {time}",
+  "Last run {status}": "Última ejecución: {status}"
 }

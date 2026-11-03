@@ -182,7 +182,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     // Ended, or another engine was picked meanwhile.
     if (closed.current || engineChoice.current !== picked) return
     if (configured) {
-      setNotice(tr('{device} Using {name}.').replace('{device}', onDeviceUnavailableReason()).replaceAll('{name}', providerName(configured)))
+      setNotice(tr('{device} Using {name}.').replace('{device}', () => onDeviceUnavailableReason()).replaceAll('{name}', () => providerName(configured)))
       if (window.codync.platform !== 'darwin') preferredEngine.set(configured)
       begin(configured)
       if (window.codync.platform === 'darwin') engineChoice.current = picked
@@ -225,7 +225,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     // A cloud engine that can't start or drops mid-call hands over to on-device voice.
     if (phase === 'failed' && session.provider && onDeviceAvailable()) {
       countCloudMinutes()
-      setNotice(tr("{name} isn't available ({reason}). Using on-device voice.").replaceAll('{name}', providerName(session.provider)).replaceAll('{reason}', tr(String(session.failure))))
+      setNotice(tr("{name} isn't available ({reason}). Using on-device voice.").replaceAll('{name}', providerName(session.provider)).replaceAll('{reason}', () => tr(String(session.failure))))
       begin(null)
     }
   }, [session, phase])

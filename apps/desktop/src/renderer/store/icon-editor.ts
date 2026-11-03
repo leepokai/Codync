@@ -4,7 +4,6 @@ import { Observable } from '../lib/observable'
 import type { BotStore } from './bot-store'
 import { trNow } from '../lib/l10n.ts'
 
-
 export class IconEditor extends Observable {
   busy = false
   error: string | null = null

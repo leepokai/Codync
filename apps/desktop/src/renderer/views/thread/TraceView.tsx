@@ -40,7 +40,7 @@ export function TraceView({ botId }: { botId: string }) {
           {sorted.map(([turn, entries]) => (
             <VStack key={turn} gap={8}>
               <Text as="div" size="compactSecondary" weight="semibold" tone="text" truncate className="trace-turn-title">
-                {entries.find((e) => e.kind === 'user')?.data.text ?? tr('Turn {turn}').replaceAll('{turn}', String(turn))}
+                {entries.find((e) => e.kind === 'user')?.data.text ?? tr('Turn {turn}').replaceAll('{turn}', () => String(turn))}
               </Text>
               <CardSection>
                 {entries.map((e) => (

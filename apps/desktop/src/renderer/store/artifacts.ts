@@ -3,7 +3,6 @@ import { FILE_CHUNK_SIZE } from '../../shared/files.ts'
 import type { HostClient } from '../client/host-client'
 import { trNow } from '../lib/l10n.ts'
 
-
 /** An artifact's HTML as last read; `updatedAt` and `sha256` name the version it is. */
 export interface ArtifactHTML { updatedAt: number; sha256: string; bytes: Uint8Array }
 

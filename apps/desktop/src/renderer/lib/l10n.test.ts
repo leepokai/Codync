@@ -196,6 +196,7 @@ test('bot, routine and message slots keep what the user wrote; other slots still
   assert.equal(translate('Created bot connected', 'ru', false), 'Создан бот connected')
   assert.equal(translate('Created bot Reviewer', 'ru', false), 'Создан бот Reviewer')
   assert.equal(translate('Routine · Проверка почты', 'ru', false), 'Рутина · Проверка почты')
+  assert.equal(translate('Created bot Price $&', 'ru', false), 'Создан бот Price $&')
   assert.equal(translate('Routine · Settings', 'ru', false), 'Рутина · Settings')
   assert.equal(translate('Message from Reviewer: Settings', 'ru', false), 'Сообщение от Reviewer: Settings')
   assert.equal(translate('Runs the official installer on this Mac.', 'ru', false), 'Запускает официальный установщик на этот Mac.')

@@ -47,7 +47,10 @@ export const isActiveRun = (run: RoutineRun) => ['pending', 'starting', 'running
 export function runLabel(run: RoutineRun, now = Date.now()) {
   switch (run.status) {
     case 'pending':
-      if (run.notBefore && run.notBefore > now) return `Retrying at ${new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })}`
+      if (run.notBefore && run.notBefore > now) {
+        const at = new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })
+        return trNow('Retrying at {time}').replaceAll('{time}', () => at)
+      }
       return run.notBefore ? trNow('Retrying') : trNow('Queued')
     case 'starting':
       return trNow('Starting')
@@ -56,7 +59,7 @@ export function runLabel(run: RoutineRun, now = Date.now()) {
     case 'recovering':
       return trNow('Resuming after restart')
     case 'failed':
-      return 'Failed'
+      return trNow('Failed')
     case 'interrupted':
       return trNow('Interrupted')
     default:

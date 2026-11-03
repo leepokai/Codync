@@ -59,7 +59,7 @@ export function AvatarPicker({ shape, color, onShape, onColor }: { shape: string
     <VStack gap={12} className="avatar-picker">
       <div className="swatch-row">
         {AVATAR_SHAPES.map((s) => (
-          <button key={s} className={`swatch ${s === shape ? 'on' : ''}`} aria-label={tr('{shape} shape').replaceAll('{shape}', s)} aria-pressed={s === shape} onClick={() => onShape(s)}>
+          <button key={s} className={`swatch ${s === shape ? 'on' : ''}`} aria-label={tr('{shape} shape').replaceAll('{shape}', () => s)} aria-pressed={s === shape} onClick={() => onShape(s)}>
             <CharacterAvatar shape={s} color={color} size={36} />
           </button>
         ))}

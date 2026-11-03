@@ -64,14 +64,14 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
       list.push({ title: p.name || p.host, verbatim: true, detail, icon: 'network', action: manage })
     }
     if (stores.length) list.push({ title: 'Reconnect', icon: 'arrow.clockwise', divider: true, action: () => stores.forEach((s) => s.restartStream()) })
-    if (app.host.state.kind === 'notInstalled') list.push({ title: tr('Install host on this {device}').replaceAll('{device}', window.codync.platform === 'darwin' ? tr('Mac') : tr('computer')), icon: 'desktopcomputer', action: () => window.codync.host.install() })
+    if (app.host.state.kind === 'notInstalled') list.push({ title: tr('Install host on this {device}').replaceAll('{device}', () => window.codync.platform === 'darwin' ? tr('Mac') : tr('computer')), icon: 'desktopcomputer', action: () => window.codync.host.install() })
     if (app.host.state.kind === 'failed') list.push({ title: 'Try again on this computer', icon: 'arrow.clockwise', action: () => window.codync.host.restart() })
     list.push({ title: 'Manage computers', icon: 'desktopcomputer', action: manage })
     return list
   }
   return (
     <DropdownMenu items={items} title={text} className={`computer-filter ${compact ? 'computer-filter-action' : ''}`}>
-      {compact ? <Icon name="desktopcomputer" size={12} weight="medium" /> : <Text truncate aria-label={tr('Computers, {filter}. Filter conversations').replaceAll('{filter}', text)}>{text}</Text>}
+      {compact ? <Icon name="desktopcomputer" size={12} weight="medium" /> : <Text truncate aria-label={tr('Computers, {filter}. Filter conversations').replaceAll('{filter}', () => text)}>{text}</Text>}
       <Icon name="chevron.down" size={8} weight="semibold" />
     </DropdownMenu>
   )

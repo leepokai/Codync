@@ -37,7 +37,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
   const selected = catalog?.models.find((m) => m.id === (value || agentDefault?.id || catalog.currentModelId))
   const modelOptions = value || catalog?.defaultModelOptions ? selected?.options ?? [] : []
-  const options: Choice[] = [{ id: '', label: agentDefault?.name ?? (current ? tr('Default · {name}').replaceAll('{name}', current.name) : tr('Default')) }, ...available.map((m) => ({ id: m.id, label: m.name }))]
+  const options: Choice[] = [{ id: '', label: agentDefault?.name ?? (current ? tr('Default · {name}').replaceAll('{name}', () => current.name) : tr('Default')) }, ...available.map((m) => ({ id: m.id, label: m.name }))]
   if (value && !available.some((m) => m.id === value)) options.push({ id: value, label: value })
   const agent = agents.find((a) => a.id === backend)
   const modelName = value ? options.find((o) => o.id === value)?.label ?? value : tr('Default')

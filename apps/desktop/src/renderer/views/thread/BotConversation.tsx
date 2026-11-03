@@ -54,7 +54,7 @@ function BotPair({ botId, peer }: { botId: string; peer: Peer }) {
     </HStack>
   )
   return (
-    <HStack as="span" gap={8} aria-label={tr('{name} and {other}').replaceAll('{name}', name(botId)).replaceAll('{other}', name(peer.id))}>
+    <HStack as="span" gap={8} aria-label={tr('{name} and {other}').replaceAll('{name}', () => name(botId)).replaceAll('{other}', () => name(peer.id))}>
       {label(botId)}
       <Icon name="arrow.left.arrow.right" size={11} color="var(--tertiary)" />
       {label(peer.id)}
@@ -114,7 +114,7 @@ function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer })
       )
     case 'status': {
       const failed = row.outcome.kind === 'failed'
-      const text = row.outcome.kind === 'failed' ? row.outcome.detail || tr("Didn't complete.") : tr('Waiting for {name}…').replaceAll('{name}', name(row.awaiting))
+      const text = row.outcome.kind === 'failed' ? row.outcome.detail || tr("Didn't complete.") : tr('Waiting for {name}…').replaceAll('{name}', () => name(row.awaiting))
       return <Text as="div" size="footnote" tone={failed ? 'danger' : 'secondary'} className="selectable bot-conversation-status">{text}</Text>
     }
   }

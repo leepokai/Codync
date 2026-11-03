@@ -9,7 +9,6 @@ import type { AppModel } from './app-model'
 import type { BotStore } from './bot-store'
 import { trNow } from '../lib/l10n.ts'
 
-
 // Wire types of the Codync cloud (`/v1`, cloud/src/api.ts); times are epoch milliseconds.
 
 /** A computer in the account (`GET /v1/computers`). */

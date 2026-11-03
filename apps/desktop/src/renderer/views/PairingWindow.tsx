@@ -5,7 +5,6 @@ import { useApp } from '../store/context'
 import { PairingCode } from './PairingCode'
 import { trNow } from '../lib/l10n.ts'
 
-
 /** The pairing window: this computer's code, without a mirror of its bots. */
 export function PairingWindow() {
   // By value: the host's snapshot is a new object on each of its changes (every few seconds), and

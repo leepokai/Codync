@@ -7,7 +7,6 @@ import { configured, voiceStatus } from '../settings/voice-settings'
 import { Dictation, type DictationPlatform } from './dictation'
 import { trNow } from '../../lib/l10n.ts'
 
-
 /**
  * Dictation's real surroundings: the speech helper and the microphone, and with `host` a provider
  * on the user's key through it; `report` shows its errors (the island has neither).

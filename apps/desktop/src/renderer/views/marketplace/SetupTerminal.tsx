@@ -184,12 +184,12 @@ export function SetupTerminalView({ backend, step, method, back }: {
         ) : exitCode !== null ? (
           <>
             <Icon name={exitCode === 0 ? 'checkmark.circle.fill' : 'exclamationmark.circle.fill'} size={10} color={exitCode === 0 ? 'var(--added)' : 'var(--warning)'} />
-            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr('Finished.') : tr('Ended with an error ({code}).').replaceAll('{code}', String(exitCode))}</Text>
+            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr('Finished.') : tr('Ended with an error ({code}).').replaceAll('{code}', () => String(exitCode))}</Text>
           </>
         ) : (
           <>
             <ThinkingOrb size={14} color="var(--secondary)" />
-            <Text tone="secondary" lines={2}>{tr('Running on {name}. Links open on this device.').replaceAll('{name}', store.hostName)}</Text>
+            <Text tone="secondary" lines={2}>{tr('Running on {name}. Links open on this device.').replaceAll('{name}', () => store.hostName)}</Text>
           </>
         )}
         <Spacer />

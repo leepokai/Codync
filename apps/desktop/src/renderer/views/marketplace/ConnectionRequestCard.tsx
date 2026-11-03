@@ -43,7 +43,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
         // The host completes the card and resends the messages once the sheet finds it signed in.
         const backend = store.hello?.backends.find((b) => b.id === request.backend)
         if (backend) setAgent(backend)
-        else setError(tr('Open {name} in Extensions to sign in.').replaceAll('{name}', request.title))
+        else setError(tr('Open {name} in Extensions to sign in.').replaceAll('{name}', () => request.title))
       } else if (request.kind === 'app' && request.toolkit) {
         setApp({ slug: request.toolkit, name: request.title })
       } else if (isLogin) {

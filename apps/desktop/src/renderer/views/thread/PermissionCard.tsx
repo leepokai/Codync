@@ -69,7 +69,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
         </Text>
         <HStack gap={6}>
           <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
-          <Text size="caption" tone="tertiary">{tr('Runs on {name}{path}').replaceAll('{name}', hostName).replaceAll('{path}', cwd)}</Text>
+          <Text size="caption" tone="tertiary">{tr('Runs on {name}{path}').replaceAll('{name}', () => hostName).replaceAll('{path}', () => cwd)}</Text>
         </HStack>
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>

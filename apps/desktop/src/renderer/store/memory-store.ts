@@ -2,7 +2,6 @@ import type { HostClient } from '../client/host-client'
 import { Observable } from '../lib/observable'
 import { trNow } from '../lib/l10n.ts'
 
-
 /** One memory entry (the host's `codync_mem::store::Entry`). */
 export interface MemoryEntry {
   id: number

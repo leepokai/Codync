@@ -1776,5 +1776,8 @@
   "Message from {bot}: {message}": "來自 {bot} 的訊息：{message}",
   "Could not start routine: {error}": "無法啟動例行任務：{error}",
   "Could not queue routine: {error}": "無法將例行任務加入佇列：{error}",
-  "Routine · {routine}": "例行任務 · {routine}"
+  "Routine · {routine}": "例行任務 · {routine}",
+  "Queued": "排隊中",
+  "Retrying at {time}": "將於 {time} 重試",
+  "Last run {status}": "上次執行：{status}"
 }

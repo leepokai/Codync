@@ -5,7 +5,6 @@ import type { VoiceProvider } from '../settings/voice-settings.ts'
 import { inOrder, joinDictated, MIN_SAMPLES, pieces } from './dictation-pieces.ts'
 import { trNow } from '../../lib/l10n.ts'
 
-
 /** The running dictation: one recognizer at a time, and a call stops dictation first. */
 let active: Dictation | null = null
 
@@ -106,7 +105,7 @@ export class Dictation extends Observable {
       this.recording = { provider, pcm: [], stopMic: null }
       return void this.record(this.recording, ++this.generation)
     }
-    if (!speech) return this.fail(trNow('{error} Pick OpenAI or Gemini beside the mic.').replaceAll('{error}', this.platform.noSpeech))
+    if (!speech) return this.fail(trNow('{error} Pick OpenAI or Gemini beside the mic.').replaceAll('{error}', () => this.platform.noSpeech))
     this.off = speech.onEvent((e) => this.event(e))
     speech.start(this.platform.language())
     this.listen()

@@ -158,7 +158,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
     const accepted: OutgoingFile[] = []
     for (const f of incoming) {
       if (f.data.length > MAX_FILE_SIZE) {
-        store.setError(tr('{name} is larger than 100 MB.').replaceAll('{name}', f.name))
+        store.setError(tr('{name} is larger than 100 MB.').replaceAll('{name}', () => f.name))
         continue
       }
       accepted.push({ id: crypto.randomUUID(), name: f.name, data: f.data })

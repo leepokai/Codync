@@ -164,10 +164,10 @@ export function Notice({ model, bot, failed }: { model: IslandModel; bot: Island
         <div key={`${failed}:${bot.ref}`} className={`island-swap-slot ${swap}`}>
           <BigCharacter bot={bot} size={58} mood="idle" badge={failed ? 'failed' : 'finished'} onOpen={() => model.openBot(bot.ref)} />
           <div className="island-alert-text">
-            <AgentRow color={bot.color} name={bot.name} subtitle={failed ? bot.backend : tr('{backend} is done').replaceAll('{backend}', bot.backend)} />
+            <AgentRow color={bot.color} name={bot.name} subtitle={failed ? bot.backend : tr('{backend} is done').replaceAll('{backend}', () => bot.backend)} />
             {failed ? (
               <>
-                <div className="island-title">{tr('{name} stopped.').replaceAll('{name}', bot.name)}</div>
+                <div className="island-title">{tr('{name} stopped.').replaceAll('{name}', () => bot.name)}</div>
                 <div className="island-error">{bot.error ?? bot.detail}</div>
               </>
             ) : (
@@ -224,8 +224,8 @@ export function Message({ model }: { model: IslandModel }) {
           >
             <input
               autoFocus
-              aria-label={tr('Message {name}').replaceAll('{name}', bot.name)}
-              placeholder={tr('Message {name}…').replaceAll('{name}', bot.name)}
+              aria-label={tr('Message {name}').replaceAll('{name}', () => bot.name)}
+              placeholder={tr('Message {name}…').replaceAll('{name}', () => bot.name)}
               value={model.draft}
               onChange={(e) => model.setDraft(e.target.value)}
               onKeyDown={(e) => {

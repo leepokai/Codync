@@ -15,7 +15,7 @@ export function fileRows(files: MemoryFiles, shared: boolean, open: (target: Fil
   return [
     <p key="notes" className="memory-notes-header">{tr('Notes')}</p>,
     ...(live.length === 0 ? [<p key="notes-empty" className="memory-muted">{tr('Longer notes, one topic each. The bot reads one when its topic comes up.')}</p>] : []),
-    ...(live.length > files.folderCap ? [<p key="notes-cap" className="memory-attention">{tr('{count} notes, over the {cap}-note cap. Ask the bot to merge some.').replaceAll('{count}', String(live.length)).replaceAll('{cap}', String(files.folderCap))}</p>] : []),
+    ...(live.length > files.folderCap ? [<p key="notes-cap" className="memory-attention">{tr('{count} notes, over the {cap}-note cap. Ask the bot to merge some.').replaceAll('{count}', () => String(live.length)).replaceAll('{cap}', () => String(files.folderCap))}</p>] : []),
     ...live.map((file) => <FileRow key={file.name} file={file} cap={files.cap} tr={tr} open={() => open({ name: file.name, shared })} />),
   ]
 }
@@ -26,7 +26,7 @@ function FileRow({ file, cap, tr, open }: { file: MemoryFile; cap: number; tr: (
     <strong><Icon name="doc.text" size={11} />{file.name}</strong>
     {file.description ? <span className="memory-muted">{file.description}</span> : null}
     <small className={over ? 'memory-attention' : undefined}>
-      {tr('{tokens} tokens').replaceAll('{tokens}', String(file.tokens))}{over ? tr(', over the {cap} cap').replaceAll('{cap}', String(cap)) : ''} · {relativeTime.day(file.updatedAt, tr)}
+      {tr('{tokens} tokens').replaceAll('{tokens}', () => String(file.tokens))}{over ? tr(', over the {cap} cap').replaceAll('{cap}', () => String(cap)) : ''} · {relativeTime.day(file.updatedAt, tr)}
     </small>
   </button>
 }

@@ -329,7 +329,7 @@ function PluginToggles({ title, empty, items, selection, onChange, onInfo }: {
         return onInfo ? (
           <HStack key={item.id} gap={4}>
             <div className="plugin-toggle">{row}</div>
-            <IconButton title={tr('About {name}').replaceAll('{name}', item.name)} icon="info.circle" onClick={() => onInfo(item)} />
+            <IconButton title={tr('About {name}').replaceAll('{name}', () => item.name)} icon="info.circle" onClick={() => onInfo(item)} />
           </HStack>
         ) : row
       })}

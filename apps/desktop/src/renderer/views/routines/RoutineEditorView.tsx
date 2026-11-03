@@ -186,7 +186,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
                 <Icon name="chevron.down" size={10} weight="semibold" />
               </span>
               <Spacer />
-              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', durationText(timeout))}</Text> : null}
+              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout))}</Text> : null}
             </button>
             {advanced ? (
               <div className="routine-fade">
@@ -246,7 +246,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             </>
           ) : null}
           <Spacer />
-          <Button disabled={!canSave} onClick={() => void save()} title={tr('Save ({shortcut})').replaceAll('{shortcut}', saveShortcut)}>
+          <Button disabled={!canSave} onClick={() => void save()} title={tr('Save ({shortcut})').replaceAll('{shortcut}', () => saveShortcut)}>
             {busy ? <Spinner size={12} /> : null}
             {tr(busy ? 'Saving…' : routine ? 'Save changes' : 'Create routine')}
             {busy ? null : <span className="button-shortcut">{saveShortcut}</span>}

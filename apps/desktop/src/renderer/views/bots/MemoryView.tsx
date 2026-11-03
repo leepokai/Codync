@@ -86,7 +86,7 @@ export function MemoryCard({ botId }: { botId: string }) {
             <strong>{relativeTime.day(dream.at, tr)}{dream.undone ? tr(' · undone') : ''}</strong>
             {dream.added.map((c) => <Text key={`a${c.id}`} tone="added" className="line-clamp memory-clamp" title={c.text}>+ {c.text}</Text>)}
             {dream.archived.map((c) => <Text key={`r${c.id}`} tone="removed" className="line-clamp memory-clamp" title={c.text}>− {c.text}</Text>)}
-            {(dream.files ?? []).map((f) => <span key={`f${f.version}`} className="memory-muted">{tr('Added to {name}').replaceAll('{name}', f.name)}</span>)}
+            {(dream.files ?? []).map((f) => <span key={`f${f.version}`} className="memory-muted">{tr('Added to {name}').replaceAll('{name}', () => f.name)}</span>)}
           </div>),
         ]}
         {view?.projectMemory && section === 'harness' && <div className="memory-content">

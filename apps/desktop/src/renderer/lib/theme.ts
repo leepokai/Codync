@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react'
 
-
 /**
  * A media query read from one MediaQueryList and listened to on another: Chromium shares a list's
  * `matches` with its change detection, so a read while the window is hidden can swallow the `change`

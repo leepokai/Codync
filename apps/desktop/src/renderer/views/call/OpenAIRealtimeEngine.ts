@@ -2,7 +2,6 @@ import type { CallLink, CallSession } from './call-link'
 import { errorMessage, microphone, onDevicesChanged, PROGRESS_TAG, reconnect, VoiceEngine, VoiceSettings } from './voice'
 import { trNow } from '../../lib/l10n.ts'
 
-
 /**
  * OpenAI Realtime over WebRTC, this computer ↔ OpenAI directly: the microphone is a WebRTC audio
  * track, the model's voice plays from the remote track, and events (tools, replies) go over

@@ -8,7 +8,6 @@ import { botDetail } from './tray-summary'
 import { optionLabel, permissionHeadline, sortedOptions } from './thread/PermissionCard'
 import { trNow } from '../lib/l10n.ts'
 
-
 /** Tool calls in the island's ticker. */
 const STEPS = 3
 

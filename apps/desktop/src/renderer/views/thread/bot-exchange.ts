@@ -1,7 +1,6 @@
 import { isChat, type Entry, type BotMessage } from '../../../shared/models.ts'
 import { trNow } from '../../lib/l10n.ts'
 
-
 /** How a bot-to-bot message ended: still going, delivered, or it didn't complete. */
 export type BotOutcome = { kind: 'pending' } | { kind: 'done' } | { kind: 'failed'; detail: string }
 

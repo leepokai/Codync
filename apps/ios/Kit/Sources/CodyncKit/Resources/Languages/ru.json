@@ -1776,5 +1776,8 @@
   "Message from {bot}: {message}": "Сообщение от {bot}: {message}",
   "Could not start routine: {error}": "Не удалось запустить рутину: {error}",
   "Could not queue routine: {error}": "Не удалось поставить рутину в очередь: {error}",
-  "Routine · {routine}": "Рутина · {routine}"
+  "Routine · {routine}": "Рутина · {routine}",
+  "Queued": "В очереди",
+  "Retrying at {time}": "Повтор в {time}",
+  "Last run {status}": "Последний запуск: {status}"
 }

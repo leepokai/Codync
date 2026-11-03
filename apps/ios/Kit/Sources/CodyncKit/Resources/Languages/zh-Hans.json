@@ -1776,5 +1776,8 @@
   "Message from {bot}: {message}": "来自 {bot} 的消息：{message}",
   "Could not start routine: {error}": "无法启动例行任务：{error}",
   "Could not queue routine: {error}": "无法将例行任务加入队列：{error}",
-  "Routine · {routine}": "例行任务 · {routine}"
+  "Routine · {routine}": "例行任务 · {routine}",
+  "Queued": "排队中",
+  "Retrying at {time}": "将于 {time} 重试",
+  "Last run {status}": "上次运行：{status}"
 }

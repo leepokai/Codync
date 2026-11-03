@@ -7,7 +7,6 @@ import { Artifacts } from './artifacts'
 import type { CallCue } from '@shared/calls'
 import { trNow } from '../lib/l10n.ts'
 
-
 const REFRESH_TIMEOUT = 20_000
 const DROP_GRACE = 5000
 const INITIAL_GRACE = 1000

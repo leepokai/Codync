@@ -2,7 +2,6 @@ import type { SpeechEvent } from '@shared/ipc'
 import { onDeviceUnavailableReason, spokenText, VoiceEngine, VoiceSettings, type VoiceFailureKind } from './voice'
 import { trNow } from '../../lib/l10n.ts'
 
-
 /**
  * The reply's language from its script, for picking a voice (replies may be English while the
  * computer is in Chinese).

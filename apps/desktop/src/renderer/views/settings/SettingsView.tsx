@@ -107,7 +107,7 @@ function PageContent({ page }: { page: SettingsPage }) {
         </StoreContext.Provider>
       ) : (
         <CardForm>
-          <Text tone="secondary">{tr(isMac ? "Voice keys are kept by This Mac's host, which isn't running." : "Voice keys are kept by {computer}'s host, which isn't running.").replaceAll('{computer}', thisMac)}</Text>
+          <Text tone="secondary">{tr(isMac ? "Voice keys are kept by This Mac's host, which isn't running." : "Voice keys are kept by {computer}'s host, which isn't running.").replaceAll('{computer}', () => thisMac)}</Text>
         </CardForm>
       )
     case 'usage':
@@ -303,7 +303,7 @@ function UpdateSettings() {
           ...(updates.downloadPercent !== null
             ? [
                 <div key="progress" className="settings-row settings-appear">
-                  <ProgressBar value={updates.downloadPercent / 100} label={tr('Downloading Codync {version}').replaceAll('{version}', updates.availableVersion ?? '')} />
+                  <ProgressBar value={updates.downloadPercent / 100} label={tr('Downloading Codync {version}').replaceAll('{version}', () => updates.availableVersion ?? '')} />
                 </div>,
               ]
             : []),

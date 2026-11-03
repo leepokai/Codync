@@ -298,7 +298,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
           </CardSection>
           <VStack gap={6} className="agent-keys-notes">
             {method.description ? <span>{method.description}</span> : null}
-            <span>{tr('Saved on {name} only and given to {other} when it starts.').replaceAll('{name}', store.hostName).replaceAll('{other}', backend.name)}</span>
+            <span>{tr('Saved on {name} only and given to {other} when it starts.').replaceAll('{name}', () => store.hostName).replaceAll('{other}', () => backend.name)}</span>
             {method.link && URL.canParse(method.link) ? <WebLink title="Get a key" url={method.link} /> : null}
           </VStack>
         </VStack>

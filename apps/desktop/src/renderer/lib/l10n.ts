@@ -122,7 +122,7 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
   let result = phrase
   for (const [token, value] of caps) {
     const inner = VERBATIM.has(token) ? value : hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
-    result = result.replaceAll(token, inner)
+    result = result.split(token).join(inner)
   }
   return result
 }

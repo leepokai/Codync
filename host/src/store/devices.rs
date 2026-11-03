@@ -187,6 +187,14 @@ impl Store {
         Ok(())
     }
 
+    /// As `remove_push_tickets`, for the tickets a device registered up to `until` (ms): a newer one came after it
+    /// signed back in.
+    pub fn remove_push_tickets_until(&self, device_key: &str, until: i64) -> Result<()> {
+        let c = self.db.locked();
+        c.execute("DELETE FROM push_tickets WHERE device_key = ?1 AND created_at <= ?2", params![device_key, until])?;
+        Ok(())
+    }
+
     pub fn remove_push_ticket(&self, ticket: &str) -> Result<()> {
         let c = self.db.locked();
         // If the newest ticket for an identity is dead or superseded, do not fall back

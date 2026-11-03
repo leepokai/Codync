@@ -25,6 +25,7 @@ import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
+import { SignInCodeDialog } from './marketplace/ConnectorSheets'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
 import { SearchPalette } from './SearchPalette'
@@ -491,6 +492,7 @@ function ChatSplitView() {
       />
       <SectionNameDialog naming={naming} onClose={() => setNaming(null)} />
       <Dialog open={errorMessage !== null} title={tr('Something went wrong')} message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
+      <SignInCodeDialog />
     </div>
   )
 }

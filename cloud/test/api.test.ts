@@ -261,14 +261,19 @@ describe("devices", () => {
     const elsewhere = await newHost();
     expect((await claim(u, host)).status).toBe(200);
     expect((await claim(other, elsewhere)).status).toBe(200);
-    const signedOut = async (h: TestHost) => (await call("GET", "/v1/host/state", { key: h.sign })).body.signedOut;
+    const signedOut = async (h: TestHost) => (await call("GET", "/v1/host/state", { key: h.sign })).body.signedOutDevices;
     expect(await signedOut(host)).toEqual([]);
     const [hostWs, elsewhereWs] = await Promise.all([hostSocket(host), hostSocket(elsewhere)]);
+    const before = Date.now();
     expect((await call("POST", "/v1/devices/sign-out", { token: u.token, key: u.key })).status).toBe(200);
     // The account's computers pull now, not at their next poll; another account's hear nothing.
     await hostWs.nextT("cloud.changed");
     await elsewhereWs.none((m) => m.t === "cloud.changed");
-    expect(await signedOut(host)).toEqual([u.dk]);
+    const marks = await signedOut(host);
+    expect(marks).toEqual([{ deviceKey: u.dk, signedOutAgo: expect.any(Number) }]);
+    // In ms, as the host's push tickets: it drops the ones that came up to then, counted back on its own clock.
+    expect(marks[0].signedOutAgo).toBeGreaterThanOrEqual(0);
+    expect(marks[0].signedOutAgo).toBeLessThanOrEqual(Date.now() - before);
     expect(await signedOut(elsewhere)).toEqual([]);
     // Still in the account, so signing back in needs no new access: registering again clears it.
     expect((await call("POST", "/v1/devices/certificate", { token: u.token, key: u.key })).status).toBe(200);
@@ -513,7 +518,7 @@ describe("revocation reaches the relay", () => {
     await grantAccess(u, host);
     expect((await call("POST", "/v1/host/unclaim", { key: host.sign, body: {} })).status).toBe(200);
     const state = await call("GET", "/v1/host/state", { key: host.sign });
-    expect(state.body).toEqual({ owner: null, grants: [], requests: [], signedOut: [] });
+    expect(state.body).toEqual({ owner: null, grants: [], requests: [], signedOutDevices: [] });
     expect((await call("GET", "/v1/computers", { token: u.token })).body.computers).toEqual([]);
   });
 
@@ -582,7 +587,7 @@ describe("Clerk webhook", () => {
     const id = `msg_${ref.b64url(ref.random(8))}`;
     expect((await deliver(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
     expect((await call("GET", "/v1/me", { token: u.token })).body.error.code).toBe("accountDeleted");
-    expect((await call("GET", "/v1/host/state", { key: host.sign })).body).toEqual({ owner: null, grants: [], requests: [], signedOut: [] });
+    expect((await call("GET", "/v1/host/state", { key: host.sign })).body).toEqual({ owner: null, grants: [], requests: [], signedOutDevices: [] });
     expect((await deliver(id, { type: "user.deleted", data: { id: u.userId } })).status).toBe(200);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM processed_events WHERE event_id = ?").bind(id).first<{ n: number }>();
     expect(n?.n).toBe(1);

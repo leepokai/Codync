@@ -1,10 +1,12 @@
 # Interface languages
 
 Each device can choose Follow system, English, Simplified Chinese, Traditional
-Chinese, Japanese, Korean, French, German, Spanish or Russian. Desktop and phone settings
-hold the choice; the terminal command palette cycles its own saved preference.
-Regional variants use their language's catalog. Unsupported system languages use
-English. The saved `zh` identifier continues to mean Simplified Chinese.
+Chinese, Japanese, Korean, French, German, Spanish, Brazilian Portuguese or Russian.
+Desktop and phone settings hold the choice; the terminal command palette cycles
+its own saved preference. Regional variants use their language's catalog.
+Portuguese system tags (`pt`, `pt-BR`, `pt_BR.UTF-8`, `pt-PT`) use `pt-BR`, shown
+as **Português (Brasil)** after Spanish. Unsupported system languages use English.
+The saved `zh` identifier continues to mean Simplified Chinese.
 
 The canonical UTF-8 JSON catalogs live in
 `apps/ios/Kit/Sources/CodyncKit/Resources/Languages/`. iOS bundles them, desktop
@@ -17,11 +19,12 @@ Traditional Chinese retains its existing Simplified fallback. Translate an
 interface template before inserting a user's name or text. Conversation content
 is not translated. The desktop catalog test checks key and placeholder parity.
 
-The Russian catalog was translated with a fixed glossary (бот, ведущий бот, рутина,
-коннектор, Настройки, Войти/Выйти, разрешить/отклонить) and Apple's Russian names
-for system screens. Russian has three plural forms, so phrases with `{count}`
-use a count-neutral form ("Ботов: {count}"). The five other additional catalogs
-began as machine translations of public interface
+Russian system locales (including `ru-RU` and `ru_RU.UTF-8`) use `ru`, shown
+as **Русский** after Brazilian Portuguese. The Russian catalog uses a fixed
+glossary (бот, ведущий агент, рутина, коннектор) and count-neutral phrases such
+as «Ботов: {count}» so every number remains grammatical.
+
+The five additional catalogs began as machine translations of public interface
 copy, with reviewed overrides for common controls. They have not had a complete
 native-speaker review. Translation improvements should change the canonical
 catalog and run the catalog test, together with the affected client checks.

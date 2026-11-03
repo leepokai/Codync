@@ -1511,5 +1511,13 @@
   "This computer isn't in an account: it uses a private relay": "Этот компьютер не в аккаунте: он работает через приватный ретранслятор",
   "This computer isn't in your account": "Этот компьютер не в вашем аккаунте",
   "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "iPhone перестанет получать уведомления аккаунта, но сохранит компьютеры, и при повторном входе сканировать код не придётся. Чтобы отключить его от компьютеров, используйте «Начать заново» в настройках.",
-  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Телефон перестанет получать уведомления аккаунта, но сохранит компьютеры, и при повторном входе сканировать код не придётся. Чтобы отключить его от компьютеров, используйте «Начать заново» в настройках."
+  "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.": "Телефон перестанет получать уведомления аккаунта, но сохранит компьютеры, и при повторном входе сканировать код не придётся. Чтобы отключить его от компьютеров, используйте «Начать заново» в настройках.",
+  "Paste this code on the sign-in page that opens next.": "Вставьте этот код на странице входа, которая откроется далее.",
+  "Copy and open": "Скопировать и открыть",
+  "Code {code} copied: paste it on the page that opened, then ^r refreshes": "Код {code} скопирован: вставьте его на открывшейся странице, затем нажмите ^r для обновления",
+  "Code {code} copied: paste it at {url}, then ^r refreshes": "Код {code} скопирован: вставьте его на {url}, затем нажмите ^r для обновления",
+  "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "Код {code} скопирован. Вставьте его на странице входа, затем нажмите Enter для проверки. Ctrl+X — отмена.",
+  "Sign in instead of using a saved token": "Войти вместо использования сохранённого токена",
+  "↵ sign in instead of the token": "↵ войти вместо использования токена",
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "Код {code} скопирован: вставьте его на {url}, затем нажмите Enter для проверки. Ctrl+X — отмена."
 }

@@ -38,6 +38,9 @@ fun AccountStore.signOut() = sessionAction {
     val account = cloud?.pinningToken()
     transitions.withLock {
         NativeAccounts.signOut(old.sessionId)
+        // No push ticket goes out from here (a background registration finishes first): a computer keeps one that
+        // reaches it after the account marks this phone signed out, taking it for one sent on signing back in.
+        PushDelivery.retire(getApplication())
         account?.let { bestEffort("tell the account this phone signed out") { it.signOutThisDevice() } }
         switchAway(old.userId)
     }

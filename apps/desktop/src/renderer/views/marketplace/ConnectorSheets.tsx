@@ -1,13 +1,30 @@
 import { useEffect, useRef, useState } from 'react'
 import { CardForm, CardSection, ChoiceList, IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
-import { ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
+import { Dialog, ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
+import { useModel } from '../../lib/observable'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { errorText, market, needsSignIn, type InstalledConnector, type MarketConnector, type MarketInput } from './market-models'
 import { ErrorText, Field, WebLink } from './pieces'
 import { usePlugins } from './plugins'
+import { signInCode } from './sign-in-code'
 import { useTr } from '../../lib/use-language'
+
+/** A sign-in with a code (GitHub): the code to paste on its page, before the page opens. */
+export function SignInCodeDialog() {
+  const tr = useTr()
+  const prompt = useModel(signInCode)
+  return (
+    <Dialog
+      open={prompt.code !== null}
+      title={prompt.code ?? ''}
+      message={tr('Paste this code on the sign-in page that opens next.')}
+      actions={[{ title: 'Copy and open', action: () => prompt.open() }]}
+      onClose={() => prompt.close()}
+    />
+  )
+}
 
 /**
  * `addsAtOnce`: opened by an Add, so a connector with nothing to fill in installs at once. Opened to
@@ -38,7 +55,11 @@ export function InstallConnectorSheet({ item, requestId, addsAtOnce = true, done
       const c = await plugins.installConnector(item, option.id, values)
       setInstalled(c)
       setValues({})
-      if (needsSignIn(c)) await plugins.signIn(c.id)
+      // Cancelled: the sheet stays as it is.
+      if (needsSignIn(c) && !(await plugins.signIn(c.id))) {
+        setSaving(false)
+        return
+      }
       if (requestId) await market.finishConnectionRequest(client, requestId, { connectorId: c.id })
       else await market.verifyConnector(client, c.id)
       await plugins.refresh()

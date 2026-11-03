@@ -7,19 +7,12 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.36.0
+## 2.38.0
 ### zh-Hant
-- Codync 現在需要用 Apple、Google 或 GitHub 登入。以前沒登入就配對的電腦，第一次登入時會一起移進你的賬戶，不用再掃一次。
-- 登出後，這支手機不再收到通知，但會保留它的電腦，重新登入不用再掃描。
-- 可以在 App 裡刪除賬戶：點 Bots 分頁左上角的賬戶按鈕，再點「刪除賬戶」。
-- 配對會確認賬戶：在別人賬戶裡的電腦會告訴你它在誰的賬戶；還不在任何賬戶的電腦，會先在電腦上問一聲，再加入你的賬戶。
-- 也可以輸入 `codync-host pair` 印出的短代碼來配對，不用掃 QR code。
-- 新增俄文介面：到「設定」選擇語言。
+- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
+
+- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
 
 ### en-US
-- Sign in with Apple, Google or GitHub. Computers paired before come along, no new scan.
-- Signing out stops notifications and keeps your computers: sign back in, no scan.
-- Delete your account: account button (top left of Bots), then Delete account.
-- Pairing checks accounts: a computer in another account says whose; one in none asks first, then joins yours.
-- Or type the short code `codync-host pair` prints instead of scanning.
-- New Russian interface: pick it under Settings → Language.
+- Choose Português (Brasil) in Settings, or follow your Portuguese system language.
+- Choose Русский in Settings, or follow your Russian system language.

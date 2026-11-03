@@ -62,7 +62,7 @@ Decided 2026-11-02. A computer is in one account at most; a phone may know sever
 | What happens | On the phone | Computers and cloud |
 | --- | --- | --- |
 | The Clerk session ends on its own (expired, revoked elsewhere) | The sign-in screen; the account's key, computers and drafts stay. Signing in to the same account connects as before: no scan, no 6-digit check | Unchanged |
-| **Sign out** | The key, computers and drafts stay; signing back in to the same account connects as before, no scan, no check | The phone stays a device. Its alerts stop: the computers it reaches drop its push tickets (`unregisterDevice`), the account marks it signed out (`POST /v1/devices/sign-out`) and the other computers drop them on their next state pull (`signedOut`). Registering again at sign-in clears the mark |
+| **Sign out** | The key, computers and drafts stay; signing back in to the same account connects as before, no scan, no check | The phone stays a device. Its alerts stop: the computers it reaches drop its push tickets (`unregisterDevice`), the account marks it signed out (`POST /v1/devices/sign-out`) and the other computers drop those registered before it on their next state pull (`signedOutDevices`). Registering again at sign-in clears the mark |
 | Using another account | Only after signing out: both Clerk instances stay single-session (`single_session_mode`) | As signing out: the first account's computers keep the phone, without alerts, until it comes back |
 | **Start over**, **Delete account** | Start over erases every account's keys and data, accounts signed out here included; Delete account erases that account's | The open account's computers drop the phone (`forgetDevice`), the cloud revokes it (Delete account: Clerk's webhook does) |
 

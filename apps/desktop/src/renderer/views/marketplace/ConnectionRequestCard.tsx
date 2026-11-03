@@ -55,8 +55,9 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
       } else if (request.connectorId) {
         const id = request.connectorId
         const connector = (await market.connectors(client)).find((c) => c.id === id)
-        if (connector && needsSignIn(connector)) await pluginsFor(store).signIn(id)
-        await market.finishConnectionRequest(client, entry.id, { connectorId: id })
+        // Cancelled: the card stays pending.
+        const signedIn = !(connector && needsSignIn(connector)) || (await pluginsFor(store).signIn(id))
+        if (signedIn) await market.finishConnectionRequest(client, entry.id, { connectorId: id })
       } else if (request.registryName) {
         setItem(await market.connectorInfo(client, request.registryName))
       }

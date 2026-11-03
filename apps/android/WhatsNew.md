@@ -10,7 +10,6 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ## 2.38.0
 ### zh-Hant
 - 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
-
 - 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
 - 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如網路中斷），下次連上時會自動補上。
 

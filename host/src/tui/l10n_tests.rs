@@ -34,7 +34,7 @@ fn portuguese_system_locales_use_the_brazilian_catalog() {
 #[test]
 fn the_language_cycle_appends_portuguese_after_spanish() {
     let mut choice = AppLanguage::System;
-    for identifier in ["zh", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "pt-BR", "system"] {
+    for identifier in ["zh", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "pt-BR", "ru", "system"] {
         choice = choice.next();
         assert_eq!(choice.stored(), identifier);
         assert_eq!(AppLanguage::parse(identifier), choice);
@@ -75,6 +75,7 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
         ("fr_CA.UTF-8", AppLanguage::Fr),
         ("de-AT", AppLanguage::De),
         ("es_MX.UTF-8", AppLanguage::Es),
+        ("ru_RU.UTF-8", AppLanguage::Ru),
         ("nl_NL.UTF-8", AppLanguage::En),
         ("C.UTF-8", AppLanguage::En),
         ("", AppLanguage::En),

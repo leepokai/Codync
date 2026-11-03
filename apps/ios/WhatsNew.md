@@ -10,5 +10,8 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ### zh-Hant
 - 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
 
+- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
+
 ### en-US
 - Choose Português (Brasil) in Settings, or follow your Portuguese system language.
+- Choose Русский in Settings, or follow your Russian system language.

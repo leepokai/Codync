@@ -9,7 +9,7 @@ import org.junit.Test
 
 class AppLanguageTest {
     @Test fun additionalLanguagesResolveRegionsAndKeepExplicitChoices() {
-        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es)) {
+        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es, AppLanguage.Ru)) {
             assertEquals(language, AppLanguage.System.resolved(language.stored + "-XX"))
             assertEquals(language, language.resolved("zh-TW"))
             assertEquals(language, AppLanguage.fromStored(language.stored))
@@ -23,8 +23,8 @@ class AppLanguageTest {
         val language = AppLanguage.fromStored("pt-BR")
         assertEquals("pt-BR", AppLanguage.stored(language))
         assertEquals("Português (Brasil)", language.title)
-        assertEquals(language, AppLanguage.entries.last())
-        assertEquals(AppLanguage.Es, AppLanguage.entries[AppLanguage.entries.lastIndex - 1])
+        assertEquals(AppLanguage.Ru, AppLanguage.entries[AppLanguage.entries.indexOf(language) + 1])
+        assertEquals(AppLanguage.Es, AppLanguage.entries[AppLanguage.entries.indexOf(language) - 1])
         assertEquals("Português (Brasil)", AppLanguage.menuTitle(language, AppLanguage.En, false, emptyMap()))
         assertEquals(language, language.resolved("zh-TW"))
         assertEquals(language, language.resolved("en-US"))
@@ -43,6 +43,7 @@ class AppLanguageTest {
     @Test fun existingSystemLocalesKeepTheirCatalogs() {
         val locales = mapOf(
             "en-US" to AppLanguage.En,
+            "ru-RU" to AppLanguage.Ru,
             "zh-CN" to AppLanguage.Zh,
             "zh_Hans.UTF-8" to AppLanguage.Zh,
             "zh-TW" to AppLanguage.ZhHant,
@@ -56,7 +57,7 @@ class AppLanguageTest {
     }
 
     @Test fun unsupportedLanguagesKeepTheirFallbacks() {
-        for (tag in listOf("nl-NL", "ru-RU", "unknown", "")) {
+        for (tag in listOf("nl-NL", "it-IT", "unknown", "")) {
             assertEquals(tag, AppLanguage.En, AppLanguage.System.resolved(tag))
         }
         assertEquals(AppLanguage.System, AppLanguage.fromStored("unknown"))

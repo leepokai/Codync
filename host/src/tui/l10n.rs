@@ -24,6 +24,7 @@ enum AppLanguage {
     De,
     Es,
     PtBr,
+    Ru,
 }
 
 impl AppLanguage {
@@ -38,6 +39,7 @@ impl AppLanguage {
             "de" => Self::De,
             "es" => Self::Es,
             "pt-BR" => Self::PtBr,
+            "ru" => Self::Ru,
             _ => Self::System,
         }
     }
@@ -54,6 +56,7 @@ impl AppLanguage {
             Self::De => "de",
             Self::Es => "es",
             Self::PtBr => "pt-BR",
+            Self::Ru => "ru",
         }
     }
 
@@ -68,7 +71,8 @@ impl AppLanguage {
             Self::Fr => Self::De,
             Self::De => Self::Es,
             Self::Es => Self::PtBr,
-            Self::PtBr => Self::System,
+            Self::PtBr => Self::Ru,
+            Self::Ru => Self::System,
         }
     }
 }
@@ -111,6 +115,11 @@ static ES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
 static PT_BR: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/pt-BR.json"))
         .expect("pt-BR.json is a string map")
+});
+
+static RU: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/ru.json"))
+        .expect("ru.json is a string map")
 });
 
 static PREFERENCE: LazyLock<Mutex<AppLanguage>> = LazyLock::new(|| Mutex::new(read_preference()));
@@ -170,6 +179,7 @@ fn active_phrases() -> Option<&'static HashMap<String, String>> {
         AppLanguage::De => Some(&DE),
         AppLanguage::Es => Some(&ES),
         AppLanguage::PtBr => Some(&PT_BR),
+        AppLanguage::Ru => Some(&RU),
         AppLanguage::En | AppLanguage::System => None,
     }
 }
@@ -379,6 +389,7 @@ pub(in crate::tui) fn language_title() -> Cow<'static, str> {
         AppLanguage::De => Cow::Borrowed("Deutsch"),
         AppLanguage::Es => Cow::Borrowed("Español"),
         AppLanguage::PtBr => Cow::Borrowed("Português (Brasil)"),
+        AppLanguage::Ru => Cow::Borrowed("Русский"),
         AppLanguage::System => tr("Follow system"),
     }
 }
@@ -413,6 +424,7 @@ mod tests {
             (AppLanguage::Fr, &*super::FR),
             (AppLanguage::De, &*super::DE),
             (AppLanguage::Es, &*super::ES),
+            (AppLanguage::Ru, &*super::RU),
         ] {
             assert_eq!(
                 super::resolved_language(AppLanguage::System, &format!("{}_XX.UTF-8", language.stored())),
@@ -475,7 +487,8 @@ mod tests {
         assert_eq!(AppLanguage::ZhHant.next(), AppLanguage::En);
         assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
         assert_eq!(AppLanguage::Es.next(), AppLanguage::PtBr);
-        assert_eq!(AppLanguage::PtBr.next(), AppLanguage::System);
+        assert_eq!(AppLanguage::PtBr.next(), AppLanguage::Ru);
+        assert_eq!(AppLanguage::Ru.next(), AppLanguage::System);
         assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));

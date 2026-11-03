@@ -4,7 +4,7 @@ import { setMaxListeners } from 'node:events'
 import type { AppLanguage } from './l10n.ts'
 import type { TraySummary } from '../../shared/ipc.ts'
 
-test('Brazilian Portuguese persists its exact identifier and reaches the tray language contract', async (t) => {
+test('Additional languages persist their identifiers and reach the tray language contract', async (t) => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
   const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
   t.after(() => {
@@ -25,13 +25,15 @@ test('Brazilian Portuguese persists its exact identifier and reaches the tray la
     },
   })
   const { pref, prefs } = await import('./prefs.ts')
-  const language: TraySummary['language'] = 'pt-BR'
+  const languages: TraySummary['language'][] = ['pt-BR', 'ru']
   assert.equal(prefs.appLanguage.get(), 'system')
-  prefs.appLanguage.set(language)
-  assert.equal(stored.get('appLanguage'), '"pt-BR"')
-  assert.equal(pref<AppLanguage>('appLanguage', 'system').get(), 'pt-BR')
-  const event = Object.assign(new Event('storage'), { key: 'appLanguage', newValue: '"pt-BR"' })
-  prefs.appLanguage.set('en')
-  events.dispatchEvent(event)
-  assert.equal(prefs.appLanguage.get(), 'pt-BR')
+  for (const language of languages) {
+    prefs.appLanguage.set(language)
+    assert.equal(stored.get('appLanguage'), JSON.stringify(language))
+    assert.equal(pref<AppLanguage>('appLanguage', 'system').get(), language)
+    const event = Object.assign(new Event('storage'), { key: 'appLanguage', newValue: JSON.stringify(language) })
+    prefs.appLanguage.set('en')
+    events.dispatchEvent(event)
+    assert.equal(prefs.appLanguage.get(), language)
+  }
 })

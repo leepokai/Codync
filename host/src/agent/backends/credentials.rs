@@ -74,14 +74,19 @@ fn jwt_email(token: &str) -> Option<String> {
 }
 
 /// Claude Code keeps its sign-in in `~/.claude/.credentials.json`, under one of the `*Oauth`
-/// blocks; the access token is a JWT naming the account.
+/// blocks. The access token names the account when it's a JWT; on a subscription login it's an
+/// opaque token and the account lives in `~/.claude.json` instead.
 fn claude(home: &Path, installed: bool) -> Credential {
     let Some(v) = read(&home.join(".claude").join(".credentials.json")) else {
         return absent(installed);
     };
     for key in ["claudeAiOauth", "claudeProOauth", "claudeMaxOauth"] {
         if let Some(token) = v[key]["accessToken"].as_str().filter(|t| non_empty(t)) {
-            return Credential { signed_in: Some(true), email: jwt_email(token) };
+            let email = jwt_email(token).or_else(|| {
+                read(&home.join(".claude.json"))
+                    .and_then(|v| v["oauthAccount"]["emailAddress"].as_str().map(str::to_owned))
+            });
+            return Credential { signed_in: Some(true), email };
         }
     }
     absent(installed)
@@ -121,18 +126,36 @@ fn gemini(home: &Path, installed: bool) -> Credential {
     Credential { signed_in: Some(true), email }
 }
 
-/// Grok keeps its sign-in in `~/.grok/auth.json`, a flat map of `<issuer>::<client>.<field>`
-/// rows; a refresh token means signed in, and the `email` field names the account.
-#[allow(clippy::case_sensitive_file_extension_comparisons, reason = "field names in Grok's key map, not file extensions")]
+/// Grok keeps its sign-in in `~/.grok/auth.json`: one entry per `<issuer>::<client>`, the
+/// newer builds nesting the fields in an object, the older ones as a flat `<entry>.<field>`
+/// map. A refresh or access token means signed in, and the `email` field names the account.
+#[allow(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "field names in Grok's key map, not file extensions"
+)]
 fn grok(home: &Path, installed: bool) -> Credential {
     let Some(map) = read(&home.join(".grok").join("auth.json")).and_then(|v| v.as_object().cloned()) else {
         return absent(installed);
     };
-    let signed = map.keys().any(|k| k.ends_with(".refresh_token") || k.ends_with(".access_token"));
+    let has_token = |o: &serde_json::Map<String, Value>| {
+        ["refresh_token", "access_token"].iter().any(|f| o.get(*f).and_then(Value::as_str).is_some_and(non_empty))
+    };
+    let signed = map.iter().any(|(k, v)| {
+        k.ends_with(".refresh_token") || k.ends_with(".access_token") || v.as_object().is_some_and(has_token)
+    });
     if !signed {
         return absent(installed);
     }
-    let email = map.iter().find_map(|(k, v)| k.ends_with(".email").then(|| v.as_str().map(str::to_owned))).flatten();
+    let email = map
+        .iter()
+        .find_map(|(k, v)| {
+            if k.ends_with(".email") {
+                v.as_str().map(str::to_owned)
+            } else {
+                v.as_object().and_then(|o| o.get("email")).and_then(Value::as_str).map(str::to_owned)
+            }
+        })
+        .filter(|e| non_empty(e));
     Credential { signed_in: Some(true), email }
 }
 
@@ -229,6 +252,22 @@ mod tests {
     }
 
     #[test]
+    fn claude_falls_back_to_the_account_in_its_settings() {
+        // A subscription login: the access token is opaque and the account lives in `~/.claude.json`.
+        let home = home_with(&[
+            (
+                ".claude/.credentials.json",
+                r#"{"claudeAiOauth": {"accessToken": "sk-ant-oat01-opaque", "subscriptionType": "pro"}}"#,
+            ),
+            (".claude.json", r#"{"oauthAccount": {"emailAddress": "claude@x.co"}}"#),
+        ]);
+        assert_eq!(claude(&home, true), Credential { signed_in: Some(true), email: Some("claude@x.co".to_owned()) });
+        let no_settings =
+            home_with(&[(".claude/.credentials.json", r#"{"claudeAiOauth": {"accessToken": "sk-ant-oat01-opaque"}}"#)]);
+        assert_eq!(claude(&no_settings, true), Credential { signed_in: Some(true), email: None });
+    }
+
+    #[test]
     fn codex_reads_chatgpt_and_api_key_logins() {
         let chatgpt = home_with(&[(
             ".codex/auth.json",
@@ -256,13 +295,19 @@ mod tests {
     }
 
     #[test]
-    fn grok_reads_its_flat_map() {
-        let home = home_with(&[(
+    fn grok_reads_its_nested_and_flat_maps() {
+        // Newer builds: the fields nest under the `<issuer>::<client>` entry.
+        let nested = home_with(&[(
+            ".grok/auth.json",
+            r#"{"https://auth.x.ai::c1": {"auth_mode": "oidc", "refresh_token": "r", "email": "grok@x.co"}}"#,
+        )]);
+        assert_eq!(grok(&nested, true), Credential { signed_in: Some(true), email: Some("grok@x.co".to_owned()) });
+        let flat = home_with(&[(
             ".grok/auth.json",
             r#"{"https://auth.x.ai::c1.refresh_token": "r", "https://auth.x.ai::c1.email": "grok@x.co"}"#,
         )]);
-        assert_eq!(grok(&home, true), Credential { signed_in: Some(true), email: Some("grok@x.co".to_owned()) });
-        let out = home_with(&[(".grok/auth.json", r#"{"https://auth.x.ai::c1.auth_mode": "oidc"}"#)]);
+        assert_eq!(grok(&flat, true), Credential { signed_in: Some(true), email: Some("grok@x.co".to_owned()) });
+        let out = home_with(&[(".grok/auth.json", r#"{"https://auth.x.ai::c1": {"auth_mode": "oidc"}}"#)]);
         assert_eq!(grok(&out, true), Credential { signed_in: Some(false), email: None });
     }
 

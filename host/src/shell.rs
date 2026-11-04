@@ -105,15 +105,22 @@ pub fn user_path() -> Option<String> {
 
 /// Quotes one word for [`line`].
 pub fn quote(s: &str) -> String {
-    let plain = |c: char| c.is_ascii_alphanumeric() || "-_./=@:+,".contains(c) || (cfg!(windows) && c == '\\');
+    if !cfg!(windows) {
+        return posix_quote(s);
+    }
+    let plain = |c: char| c.is_ascii_alphanumeric() || "-_./=@:+,\\".contains(c);
     if !s.is_empty() && s.chars().all(plain) {
         s.to_owned()
-    } else if cfg!(windows) {
+    } else {
         // `cmd` has no escape for a quote inside quotes; Windows paths can't hold one.
         format!("\"{}\"", s.replace('"', ""))
-    } else {
-        format!("'{}'", s.replace('\'', "'\\''"))
     }
+}
+
+/// [`quote`] for a POSIX shell on every platform, for command lines only a POSIX shell runs.
+pub fn posix_quote(s: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || "-_./=@:+,".contains(c);
+    if !s.is_empty() && s.chars().all(plain) { s.to_owned() } else { format!("'{}'", s.replace('\'', "'\\''")) }
 }
 
 /// `KEY=value ` assignments before a command. Unix goes through `env` so the result

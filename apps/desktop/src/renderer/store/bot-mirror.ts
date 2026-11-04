@@ -1,4 +1,5 @@
 import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
+import { mixesAgents } from '@shared/fallbacks'
 import {
   type AccessRequest,
   type Bot,
@@ -19,6 +20,7 @@ import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
+import { trNow } from '../lib/l10n.ts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -115,7 +117,7 @@ export class BotMirror extends Observable {
     super()
     this.computer = computer
     this.composerDrafts = new ComposerDrafts(localStorage, `codync-drafts-v1-${JSON.stringify([contextId, computer.id])}`,
-      () => this.setError("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it."))
+      () => this.setError(trNow("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it.")))
     this.loadCache()
   }
 
@@ -186,6 +188,12 @@ export class BotMirror extends Observable {
     return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
   }
 
+  /** The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+   * `hello`: it names the logos, and without it every badge would be the same generic one. */
+  get mixesAgents(): boolean {
+    return this.hello !== null && mixesAgents([...this.bots.values()].filter((b) => !b.hidden))
+  }
+
   get hiddenBots(): Bot[] {
     return [...this.bots.values()].filter((b) => b.hidden).sort((a, b) => a.name.localeCompare(b.name))
   }
@@ -214,7 +222,7 @@ export class BotMirror extends Observable {
 
   /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
   authorName(id: string | null | undefined, fallback?: string) {
-    return (id && this.bots.get(id)?.name) || fallback || 'A deleted bot'
+    return (id && this.bots.get(id)?.name) || fallback || trNow('A deleted bot')
   }
 
   get connectionLabel() {
@@ -339,6 +347,6 @@ export function builtInBackendName(id: string) {
     case 'gemini':
       return 'Gemini CLI'
     default:
-      return 'Custom agent'
+      return trNow('Custom agent')
   }
 }

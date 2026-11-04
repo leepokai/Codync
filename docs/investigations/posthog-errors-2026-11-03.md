@@ -31,3 +31,15 @@ root cause and fixed in 2.38.1. Method as in the [2026-10-19 triage](posthog-err
   window that reloads keeps reporting each crash.
 - 4: the cause is inferred and the rate-changing path never runs on a simulator (input and hardware
   are both 48 kHz there; `MicTapTests` covers it): watch issue `01a19565` after 2.38.1.
+- Not ours: a desktop renderer `TypeError` (issue `01a1a14b`), one Windows user on 2.34.2, four
+  times in two minutes while a group chat was answering. That install's renderer bundle had been
+  edited on the computer: the same user's earlier `ReferenceError` on 2.33.6 (issue `01a19268`)
+  runs through `window.__antigravity_handle_composer_keydown` at line 55425, a function no Codync
+  release or commit has, in a bundle whose shipped copy ends at line 55267, called from an
+  `onKeyDown` at a column the shipped line doesn't reach. On 2.34.2 every React frame matches the
+  shipped Windows bundle (taken from the release's installer), but the composer's frame lands
+  inside the `@`-mention parser's inner function, which can't throw there and would have its own
+  frame: the edited composer code is what threw. Since 2.38.1 the window shows *Something went
+  wrong* with *Try again* instead of going blank. To check a Windows report against the shipped
+  code, cut the 7z payload out of `codync-windows-x64.exe` (it starts at the `7z\xBC\xAF\x27\x1C`
+  signature), extract `resources/app.asar` with `bsdtar` and read it with `@electron/asar`.

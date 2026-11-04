@@ -64,7 +64,7 @@ export function SkillSheet({ skill }: { skill: SkillRef }) {
             <Text size="subheadline" tone="secondary">{skill.description}</Text>
           </CardSection>
         ) : null}
-        <CardSection title="Instructions" footer={added ? 'Bots read these before using the skill.' : 'Add it to let bots use these instructions.'}>
+        <CardSection title="Instructions" footer={tr(added ? 'Bots read these before using the skill.' : 'Add it to let bots use these instructions.')}>
           {markdown ? <MarkdownText text={markdown} /> : markdown === '' ? <Text tone="secondary">{tr(`No instructions.`)}</Text> : error ? null : <Spinner />}
         </CardSection>
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}

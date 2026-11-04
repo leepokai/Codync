@@ -20,15 +20,24 @@ internal object AppearancePreferences {
     private var stored: SharedPreferences? = null
     private val current = MutableStateFlow(Appearance.System)
     val mode = current.asStateFlow()
+    private val logos = MutableStateFlow(true)
+    /** The roster marks each bot with its agent's logo while the bots run more than one agent (iOS `AgentLogos`). */
+    val agentLogos = logos.asStateFlow()
 
     fun initialize(context: Context) {
         val preferences = context.getSharedPreferences("codync-appearance", Context.MODE_PRIVATE)
         stored = preferences
         current.value = Appearance.entries.firstOrNull { it.value == preferences.getString("mode", null) } ?: Appearance.System
+        logos.value = preferences.getBoolean("showAgentLogos", true)
     }
 
     fun select(value: Appearance) {
         stored?.edit()?.putString("mode", value.value)?.apply()
         current.value = value
+    }
+
+    fun showAgentLogos(on: Boolean) {
+        stored?.edit()?.putBoolean("showAgentLogos", on)?.apply()
+        logos.value = on
     }
 }

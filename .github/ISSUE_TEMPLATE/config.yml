@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help
+    url: https://discord.gg/KBAX3Qznxh
+    about: Ask on Discord.
+  - name: Security vulnerability
+    url: https://github.com/leepokai/Codync/security/advisories/new
+    about: Report it privately instead of opening a public issue.

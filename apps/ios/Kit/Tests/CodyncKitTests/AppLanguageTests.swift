@@ -187,4 +187,33 @@ extension AppLanguageTests {
         #expect(AppLanguage.preference(in: store) == .ja)
         store.removeObject(forKey: AppLanguage.storageKey)
     }
+
+    @Test func botRoutineAndMessageSlotsKeepWhatTheUserWrote() {
+        func ru(_ text: String) -> String { L10n.tr(text, preference: .ru, systemIsChinese: false) }
+        #expect(ru("Created bot connected") == "Создан бот connected")
+        #expect(ru("Created bot Reviewer").hasSuffix("Reviewer"))
+        #expect(ru("Routine · Проверка почты") == "Рутина · Проверка почты")
+        #expect(ru("Routine · Settings") == "Рутина · Settings")
+        #expect(ru("Message from Reviewer: Settings") == "Сообщение от Reviewer: Settings")
+    }
+}
+
+extension AppLanguageTests {
+    @Test func filledTemplatesPreserveNamesAndSubstituteValuesOnlyOnce() {
+        for language in AppLanguage.allCases where language != .system && language != .en {
+            for name in ["Plan", "connected", "Standby", "$&", "{hint}"] {
+                let expected = L10n.tr("Routine · {name}", preference: language)
+                    .replacingOccurrences(of: "{name}", with: name)
+                #expect(L10n.tr("Routine · \(name)", preference: language) == expected)
+                let title = L10n.tr("Message about “{title}”", preference: language)
+                    .replacingOccurrences(of: "{title}", with: name)
+                #expect(L10n.tr("Message about “\(name)”", preference: language) == title)
+            }
+            let hint = "Install Claude Code and run `claude auth login`."
+            let expected = L10n.tr("{name} isn't set up on this computer. {hint}", preference: language)
+                .replacingOccurrences(of: "{hint}", with: L10n.tr(hint, preference: language))
+                .replacingOccurrences(of: "{name}", with: "{hint}")
+            #expect(L10n.tr("{hint} isn't set up on this computer. \(hint)", preference: language) == expected)
+        }
+    }
 }

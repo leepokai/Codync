@@ -214,6 +214,10 @@ public final class BotStore {
         }
     }
 
+    /// The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+    /// `hello`: it names the logos, and without it every badge would be the same generic one.
+    public var mixesAgents: Bool { hello != nil && bots.values.filter { !$0.hidden }.mixesAgents }
+
     /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
     public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
-import { draftOf, type Bot, type BotDraft, type DirListing, type Personality } from '@shared/models'
+import { draftOf, type Bot, type BotDraft, type Personality } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { ProactivePolicySection } from '../../components/ProactivePolicySection'

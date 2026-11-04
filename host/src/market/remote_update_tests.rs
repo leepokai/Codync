@@ -236,7 +236,7 @@ async fn http_edit_stays_saved_when_sign_in_is_needed_and_preserves_bot_selectio
     assert_eq!(updated.description, "saved despite verification");
     assert_eq!(updated.headers["X-New"], "private");
     assert_eq!(hub.store.bot("uses-remote").unwrap().unwrap().config.connectors, ["remote"]);
-    assert!(hub.store.bot("unrelated").unwrap().unwrap().config.connectors.is_empty());
+    assert_eq!(hub.store.bot("unrelated").unwrap().unwrap().config.connectors, Vec::<String>::new());
     server.abort();
     let _ = server.await;
     std::fs::remove_dir_all(dir).unwrap();

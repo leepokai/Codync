@@ -26,7 +26,7 @@ import kotlinx.serialization.json.jsonObject
     fun toolsText(): String = tools.joinToString(", ") { if (it.startsWith("execute:")) it.removePrefix("execute:").ifEmpty { "commands" } else it }
 
     companion object {
-        private val STEP = Regex("^\d+\.\s.*")
+        private val STEP = Regex("^\\d+\\.\\s.*")
 
         fun decodeAll(response: JsonElement): List<SkillProposal> =
             WireJson.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(serializer()), response.jsonObject.getValue("proposals"))

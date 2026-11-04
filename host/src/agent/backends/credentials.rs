@@ -37,8 +37,7 @@ pub fn for_id(id: &str) -> Credential {
 fn opencode_candidates(home: &Path) -> Vec<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .filter(|p| !p.as_os_str().is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".local").join("share"));
+        .map_or_else(|| home.join(".local").join("share"), PathBuf::from);
     let mut candidates = vec![base.join("opencode").join("auth.json")];
     if let Some(appdata) = std::env::var_os("APPDATA") {
         candidates.push(PathBuf::from(appdata).join("opencode").join("auth.json"));
@@ -115,7 +114,7 @@ fn gemini(home: &Path, installed: bool) -> Credential {
     let Some(v) = read(&home.join(".gemini").join("oauth_creds.json")) else {
         return absent(installed);
     };
-    if v["refresh_token"].as_str().filter(|t| non_empty(t)).is_none() {
+    if v["refresh_token"].as_str().is_none_or(|t| !non_empty(t)) {
         return absent(installed);
     }
     let email = v["id_token"].as_str().and_then(jwt_email).or_else(|| v["email"].as_str().map(str::to_owned));
@@ -124,6 +123,7 @@ fn gemini(home: &Path, installed: bool) -> Credential {
 
 /// Grok keeps its sign-in in `~/.grok/auth.json`, a flat map of `<issuer>::<client>.<field>`
 /// rows; a refresh token means signed in, and the `email` field names the account.
+#[allow(clippy::case_sensitive_file_extension_comparisons, reason = "field names in Grok's key map, not file extensions")]
 fn grok(home: &Path, installed: bool) -> Credential {
     let Some(map) = read(&home.join(".grok").join("auth.json")).and_then(|v| v.as_object().cloned()) else {
         return absent(installed);
@@ -182,10 +182,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn jwt(claims: Value) -> String {
+    fn jwt(claims: &Value) -> String {
         use base64::Engine;
         let encode = |v: &Value| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(v.to_string());
-        format!("{}.{}.{}", encode(&json!({"alg": "none"})), encode(&claims), "signature")
+        format!("{}.{}.{}", encode(&json!({"alg": "none"})), encode(claims), "signature")
     }
 
     /// A throwaway home directory holding `files` (relative path → body).
@@ -207,10 +207,10 @@ mod tests {
 
     #[test]
     fn a_jwt_payload_gives_its_email_claim() {
-        let token = jwt(json!({"sub": "1", "email": "sebasvilledah25@gmail.com"}));
+        let token = jwt(&json!({"sub": "1", "email": "sebasvilledah25@gmail.com"}));
         assert_eq!(jwt_email(&token), Some("sebasvilledah25@gmail.com".to_owned()));
         assert_eq!(jwt_email("not-a-jwt"), None);
-        assert_eq!(jwt_email(&jwt(json!({"sub": "1"}))), None, "no email claim");
+        assert_eq!(jwt_email(&jwt(&json!({"sub": "1"}))), None, "no email claim");
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
             ".claude/.credentials.json",
             &format!(
                 "{{\"claudeAiOauth\": {{\"accessToken\": \"{}\", \"subscriptionType\": \"pro\"}}}}",
-                jwt(json!({"email": "claude@x.co"}))
+                jwt(&json!({"email": "claude@x.co"}))
             ),
         )]);
         assert_eq!(claude(&home, true), Credential { signed_in: Some(true), email: Some("claude@x.co".to_owned()) });
@@ -234,7 +234,7 @@ mod tests {
             ".codex/auth.json",
             &format!(
                 "{{\"auth_mode\": \"chatgpt\", \"tokens\": {{\"id_token\": \"{}\"}}}}",
-                jwt(json!({"email": "codex@x.co"}))
+                jwt(&json!({"email": "codex@x.co"}))
             ),
         )]);
         assert_eq!(codex(&chatgpt, true), Credential { signed_in: Some(true), email: Some("codex@x.co".to_owned()) });
@@ -248,7 +248,7 @@ mod tests {
     fn gemini_reads_its_oauth_creds() {
         let home = home_with(&[(
             ".gemini/oauth_creds.json",
-            &format!("{{\"refresh_token\": \"r\", \"id_token\": \"{}\"}}", jwt(json!({"email": "gemini@x.co"}))),
+            &format!("{{\"refresh_token\": \"r\", \"id_token\": \"{}\"}}", jwt(&json!({"email": "gemini@x.co"}))),
         )]);
         assert_eq!(gemini(&home, true), Credential { signed_in: Some(true), email: Some("gemini@x.co".to_owned()) });
         let out = home_with(&[(".gemini/oauth_creds.json", "{\"refresh_token\": \"\"}")]);
@@ -270,7 +270,7 @@ mod tests {
     fn opencode_reads_its_auth_file() {
         let home = home_with(&[(".local/share/opencode/auth.json", r#"{"anthropic": {"type": "oauth"}}"#)]);
         let path = home.join(".local/share/opencode/auth.json");
-        assert_eq!(opencode(&[path.clone()], true), Credential { signed_in: Some(true), email: None });
+        assert_eq!(opencode(std::slice::from_ref(&path), true), Credential { signed_in: Some(true), email: None });
         let empty = home_with(&[(".local/share/opencode/auth.json", "{}")]);
         let empty_path = empty.join(".local/share/opencode/auth.json");
         assert_eq!(opencode(&[empty_path], true), Credential { signed_in: Some(false), email: None });

@@ -82,10 +82,7 @@ pub fn set_signed_in(id: &str, state: Option<bool>) {
 pub fn merged(id: &str, from_files: Option<bool>) -> Option<bool> {
     match signed_in(id) {
         Some(live) => Some(live),
-        None => from_files.map(|files| {
-            set_signed_in(id, Some(files));
-            files
-        }),
+        None => from_files.inspect(|&files| set_signed_in(id, Some(files))),
     }
 }
 

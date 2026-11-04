@@ -179,6 +179,7 @@ pub struct Acp {
     child: Arc<tokio::sync::Mutex<Process>>,
     /// The process (and, on Unix, process group) leader.
     pid: Option<u32>,
+    stopped: tokio::sync::watch::Sender<Option<std::result::Result<(), String>>>,
 }
 
 impl Acp {
@@ -197,9 +198,17 @@ impl Acp {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        // Its own group, so `kill` can stop everything it started.
+        // Own the Unix session, including MCP servers that create another process group.
         #[cfg(unix)]
-        process.process_group(0);
+        // SAFETY: setsid is async-signal-safe; the child has not exec'd or started threads.
+        unsafe {
+            process.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
         #[cfg(windows)]
         process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
@@ -274,6 +283,7 @@ impl Acp {
             pending,
             child,
             pid,
+            stopped: tokio::sync::watch::channel(None).0,
         });
         note_started(&acp);
         Ok((acp, rx))
@@ -329,11 +339,32 @@ impl Acp {
         if !child.begin_stop() {
             return;
         }
-        self.stdin.lock().await.take();
+        self.stopped.send_replace(None);
+        let mut stdin = self.stdin.lock().await;
+        stdin.take();
+        drop(stdin);
         let owned = self.child.clone();
         let mut stopping = STOPPING.locked();
         stopping.retain(|task| !task.is_finished());
-        stopping.push(tokio::spawn(async move { owned.lock().await.stop_within(EXIT_GRACE).await }));
+        let completed = self.stopped.clone();
+        stopping.push(tokio::spawn(async move {
+            let mut process = owned.lock().await;
+            let stopped = process.stop_within(EXIT_GRACE).await;
+            let result = stopped.map_err(|e| format!("{e:#}"));
+            if let Err(error) = &result {
+                process.retry_stop();
+                tracing::warn!(%error, "agent cleanup failed");
+            }
+            completed.send_replace(Some(result));
+        }));
+    }
+    /// Retires this allocation before a replacement can consume its resources.
+    pub async fn stop_and_wait(&self) -> Result<()> {
+        let mut completed = self.stopped.subscribe();
+        self.kill().await;
+        let observed = completed.wait_for(Option::is_some).await;
+        let result = observed.context("agent cleanup task exited")?;
+        result.clone().expect("wait_for observed completion").map_err(anyhow::Error::msg)
     }
 }
 

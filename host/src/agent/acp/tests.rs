@@ -140,3 +140,21 @@ async fn request_response_roundtrip() {
     }
     assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_transient_cleanup_failure_keeps_ownership_and_can_be_retried() {
+    let (acp, _) = Acp::spawn("sleep 60", "/tmp", &[]).unwrap();
+    let pid = i32::try_from(acp.pid().unwrap()).unwrap();
+    let mut process = acp.child.lock().await;
+    process.fail_next_stop();
+    drop(process);
+    let first = acp.stop_and_wait().await;
+    assert!(first.is_err());
+    // SAFETY: signal zero tests existence without signalling.
+    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "the failed cleanup still owns a live allocation");
+    let second = acp.stop_and_wait().await;
+    second.unwrap();
+    // SAFETY: signal zero tests existence without signalling.
+    assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "retry actually stopped the allocation");
+}

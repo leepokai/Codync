@@ -5,6 +5,7 @@
 //! Agents that can't load a session keep everything: stopping them would lose the conversation.
 
 use super::Actor;
+use anyhow::Result;
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -63,13 +64,16 @@ impl Actor {
         match release {
             Release::Agent => {
                 tracing::info!(bot = %self.cfg.id, "stopping an idle agent");
-                if let Some(conn) = self.conn.take() {
-                    conn.acp.kill().await;
+                if let Err(error) = self.retire_agent("idle").await {
+                    tracing::warn!(%error, "couldn't retire idle agent");
                 }
             }
             Release::Sessions(sessions) => {
                 for sid in sessions {
-                    self.close_session(&sid).await;
+                    let closed = self.close_session(&sid).await;
+                    if closed.is_err() {
+                        break;
+                    }
                 }
             }
             Release::Nothing => {}
@@ -92,31 +96,48 @@ impl Actor {
     /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`].
     pub(super) async fn release_spent(&mut self, sid: &str) {
         let Some(conn) = &self.conn else { return };
-        if !conn.sessions.load {
-            return;
-        }
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
-        if alone && !background_work(conn.acp.pid()).await {
-            tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
-            if let Some(conn) = self.conn.take() {
-                conn.acp.kill().await;
+        let can_close = conn.sessions.close;
+        let can_load = conn.sessions.load;
+        if can_load && alone && !background_work(conn.acp.pid()).await {
+            if let Err(error) = self.retire_agent("routine_finished").await {
+                tracing::warn!(%error, "couldn't retire routine agent");
             }
         } else {
-            self.close_reloadable(sid).await;
+            let closed = if can_close {
+                self.close_session(sid).await
+            } else {
+                Err(anyhow::anyhow!("session close unsupported"))
+            };
+            if closed.is_ok() {
+                return;
+            }
+            if can_load && let Err(error) = self.recycle_agent("routine_finished").await {
+                tracing::warn!(bot = %self.cfg.id, %error, "routine resources retained until safe recycling");
+            }
         }
     }
 
-    /// Closes a session the agent can load again when it's next needed, like one a turn failed in (see
-    /// `acp::may_end_session`): the next turn loads it afresh instead of finding it dead.
+    /// A failed live session must be released before loading it again.
     pub(super) async fn close_reloadable(&mut self, sid: &str) {
-        if self.conn.as_ref().is_some_and(|c| c.sessions.close && c.sessions.load && c.loaded.contains_key(sid)) {
-            self.close_session(sid).await;
+        let Some(conn) = &self.conn else { return };
+        if !conn.sessions.load || !conn.loaded.contains_key(sid) {
+            return;
+        }
+        if conn.sessions.close {
+            let closed = self.close_session(sid).await;
+            if closed.is_ok() {
+                return;
+            }
+        }
+        if let Err(error) = self.recycle_agent("session_failed").await {
+            tracing::warn!(%error, "couldn't retire failed session");
         }
     }
 
-    async fn close_session(&mut self, sid: &str) {
+    pub(super) async fn close_session(&mut self, sid: &str) -> Result<()> {
         let closed = self.session_request("session/close", json!({ "sessionId": sid })).await;
-        let Some(conn) = self.conn.as_mut() else { return };
+        let Some(conn) = self.conn.as_mut() else { return closed.map(drop) };
         match closed {
             Ok(_) => {
                 tracing::info!(bot = %self.cfg.id, session = sid, "closed a session");
@@ -126,12 +147,15 @@ impl Actor {
                 conn.mode_set.remove(sid);
                 conn.usage.remove(sid);
                 conn.renamed.remove(sid);
+                conn.pending_models.remove(sid);
                 self.applied_system.remove(sid);
+                Ok(())
             }
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close a session");
                 // Try again after another idle period rather than every check.
                 conn.loaded.insert(sid.to_owned(), Instant::now());
+                Err(error)
             }
         }
     }
@@ -143,7 +167,7 @@ impl Actor {
 /// their own (Codex starts each one in its own group). Unsure counts as busy.
 // ponytail: a dev server keeps its agent (and memory) indefinitely; add a cap if that matters.
 #[cfg(unix)]
-async fn background_work(leader: Option<u32>) -> bool {
+pub(super) async fn background_work(leader: Option<u32>) -> bool {
     let Some(leader) = leader else { return true };
     let listed = tokio::process::Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output().await;
     let Ok(listed) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes")) else {
@@ -175,7 +199,7 @@ fn session(pid: u32) -> Option<i32> {
 /// ends its whole process tree there, so its agents are never released.
 #[cfg(windows)]
 #[allow(clippy::unused_async)] // the Unix check's signature
-async fn background_work(_leader: Option<u32>) -> bool {
+pub(super) async fn background_work(_leader: Option<u32>) -> bool {
     true
 }
 

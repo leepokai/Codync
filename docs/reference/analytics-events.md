@@ -175,3 +175,11 @@ rating. Neither StoreKit nor Google Play provides those outcomes. The [invitatio
 describes timing, exclusions, and cooldowns.
 
 Both phones also report `link_opened` with `link: issues` for their independent **Report an issue** action, and `link: app_store` for **Update Codync** (Android opens Google Play).
+
+## Agent resource retirement
+
+| Event | Sender | Properties |
+| --- | --- | --- |
+| `agent_retired` | Host | `reason`: `routine_finished`, `session_failed`, `idle`, `instructions_changed`, `session_budget`, `tools_changed`, `load_failed`, `session_timeout`, `setup_cancelled`; `outcome`: `done` or `failed`; `sessions`: live session count; `duration_ms`: cleanup duration |
+
+The local diagnostic log also identifies the bot and process allocation. Those identities, prompts and connector credentials are never properties of this event.

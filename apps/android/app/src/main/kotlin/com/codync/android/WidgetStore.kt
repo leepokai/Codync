@@ -12,6 +12,8 @@ import kotlinx.serialization.Serializable
 
 /** Every write checks the original account activation, including background responses. */
 internal object WidgetStore {
+    /** How long a card keeps saying "Sending…" for an answer whose work hasn't finished. */
+    private const val SENDING_MS = 90_000L
     val changes = MutableStateFlow(0L)
     private fun activeFile(context: Context) = AtomicFile(File(context.noBackupFilesDir, "widget-owner.json"))
     private fun feedFile(context: Context, owner: WidgetOwner) = AtomicFile(File(LocalStore(context, owner.context).directory, "widget-feed.json"))
@@ -38,18 +40,30 @@ internal object WidgetStore {
 
     @Synchronized fun publish(context: Context, expected: WidgetOwner, computer: Computer?, bots: List<Bot>,
         usage: UsageReport, freshBots: Boolean, freshUsage: Boolean, now: Long = System.currentTimeMillis(),
-        expectedRevision: Long? = null): Boolean {
+        expectedRevision: Long? = null, approvals: List<WidgetApproval> = emptyList()): Boolean {
         if (owner(context) != expected || expectedRevision != null && changes.value != expectedRevision) return false
         val file = feedFile(context, expected)
         val previous = read<WidgetFeed>(file)?.takeIf { it.computerId == computer?.id } ?: WidgetFeed(scope = expected.scope)
         val next = WidgetFeed(expected.scope, computer?.id, computer?.name.orEmpty().take(256), widgetBots(bots),
             if (freshBots) now else previous.botsAt, usage, if (freshUsage) now else
                 if (usage != previous.usage) usage.providers.mapNotNull { it.updatedAt?.takeIf { time -> time > 0 } }.minOrNull() ?: 0
-                else previous.usageAt)
+                else previous.usageAt,
+            // A read that only refreshed usage keeps what it knew; a report of the bots replaces it, and a read that saw none leaves none.
+            approvals = if (freshBots) approvals.map { it.copy(at = now) } else previous.approvals)
         if (previous == next) return true
         write(file, next)
         changed()
         return true
+    }
+
+    /** A background read failed: the widgets say so instead of showing the last numbers as current. The next report clears it. */
+    @Synchronized fun markOffline(context: Context, expected: WidgetOwner, now: Long = System.currentTimeMillis()) {
+        if (owner(context) != expected) return
+        val file = feedFile(context, expected)
+        val previous = read<WidgetFeed>(file) ?: return
+        if (previous.offlineSince > 0) return
+        write(file, previous.copy(offlineSince = now))
+        changed()
     }
 
     @Synchronized fun selectProvider(context: Context, widget: Int, provider: String) {
@@ -75,9 +89,28 @@ internal object WidgetStore {
     }
     fun team(context: Context, widget: Int): List<String?> = context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE)
         .getString("team:$widget", null)?.split("\n")?.map { it.ifEmpty { null } }?.takeIf { it.size == 4 } ?: List(4) { null }
+    /** What the person chose for one overview widget; a damaged or missing value reads as the defaults. */
+    fun overview(context: Context, widget: Int): OverviewConfig =
+        OverviewConfig.decode(context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE).getString("overview:$widget", null))
+    @Synchronized fun selectOverview(context: Context, widget: Int, config: OverviewConfig) {
+        check(context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE).edit().putString("overview:$widget", config.encode()).commit())
+        changed()
+    }
+    /** Requests a widget has answered and not yet seen leave the report: the card says "Sending…" instead of offering the buttons again. */
+    @Synchronized fun sending(context: Context, entry: String, now: Long = System.currentTimeMillis()) {
+        check(context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE).edit().putLong("sending:$entry", now).commit())
+        changed()
+    }
+    @Synchronized fun sent(context: Context, entry: String) {
+        check(context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE).edit().remove("sending:$entry").commit())
+        changed()
+    }
+    fun isSending(context: Context, entry: String, now: Long = System.currentTimeMillis()): Boolean =
+        now - context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE).getLong("sending:$entry", 0) in 0..SENDING_MS
+
     @Synchronized fun remove(context: Context, ids: IntArray) {
         val editor = context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE).edit()
-        ids.forEach { editor.remove("provider:$it"); editor.remove("team:$it") }; check(editor.commit()); changed()
+        ids.forEach { editor.remove("provider:$it"); editor.remove("team:$it"); editor.remove("overview:$it") }; check(editor.commit()); changed()
     }
     @Synchronized fun reset(context: Context) {
         activeFile(context).delete()

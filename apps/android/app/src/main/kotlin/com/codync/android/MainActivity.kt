@@ -156,7 +156,7 @@ class MainActivity : FragmentActivity() {
             store.pair(uri.toString())
         }
         // Retain the scoped, non-secret destination for Activity/process restoration.
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) store.openLink(uri)
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage", "team", "approvals")) store.openLink(uri)
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; store.finishConnectorSignIn(uri) }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; store.openScreenLink() }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; store.openPage(LinkPage.Computers) }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Codync": one adaptive widget. 4x2 cells to start; it grows to 4x4 and, on tablets and foldables, wider (two columns). MIUI launchers
+     may ignore resizeMode, maxResize and previewLayout: it then keeps its first size and the picker shows the static layout. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp" android:minHeight="110dp" android:minResizeWidth="110dp" android:minResizeHeight="110dp"
+    android:maxResizeWidth="560dp" android:maxResizeHeight="560dp"
+    android:targetCellWidth="4" android:targetCellHeight="2" android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget_loading"
+    android:description="@string/widget_overview_description" android:previewLayout="@layout/widget_overview_preview"
+    android:configure="com.codync.android.WidgetConfigurationActivity" android:widgetFeatures="reconfigurable"
+    android:widgetCategory="home_screen" />

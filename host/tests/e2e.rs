@@ -120,6 +120,37 @@ async fn readiness_needs_this_homes_token() {
     std::fs::remove_dir_all(home).unwrap();
 }
 
+/// The session folders oh-my-pi keeps in `agent_dir` whose names hold `home`'s own folder name.
+fn omp_sessions(agent_dir: &std::path::Path, home: &std::path::Path) -> Vec<String> {
+    let name = home.file_name().unwrap().to_string_lossy().into_owned();
+    std::fs::read_dir(agent_dir.join("sessions"))
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .filter(|folder| folder.contains(&name))
+        .collect()
+}
+
+#[tokio::test]
+async fn agent_probes_leave_no_session_in_the_users_omp() {
+    let host = start_host().await;
+    let hello = host.call("hello", json!({})).await;
+    let omp = hello["backends"].as_array().unwrap().iter().find(|b| b["id"] == "omp").unwrap();
+    if omp["installed"] != true {
+        eprintln!("skipping: oh-my-pi not installed");
+        return;
+    }
+    let users = std::env::var_os("PI_CODING_AGENT_DIR")
+        .map_or_else(|| dirs::home_dir().unwrap().join(".omp/agent"), PathBuf::from);
+    let ours = common::agent_dir(&host.home);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while omp_sessions(&ours, &host.home).is_empty() && omp_sessions(&users, &host.home).is_empty() {
+        assert!(Instant::now() < deadline, "oh-my-pi never opened its probe session");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(omp_sessions(&users, &host.home), Vec::<String>::new(), "a probe session in the user's oh-my-pi");
+}
+
 // SIGTERM is Unix only; Windows stops the host by ending its process.
 #[cfg(unix)]
 #[tokio::test]

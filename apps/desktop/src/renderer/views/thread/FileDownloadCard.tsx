@@ -9,6 +9,7 @@ import { Text } from '../../components/Text'
 import { analytics } from '../../store/analytics'
 import { AttachmentImage, AttachmentViewer, attachmentSymbol, byteCount, type ImageSource } from './Attachments'
 import { ImageContextMenu } from './ImageContextMenu'
+import type { MessageMenu } from './use-image-actions'
 import { trNow } from '../../lib/l10n.ts'
 import './attachments.css'
 
@@ -40,7 +41,7 @@ function DownloadButton({ entry, file, inViewer = false }: { entry: Entry; file:
   return <IconButtonBase title={downloadAction(state)} icon={busy ? 'xmark' : 'arrow.down.to.line'} size={inViewer ? 28 : 36} onClick={start} />
 }
 
-export function FileDownloadCard({ entry, file }: { entry: Entry; file: SharedFile }) {
+export function FileDownloadCard({ entry, file, menu }: { entry: Entry; file: SharedFile; menu?: MessageMenu }) {
   const store = useStore()
   const state = store.fileDownloads.states.get(file.id)
   const detail = downloadDetail(state, file)
@@ -48,12 +49,12 @@ export function FileDownloadCard({ entry, file }: { entry: Entry; file: SharedFi
   const image: ImageSource = { file, entryId: entry.id }
   return <VStack gap={12} className="file-card">
     {showsAsImage(file) ? <>
-      <ImageContextMenu source={image}>
+      <ImageContextMenu source={image} menu={menu}>
         <button className="file-card-image" aria-label={file.name} onClick={() => setViewing(true)}>
           <AttachmentImage source={image} fit="thumbnail" />
         </button>
       </ImageContextMenu>
-      <AttachmentViewer source={viewing ? image : null} close={() => setViewing(false)} actions={<DownloadButton entry={entry} file={file} inViewer />} />
+      <AttachmentViewer source={viewing ? image : null} close={() => setViewing(false)} menu={menu} actions={<DownloadButton entry={entry} file={file} inViewer />} />
     </> : null}
     <HStack gap={12}>
       <Icon name={attachmentSymbol(file.name)} size={24} color="var(--secondary)" />

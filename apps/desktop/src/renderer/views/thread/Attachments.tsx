@@ -7,7 +7,7 @@ import { Text } from '../../components/Text'
 import { analytics } from '../../store/analytics'
 import { useStoreRef } from '../../store/context'
 import { ImageContextMenu } from './ImageContextMenu'
-import { imageBytes, useImageActions } from './use-image-actions'
+import { imageBytes, useImageCopy, type MessageMenu } from './use-image-actions'
 import { ZoomableImage } from './ZoomableImage'
 import './attachments.css'
 
@@ -35,13 +35,13 @@ export function byteCount(bytes: number) {
 }
 
 /** Files sent with a message: images as pictures (click for full size), other files as cards. */
-export function AttachmentList({ attachments, botId }: { attachments: Attachment[]; botId: string }) {
+export function AttachmentList({ attachments, botId, menu }: { attachments: Attachment[]; botId: string; menu?: MessageMenu }) {
   const [viewing, setViewing] = useState<Attachment | null>(null)
   return (
     <VStack align="flex-end" gap={4}>
       {attachments.map((file) =>
         isImageName(file.name) ? (
-          <ImageContextMenu key={file.id} source={{ file, botId }}>
+          <ImageContextMenu key={file.id} source={{ file, botId }} menu={menu}>
             <button className="attachment-image-button" aria-label={file.name} onClick={() => setViewing(file)}>
               <AttachmentImage source={{ file, botId }} fit="thumbnail" />
             </button>
@@ -56,7 +56,7 @@ export function AttachmentList({ attachments, botId }: { attachments: Attachment
           </HStack>
         ),
       )}
-      <AttachmentViewer source={viewing && { file: viewing, botId }} close={() => setViewing(null)} />
+      <AttachmentViewer source={viewing && { file: viewing, botId }} close={() => setViewing(null)} menu={menu} />
     </VStack>
   )
 }
@@ -65,20 +65,25 @@ export function AttachmentList({ attachments, botId }: { attachments: Attachment
 export type ImageSource = { file: Attachment; botId: string } | { file: SharedFile; entryId: string }
 
 /** A picture full size, in a sheet: zoom it, copy it, and with `actions` (a shared file's download) next to the close button. */
-export function AttachmentViewer({ source, close, actions }: { source: ImageSource | null; close: () => void; actions?: ReactNode }) {
+export function AttachmentViewer({ source, close, actions, menu }: { source: ImageSource | null; close: () => void; actions?: ReactNode; menu?: MessageMenu }) {
   const id = source?.file.id
   useEffect(() => {
     if (id) analytics.track({ event: 'image_preview_opened' })
   }, [id])
   return (
     <Sheet open={source !== null} onClose={close} width={1040} height={800}>
-      {source ? <ViewerPage source={source} actions={actions} /> : null}
+      {source ? <ViewerPage source={source} actions={actions} menu={menu && leavingViewer(menu, close)} /> : null}
     </Sheet>
   )
 }
 
-function ViewerPage({ source, actions }: { source: ImageSource; actions?: ReactNode }) {
-  const copy = useImageActions(source)
+/** The message's menu in the viewer: what it does leaves the viewer first (Reply, what it did), reactions stay. */
+function leavingViewer(menu: MessageMenu, close: () => void): MessageMenu {
+  return { ...menu, items: () => menu.items().map((item) => ({ ...item, action: () => { close(); item.action() } })) }
+}
+
+function ViewerPage({ source, actions, menu }: { source: ImageSource; actions?: ReactNode; menu?: MessageMenu }) {
+  const copy = useImageCopy(source)
   // Zooming is counted once per opening, not per pinch step.
   const zoomed = useRef(false)
   const reportZoom = () => {
@@ -93,12 +98,12 @@ function ViewerPage({ source, actions }: { source: ImageSource; actions?: ReactN
         title={source.file.name}
         trailing={
           <>
-            <IconButtonBase title={title} icon={icon} onClick={() => void copy.copyImage()} />
+            <IconButtonBase title={title} icon={icon} onClick={() => void copy.copy()} />
             {actions}
           </>
         }
       />
-      <ImageContextMenu source={source} className="attachment-viewer">
+      <ImageContextMenu source={source} menu={menu} className="attachment-viewer">
         <ZoomableImage onZoom={reportZoom}>
           <AttachmentImage source={source} fit="full" />
         </ZoomableImage>

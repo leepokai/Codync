@@ -34,8 +34,13 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   double-click, `+` / `-` / `0`) and moves the picture by dragging or scrolling once zoomed in.
   The header has Copy image (the picture itself on the clipboard, re-encoded as PNG when it is
   another format) and, for a bot-shared file, the file's Download button next to the close button.
-  Right-click on a picture, in the chat or the viewer, offers Copy image and Copy name. iPhone and
-  Android have no full-size viewer yet, so none of this applies there.
+  Right-click on a picture, in the chat or the viewer, opens its message's own menu (reactions, Reply, what it did) with Copy turned into Copy image and Copy name. iPhone and
+  Android open a picture in a sheet that zooms the same way (pinch, drag once zoomed in, double-tap
+  to 2.5x and back; at fit size a swipe down still closes it), with Copy image (the picture
+  itself; iPhone puts the file's own bytes on the pasteboard, plus a PNG copy when it is not PNG,
+  JPEG or GIF; Android clips the original file as a FileProvider `content://` link) and, for a
+  bot-shared file, its Download button by the close button. Holding a picture, in the chat or the
+  viewer, opens that same message menu; in the Library it offers only Copy image and Copy name.
 - Terminal UI: dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
   an empty draft removes the last one); sent files show as `▤ name size` lines. It uploads with the
   same `upload` chunks.

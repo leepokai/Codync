@@ -1,24 +1,20 @@
 import type { ReactNode } from 'react'
 import { AnchoredMenu, useContextMenu } from '../../components/Overlay'
+import { useStoreRef } from '../../store/context'
 import type { ImageSource } from './Attachments'
-import { useImageActions } from './use-image-actions'
+import { imageCopyItems, type MessageMenu } from './use-image-actions'
 
-/** Right-click on a picture: copy the picture, or its name. */
-export function ImageContextMenu({ source, className, children }: { source: ImageSource; className?: string; children: ReactNode }) {
+/**
+ * Right-click on a picture: its message's own menu (reactions, Reply, …) with the message's Copy turned into Copy image
+ * and Copy name. With no message (the Library) it is just those two.
+ */
+export function ImageContextMenu({ source, menu: message, className, children }: { source: ImageSource; menu?: MessageMenu; className?: string; children: ReactNode }) {
+  const store = useStoreRef()
   const menu = useContextMenu()
-  const actions = useImageActions(source)
   return (
     <>
       <div className={className} onContextMenu={menu.onContextMenu}>{children}</div>
-      <AnchoredMenu
-        open={menu.open}
-        onClose={menu.close}
-        point={menu.point}
-        items={() => [
-          { title: 'Copy image', icon: 'photo.on.rectangle', action: () => void actions.copyImage() },
-          { title: 'Copy name', icon: 'square.on.square', action: actions.copyName },
-        ]}
-      />
+      <AnchoredMenu open={menu.open} onClose={menu.close} point={menu.point} reactions={message?.reactions} items={() => [...imageCopyItems(store, source), ...(message?.items() ?? [])]} />
     </>
   )
 }

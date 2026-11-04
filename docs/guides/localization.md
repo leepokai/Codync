@@ -25,7 +25,9 @@ glossary (бот, ведущий агент, рутина, коннектор) a
 as «Ботов: {count}» so every number remains grammatical.
 
 Italian system locales (including `it-IT` and `it_CH.UTF-8`) use `it`, shown
-as **Italiano** after Russian.
+as **Italiano** after Russian. The catalog began as a machine translation and
+every entry was then corrected against a fixed glossary (bot, agente, agente
+principale, routine, connettore); no native speaker has reviewed it yet.
 
 The five additional catalogs began as machine translations of public interface
 copy, with reviewed overrides for common controls. They have not had a complete

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -236,7 +237,7 @@ import kotlinx.coroutines.launch
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
                 for (c in connectors.take(3)) ServiceLogo(null, c.name, c.registryName, 26.dp)
-                for (s in skills.take(maxOf(0, 3 - minOf(3, connectors.size)))) {
+                repeat(minOf(skills.size, maxOf(0, 3 - connectors.size))) {
                     Box(Modifier.size(26.dp)) { SkillGlyph() }
                 }
             }

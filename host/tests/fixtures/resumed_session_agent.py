@@ -1,12 +1,14 @@
 """`ended_session_agent.py` for an agent that reopens sessions with `session/resume` and has no `session/load`,
 like DeepSeek Harness: "end-this-session" fails the turn, and every later prompt on that session fails until the
-session is closed and resumed."""
+session is closed and resumed. Only one session is ever created, so a host that starts a fresh session instead of
+resuming fails the test."""
 
 import json
 import sys
 
 ENDED = {"code": -32603, "message": "The Claude Agent session has ended. Please start a new session."}
 open_sessions = {}  # id -> ended
+created = False
 
 
 def send(value):
@@ -27,7 +29,10 @@ for line in sys.stdin:
     if method == "initialize":
         capabilities = {"sessionCapabilities": {"close": {}, "resume": {}}}
         send({"id": message["id"], "result": {"protocolVersion": 1, "agentCapabilities": capabilities}})
+    elif method == "session/new" and created:
+        send({"id": message["id"], "error": {"code": -32603, "message": "a second session/new loses the conversation"}})
     elif method == "session/new":
+        created = True
         open_sessions["s1"] = False
         send({"id": message["id"], "result": {"sessionId": "s1"}})
     elif method == "session/resume":

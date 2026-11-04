@@ -74,8 +74,8 @@ public enum SharedStore {
             get { read([BotSnapshot].self, "bots") ?? [] }
             nonmutating set { write(newValue, "bots") }
         }
-        /// Each computer's unread total from its latest alert while the app was away; the app clears it
-        /// whenever it writes a fresher roster to `bots`.
+        /// Each computer's unread total from its latest alert while the app was away; the app drops a
+        /// computer's once its roster has caught up with the host (`IconBadge.settle`).
         public var pushedUnread: [ComputerID: Int] {
             get { read([ComputerID: Int].self, "pushedUnread") ?? [:] }
             nonmutating set { write(newValue, "pushedUnread") }

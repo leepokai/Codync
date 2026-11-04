@@ -100,7 +100,7 @@ extension BotStore {
             if hostRewound { rev = 0 }
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
-            bump(rev)
+            bump(rev, opening: true)
         case .bot(let received):
             let bot = putHostBot(received)
             bump(bot.rev)
@@ -188,9 +188,13 @@ extension BotStore {
         eventsTask = Task { [weak self] in await self?.runEvents(client) }
     }
 
-    private func bump(_ r: Int64) {
+    /// `opening`: this connection's `hello`, whose catch-up may already be complete.
+    private func bump(_ r: Int64, opening: Bool = false) {
+        let behind = opening || rev < catchUpRev
         rev = max(rev, r)
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
+        // Caught up: `rosterIsCurrent` turned true even if no bot changed.
+        if behind && rev >= catchUpRev { onRosterChanged?() }
     }
 
     /// Per bot, the lowest synced `seq` in the mirror (optimistic entries don't count).

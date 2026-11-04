@@ -42,6 +42,9 @@ public final class BotStore {
     /// The first catch-up has arrived: everything up to the host's rev when this app connected.
     public internal(set) var caughtUp = false
     var catchUpRev = Int64.max
+    /// Online and caught up with this connection's `hello`: the roster matches the host, so the icon badge
+    /// stops using the computer's alert counts.
+    public var rosterIsCurrent: Bool { connection == .online && rev >= catchUpRev }
     /// The `since` this connection's events stream was opened with; the `hello` that opens its
     /// catch-up reads it (after a mirror reset `rev` no longer says what was requested).
     var requestedSince: Int64 = 0

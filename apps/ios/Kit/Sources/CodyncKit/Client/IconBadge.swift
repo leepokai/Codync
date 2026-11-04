@@ -14,6 +14,13 @@ public enum IconBadge {
         pushed.values.reduce(0, +) + count(snapshot.filter { pushed[$0.computerId] == nil }.map(\.bot))
     }
 
+    /// The app's badge: alerts' totals are kept only for computers whose roster isn't current yet
+    /// (`pushed` is updated in place), and stand in for those computers' cached unread.
+    public static func settle(_ roster: [BotSnapshot], current: Set<ComputerID>, pushed: inout [ComputerID: Int]) -> Int {
+        pushed = pushed.filter { !current.contains($0.key) }
+        return count(pushed: pushed, snapshot: roster)
+    }
+
     /// iOS keeps the count but shows it only once the app may notify (the push switch asks for that).
     public static func show(_ count: Int) {
         UNUserNotificationCenter.current().setBadgeCount(count) { error in

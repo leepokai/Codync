@@ -285,11 +285,13 @@ final class AppStore {
             store.onUsageChanged = { _, _ in WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage") }
         }
         accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
-        accounts.onRosterChanged = { roster in
+        accounts.onRosterChanged = { [weak accounts] roster in
             BotsWidgetFeed.update(roster, storage: storage)
-            // The live roster is newer than any alert's count.
-            storage.pushedUnread = [:]
-            IconBadge.show(IconBadge.count(roster.map(\.bot)))
+            let current = Set((accounts?.stores ?? [:]).filter { $0.value.rosterIsCurrent }.keys)
+            var pushed = storage.pushedUnread
+            IconBadge.show(IconBadge.settle(roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) },
+                                            current: current, pushed: &pushed))
+            storage.pushedUnread = pushed
             if roster.isEmpty {
                 LiveActivities.shared.endAll()
                 WidgetCenter.shared.reloadAllTimelines()

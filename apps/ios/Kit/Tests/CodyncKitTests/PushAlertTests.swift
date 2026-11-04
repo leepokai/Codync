@@ -24,4 +24,8 @@ import Testing
     #expect(IconBadge.count(pushed: ["a": 2], snapshot: snapshot) == 5)
     // B's alert keeps A's earlier one instead of falling back to A's snapshot.
     #expect(IconBadge.count(pushed: ["a": 2, "b": 1], snapshot: snapshot) == 6)
+    // The app opens: A's roster catches up (its live 5 replaces its alert); B, still unreachable, keeps its alert's 1.
+    var pushed = ["a": 2, "b": 1]
+    #expect(IconBadge.settle(snapshot, current: ["a"], pushed: &pushed) == 9)
+    #expect(pushed == ["b": 1])
 }

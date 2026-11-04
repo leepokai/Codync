@@ -67,7 +67,7 @@ interface Piece { literal?: string; token?: string }
 /**
  * Phrase keys that already contain `{token}` slots, longest fixed text first.
  * A filled sentence ("Runs the official installer on this Mac.") matches the key,
- * and a slot that is itself a known phrase (a setup hint) is translated too.
+ * while only app-owned hints recurse; names and free text stay as written.
  */
 const templates: Array<{ key: string; pieces: Piece[]; literal: number }> = [...new Set(Object.values(catalogs).flatMap((catalog) => Object.keys(catalog)))].flatMap((key) => {
   const pieces = parseTemplate(key)
@@ -95,11 +95,11 @@ function parseTemplate(template: string): Piece[] | undefined {
 }
 
 function hit(key: string, primary: Record<string, string>, fallback: Record<string, string>): string | undefined {
-  return primary[key] ?? fallback[key]
+  // Own keys only: a catalog is a plain object, so `constructor` must not find Object's.
+  return Object.hasOwn(primary, key) ? primary[key] : Object.hasOwn(fallback, key) ? fallback[key] : undefined
 }
 
-/** Slots that hold what a person wrote (a bot or routine name, a message): inserted as written, never translated. */
-const VERBATIM = new Set(['{bot}', '{routine}', '{message}'])
+const localizableSlots = new Set(['{hint}', '{error}', '{setup}', '{kind}', '{when}', '{status}', '{reason}', '{shortcut}', '{changes}'])
 
 function fill(text: string, pieces: Piece[], phrase: string, primary: Record<string, string>, fallback: Record<string, string>, depth: number): string | undefined {
   let pos = 0
@@ -119,12 +119,13 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
     pos = end
   }
   if (pos !== text.length) return undefined
-  let result = phrase
   for (const [token, value] of caps) {
-    const inner = VERBATIM.has(token) ? value : hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
-    result = result.split(token).join(inner)
+    // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+    const localizable = localizableSlots.has(token)
+    const inner = localizable ? hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value : value
+    caps.set(token, inner)
   }
-  return result
+  return phrase.replace(/\{[A-Za-z0-9]+\}/g, (token) => caps.get(token) ?? token)
 }
 
 /** A sentence the host or a view already filled in, matched back to its `{token}` phrase. */

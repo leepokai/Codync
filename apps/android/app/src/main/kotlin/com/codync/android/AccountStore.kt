@@ -28,6 +28,8 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
     internal var cloud: CloudClient? = null
     /** The account proof pairing sends, kept for this account context while it lasts. */
     internal var deviceCertificate: DeviceCertificate? = null
+    /** Computers joining this account ([joinAccount]). */
+    internal val joining: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private var sessionJob: Job? = null
     internal var linkJob: Job? = null
     internal var pairingJob: Job? = null
@@ -152,7 +154,9 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             for (other in stores.value) if (other !== opened) other.openBot(null)
             mutableState.update { it.copy(removedChat = false) }
             noteActive(opened.id)
-        }, usageRead = ::publishUsage)
+        }, usageRead = ::publishUsage, joinAccount = { sign ->
+            joinAccount(computer.id) { client -> client.createClaim().let { claim -> claim to sign(claim) } }
+        })
         store.open()
         mutableStores.update { list -> list.filter { it.id != computer.id } + store }
         sortStores()

@@ -10,6 +10,12 @@ data class Fallback(val backend: String = "", val command: String? = null, val m
 @Serializable
 data class AgentStep(val step: Int = 0, val agent: String = "", val model: String? = null, val since: Long = 0, val reason: String? = null)
 
+/** The agent the bot runs on right now: its fallback's while it's on one. */
+val Bot.runningAgent: String get() = agentStep?.agent ?: backend
+
+/** The bots run more than one agent, so the roster marks each with its agent's logo. */
+fun List<Bot>.mixesAgents(): Boolean = filter { it.kind != "group" }.mapTo(HashSet()) { it.runningAgent }.size > 1
+
 /** An agent of a bot's chain that rests until `until` (ms): `usageLimit`, `rateLimited`, `signedOut`… */
 @Serializable
 data class Resting(val agent: String = "", val until: Long = 0, val reason: String = "") {

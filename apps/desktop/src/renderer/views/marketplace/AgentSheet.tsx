@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Backend } from '@shared/models'
-import { AgentIcon } from '../../components/AgentIcon'
+import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
@@ -15,23 +15,6 @@ import { AgentBrings } from './AgentBrings'
 import { SetupTerminalView } from './SetupTerminal'
 
 type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
-
-/** Registry logos are one-color; paint the ones with a known brand color in it. */
-export function agentTint(registry: string | null | undefined) {
-  switch (registry) {
-    case 'claude-acp': return 'rgb(217, 120, 87)'
-    case 'gemini': return 'linear-gradient(to top right, rgb(71, 150, 227), rgb(145, 120, 199), rgb(201, 102, 115))'
-    case 'antigravity-acp': return 'rgb(66, 133, 245)'
-    case 'mistral-vibe': return 'rgb(250, 82, 15)'
-    case 'qwen-code': return 'rgb(97, 92, 237)'
-    case 'amp-acp': return 'rgb(242, 79, 64)'
-    case 'kiro': return 'rgb(143, 69, 255)'
-    case 'dsh': return 'rgb(77, 107, 254)'
-    case 'cortex-code': return 'rgb(41, 181, 232)'
-    case 'omp': return 'linear-gradient(to bottom right, rgb(237, 74, 191), rgb(155, 77, 255), rgb(90, 216, 230))'
-    default: return 'var(--text)'
-  }
-}
 
 /** An agent's registry logo on a rounded tile. */
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {

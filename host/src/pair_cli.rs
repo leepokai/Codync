@@ -5,7 +5,7 @@
 use crate::local_api::local_call;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
-use std::io::{IsTerminal as _, Write as _};
+use std::io::IsTerminal as _;
 use std::time::Duration;
 
 #[derive(clap::Subcommand)]
@@ -85,7 +85,7 @@ async fn wait(port: u16, url: &str, expires_at: i64) -> Result<()> {
                 r["email"].as_str().unwrap_or("a Codync account"),
                 spaced(r["code"].as_str().unwrap_or_default()),
             );
-            let approve = ask_yes_no("Let it in? [y/N] ").await?;
+            let approve = crate::prompt::ask_yes_no("Let it in? [y/N] ").await?;
             let answered = local_call(port, "decidePairing", json!({"requestId": r["requestId"], "approve": approve}));
             if answered.await.is_err() {
                 println!("The phone stopped waiting, or it was answered elsewhere.");
@@ -109,17 +109,6 @@ fn spaced(code: &str) -> String {
         Some((a, b)) if code.len() == 6 => format!("{a} {b}"),
         _ => code.to_owned(),
     }
-}
-
-async fn ask_yes_no(prompt: &str) -> Result<bool> {
-    print!("{prompt}");
-    std::io::stdout().flush()?;
-    let line = tokio::task::spawn_blocking(|| {
-        let mut line = String::new();
-        std::io::stdin().read_line(&mut line).map(|_| line)
-    })
-    .await??;
-    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }
 
 /// Requests waiting for this computer's answer, each with the method that answers it.

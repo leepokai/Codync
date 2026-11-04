@@ -43,7 +43,7 @@ export function ApprovalSheet({ approval }: { approval: Approval }) {
         <Icon name={deviceIcon(request.platform)} size={40} weight="light" color="var(--secondary)" />
         <VStack align="center" gap={4}>
           <Text as="div" size="title3" weight="semibold" className="settings-centered">
-            {tr('{name} wants to use {other}').replaceAll('{name}', () => request.deviceName).replaceAll('{other}', () => approval.store.hostName)}
+            {tr('{name} wants to use {other}').replaceAll('{other}', () => approval.store.hostName).replaceAll('{name}', () => request.deviceName)}
           </Text>
           {request.email ? <Text as="div" size="callout" tone="secondary">{tr('Signed in as {email}').split('{email}').join(request.email)}</Text> : null}
         </VStack>

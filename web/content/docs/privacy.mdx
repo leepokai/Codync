@@ -57,7 +57,7 @@ Your provider key stays on your computer, encrypted. It's never sent to the rela
 
 ## Usage analytics
 
-Codync records which features you use, to spot bugs sooner and see where people get stuck. Analytics are **on by default**, and nothing asks first. They go to PostHog (US).
+Codync records which features you use, to spot bugs sooner and see where people get stuck. Analytics are **on by default**. The Windows installer asks first; nothing else does. They go to PostHog (US).
 
 **What's recorded:** opening the app and its screens, setting up and pairing (and whether you allow notifications), creating or deleting a bot, sending a message (with the number of attachments, never the files), running a routine or a voice call, and installing a connector. Each event carries the app version, the platform, and the agent and model the bot uses.
 
@@ -78,6 +78,8 @@ Each phone and each computer has its own switch, **Share usage analytics**. Turn
 - **iPhone:** the **Settings** tab, **Share usage analytics**.
 - **Desktop app:** **Settings → General**, under **Privacy**. This switch belongs to the computer's host, so it also covers the terminal UI on that computer.
 - **Terminal UI:** press `^k` and choose **Share usage analytics**.
+- **Windows installer:** it asks whether to share usage analytics from the computer (not when Codync updates itself). **No** turns off the same switch the desktop app shows.
+- **Command line:** `codync-host analytics off` (`on` turns it back on).
 
 The info button next to the switch (**About usage analytics…** in the terminal UI) lists the same details. What you do from the phone on a computer, such as sending a message, is recorded by that computer. To stop all of it, turn the switch off on both.
 

@@ -8,6 +8,7 @@ import com.codync.android.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonObject
 
 // Pairing and the links notifications, widgets and other apps open.
 
@@ -29,7 +30,7 @@ internal fun AccountStore.pair(text: String, via: PairedVia) {
             mutableState.update { it.copy(pairingCheck = pairing.checkCode(identity)) }
             val certificate = accountProof()
             val client = cloud
-            // Without a claim a computer in no account still lets the phone in; it just doesn't join the account.
+            // Without a claim a computer in no account still lets the phone in; it joins the account on a later connection.
             val claim = client?.let { bestEffort("start a claim") { it.createClaim() } }
             val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100), certificate, claim)
             // Picked on this phone: pairing again keeps them (iOS `AccountStore.pair`).
@@ -39,15 +40,9 @@ internal fun AccountStore.pair(text: String, via: PairedVia) {
             mutableState.update { it.copy(setupComplete = true) }
             Analytics.capture(AnalyticsEvent.ComputerPaired(via, computer.id))
             Analytics.completeOnboarding(OnboardingVia.Paired)
-            // The computer joined this account: the account takes it in (or it stays paired, outside the account).
+            // The computer signed this account's claim: the account takes it in.
             val signed = paired.claim
-            // In the background, as on iOS: the computer is already paired.
-            if (client != null && claim != null && signed != null) {
-                contextScope.launch {
-                    bestEffort("complete the claim") { client.completeClaim(claim.claimId, signed) }
-                    refreshCloud()
-                }
-            }
+            if (claim != null && signed != null) joinAccount(computer.id) { claim to signed }
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) {
             val reason = PairingFailure.of(error)
@@ -79,6 +74,26 @@ private suspend fun AccountStore.accountProof(): DeviceCertificate {
 }
 
 private const val NO_PROOF = "Connect to the internet to pair, so Codync can confirm your account."
+
+/**
+ * The computer signs this account's claim ([sign]: while letting this phone in, or later through `joinAccount` when its
+ * hello asks), and the phone, which holds the account's session, completes it in the background (iOS
+ * `AccountStore.joinAccount`). One at a time per computer; the computer decides whether a join that failed here is asked
+ * for again.
+ */
+internal fun AccountStore.joinAccount(id: String, sign: suspend (CloudClient) -> Pair<PairingClaim, JsonObject>) {
+    val client = cloud ?: return
+    if (!joining.add(id)) return
+    contextScope.launch {
+        try {
+            val joined = bestEffort("join the account") {
+                val (claim, signed) = sign(client)
+                client.completeClaim(claim.claimId, signed)
+            }
+            if (joined != null) refreshCloud()
+        } finally { joining.remove(id) }
+    }
+}
 
 /** [step] of joining the account, which pairing goes on without: a failure is only logged. */
 private suspend fun <T> bestEffort(what: String, step: suspend () -> T): T? = try { step() }

@@ -8,11 +8,10 @@ class L10nTest {
         "connected" to "на связи",
         "Settings" to "Настройки",
         "Routine" to "Рутина",
-        "this Mac" to "этот Mac",
         "Created bot {bot}" to "Создан бот {bot}",
-        "Routine · {routine}" to "Рутина · {routine}",
+        "Routine · {name}" to "Рутина · {name}",
         "Message from {bot}: {message}" to "Сообщение от {bot}: {message}",
-        "Runs the official installer on {name}." to "Запускает официальный установщик на {name}.",
+        "Last run {status}" to "Последний запуск: {status}",
     )
 
     private fun ru(text: String) = translate(text, AppLanguage.Ru, false, phrases)
@@ -24,7 +23,7 @@ class L10nTest {
         assertEquals("Сообщение от Reviewer: Settings", ru("Message from Reviewer: Settings"))
     }
 
-    @Test fun `other slots still translate`() {
-        assertEquals("Запускает официальный установщик на этот Mac.", ru("Runs the official installer on this Mac."))
+    @Test fun `app-owned slots still translate`() {
+        assertEquals("Последний запуск: на связи", ru("Last run connected"))
     }
 }

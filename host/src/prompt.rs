@@ -1,4 +1,5 @@
-//! Reads a secret for a CLI command: typed without echo on a terminal, or one line of piped stdin.
+//! Reads answers for CLI commands: a secret (typed without echo on a terminal, or one line of piped stdin) or a
+//! yes or no.
 
 use anyhow::{Result, bail};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -6,7 +7,7 @@ use crossterm::terminal;
 use std::io::{BufRead, IsTerminal, Write};
 
 /// One line of secret input, trimmed. Typed keys are never shown.
-pub fn read(prompt: &str) -> Result<String> {
+pub fn read_secret(prompt: &str) -> Result<String> {
     if !std::io::stdin().is_terminal() {
         let mut line = String::new();
         std::io::stdin().lock().read_line(&mut line)?;
@@ -39,4 +40,16 @@ fn read_keys() -> Result<String> {
             _ => {}
         }
     }
+}
+
+/// `true` for `y` or `yes` (any case); anything else is a no.
+pub async fn ask_yes_no(prompt: &str) -> Result<bool> {
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+    let line = tokio::task::spawn_blocking(|| {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).map(|_| line)
+    })
+    .await??;
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }

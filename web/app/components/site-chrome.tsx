@@ -78,6 +78,7 @@ const footerLinks: [label: string, href: string][] = [
   ["codync-mem", "/codync-mem"],
   ["Terms", "/terms"],
   ["Privacy", "/privacy"],
+  ["Code signing policy", "/code-signing"],
   ["Discord", DISCORD],
   ["WeChat (China)", WECHAT],
   ["Ko-fi", KO_FI],
@@ -93,7 +94,7 @@ export function SiteFooter() {
           <a href={GITHUB} className="text-neutral-300 underline underline-offset-4 hover:text-white">
             Code on GitHub
           </a>
-          <br />© {new Date().getFullYear()} Leeporic LLC
+          <br />© {new Date().getFullYear()} leepokai
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-2">
           {footerLinks.map(([label, href]) => (

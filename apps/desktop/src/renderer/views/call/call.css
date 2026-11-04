@@ -92,3 +92,22 @@
   padding: 6px 0;
   max-width: 100%;
 }
+
+/* The call's conversation: who it was with and when on top, then what was said. */
+.call-header {
+  padding: 12px 0 28px;
+}
+.call-header-avatar {
+  padding-bottom: 8px;
+}
+.call-note {
+  text-align: center;
+  padding-bottom: 16px;
+}
+/* Close within an exchange, wide where you start the next one. */
+.call-gap {
+  padding-top: 8px;
+}
+.call-gap-wide {
+  padding-top: 24px;
+}

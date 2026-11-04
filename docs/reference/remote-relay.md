@@ -446,7 +446,7 @@ Channel 訊息與 DO 訊息的 `t` 值不重疊：channel 只有 `hello`/`welcom
 - 重連退避：host 1 s 起倍增至 60 s、device 1 s 起倍增至 30 s，皆 full jitter；穩定 60 秒後重置。
 - `4100 paired` → 立即以一般模式重連（§4.1）。
 - 不重試的 close code：`4001 unauthorized`、`4003 revoked`、`4410 pairingExpired`（device 顯示需重新授權）；`4009 replaced` → host 等 5 分鐘再試並記錄 `error`（可能有人複製了 `identity.json`）；`4400 unsupportedVersion` → 顯示需要更新。
-- 限流（DO 記憶體 token bucket，休眠後重置可接受）：**只計 device → DO 方向**，每條 device socket 每 10 秒 ≤ 200 則、≤ 8 MiB；超過 `4008 rateLimited`。host → device（含 `sync` 補送）不限。
+- 限流（DO 記憶體 token bucket，休眠後重置可接受）：**只計 device → DO 方向**，每條 device socket 每 10 秒 ≤ 200 則、≤ 12 MiB（容得下一則 8 MiB 上限訊息封成 base64url frames 後約 10.7 MiB）；超過 `4008 rateLimited`。host → device（含 `sync` 補送）不限。
 - 單則 WebSocket 訊息 ≤ 1 MiB（Cloudflare 限制）；§6.3 的 256 KiB chunk 保證不超過。
 
 Close code 總表：`1000` 正常、`1011` 內部錯誤／逾時、`4001 unauthorized`、`4002 protocolError`、`4003 revoked`、`4004 unknownComputer`、`4008 rateLimited`、`4009 replaced`、`4011 rekey`、`4013 tooLarge`、`4100 paired`、`4400 unsupportedVersion`、`4410 pairingExpired`。

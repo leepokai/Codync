@@ -17,7 +17,8 @@ const PAIRING_TTL_MS = 120_000;
 const PAIRING_MAX_MESSAGES = 16;
 const RATE_WINDOW_MS = 10_000;
 const RATE_MAX_MESSAGES = 200;
-const RATE_MAX_BYTES = 8 * 1024 * 1024;
+// One message at the host's 8 MiB cap for an approved device (a 5 MiB icon) is ~10.7 MiB of sealed base64url frames.
+const RATE_MAX_BYTES = 12 * 1024 * 1024;
 const MBOX_MAX_BLOB = 64 * 1024;
 const MBOX_PER_DEVICE = 50;
 const MBOX_PER_COMPUTER = 500;
@@ -502,7 +503,7 @@ export class ComputerRelay extends DurableObject<Env> {
     }
   }
 
-  /** Fixed 10 s window per device link: ≤ 200 messages and ≤ 8 MiB (§7.6). */
+  /** Fixed 10 s window per device link: ≤ 200 messages and ≤ 12 MiB (§7.6). */
   private charge(link: string, bytes: number, now: number): boolean {
     let r = this.rates.get(link);
     if (!r || now - r.start >= RATE_WINDOW_MS) {

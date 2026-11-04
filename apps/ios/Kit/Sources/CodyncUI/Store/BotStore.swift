@@ -250,14 +250,14 @@ public final class BotStore {
 
     static let leadChoiceHost = "2.33.0"
 
-    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.39.0
+    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.40.0
     /// (it refuses `markUnread`), "Mark as read".
     public func offersMarkUnread(_ bot: Bot) -> Bool {
         bot.unread == 0 && !bot.keptUnread
             && hostVersion.map { !AppVersion.isBelow($0.version, Self.markUnreadHost) } ?? false
     }
 
-    static let markUnreadHost = "2.39.0"
+    static let markUnreadHost = "2.40.0"
 
     /// From host 2.39.0 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
     public var supportsQueueActions: Bool {

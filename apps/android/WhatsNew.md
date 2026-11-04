@@ -9,6 +9,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ## 2.38.1
 ### zh-Hant
+- 第一次設定時，如果帳號裡已有電腦，可以向它申請訪問，或配對一臺新電腦（例如 VPS）。安裝頁也能直接複製或分享下載連結到電腦。
 - bot 用了不只一種智慧體時，列表會在頭像左下角標出各自的智慧體標誌，可在「設定 › 外觀」關閉。
 - 修正與電腦的連線中斷時，app 可能閃退的問題。
 - 語音通話中語音辨識偶爾出錯時，會送出已聽到的內容並繼續聆聽，不再直接結束通話。
@@ -21,10 +22,10 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 擴充功能的「已安裝」提示也會顯示技能的圖示。
 
 ### en-US
+- First-time setup offers your account's computers or a new one, plus a download link to share.
 - When bots use different agents, the bot list shows each one's logo (off in Settings › Appearance).
 - Fixed a crash when the connection dropped.
 - A one-off speech error no longer ends a voice call.
 - Choose Português (Brasil), Русский or Italiano in Settings, or follow your system language.
 - A QR-paired computer joins your account when it next connects.
-- Calls read more clearly, and the call bar shows still dots while the bot is quiet.
-- Routine and trace labels follow your language.
+- Calls read more clearly.

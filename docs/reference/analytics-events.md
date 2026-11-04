@@ -37,8 +37,8 @@ host answers and sends it once the host is up.
 | `window_opened` | host `track` (desktop) | The chat window is shown after being hidden (tray, dock, shortcut, second launch). A long-running menu bar app opens it many times per launch. | — |
 | `host_started` | host | Each start of the host process | `first_run` (the first start of a new install; `open_store` marks a new host id with an empty `analytics_version`), `updated_from` (the previous version, when it changed), `service` (started by launchd, systemd or the Windows runner: `XPC_SERVICE_NAME`, `SYSTEMD_EXEC_PID`, `CODYNC_SERVICE`) |
 | `host_setup_failed` | desktop main | The desktop app couldn't get a working host | `stage` (`missing_binary`/`install`/`verify`/`not_responding`/`environment`) |
-| `onboarding_step_viewed` | iOS, Android | An onboarding screen appears. `welcome` is also the sign-in screen, so it's sent again after each sign-out (builds with accounts require sign-in): count persons, or the first one per person, for first runs | `step` (`welcome`/`install`/`scan`) |
-| `onboarding_completed` | host `track` (desktop), iOS, Android | Once per setup. Desktop: the first run's welcome is finished (by signing in, in a build with accounts). Phones: the first-run screens are finished and the tabs appear (a computer paired, signed in to an account with computers, or skipped). | desktop `signed_in`; phones `via` (`paired`/`account`/`skipped`) |
+| `onboarding_step_viewed` | iOS, Android | An onboarding screen appears. `welcome` is also the sign-in screen, so it's sent again after each sign-out (builds with accounts require sign-in): count persons, or the first one per person, for first runs | `step` (`welcome`/`choose`/`install`/`scan`; `choose`: the account has computers, ask one or pair a new one) |
+| `onboarding_completed` | host `track` (desktop), iOS, Android | Once per setup. Desktop: the first run's welcome is finished (by signing in, in a build with accounts). Phones: the first-run screens are finished and the tabs appear (a computer reached, or skipped). | desktop `signed_in`; phones `via` (`paired`: by its code; `account`: approved after asking; `skipped`) |
 | `computer_access_finished` | host `track` (desktop) | The *Computer access* step is left | `ready` (screen recording and control granted), `onboarding` |
 | `sign_in_started` | host `track` (desktop), iOS, Android | A sign-in button is pressed | `provider` (`apple`/`google`/`github`/`hosted`) |
 | `sign_in_failed` | host `track` (desktop), iOS, Android | Sign-in ended without an account | `provider`, `reason` (`cancelled`/`timeout`/`verification`/`error`) |
@@ -57,7 +57,7 @@ host answers and sends it once the host is up.
 | `notifications_answered` | iOS, Android | The system notification prompt was answered | `granted`, `source` (`settings`/`widgets`/`automatic`) |
 | `notification_opened` | iOS, Android | A Codync notification was tapped | `kind` (`done`/`needs_input`/`failed`) |
 | `star_prompt_answered` | host `track` (desktop) | The GitHub star setup invitation or reminder was answered or closed | `ask` (`first`/`second`), `starred` |
-| `link_opened` | host `track` (desktop), iOS, Android | An outbound link was opened (`install_command`: an install command copied) | `link` (`github`/`docs`/`issues`/`discord`/`app_store`/`demo`/`tailscale`/`privacy`/`support`/`install_command`/`product_hunt`) |
+| `link_opened` | host `track` (desktop), iOS, Android | An outbound link was opened (`install_command`: an install command copied; `install_link`: the phone's download link copied or shared) | `link` (`github`/`docs`/`issues`/`discord`/`app_store`/`demo`/`tailscale`/`privacy`/`support`/`install_command`/`install_link`/`product_hunt`) |
 
 ## Using Codync
 
@@ -141,7 +141,7 @@ The *Onboarding & conversion* dashboard in PostHog reads these steps, each per `
   `message_sent` with `client = remote` (Activated).
 - **iPhone / Android**: first `onboarding_step_viewed` `welcome` → `sign_in_started` → `signed_in`
   → `install` → `scan` → `computer_paired` → `message_sent` with `client = remote` on that
-  `computer`. The sign-in steps are the gate's sign-in rate (sign-in is required since 2.35.0).
+  `computer`; an account with computers goes `choose` → `access_requested` → `computer_paired` (`via = account`), or `choose` → `install`. The sign-in steps are the gate's sign-in rate (sign-in is required since 2.35.0).
 - **Star**: `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`.
 - **Website**: `$pageview` → `download_clicked` (per `platform`) → the first `app_opened` that day
   (counts only, no link between a visitor and an install).

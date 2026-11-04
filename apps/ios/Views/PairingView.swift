@@ -9,6 +9,8 @@ struct PairingView<Leading: View>: View {
     var inModal = false
     /// Finish onboarding without pairing; modal pairing simply closes when skipped.
     var onSkip: (() -> Void)? = nil
+    /// On past the install page: the user is pairing this way now.
+    var onContinue: (() -> Void)? = nil
     /// Top-left on the first page (back to the welcome, the account switcher).
     @ViewBuilder var leading: Leading
 
@@ -36,7 +38,7 @@ struct PairingView<Leading: View>: View {
             ZStack {
                 switch step {
                 case .install:
-                    InstallPage(os: $os) { go(.scan) }
+                    InstallPage(os: $os) { onContinue?(); go(.scan) }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 case .scan:
                     ScanPage(os: os) { if inModal { dismissModal() } }
@@ -47,18 +49,8 @@ struct PairingView<Leading: View>: View {
             .clipped()
 
             if step == .scan {
-                Button {
-                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
-                        if inModal { dismissModal() } else { onSkip?() }
-                    }
-                } label: {
-                    Text(L10n.tr("Skip")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
-                }
-                .buttonStyle(.secondary)
-                .accessibilityHint("Pair a computer later from Manage computers.")
-                .padding(.horizontal, 24)
-                .padding(.bottom, 12)
-                .transition(.opacity)
+                SkipSetupButton { if inModal { dismissModal() } else { onSkip?() } }
+                    .transition(.opacity)
             }
         }
         .background(Palette.background)
@@ -75,13 +67,42 @@ extension PairingView where Leading == EmptyView {
     init(inModal: Bool) { self.init(inModal: inModal) { EmptyView() } }
 }
 
+/// Past the setup pages without a computer, at the foot of the page.
+struct SkipSetupButton: View {
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion), action)
+        } label: {
+            Text(L10n.tr("Skip")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+        }
+        .buttonStyle(.secondary)
+        .accessibilityHint("Pair a computer later from Manage computers.")
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+    }
+}
+
+extension Text {
+    /// A setup page's big title.
+    func pageTitle() -> some View {
+        font(.system(size: 30, weight: .semibold)).tracking(-0.5).foregroundStyle(Palette.text)
+    }
+}
+
 private enum ComputerOS: Hashable { case mac, linux }
 
 // MARK: - Install
 
 private struct InstallPage: View {
+    /// The website's downloads, for whatever the computer runs.
+    private static let downloadLink = URL(string: "https://www.codync.dev/#install")!
+
     @Binding var os: ComputerOS
     let next: () -> Void
+    @Environment(AccountSession.self) private var account
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -99,13 +120,21 @@ private struct InstallPage: View {
                     .padding(.top, 8)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(L10n.tr("Install Codync\non your computer"))
-                            .font(.system(size: 30, weight: .semibold))
-                            .tracking(-0.5)
-                            .foregroundStyle(Palette.text)
+                        Text(L10n.tr("Install Codync\non your computer")).pageTitle()
                         Text(L10n.tr("Your bots run there. This iPhone is how you talk to them."))
                             .font(.body)
                             .foregroundStyle(Palette.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Hint("Send this link to your computer")
+                        CommandBlock(Self.downloadLink.absoluteString, records: .installLink, share: Self.downloadLink)
+                        // The same account is what lets this phone find the computer afterwards.
+                        if let email = account.email {
+                            Text(L10n.tr("Sign in there with {email} and it shows up here.").replacingOccurrences(of: "{email}", with: email))
+                                .font(.subheadline)
+                                .foregroundStyle(Palette.secondary)
+                        }
                     }
 
                     SegmentedChoice(selection: $os, options: [(.mac, "Mac"), (.linux, "Linux")])
@@ -129,8 +158,6 @@ private struct InstallPage: View {
                             .font(.subheadline)
                             .foregroundStyle(Palette.secondary)
                             .contentTransition(.opacity)
-                        Hint("Every install option")
-                        CommandBlock("https://www.codync.dev/#install", records: .installCommand)
                     }
                     .animation(Motion.layout, value: os)
 
@@ -160,15 +187,17 @@ private struct Hint: View {
     }
 }
 
-/// A terminal command with a copy button; copying it counts as opening `records`.
+/// A terminal command or link with a copy button; copying it (or sharing `share`) counts as opening `records`.
 private struct CommandBlock: View {
     let command: String
     let records: AnalyticsEvent.Link?
+    let share: URL?
     @State private var copied = false
 
-    init(_ command: String, records: AnalyticsEvent.Link? = nil) {
+    init(_ command: String, records: AnalyticsEvent.Link? = nil, share: URL? = nil) {
         self.command = command
         self.records = records
+        self.share = share
     }
 
     var body: some View {
@@ -190,6 +219,16 @@ private struct CommandBlock: View {
                 }
             }
             .contentTransition(.symbolEffect(.replace))
+            if let share {
+                ShareLink(item: share) {
+                    Label(L10n.tr("Share link"), systemImage: "square.and.arrow.up")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(IconButtonStyle())
+                .simultaneousGesture(TapGesture().onEnded {
+                    if let records { Analytics.shared.capture(.linkOpened(records)) }
+                })
+            }
         }
         .padding(.leading, 14)
         .padding(.trailing, 4)
@@ -222,10 +261,7 @@ private struct ScanPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(L10n.tr("Scan the pairing code"))
-                        .font(.system(size: 30, weight: .semibold))
-                        .tracking(-0.5)
-                        .foregroundStyle(Palette.text)
+                    Text(L10n.tr("Scan the pairing code")).pageTitle()
                     Text(os == .mac
                          ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair iPhone.")
                          : L10n.tr("On your computer, run this in a terminal:"))

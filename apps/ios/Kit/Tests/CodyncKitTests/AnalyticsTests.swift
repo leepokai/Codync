@@ -68,6 +68,8 @@ import Testing
     #expect(try json(.voiceCallQuality(.onDevice, readyMs: nil, reconnects: 0, stuck: .connecting, failure: .none))
         == #"{"engine":"on_device","failure":"none","reconnects":0,"stuck":"connecting"}"#)
     #expect(try json(.linkOpened(.installCommand)) == #"{"link":"install_command"}"#)
+    #expect(try json(.linkOpened(.installLink)) == #"{"link":"install_link"}"#)
+    #expect(try json(.onboardingStepViewed(.choose)) == #"{"step":"choose"}"#)
     #expect(try json(.signedOutPairingsMoved(computers: 2, keys: .rescan)) == #"{"computers":2,"keys":"rescan"}"#)
     #expect(AnalyticsEvent.notificationOpened(.needsInput).name == "notification_opened")
     #expect(AnalyticsEvent.NotificationKind(category: "needsInput") == .needsInput)

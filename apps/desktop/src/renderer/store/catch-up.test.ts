@@ -24,6 +24,20 @@ test('a reset stream waits for its own hello', () => {
   assert.deepEqual([bot, bot].map((e) => catchUp.ended(e)), [false, false])
 })
 
+test('replaying holds from a counted hello until its last replayed event', () => {
+  const catchUp = new CatchUp()
+  const replaying = [hello(9, 2), icons, bot].map((e) => (catchUp.ended(e), catchUp.replaying))
+  assert.deepEqual(replaying, [true, true, false])
+  catchUp.ended(hello(9, 0))
+  assert.equal(catchUp.replaying, false)
+})
+
+test('a hello without a count never holds reads back', () => {
+  const catchUp = new CatchUp()
+  catchUp.ended({ type: 'hello' } as unknown as HostEvent)
+  assert.equal(catchUp.replaying, false)
+})
+
 test('a raw hello carries its catchUp count through to the counter', () => {
   const raw = JSON.parse('{"type":"hello","hostId":"h","rev":9,"catchUp":1}') as Record<string, unknown>
   const catchUp = new CatchUp()

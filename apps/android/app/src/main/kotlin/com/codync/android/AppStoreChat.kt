@@ -33,6 +33,9 @@ internal class CatchUpCount {
     private var left: Long? = null
 
     /** True once, on the event that ends this stream's catch-up. */
+    /** Between a counted `hello` and its last replayed event: a hold set elsewhere may not have arrived yet. */
+    val replaying: Boolean get() = (left ?: 0) > 0
+
     fun ended(event: JsonObject): Boolean {
         left = if (event.text("type") == "hello") event["catchUp"]?.jsonPrimitive?.longOrNull else left?.minus(1)
         if (left != 0L) return false
@@ -101,9 +104,10 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
     }
 }
 
-/** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
+/** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. Not mid catch-up ([catchingUp]). */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
     if (!foreground || channel?.state?.value !is LinkState.Ready) return
+    if (catchingUp) { readsDeferred = true; return }
     for (chat in chats.filterNot { keptUnread(it) }) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
 }
 

@@ -50,6 +50,7 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private readonly catchUp = new CatchUp()
+  private readsDeferred = false
   private readingViews = new Map<string, string>()
   protected readonly reads = new ReadMarks(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
@@ -175,10 +176,11 @@ export class BotSync extends BotMirror {
             'desktop',
             (event) => {
               if (!alive()) return
+              const caughtUp = this.catchUp.ended(event)
               this.setConnection({ kind: 'online' })
               backoff = 1000
               this.apply(event)
-              if (this.catchUp.ended(event)) this.reads.caughtUp()
+              if (caughtUp) this.caughtUp()
               this.finishRefresh?.()
             },
             (error) => (error ? reject(error) : resolve()),
@@ -441,8 +443,19 @@ export class BotSync extends BotMirror {
     this.markRead(botId)
   }
 
-  /** The chat on screen is read, unless it's held unread (`ReadMarks.held`): only opening it reads that. */
+  private caughtUp() {
+    this.reads.caughtUp()
+    if (!this.readsDeferred) return
+    this.readsDeferred = false
+    for (const botId of new Set(this.readingViews.values())) this.markRead(botId)
+  }
+
+  /** The chat on screen is read, unless it's held unread (`ReadMarks.held`): only opening it reads that. Not mid catch-up, where a hold set elsewhere may not have arrived yet. */
   markRead(botId: string) {
+    if (this.catchUp.replaying) {
+      this.readsDeferred = true
+      return
+    }
     void (async () => {
       if (!this.live) await sleep(INITIAL_GRACE)
       const client = this.live

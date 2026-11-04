@@ -13,6 +13,11 @@ export class CatchUp {
     this.left = null
   }
 
+  /** Between a counted `hello` and its last replayed event: what's here may still be behind the host. */
+  get replaying(): boolean {
+    return this.left !== null && this.left > 0
+  }
+
   /** True once, on the event that ends this stream's catch-up. */
   ended(event: HostEvent): boolean {
     if (event.type === 'hello') this.left = event.catchUp ?? null

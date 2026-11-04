@@ -91,6 +91,27 @@ import Testing
     #expect(await fake.readReceipts.count == 1)
 }
 
+@MainActor @Test func chatOnScreenWaitsForCatchUpBeforeItIsReadAutomatically() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    store.setReading(UUID(), botId: "b1", active: true)
+    store.setReading(UUID(), botId: "b2", active: true)
+    await fake.emit(#"{"type":"hello","hostId":"h1","rev":5,"catchUp":2}"#)
+    #expect(await until { store.connection == .online })
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":3,"unread":1,"keptUnread":true}}"#)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(await fake.readReceipts.isEmpty)
+    await fake.emit(#"{"type":"bot","bot":{"id":"b2","name":"Other","rev":4,"unread":1}}"#)
+    #expect(await until { await fake.readReceipts.count == 1 })
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(await fake.readReceipts.count == 1)
+}
+
 @MainActor @Test func markingAnEmptyChatUnreadLeavesNoHold() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

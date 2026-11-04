@@ -163,8 +163,12 @@ extension BotStore {
     }
 
     /// The chat on screen is read; the host ignores it when nothing there is unread. A chat held unread
-    /// (`heldUnread`) is left alone: only opening it reads it.
+    /// (`heldUnread`) is left alone: only opening it reads it. Mid catch-up it waits for the catch-up to end.
     public func markRead(_ botId: String) {
+        if replayingCatchUp {
+            readsDeferred = true
+            return
+        }
         // Entry events may arrive before the roster's unread count. The host is
         // authoritative and treats a redundant scoped acknowledgement as a no-op.
         Task {

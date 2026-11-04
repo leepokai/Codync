@@ -155,6 +155,8 @@ public final class BotStore {
     @ObservationIgnored var openedEarly: Set<String>? = []
     /// This stream's catch-up events still to come (its `hello`'s `catchUp`): at zero, `openedEarly` is settled.
     @ObservationIgnored var openCatchUpLeft: Int?
+    /// An automatic read asked for mid catch-up: sent for the chats on screen once it ends.
+    @ObservationIgnored var readsDeferred = false
 
     /// A mark as unread on its way; `from` is the host's rev for it once it answered.
     struct PendingUnread {

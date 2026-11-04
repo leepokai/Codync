@@ -41,6 +41,16 @@ class ReadingTest {
         assertEquals(true, CatchUpCount().ended(buildJsonObject { put("type", "hello"); put("catchUp", 0) }))
     }
 
+    @Test fun `reads wait from a counted hello until its last replayed event, and never for an uncounted one`() {
+        val hello = buildJsonObject { put("type", "hello"); put("catchUp", 2) }
+        val bot = buildJsonObject { put("type", "bot") }
+        val count = CatchUpCount()
+        assertEquals(listOf(true, true, false), listOf(hello, bot, bot).map { count.ended(it); count.replaying })
+        val uncounted = CatchUpCount()
+        uncounted.ended(buildJsonObject { put("type", "hello") })
+        assertEquals(false, uncounted.replaying)
+    }
+
     @Test fun `mark as unread is offered for a read chat on a host that has it`() {
         val host = AppState(hello = buildJsonObject { put("version", "2.40.0") })
         assertEquals(true, host.offersMarkUnread(Bot("bot")))

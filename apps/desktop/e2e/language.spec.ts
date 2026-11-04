@@ -4,6 +4,9 @@ import { attach } from './sandbox.ts'
 test('choosing Italiano translates the interface', async () => {
   const { browser, page } = await attach()
   try {
+    // A sandbox keeps its window's settings between runs, so start from the default.
+    await page.evaluate(() => localStorage.removeItem('appLanguage'))
+    await page.reload()
     await page.locator('.sidebar-account').click()
     await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
     await page.locator('.choice-picker[title="Follow system"]').click()

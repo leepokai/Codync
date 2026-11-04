@@ -61,8 +61,6 @@ body:
     attributes:
       label: Evidence
       description: >-
-        Exact error text, screenshots, a recording or logs. Host logs: `~/.codync/host.log` on macOS,
+        Optional, but it helps: exact error text, screenshots, a recording or logs. Host logs: `~/.codync/host.log` on macOS,
         `journalctl --user -u codync-host` on Linux, `%USERPROFILE%\.codync\host.log` on Windows.
         Issues are public, so remove tokens, keys and anything private first.
-    validations:
-      required: true

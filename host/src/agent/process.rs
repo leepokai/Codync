@@ -10,6 +10,15 @@ use tokio::time::Instant;
 const REAP_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(100);
 
+/// One process in an agent's job on Windows.
+#[cfg(any(windows, test))]
+#[derive(Clone)]
+pub(crate) struct JobProcess {
+    pub(crate) pid: u32,
+    pub(crate) parent: u32,
+    pub(crate) name: String,
+}
+
 pub(super) struct Process {
     // Drop the tree before Child can reap the leader and make its PID reusable.
     tree: Tree,
@@ -88,6 +97,12 @@ impl Process {
             return Err(std::io::Error::last_os_error());
         }
         Ok(status == WAIT_OBJECT_0)
+    }
+
+    /// The ids of what is running in the agent's job.
+    #[cfg(windows)]
+    pub(super) fn job_members(&self) -> Result<Vec<u32>> {
+        super::process_windows::job_members(&self.tree.handle)
     }
 
     /// The graceful-shutdown task keeps ownership until its deadline.

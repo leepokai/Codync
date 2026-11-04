@@ -41,12 +41,12 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
 
   return (
     <CardSection footer={<SchedulePreview preview={preview} error={error} />}>
-      <LabeledRow key="Repeat" label="Repeat">
+      <LabeledRow key="Repeat" label={tr('Repeat')}>
         <ChipChoice label="Repeat" selection={repeat} options={repeatChoices} onChange={choose} />
       </LabeledRow>
       {repeat === 'weekly' ? (
         <LabeledRow key="On" label="On">
-          <ChipChoice label="Day" selection={schedule.weekday} options={weekdays} onChange={(weekday) => update({ weekday })} />
+          <ChipChoice label={tr('Day')} selection={schedule.weekday} options={weekdays} onChange={(weekday) => update({ weekday })} />
         </LabeledRow>
       ) : null}
       {repeat === 'hourly' ? (
@@ -54,11 +54,11 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
           <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
         </LabeledRow>
       ) : repeat === 'custom' ? (
-        <LabeledRow key="Cron" label="Cron" top>
+        <LabeledRow key="Cron" label={tr('Cron')} top>
           <VStack gap={6} grow>
             <input
               className="schedule-input routine-cron-input"
-              aria-label="Cron"
+              aria-label={tr('Cron')}
               value={schedule.expression}
               placeholder="0 9 * * 1-5"
               spellCheck={false}
@@ -73,7 +73,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
           <input
             type="time"
             className="schedule-input schedule-time"
-            aria-label="Time"
+            aria-label={tr('Time')}
             value={`${pad(schedule.hour)}:${pad(schedule.minute)}`}
             onChange={(e) => {
               const [hour, minute] = e.target.value.split(':').map(Number)

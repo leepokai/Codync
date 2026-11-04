@@ -114,7 +114,7 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
       {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
       <DropdownMenu
         className="icon-button fallback-menu"
-        title="More"
+        title={tr('More')}
         items={() => [
           ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
           ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),

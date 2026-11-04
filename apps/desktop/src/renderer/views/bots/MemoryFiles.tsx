@@ -4,6 +4,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import type { MemoryFile, MemoryFileDetail, MemoryFiles, MemoryStore } from '../../store/memory-store'
 import { relativeTime } from '../thread/chat-items'
+import { useTr } from '../../lib/use-language'
 
 /** The note a sheet opens. */
 export interface FileTarget { name: string; shared: boolean }
@@ -14,7 +15,7 @@ export function fileRows(files: MemoryFiles, shared: boolean, open: (target: Fil
   return [
     <p key="notes" className="memory-notes-header">{tr('Notes')}</p>,
     ...(live.length === 0 ? [<p key="notes-empty" className="memory-muted">{tr('Longer notes, one topic each. The bot reads one when its topic comes up.')}</p>] : []),
-    ...(live.length > files.folderCap ? [<p key="notes-cap" className="memory-attention">{live.length} notes, over the {files.folderCap}-note cap. Ask the bot to merge some.</p>] : []),
+    ...(live.length > files.folderCap ? [<p key="notes-cap" className="memory-attention">{tr('{count} notes, over the {cap}-note cap. Ask the bot to merge some.').replaceAll('{count}', () => String(live.length)).replaceAll('{cap}', () => String(files.folderCap))}</p>] : []),
     ...live.map((file) => <FileRow key={file.name} file={file} cap={files.cap} tr={tr} open={() => open({ name: file.name, shared })} />),
   ]
 }
@@ -25,13 +26,14 @@ function FileRow({ file, cap, tr, open }: { file: MemoryFile; cap: number; tr: (
     <strong><Icon name="doc.text" size={11} />{file.name}</strong>
     {file.description ? <span className="memory-muted">{file.description}</span> : null}
     <small className={over ? 'memory-attention' : undefined}>
-      {file.tokens} tokens{over ? `, over the ${cap} cap` : ''} · {relativeTime.day(file.updatedAt, tr)}
+      {tr('{tokens} tokens').replaceAll('{tokens}', () => String(file.tokens))}{over ? tr(', over the {cap} cap').replaceAll('{cap}', () => String(cap)) : ''} · {relativeTime.day(file.updatedAt, tr)}
     </small>
   </button>
 }
 
 /** One note, to read. */
 export function MemoryFileSheet({ memory, target }: { memory: MemoryStore; target: FileTarget }) {
+  const tr = useTr()
   const [detail, setDetail] = useState<MemoryFileDetail | null>(null)
   useEffect(() => { void memory.file(target.name, target.shared).then(setDetail) }, [memory, target])
 
@@ -40,7 +42,7 @@ export function MemoryFileSheet({ memory, target }: { memory: MemoryStore; targe
     <CardForm>
       {memory.error ? <CardSection><p role="alert" className="memory-error">{memory.error}</p></CardSection> : null}
       {detail
-        ? <CardSection footer={detail.path}><pre className="memory-file-text">{detail.content ?? 'Deleted.'}</pre></CardSection>
+        ? <CardSection footer={detail.path}><pre className="memory-file-text">{detail.content ?? tr('Deleted.')}</pre></CardSection>
         : <CardSection><p className="memory-muted">Loading…</p></CardSection>}
     </CardForm>
   </div>

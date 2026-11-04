@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { SANDBOX_PREFIX, sandboxName } from '../src/shared/dev-sandbox.ts'
+import type { HostSnapshot } from '../src/shared/ipc.ts'
 
 // Playwright loads specs as CommonJS here (the package has no "type": "module").
 const root = resolve(__dirname, '../../..')
@@ -32,4 +33,25 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     .find((p) => !p.url().startsWith('devtools://'))
   if (!page) throw new Error('The sandbox app has no window open.')
   return { browser, page }
+}
+
+/** Opens Settings from the account panel, on its General page. */
+export async function openGeneralSettings(page: Page) {
+  await page.locator('.sidebar-account').click()
+  await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+}
+
+type Host = {
+  snapshot(): Promise<HostSnapshot>
+  call(baseURL: string, token: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
+}
+
+/** POST /api/<method> on the sandbox host, through the bridge the renderer uses. */
+export function api<T>(page: Page, method: string, body: unknown): Promise<T> {
+  return page.evaluate(async ([method, body]) => {
+    const host = (window as unknown as { codync: { host: Host } }).codync.host
+    const local = (await host.snapshot()).local
+    if (!local) throw new Error('The sandbox host has not answered yet.')
+    return host.call(local.baseURL, local.token, method, body, 30_000)
+  }, [method, body] as const) as Promise<T>
 }

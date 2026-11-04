@@ -1,5 +1,6 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
+use super::entries::NOT_REMOVED;
 use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
 use super::{Store, logged, next_rev};
 use crate::LockExt;
@@ -182,10 +183,12 @@ impl Store {
     pub fn last_message(&self, id: &str) -> Option<LastMessage> {
         let c = self.db.locked();
         let row = c.query_row(
-            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
-               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
-               json_extract(data, '$.call') IS NULL
-             ORDER BY seq DESC LIMIT 1",
+            &format!(
+                "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
+                   (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
+                   json_extract(data, '$.call') IS NULL AND {NOT_REMOVED}
+                 ORDER BY seq DESC LIMIT 1"
+            ),
             [id],
             |r| {
                 let kind: String = r.get(0)?;

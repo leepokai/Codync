@@ -249,6 +249,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             json!({})
         }
+        // A message of the user's waiting for its turn: handled now (`steer`) or taken back (`unqueue`).
+        "steer" | "unqueue" => {
+            let (bot, entry_id) = (str_arg(&b, "botId")?, str_arg(&b, "entryId")?.to_owned());
+            let queued = hub
+                .store
+                .entry(&entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "queued");
+            if queued.is_none() {
+                bail!("that message isn't waiting any more");
+            }
+            let cmd = if method == "steer" { Cmd::Steer { entry_id } } else { Cmd::Unqueue { entry_id } };
+            hub.send_cmd(bot, cmd)?;
+            json!({})
+        }
         "switchBack" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;
             json!({})

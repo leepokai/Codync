@@ -7,6 +7,7 @@ import { Artifacts } from './artifacts'
 import { ReadMarks } from './read-marks'
 import { CatchUp } from './catch-up'
 import type { CallCue } from '@shared/calls'
+import { trNow } from '../lib/l10n.ts'
 
 const REFRESH_TIMEOUT = 20_000
 const DROP_GRACE = 5000
@@ -84,7 +85,7 @@ export class BotSync extends BotMirror {
     if (this.retired) return Promise.resolve()
     this.restartStream()
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.finishRefresh?.(new Error('Connection timed out')), REFRESH_TIMEOUT)
+      const timer = setTimeout(() => this.finishRefresh?.(new Error(trNow('Connection timed out'))), REFRESH_TIMEOUT)
       this.finishRefresh = (error) => {
         clearTimeout(timer)
         this.finishRefresh = null
@@ -343,7 +344,7 @@ export class BotSync extends BotMirror {
   }
 
   private isBelowFloor(e: Entry) {
-    const held = this.allEntries(e.botId).some((x) => x.id === e.id)
+    const held = !!this.entries.get(e.botId)?.some((x) => x.id === e.id)
     return isOutsideLoadedWindow(this.floors.get(e.botId), held, e)
   }
 
@@ -378,7 +379,7 @@ export class BotSync extends BotMirror {
           case 'unpaired':
             throw HostError.unreachable()
           case 'computerOffline':
-            throw new HostError(0, 'Your computer is offline.')
+            throw new HostError(0, trNow('Your computer is offline.'))
           case 'unauthorized':
             throw new HostError(401, this.connection.message)
         }

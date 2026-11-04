@@ -410,7 +410,7 @@ internal fun messagePreview(text: String): String {
 /** The account capsule: who's signed in, opening the account sheet. */
 @Composable internal fun AccountSwitcherButton(state: AccountContext, open: () -> Unit) {
     val (source, pressed) = rememberPress()
-    val email = state.account.accounts.firstOrNull { it.userId == state.account.userId }?.email
+    val email = state.account.current?.email
     Row(Modifier.height(44.dp).glass(Capsule(), pressed = pressed)
         .clickable(source, null, role = Role.Button, onClick = open)
         .semantics { contentDescription = "Switch account"; stateDescription = email ?: "Local pairing" }

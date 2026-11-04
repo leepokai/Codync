@@ -1,6 +1,7 @@
 /** What the Network section says about this computer's networks (codync-network). */
 
 import type { Network, NetworkComputer, NetworkRole, NetworkRule } from '@shared/network'
+import { fill } from './fill.ts'
 
 /** How computers reach each other without a direct path. */
 export type ConnectorChoice = 'public' | 'private' | 'relay'
@@ -44,14 +45,14 @@ export function ruleLine(rule: NetworkRule, net: Network, tr: (s: string) => str
     rule.fromComputer === ANY
       ? rule.fromAgent === ANY
         ? tr('any bot on any computer')
-        : tr('{bot} on any computer').replaceAll('{bot}', bot)
+        : fill(tr('{bot} on any computer'), { bot })
       : rule.fromAgent === ANY
-        ? tr('any bot on {computer}').replaceAll('{computer}', rule.fromComputer)
-        : tr('{bot} on {computer}').replaceAll('{bot}', bot).replaceAll('{computer}', rule.fromComputer)
+        ? fill(tr('any bot on {computer}'), { computer: rule.fromComputer })
+        : fill(tr('{bot} on {computer}'), { bot, computer: rule.fromComputer })
   const me = net.computers.find((c) => c.me)
   const to = rule.toAgent === ANY ? tr('any bot here') : agentName(me, rule.toAgent)
   const template = rule.access === 'allow' ? 'Allow: {from} → {to}' : 'Deny: {from} → {to}'
-  return tr(template).replaceAll('{from}', from).replaceAll('{to}', to)
+  return fill(tr(template), { from, to })
 }
 
 /** The rules with `i` moved by `by` (−1 up, +1 down); unchanged at either end. */

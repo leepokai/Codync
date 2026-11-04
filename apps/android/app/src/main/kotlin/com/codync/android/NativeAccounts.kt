@@ -25,12 +25,17 @@ import java.io.IOException
 /** A sign-in that ended without an account, and why. */
 internal class SignInError(val reason: SignInFailure, message: String, cause: Throwable? = null) : IOException(message, cause)
 
-data class SavedAccount(val userId: String, val sessionId: String, val email: String, val avatar: String?)
+data class SavedAccount(val userId: String, val sessionId: String, val email: String, val avatar: String?) {
+    /** The real address: [email] holds a label for an account without one (`observe`). */
+    val address: String? get() = email.takeIf { "@" in it }
+}
 data class AccountState(val ready: Boolean = false, val configured: Boolean = NativeAccounts.configured,
     val userId: String? = null, val accounts: List<SavedAccount> = emptyList(),
     val multiple: Boolean = false, val error: String? = null) {
     /** Clerk is still restoring the saved sign-in: the launch layer and the root wait, rather than show the welcome. */
     val restoring: Boolean get() = configured && !ready && error == null
+    /** The signed-in account. */
+    val current: SavedAccount? get() = accounts.firstOrNull { it.userId == userId }
 }
 
 /** Clerk owns browser authentication, encrypted credentials and session restoration. */

@@ -145,8 +145,12 @@ public struct MarketplaceView: View {
                 Button { withAnimation(Motion.layout) { showInstalled = true } } label: {
                     HStack(spacing: 8) {
                         HStack(spacing: -8) {
-                            ForEach(model.installedConnectors.prefix(3)) { c in
+                            ForEach(Array(model.installedConnectors.prefix(3))) { c in
                                 ServiceLogo(website: nil, name: c.name, registryName: c.registryName, size: 26)
+                            }
+                            ForEach(Array(model.installedSkills.prefix(max(0, 3 - min(3, model.installedConnectors.count))))) { _ in
+                                SkillGlyph()
+                                    .frame(width: 26, height: 26)
                             }
                         }
                         VStack(alignment: .leading, spacing: 2) {

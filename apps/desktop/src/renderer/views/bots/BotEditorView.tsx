@@ -224,7 +224,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             }
           >
             <DropdownMenu
-              title={draft.cwd || 'A persistent workspace allocated for this bot'}
+              title={draft.cwd || tr('A persistent workspace allocated for this bot')}
               items={() => [
                 { title: 'Personal workspace', selected: !draft.cwd, action: () => set('cwd', '') },
                 { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
@@ -329,7 +329,7 @@ function PluginToggles({ title, empty, items, selection, onChange, onInfo }: {
         return onInfo ? (
           <HStack key={item.id} gap={4}>
             <div className="plugin-toggle">{row}</div>
-            <IconButton title={`About ${item.name}`} icon="info.circle" onClick={() => onInfo(item)} />
+            <IconButton title={tr('About {name}').replaceAll('{name}', () => item.name)} icon="info.circle" onClick={() => onInfo(item)} />
           </HStack>
         ) : row
       })}

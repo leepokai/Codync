@@ -137,6 +137,9 @@ async fn wire_shape_matches_the_snapshot() {
         .to_owned();
     host.call("send", json!({"botId": bot, "text": "go", "clientNonce": "n1"})).await;
     let card = host.wait_for(&bot, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
+    // A queued message taken back: its `removed`.
+    let waiting = host.call("send", json!({"botId": bot, "text": "never mind", "clientNonce": "n3"})).await;
+    host.call("unqueue", json!({"botId": bot, "entryId": waiting["entry"]["id"]})).await;
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
     // A bot another bot created: its `createdBy`.

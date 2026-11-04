@@ -111,6 +111,8 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`).
+    @ObservationIgnored var lastSentNonce: String?
     /// Section moves shown but not answered yet, oldest first.
     @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 
@@ -257,6 +259,13 @@ public final class BotStore {
 
     static let markUnreadHost = "2.39.0"
 
+    /// From host 2.39.0 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
+    public var supportsQueueActions: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.queueActionsHost) } ?? false
+    }
+
+    static let queueActionsHost = "2.39.0"
+
     static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).
@@ -277,7 +286,9 @@ public final class BotStore {
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
-    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard
+    /// against a late response.
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
     public func canLoadOlder(_ botId: String) -> Bool {
         !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }

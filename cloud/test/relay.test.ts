@@ -386,7 +386,7 @@ describe("rate limits", () => {
   it("passes one message at an approved device's 8 MiB cap (a 5 MiB icon), sealed into frames", async () => {
     const { hostWs, dev } = await pair();
     await dev.nextT("presence");
-    const frames = new ref.FrameCodec(ref.random(32), ref.random(32)).seal({ b: { data: "A".repeat(8 * 1024 * 1024 - 16) } });
+    const frames = new ref.FrameCodec(ref.random(32), ref.random(32)).seal({ b: { data: "A".repeat(8 * 1024 * 1024 - 17) } });
     for (const f of frames) dev.send(f);
     for (let i = 0; i < frames.length; i++) await hostWs.nextT("data");
     dev.send(PING);

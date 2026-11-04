@@ -58,6 +58,15 @@ it would run the same way, so its sign-in survives. New values or another way to
 it (package runtime or hosted) rebuild it in place, under the same id, so each bot
 keeps it on or off as before (`install_server` in `host/src/market/install.rs`).
 
+Editing a custom local connector (`updateConnector`, loopback only, no form in the
+apps) keeps its id and each bot's choice. Omitted fields stay; `command` is an
+executable path, never split into arguments; `args` replaces the list and `args: []`
+clears it; `env` merges, with `null` removing a key. The readiness check runs on the
+edited copy and the edit is saved only if it passes, so a typo can't break a working
+connector and an error always means nothing changed. Bots that have the connector on
+then rebuild their tools for their next turn. Registry and remote connectors are
+refused (`host/src/market/connector_update.rs`).
+
 ## Conversation requests
 
 The built-in `connectors` MCP offers search_connectors, list_connectors,

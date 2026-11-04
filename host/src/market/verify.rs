@@ -17,6 +17,11 @@ pub async fn verify(store: &Store, id: &str, port: u16) -> Result<Value> {
         bail!("Finish signing in before checking this connection.");
     }
     let c = super::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
+    check_connector(store, &c, port).await
+}
+
+/// The same check for a definition that doesn't have to be saved yet.
+pub async fn check_connector(store: &Store, c: &super::Connector, port: u16) -> Result<Value> {
     if c.oauth.as_ref().is_some_and(|o| !o.signed_in()) {
         bail!("Sign in before checking this connection.");
     }
@@ -29,7 +34,7 @@ pub async fn verify(store: &Store, id: &str, port: u16) -> Result<Value> {
         command
     } else {
         let mut command = Command::new(std::env::current_exe()?);
-        command.args(["mcp", "remote", "--connector", id, "--port", &port.to_string()]);
+        command.args(["mcp", "remote", "--connector", &c.id, "--port", &port.to_string()]);
         command
     };
     let mut child = command

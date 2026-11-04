@@ -52,21 +52,6 @@ In the **Connectors** section, choose **Custom connector**, above the registry l
 
 Everything you enter is saved on that computer only.
 
-### Edit a custom local connector through the API
-
-`POST /api/updateConnector` edits an existing custom command connector by `id`,
-keeping its id and bot assignments. Supply only the fields you want to change.
-For a runtime upgrade, set `command` to the new executable path; the existing
-arguments stay in place. Send `args` separately to replace them, or `args: []` to
-clear them. Unlike adding a connector, this method does not split a command line.
-`env` adds or replaces individual values, and `null` removes a key.
-
-The host saves the edit and checks that the connector starts and lists its tools.
-If that check fails, the edit remains saved: correct it and try again. After a
-successful check, bots using the connector are notified to refresh their tools.
-This method does not edit registry-installed or URL connectors, and there is no
-edit form in the apps yet.
-
 ## Apps through Composio
 
 Composio is in the featured connectors. Add it and sign in to your Composio account; no API key is needed. Your bots can then find and connect apps through Composio's own tools.

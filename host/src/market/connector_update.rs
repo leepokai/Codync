@@ -1,64 +1,75 @@
 //! Editing an installed connector in place, so its id and every bot's reference to it stay.
 
-use super::install::split_command;
-use super::update_connectors;
+use super::command_line::split_command;
+use super::{Connector, MAX_CREDENTIAL_BYTES, connectors, update_connectors, verify};
 use anyhow::{Result, anyhow, bail};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Edits an installed local connector: omitted fields keep their value, `args` replaces the
-/// argument list, and `env` merges, with `null` removing a key. Every field is checked before
-/// anything is written, so one bad value leaves the connector as it was.
+/// argument list, and `env` merges, with `null` removing a key. The edit is saved only once the
+/// edited connector starts, so an error always means the connector is as it was.
 ///
 /// Registry installs rebuild their command line from the registry, and a remote connector's
 /// URL and OAuth handling are the registry's or the user's to redo, so those are refused here.
-pub fn update_custom_connector(store: &crate::store::Store, b: &Value) -> Result<Value> {
+pub async fn update_custom_connector(store: &crate::store::Store, b: &Value, port: u16) -> Result<Value> {
     let id = b["id"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`id` is required"))?;
-    update_connectors(store, |all| {
+    let mut edited = connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
+    apply(&mut edited, b)?;
+    let check = verify::check_connector(store, &edited, port).await?;
+    // The check can take a minute, so the edit goes onto what's saved by then, not onto the copy.
+    let connector = update_connectors(store, |all| {
         let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
-        if c.command.is_none() {
-            bail!("{} is a remote connector: remove it and add the URL you want", c.name);
-        }
-        if c.registry_name.is_some() {
-            bail!("{} came from the MCP registry: install it again to change how it runs", c.name);
-        }
-        let name = text(b, "name")?.filter(|s| !s.is_empty());
-        let description = text(b, "description")?;
-        let command = match (b.get("command"), b.get("args")) {
-            (None, None) => None,
-            (given, args) => {
-                let line = match given {
-                    Some(Value::String(line)) => line.clone(),
-                    None => c.command.clone().unwrap_or_default(),
-                    Some(_) => bail!("`command` is a string"),
-                };
-                // Updates treat the executable and its arguments as independent fields.
-                let preserved_args = serde_json::json!(&c.args);
-                Some(split_command(&line, Some(args.unwrap_or(&preserved_args)))?)
-            }
-        };
-        let env = b.get("env").map(env_changes).transpose()?;
-
-        if let Some(name) = name {
-            name.clone_into(&mut c.name);
-        }
-        if let Some(description) = description {
-            c.description = description;
-        }
-        if let Some((command, args)) = command {
-            (c.command, c.args) = (command, args);
-        }
-        for (key, value) in env.into_iter().flatten() {
-            match value {
-                Some(value) => {
-                    c.env.insert(key, value);
-                }
-                None => {
-                    c.env.remove(&key);
-                }
-            }
-        }
+        apply(c, b)?;
         Ok(c.public())
-    })
+    })?;
+    Ok(json!({"connector": connector, "verify": check}))
+}
+
+/// Applies an edit, reading every field before writing any, so one bad value changes nothing.
+fn apply(c: &mut Connector, b: &Value) -> Result<()> {
+    if c.command.is_none() {
+        bail!("{} is a remote connector: remove it and add the URL you want", c.name);
+    }
+    if c.registry_name.is_some() {
+        bail!("{} came from the MCP registry: install it again to change how it runs", c.name);
+    }
+    let name = text(b, "name")?.filter(|s| !s.is_empty());
+    let description = text(b, "description")?;
+    let command = match (b.get("command"), b.get("args").filter(|a| !a.is_null())) {
+        (None, None) => None,
+        (given, args) => {
+            let line = match given {
+                Some(Value::String(line)) => line.clone(),
+                None => c.command.clone().unwrap_or_default(),
+                Some(_) => bail!("`command` is a string"),
+            };
+            // Updates treat the executable and its arguments as independent fields.
+            let preserved_args = json!(&c.args);
+            Some(split_command(&line, Some(args.unwrap_or(&preserved_args)))?)
+        }
+    };
+    let env = b.get("env").map(env_changes).transpose()?;
+
+    if let Some(name) = name {
+        name.clone_into(&mut c.name);
+    }
+    if let Some(description) = description {
+        c.description = description;
+    }
+    if let Some((command, args)) = command {
+        (c.command, c.args) = (command, args);
+    }
+    for (key, value) in env.into_iter().flatten() {
+        match value {
+            Some(value) => {
+                c.env.insert(key, value);
+            }
+            None => {
+                c.env.remove(&key);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A present text field: `None` when it isn't there, an error when it isn't a string.
@@ -70,8 +81,8 @@ fn text(b: &Value, key: &str) -> Result<Option<String>> {
     }
 }
 
-/// `env` entries to set, and the ones `null` removes. Values are checked once here, not when
-/// a bot starts, so a bad entry fails at the call.
+/// `env` entries to set, and the ones `null` removes. An empty value is a real value here, as it
+/// is at install; only the credential form refuses it, because it fills in a secret.
 fn env_changes(env: &Value) -> Result<Vec<(String, Option<String>)>> {
     let fields = env.as_object().ok_or_else(|| anyhow!("`env` must be an object"))?;
     let mut changes = Vec::with_capacity(fields.len());
@@ -81,7 +92,9 @@ fn env_changes(env: &Value) -> Result<Vec<(String, Option<String>)>> {
         }
         match value {
             Value::Null => changes.push((key.clone(), None)),
-            Value::String(value) if value.len() <= 64 * 1024 => changes.push((key.clone(), Some(value.clone()))),
+            Value::String(value) if value.len() <= MAX_CREDENTIAL_BYTES => {
+                changes.push((key.clone(), Some(value.clone())));
+            }
             _ => bail!("`env` values are strings, or null to remove one"),
         }
     }
@@ -91,131 +104,107 @@ fn env_changes(env: &Value) -> Result<Vec<(String, Option<String>)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::market::{Connector, add_custom_connector, connectors, install::install_server};
-    use serde_json::json;
+    use crate::market::save_connectors;
 
-    async fn add_local(store: &crate::store::Store, b: Value) -> String {
-        let added = add_custom_connector(store, &b).await.expect("add");
-        added["id"].as_str().expect("id").to_owned()
+    fn local() -> Connector {
+        serde_json::from_value(json!({
+            "id": "local", "name": "Local", "description": "kept", "command": "node",
+            "args": ["a.js", "--flag"], "env": {"API_KEY": "one", "GONE": "x"},
+        }))
+        .expect("connector")
     }
 
-    fn only(store: &crate::store::Store) -> Connector {
-        connectors(store).expect("read").pop().expect("one connector")
-    }
-
-    #[tokio::test]
-    async fn updating_a_connector_keeps_its_id_and_merges_env() {
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
-        let id = add_local(
-            &store,
-            json!({"name": "Local", "command": "node old.js", "env": {"API_KEY": "one", "GONE": "x"}}),
-        )
-        .await;
-        let updated = update_custom_connector(
-            &store,
-            &json!({"id": id, "command": "node", "args": ["new.js"], "env": {"API_KEY": "two", "GONE": null, "NEW": "y"}}),
-        )
-        .expect("update");
-        assert_eq!((updated["id"].as_str(), updated["name"].as_str()), (Some(id.as_str()), Some("Local")));
-        assert_eq!(connectors(&store).expect("read").len(), 1, "an update adds nothing");
-        let c = only(&store);
-        assert_eq!(c.id, id, "bots keep pointing at the same connector");
-        assert_eq!((c.command.as_deref(), c.args.as_slice()), (Some("node"), ["new.js".to_owned()].as_slice()));
-        assert_eq!(c.env["API_KEY"], "two");
-        assert_eq!(c.env["NEW"], "y");
-        assert!(!c.env.contains_key("GONE"), "null removes a key");
-    }
-
-    #[tokio::test]
-    async fn an_update_leaves_what_it_does_not_name() {
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
-        let id = add_local(
-            &store,
-            json!({"name": "Local", "description": "kept", "command": "node", "args": ["a.js", "--flag"]}),
-        )
-        .await;
-        update_custom_connector(&store, &json!({"id": id, "args": ["b.js"]})).expect("args only");
-        let c = only(&store);
-        assert_eq!((c.name.as_str(), c.description.as_str()), ("Local", "kept"));
+    #[test]
+    fn an_edit_merges_env_and_leaves_what_it_does_not_name() {
+        let mut c = local();
+        apply(&mut c, &json!({"args": ["b.js"], "env": {"API_KEY": "two", "GONE": null, "NEW": "y"}})).expect("edit");
+        assert_eq!((c.id.as_str(), c.name.as_str(), c.description.as_str()), ("local", "Local", "kept"));
         assert_eq!((c.command.as_deref(), c.args.as_slice()), (Some("node"), ["b.js".to_owned()].as_slice()));
-        update_custom_connector(&store, &json!({"id": id, "command": "/opt/node-new/bin/node"})).expect("command only");
-        let c = only(&store);
-        assert_eq!(
-            (c.command.as_deref(), c.args.as_slice()),
-            (Some("/opt/node-new/bin/node"), ["b.js".to_owned()].as_slice())
-        );
+        assert_eq!((c.env["API_KEY"].as_str(), c.env["NEW"].as_str()), ("two", "y"));
+        assert!(!c.env.contains_key("GONE"), "null removes a key");
+        apply(&mut c, &json!({"name": " Renamed ", "description": "new"})).expect("text");
+        assert_eq!((c.name.as_str(), c.description.as_str()), ("Renamed", "new"));
     }
 
-    #[tokio::test]
-    async fn command_updates_preserve_omitted_arguments() {
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
-        let id = add_local(&store, json!({"name": "Local", "command": "node", "args": ["server.js", "--flag"]})).await;
+    #[test]
+    fn a_new_command_keeps_the_arguments_until_they_are_named() {
+        let mut c = local();
         for command in ["/opt/node-new/bin/node", "C:\\Program Files\\nodejs\\node.exe"] {
-            update_custom_connector(&store, &json!({"id": id, "command": command})).expect("command only");
-            let c = only(&store);
+            apply(&mut c, &json!({"command": command})).expect("command only");
             assert_eq!(c.command.as_deref(), Some(command));
-            assert_eq!(c.args, ["server.js", "--flag"], "omitting args preserves the server entry point");
+            assert_eq!(c.args, ["a.js", "--flag"], "omitting args preserves the server entry point");
         }
-        update_custom_connector(&store, &json!({"id": id, "args": []})).expect("clear arguments");
-        let c = only(&store);
-        assert_eq!(c.command.as_deref(), Some("C:\\Program Files\\nodejs\\node.exe"));
+        apply(&mut c, &json!({"command": "node", "args": null})).expect("null args");
+        assert_eq!((c.command.as_deref(), c.args.as_slice()), (Some("node"), local().args.as_slice()));
+        apply(&mut c, &json!({"args": []})).expect("clear arguments");
         assert!(c.args.is_empty(), "an explicit empty list clears the arguments");
     }
 
+    #[test]
+    fn a_bad_field_changes_nothing() {
+        let before = local();
+        for (b, why) in [
+            (json!({"command": " "}), "give a command"),
+            (json!({"command": 42}), "`command` is a string"),
+            (json!({"args": 42}), "`args` are strings"),
+            (json!({"args": [1]}), "`args` are strings"),
+            (json!({"name": 7}), "`name` is a string"),
+            (json!({"description": []}), "`description` is a string"),
+            (json!({"env": {"K": 1}}), "`env` values are strings"),
+            (json!({"env": []}), "`env` must be an object"),
+            (json!({"name": "New", "args": ["b.js"], "env": {"K": 1}}), "`env` values are strings"),
+        ] {
+            let mut c = before.clone();
+            let err = apply(&mut c, &b).expect_err(why).to_string();
+            assert!(err.contains(why), "{err}");
+            assert_eq!(c, before, "{why} left the connector untouched");
+        }
+    }
+
+    #[test]
+    fn registry_and_remote_connectors_are_not_edited_in_place() {
+        let mut remote = local();
+        (remote.command, remote.url) = (None, Some("https://example.com/mcp".into()));
+        let err = apply(&mut remote, &json!({"command": "node"})).expect_err("remote");
+        assert!(err.to_string().contains("remote connector"), "{err}");
+        let mut registry = local();
+        registry.registry_name = Some("io.example/server".into());
+        let err = apply(&mut registry, &json!({"command": "node"})).expect_err("registry");
+        assert!(err.to_string().contains("MCP registry"), "{err}");
+    }
+
     #[tokio::test]
-    async fn command_only_update_keeps_a_working_mcp_connector() {
+    async fn an_edit_is_saved_only_once_the_connector_starts() {
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
         let python = if cfg!(windows) { "python" } else { "python3" };
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py");
-        let id = add_local(
-            &store,
-            json!({"name": "Local", "command": python, "args": [fixture], "env": {"API_KEY": "test-private-key"}}),
-        )
-        .await;
-        let before = crate::market::verify::verify(&store, &id, 0).await.expect("initial MCP handshake");
-        update_custom_connector(&store, &json!({"id": id, "command": python})).expect("command only");
-        let after = crate::market::verify::verify(&store, &id, 0).await.expect("MCP handshake after edit");
-        assert_eq!(before, after);
-        assert_eq!(after["status"], "ready");
-        assert_eq!(after["toolCount"], 0);
-    }
+        let fixture = fixture.to_str().expect("utf-8 path");
+        let mut saved = local();
+        saved.command = Some(python.to_owned());
+        saved.args = vec![fixture.to_owned()];
+        saved.env = [("API_KEY".to_owned(), "test-private-key".to_owned())].into();
+        save_connectors(&store, std::slice::from_ref(&saved)).expect("save");
+        let stored = || connectors(&store).expect("read");
 
-    #[tokio::test]
-    async fn a_bad_field_changes_nothing() {
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
-        let id = add_local(&store, json!({"name": "Local", "command": "node", "args": ["a.js"]})).await;
-        for (b, why) in [
-            (json!({"id": "missing"}), "Unknown connector"),
-            (json!({"id": id, "command": " "}), "give a command"),
-            (json!({"id": id, "command": 42}), "`command` is a string"),
-            (json!({"id": id, "args": 42}), "`args` are strings"),
-            (json!({"id": id, "args": [1]}), "`args` are strings"),
-            (json!({"id": id, "name": 7}), "`name` is a string"),
-            (json!({"id": id, "description": []}), "`description` is a string"),
-            (json!({"id": id, "env": {"K": 1}}), "`env` values are strings"),
-            (json!({"id": id, "env": []}), "`env` must be an object"),
+        let err = update_custom_connector(&store, &json!({"id": "missing"}), 0).await.expect_err("unknown");
+        assert!(err.to_string().contains("Unknown connector"), "{err}");
+        for bad in [
+            json!({"id": "local", "command": "/nonexistent/codync-connector-test"}),
+            json!({"id": "local", "env": {"API_KEY": "wrong"}}),
         ] {
-            let err = update_custom_connector(&store, &b).expect_err(why).to_string();
-            assert!(err.contains(why), "{err}");
+            update_custom_connector(&store, &bad, 0).await.expect_err("it won't start");
+            assert_eq!(stored(), [saved.clone()], "a failed check leaves the connector as it was");
         }
-        let c = only(&store);
-        assert_eq!(
-            (c.command.as_deref(), c.args.as_slice()),
-            (Some("node"), ["a.js".to_owned()].as_slice()),
-            "the connector is untouched"
-        );
-    }
 
-    #[tokio::test]
-    async fn registry_and_remote_connectors_are_not_edited_in_place() {
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
-        let remote = add_local(&store, json!({"name": "Remote", "url": "https://example.com/mcp"})).await;
-        let err = update_custom_connector(&store, &json!({"id": remote, "command": "node"})).expect_err("remote");
-        assert!(err.to_string().contains("remote connector"), "{err}");
-        let server = json!({"name": "io.example/server",
-                            "packages": [{"registryType": "npm", "identifier": "server", "version": "1.0.0"}]});
-        let c = install_server(&store, &server, "io.example/server", "package:0", &json!({})).await.expect("install");
-        let err = update_custom_connector(&store, &json!({"id": c["id"], "command": "node"})).expect_err("registry");
-        assert!(err.to_string().contains("MCP registry"), "{err}");
+        let updated = update_custom_connector(&store, &json!({"id": " local ", "args": ["-u", fixture]}), 0)
+            .await
+            .expect("it starts");
+        assert_eq!(
+            (updated["connector"]["id"].as_str(), updated["verify"]["status"].as_str()),
+            (Some("local"), Some("ready"))
+        );
+        assert!(!updated.to_string().contains("test-private-key"), "the answer carries no credential");
+        saved.args = vec!["-u".to_owned(), fixture.to_owned()];
+        assert_eq!(stored(), [saved], "one connector, same id, with the edit");
     }
 }

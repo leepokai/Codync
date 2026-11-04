@@ -238,6 +238,11 @@ def main():
                 assert api("connectorRuntime", {"id": local})["args"][0] == "-u", "the new command line is what runs"
                 assert [c["id"] for c in api("connectors")["items"]] == [local], "an update adds nothing"
             check("updateConnector edits the command line in place and verifies it", edit_in_place)
+            def failed_edit():
+                before = api("connectorRuntime", {"id": local})
+                api("updateConnector", {"id": local, "command": "/nonexistent/codync-connector-check"}, ok=False)
+                assert api("connectorRuntime", {"id": local}) == before, "a connector that won't start isn't saved"
+            check("a failed updateConnector leaves the connector as it was", failed_edit)
             def local_proxy():
                 with proxy(env, port, local, "local") as rpc:
                     assert rpc("tools/list")["tools"] == []

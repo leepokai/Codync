@@ -128,6 +128,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "importConnectors" => Event::ConnectorsImported,
         "importBots" => Event::BotsImported,
         "removeConnector" => Event::ConnectorRemoved,
+        "updateConnector" => Event::ConnectorUpdated,
         "connectorSignIn" => Event::ConnectorSigninStarted,
         "installSkill" => {
             p.insert("custom".into(), (!b["source"].is_string()).into());
@@ -223,6 +224,9 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ArtifactPublished => {
             p.insert("card".into(), answer["card"].is_null().into());
         }
+        Event::ConnectorUpdated => {
+            p.insert("outcome".into(), "ready".into());
+        }
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
         {
@@ -234,12 +238,21 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and a connector edit that was refused or
+/// didn't start says so; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>) -> Option<(Event, Map<String, Value>)> {
-    matches!(event, Event::NetworkJoined | Event::NetworkChanged).then(|| {
-        p.insert("stage".into(), "action".into());
-        (Event::NetworkFailed, p)
-    })
+    match event {
+        Event::NetworkJoined | Event::NetworkChanged => {
+            p.insert("stage".into(), "action".into());
+            Some((Event::NetworkFailed, p))
+        }
+        Event::ConnectorUpdated => {
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), "edit_or_check".into());
+            Some((event, p))
+        }
+        _ => None,
+    }
 }
 
 /// The bot settings a patch changes, by name (never their values), sorted.

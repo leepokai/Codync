@@ -105,6 +105,18 @@ fn settings_routines_screen_and_devices() {
 }
 
 #[test]
+fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
+    let edit = json!({"id": "mine", "command": "/Users/me/bin/server", "env": {"API_KEY": "secret"}});
+    let (event, p) = observe(&Caller::Local, "updateConnector", &edit).expect("tracked");
+    assert_eq!(event, Event::ConnectorUpdated);
+    let saved = answered(event, p.clone(), &json!({"connector": {"id": "mine"}})).expect("reported");
+    assert_eq!(Value::Object(saved), json!({"client": "local", "outcome": "ready"}));
+    let (event, refused) = failed(event, p).expect("reported");
+    assert_eq!(event, Event::ConnectorUpdated);
+    assert_eq!(Value::Object(refused), json!({"client": "local", "outcome": "failed", "error": "edit_or_check"}));
+}
+
+#[test]
 fn connectors_skills_and_agents() {
     assert_eq!(
         props("removeConnector", &json!({"id": "github"})),

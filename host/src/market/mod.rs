@@ -26,6 +26,7 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
+mod command_line;
 mod connector_update;
 mod install;
 mod registry;
@@ -57,6 +58,9 @@ const UA: &str = concat!("codync-host/", env!("CARGO_PKG_VERSION"));
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// Registry search is slow (often 20-30 s); lookups by name are fast.
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// The largest value a connector keeps in its environment or headers.
+pub const MAX_CREDENTIAL_BYTES: usize = 64 * 1024;
 
 // MARK: stored items
 

@@ -21,13 +21,13 @@ Failures produce a nonzero exit code; live provider failures are not skipped.
 
 ## Editing a custom local connector
 
-Edit a custom local connector through `updateConnector` without changing its id
-or bot assignments. Omitted fields keep their values, including `args` when only
-`command` changes. The update's `command` is an executable path; pass arguments
+`updateConnector` (loopback only) edits a custom local connector without changing
+its id or bot assignments. Omitted fields keep their values, including `args` when
+only `command` changes. The update's `command` is an executable path; pass arguments
 separately in `args`, or `args: []` to clear them. Unlike installation, updates
 do not split a command line. `env` merges entries, with `null` removing a key.
-The host saves a valid edit before verification; a failed handshake does not
-roll back that edit. Bot tool refresh occurs only after verification succeeds.
+The host checks the edited copy first and saves it only if it starts, so an error
+means nothing changed. Bots using the connector then refresh their tools.
 
 ## Recorded result: 2026-10-05, macOS
 

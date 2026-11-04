@@ -25,7 +25,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                     }
                     let value = value
                         .as_str()
-                        .filter(|s| !s.is_empty() && s.len() <= 64 * 1024)
+                        .filter(|s| !s.is_empty() && s.len() <= market::MAX_CREDENTIAL_BYTES)
                         .ok_or_else(|| anyhow!("Invalid credential value"))?;
                     values.insert(key.clone(), value.to_owned());
                 }
@@ -140,13 +140,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"connector": c})
         }
         "updateConnector" => {
-            let id = str_arg(&b, "id")?.trim().to_owned();
-            let connector = market::update_custom_connector(&hub.store, &b)?;
-            // Same contract as a credential change: prove the edited definition starts, then
-            // let the bots that have it turned on rebuild their tools for the next turn.
-            let verify = market::verify::verify(&hub.store, &id, hub.port).await?;
-            refresh_tools_for_bots_using(hub, &id)?;
-            json!({"connector": connector, "verify": verify})
+            let updated = market::update_custom_connector(&hub.store, &b, hub.port).await?;
+            // Saved and proven to start: the bots that have it turned on rebuild their tools for the next turn.
+            refresh_tools_for_bots_using(hub, str_arg(&b, "id")?.trim())?;
+            updated
         }
         "connectorSignIn" => {
             // The browser can only reach this host's loopback page when it runs on this computer.

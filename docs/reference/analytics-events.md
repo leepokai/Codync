@@ -49,8 +49,8 @@ host answers and sends it once the host is up.
 | `pairing_failed` | iOS, Android | A pairing attempt fails | `reason` (`not_pairing_link`/`outdated_host`/`invalid`/`expired`/`unauthorized`/`unreachable`/`timeout`/`upgrade_required`/`other`) |
 | `computer_paired` | iOS, Android | The phone reached a computer | `via` (`qr`: scanned or pasted on the scan screen; `link`: a pairing link opened from outside; `account`), `computer` |
 | `device_paired` | host | A phone was added: a pairing code redeemed or an account request approved | `via` (`qr`/`account`), `platform`, `automatic` (approved without a tap) |
-| `access_requested` | iOS, Android | The phone asks an account computer for access | — |
-| `access_request_failed` | iOS, Android | The request ended without access | `reason` (`denied`/`expired`/`cancelled`) |
+| `access_requested` | host `track` (desktop), iOS, Android | The app asks an account computer for access (the computer shows the code) | — |
+| `access_request_failed` | host `track` (desktop), iOS, Android | The request ended without access | `reason` (`denied`/`expired`/`cancelled`) |
 | `access_request_denied` | host (`decideAccessRequest`) | The computer's owner denied a phone | `client` |
 | `device_revoked` | host (`revokeDevice`) | A phone's access was removed | `client` |
 | `phone_connected` | host | A paired phone connects, at most once per phone per UTC day | `platform` |

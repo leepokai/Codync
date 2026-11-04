@@ -1,8 +1,10 @@
+import type { AccessFailure } from '@shared/analytics'
 import type { AccessTicket } from '@shared/ipc'
 import type { Computer } from '@shared/models'
 import { RelayTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
 import { account } from './account'
+import { analytics } from './analytics'
 import type { AppModel } from './app-model'
 import { BotStore } from './bot-store'
 import { CloudError, request, type CloudComputer } from './cloud'
@@ -59,6 +61,7 @@ export class AccountComputers extends Observable {
       // Withdrawn while the computer was still answering: take it off its screen too.
       if (this.asking.get(id) !== asking) return withdraw(ticket)
       asking.ticket = ticket
+      analytics.track({ event: 'access_requested' })
       this.changed()
       if (await this.awaitDecision(id, ticket)) await this.app.cloud.refresh()
     } catch (error) {
@@ -72,7 +75,9 @@ export class AccountComputers extends Observable {
   cancel(computerId: string) {
     const ticket = this.asking.get(computerId)?.ticket
     this.set(computerId, null)
-    if (ticket) withdraw(ticket)
+    if (!ticket) return
+    analytics.track({ event: 'access_request_failed', reason: 'cancelled' })
+    withdraw(ticket)
   }
 
   /** True once approved; false when withdrawn here; throws when the computer declined or the request ran out. */
@@ -80,14 +85,14 @@ export class AccountComputers extends Observable {
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 2_000))
       if (this.asking.get(computerId)?.ticket !== ticket) return false
-      if (Date.now() >= ticket.expiresAt) throw new CloudError(410, 'requestExpired', null)
+      if (Date.now() >= ticket.expiresAt) throw failed('expired')
       const status = await request<{ status: string }>('GET', `v1/access-requests/${ticket.requestId}`, undefined, true).catch((error: unknown) => {
         if (error instanceof CloudError && error.status === 0) return { status: 'pending' }
         throw error
       })
       if (status.status === 'approved') return true
-      if (status.status === 'denied') throw new Error('The computer declined the request.')
-      if (status.status !== 'pending') throw new CloudError(410, 'requestExpired', null)
+      if (status.status === 'denied') throw failed('denied')
+      if (status.status !== 'pending') throw failed(status.status === 'cancelled' ? 'cancelled' : 'expired')
     }
   }
 
@@ -100,4 +105,10 @@ export class AccountComputers extends Observable {
 
 function withdraw(ticket: AccessTicket) {
   void request('DELETE', `v1/access-requests/${ticket.requestId}`, undefined, true).catch(() => {})
+}
+
+/** The request ended without access (as the phones count it): its reason goes out, and the error the person sees comes back. */
+function failed(reason: AccessFailure) {
+  analytics.track({ event: 'access_request_failed', reason })
+  return reason === 'denied' ? new Error('The computer declined the request.') : new CloudError(410, 'requestExpired', null)
 }

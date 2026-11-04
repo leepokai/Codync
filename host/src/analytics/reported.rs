@@ -82,6 +82,11 @@ pub enum Reported {
         stuck: VoiceStuck,
         failure: VoiceFailure,
     },
+    /// The desktop app asks an account computer for access (the phones send this themselves).
+    AccessRequested,
+    AccessRequestFailed {
+        reason: AccessFailure,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
@@ -114,6 +119,17 @@ pub enum SignInFailure {
 pub enum Ask {
     First,
     Second,
+    #[serde(other)]
+    Other,
+}
+
+/// Why an access request ended without access.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccessFailure {
+    Denied,
+    Expired,
+    Cancelled,
     #[serde(other)]
     Other,
 }
@@ -294,6 +310,11 @@ mod tests {
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,
                     "reconnects": 1, "stuck": "none", "failure": "none"}),
                 Event::VoiceCallQuality,
+            ),
+            (json!({"event": "access_requested", "app": "desktop"}), Event::AccessRequested),
+            (
+                json!({"event": "access_request_failed", "app": "desktop", "reason": "denied"}),
+                Event::AccessRequestFailed,
             ),
         ];
         for (body, event) in cases {

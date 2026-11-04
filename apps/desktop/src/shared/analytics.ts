@@ -34,6 +34,8 @@ export type VoiceCallEngine = 'on_device' | 'openai' | 'gemini' | 'cloud'
 export type VoiceStuck = 'none' | 'connecting' | 'reconnecting' | 'speaking'
 /** Why a call's engine gave up. */
 export type VoiceFailure = 'none' | 'microphone' | 'connection' | 'provider'
+/** Why an access request to an account computer ended without access (the phones' reasons). */
+export type AccessFailure = 'denied' | 'expired' | 'cancelled'
 
 export type AnalyticsEvent =
   | { event: 'app_opened'; at_login: boolean }
@@ -49,6 +51,8 @@ export type AnalyticsEvent =
   | { event: 'screen_viewed'; screen: Screen }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
+  | { event: 'access_requested' }
+  | { event: 'access_request_failed'; reason: AccessFailure }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

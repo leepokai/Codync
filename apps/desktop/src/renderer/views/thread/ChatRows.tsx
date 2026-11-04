@@ -204,7 +204,8 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
 }
 
 export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: () => void }) {
-  const text = entry.data.text ?? ''
+  const tr = useTr()
+  const text = tr(entry.data.text ?? '')
   if (entry.data.callSeconds !== undefined) {
     return (
       <HStack justify="center" gap={6}>
@@ -220,7 +221,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" />
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
-            {addFallback ? <Button kind="secondary" onClick={addFallback}>Add a fallback</Button> : null}
+            {addFallback ? <Button kind="secondary" onClick={addFallback}>{tr('Add a fallback')}</Button> : null}
           </VStack>
         </HStack>
       )

@@ -150,9 +150,10 @@ impl Entry {
 
     /// A notice's line; a voice call gets its length ("Voice chat · 00:16").
     pub fn notice_text(&self) -> String {
+        let text = super::super::l10n::tr(self.text());
         match self.data["callSeconds"].as_u64() {
-            Some(s) => format!("{} · {:02}:{:02}", self.text(), s / 60, s % 60),
-            None => self.text().to_owned(),
+            Some(s) => format!("{text} · {:02}:{:02}", s / 60, s % 60),
+            None => text.into_owned(),
         }
     }
 

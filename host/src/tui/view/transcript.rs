@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
@@ -152,7 +153,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ];
             match e.data["status"].as_str() {
-                Some("queued") => head.push(Span::styled(" · queued", t.dim)),
+                Some("queued") => head.push(Span::styled(format!(" · {}", tr("Queued")), t.dim)),
                 Some("cancelled") => head.push(Span::styled(" · not sent", t.red)),
                 _ => {}
             }

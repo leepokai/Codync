@@ -1,4 +1,4 @@
-use super::{AppLanguage, PREFERENCE, language_title, resolved_language, tr};
+use super::{AppLanguage, PREFERENCE, language_title, resolved_language, tr, translate};
 use crate::LockExt;
 
 #[test]
@@ -81,5 +81,107 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
         ("", AppLanguage::En),
     ] {
         assert_eq!(resolved_language(AppLanguage::System, locale), expected, "{locale}");
+    }
+}
+
+#[test]
+fn additional_languages_resolve_regions_and_load_catalogs() {
+    for (language, table) in [
+        (AppLanguage::Ja, &*super::JA),
+        (AppLanguage::Ko, &*super::KO),
+        (AppLanguage::Fr, &*super::FR),
+        (AppLanguage::De, &*super::DE),
+        (AppLanguage::Es, &*super::ES),
+        (AppLanguage::Ru, &*super::RU),
+    ] {
+        assert_eq!(resolved_language(AppLanguage::System, &format!("{}_XX.UTF-8", language.stored())), language);
+        assert_eq!(resolved_language(language, "zh_TW"), language);
+        assert_ne!(super::translate_with("Settings", table), "Settings");
+        assert_eq!(super::translate_with("Unknown phrase", table), "Unknown phrase");
+    }
+    assert_eq!(resolved_language(AppLanguage::System, "nl_NL"), AppLanguage::En);
+}
+
+#[test]
+fn chinese_replaces_a_known_phrase_and_leaves_the_rest() {
+    assert_eq!(translate("Pair a computer", true).as_ref(), "配对一台电脑");
+    assert_eq!(translate("Pair a computer", false).as_ref(), "Pair a computer");
+    assert_eq!(translate("Not a phrase", true).as_ref(), "Not a phrase");
+    assert_eq!(translate("Follow system", true).as_ref(), "跟随系统");
+    assert_eq!(translate("Writing a reply…", true).as_ref(), "正在写回复…");
+    assert_eq!(translate("Downloading Codebuddy Code…", true).as_ref(), "正在下载 Codebuddy Code…");
+    assert_eq!(translate("Needs approval: Bash", true).as_ref(), "需要批准：Bash");
+    assert_eq!(translate("Storage", true).as_ref(), "存储");
+    assert_eq!(translate("New skill", true).as_ref(), "新建技能");
+    assert_eq!(translate("Add connector", true).as_ref(), "添加连接器");
+    assert_eq!(translate("Name your group", true).as_ref(), "给群聊起个名字");
+    assert_eq!(translate("Nothing installed", true).as_ref(), "还没有安装");
+    assert_eq!(translate("No setup needed.", true).as_ref(), "无需设置。");
+    assert_eq!(
+        translate("Runs the official installer on this Mac.", true).as_ref(),
+        "在 this Mac 上运行官方安装程序。"
+    );
+    assert_eq!(
+        translate("Claude Code isn't set up on this computer. Install Claude Code and run `claude auth login`.", true)
+            .as_ref(),
+        "Claude Code 还没有在这台电脑上设置好。安装 Claude Code，然后运行 `claude auth login`。"
+    );
+    assert_eq!(super::compact_time("3h 20m").as_deref(), Some("3小时20分"));
+    assert_eq!(super::compact_time("2d 6h").as_deref(), Some("2天6小时"));
+    assert_eq!(super::compact_time("Sep 26"), None);
+}
+
+#[test]
+fn the_palette_label_reads_the_choice_without_locking_twice() {
+    let title = language_title();
+    assert!(!title.is_empty());
+}
+
+#[test]
+fn a_missing_choice_follows_the_computer() {
+    assert_eq!(AppLanguage::parse(""), AppLanguage::System);
+    assert_eq!(AppLanguage::parse("zh"), AppLanguage::Zh);
+    assert_eq!(AppLanguage::parse("zh-Hans"), AppLanguage::Zh);
+    assert_eq!(AppLanguage::parse("zh-Hant"), AppLanguage::ZhHant);
+    assert_eq!(AppLanguage::parse("en"), AppLanguage::En);
+    assert_eq!(AppLanguage::System.next(), AppLanguage::Zh);
+    assert_eq!(AppLanguage::Zh.next(), AppLanguage::ZhHant);
+    assert_eq!(AppLanguage::ZhHant.next(), AppLanguage::En);
+    assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
+    assert_eq!(AppLanguage::Es.next(), AppLanguage::PtBr);
+    assert_eq!(AppLanguage::PtBr.next(), AppLanguage::Ru);
+    assert_eq!(AppLanguage::Ru.next(), AppLanguage::System);
+    assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
+    assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
+    assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));
+    assert_eq!(super::system_script_of("en_US.UTF-8"), None);
+    assert_eq!(super::translate_with("Settings", &super::HANT).as_ref(), "設定");
+    assert_eq!(super::translate_with("Files", &super::HANT).as_ref(), "檔案");
+}
+
+#[test]
+fn catalogs_preserve_names_and_substitute_captured_values_once() {
+    for table in [
+        &*super::HANS,
+        &*super::HANT,
+        &*super::JA,
+        &*super::KO,
+        &*super::FR,
+        &*super::DE,
+        &*super::ES,
+        &*super::PT_BR,
+        &*super::RU,
+    ] {
+        for name in ["Plan", "connected", "Standby", "$&", "{hint}"] {
+            let expected = super::translate_with("Routine · {name}", table).replace("{name}", name);
+            assert_eq!(super::translate_with(&format!("Routine · {name}"), table), expected);
+            let title = super::translate_with("Message about “{title}”", table).replace("{title}", name);
+            assert_eq!(super::translate_with(&format!("Message about “{name}”"), table), title);
+        }
+        let hint = "Install Claude Code and run `claude auth login`.";
+        let expected = super::translate_with("{name} isn't set up on this computer. {hint}", table)
+            .replace("{hint}", &super::translate_with(hint, table))
+            .replace("{name}", "{hint}");
+        assert_eq!(super::translate_with(&format!("{{hint}} isn't set up on this computer. {hint}"), table), expected);
     }
 }

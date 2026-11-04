@@ -67,7 +67,7 @@ interface Piece { literal?: string; token?: string }
 /**
  * Phrase keys that already contain `{token}` slots, longest fixed text first.
  * A filled sentence ("Runs the official installer on this Mac.") matches the key,
- * and a slot that is itself a known phrase (a setup hint) is translated too.
+ * while only app-owned hints recurse; names and free text stay as written.
  */
 const templates: Array<{ key: string; pieces: Piece[]; literal: number }> = Object.keys(hans).flatMap((key) => {
   const pieces = parseTemplate(key)
@@ -98,6 +98,8 @@ function hit(key: string, primary: Record<string, string>, fallback: Record<stri
   return primary[key] ?? fallback[key]
 }
 
+const localizableSlots = new Set(['{hint}', '{error}', '{setup}', '{kind}', '{when}', '{status}', '{reason}', '{shortcut}'])
+
 function fill(text: string, pieces: Piece[], phrase: string, primary: Record<string, string>, fallback: Record<string, string>, depth: number): string | undefined {
   let pos = 0
   const caps = new Map<string, string>()
@@ -116,12 +118,13 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
     pos = end
   }
   if (pos !== text.length) return undefined
-  let result = phrase
   for (const [token, value] of caps) {
-    const inner = hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
-    result = result.replaceAll(token, inner)
+    // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+    const localizable = localizableSlots.has(token)
+    const inner = localizable ? hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value : value
+    caps.set(token, inner)
   }
-  return result
+  return phrase.replace(/\{[A-Za-z0-9]+\}/g, (token) => caps.get(token) ?? token)
 }
 
 /** A sentence the host or a view already filled in, matched back to its `{token}` phrase. */

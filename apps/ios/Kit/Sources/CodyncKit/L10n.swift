@@ -211,6 +211,10 @@ public enum L10n {
         return nil
     }
 
+    private static let localizableSlots: Set<String> = [
+        "{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}",
+    ]
+
     private static func fill(
         _ text: String,
         pieces: [Piece],
@@ -240,12 +244,16 @@ public enum L10n {
             pos = end
         }
         guard pos == text.endIndex else { return nil }
-        var result = phrase
+        var values: [String: String] = [:]
         for (token, value) in caps {
-            let inner = primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value
-            result = result.replacingOccurrences(of: token, with: inner)
+            // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+            let localizable = localizableSlots.contains(token)
+            let inner = localizable ? (primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value) : value
+            values[token] = inner
         }
-        return result
+        return phrase.replacing(#/\{[A-Za-z0-9]+\}/#) { match in
+            values[String(match.output)] ?? String(match.output)
+        }
     }
 
     /// One more template pass, for a setup hint inside an error. It does not look inside its own slots.

@@ -19,6 +19,13 @@ Traditional Chinese retains its existing Simplified fallback. Translate an
 interface template before inserting a user's name or text. Conversation content
 is not translated. The desktop catalog test checks key and placeholder parity.
 
+A captured name, title, query, sign-in code or message is opaque, even when it
+matches an English interface phrase. Only app-owned `{hint}`, `{error}`,
+`{setup}`, `{kind}`, `{when}`, `{status}`, `{reason}` and `{shortcut}` slots
+translate recursively. Cloud errors use `{reason}` and `{hint}` for their
+interface text; keyboard hints use `{shortcut}`. Substitute captured values in
+one pass so a name containing another placeholder's spelling stays literal.
+
 Russian system locales (including `ru-RU` and `ru_RU.UTF-8`) use `ru`, shown
 as **Русский** after Brazilian Portuguese. The Russian catalog uses a fixed
 glossary (бот, ведущий агент, рутина, коннектор) and count-neutral phrases such

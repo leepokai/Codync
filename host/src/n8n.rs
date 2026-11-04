@@ -320,6 +320,10 @@ impl N8n {
     /// The instance is ready: its owner, session, MCP access and the bots' connector.
     /// Best effort — a failure shows in the state and the logs, never in the instance.
     async fn mcp_setup(&self, generation: u64, hub: &Arc<Hub>) {
+        if !self.rest_ready(generation).await {
+            tracing::warn!("the n8n instance's REST API was not ready yet; its MCP server waits for the next start");
+            return;
+        }
         let store = &hub.store;
         let result = self.mcp_setup_inner(store, generation, hub).await;
         let mcp = match result {
@@ -334,6 +338,31 @@ impl N8n {
         };
         *self.mcp.locked() = mcp;
         self.broadcast();
+    }
+
+    /// The REST API mounts a while after `/healthz` answers (it runs migrations first);
+    /// wait until one of its routes answers anything but a 404 — the unauthenticated
+    /// `GET /rest/login` answers 401 once the router is up.
+    async fn rest_ready(&self, generation: u64) -> bool {
+        let port = self.settings.locked().port;
+        let url = format!("http://127.0.0.1:{port}/rest/login");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+        loop {
+            if self.generation.load(Ordering::SeqCst) != generation {
+                return false; // a stop or new start took over
+            }
+            let mounted = matches!(
+                crate::http().get(&url).timeout(Duration::from_secs(2)).send().await,
+                Ok(r) if r.status().as_u16() != 404
+            );
+            if mounted {
+                return true;
+            }
+            if tokio::time::Instant::now() > deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
     }
 
     /// Owner, login, MCP access, API key and the bots' connector; returns the session cookie.

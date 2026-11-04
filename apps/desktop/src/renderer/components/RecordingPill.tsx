@@ -22,14 +22,14 @@ function useElapsed(startedAt: number) {
 /**
  * Dictation in progress, in place of the mic: stop, the time since it started, and dots that
  * follow the microphone's level; `transcribing` once a recording waits for its transcript.
- * `color` null is the text color.
+ * `color` defaults to the text color.
  */
-export function RecordingPill({ startedAt, sample, onStop, transcribing = false, color = null, className = '' }: {
+export function RecordingPill({ startedAt, sample, onStop, transcribing = false, color, className = '' }: {
   startedAt: number
   sample: () => LevelSample
   onStop: () => void
   transcribing?: boolean
-  color?: string | null
+  color?: string
   className?: string
 }) {
   const tr = useTr()

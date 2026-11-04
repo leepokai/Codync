@@ -58,6 +58,9 @@ can be traced from the events around it:
   failure, its category in `error`. Never the error's message.
 - **Errors**: failures that should never happen go to *Error tracking* below (`reportError` on
   the host, desktop and terminal UI); crashes are already caught.
+- **Display preferences send nothing.** A device's own look (Settings › Appearance: theme, text
+  size, usage icons, compact sidebar, agent logos; thinking details) has no outcome or failure to
+  trace, so switching one is not an event.
 - The *Rules* above apply: feature use only, never content. List each new event and property in
   [analytics events](../reference/analytics-events.md), and check they arrive in PostHog
   (`env = dev`) during the change's e2e test.

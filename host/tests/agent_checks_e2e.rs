@@ -80,7 +80,11 @@ async fn a_test_host_never_runs_the_agent_clis() {
     let (mut host, base) = common::serve_with(&home, &[("PATH", path.as_os_str())]).await;
     for method in ["refreshBackends", "usage", "agentAuth"] {
         let response = call(&base, &home, method).send().await.unwrap();
-        assert!(response.status().is_success(), "{method}: {}", response.status());
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        // `agentAuth` opens the vault first: a computer with no keyring, like Linux CI, refuses it there, before any agent.
+        let no_keyring = method == "agentAuth" && body.contains("Secure credential storage");
+        assert!(status.is_success() || no_keyring, "{method}: {status} {body}");
     }
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert_eq!(std::fs::read_to_string(&log).unwrap_or_default(), "");

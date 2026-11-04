@@ -51,12 +51,30 @@ A readiness check starts the connector, performs MCP initialize and tools/list,
 and stops the check process. It never invokes a business tool. Failures and a
 90-second timeout remain visible and retryable. Package acquisition is performed
 by the configured runtime (npx, uvx, Docker, etc.), so that runtime must be present.
+A local connector is found and started the way a bot runs it (`shell::program`, so
+npm's `.cmd` shims on Windows too), in the folder of the first bot that has it on, or
+the host's folder when none does, so a relative path means the same thing in both.
 
 Installing a registry connector that is already installed (Add again after a failed
 check, or Connect on a request card) keeps it as it is when nothing new is typed and
 it would run the same way, so its sign-in survives. New values or another way to run
 it (package runtime or hosted) rebuild it in place, under the same id, so each bot
 keeps it on or off as before (`install_server` in `host/src/market/install.rs`).
+
+Editing a custom local connector (`updateConnector`, loopback only, no form in the
+apps) keeps its id and each bot's choice. Omitted fields stay; `command` is an
+executable path, never split into arguments; `args` replaces the list and `args: []`
+clears it; `env` merges, with `null` removing a key. A change to how it runs (`command`,
+`args`, `env`) is checked on the edited copy and exactly that copy is saved if it passes,
+so a typo can't break a working connector and an error means the edit changed nothing. A
+save by anything else during the check refuses the edit, so overlapping edits never combine
+into settings nobody checked. A new `name` or `description` alone starts nothing: it saves
+even while the server can't start, `verify` is null in the answer and no bot restarts.
+Otherwise the bots that have the connector on are told to rebuild their tools. An agent that
+can resume restarts whole before its next turn (not only this connector's process); one
+that can't keeps its session, and the old definition, until its next new session. A bot
+that can't be told is logged and doesn't fail the saved edit. Registry and remote
+connectors are refused (`host/src/market/connector_update.rs`).
 
 ## Conversation requests
 

@@ -133,6 +133,9 @@ pub async fn poll(hub: Arc<Hub>) {
 }
 
 pub async fn refresh(hub: &Hub) {
+    if crate::agent::backends::agent_checks_off() {
+        return;
+    }
     let (
         codex,
         claude,

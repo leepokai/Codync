@@ -18,7 +18,7 @@ const where = input.dir
   ? `in the change's git worktree ${input.dir}: run every command there (\`cd ${input.dir} && …\` in each call, or \`git -C ${input.dir}\`) and use absolute paths under it`
   : 'in the current directory (the change\'s git worktree)'
 const scope = `The change: ${change}
-Its diff: \`git diff ${base}\` (committed and uncommitted) plus the new files \`git status --short\` lists, ${where}. Touch nothing outside that worktree and no other agent's work.`
+Its diff: \`git diff ${base}\` (committed and uncommitted) plus the new files \`git status --short\` lists, ${where}. Touch nothing outside that worktree and no other agent's work. Host tests run one at a time: never start a test binary several times in parallel, or several copies of the suite, not even to hunt a flake (repeat it one run after another, a few times at most).`
 
 const FINDING = {
   type: 'object',

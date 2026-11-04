@@ -23,11 +23,11 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 擴充功能的「已安裝」提示也會顯示技能的圖示。
 
 ### en-US
+- Messages sent while a bot works wait above the box: send now or take back.
 - First-time setup offers your account's computers or a new one, plus a website link to copy.
-- Messages sent while a bot works wait above the message box: send one now, or take it back.
-- When bots use different agents, the bot list shows each one's logo (off in Settings › Appearance).
+- When bots use different agents, the list shows each one's logo (off in Settings).
 - Fixed a crash when the connection dropped.
 - A one-off speech error no longer ends a voice call.
-- Choose Português (Brasil), Русский or Italiano in Settings, or follow your system language.
+- Choose Português (Brasil), Русский or Italiano in Settings.
 - A QR-paired computer joins your account when it next connects.
 - Calls read more clearly.

@@ -2,6 +2,20 @@
 
 How the end-to-end (e2e) checks drive the apps: Playwright for the desktop app, Maestro for the iPhone and Android apps, and Computer Use only for the native steps neither can reach. Unit and component tests stay as they are (`npm run typecheck && npm test`, `cargo test`, the Swift tests in `apps/ios/Kit`, the Gradle checks).
 
+## Host tests
+
+`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`).
+
+Run them one at a time: never start a test binary several times in parallel, or several copies of the suite, not even to hunt a flake. Repeat it one run after another, a few times at most. On 2026-11-04 parallel repeats left about 200 `claude -p /usage` processes behind, using 55 GB on a 32 GB Mac, and froze it.
+
+## Real agents
+
+Everyday tests use the fake agents, which only answer the way we expect. Run the real ones too, one short turn per agent on the cheapest model, with nothing in parallel (it uses your own plan), when:
+
+1. The registry version of `claude-acp` or `codex-acp` moves ([ACP adapter workarounds](../reference/acp-adapter-workarounds.md)).
+2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
+3. Before a release.
+
 ## Desktop: Playwright
 
 Playwright attaches to the worktree's running sandbox over the DevTools protocol. It doesn't launch Electron itself: the sandbox already owns the host, data, sign-in and single-instance lock, and an app launched without them would open against the shared Codync Dev.

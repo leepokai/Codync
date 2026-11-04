@@ -61,8 +61,9 @@ use std::time::Duration;
 
 const MCP_REGISTRY: &str = "https://registry.modelcontextprotocol.io/v0/servers";
 const SKILLS_REPO: &str = "anthropics/skills";
-/// Where skill listings and files may be fetched from (download links come from GitHub's answer).
-const GITHUB: Policy = Policy::Only(&["api.github.com", "raw.githubusercontent.com"]);
+/// Where skill listings and files may be fetched from: the tree pages from `github.com`, the
+/// files from `raw.githubusercontent.com` (download links come from GitHub's answer).
+const GITHUB: Policy = Policy::Only(&["api.github.com", "github.com", "raw.githubusercontent.com"]);
 const UA: &str = concat!("codync-host/", env!("CARGO_PKG_VERSION"));
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// Registry search is slow (often 20-30 s); lookups by name are fast.

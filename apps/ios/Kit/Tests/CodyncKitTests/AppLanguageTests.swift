@@ -126,7 +126,7 @@ struct AppLanguageTests {
 
 extension AppLanguageTests {
 @Test func additionalLanguagesResolveRegionsAndLoadBundledCatalogs() {
-    for language in [AppLanguage.ja, .ko, .fr, .de, .es, .ru] {
+    for language in [AppLanguage.ja, .ko, .fr, .de, .es, .ru, .it] {
         #expect(AppLanguage.resolved(preference: .system, languages: [language.rawValue + "-XX"]) == language)
         #expect(AppLanguage.resolved(preference: language, languages: ["zh-TW"]) == language)
         let translated = L10n.tr("Settings", preference: language, systemIsChinese: false)
@@ -138,6 +138,8 @@ extension AppLanguageTests {
     #expect(AppLanguage.resolved(preference: .system, languages: ["nl-NL"]) == .en)
     #expect(AppLanguage.resolved(preference: .system, languages: ["ru_RU.UTF-8"]) == .ru)
     #expect(AppLanguage.menuTitle(.ru, preference: .en, systemIsChinese: true) == "Русский")
+    #expect(AppLanguage.resolved(preference: .system, languages: ["it_IT.UTF-8"]) == .it)
+    #expect(AppLanguage.menuTitle(.it, preference: .en, systemIsChinese: true) == "Italiano")
 }
 
 }
@@ -153,7 +155,7 @@ extension AppLanguageTests {
         #expect(AppLanguage.preference(in: suite) == .ptBR)
         #expect(AppLanguage(rawValue: "pt-BR") == .ptBR)
         #expect(AppLanguage.ptBR.catalogName == "pt-BR")
-        #expect(Array(AppLanguage.allCases.suffix(3)) == [.es, .ptBR, .ru])
+        #expect(Array(AppLanguage.allCases.suffix(4)) == [.es, .ptBR, .ru, .it])
         #expect(AppLanguage.menuTitle(.ptBR, preference: .en, systemIsChinese: true) == "Português (Brasil)")
         #expect(!AppLanguage.usesChinese(preference: .ptBR, systemIsChinese: true))
         let locale = AppLanguage.locale(preference: .ptBR, systemIsChinese: true)

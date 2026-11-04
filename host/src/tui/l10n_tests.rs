@@ -34,7 +34,7 @@ fn portuguese_system_locales_use_the_brazilian_catalog() {
 #[test]
 fn the_language_cycle_appends_portuguese_after_spanish() {
     let mut choice = AppLanguage::System;
-    for identifier in ["zh", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "pt-BR", "ru", "system"] {
+    for identifier in ["zh", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "pt-BR", "ru", "it", "system"] {
         choice = choice.next();
         assert_eq!(choice.stored(), identifier);
         assert_eq!(AppLanguage::parse(identifier), choice);
@@ -101,6 +101,7 @@ fn additional_languages_resolve_regions_and_load_catalogs() {
         (AppLanguage::De, &*super::DE),
         (AppLanguage::Es, &*super::ES),
         (AppLanguage::Ru, &*super::RU),
+        (AppLanguage::It, &*super::IT),
     ] {
         assert_eq!(resolved_language(AppLanguage::System, &format!("{}_XX.UTF-8", language.stored())), language);
         assert_eq!(resolved_language(language, "zh_TW"), language);
@@ -158,7 +159,8 @@ fn a_missing_choice_follows_the_computer() {
     assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
     assert_eq!(AppLanguage::Es.next(), AppLanguage::PtBr);
     assert_eq!(AppLanguage::PtBr.next(), AppLanguage::Ru);
-    assert_eq!(AppLanguage::Ru.next(), AppLanguage::System);
+    assert_eq!(AppLanguage::Ru.next(), AppLanguage::It);
+    assert_eq!(AppLanguage::It.next(), AppLanguage::System);
     assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
     assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
     assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));
@@ -179,6 +181,7 @@ fn catalogs_preserve_names_and_substitute_captured_values_once() {
         &*super::ES,
         &*super::PT_BR,
         &*super::RU,
+        &*super::IT,
     ] {
         for name in ["Plan", "connected", "Standby", "$&", "{hint}"] {
             let expected = translate_with("Routine · {name}", table).replace("{name}", name);

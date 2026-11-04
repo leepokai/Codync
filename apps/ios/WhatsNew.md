@@ -17,6 +17,8 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
 - 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
 - 排隊狀態、例行任務和執行紀錄會跟隨介面語言，名稱與訊息保留原文。
+- 新增義大利文介面：可在設定選擇「Italiano」，或跟隨系統的義大利文語言。
+- 擴充功能的「已安裝」提示也會顯示技能的圖示。
 
 ### en-US
 - When your bots use more than one agent, the bot list marks each avatar with its agent's logo. Turn it off in Settings › Appearance.
@@ -26,5 +28,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - When speech recognition stops working, voice calls and dictation tell you, instead of listening forever or ending without a word.
 - Choose Português (Brasil) in Settings, or follow your Portuguese system language.
 - Choose Русский in Settings, or follow your Russian system language.
+- Choose Italiano in Settings, or follow your Italian system language.
+- The Installed button in Extensions also shows your skills' icons.
 - A computer you pair with a QR code that couldn't join your account at the time (the phone couldn't reach the Codync cloud, or the computer's cloud was off, say) joins it the next time it connects.
 - Queue status, routine notices and trace labels follow your language; names and messages stay as written.

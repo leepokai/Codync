@@ -17,12 +17,14 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
 - 語音通話的對話紀錄更好讀，通話列在 bot 沒說話時也會顯示一排靜止的點。
 - 排隊狀態、例行任務和執行紀錄會跟隨介面語言，名稱與訊息保留原文。
+- 新增義大利文介面：可在設定選擇「Italiano」，或跟隨系統的義大利文語言。
+- 擴充功能的「已安裝」提示也會顯示技能的圖示。
 
 ### en-US
 - When bots use different agents, the bot list shows each one's logo (off in Settings › Appearance).
 - Fixed a crash when the connection dropped.
-- A one-off speech recognition error no longer ends a voice call.
-- Choose Português (Brasil) or Русский in Settings, or follow your system language.
+- A one-off speech error no longer ends a voice call.
+- Choose Português (Brasil), Русский or Italiano in Settings, or follow your system language.
 - A QR-paired computer joins your account when it next connects.
 - Calls read more clearly, and the call bar shows still dots while the bot is quiet.
 - Routine and trace labels follow your language.

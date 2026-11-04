@@ -25,6 +25,7 @@ enum AppLanguage {
     Es,
     PtBr,
     Ru,
+    It,
 }
 
 impl AppLanguage {
@@ -40,6 +41,7 @@ impl AppLanguage {
             "es" => Self::Es,
             "pt-BR" => Self::PtBr,
             "ru" => Self::Ru,
+            "it" => Self::It,
             _ => Self::System,
         }
     }
@@ -57,6 +59,7 @@ impl AppLanguage {
             Self::Es => "es",
             Self::PtBr => "pt-BR",
             Self::Ru => "ru",
+            Self::It => "it",
         }
     }
 
@@ -72,7 +75,8 @@ impl AppLanguage {
             Self::De => Self::Es,
             Self::Es => Self::PtBr,
             Self::PtBr => Self::Ru,
-            Self::Ru => Self::System,
+            Self::Ru => Self::It,
+            Self::It => Self::System,
         }
     }
 }
@@ -120,6 +124,11 @@ static PT_BR: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
 static RU: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/ru.json"))
         .expect("ru.json is a string map")
+});
+
+static IT: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/it.json"))
+        .expect("it.json is a string map")
 });
 
 static PREFERENCE: LazyLock<Mutex<AppLanguage>> = LazyLock::new(|| Mutex::new(read_preference()));
@@ -180,6 +189,7 @@ fn active_phrases() -> Option<&'static HashMap<String, String>> {
         AppLanguage::Es => Some(&ES),
         AppLanguage::PtBr => Some(&PT_BR),
         AppLanguage::Ru => Some(&RU),
+        AppLanguage::It => Some(&IT),
         AppLanguage::En | AppLanguage::System => None,
     }
 }
@@ -420,6 +430,7 @@ pub(in crate::tui) fn language_title() -> Cow<'static, str> {
         AppLanguage::Es => Cow::Borrowed("Español"),
         AppLanguage::PtBr => Cow::Borrowed("Português (Brasil)"),
         AppLanguage::Ru => Cow::Borrowed("Русский"),
+        AppLanguage::It => Cow::Borrowed("Italiano"),
         AppLanguage::System => tr("Follow system"),
     }
 }

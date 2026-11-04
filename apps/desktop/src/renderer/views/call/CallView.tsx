@@ -22,6 +22,7 @@ import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
 import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoicePhase, type VoiceProvider } from './voice'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
+import { fill } from '../../lib/fill.ts'
 import './call.css'
 
 /** What the call bar says for `phase`. */
@@ -223,7 +224,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     // A cloud engine that can't start or drops mid-call hands over to on-device voice.
     if (phase === 'failed' && session.provider && onDeviceAvailable()) {
       countCloudMinutes()
-      setNotice(tr("{name} isn't available ({reason}). Using on-device voice.").replaceAll('{name}', providerName(session.provider)).replaceAll('{reason}', () => tr(String(session.failure))))
+      setNotice(fill(tr("{name} isn't available ({reason}). Using on-device voice."), { name: providerName(session.provider), reason: tr(String(session.failure)) }))
       begin(null)
     }
   }, [session, phase])

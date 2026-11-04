@@ -5,6 +5,11 @@ import Testing
 @testable import CodyncKit
 
 struct AppLanguageTests {
+    @Test func whatFillPutsInStaysAsWritten() {
+        #expect(L10n.fill("{name} and {other}", ["name": "Build {other}", "other": "Reviewer"]) == "Build {other} and Reviewer")
+        #expect(L10n.fill("{name} and {missing}", ["name": "Build"]) == "Build and {missing}")
+    }
+
     @Test func theLanguageChoiceIsReadFromTheStoreItWasWrittenTo() {
         let name = "AppLanguageTests.\(UUID().uuidString)"
         let suite = UserDefaults(suiteName: name)!

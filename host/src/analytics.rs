@@ -86,6 +86,8 @@ pub enum Event {
     VoiceCallFinished,
     /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
     VoiceCallQuality,
+    /// A desktop window's crashed page loaded again, or crashed too often and stays down.
+    WindowRecovery,
     RemoteScreenOpened,
     ScreenTakenOver,
     ConnectorInstalled,
@@ -103,6 +105,8 @@ pub enum Event {
     AgentSetupStarted,
     AgentSignedIn,
     SettingChanged,
+    /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
+    ReachAccountAnswered,
     HostUpdateInstalled,
     /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
     NetworkJoined,
@@ -158,6 +162,7 @@ impl Event {
             Self::VoiceCallStarted => "voice_call_started",
             Self::VoiceCallFinished => "voice_call_finished",
             Self::VoiceCallQuality => "voice_call_quality",
+            Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
@@ -174,6 +179,7 @@ impl Event {
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::SettingChanged => "setting_changed",
+            Self::ReachAccountAnswered => "reach_account_answered",
             Self::HostUpdateInstalled => "host_update_installed",
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",

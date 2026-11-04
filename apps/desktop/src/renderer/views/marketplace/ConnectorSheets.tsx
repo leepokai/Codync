@@ -10,6 +10,7 @@ import { ErrorText, Field, WebLink } from './pieces'
 import { usePlugins } from './plugins'
 import { signInCode } from './sign-in-code'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 
 /** A sign-in with a code (GitHub): the code to paste on its page, before the page opens. */
 export function SignInCodeDialog() {
@@ -106,7 +107,7 @@ export function InstallConnectorSheet({ item, requestId, addsAtOnce = true, done
                 id: o.id,
                 label: o.kind === 'remote'
                   ? tr('Hosted by {name}').replaceAll('{name}', item.title)
-                  : tr('On {name} ({kind})').replaceAll('{name}', store.hostName).replaceAll('{kind}', o.kind),
+                  : fill(tr('On {name} ({kind})'), { name: store.hostName, kind: o.kind }),
               }))}
             />
           </CardSection>

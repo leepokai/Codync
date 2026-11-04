@@ -35,6 +35,12 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
   return { browser, page }
 }
 
+/** Opens Settings from the account panel, on its General page. */
+export async function openGeneralSettings(page: Page) {
+  await page.locator('.sidebar-account').click()
+  await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+}
+
 type Host = {
   snapshot(): Promise<HostSnapshot>
   call(baseURL: string, token: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>

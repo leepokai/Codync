@@ -9,13 +9,28 @@ struct QueuedMessages: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(entries) { entry in
-                row(entry).transition(.move(edge: .bottom).combined(with: .opacity))
+        // A long queue scrolls, so every row stays in reach and the chat keeps its room.
+        ScrollViewReader { proxy in
+            CappedHeight(max: 190) {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(entries) { entry in
+                            row(entry).id(entry.id).transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            // It stays where it is, the oldest (next to go) in view; a message sent from here shows that it arrived.
+            .onChange(of: entries.last?.id) {
+                guard let newest = entries.last, let nonce = newest.data.clientNonce, nonce == model.lastSentNonce else { return }
+                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { proxy.scrollTo(newest.id, anchor: .bottom) }
             }
         }
-        .padding(.vertical, 2)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Palette.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: entries.map(\.id))
     }
 

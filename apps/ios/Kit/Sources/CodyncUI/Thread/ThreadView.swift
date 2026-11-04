@@ -292,9 +292,7 @@ struct IntroCard: View {
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text(bot.managedWorkspace
                  ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
-                 : L10n.tr("{agent} in {path}")
-                    .replacingOccurrences(of: "{agent}", with: model.backendName(bot.backend))
-                    .replacingOccurrences(of: "{path}", with: bot.cwd))
+                 : L10n.fill(L10n.tr("{agent} in {path}"), ["agent": model.backendName(bot.backend), "path": bot.cwd]))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)

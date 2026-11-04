@@ -8,6 +8,7 @@ import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
+import { analytics } from '../../store/analytics'
 import type { CloudComputer } from '../../store/cloud'
 import type { BotStore } from '../../store/bot-store'
 import { StoreContext, useApp } from '../../store/context'
@@ -114,6 +115,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
   const [showVoice, setShowVoice] = useState(false)
   const [confirmUnclaim, setConfirmUnclaim] = useState(false)
   const [confirmAutoApproval, setConfirmAutoApproval] = useState(false)
+  const [askAccount, setAskAccount] = useState(false)
   const cloud = store.cloud
   const owner = cloud?.owner ?? null
   const autoApproval = cloud?.approval === 'auto'
@@ -135,6 +137,14 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         store.setError(errorText(e))
       }
     })
+
+  // Turning it on asks to add a computer that would be in no account (`joinsAccountOnEnable`). Signed out, the welcome
+  // covers Settings and a build without accounts has none to join; a saved session still restoring makes the switch wait.
+  const asksAccount = cloud?.joinsAccountOnEnable === true
+  const setReach = (on: boolean) => {
+    if (on && asksAccount && account.isSignedIn) setAskAccount(true)
+    else void run(() => app.cloud.setCloud(store, on))
+  }
 
   // A private relay has no accounts: no claim, no access requests.
   const privateRelay = cloud?.relay === 'private'
@@ -186,7 +196,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
           // Until the host gives its cloud status, there's no way to tell its relay or account.
           ...(cloud
             ? [
-                <Switch key="cloud" className="settings-appear" on={cloud.enabled} disabled={busy || !manageable} onChange={(on) => run(() => app.cloud.setCloud(store, on))}>
+                <Switch key="cloud" className="settings-appear" on={cloud.enabled} disabled={busy || !manageable || (asksAccount && !cloud.enabled && !account.isReady)} onChange={setReach}>
                   <span className="settings-stack">
                     <Text>{tr(`Reach from anywhere`)}</Text>
                     <Text size="caption" tone={cloud.lastError ? 'attention' : 'secondary'}>{cloudLine}</Text>
@@ -268,6 +278,17 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         message={tr("Any device signed in to your account gets full control of {name}: its files, terminals and bots, with no check here. If someone gets into your account, or Codync's cloud is ever compromised, they could add their own device and you'd have no chance to stop it. Devices paired with a QR code aren't affected.").replaceAll('{name}', name)}
         actions={[{ title: 'Skip the check', destructive: true, action: () => setApproval('auto') }]}
         onClose={() => setConfirmAutoApproval(false)}
+      />
+      <Dialog
+        open={askAccount}
+        title={tr('Add {name} to your account first').replaceAll('{name}', () => name)}
+        message={tr('Your phone reaches {name} from anywhere through your account. Adding it also turns this on.').replaceAll('{name}', () => name)}
+        actions={[
+          { title: 'Add to account', action: () => void run(() => app.cloud.addFromReach(store)) },
+          { title: 'Use your own relay', action: () => void run(() => app.cloud.useOwnRelay(store)) },
+        ]}
+        onCancel={() => analytics.track({ event: 'reach_account_answered', outcome: 'cancelled' })}
+        onClose={() => setAskAccount(false)}
       />
       <Dialog
         open={confirmUnclaim}

@@ -20,7 +20,17 @@ const SIGNED: &str = "account_claims_signed";
 /// with the Codync cloud off or a private relay, where it is in no account either (as its status says).
 pub fn owner(store: &Store) -> Option<Owner> {
     cloud::current(store).filter(|address| address.kind == RelayKind::Codync)?;
+    recorded(store)
+}
+
+/// The account last recorded, whichever relay is in use now.
+fn recorded(store: &Store) -> Option<Owner> {
     store.kv_get(OWNER).and_then(|v| serde_json::from_str::<Option<Owner>>(&v).ok()).flatten()
+}
+
+/// `CloudStatus::joins_account_on_enable`: read from what's saved, as the status says nothing of it with the cloud off.
+pub fn joins_account_on_enable(store: &Store) -> bool {
+    cloud::when_on(store).is_some_and(|address| address.kind == RelayKind::Codync) && recorded(store).is_none()
 }
 
 /// Records the account the cloud reports. When it is another one than before (joining one, moving, or leaving),

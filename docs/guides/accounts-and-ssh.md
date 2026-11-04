@@ -246,7 +246,10 @@ such action: removing a computer from the account takes the desktop app (or `cod
 on that computer), and phones manage only their own access (pair or forget, revoke, ask). See [desktop app](../architecture/desktop-app.md).
 
 **Computers & devices** (Settings) shows, for this computer and each SSH computer:
-*Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud),
+*Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud; when the host's
+`cloudStatus` says `joinsAccountOnEnable`, read from what it saved since the status names no owner or
+relay with the cloud off, turning it on first asks: *Add to account* turns it on too, *Use your own
+relay* turns it on and keeps this identity out of auto-claim (`keptOutOfAccount`) until the address is saved; older hosts just turn on),
 *Relay address* and, for a private relay, a write-only *Relay token* (`setCloudUrl`; the
 host's `cloudStatus` says `relay: "private"` and `tokenSet`, and there the account rows are hidden
 and auto-claim never runs), *Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and

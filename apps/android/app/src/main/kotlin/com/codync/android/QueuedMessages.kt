@@ -11,14 +11,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,10 +54,20 @@ internal val AppState.supportsQueueActions: Boolean
     var shown by remember { mutableStateOf(entries) }
     if (entries.isNotEmpty() && entries != shown) shown = entries
     val actions = state.supportsQueueActions
+    val scroll = rememberScrollState()
+    val newest = entries.lastOrNull()
+    // It stays where it is, the oldest (next to go) in view; a message sent from here shows that it arrived.
+    LaunchedEffect(newest?.id) {
+        if (newest?.clientNonce != null && newest.clientNonce == store.lastSentNonce) {
+            withFrameNanos {} // Its row is laid out by then, so the scroll takes it in.
+            scroll.animateScrollTo(scroll.maxValue)
+        }
+    }
     AnimatedVisibility(entries.isNotEmpty(), modifier, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
+        // A long queue scrolls, so every row stays in reach and the chat keeps its room.
         Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.surface).animateContentSize(Motion.layoutSize)
-            .padding(vertical = 2.dp)) {
+            .heightIn(max = 190.dp).verticalScroll(scroll).padding(vertical = 2.dp)) {
             for (entry in shown) key(entry.id) {
                 QueuedRow(entry, actions, steering = "steer:" + entry.id in state.busy, steer = { store.steer(entry) }, remove = { store.unqueue(entry) })
             }

@@ -35,12 +35,10 @@ public struct NetworkView: Codable, Hashable, Sendable {
                 ? L10n.tr("{bot} on any computer").replacingOccurrences(of: "{bot}", with: rule.fromAgent)
                 : rule.fromAgent == Rule.any
                 ? L10n.tr("any bot on {computer}").replacingOccurrences(of: "{computer}", with: rule.fromComputer)
-                : L10n.tr("{bot} on {computer}")
-                    .replacingOccurrences(of: "{bot}", with: named(rule.fromAgent, agents(false, rule.fromComputer)))
-                    .replacingOccurrences(of: "{computer}", with: rule.fromComputer)
+                : L10n.fill(L10n.tr("{bot} on {computer}"), ["bot": named(rule.fromAgent, agents(false, rule.fromComputer)), "computer": rule.fromComputer])
             let to = rule.toAgent == Rule.any ? L10n.tr("any bot here") : named(rule.toAgent, agents(true, nil))
             let template = rule.access == .allow ? "Allow: {from} → {to}" : "Deny: {from} → {to}"
-            return L10n.tr(template).replacingOccurrences(of: "{from}", with: from).replacingOccurrences(of: "{to}", with: to)
+            return L10n.fill(L10n.tr(template), ["from": from, "to": to])
         }
     }
 

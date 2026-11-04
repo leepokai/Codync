@@ -140,15 +140,12 @@ async fn agent_probes_leave_no_session_in_the_users_omp() {
         eprintln!("skipping: oh-my-pi not installed");
         return;
     }
+    // The probe is started here: which agent the host starts on its own depends on what else is installed.
+    host.call("agentModels", json!({"backend": "omp"})).await;
     let users = std::env::var_os("PI_CODING_AGENT_DIR")
         .map_or_else(|| dirs::home_dir().unwrap().join(".omp/agent"), PathBuf::from);
-    let ours = common::agent_dir(&host.home);
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while omp_sessions(&ours, &host.home).is_empty() && omp_sessions(&users, &host.home).is_empty() {
-        assert!(Instant::now() < deadline, "oh-my-pi never opened its probe session");
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
     assert_eq!(omp_sessions(&users, &host.home), Vec::<String>::new(), "a probe session in the user's oh-my-pi");
+    assert_ne!(omp_sessions(&common::agent_dir(&host.home), &host.home), Vec::<String>::new(), "no probe session");
 }
 
 // SIGTERM is Unix only; Windows stops the host by ending its process.

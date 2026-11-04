@@ -30,6 +30,12 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - Desktop opens an image in a large panel that fits the window; a large image shrinks to fit
   below the header without cropping, even when the window is resized, and a small one keeps its
   own size. Sent and bot-shared images use the same viewer.
+- The desktop viewer zooms (trackpad pinch or ctrl + wheel, two fingers on a touch screen,
+  double-click, `+` / `-` / `0`) and moves the picture by dragging or scrolling once zoomed in.
+  The header has Copy image (the picture itself on the clipboard, re-encoded as PNG when it is
+  another format) and, for a bot-shared file, the file's Download button next to the close button.
+  Right-click on a picture, in the chat or the viewer, offers Copy image and Copy name. iPhone and
+  Android have no full-size viewer yet, so none of this applies there.
 - Terminal UI: dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
   an empty draft removes the last one); sent files show as `▤ name size` lines. It uploads with the
   same `upload` chunks.

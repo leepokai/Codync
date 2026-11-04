@@ -23,6 +23,9 @@ export type Screen =
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
 
+/** What was done in the full-size picture viewer. */
+export type ImageAction = 'zoom' | 'copy_image' | 'copy_name' | 'download'
+
 export type SignInProvider = 'apple' | 'google' | 'github'
 
 /** Why a sign-in ended without an account. */
@@ -54,6 +57,8 @@ export type AnalyticsEvent =
   | { event: 'star_prompt_answered'; ask: 'first' | 'second'; starred: boolean }
   | { event: 'link_opened'; link: Link }
   | { event: 'screen_viewed'; screen: Screen }
+  | { event: 'image_preview_opened' }
+  | { event: 'image_preview_action'; action: ImageAction }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }

@@ -70,6 +70,11 @@ pub enum Reported {
     ScreenViewed {
         screen: Screen,
     },
+    /// A picture opened full size (desktop).
+    ImagePreviewOpened,
+    ImagePreviewAction {
+        action: ImageAction,
+    },
     VoiceCallStarted {
         engine: Engine,
     },
@@ -150,6 +155,18 @@ pub enum Link {
     Privacy,
     Support,
     InstallCommand,
+    #[serde(other)]
+    Other,
+}
+
+/// What was done in the full-size picture viewer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageAction {
+    Zoom,
+    CopyImage,
+    CopyName,
+    Download,
     #[serde(other)]
     Other,
 }
@@ -331,6 +348,11 @@ mod tests {
             ),
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
+            (json!({"event": "image_preview_opened", "app": "desktop"}), Event::ImagePreviewOpened),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "copy_image"}),
+                Event::ImagePreviewAction,
+            ),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,

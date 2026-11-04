@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { isImageName, type Attachment, type SharedFile } from '@shared/models'
 import { Icon } from '../../components/Icon'
-import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
+import { IconButtonBase, ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { analytics } from '../../store/analytics'
 import { useStoreRef } from '../../store/context'
+import { ImageContextMenu } from './ImageContextMenu'
+import { imageBytes, useImageActions } from './use-image-actions'
+import { ZoomableImage } from './ZoomableImage'
 import './attachments.css'
 
 /** The symbol for a file by its extension. */
@@ -37,9 +41,11 @@ export function AttachmentList({ attachments, botId }: { attachments: Attachment
     <VStack align="flex-end" gap={4}>
       {attachments.map((file) =>
         isImageName(file.name) ? (
-          <button key={file.id} className="attachment-image-button" aria-label={file.name} onClick={() => setViewing(file)}>
-            <AttachmentImage source={{ file, botId }} fit="thumbnail" />
-          </button>
+          <ImageContextMenu key={file.id} source={{ file, botId }}>
+            <button className="attachment-image-button" aria-label={file.name} onClick={() => setViewing(file)}>
+              <AttachmentImage source={{ file, botId }} fit="thumbnail" />
+            </button>
+          </ImageContextMenu>
         ) : (
           <HStack key={file.id} gap={8} className="attachment-file">
             <Icon name={attachmentSymbol(file.name)} size={16} color="var(--secondary)" />
@@ -58,19 +64,46 @@ export function AttachmentList({ attachments, botId }: { attachments: Attachment
 /** Where a picture's bytes are on the computer: a file sent with a message, or one a bot shared. */
 export type ImageSource = { file: Attachment; botId: string } | { file: SharedFile; entryId: string }
 
-/** A picture full size, in a sheet. */
-export function AttachmentViewer({ source, close }: { source: ImageSource | null; close: () => void }) {
+/** A picture full size, in a sheet: zoom it, copy it, and with `actions` (a shared file's download) next to the close button. */
+export function AttachmentViewer({ source, close, actions }: { source: ImageSource | null; close: () => void; actions?: ReactNode }) {
+  const id = source?.file.id
+  useEffect(() => {
+    if (id) analytics.track({ event: 'image_preview_opened' })
+  }, [id])
   return (
     <Sheet open={source !== null} onClose={close} width={1040} height={800}>
-      {source ? (
-        <SheetPage>
-          <ModalHeader title={source.file.name} />
-          <div className="attachment-viewer">
-            <AttachmentImage source={source} fit="full" />
-          </div>
-        </SheetPage>
-      ) : null}
+      {source ? <ViewerPage source={source} actions={actions} /> : null}
     </Sheet>
+  )
+}
+
+function ViewerPage({ source, actions }: { source: ImageSource; actions?: ReactNode }) {
+  const copy = useImageActions(source)
+  // Zooming is counted once per opening, not per pinch step.
+  const zoomed = useRef(false)
+  const reportZoom = () => {
+    if (zoomed.current) return
+    zoomed.current = true
+    analytics.track({ event: 'image_preview_action', action: 'zoom' })
+  }
+  const [title, icon] = copy.done === 'image' ? ['Copied', 'checkmark'] : copy.done === 'failed' ? ["Couldn't copy image", 'exclamationmark.circle'] : ['Copy image', 'doc.on.doc']
+  return (
+    <SheetPage>
+      <ModalHeader
+        title={source.file.name}
+        trailing={
+          <>
+            <IconButtonBase title={title} icon={icon} onClick={() => void copy.copyImage()} />
+            {actions}
+          </>
+        }
+      />
+      <ImageContextMenu source={source} className="attachment-viewer">
+        <ZoomableImage onZoom={reportZoom}>
+          <AttachmentImage source={source} fit="full" />
+        </ZoomableImage>
+      </ImageContextMenu>
+    </SheetPage>
   )
 }
 
@@ -82,8 +115,7 @@ export function AttachmentImage({ source, fit }: { source: ImageSource; fit: 'ic
     let revoked = false
     let made: string | null = null
     const read = () => {
-      const data = 'entryId' in source ? store.sharedFileData(source.file, source.entryId) : store.attachmentData(source.file.id, source.botId)
-      void data.then((data) => {
+      void imageBytes(store, source).then((data) => {
         if (!data || revoked || made) return
         made = URL.createObjectURL(new Blob([data as BlobPart]))
         setUrl(made)
@@ -111,5 +143,5 @@ export function AttachmentImage({ source, fit }: { source: ImageSource; fit: 'ic
       </div>
     )
   }
-  return <img src={url} alt="" className={`attachment-image ${fit}`} />
+  return <img src={url} alt="" draggable={false} className={`attachment-image ${fit}`} />
 }

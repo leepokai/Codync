@@ -15,14 +15,16 @@ use std::collections::HashSet;
 use std::path::Path;
 
 mod catalog;
+mod credentials;
 mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
+pub(crate) use credentials::for_id as credential_state;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{
-    SignInCheck, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused, refresh_sign_in,
-    set_signed_in, signed_in,
+    SignInCheck, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, from_files_first, merged,
+    note_prompt_refused, refresh_sign_in, set_signed_in, signed_in,
 };
 pub use workbuddy::{apply_process_env, move_saved_session_aside, session_proves_sign_in};
 
@@ -84,11 +86,17 @@ pub fn list() -> Vec<Value> {
         .filter(|h| workbuddy::offered(h.id))
         .map(|h| {
             let path = installed_cli(h);
+            let creds = credentials::for_id(h.id);
             let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));
             let native = path.is_some() && h.local.is_some();
             let runnable = native || reg.is_some_and(|a| registry::launch_kind(a).is_some());
             let needs_node = if native { workbuddy::runs_on_node(h.id) } else { reg.is_some_and(registry::needs_node) };
             let node = if needs_node { node::state() } else { None };
+            let signed_in = if h.signed_in.is_some() {
+                merged(h.id, creds.signed_in)
+            } else {
+                from_files_first(h.id, creds.signed_in)
+            };
             json!({
                 "id": h.id,
                 "name": h.name,
@@ -97,7 +105,8 @@ pub fn list() -> Vec<Value> {
                 "path": path.map(|p| p.to_string_lossy().into_owned()),
                 "description": reg.and_then(|a| a["description"].as_str()).unwrap_or_default(),
                 "installHint": h.setup,
-                "signedIn": signed_in(h.id),
+                "signedIn": signed_in,
+                "email": creds.email,
                 "canInstall": h.install.and_then(Install::command).is_some(),
                 "node": node.map(node::State::name),
                 "command": h.local.unwrap_or_default(),
@@ -122,6 +131,7 @@ pub fn list() -> Vec<Value> {
             "description": a["description"],
             "installHint": format!("Codync installs it automatically. Sign in to {} on this computer first if it needs an account.", a["name"].as_str().unwrap_or(id)),
             "signedIn": signed_in(id),
+            "email": null,
             "node": node::state().filter(|_| registry::needs_node(a)).map(node::State::name),
             "command": "",
             "registry": id,

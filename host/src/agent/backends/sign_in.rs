@@ -76,6 +76,32 @@ pub fn set_signed_in(id: &str, state: Option<bool>) {
     }
 }
 
+/// What the list shows when the agent's own CLI check applies: the live evidence (its report,
+/// a session or a CLI check, all re-run on the last refresh) first, else its credential files —
+/// recorded so the rest of the host agrees.
+pub fn merged(id: &str, from_files: Option<bool>) -> Option<bool> {
+    match signed_in(id) {
+        Some(live) => Some(live),
+        None => from_files.map(|files| {
+            set_signed_in(id, Some(files));
+            files
+        }),
+    }
+}
+
+/// What the list shows when the agent has no CLI check of its own: its credential files, read
+/// just now, outrank a probe that is only as fresh as the last refresh; a probe result stands
+/// when the files say nothing.
+pub fn from_files_first(id: &str, from_files: Option<bool>) -> Option<bool> {
+    match from_files {
+        Some(files) => {
+            set_signed_in(id, Some(files));
+            Some(files)
+        }
+        None => signed_in(id),
+    }
+}
+
 /// Re-checks every installed harness that can report its sign-in state.
 pub async fn refresh_sign_in() {
     let installed = HARNESSES.iter().filter(|h| h.signed_in.is_some() && h.bins.iter().any(|b| on_path(b)));

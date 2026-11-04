@@ -116,9 +116,10 @@ fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
 /// Runs a check and returns `{signedIn, detail, methods, savedEnv}`.
 pub async fn check(store: &Store, backend: &str) -> Result<Value> {
     let mut status = probe(store, backend).await?;
-    // Where a session proves nothing, a check that can't tell keeps what the last sign-in showed.
+    // Where a session proves nothing, a check that can't tell keeps what the last sign-in
+    // showed, or what the agent's own credential files say.
     if status.signed_in.is_none() && !backends::session_proves_sign_in(backend) {
-        status.signed_in = backends::signed_in(backend);
+        status.signed_in = backends::signed_in(backend).or_else(|| backends::credential_state(backend).signed_in);
     }
     status.signed_in = backends::apply_prompt_refusal(backend, status.signed_in);
     backends::set_signed_in(backend, status.signed_in);

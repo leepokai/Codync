@@ -66,6 +66,11 @@ couldn't get the matching side yet.
   `kind`, `target` and `everyMinutes` there. The host makes this safe by reusing its stored
   triggers when a routine form saves with "keep". An older app's schedule preview of such a
   routine still fails; the routine itself is untouched.
+- **Routine flows** ([feature](../features/routine-flows.md)) only added methods (`routineFlowCanvas`, `saveRoutineFlowPosition`,
+  `removeRoutineFlowPosition`, `placeRoutineFlowBot`, `connectRoutineFlow`, `disconnectRoutineFlow`, `updateRoutineFlowLink`,
+  `testRoutineFlow`), a `routineFlow` event type and three tools of the `routines` MCP server: `minApp` and `minHost` do not
+  change. An older client never calls the methods and skips the event type, which carries no data; a client built for flows
+  that meets an older host gets `404 unknown method` and hides its canvas.
 - Floors never exceed the release that ships them (unit tests in both crates check this).
 - The encrypted channel's handshake version (`v` in its `hello`, rejected with
   `unsupportedVersion`, close code 4400) is separate: the host must keep accepting every `v`

@@ -30,10 +30,16 @@ pub(super) fn tool() -> Value {
 }
 
 /// Dropping a caller cancels only its own request, including when the MCP connection goes away.
-struct PendingAsk {
+pub(super) struct PendingAsk {
     hub: Arc<Hub>,
     id: String,
     target: String,
+}
+
+impl PendingAsk {
+    pub(super) fn new(hub: &Arc<Hub>, id: &str, target: &str) -> Self {
+        Self { hub: hub.clone(), id: id.to_owned(), target: target.to_owned() }
+    }
 }
 
 impl Drop for PendingAsk {

@@ -129,6 +129,7 @@ impl App {
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
+            Overlay::Flow(f) => self.flow_key(f, k),
             Overlay::Library(l) => self.library_key(l, k),
             Overlay::Market(m) => self.market_key(m, k),
             Overlay::Agent(a) => self.agent_key(a, k),

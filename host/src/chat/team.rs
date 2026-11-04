@@ -20,6 +20,7 @@ pub mod assistant;
 mod batch;
 mod blocking;
 mod directory;
+pub mod flow;
 mod pipeline;
 pub mod remote;
 mod requests;

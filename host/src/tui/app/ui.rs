@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, DocumentSheet, Fields, Library, Market, MemorySheet, NetworkSheet,
-    RoutineForm, RoutineList, SkillSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, DocumentSheet, Fields, FlowSheet, Library, Market, MemorySheet,
+    NetworkSheet, RoutineForm, RoutineList, SkillSheet,
 };
 use super::{Editor, Mark};
 
@@ -338,6 +338,7 @@ pub enum Overlay {
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
     Routines(RoutineList),
+    Flow(Box<FlowSheet>),
     Routine(Box<RoutineForm>),
     Library(Library),
     Market(Box<Market>),

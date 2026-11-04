@@ -13,6 +13,7 @@ mod catalog;
 pub(in crate::tui) mod computer;
 pub(in crate::tui) mod documents;
 mod fields;
+mod flow;
 mod library;
 mod market;
 pub(in crate::tui) mod mcp_tools;
@@ -29,6 +30,7 @@ mod when;
 pub use analytics::AnalyticsSheet;
 pub use documents::{DocumentReply, DocumentSheet};
 pub use fields::{handoff_fields, protected_fill_fields, voice_decision_fields};
+pub use flow::{FlowSheet, FlowStage, Target};
 pub use library::{ArtifactTitles, LibraryItem};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
@@ -59,6 +61,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
+    /// A canvas request, or a change to a flow that needs the canvas again.
+    Flow(String),
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),

@@ -3,6 +3,7 @@ mod check;
 pub use check::Checked;
 mod editor;
 mod failed;
+pub mod flow;
 mod idle;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
 pub mod hooks;
@@ -132,6 +133,8 @@ pub struct Routines {
     stopping: std::sync::atomic::AtomicBool,
     /// Bumped whenever the webhook set the relay registers (`hooks()`) changes.
     hooks_rev: tokio::sync::watch::Sender<u64>,
+    /// The routine flows running now (`flow`).
+    flows: flow::Registry,
 }
 
 impl Default for Routines {
@@ -142,6 +145,7 @@ impl Default for Routines {
             scheduler: Mutex::default(),
             stopping: std::sync::atomic::AtomicBool::default(),
             hooks_rev: tokio::sync::watch::channel(0).0,
+            flows: flow::Registry::default(),
         }
     }
 }
@@ -342,6 +346,7 @@ impl Routines {
             Ok(retry::forget(s, |run| run.routine_id == id))
         })?;
         retry::withdraw(hub, &withdrawn);
+        flow::forget_routine(hub, id, bot);
         Ok(json!({"ok":true}))
     }
 
@@ -450,7 +455,7 @@ impl Routines {
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
     body[key].as_str().with_context(|| format!("{key} is required"))
 }
-fn public(r: &Routine) -> Value {
+pub(crate) fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})

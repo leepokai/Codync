@@ -102,7 +102,8 @@ def verify_routine_tools():
         assert init["serverInfo"]["name"] == "codync-routines"
         names = {t["name"] for t in rpc("tools/list", {})["tools"]}
         assert names == {"list_routines", "save_routine", "set_routine_enabled",
-                         "delete_routine", "run_routine", "routine_webhook"}, names
+                         "delete_routine", "run_routine", "routine_webhook", "link_routine_bots",
+                         "unlink_routine_bots", "list_routine_flow"}, names
         assert not call("list_routines", {})["routines"]
         invalid = rpc("tools/call", {"name": "save_routine", "arguments": {
             "name": "Invalid", "instruction": "Check", "triggers": [{"type": "interval", "seconds": 0}]}})

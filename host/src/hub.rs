@@ -19,6 +19,7 @@ use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
 mod documents;
+pub mod flows;
 mod order;
 mod reactions;
 mod stop;
@@ -172,6 +173,7 @@ impl Hub {
         self.store.expire_pending()?;
         crate::chat::memory::import_old_memory(self);
         self.routines.restore(&self.store)?;
+        crate::routines::flow::recover(self)?;
         crate::market::turn_on_installed_once(&self.store)?;
         for row in self.store.bots()? {
             if row.deleted {
@@ -369,6 +371,7 @@ impl Hub {
         self.external.forget(self, id);
         self.computer.revoke_all(id);
         self.screen.forget_bot_snapshots(id);
+        crate::routines::flow::forget_bot(self, id);
         self.routines.disable_bot(&self.store, id)?;
         // A locked vault keeps them; Credentials lists them under "A removed bot" to remove.
         if let Err(error) = crate::market::bot_secrets::remove_bot(&self.store, id) {

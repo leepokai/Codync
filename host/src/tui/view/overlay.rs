@@ -141,6 +141,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
+        Overlay::Flow(f) => super::super::sheets::flow(buf, area, app, f),
         Overlay::Library(l) => super::super::sheets::library(buf, area, app, l),
         Overlay::Market(m) => super::super::sheets::market(buf, area, app, m),
         Overlay::Agent(a) => super::super::sheets::agent(buf, area, app, a),

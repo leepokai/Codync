@@ -11,6 +11,9 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
+    if let Some(answer) = crate::routines::flow::api_call(hub, method, &b)? {
+        return Ok(ControlFlow::Break(answer));
+    }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),

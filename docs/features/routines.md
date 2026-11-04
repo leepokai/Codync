@@ -1,5 +1,7 @@
 # Routines
 
+A routine can also pass its result on to other bots: see [routine flows](routine-flows.md).
+
 Routines belong to an agent bot and are usually created by talking to it ("I want
 a routine that…"); the host gives the [lead bot](lead-bot.md) one of its own, *Check in*. Every agent receives the built-in `routines` MCP server. The Details page
 of the bot's details (the desktop's details panel; the phones' details sheet, which tapping the
@@ -36,7 +38,8 @@ rest of Codync, with Reduce Motion support.
 
 Every agent receives the `routines` MCP server automatically; no marketplace
 installation is needed. Its tools are `list_routines`, `save_routine`,
-`set_routine_enabled`, `delete_routine`, `run_routine` and `routine_webhook`.
+`set_routine_enabled`, `delete_routine`, `run_routine` and `routine_webhook`, plus three that build a
+[routine flow](routine-flows.md): `link_routine_bots`, `unlink_routine_bots` and `list_routine_flow`.
 They reach only the bot's own routines, so every bot test-runs its own with
 `run_routine`, also when another bot asks it to (such as a
 [team manager](bot-collaboration.md#team-management)). A bot never
@@ -54,7 +57,7 @@ reported as awaiting connection. Testing runs the actual instruction, so creatin
 a schedule alone should not trigger an unsolicited test execution.
 
 A deterministic ACP fixture exercises the actual advertised MCP subprocess:
-initialize, discover all six tools, reject an invalid schedule, create, read,
+initialize, discover the tools, reject an invalid schedule, create, read,
 edit, pause/resume, fetch webhook credentials, delete, refuse a routine that
 isn't the bot's, and execute a test run.
 This verifies tool wiring and persisted behavior; it does not guarantee how every
@@ -224,6 +227,7 @@ All normal methods use the existing authenticated host API / authorized E2E chan
 | `runRoutine` | `botId`, `id` (a waiting retry runs now instead) |
 | `retryRoutineRun` | `botId`, `runId` of a failed run whose notice offers a retry; returns the new `run` |
 | `routineWebhook` | `botId`, `id`, optional `rotate`; returns `url` (public or null), `localUrl`, `key`, `connected` |
+| `routineFlowCanvas` and seven more | A routine's flow of bot-to-bot hand-offs: canvas, node positions, connect, disconnect, test. See [routine flows](routine-flows.md#host-api). |
 
 The local-only `routineCall` backs the MCP tools. Each MCP instance is scoped to
 its bot. Phone and desktop panels refresh while visible; definitions do not currently

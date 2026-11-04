@@ -84,6 +84,8 @@ pub enum Event {
     VoiceCallFinished,
     /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
     VoiceCallQuality,
+    /// A desktop window's crashed page loaded again, or crashed too often and stays down.
+    WindowRecovery,
     RemoteScreenOpened,
     ScreenTakenOver,
     ConnectorInstalled,
@@ -154,6 +156,7 @@ impl Event {
             Self::VoiceCallStarted => "voice_call_started",
             Self::VoiceCallFinished => "voice_call_finished",
             Self::VoiceCallQuality => "voice_call_quality",
+            Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",

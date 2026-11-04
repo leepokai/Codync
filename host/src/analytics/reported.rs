@@ -82,9 +82,22 @@ pub enum Reported {
         stuck: VoiceStuck,
         failure: VoiceFailure,
     },
+    WindowRecovery {
+        outcome: WindowRecoveryOutcome,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
+
+/// What came of a desktop window whose page crashed: it loaded again, or crashed too often and stays down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowRecoveryOutcome {
+    Reloaded,
+    GaveUp,
+    #[serde(other)]
+    Other,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -295,6 +308,8 @@ mod tests {
                     "reconnects": 1, "stuck": "none", "failure": "none"}),
                 Event::VoiceCallQuality,
             ),
+            (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
+            (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
         ];
         for (body, event) in cases {
             let mut expected = body.clone();

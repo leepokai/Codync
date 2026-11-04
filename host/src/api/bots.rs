@@ -364,7 +364,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::chat::skill_proposals::call(hub, method, &b).await?
         }
         "beliefs" | "beliefAction" | "undoMemoryChange" => crate::chat::memory::belief_call(hub, method, &b).await?,
-        "importAgentMemory" => crate::chat::memory::import_agent_memory(hub, str_arg(&b, "botId")?, &b["facts"]).await?,
+        "importAgentMemory" => {
+            crate::chat::memory::import_agent_memory(hub, str_arg(&b, "botId")?, &b["facts"]).await?
+        }
         "library" => crate::chat::library::list(hub, str_arg(&b, "botId")?)?,
         "readArtifact" | "renameArtifact" => crate::chat::artifacts::api(hub, method, &b).await?,
         "editHandoff" | "keepConversation" => crate::chat::handoff::call(hub, method, &b)?,

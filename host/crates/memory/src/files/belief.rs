@@ -12,6 +12,7 @@
 //! ```
 
 use serde::Serialize;
+use std::fmt::Write;
 
 /// What a note is about, in the vocabulary of a bot's memory: the user, how they want the bot to work, a project, or
 /// where to look something up.
@@ -143,9 +144,9 @@ pub fn stamp(content: &str, belief: &Belief) -> String {
             }
         }
     }
-    out.push_str(&format!("type: {}{eol}confidence: {}{eol}", belief.kind.as_str(), belief.confidence.as_str()));
+    let _ = write!(out, "type: {}{eol}confidence: {}{eol}", belief.kind.as_str(), belief.confidence.as_str());
     if let Some(date) = &belief.confirmed {
-        out.push_str(&format!("confirmed: {date}{eol}"));
+        let _ = write!(out, "confirmed: {date}{eol}");
     }
     out.push_str(&content[end..]);
     out
@@ -167,7 +168,10 @@ mod tests {
     fn the_header_is_read_as_written() {
         let note = "---\ndescription: x\ntype: Project\nconfidence: \"low\"\nconfirmed: 2026-10-30\n---\nbody\n";
         let belief = read(note);
-        assert_eq!((belief.kind, belief.confidence, belief.confirmed.as_deref()), (Kind::Project, Confidence::Low, Some("2026-10-30")));
+        assert_eq!(
+            (belief.kind, belief.confidence, belief.confirmed.as_deref()),
+            (Kind::Project, Confidence::Low, Some("2026-10-30"))
+        );
     }
 
     #[test]
@@ -178,7 +182,8 @@ mod tests {
 
     #[test]
     fn stamping_sets_the_header_and_keeps_the_rest_of_the_note() {
-        let belief = Belief { kind: Kind::Feedback, confidence: Confidence::High, confirmed: Some("2026-11-01".into()) };
+        let belief =
+            Belief { kind: Kind::Feedback, confidence: Confidence::High, confirmed: Some("2026-11-01".into()) };
         let stamped = stamp(NOTE, &belief);
         assert_eq!(
             stamped,

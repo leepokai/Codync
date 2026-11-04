@@ -12,7 +12,12 @@ fn rows(list: &[(&str, &str)]) -> Vec<(String, String)> {
 fn three_different_kinds_of_tool_are_a_procedure_and_three_reads_are_not() {
     let reads = tool_keys(&rows(&[("read", "Read a.rs"), ("read", "Read b.rs"), ("read", "Read c.rs")]));
     assert!(!worth_a_skill(&reads), "{reads:?}");
-    let work = tool_keys(&rows(&[("read", "Read a.rs"), ("edit", "Edit a.rs"), ("execute", "Run cargo test"), ("execute", "Run git status")]));
+    let work = tool_keys(&rows(&[
+        ("read", "Read a.rs"),
+        ("edit", "Edit a.rs"),
+        ("execute", "Run cargo test"),
+        ("execute", "Run git status"),
+    ]));
     assert_eq!(work.iter().cloned().collect::<Vec<_>>(), ["edit", "execute:cargo", "execute:git", "read"]);
     assert!(worth_a_skill(&work));
     // Thinking and the unknown say nothing about what was done.
@@ -35,7 +40,13 @@ fn a_draft_is_read_from_the_models_reply_and_cut_to_the_limits() {
     let (name, description, instructions) = parse_draft(reply).expect("a draft");
     assert_eq!((name.as_str(), description.as_str()), ("Ship a release", "The user asks to publish a version."));
     assert_eq!(instructions, "Use this when: The user asks to publish a version.\n\n1. Run the tests\n2. Tag it\n");
-    for bad in ["no json here", "{\"name\": \"x\"}", "{\"name\": \"\", \"when\": \"w\", \"steps\": [\"s\"]}", "{\"name\": \"n\", \"when\": \"w\", \"steps\": []}", "{broken"] {
+    for bad in [
+        "no json here",
+        "{\"name\": \"x\"}",
+        "{\"name\": \"\", \"when\": \"w\", \"steps\": [\"s\"]}",
+        "{\"name\": \"n\", \"when\": \"w\", \"steps\": []}",
+        "{broken",
+    ] {
         assert!(parse_draft(bad).is_none(), "{bad}");
     }
     let long = format!("{{\"name\": \"{}\", \"when\": \"w\", \"steps\": [\"s\"]}}", "n".repeat(500));
@@ -58,10 +69,12 @@ fn fixture() -> Fixture {
     let dir = std::env::temp_dir().join(format!("codync-proposals-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).expect("dir");
     let store = Store::open(&dir.join("test.db")).expect("store");
-    let hub = Hub::new(store, "proposals-test".into(), Identity::load_or_create(&dir).expect("identity"), "t".into(), 0);
+    let hub =
+        Hub::new(store, "proposals-test".into(), Identity::load_or_create(&dir).expect("identity"), "t".into(), 0);
     let bot = uuid::Uuid::new_v4().to_string();
     let cfg: BotConfig =
-        serde_json::from_value(json!({"id": bot, "name": "Bot", "backend": "fixture", "command": "x", "cwd": dir})).expect("config");
+        serde_json::from_value(json!({"id": bot, "name": "Bot", "backend": "fixture", "command": "x", "cwd": dir}))
+            .expect("config");
     hub.store.save_bot(&cfg).expect("bot");
     Fixture { hub, bot, dir }
 }
@@ -100,10 +113,18 @@ async fn proposals_wait_in_the_inbox_and_are_not_skills() {
 async fn an_edit_changes_the_draft_and_keeps_the_rest() {
     let f = fixture();
     save_pending(&f.hub.store, &f.bot, &[proposal(&f, "p1", "aaaa")]).expect("saved");
-    let after = ask(&f, "editSkillProposal", json!({"id": "p1", "name": "  Publish  ", "instructions": ""})).await.expect("edited");
+    let after = ask(&f, "editSkillProposal", json!({"id": "p1", "name": "  Publish  ", "instructions": ""}))
+        .await
+        .expect("edited");
     let first = &after["proposals"][0];
-    assert_eq!((first["name"].as_str(), first["description"].as_str()), (Some("Publish"), Some("When the user asks to publish.")));
-    assert_eq!(first["instructions"], "Use this when: publishing\n\n1. Test\n2. Tag\n", "an empty field changes nothing");
+    assert_eq!(
+        (first["name"].as_str(), first["description"].as_str()),
+        (Some("Publish"), Some("When the user asks to publish."))
+    );
+    assert_eq!(
+        first["instructions"], "Use this when: publishing\n\n1. Test\n2. Tag\n",
+        "an empty field changes nothing"
+    );
     assert!(ask(&f, "editSkillProposal", json!({"id": "missing", "name": "x"})).await.is_err());
 }
 
@@ -123,7 +144,7 @@ async fn approving_saves_a_skill_of_the_bot_and_empties_the_proposal() {
     let f = fixture();
     save_pending(&f.hub.store, &f.bot, &[proposal(&f, "p1", "aaaa")]).expect("saved");
     let after = ask(&f, "approveSkillProposal", json!({"id": "p1"})).await.expect("approved");
-    assert!(after["proposals"].as_array().expect("list").is_empty());
+    assert_eq!(after["proposals"].as_array().expect("list").as_slice(), &[] as &[Value]);
     assert!(crate::market::list_skills(&f.hub.store).to_string().contains("Ship a release"), "now it is a skill");
     let notices: Vec<String> = f
         .hub

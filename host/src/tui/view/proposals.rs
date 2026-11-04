@@ -37,15 +37,50 @@ pub(super) fn proposals(buf: &mut Buffer, area: Rect, s: &ProposalsSheet) {
                     restyle(buf, Rect::new(inner.x.saturating_sub(1), y, inner.width + 2, 5), t.sel);
                 }
                 let base = if selected { t.sel } else { t.panel };
-                put(buf, inner.x, y, inner.width, &truncate(p["name"].as_str().unwrap_or_default(), width), t.text.patch(base));
-                put(buf, inner.x, y + 1, inner.width, &truncate(p["description"].as_str().unwrap_or_default(), width), t.secondary.patch(base));
+                put(
+                    buf,
+                    inner.x,
+                    y,
+                    inner.width,
+                    &truncate(p["name"].as_str().unwrap_or_default(), width),
+                    t.text.patch(base),
+                );
+                put(
+                    buf,
+                    inner.x,
+                    y + 1,
+                    inner.width,
+                    &truncate(p["description"].as_str().unwrap_or_default(), width),
+                    t.secondary.patch(base),
+                );
                 for (n, step) in steps_preview(p, 2).iter().enumerate() {
-                    put(buf, inner.x + 2, y + 2 + u(n), inner.width.saturating_sub(2), &truncate(step, width), t.dim.patch(base));
+                    put(
+                        buf,
+                        inner.x + 2,
+                        y + 2 + u(n),
+                        inner.width.saturating_sub(2),
+                        &truncate(step, width),
+                        t.dim.patch(base),
+                    );
                 }
-                put(buf, inner.x, y + 4, inner.width, &truncate(&format!("{}: {}", tr("Used"), tools_text(p)), width), t.dim.patch(base));
+                put(
+                    buf,
+                    inner.x,
+                    y + 4,
+                    inner.width,
+                    &truncate(&format!("{}: {}", tr("Used"), tools_text(p)), width),
+                    t.dim.patch(base),
+                );
                 y += 6;
             }
         }
     }
-    put(buf, inner.x, inner.bottom() - 1, inner.width, &tr("↑↓ pick  a approve  x dismiss  r refresh  esc close"), t.dim.patch(t.panel));
+    put(
+        buf,
+        inner.x,
+        inner.bottom() - 1,
+        inner.width,
+        &tr("↑↓ pick  a approve  x dismiss  r refresh  esc close"),
+        t.dim.patch(t.panel),
+    );
 }

@@ -120,13 +120,20 @@ pub fn parse_draft(reply: &str) -> Option<(String, String, String)> {
     let value: Value = serde_json::from_str(reply.get(start..=end)?).ok()?;
     let name = value["name"].as_str()?.trim().chars().take(MAX_NAME).collect::<String>();
     let when = value["when"].as_str()?.trim().chars().take(MAX_DESCRIPTION).collect::<String>();
-    let steps: Vec<String> =
-        value["steps"].as_array()?.iter().filter_map(Value::as_str).map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).take(30).collect();
+    let steps: Vec<String> = value["steps"]
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .take(30)
+        .collect();
     if name.is_empty() || when.is_empty() || steps.is_empty() {
         return None;
     }
     let numbered: Vec<String> = steps.iter().enumerate().map(|(i, s)| format!("{}. {s}", i + 1)).collect();
-    let instructions = format!("Use this when: {when}\n\n{}\n", numbered.join("\n")).chars().take(MAX_INSTRUCTIONS).collect();
+    let instructions =
+        format!("Use this when: {when}\n\n{}\n", numbered.join("\n")).chars().take(MAX_INSTRUCTIONS).collect();
     Some((name, when, instructions))
 }
 
@@ -151,7 +158,10 @@ async fn try_consider(hub: &Arc<Hub>, cfg: &BotConfig, turn: i64, request: &str)
     }
     let print = fingerprint(&tools, request);
     let waiting = pending(&hub.store, &cfg.id);
-    if waiting.len() >= MAX_PENDING || waiting.iter().any(|p| p.fingerprint == print) || dismissed(&hub.store, &cfg.id).contains(&print) {
+    if waiting.len() >= MAX_PENDING
+        || waiting.iter().any(|p| p.fingerprint == print)
+        || dismissed(&hub.store, &cfg.id).contains(&print)
+    {
         return Ok(());
     }
     let last_key = format!("skill-proposals.last.{}", cfg.id);
@@ -159,7 +169,8 @@ async fn try_consider(hub: &Arc<Hub>, cfg: &BotConfig, turn: i64, request: &str)
         return Ok(());
     }
     hub.store.kv_set(&last_key, &now.to_string())?;
-    let steps: Vec<String> = rows.iter().map(|(kind, title)| format!("- {kind}: {}", crate::agent::acp::truncate(title, 120))).collect();
+    let steps: Vec<String> =
+        rows.iter().map(|(kind, title)| format!("- {kind}: {}", crate::agent::acp::truncate(title, 120))).collect();
     let user = format!("Request: {}\n\nSteps taken:\n{}", crate::agent::acp::truncate(request, 600), steps.join("\n"));
     let reply = super::oneshot::one_shot(hub, cfg, SYSTEM, &user).await?;
     let Some((name, description, instructions)) = parse_draft(&reply) else { return Ok(()) };
@@ -201,7 +212,9 @@ fn take(list: &mut Vec<Proposal>, id: &str) -> Result<Proposal> {
 fn edit(store: &Store, bot: &str, id: &str, b: &Value) -> Result<()> {
     let mut list = pending(store, bot);
     let proposal = list.iter_mut().find(|p| p.id == id).ok_or_else(|| anyhow!("That proposal is gone."))?;
-    let text = |key: &str, max: usize| b[key].as_str().map(|s| s.trim().chars().take(max).collect::<String>()).filter(|s| !s.is_empty());
+    let text = |key: &str, max: usize| {
+        b[key].as_str().map(|s| s.trim().chars().take(max).collect::<String>()).filter(|s| !s.is_empty())
+    };
     if let Some(name) = text("name", MAX_NAME) {
         proposal.name = name;
     }

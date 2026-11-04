@@ -59,7 +59,9 @@ impl BeliefsSheet {
         shown.sort_by(|a, b| {
             rank(a["confidence"].as_str().unwrap_or_default())
                 .cmp(&rank(b["confidence"].as_str().unwrap_or_default()))
-                .then_with(|| a["confirmed"].as_str().unwrap_or_default().cmp(b["confirmed"].as_str().unwrap_or_default()))
+                .then_with(|| {
+                    a["confirmed"].as_str().unwrap_or_default().cmp(b["confirmed"].as_str().unwrap_or_default())
+                })
                 .then_with(|| a["file"].as_str().unwrap_or_default().cmp(b["file"].as_str().unwrap_or_default()))
         });
         shown
@@ -213,7 +215,9 @@ mod tests {
             ]),
             ..BeliefsSheet::default()
         };
-        let files = |s: &BeliefsSheet| s.shown().iter().map(|b| b["file"].as_str().unwrap_or_default().to_owned()).collect::<Vec<_>>();
+        let files = |s: &BeliefsSheet| {
+            s.shown().iter().map(|b| b["file"].as_str().unwrap_or_default().to_owned()).collect::<Vec<_>>()
+        };
         assert_eq!(files(&sheet), ["doubt.md", "old.md", "sure.md"]);
         let feedback = BeliefsSheet { kind: Some(1), items: sheet.items.clone(), ..BeliefsSheet::default() };
         assert_eq!(files(&feedback), ["doubt.md"]);

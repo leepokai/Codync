@@ -8,8 +8,8 @@
 
 mod activity;
 mod analytics;
-mod bot_chat;
 mod beliefs;
+mod bot_chat;
 mod buffer;
 mod channels;
 mod chat;
@@ -21,11 +21,11 @@ mod help;
 mod lead_agent;
 mod network;
 mod network_rules;
-mod proposals;
 mod new_bot;
 mod overlay;
 mod pair;
 mod permission;
+mod proposals;
 mod roster;
 mod roster_tools;
 mod rules;

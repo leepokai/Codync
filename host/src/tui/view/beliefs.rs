@@ -29,7 +29,10 @@ pub(super) fn beliefs(buf: &mut Buffer, area: Rect, s: &BeliefsSheet) {
         inner.x,
         inner.y + 1,
         inner.width,
-        &truncate(&format!("{} · {}: {} · {}: {}", tr(heading), tr("Kind"), tr(kind), tr("Confidence"), tr(confidence)), width),
+        &truncate(
+            &format!("{} · {}: {} · {}: {}", tr(heading), tr("Kind"), tr(kind), tr("Confidence"), tr(confidence)),
+            width,
+        ),
         t.secondary.patch(t.panel),
     );
     let mut y = inner.y + 3;
@@ -60,7 +63,14 @@ pub(super) fn beliefs(buf: &mut Buffer, area: Rect, s: &BeliefsSheet) {
                         }
                         let mark = if n == at { "▸" } else { " " };
                         let back = if restorable { "  (b brings it back)" } else { "" };
-                        put(buf, inner.x + 2, y, inner.width.saturating_sub(2), &truncate(&format!("{mark} {}{back}", tr(label)), width), t.dim.patch(t.panel));
+                        put(
+                            buf,
+                            inner.x + 2,
+                            y,
+                            inner.width.saturating_sub(2),
+                            &truncate(&format!("{mark} {}{back}", tr(label)), width),
+                            t.dim.patch(t.panel),
+                        );
                         y += 1;
                     }
                 }

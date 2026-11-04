@@ -57,7 +57,8 @@ impl App {
 
     pub(super) fn proposals_key(&mut self, mut s: Box<ProposalsSheet>, k: KeyEvent) -> Option<Overlay> {
         let count = s.items.as_ref().map_or(0, Vec::len);
-        let picked = s.items.as_ref().and_then(|items| items.get(s.sel)).and_then(|p| p["id"].as_str()).map(str::to_owned);
+        let picked =
+            s.items.as_ref().and_then(|items| items.get(s.sel)).and_then(|p| p["id"].as_str()).map(str::to_owned);
         match k.code {
             KeyCode::Esc | KeyCode::Char('q') => return None,
             KeyCode::Down | KeyCode::Char('j') => s.sel = (s.sel + 1).min(count.saturating_sub(1)),
@@ -103,6 +104,6 @@ mod tests {
         let p = json!({"tools": ["edit", "execute:cargo", "execute:"], "instructions": "Use this when: x\n\n1. Test\n2. Tag\n3. Push\n4. Announce\n"});
         assert_eq!(tools_text(&p), "edit, cargo, commands");
         assert_eq!(steps_preview(&p, 3), ["1. Test", "2. Tag", "3. Push"]);
-        assert!(steps_preview(&json!({"instructions": "no steps"}), 3).is_empty());
+        assert_eq!(steps_preview(&json!({"instructions": "no steps"}), 3), [] as [String; 0]);
     }
 }

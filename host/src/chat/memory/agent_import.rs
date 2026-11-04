@@ -45,7 +45,8 @@ fn token_is_key(token: &str) -> bool {
     }
     if let Some(rest) = after("xox") {
         let mut chars = rest.chars();
-        return chars.next().is_some_and(|c| "abposr".contains(c)) && chars.as_str().strip_prefix('-').is_some_and(|r| r.len() >= 10);
+        return chars.next().is_some_and(|c| "abposr".contains(c))
+            && chars.as_str().strip_prefix('-').is_some_and(|r| r.len() >= 10);
     }
     for prefix in ["AKIA", "ASIA"] {
         if let Some(rest) = after(prefix) {
@@ -93,8 +94,14 @@ pub fn looks_like_credential(text: &str) -> bool {
 /// Adds `facts` to the bot's own `MEMORY.md`, one line each, leaving out empty ones, long ones and any that look like a
 /// credential. Answers how many were added and how many left out; a full `MEMORY.md` stops the import and says so.
 pub async fn import(hub: &Arc<Hub>, bot: &str, facts: &Value) -> Result<Value> {
-    let cfg = hub.store.bot(bot)?.filter(|b| !b.deleted && !b.config.is_group()).ok_or_else(|| anyhow!("unknown bot"))?.config;
-    let facts: Vec<&str> = facts.as_array().ok_or_else(|| anyhow!("facts must be a list"))?.iter().filter_map(Value::as_str).collect();
+    let cfg = hub
+        .store
+        .bot(bot)?
+        .filter(|b| !b.deleted && !b.config.is_group())
+        .ok_or_else(|| anyhow!("unknown bot"))?
+        .config;
+    let facts: Vec<&str> =
+        facts.as_array().ok_or_else(|| anyhow!("facts must be a list"))?.iter().filter_map(Value::as_str).collect();
     if facts.len() > MAX_FACTS {
         bail!("That is more than {MAX_FACTS} memories at once; import fewer.");
     }

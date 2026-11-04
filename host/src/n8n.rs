@@ -339,7 +339,7 @@ impl N8n {
         // The editor's auto-login only needs the session: it is published even when the
         // connector below cannot be written, as its vault may be locked.
         *self.session.locked() = Some(cookie);
-        *self.mcp.locked() = match self.connect_bots(store, hub, &key).await {
+        *self.mcp.locked() = match self.connect_bots(store, hub, &key) {
             Ok(()) => true,
             Err(e) => {
                 tracing::warn!(error = format!("{e:#}"), "registering the n8n connector for the bots");
@@ -455,7 +455,7 @@ impl N8n {
     }
 
     /// The bots' connector: one for this instance, upserted so port and key changes follow.
-    async fn connect_bots(&self, store: &Store, hub: &Arc<Hub>, key: &str) -> Result<()> {
+    fn connect_bots(&self, store: &Store, hub: &Arc<Hub>, key: &str) -> Result<()> {
         let port = self.settings.locked().port;
         let mut headers = BTreeMap::new();
         headers.insert("Authorization".to_owned(), format!("Bearer {key}"));

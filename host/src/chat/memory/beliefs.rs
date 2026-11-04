@@ -85,7 +85,15 @@ fn today() -> String {
 }
 
 /// Writes `content` (or deletes) over a note that is `expected` as the person or the bot, and says what version it made.
-fn write(hub: &Hub, cfg: &BotConfig, layer: Option<&str>, name: &str, content: Option<&str>, by: By, cause: Cause) -> Result<mf::Version> {
+fn write(
+    hub: &Hub,
+    cfg: &BotConfig,
+    layer: Option<&str>,
+    name: &str,
+    content: Option<&str>,
+    by: By,
+    cause: Cause,
+) -> Result<mf::Version> {
     let before = files::read(layer, name)?;
     let expected = before.as_deref().map(mf::hash);
     let message = hub.runtime(&cfg.id).message;
@@ -127,7 +135,8 @@ fn act(hub: &Hub, cfg: &BotConfig, b: &Value) -> Result<Value> {
             if old.name != name || old.bot.as_deref() != layer.as_deref() {
                 bail!("That version belongs to another note.");
             }
-            let content = old.content.ok_or_else(|| anyhow!("That version is the note being forgotten; pick an earlier one."))?;
+            let content =
+                old.content.ok_or_else(|| anyhow!("That version is the note being forgotten; pick an earlier one."))?;
             write(hub, cfg, layer.as_deref(), name, Some(&content), By::Person, Cause::Restore)?
         }
         _ => bail!("action must be confirm, forget or restore"),
@@ -150,14 +159,18 @@ pub fn tool(hub: &Hub, cfg: &BotConfig, name: &str, args: &Value) -> Result<Valu
             Ok(json!({"status": "confirmed", "file": file}))
         }
         "correct_memory" => {
-            let content = args["content"].as_str().ok_or_else(|| anyhow!("content (the whole corrected note) required"))?;
+            let content =
+                args["content"].as_str().ok_or_else(|| anyhow!("content (the whole corrected note) required"))?;
             let kept = before.as_deref().map(belief::read).unwrap_or_default();
-            let fixed = belief::stamp(content, &Belief { confidence: Confidence::High, confirmed: Some(today()), ..kept });
+            let fixed =
+                belief::stamp(content, &Belief { confidence: Confidence::High, confirmed: Some(today()), ..kept });
             let version = write(hub, cfg, layer.as_deref(), file, Some(&fixed), By::Bot, Cause::Edit)?;
             let summary = args["summary"].as_str().unwrap_or("something about you changed");
             announce(hub, cfg, summary, file, layer.is_none(), earlier, version.id);
             let question = args["question"].as_str().map(|q| ask(hub, cfg, q)).transpose()?;
-            Ok(json!({"status": "corrected", "file": file, "question": question.map(|asked| if asked { "asked" } else { "skipped: a question was asked in the last 24 hours" })}))
+            Ok(
+                json!({"status": "corrected", "file": file, "question": question.map(|asked| if asked { "asked" } else { "skipped: a question was asked in the last 24 hours" })}),
+            )
         }
         "forget_memory" => {
             before.ok_or_else(|| anyhow!("There's no note {file}."))?;
@@ -212,7 +225,10 @@ fn undo(hub: &Hub, cfg: &BotConfig, b: &Value) -> Result<Value> {
     files::scan(hub, cfg);
     match undo["before"].as_i64() {
         Some(version) => {
-            let old = hub.store.memory_read(|c| mf::version(c, version))?.ok_or_else(|| anyhow!("The earlier version is gone."))?;
+            let old = hub
+                .store
+                .memory_read(|c| mf::version(c, version))?
+                .ok_or_else(|| anyhow!("The earlier version is gone."))?;
             let content = old.content.ok_or_else(|| anyhow!("The earlier version was a deletion."))?;
             write(hub, cfg, layer.as_deref(), file, Some(&content), By::Person, Cause::Undo)?;
         }

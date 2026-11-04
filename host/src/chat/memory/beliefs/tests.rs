@@ -24,10 +24,11 @@ fn fixture() -> Fixture {
     let dir = std::env::temp_dir().join(format!("codync-beliefs-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).expect("dir");
     let store = Store::open(&dir.join("test.db")).expect("store");
-    let hub = Hub::new(store, "beliefs-test".into(), crate::remote::identity::Identity::load_or_create(&dir).expect("identity"), "t".into(), 0);
+    let hub = Hub::new(store, "beliefs-test".into(), Identity::load_or_create(&dir).expect("identity"), "t".into(), 0);
     let id = uuid::Uuid::new_v4().to_string();
     let cfg: BotConfig =
-        serde_json::from_value(json!({"id": id, "name": "Bot", "backend": "fixture", "command": "x", "cwd": dir})).expect("config");
+        serde_json::from_value(json!({"id": id, "name": "Bot", "backend": "fixture", "command": "x", "cwd": dir}))
+            .expect("config");
     hub.store.save_bot(&cfg).expect("bot");
     let _: Option<Identity> = None;
     Fixture { hub, cfg, dir }
@@ -35,11 +36,18 @@ fn fixture() -> Fixture {
 
 /// A note as the person (or dreaming) wrote it.
 fn note(f: &Fixture, name: &str, content: &str) {
-    files::write(&f.hub, Some(&f.cfg.id), name, Some(content), None, Writer { author: Author::User, bot: None, cause: Cause::Edit, message: None })
-        .expect("written");
+    files::write(
+        &f.hub,
+        Some(&f.cfg.id),
+        name,
+        Some(content),
+        None,
+        Writer { author: Author::User, bot: None, cause: Cause::Edit, message: None },
+    )
+    .expect("written");
 }
 
-fn beliefs(f: &Fixture, filter: Value) -> Vec<Value> {
+fn beliefs(f: &Fixture, filter: &Value) -> Vec<Value> {
     let mut body = json!({"botId": f.cfg.id});
     body.as_object_mut().expect("object").extend(filter.as_object().cloned().unwrap_or_default());
     dispatch(&f.hub, "beliefs", &body).expect("listed")["beliefs"].as_array().cloned().unwrap_or_default()
@@ -50,23 +58,33 @@ fn notes_are_listed_with_their_belief_and_filtered_by_kind_and_confidence() {
     let f = fixture();
     note(&f, "home.md", NOTE);
     note(&f, "style.md", "---\ndescription: How to answer\ntype: feedback\nconfidence: low\n---\nKeep it short.\n");
-    let all = beliefs(&f, json!({}));
+    let all = beliefs(&f, &json!({}));
     let by_file = |file: &str| all.iter().find(|b| b["file"] == file).cloned().expect("listed");
-    assert_eq!((by_file("home.md")["kind"].as_str(), by_file("home.md")["confidence"].as_str()), (Some("user"), Some("medium")));
-    assert_eq!((by_file("style.md")["kind"].as_str(), by_file("style.md")["confidence"].as_str()), (Some("feedback"), Some("low")));
-    assert_eq!(beliefs(&f, json!({"kind": "feedback"})).len(), 1);
-    assert_eq!(beliefs(&f, json!({"confidence": "medium"})).len(), 1);
-    assert_eq!(beliefs(&f, json!({"kind": "project"})).len(), 0);
+    assert_eq!(
+        (by_file("home.md")["kind"].as_str(), by_file("home.md")["confidence"].as_str()),
+        (Some("user"), Some("medium"))
+    );
+    assert_eq!(
+        (by_file("style.md")["kind"].as_str(), by_file("style.md")["confidence"].as_str()),
+        (Some("feedback"), Some("low"))
+    );
+    assert_eq!(beliefs(&f, &json!({"kind": "feedback"})).len(), 1);
+    assert_eq!(beliefs(&f, &json!({"confidence": "medium"})).len(), 1);
+    assert_eq!(beliefs(&f, &json!({"kind": "project"})).len(), 0);
 }
 
 #[test]
 fn confirming_stamps_the_header_and_keeps_the_text() {
     let f = fixture();
     note(&f, "home.md", NOTE);
-    dispatch(&f.hub, "beliefAction", &json!({"botId": f.cfg.id, "file": "home.md", "action": "confirm"})).expect("confirmed");
+    dispatch(&f.hub, "beliefAction", &json!({"botId": f.cfg.id, "file": "home.md", "action": "confirm"}))
+        .expect("confirmed");
     let content = files::read(Some(&f.cfg.id), "home.md").expect("read").expect("there");
-    assert!(content.contains("Lives in Lisbon.") && content.contains("confidence: high") && content.contains("confirmed: "), "{content}");
-    let listed = beliefs(&f, json!({}));
+    assert!(
+        content.contains("Lives in Lisbon.") && content.contains("confidence: high") && content.contains("confirmed: "),
+        "{content}"
+    );
+    let listed = beliefs(&f, &json!({}));
     assert_eq!(listed[0]["confidence"], "high");
     assert!(listed[0]["versions"].as_array().expect("versions").len() >= 2, "a new version, not an overwrite");
 }
@@ -75,16 +93,32 @@ fn confirming_stamps_the_header_and_keeps_the_text() {
 fn forgetting_is_a_new_version_and_a_restore_brings_the_note_back() {
     let f = fixture();
     note(&f, "home.md", NOTE);
-    dispatch(&f.hub, "beliefAction", &json!({"botId": f.cfg.id, "file": "home.md", "action": "forget"})).expect("forgotten");
+    dispatch(&f.hub, "beliefAction", &json!({"botId": f.cfg.id, "file": "home.md", "action": "forget"}))
+        .expect("forgotten");
     assert!(files::read(Some(&f.cfg.id), "home.md").expect("read").is_none());
-    assert!(beliefs(&f, json!({})).is_empty());
+    assert_eq!(beliefs(&f, &json!({})), [] as [Value; 0]);
 
     let versions = f.hub.store.memory_read(|c| mf::versions(c, Some(&f.cfg.id), "home.md", 10)).expect("versions");
-    let kept = versions.iter().find(|v| v.content.as_deref() == Some(NOTE)).expect("what was forgotten is still in the history");
-    dispatch(&f.hub, "beliefAction", &json!({"botId": f.cfg.id, "file": "home.md", "action": "restore", "versionId": kept.id})).expect("restored");
+    let kept = versions
+        .iter()
+        .find(|v| v.content.as_deref() == Some(NOTE))
+        .expect("what was forgotten is still in the history");
+    dispatch(
+        &f.hub,
+        "beliefAction",
+        &json!({"botId": f.cfg.id, "file": "home.md", "action": "restore", "versionId": kept.id}),
+    )
+    .expect("restored");
     assert_eq!(files::read(Some(&f.cfg.id), "home.md").expect("read").as_deref(), Some(NOTE));
     // A version of another note is refused.
-    assert!(dispatch(&f.hub, "beliefAction", &json!({"botId": f.cfg.id, "file": "other.md", "action": "restore", "versionId": kept.id})).is_err());
+    assert!(
+        dispatch(
+            &f.hub,
+            "beliefAction",
+            &json!({"botId": f.cfg.id, "file": "other.md", "action": "restore", "versionId": kept.id})
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -94,7 +128,12 @@ fn a_correction_by_the_bot_is_announced_with_an_undo_that_puts_the_old_note_back
     let corrected = "---\ndescription: Where the user lives\n---\nLives in Porto.\n";
     // A bot may change what memory says only in a turn the user started in its own chat.
     f.hub.set_runtime(&f.cfg.id, |r| r.message = Some("m1".into()));
-    let result = tool(&f.hub, &f.cfg, "correct_memory", &json!({"file": "home.md", "content": corrected, "summary": "you now live in Porto"}));
+    let result = tool(
+        &f.hub,
+        &f.cfg,
+        "correct_memory",
+        &json!({"file": "home.md", "content": corrected, "summary": "you now live in Porto"}),
+    );
     // The write rules may refuse a message id that is not an entry of this chat; what matters is that nothing half-happens.
     if result.is_err() {
         assert_eq!(files::read(Some(&f.cfg.id), "home.md").expect("read").as_deref(), Some(NOTE));
@@ -127,7 +166,14 @@ fn a_contradiction_is_asked_about_at_most_once_a_day() {
     let f = fixture();
     assert!(ask(&f.hub, &f.cfg, "Do you live in Lisbon or Porto?").expect("asked"));
     assert!(!ask(&f.hub, &f.cfg, "And do you work there?").expect("held back"), "the second one waits");
-    let questions: Vec<_> = f.hub.store.history(&f.cfg.id, i64::MAX, 50).expect("history").into_iter().filter(|e| e.kind == "notice").collect();
+    let questions: Vec<_> = f
+        .hub
+        .store
+        .history(&f.cfg.id, i64::MAX, 50)
+        .expect("history")
+        .into_iter()
+        .filter(|e| e.kind == "notice")
+        .collect();
     assert_eq!(questions.len(), 1);
 }
 

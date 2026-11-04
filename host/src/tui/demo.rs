@@ -17,28 +17,48 @@ fn bot([id, name, description, shape, color, status, activity]: [&str; 7], now: 
     }})
 }
 
-fn entry(seq: i64, bot: &str, kind: &str, turn: i64, at: i64, data: Value) -> Value {
+fn entry(seq: i64, bot: &str, kind: &str, turn: i64, at: i64, data: &Value) -> Value {
     json!({"type": "entry", "rev": 10 + seq, "entry": {"id": format!("demo-{seq}"), "seq": seq, "botId": bot, "kind": kind, "turn": turn, "data": data, "createdAt": at}})
 }
 
 /// The events of the demo, in the order the host would send them: three bots, a session with steps and a diff, an approval
 /// waiting for the person.
 pub fn events(now: i64) -> Vec<Value> {
-    let patch = "@@ -18,0 +18,3 @@\n+function weeklyTotals(rows) {\n+  return rows.reduce((sum, r) => sum + r.km, 0)\n+}\n";
+    let patch =
+        "@@ -18,0 +18,3 @@\n+function weeklyTotals(rows) {\n+  return rows.reduce((sum, r) => sum + r.km, 0)\n+}\n";
     vec![
         json!({"type": "hello", "hostId": "demo-host", "rev": 1, "usage": {"providers": []}, "screen": null, "network": null}),
         bot(["scout", "Scout", "Watches the tests", "squircle", "green", "idle", ""], now - 60_000, 0),
-        bot(["pacer", "Pacer", "Owns the pace math", "blob", "orange", "needsInput", "Needs approval: Edit src/pace.js"], now - 30_000, 1),
+        bot(
+            [
+                "pacer",
+                "Pacer",
+                "Owns the pace math",
+                "blob",
+                "orange",
+                "needsInput",
+                "Needs approval: Edit src/pace.js",
+            ],
+            now - 30_000,
+            1,
+        ),
         bot(["scribe", "Scribe", "Writes the changelog", "circle", "blue", "idle", ""], now - 3_600_000, 0),
-        entry(1, "scout", "user", 1, now - 600_000, json!({"text": "Why is the weekly total wrong on Mondays?"})),
-        entry(2, "scout", "tool", 1, now - 590_000, json!({"title": "Read src/pace.js", "toolKind": "read", "status": "completed"})),
+        entry(1, "scout", "user", 1, now - 600_000, &json!({"text": "Why is the weekly total wrong on Mondays?"})),
+        entry(
+            2,
+            "scout",
+            "tool",
+            1,
+            now - 590_000,
+            &json!({"title": "Read src/pace.js", "toolKind": "read", "status": "completed"}),
+        ),
         entry(
             3,
             "scout",
             "tool",
             1,
             now - 580_000,
-            json!({"title": "Edit src/pace.js", "toolKind": "edit", "status": "completed",
+            &json!({"title": "Edit src/pace.js", "toolKind": "edit", "status": "completed",
                 "diffs": [{"path": "src/pace.js", "added": 3, "removed": 0, "isNew": false, "startLine": 18, "patch": patch}]}),
         ),
         entry(
@@ -47,7 +67,7 @@ pub fn events(now: i64) -> Vec<Value> {
             "agent",
             1,
             now - 570_000,
-            json!({"text": "The week started on Sunday for the total but Monday for the chart. I made both use the ISO week and added a test.", "final": true}),
+            &json!({"text": "The week started on Sunday for the total but Monday for the chart. I made both use the ISO week and added a test.", "final": true}),
         ),
         entry(
             5,
@@ -55,7 +75,7 @@ pub fn events(now: i64) -> Vec<Value> {
             "permission",
             2,
             now - 30_000,
-            json!({"title": "Edit src/pace.js", "toolKind": "edit", "status": "pending", "author": "pacer", "detail": "", "diffs": [],
+            &json!({"title": "Edit src/pace.js", "toolKind": "edit", "status": "pending", "author": "pacer", "detail": "", "diffs": [],
                 "options": [
                     {"optionId": "allow", "name": "Allow", "kind": "allow_once"},
                     {"optionId": "deny", "name": "Deny", "kind": "reject_once"}
@@ -77,8 +97,8 @@ pub fn answer(method: &str, now: i64) -> Result<Value, String> {
             "triggers": [], "enabled": true, "createdAt": now - 86_400_000, "updatedAt": now - 3_600_000,
             "triggerDescriptions": ["Every weekday at 9:00"], "nextRunAt": now + 12 * 3_600_000, "timeoutSeconds": 600, "lastError": null,
         }], "runs": []})),
-        "usage" | "weekSummary" | "markRead" | "track" | "securityProfiles" | "hostHealth" | "telegramStatus" | "slackStatus"
-        | "skillProposals" | "beliefs" | "memory" => Ok(json!({})),
+        "usage" | "weekSummary" | "markRead" | "track" | "securityProfiles" | "hostHealth" | "telegramStatus"
+        | "slackStatus" | "skillProposals" | "beliefs" | "memory" => Ok(json!({})),
         _ => Err("Demo mode: nothing is sent or changed. Leave it to use your bots.".to_owned()),
     }
 }
@@ -93,8 +113,14 @@ mod tests {
         let kinds: Vec<&str> = events.iter().filter_map(|e| e["type"].as_str()).collect();
         assert_eq!(kinds.iter().filter(|k| **k == "bot").count(), 3);
         let entries: Vec<&Value> = events.iter().filter(|e| e["type"] == "entry").map(|e| &e["entry"]).collect();
-        assert!(entries.iter().any(|e| e["kind"] == "tool" && e["data"]["diffs"][0]["added"] == 3), "a step with a diff");
-        assert!(entries.iter().any(|e| e["kind"] == "permission" && e["data"]["status"] == "pending"), "an approval waiting");
+        assert!(
+            entries.iter().any(|e| e["kind"] == "tool" && e["data"]["diffs"][0]["added"] == 3),
+            "a step with a diff"
+        );
+        assert!(
+            entries.iter().any(|e| e["kind"] == "permission" && e["data"]["status"] == "pending"),
+            "an approval waiting"
+        );
         let routines = answer("routines", 1_000_000).expect("routines");
         assert_eq!(routines["routines"][0]["name"], "Morning check");
         let seqs: Vec<i64> = entries.iter().filter_map(|e| e["seq"].as_i64()).collect();
@@ -115,7 +141,9 @@ mod tests {
         // No file, no network, no real host: the module is data and a match.
         let source = include_str!("demo.rs");
         let body = source.split("#[cfg(test)]").next().unwrap_or_default();
-        for forbidden in ["std::fs", "tokio::fs", "reqwest", "TcpStream", "crate::http", "data_dir", "std::process", "std::net"] {
+        for forbidden in
+            ["std::fs", "tokio::fs", "reqwest", "TcpStream", "crate::http", "data_dir", "std::process", "std::net"]
+        {
             assert!(!body.contains(forbidden), "the demo script must not use {forbidden}");
         }
     }

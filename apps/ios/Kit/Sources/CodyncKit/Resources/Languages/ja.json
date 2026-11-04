@@ -706,7 +706,6 @@
   "Enter a name and instruction above to save.": "上に名前と保存する手順を入力します。",
   "Delete routine": "ルーチンの削除",
   "Queued": "待機中",
-  "Queued until this response finishes": "この返信が終わるまで待機",
   "Routine · {name}": "ルーティン · {name}",
   "Tool": "ツール",
   "Turn {turn}": "{turn} ターン目",

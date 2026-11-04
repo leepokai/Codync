@@ -706,7 +706,6 @@
   "Enter a name and instruction above to save.": "先在上面填寫名稱和說明，再儲存。",
   "Delete routine": "刪除例行任務",
   "Queued": "排隊中",
-  "Queued until this response finishes": "等這次回覆結束後再送",
   "Routine · {name}": "例行任務 · {name}",
   "Tool": "工具",
   "Turn {turn}": "第 {turn} 輪",

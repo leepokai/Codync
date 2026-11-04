@@ -82,8 +82,12 @@ impl Store {
         Ok((entry, true))
     }
 
-    /// Rewrites an entry's data, and moves it into `turn` when given (a queued message that joined the running turn).
-    pub fn update_entry(&self, id: &str, turn: Option<i64>, data: &Value) -> Result<Option<Entry>> {
+    pub fn update_entry(&self, id: &str, data: &Value) -> Result<Option<Entry>> {
+        self.update_entry_turn(id, None, data)
+    }
+
+    /// [`Self::update_entry`] that also moves the entry into `turn` when given (a queued message on its way out).
+    pub fn update_entry_turn(&self, id: &str, turn: Option<i64>, data: &Value) -> Result<Option<Entry>> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute(
@@ -167,11 +171,11 @@ impl Store {
         Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Older entries of a chat.
+    /// Older entries of a chat, without the messages taken back: a client hears of those through `entries_since`.
     pub fn history(&self, bot_id: &str, before_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq < ?2
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq < ?2 AND {NOT_REMOVED}
              ORDER BY seq DESC LIMIT ?3"
         ))?;
         let mut rows: Vec<Entry> =
@@ -340,7 +344,7 @@ impl Store {
                     "expired"
                 };
                 e.data["status"] = status.into();
-                self.update_entry(id, None, &e.data)?;
+                self.update_entry(id, &e.data)?;
             }
         }
         Ok(ids.len())
@@ -405,6 +409,7 @@ mod tests {
         assert_eq!(ids(s.conversation_since("b1", 0, 10).unwrap()), kept, "dreaming");
         assert_eq!(ids(s.search_messages("b1", &["ship".to_owned()], None, 10).unwrap()), kept, "memory search");
         assert_eq!(ids(s.file_messages("b1", 10).unwrap()), kept, "the Library");
+        assert_eq!(ids(s.history("b1", i64::MAX, 10).unwrap()), kept, "paging, handoffs and calls");
         assert_eq!(s.last_message("b1").unwrap().text, "ship it", "the roster");
     }
 

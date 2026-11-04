@@ -8,6 +8,7 @@ import { Text } from '../../components/Text'
 import { afterExit } from '../../lib/exit-delay'
 import { messagePreview } from '../../lib/message-preview'
 import { useStore } from '../../store/context'
+import { ComposerReveal } from './Composer'
 import { canSteer, waitingMessages } from './queued-messages'
 import './queued-messages.css'
 
@@ -40,11 +41,10 @@ export function QueuedMessages({ botId }: { botId: string }) {
 
 function QueuedRow({ entry, leaving, actions }: { entry: Entry; leaving: boolean; actions: boolean }) {
   const store = useStore()
-  const { shown } = usePresence(!leaving, EXIT_MS)
   const answering = store.answering.has(entry.id)
   return (
-    <div className={`queued-row ${shown ? 'shown' : ''}`} role="listitem" inert={leaving}>
-      <div>
+    <div className="queued-row" role="listitem">
+      <ComposerReveal open={!leaving}>
         <HStack gap={2} className="queued-row-body">
           <Text size="callout" tone="secondary" truncate grow>{messagePreview(quoteOf(entry).text)}</Text>
           {actions ? (
@@ -54,7 +54,7 @@ function QueuedRow({ entry, leaving, actions }: { entry: Entry; leaving: boolean
             </>
           ) : null}
         </HStack>
-      </div>
+      </ComposerReveal>
     </div>
   )
 }

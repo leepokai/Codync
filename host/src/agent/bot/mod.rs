@@ -123,6 +123,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         last_text: None,
         sent: Vec::new(),
         reacted: Reacted::No,
+        joined: false,
         files: files::FileShares::default(),
         perms: HashMap::new(),
         stop_requested: false,
@@ -299,11 +300,16 @@ struct Actor {
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,
+    /// What it wrote last this turn, since its last `send_message` or `react`.
     last_text: Option<String>,
     /// Messages the bot sent the user this turn (`send_message`); none: its last text is the reply.
     sent: Vec<String>,
     /// The bot's `react` this turn; with no message sent, it is the reply.
     reacted: Reacted,
+    /// A steered message joined this turn: its last text is a reply even after a `send_message` or `react`.
+    // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
+    // many beats a reply lost.
+    joined: bool,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,

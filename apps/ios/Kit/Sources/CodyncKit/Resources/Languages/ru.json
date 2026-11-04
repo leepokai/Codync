@@ -706,7 +706,6 @@
   "Enter a name and instruction above to save.": "Введите название и инструкцию выше, чтобы сохранить.",
   "Delete routine": "Удалить рутину",
   "Queued": "В очереди",
-  "Queued until this response finishes": "В очереди до завершения этого ответа",
   "Routine · {name}": "Рутина · {name}",
   "Tool": "Инструмент",
   "Turn {turn}": "Ход {turn}",

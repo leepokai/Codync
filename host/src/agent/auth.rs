@@ -130,6 +130,9 @@ pub async fn check(store: &Store, backend: &str) -> Result<Value> {
 }
 
 async fn probe(store: &Store, backend: &str) -> Result<Status> {
+    if backends::agent_checks_off() {
+        return Ok(Status::default());
+    }
     let (acp, mut inbox, init, cmd) = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
     if let ControlFlow::Break(signed_in) =

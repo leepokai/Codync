@@ -10,6 +10,7 @@ import {
   type PairingRequest,
   type ScreenState,
   type Usage,
+  withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
@@ -209,7 +210,8 @@ export class BotMirror extends Observable {
 
   /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
-    return this.entries.get(botId) ?? []
+    const list = this.entries.get(botId)
+    return list ? withoutRemoved(list) : []
   }
 
   canLoadOlder(botId: string) {

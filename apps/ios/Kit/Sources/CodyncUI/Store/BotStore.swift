@@ -261,7 +261,9 @@ public final class BotStore {
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
-    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard
+    /// against a late response.
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
     public func canLoadOlder(_ botId: String) -> Bool {
         !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }

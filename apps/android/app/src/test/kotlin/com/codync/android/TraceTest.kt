@@ -20,9 +20,6 @@ class TraceTest {
     @Test fun `the trace unfolds the running turn, not a queued message holding the next`() {
         val entries = listOf(entry("u1", 1), entry("t1", 1), entry("q", 2, status = "queued"))
         assertEquals(1L, runningTurn(entries, working = true))
-        val removed = Entry("r", 0, "bot", 0, "user", 3, buildJsonObject { put("status", "cancelled"); put("removed", true) })
-        assertEquals("nor one taken back from the queue", 1L, runningTurn(entries + removed, working = true))
-        assertEquals("which is no turn of its own", listOf(1L, 2L), traceTurns(entries + removed).map { it.first })
         assertNull(runningTurn(entries, working = false))
     }
 

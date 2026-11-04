@@ -5,7 +5,6 @@ use ratatui::text::{Line, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
-use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;

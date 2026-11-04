@@ -318,8 +318,7 @@ fn others(hub: &Hub, cfg: &BotConfig) -> String {
 
 fn shared(recent: &[Entry]) -> String {
     let mut titles: Vec<String> = Vec::new();
-    // A message the user took back before it went out (`unqueue`) shared nothing.
-    for e in recent.iter().rev().filter(|e| e.data["removed"] != true) {
+    for e in recent.iter().rev() {
         if let Some(title) = e.data["artifact"]["title"].as_str() {
             titles.push(format!("- {title} (artifact)"));
         }
@@ -500,20 +499,5 @@ pub(super) mod tests {
             section.contains(&format!("- Release plan ({}): \"ship it\"", local.format("%Y-%m-%d %H:%M"))),
             "{section}"
         );
-    }
-
-    #[test]
-    fn a_file_on_a_message_taken_back_is_not_shared() {
-        let hub = hub();
-        let main = Lane::main("b");
-        let files = |name: &str, extra: serde_json::Value| {
-            let mut data = json!({"attachments": [{"name": name, "size": 1}]});
-            data.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
-            data
-        };
-        hub.store.insert_entry(&main, EntryKind::User, 1, &files("kept.png", json!({}))).unwrap();
-        let gone = files("secret.pem", json!({"status": "cancelled", "removed": true}));
-        hub.store.insert_entry(&main, EntryKind::User, 2, &gone).unwrap();
-        assert_eq!(shared(&hub.store.history("b", i64::MAX, RECENT).unwrap()), "- kept.png");
     }
 }

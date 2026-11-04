@@ -441,7 +441,7 @@ impl Hub {
     /// [`Self::set_entry`] that also moves the entry into `turn` when given.
     pub fn set_entry_turn(&self, id: &str, turn: Option<i64>, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
-        match self.store.update_entry(id, turn, data) {
+        match self.store.update_entry_turn(id, turn, data) {
             Ok(e) => {
                 if let Some(e) = &e {
                     let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
@@ -464,7 +464,7 @@ impl Hub {
         if !edit(&mut e)? {
             return Ok(e);
         }
-        let e = self.store.update_entry(id, None, &e.data)?.ok_or_else(|| anyhow!("unknown message"))?;
+        let e = self.store.update_entry(id, &e.data)?.ok_or_else(|| anyhow!("unknown message"))?;
         let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
         Ok(e)
     }

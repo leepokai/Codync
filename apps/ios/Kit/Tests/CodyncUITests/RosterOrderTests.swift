@@ -182,8 +182,8 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     store.entries["b"] = [entry]
     store.connection = .unauthorized("No access") // Every call fails at once.
     store.unqueue(entry)
-    #expect(store.entries["b"]?.first?.isChat == false)
-    #expect(await until { store.entries["b"]?.first?.isQueued == true })
+    #expect(store.chat("b").isEmpty)
+    #expect(await until { store.chat("b").first?.isQueued == true })
     #expect(store.lastError != nil)
 }
 

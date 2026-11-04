@@ -26,20 +26,6 @@
   border-radius: var(--radius-l) var(--radius-l) 0 0;
   padding: 4px 6px calc(var(--queued-tuck) + 2px) 14px;
 }
-.queued-row {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition: grid-template-rows var(--layout), opacity var(--morph);
-}
-.queued-row.shown {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-.queued-row > div {
-  min-height: 0;
-  overflow: hidden;
-}
 .queued-row-body {
   min-height: 32px;
 }

@@ -68,6 +68,6 @@ Report:
 - E2E: each check's platform, flow, result and evidence; checks not run and why.
 - Next: readiness to commit, any unresolved failures or material skipped fixes, and any task-owned processes still running.
 
-Do not label missing validation as passed. Follow the existing task's commit/merge/push authorization and the repository's handoff rules; the skill itself does not authorize publishing unrelated work. Only the coordinator performs git handoff.
+Do not label missing validation as passed. Follow the existing task's commit/merge/push authorization and the repository's handoff rules; the skill itself does not authorize publishing unrelated work. Only the coordinator performs git handoff. Passing on the worktree is enough, even when `dev` has moved on: a rebase needs only its conflicts resolved and what they touched still building.
 
 Keep the change's development app running through review and until its merge is successfully pushed. On merge/push failure, preserve the worktree and its app. After successful push, stop the task-owned app, Vite and sandbox host, verify they exited, leave the worktree, and follow the clean-code guide's worktree/sandbox cleanup. Confirm the worktree contains no unmerged or other agents' work before removal; never remove the shared checkout. Stop other temporary processes you started when no longer needed.

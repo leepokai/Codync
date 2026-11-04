@@ -11,7 +11,8 @@ public struct TraceView: View {
 
     public var body: some View {
         let all = model.chat(botId)
-        let turns = Entry.traceTurns(all)
+        let turns = Dictionary(grouping: all, by: \.turn)
+            .sorted { $0.key < $1.key }
         // The running turn's thoughts start unfolded.
         let running = Entry.runningTurn(all, working: model.bots[botId]?.isWorking(in: botId) == true)
         VStack(spacing: 0) {

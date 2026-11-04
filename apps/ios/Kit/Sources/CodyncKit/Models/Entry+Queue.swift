@@ -2,7 +2,7 @@ import Foundation
 
 public extension Entry {
     /// A message of the user's waiting behind the bot's work: the computer hasn't given it to the agent yet.
-    var isQueued: Bool { kind == "user" && data.status == "queued" && data.removed != true }
+    var isQueued: Bool { kind == "user" && data.status == "queued" }
 }
 
 public extension Array where Element == Entry {

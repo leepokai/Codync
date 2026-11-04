@@ -1,16 +1,16 @@
 import type { Entry } from '../../../shared/models.ts'
 
-/** A bot's entries grouped by turn, oldest turn first, each turn's entries in their order; one taken back from the queue never had a turn. */
+/** A bot's entries grouped by turn, oldest turn first, each turn's entries in their order. */
 export function traceTurns(entries: Entry[]): [number, Entry[]][] {
   const turns = new Map<number, Entry[]>()
-  for (const e of entries) if (!e.data.removed) turns.set(e.turn, [...(turns.get(e.turn) ?? []), e])
+  for (const e of entries) turns.set(e.turn, [...(turns.get(e.turn) ?? []), e])
   return [...turns.entries()].sort((a, b) => a[0] - b[0])
 }
 
-/** The turn running now while the bot works in this chat; a queued message (or one taken back) holds the next turn. */
+/** The turn running now while the bot works in this chat; a queued message already holds the next turn. */
 export function runningTurn(entries: Entry[], working: boolean): number | undefined {
   if (!working) return undefined
-  return entries.reduce((t, e) => (e.data.status === 'queued' || e.data.removed ? t : Math.max(t, e.turn)), -1)
+  return entries.reduce((t, e) => (e.data.status === 'queued' ? t : Math.max(t, e.turn)), -1)
 }
 
 /** What the running turn has done so far, in order: the steps the working indicator unfolds. */

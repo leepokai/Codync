@@ -66,7 +66,7 @@ class AppStore internal constructor(
     internal var mirrorBots: List<Bot> = emptyList()
     /** Section moves shown but not answered yet, oldest first. */
     internal val pendingSectionMoves = mutableListOf<SectionMove>()
-    /** Queued messages taken back here, by the `rev` they had; the state shows them removed until a newer one (`withRemovals`). */
+    /** Queued messages taken back here, by the `rev` they had; the state leaves them out until a newer one (`withRemovals`). */
     internal val pendingRemovals = mutableMapOf<String, Long>()
     internal var pluginsRefreshAgain = false
     /** The host version an undecodable event already made the mirror fetch everything again for. */

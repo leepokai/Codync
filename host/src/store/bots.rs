@@ -213,7 +213,7 @@ mod tests {
             .unwrap();
         assert!(a.rev > u.rev);
         assert_eq!(s.unread("b1", 0), 0, "narration is not unread");
-        let a2 = s.update_entry(&a.id, None, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
+        let a2 = s.update_entry(&a.id, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
         assert_eq!(s.unread("b1", 0), 1);
         assert_eq!(s.entries_since(a2.rev - 1, 500).unwrap().len(), 1);
         assert_eq!(s.entries_since(0, 1).unwrap().len(), 1, "fresh sync is capped per bot");

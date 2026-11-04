@@ -308,7 +308,7 @@ export interface EntryData {
   final?: boolean
   /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */
   status?: string
-  /** user: taken back from the queue before it went out (`unqueue`); the chat no longer shows it. */
+  /** user: taken back from the queue before it went out (`unqueue`); no view reads it (`withoutRemoved`). */
   removed?: boolean
   clientNonce?: string
   title?: string
@@ -360,12 +360,25 @@ export interface Entry {
   updatedAt: number
 }
 
+const shownOf = new WeakMap<Entry[], Entry[]>()
+
+/**
+ * `list` as the views read it, without the messages taken back (`unqueue`): the store keeps those for its rev guard
+ * against a late response. One array per list, because the chat's memos depend on its identity.
+ */
+export function withoutRemoved(list: Entry[]): Entry[] {
+  let shown = shownOf.get(list)
+  if (!shown) {
+    shown = list.filter((e) => !e.data.removed)
+    shownOf.set(list, shown)
+  }
+  return shown
+}
+
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */
 export function isChat(e: Entry): boolean {
   switch (e.kind) {
     case 'user':
-      // One the user took back from the queue (`unqueue`) is gone.
-      return !e.data.removed
     case 'permission':
       return true
     case 'notice':

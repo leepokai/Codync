@@ -112,15 +112,19 @@ export class BotStore extends BotSync {
     const files = (entry.data.clientNonce && this.outgoingFiles.get(entry.data.clientNonce)) || []
     const text = entry.data.text ?? ''
     if (!text && !files.length) return
-    this.entries.set(entry.botId, this.allEntries(entry.botId).filter((e) => e.id !== entry.id))
+    this.dropEntry(entry)
     this.send(text, entry.botId, { files, nonce: entry.data.clientNonce, replyTo: entry.data.replyTo })
   }
 
   discard(entry: Entry) {
     if (entry.data.clientNonce) this.outgoingFiles.delete(entry.data.clientNonce)
-    this.entries.set(entry.botId, this.allEntries(entry.botId).filter((e) => e.id !== entry.id))
+    this.dropEntry(entry)
     this.changed()
     this.scheduleSave()
+  }
+
+  private dropEntry(entry: Entry) {
+    this.entries.set(entry.botId, (this.entries.get(entry.botId) ?? []).filter((e) => e.id !== entry.id))
   }
 
   private markLocal(nonce: string, botId: string, status: string) {

@@ -336,7 +336,7 @@ export class BotSync extends BotMirror {
   }
 
   private isBelowFloor(e: Entry) {
-    const held = this.allEntries(e.botId).some((x) => x.id === e.id)
+    const held = !!this.entries.get(e.botId)?.some((x) => x.id === e.id)
     return isOutsideLoadedWindow(this.floors.get(e.botId), held, e)
   }
 

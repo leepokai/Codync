@@ -93,6 +93,16 @@ pub fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Waits until `done` holds, checking every 100 ms; fails naming `what` after `within`.
+#[allow(dead_code, reason = "only some tests wait this way")]
+pub async fn eventually(what: &str, within: Duration, mut done: impl AsyncFnMut() -> bool) {
+    let deadline = Instant::now() + within;
+    while !done().await {
+        assert!(Instant::now() < deadline, "timed out waiting until {what}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// Python as the test machine names it.
 pub fn python() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }

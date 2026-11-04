@@ -34,7 +34,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /** "Full conversation": everything the agent did, grouped by turn (iOS `TraceView`). */
 @Composable internal fun TraceView(bot: Bot, state: AppState) {
     val all = state.entries.filter { it.botId == bot.id }
-    val turns = traceTurns(all)
+    val turns = all.groupBy { it.turn }.toSortedMap().toList()
     // The running turn's thoughts start unfolded.
     val running = runningTurn(all, bot.isWorking(bot.id))
     val list = rememberLazyListState()
@@ -55,14 +55,9 @@ import kotlinx.serialization.json.jsonPrimitive
     }
 }
 
-/** A chat's entries grouped by turn, oldest turn first; one taken back from the queue never had a turn. */
-internal fun traceTurns(entries: List<Entry>): List<Pair<Long, List<Entry>>> =
-    entries.filterNot(Entry::isRemoved).groupBy { it.turn }.toSortedMap().toList()
-
-/** The turn running now while the bot works in this chat; a queued message already holds the next turn, and so does one
- *  taken back from the queue. */
+/** The turn running now while the bot works in this chat; a queued message already holds the next turn. */
 internal fun runningTurn(entries: List<Entry>, working: Boolean): Long? =
-    if (working) entries.filter { it.status != "queued" && !it.isRemoved }.maxOfOrNull { it.turn } else null
+    if (working) entries.filter { it.status != "queued" }.maxOfOrNull { it.turn } else null
 
 /** What the running turn has done so far, in order: the steps the working indicator unfolds. */
 internal fun workingSteps(entries: List<Entry>): List<Entry> {

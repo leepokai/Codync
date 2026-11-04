@@ -69,18 +69,12 @@ class ConversationTest {
         }
     }
 
-    @Test fun `a queued message waits above the composer and one taken back shows nowhere`() {
-        fun user(status: String, removed: Boolean = false) = Entry("u", 1, "b", rev = 1, kind = "user",
-            data = buildJsonObject { put("text", "hi"); put("status", status); if (removed) put("removed", true) })
+    @Test fun `a queued message waits above the composer`() {
+        fun user(status: String) = Entry("u", 1, "b", rev = 1, kind = "user", data = buildJsonObject { put("text", "hi"); put("status", status) })
         assertTrue(user("queued").isQueued)
         assertTrue(user("queued").isChat)
         assertFalse(user("sent").isQueued)
         assertFalse(Entry("n", 1, "b", rev = 1, kind = "notice", data = buildJsonObject { put("status", "queued") }).isQueued)
-        val removed = user("cancelled", removed = true)
-        assertTrue(removed.isRemoved)
-        assertFalse(removed.isChat)
-        assertFalse(removed.isQueued)
-        assertFalse("still queued, but taken back", user("queued", removed = true).isQueued)
     }
 
     @Test fun `malformed known events fail before a checkpoint while unknown events are ignored`() {

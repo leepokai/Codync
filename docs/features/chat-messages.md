@@ -18,7 +18,9 @@ it has no pointer tooltip or link-opening action.
 - The agent's own reply text (`agent_message_chunk`) stays in the trace when the turn sent
   text through `send_message`. A turn that sent nothing (an agent that ignores the tool, or has no MCP) falls back to
   the old rule: its last text becomes the turn's final message, unless that text is `(pass)`: a message that
-  needs neither words nor a reaction gets nothing, as in a group.
+  needs neither words nor a reaction gets nothing, as in a group. In a turn a steered message joined, what the agent
+  wrote after its last `send_message` or reaction becomes a final message too, since either may have answered only
+  what came before that message.
 - File cards are separate final entries. Sharing a file preserves an intended final text
   reply; a files-only turn uses its filename for the completion summary. See
   [file attachments](file-attachments.md#files-from-a-bot). Artifact cards (`publish_artifact`) are final entries the

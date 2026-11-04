@@ -327,7 +327,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
 }
 
 /** Keep the outgoing row until its height/fade transition finishes. */
-function ComposerReveal({ open, children }: { open: boolean; children: ReactNode }) {
+export function ComposerReveal({ open, children }: { open: boolean; children: ReactNode }) {
   const { mounted, shown } = usePresence(open)
   const last = useRef(children)
   if (open) last.current = children

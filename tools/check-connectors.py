@@ -191,7 +191,7 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="codync-connectors-check-") as temp:
         home = Path(temp)
-        env = {**os.environ, "CODYNC_HOME": str(home), "CODYNC_CLOUD": "off"}
+        env = {**os.environ, "CODYNC_HOME": str(home), "CODYNC_CLOUD": "off", "CODYNC_AGENT_CHECKS": "off"}
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]

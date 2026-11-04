@@ -706,7 +706,6 @@
   "Enter a name and instruction above to save.": "Gib oben einen Namen und eine Anweisung ein, um zu speichern.",
   "Delete routine": "Routine löschen",
   "Queued": "In der Warteschlange",
-  "Queued until this response finishes": "Wartet, bis diese Antwort fertig ist",
   "Routine · {name}": "Routine · {name}",
   "Tool": "Werkzeug",
   "Turn {turn}": "Runde {turn}",

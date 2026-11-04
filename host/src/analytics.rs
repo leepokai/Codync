@@ -103,6 +103,8 @@ pub enum Event {
     AgentSetupStarted,
     AgentSignedIn,
     SettingChanged,
+    /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
+    ReachAccountAnswered,
     HostUpdateInstalled,
     /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
     NetworkJoined,
@@ -173,6 +175,7 @@ impl Event {
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::SettingChanged => "setting_changed",
+            Self::ReachAccountAnswered => "reach_account_answered",
             Self::HostUpdateInstalled => "host_update_installed",
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",

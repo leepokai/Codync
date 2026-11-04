@@ -37,6 +37,10 @@ export type VoiceFailure = 'none' | 'microphone' | 'connection' | 'provider'
 
 /** What came of a window whose page crashed: it loaded again, or crashed too often and stays down. */
 export type WindowRecoveryOutcome = 'reloaded' | 'gave_up'
+/** How the ask before Reach from anywhere turns on ended. */
+export type ReachOutcome = 'added' | 'own_relay' | 'cancelled' | 'failed'
+/** Why a computer couldn't be added to the account: the cloud couldn't be reached, it refused, or the host failed. */
+export type ClaimFailure = 'unreachable' | 'refused' | 'host'
 
 export type AnalyticsEvent =
   | { event: 'app_opened'; at_login: boolean }
@@ -53,6 +57,7 @@ export type AnalyticsEvent =
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }
+  | { event: 'reach_account_answered'; outcome: ReachOutcome; error?: ClaimFailure }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

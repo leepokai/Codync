@@ -1806,5 +1806,8 @@
   "D removes": "D remove",
   "S sends this now": "S envia esta agora",
   "D removes the last": "D remove a última",
-  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Atualize o Codync em {host}: enviar agora e retirar precisam da versão {version} ou mais recente."
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Atualize o Codync em {host}: enviar agora e retirar precisam da versão {version} ou mais recente.",
+  "Add {name} to your account first": "Primeiro adicione {name} à sua conta",
+  "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "Seu telefone acessa {name} de qualquer lugar pela sua conta. Ao adicionar, isto também é ativado.",
+  "Use your own relay": "Usar seu próprio relay"
 }

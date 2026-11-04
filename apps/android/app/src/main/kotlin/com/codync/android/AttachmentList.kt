@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -34,37 +33,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Files sent with a message, on the sender's side (iOS `AttachmentList`): images as pictures (tap for full size), other files as cards. */
-@Composable internal fun AttachmentList(attachments: List<Attachment>, botId: String, state: AppState, store: AppStore) {
+/** Files sent with a message, on the sender's side (iOS `AttachmentList`): images as pictures (tap for full size, hold for
+ *  `menu` with Copy image and Copy name), other files as cards. */
+@Composable internal fun AttachmentList(attachments: List<Attachment>, botId: String, menu: MessageMenu, state: AppState, store: AppStore) {
     var viewing by remember { mutableStateOf<Attachment?>(null) }
     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (file in attachments) {
-            if (file.isImage) AttachmentImage(file, botId, 720, state, store, Modifier.sizeIn(maxWidth = 220.dp, maxHeight = 280.dp)
-                .clip(RoundedRectangle(16.dp)).plainButton { viewing = file }.semantics { contentDescription = file.name })
-            else AttachmentCard(file)
+            // The tap is the picture's own button: the chat's tap-to-dismiss-keyboard takes a tap the menu's hold would leave.
+            if (file.isImage) Box(Modifier.contextActions(reactions = menu.reactions) { menu.items(imageCopyItems(store, file.imageSource(botId, store))) }) {
+                AttachmentImage(file, botId, 720, state, store, Modifier.sizeIn(maxWidth = 220.dp, maxHeight = 280.dp)
+                    .clip(RoundedRectangle(16.dp)).plainButton { viewing = file }.semantics { contentDescription = file.name })
+            } else AttachmentCard(file)
         }
     }
-    AttachmentImageSheet(viewing, botId, state, store) { viewing = null }
-}
-
-/** A sent image full size, in a sheet while `file` is set. */
-@Composable internal fun AttachmentImageSheet(file: Attachment?, botId: String, state: AppState, store: AppStore, dismiss: () -> Unit) {
-    ImageSheet(file, { it.name }, dismiss) { shown, modifier -> AttachmentImage(shown, botId, 4096, state, store, modifier) }
-}
-
-/** An image a bot shared full size, in a sheet while `file` is set. */
-@Composable internal fun SharedImageSheet(file: SharedFile?, entryId: String, state: AppState, store: AppStore, dismiss: () -> Unit) {
-    ImageSheet(file, { it.name }, dismiss) { shown, modifier -> SharedImage(shown, entryId, 4096, state, store, modifier) }
-}
-
-/** A picture full size (iOS `AttachmentViewer`), in a sheet while `item` is set. */
-@Composable private fun <T : Any> ImageSheet(item: T?, name: (T) -> String, dismiss: () -> Unit, image: @Composable (T, Modifier) -> Unit) {
-    CodyncSheet(item, dismiss) { shown ->
-        Column(Modifier.fillMaxSize().background(Palette.background)) {
-            ModalHeader(name(shown))
-            Box(Modifier.weight(1f).padding(12.dp), contentAlignment = Alignment.Center) { image(shown, Modifier.fillMaxSize()) }
-        }
-    }
+    AttachmentImageSheet(viewing, botId, menu, state, store) { viewing = null }
 }
 
 @Composable private fun AttachmentCard(file: Attachment) {
@@ -78,29 +60,46 @@ import kotlinx.coroutines.withContext
     }
 }
 
+/** A picture from the computer the viewer and its menus act on (desktop `ImageSource`): its cache id, its name, and how to
+ *  fetch its original file. */
+internal class ImageSource(val id: String, val name: String, val load: suspend () -> java.io.File)
+
+internal fun Attachment.imageSource(botId: String, store: AppStore) = ImageSource(id, name) { store.attachment(botId, this) }
+
+internal fun SharedFile.imageSource(entryId: String, store: AppStore) = ImageSource(id, name) { store.sharedImage(entryId, this) }
+
 /** A sent image, fetched from the computer once and then read from the cache; a placeholder until then. */
 @Composable internal fun AttachmentImage(file: Attachment, botId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier,
-    scale: ContentScale = ContentScale.Fit) = RemoteImage(file.id, maxPixels, state, modifier, scale) { store.attachment(botId, file) }
+    scale: ContentScale = ContentScale.Fit) = RemoteImage(file.imageSource(botId, store), maxPixels, state, modifier, scale)
 
 /** An image a bot shared, like `AttachmentImage`. */
 @Composable internal fun SharedImage(file: SharedFile, entryId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier) =
-    RemoteImage(file.id, maxPixels, state, modifier, ContentScale.Fit) { store.sharedImage(entryId, file) }
+    RemoteImage(file.imageSource(entryId, store), maxPixels, state, modifier, ContentScale.Fit)
 
-/** A picture `load` fetches from the computer into the cache (iOS `AttachmentImage`); a placeholder until then. */
-@Composable private fun RemoteImage(id: String, maxPixels: Int, state: AppState, modifier: Modifier, scale: ContentScale, load: suspend () -> java.io.File) {
-    var image by remember(id, maxPixels) { mutableStateOf<ImageBitmap?>(null) }
+/** A picture from the computer (iOS `AttachmentImage`); a placeholder until it's here. */
+@Composable private fun RemoteImage(source: ImageSource, maxPixels: Int, state: AppState, modifier: Modifier, scale: ContentScale) {
+    val bitmap = rememberRemoteImage(source, maxPixels, state)
+    if (bitmap != null) Image(bitmap, contentDescription = null, modifier = modifier, contentScale = scale) else ImagePlaceholder(modifier)
+}
+
+/** `source`'s picture, fetched from the computer into the cache and decoded to at most `maxPixels` a side; null until then. */
+@Composable internal fun rememberRemoteImage(source: ImageSource, maxPixels: Int, state: AppState): ImageBitmap? {
+    var image by remember(source.id, maxPixels) { mutableStateOf<ImageBitmap?>(null) }
     // Retried whenever the link changes: an image the computer couldn't send stays a placeholder, as on iOS.
-    LaunchedEffect(id, maxPixels, state.actualConnection) {
+    LaunchedEffect(source.id, maxPixels, state.actualConnection) {
         if (image != null) return@LaunchedEffect
         try {
-            val source = load()
-            image = withContext(Dispatchers.IO) { AttachmentFiles.thumbnail(source, maxPixels).asImageBitmap() }
+            val file = source.load()
+            image = withContext(Dispatchers.IO) { AttachmentFiles.thumbnail(file, maxPixels).asImageBitmap() }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { /* The placeholder stays; the next link change tries again. */ }
     }
-    val bitmap = image
-    if (bitmap != null) Image(bitmap, contentDescription = null, modifier = modifier, contentScale = scale)
-    else Box(modifier.size(160.dp, 120.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser), contentAlignment = Alignment.Center) {
+    return image
+}
+
+/** Where a picture shows until it's here. */
+@Composable internal fun ImagePlaceholder(modifier: Modifier = Modifier) {
+    Box(modifier.size(160.dp, 120.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser), contentAlignment = Alignment.Center) {
         Symbol("photo", size = 20.dp, tint = Palette.tertiary)
     }
 }

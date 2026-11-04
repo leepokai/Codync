@@ -27,6 +27,7 @@ class AnalyticsTest {
         assertEquals("{}", json(AnalyticsEvent.SignedOut))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
+        assertEquals("""{"action":"copy_image"}""", json(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage)))
         assertEquals("""{"computers":2,"keys":"moved"}""", json(AnalyticsEvent.SignedOutPairingsMoved(2, MovedKeys.Moved)))
         assertEquals("""{"computers":1,"keys":"rescan"}""", json(AnalyticsEvent.SignedOutPairingsMoved(1, MovedKeys.Rescan)))
         assertEquals("""{"engine":"gemini","reconnects":1,"stuck":"none","failure":"connection","ready_ms":1200}""",

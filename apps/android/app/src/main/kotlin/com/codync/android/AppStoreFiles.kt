@@ -1,11 +1,13 @@
 package com.codync.android
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import com.codync.android.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 // Files a bot shares in a chat (iOS `FileDownloads`): one download at a time, checked against its
-// SHA-256, then handed to the system share sheet.
+// SHA-256, then handed to the system share sheet. Any picture in a chat also copies to the clipboard.
 
 /** Where a shared file's download is, as iOS `FileDownloads.State`. */
 sealed interface FileDownloadState {
@@ -46,6 +48,22 @@ fun AppStore.cancelFile(fileId: String) {
 
 private fun AppStore.setDownload(fileId: String, download: FileDownloadState?) = mutableState.update {
     it.copy(fileDownloads = if (download == null) it.fileDownloads - fileId else it.fileDownloads + (fileId to download))
+}
+
+/** Picture `source` itself on the clipboard (desktop `copyImageOf`), its original file fetched first if it isn't cached yet. */
+internal suspend fun AppStore.copyImage(source: ImageSource) {
+    val file = source.load()
+    withContext(Dispatchers.IO) { attachments.copyImage(file, source.name) }
+    Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage))
+}
+
+/** Copy image from a menu: a failure shows as the store's error. */
+internal fun AppStore.copyImageLater(source: ImageSource) = action("copy:" + source.id) { copyImage(source) }
+
+/** Just a picture's file name on the clipboard, as text. */
+internal fun AppStore.copyImageName(source: ImageSource) {
+    application.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Name", source.name))
+    Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyName))
 }
 
 /** The chat is the one open. */

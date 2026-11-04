@@ -86,6 +86,12 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class ScreenViewed(val screen: AnalyticsScreen) : AnalyticsEvent("screen_viewed") {
         override val properties get() = mapOf("screen" to screen.json)
     }
+    /** A picture in a chat or the Library opened full size. Never the picture or its name. */
+    data object ImagePreviewOpened : AnalyticsEvent("image_preview_opened")
+    /** Something done to a picture (at most one `zoom` per opening). Never the picture or its name. */
+    data class ImagePreviewAction(val action: ImageAction) : AnalyticsEvent("image_preview_action") {
+        override val properties get() = mapOf("action" to action.json)
+    }
 }
 
 /** One of a property's catalog values, as sent. */
@@ -180,6 +186,10 @@ internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     OnDevice("on_device"), OpenAI("openai"), Gemini("gemini"),
     /** A provider's speech-to-text and text-to-speech (`CloudSpeechEngine`), not its realtime model. */
     Cloud("cloud"),
+}
+
+internal enum class ImageAction(override val wire: String) : CatalogValue {
+    Zoom("zoom"), CopyImage("copy_image"), CopyName("copy_name"), Download("download"),
 }
 
 /** `screen_viewed` values (the catalog's *Screens* table, iOS/Android column). */

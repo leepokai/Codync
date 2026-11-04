@@ -68,7 +68,7 @@ import com.kyant.shapes.RoundedRectangle
     // The artifact as composed: Save closes the dialog (clearing `renaming`) before it renames.
     val target = renaming
     RenameArtifactDialog(target?.title, { renaming = null }) { title -> target?.let { store.renameArtifact(bot.id, it.id, title) } }
-    AttachmentImageSheet(image, bot.id, state, store) { image = null }
+    AttachmentImageSheet(image, bot.id, null, state, store) { image = null }
 }
 
 /** One row of the Library: what it is on the left, its name and detail. */
@@ -100,11 +100,15 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** A file the user attached: an image opens full size, as in the chat; another file only shows. */
+/** A file the user attached: an image opens full size, as in the chat, and holding it copies it or its name; another file
+ *  only shows. */
 @Composable private fun AttachmentRow(file: Attachment, botId: String, state: AppState, store: AppStore, openImage: () -> Unit) {
-    if (file.isImage) LibraryRow(Modifier.plainButton(action = openImage), {
-        AttachmentImage(file, botId, 144, state, store, Modifier.size(36.dp).clip(RoundedRectangle(8.dp)), ContentScale.Crop)
-    }) { NameAndDetail(file.name, formatBytes(file.size)) }
+    // As the chat's picture: the tap is the row's own button, the hold the menu's.
+    if (file.isImage) Box(Modifier.contextActions { imageCopyItems(store, file.imageSource(botId, store)) }) {
+        LibraryRow(Modifier.plainButton(action = openImage), {
+            AttachmentImage(file, botId, 144, state, store, Modifier.size(36.dp).clip(RoundedRectangle(8.dp)), ContentScale.Crop)
+        }) { NameAndDetail(file.name, formatBytes(file.size)) }
+    }
     else LibraryRow(Modifier.semantics(mergeDescendants = true) {}, { Symbol(AttachmentIcon.symbol(file.name), size = 22.dp, tint = Palette.secondary) }) {
         NameAndDetail(file.name, formatBytes(file.size))
     }

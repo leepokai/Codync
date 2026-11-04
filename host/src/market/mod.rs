@@ -19,6 +19,7 @@
 
 pub mod agent_sign_in;
 pub mod composio;
+pub mod connector_update;
 pub mod logins;
 pub mod oauth;
 pub mod passwords;
@@ -27,13 +28,11 @@ pub mod vault;
 pub mod verify;
 
 mod command_line;
-mod connector_update;
 mod install;
 mod registry;
 mod skills;
 mod updates;
 
-pub use connector_update::update_custom_connector;
 pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
 pub use skills::{
@@ -198,6 +197,13 @@ pub fn connector_ids(store: &crate::store::Store) -> Result<Vec<String>> {
         .flatten()
         .filter_map(|c| c["id"].as_str().map(str::to_owned))
         .collect())
+}
+
+/// The bots that have this connector turned on.
+pub fn bots_using(store: &crate::store::Store, id: &str) -> Result<Vec<crate::store::BotRow>> {
+    let mut bots = store.bots()?;
+    bots.retain(|row| !row.deleted && !row.config.is_group() && row.config.connectors.iter().any(|c| c == id));
+    Ok(bots)
 }
 
 /// What the computer installs for its bots.

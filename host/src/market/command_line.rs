@@ -10,18 +10,18 @@ pub(super) fn split_command(line: &str, args: Option<&Value>) -> Result<(Option<
     if line.is_empty() {
         bail!("give a command");
     }
-    let words = match args.filter(|a| !a.is_null()) {
-        Some(args) => {
-            let mut words = vec![line.to_owned()];
-            for a in args.as_array().ok_or_else(|| anyhow!("`args` are strings"))? {
-                words.push(a.as_str().ok_or_else(|| anyhow!("`args` are strings"))?.to_owned());
-            }
-            words
-        }
-        None => shlex::split(line).ok_or_else(|| anyhow!("the command has an unclosed quote"))?,
-    };
-    let mut words = words.into_iter();
+    if let Some(args) = args.filter(|a| !a.is_null()) {
+        return Ok((Some(line.to_owned()), string_args(args)?));
+    }
+    let mut words = shlex::split(line).ok_or_else(|| anyhow!("the command has an unclosed quote"))?.into_iter();
     Ok((words.next(), words.collect()))
+}
+
+/// An `args` list, every item of it a string.
+pub(super) fn string_args(args: &Value) -> Result<Vec<String>> {
+    args.as_array()
+        .and_then(|args| args.iter().map(|a| a.as_str().map(str::to_owned)).collect())
+        .ok_or_else(|| anyhow!("`args` are strings"))
 }
 
 #[cfg(test)]

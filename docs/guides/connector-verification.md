@@ -19,18 +19,6 @@ SQLite, Keychain and MCP subprocesses. `--network` additionally exercises live
 providers. `--slow` waits for the production 90-second handshake timeout.
 Failures produce a nonzero exit code; live provider failures are not skipped.
 
-## Editing a custom local connector
-
-`updateConnector` (loopback only) edits a custom local connector without changing
-its id or bot assignments. Omitted fields keep their values, including `args` when
-only `command` changes. The update's `command` is an executable path; pass arguments
-separately in `args`, or `args: []` to clear them. Unlike installation, updates
-do not split a command line. `env` merges entries, with `null` removing a key.
-The host checks the edited copy first and saves exactly that copy if it starts, so an
-error means the edit changed nothing. If the connector was saved by something else
-during the check, the edit is refused and can be sent again, so overlapping edits never
-combine into settings nobody checked. Bots using the connector then refresh their tools.
-
 ## Recorded result: 2026-10-05, macOS
 
 `python3 tools/check-connectors.py --network --slow`: **15/15 passed**.
@@ -52,6 +40,11 @@ not a released-build certification.
   tools in a real subprocess. Public listings omit credentials and command args.
 - Check the connector record is encrypted in SQLite; restart the host and verify
   it can recover credentials through the OS Keychain.
+- Edit a custom local connector through `updateConnector` (what an edit does:
+  [connector credentials](../features/connector-credentials.md)): new `args` keep
+  the id, verify as ready and `connectorRuntime` returns the new command line; an edit
+  that won't start leaves what's saved as it was. Bot assignments and the bots' tool
+  refresh are not covered here (`host/src/market/connector_update.rs` tests them).
 - Import a pasted `mcpServers` configuration and verify the resulting connector.
 - Reject a missing runtime and a malformed MCP initialize response.
 - Verify authenticated remote MCP using JSON and streamable HTTP SSE responses,

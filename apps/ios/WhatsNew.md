@@ -16,3 +16,10 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Pinch to zoom a full-size picture up to 8x, drag it once zoomed in, or double-tap to zoom in and back.
 - Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
 - Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
+
+## 2.39.1
+### zh-Hant
+- 現在會在你從這支 iPhone 送出第五則訊息後，邀請你到 App Store 評分，一年最多兩次。
+
+### en-US
+- Codync now invites you to rate it on the App Store after your fifth message from this iPhone, at most twice a year.

@@ -7,6 +7,8 @@ import type { HostSnapshot } from '../src/shared/ipc.ts'
 
 // Playwright loads specs as CommonJS here (the package has no "type": "module").
 const root = resolve(__dirname, '../../..')
+// A scripted agent whose turn waits until a steered message joins it (host/tests/fixtures/steer_agent.py).
+const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 
 /** This worktree's sandbox: its name, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
 export function sandbox() {
@@ -32,7 +34,30 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     .flatMap((context) => context.pages())
     .find((p) => !p.url().startsWith('devtools://'))
   if (!page) throw new Error('The sandbox app has no window open.')
+  await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
   return { browser, page }
+}
+
+/** Sets a `pref` in the running window, which hears it as if another window had written it. */
+export async function setPref(page: Page, key: string, value: unknown) {
+  await page.evaluate(([key, value]) => {
+    localStorage.setItem(key, value)
+    window.dispatchEvent(new StorageEvent('storage', { key, newValue: value }))
+  }, [key, JSON.stringify(value)] as const)
+}
+
+/** A bot on the scripted agent, which waits up to `seconds` for a steered message. */
+export async function steerBot(page: Page, name: string, seconds: number) {
+  const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+    name, backend: 'custom', command: `python3 -X utf8 -u '${steerAgent}' steer ${seconds}`, connectors: [], skills: [], notify: false,
+  })
+  return bot
+}
+
+/** Sends `text` from the open chat's composer. */
+export async function typeMessage(page: Page, text: string) {
+  await page.locator('.composer textarea').fill(text)
+  await page.locator('.composer textarea').press('Enter')
 }
 
 /** Opens Settings from the account panel, on its General page. */

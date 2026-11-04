@@ -31,12 +31,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case imagePreviewOpened
     /// Something done in the full-size viewer, or a picture copied from a message's menu; at most one `zoom` per opening.
     case imagePreviewAction(ImageAction)
-    case reviewOpportunity(completed: Int)
-    case reviewCancelled(ReviewCancellation)
-    case reviewRequested(completed: Int)
+    case reviewRequested(prompts: Int)
     case reviewLinkOpened
-
-    public enum ReviewCancellation: String, Sendable { case background, interaction, unavailable }
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -128,8 +124,6 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .screenViewed: "screen_viewed"
         case .imagePreviewOpened: "image_preview_opened"
         case .imagePreviewAction: "image_preview_action"
-        case .reviewOpportunity: "review_opportunity"
-        case .reviewCancelled: "review_cancelled"
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
         }
@@ -163,9 +157,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
                                                 "stuck": .string(stuck.rawValue), "failure": .string(failure.rawValue)]
             p["ready_ms"] = readyMs.map(Analytics.Value.int)
             return p
-        case let .reviewOpportunity(completed), let .reviewRequested(completed):
-            return ["completed_interactions": .int(completed), "policy": .string("v1"), "trigger": .string("return_to_bots")]
-        case let .reviewCancelled(reason): return ["reason": .string(reason.rawValue), "policy": .string("v1")]
+        case let .reviewRequested(prompts):
+            return ["prompts": .int(prompts), "policy": .string("v2")]
         case .reviewLinkOpened: return ["source": .string("settings")]
         case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
         }

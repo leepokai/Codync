@@ -63,6 +63,11 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Restart host', 'zh', false), '重启 Host')
   assert.equal(translate('2 bots working', 'zh', false), '2 个 Bot 正在工作')
   assert.equal(translate('Check for updates', 'zh', false), '检查更新')
+  assert.equal(translate('Routine · News', 'zh', false), '例行任务 · News')
+  assert.equal(translate('Routine · News', 'zh-Hant', 'en'), '例行任務 · News')
+  assert.equal(translate('Turn {turn}', 'zh', false), '第 {turn} 轮')
+  assert.equal(translate('Tool', 'zh', false), '工具')
+  assert.equal(translate('Tool', 'zh-Hant', 'en'), '工具')
   assert.equal(translate('Computer access is ready.', 'zh', false), '电脑访问已就绪。')
   assert.equal(translate('Storage', 'zh', false), '存储')
   assert.equal(translate('Extensions sections', 'zh', false), '扩展分类')
@@ -113,7 +118,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Remove {name}?', 'zh', false), '移除 {name}？')
   assert.equal(translate('No setup needed.', 'zh', false), '无需设置。')
   assert.equal(translate('On {name} ({kind})', 'zh', false), '在 {name} 上（{kind}）')
-  assert.equal(translate('Runs the official installer on this Mac.', 'zh', false), '在 这台 Mac 上运行官方安装程序。')
+  assert.equal(translate('Runs the official installer on this Mac.', 'zh', false), '在 this Mac 上运行官方安装程序。')
   assert.equal(translate('Use Claude subscription', 'zh', false), '使用 Claude 订阅')
   assert.equal(translate('Support', 'zh', false), '支持')
   assert.equal(translate('Devices that can use FORWARDXU-MC3', 'zh', false), '可以使用 FORWARDXU-MC3 的设备')
@@ -142,7 +147,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
 
 
 test('each supported locale follows regional system tags and explicit choices win', () => {
-  for (const language of ['ja', 'ko', 'fr', 'de', 'es'] as const) {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru'] as const) {
     assert.equal(resolvedLanguage('system', `${language.toUpperCase()}_XX.UTF-8`), language)
     assert.equal(resolvedLanguage(language, 'zh-TW'), language)
     assert.equal(usesChinese(language, 'zh-TW'), false)
@@ -153,16 +158,63 @@ test('each supported locale follows regional system tags and explicit choices wi
     assert.equal(resetLine('resets 3h 20m', language).includes('3h 20m'), true)
     assert.notEqual(languageTitle(language, 'en', 'en'), 'Follow system')
   }
-  assert.equal(new Set(appLanguages).size, 9)
-  assert.equal(resolvedLanguage('system', 'pt-BR'), 'en')
+  assert.equal(new Set(appLanguages).size, 11)
+  assert.equal(resolvedLanguage('system', 'nl-NL'), 'en')
   assert.equal(translate('Settings', 'en', 'ja-JP'), 'Settings')
 })
 
 
+test('Brazilian Portuguese follows Portuguese regions and keeps its native menu name', () => {
+  assert.deepEqual(appLanguages.slice(-3), ['es', 'pt-BR', 'ru'])
+  assert.equal(languageTitle('pt-BR', 'en', 'en'), 'Português (Brasil)')
+  for (const tag of ['pt', 'pt-BR', 'pt_BR.UTF-8', 'pt-PT', 'pt-AO', 'pt-MZ', 'PT_cv.UTF-8']) {
+    assert.equal(resolvedLanguage('system', tag), 'pt-BR', tag)
+    assert.equal(translate('Settings', 'system', tag), translate('Settings', 'pt-BR'), tag)
+  }
+  assert.equal(resolvedLanguage('pt-BR', 'zh-TW'), 'pt-BR')
+  assert.equal(usesChinese('pt-BR', 'zh-TW'), false)
+  assert.equal(translate('Settings', 'en', 'pt-BR'), 'Settings')
+  assert.equal(resolvedLanguage('system', 'en-US'), 'en')
+  assert.equal(resolvedLanguage('system', ''), 'en')
+})
+
 test('English reset text remains literal and absolute dates do not become durations', () => {
   assert.equal(resetLine('resets Sep 26 at 12pm', 'en'), 'resets Sep 26 at 12pm')
   assert.equal(resetLine('resets 3h 20m', 'en'), 'resets 3h 20m')
-  for (const language of ['ja', 'ko', 'fr', 'de', 'es'] as const) {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru'] as const) {
     assert.equal(resetLine('resets Sep 26 at 12pm', language), `${translate('resets', language)} Sep 26 at 12pm`)
+  }
+})
+
+
+test('Russian resolves regional tags and keeps its native menu name', () => {
+  for (const tag of ['ru', 'ru-RU', 'ru_RU.UTF-8', 'ru-UA']) {
+    assert.equal(resolvedLanguage('system', tag), 'ru')
+    assert.equal(translate('Settings', 'system', tag), 'Настройки')
+  }
+  assert.equal(languageTitle('ru', 'en', 'en'), 'Русский')
+  assert.equal(resolvedLanguage('ru', 'pt-BR'), 'ru')
+})
+
+test('filled interface templates preserve user-owned names', () => {
+  for (const name of ['Plan', 'connected', 'Standby']) {
+    assert.equal(translate(`Routine · ${name}`, 'zh', 'en'), `例行任务 · ${name}`)
+    assert.equal(translate(`Routine · ${name}`, 'zh-Hant', 'en'), `例行任務 · ${name}`)
+    assert.equal(translate(`Remove ${name}?`, 'zh', 'en'), `移除 ${name}？`)
+  }
+})
+
+test('all catalogs preserve names and substitute captured values only once', () => {
+  for (const language of appLanguages.filter((id) => id !== 'en' && id !== 'system')) {
+    for (const name of ['Plan', 'connected', 'Standby', '$&', '{hint}']) {
+      const expected = translate('Routine · {name}', language).replaceAll('{name}', () => name)
+      assert.equal(translate(`Routine · ${name}`, language), expected, `${language}: ${name}`)
+      const title = translate('Message about “{title}”', language).replaceAll('{title}', () => name)
+      assert.equal(translate(`Message about “${name}”`, language), title)
+    }
+    const hint = 'Install Claude Code and run `claude auth login`.'
+    const expected = translate("{name} isn't set up on this computer. {hint}", language)
+      .replaceAll('{hint}', translate(hint, language)).replaceAll('{name}', '{hint}')
+    assert.equal(translate(`{hint} isn't set up on this computer. ${hint}`, language), expected)
   }
 })

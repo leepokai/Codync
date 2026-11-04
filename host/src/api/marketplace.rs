@@ -155,7 +155,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 market::oauth::Callback::App
             };
-            market::oauth::start(&hub.store, hub.port, str_arg(&b, "id")?, callback).await?
+            market::oauth::start(hub, str_arg(&b, "id")?, callback, b["showsCode"] == true).await?
         }
         "connectorSignInFinish" => {
             let c = market::oauth::finish(&hub.store, str_arg(&b, "state")?, b["code"].as_str(), b["error"].as_str())

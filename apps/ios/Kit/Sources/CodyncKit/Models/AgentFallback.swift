@@ -40,6 +40,16 @@ public struct AgentStep: Codable, Hashable, Sendable {
     public var reason: String?
 }
 
+extension Bot {
+    /// The agent the bot runs on right now: its fallback's while it's on one.
+    public var runningAgent: String { agentStep?.agent ?? backend }
+}
+
+extension Sequence<Bot> {
+    /// The bots run more than one agent, so the roster marks each with its agent's logo.
+    public var mixesAgents: Bool { Set(filter { !$0.isGroup }.map(\.runningAgent)).count > 1 }
+}
+
 /// An agent of the bot's chain (its own included) resting after it couldn't answer, until `until` (ms).
 public struct AgentRest: Codable, Hashable, Sendable {
     public var agent: String

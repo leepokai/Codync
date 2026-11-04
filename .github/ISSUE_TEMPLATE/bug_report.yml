@@ -1,0 +1,66 @@
+name: Bug report
+description: Something that should work is broken.
+labels: [bug]
+body:
+  - type: dropdown
+    id: client
+    attributes:
+      label: Where it happens
+      multiple: true
+      options:
+        - iPhone
+        - Android
+        - Desktop app
+        - Terminal UI
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Codync version
+      description: >-
+        The app's version is in Settings. The computer's is under Manage computers on a phone,
+        Settings > Computers on the desktop app, or from `codync-host --version`.
+      placeholder: App 2.34.0, computer 2.34.0
+    validations:
+      required: true
+  - type: input
+    id: systems
+    attributes:
+      label: Devices and systems
+      placeholder: iPhone 16 on iOS 26.1, MacBook Air on macOS 26.1
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      description: The agent and its version, if a bot is involved.
+      placeholder: Claude Code 2.1.303
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact steps. Say whether it happens every time or only sometimes.
+      placeholder: |
+        1. Open a bot
+        2. Tap ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >-
+        Optional, but it helps: exact error text, screenshots, a recording or logs. Host logs: `~/.codync/host.log` on macOS,
+        `journalctl --user -u codync-host` on Linux, `%USERPROFILE%\.codync\host.log` on Windows.
+        Issues are public, so remove tokens, keys and anything private first.

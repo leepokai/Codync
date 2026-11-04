@@ -8,7 +8,7 @@ struct CallLineRow: View {
 
     var body: some View {
         let title = L10n.tr(entry.data.text ?? "Voice chat")
-        let length = entry.data.callSeconds.map { String(format: " · %02d:%02d", $0 / 60, $0 % 60) } ?? ""
+        let length = callLength(entry.data.callSeconds)
         Button(action: open) {
             HStack(spacing: 6) {
                 Image(systemName: "waveform").foregroundStyle(Palette.secondary)
@@ -43,23 +43,30 @@ struct CallConversationView: View {
         VStack(spacing: 0) {
             ModalHeader(entry.data.text ?? "Voice chat")
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if let error {
-                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
-                            .frame(maxWidth: .infinity).padding(.top, 24)
-                    } else if fetched == nil, line.data.call != nil {
-                        Spinner(size: 14).frame(maxWidth: .infinity).padding(.top, 24)
-                            .accessibilityLabel(L10n.tr("Loading the call"))
-                    } else if messages.isEmpty {
-                        Text(L10n.tr("Nothing was said on this call.")).font(.footnote).foregroundStyle(Palette.tertiary)
-                            .frame(maxWidth: .infinity).padding(.top, 24)
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    CallHeader(line: entry)
+                    Group {
+                        if let error {
+                            Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
+                        } else if fetched == nil, line.data.call != nil {
+                            Spinner(size: 14).accessibilityLabel(L10n.tr("Loading the call"))
+                        } else if messages.isEmpty {
+                            Text(L10n.tr("Nothing was said on this call.")).font(.footnote).foregroundStyle(Palette.tertiary)
+                        }
                     }
-                    ForEach(Array(messages.enumerated()), id: \.offset) { _, message in row(message) }
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 16)
+                    ForEach(Array(messages.enumerated()), id: \.offset) { i, message in
+                        row(message).padding(.top, i == 0 ? 0 : message.gap(after: messages[i - 1]))
+                    }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                .padding(.bottom, 16)
             }
-            .defaultScrollAnchor(.bottom)
+            // A short call reads from the top; a long one opens at its end.
+            .defaultScrollAnchor(.top, for: .alignment)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
         }
         .background(Palette.background)
         .task(id: line.id) {
@@ -77,13 +84,14 @@ struct CallConversationView: View {
         switch message.speaker {
         case .user:
             Text(message.text)
-                .padding(.horizontal, 14).padding(.vertical, 9)
+                .foregroundStyle(Palette.text)
+                .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.leading, 40)
+                .padding(.leading, 56)
         case .voice:
             Text(message.text)
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(Palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 40)
         case .voiceToBot:
@@ -100,4 +108,40 @@ struct CallConversationView: View {
                 .padding(.trailing, 40)
         }
     }
+}
+
+/// Who the call was with, when it ended and how long it lasted, above what was said.
+private struct CallHeader: View {
+    let line: Entry
+    @Environment(BotStore.self) private var model
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if let bot = model.bots[line.botId] {
+                BotAvatar(bot: bot, members: model.members(of: bot), size: 52, animated: false)
+                    .padding(.bottom, 8)
+                Text(bot.name).font(.headline).foregroundStyle(Palette.text)
+            }
+            Text(RelativeTime.separator(Date(milliseconds: line.createdAt)) + callLength(line.data.callSeconds))
+                .font(.footnote)
+                .monospacedDigit()
+                .foregroundStyle(Palette.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 12)
+        .padding(.bottom, 28)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private extension CallMessage {
+    /// The space above this message: wide where you start a new exchange, close within one.
+    func gap(after previous: CallMessage) -> CGFloat {
+        speaker == .user && previous.speaker != .user ? 24 : 8
+    }
+}
+
+/// A call's length after its title or time: " · 00:16"; empty while it has none.
+func callLength(_ seconds: Int?) -> String {
+    seconds.map { String(format: " · %02d:%02d", $0 / 60, $0 % 60) } ?? ""
 }

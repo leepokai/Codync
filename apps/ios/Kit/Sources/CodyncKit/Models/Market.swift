@@ -18,6 +18,8 @@ public struct InstalledConnector: Codable, Hashable, Sendable, Identifiable {
     public var logo: String?
     /// Remote servers: `none`, `signedOut` (waits for sign-in; bots don't get it yet) or `signedIn`.
     public var auth: String?
+    /// Set up with a token that a sign-in can replace (GitHub); absent from older hosts.
+    public var canSignIn: Bool?
 
     public var needsSignIn: Bool { auth == "signedOut" }
 }
@@ -27,6 +29,8 @@ public struct InstalledConnector: Codable, Hashable, Sendable, Identifiable {
 public struct ConnectorSignIn: Decodable, Sendable {
     public var url: String
     public var callback: String
+    /// A sign-in with a code (GitHub): what to paste on `url`; the host waits for it.
+    public var code: String?
 }
 
 // MARK: Composio (host/src/market/composio.rs): apps connected through composio.dev
@@ -204,8 +208,10 @@ public extension HostClient {
         return res.items
     }
 
+    /// `showsCode`: this app shows the code of a sign-in with a code (GitHub).
     func connectorSignIn(_ id: String) async throws -> ConnectorSignIn {
-        try await call("connectorSignIn", ["id": id], timeout: 60)
+        struct Body: Encodable { var id: String; var showsCode = true }
+        return try await call("connectorSignIn", Body(id: id), timeout: 60)
     }
 
     @discardableResult

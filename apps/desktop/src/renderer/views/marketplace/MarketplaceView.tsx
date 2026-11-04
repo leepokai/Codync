@@ -269,11 +269,11 @@ function InstalledView({ back }: { back: () => void }) {
                     <ItemRow
                       key={c.id}
                       title={c.name}
-                      subtitle={needsSignIn(c) ? 'Sign in so bots can use it' : (c.command ?? c.url ?? c.description)}
+                      subtitle={needsSignIn(c) ? tr('Sign in so bots can use it') : c.canSignIn ? tr('Sign in instead of using a saved token') : (c.command ?? c.url ?? c.description)}
                       icon={c.kind === 'composio' ? <AppLogo url={c.logo} name={c.name} /> : <ServiceLogo name={c.name} registryName={c.registryName} />}
                       trailing={(
                         <>
-                          {signingIn === c.id ? <Spinner /> : needsSignIn(c) ? <Button onClick={() => void signIn(c.id)}>Sign in</Button> : null}
+                          {signingIn === c.id ? <Spinner /> : needsSignIn(c) || c.canSignIn ? <Button onClick={() => void signIn(c.id)}>Sign in</Button> : null}
                           <RemoveButton title={c.name} onClick={() => setRemoving({ id: c.id, name: c.name, isSkill: false })} />
                         </>
                       )}

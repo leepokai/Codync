@@ -1,0 +1,25 @@
+# A fresh install opens on the welcome screen with every sign-in choice.
+# One flow for iPhone and Android; run it on both at once (docs/guides/test-stack.md):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags smoke apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - smoke
+  - onboarding
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          clearState: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          clearState: true
+- assertVisible: "Your coding agents,\\s+as teammates\\."
+- assertVisible: "Continue with Google"
+- assertVisible: "Continue with GitHub"

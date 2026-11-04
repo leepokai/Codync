@@ -170,7 +170,7 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 | `codync-host serve [--port 19222]` | run in the foreground |
 | `codync-host statusline [-- <your command>]` | Claude Code status line command (wraps yours) |
 | `codync-host reset-token` | rotate the local loopback bearer token |
-| `codync-host cloud [--assistants on\|off]` | cloud enablement, URL and status; whether ChatGPT, Claude and other connected assistants may message this computer's bots |
+| `codync-host cloud [--assistants on\|off] [--leave]` | cloud enablement, URL and status; whether ChatGPT, Claude and other connected assistants may message this computer's bots; `--leave` takes this computer out of its account |
 | `codync-host network` | codync-network, your computers' network: create, invite, join, status, promote, remove, recover |
 | `codync-host devices` | list/revoke authorized remote devices |
 | `codync-host access` | review device access requests |
@@ -261,6 +261,10 @@ Clients and the host each name the oldest version of the other they still work w
 ## Credits
 
 The desktop notch island's design is inspired by the work of [@novra.design](https://www.instagram.com/novra.design/).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org), for the Windows releases once SignPath Foundation accepts the project (earlier releases are unsigned). What is signed and who approves it: [code signing policy](https://www.codync.dev/code-signing).
 
 ## License
 

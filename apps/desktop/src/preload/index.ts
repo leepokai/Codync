@@ -11,6 +11,11 @@ ipcRenderer.on('host:stream:end', (_e, id: string, error: CallError | null) => {
   streams.delete(id)
   s?.onEnd(error)
 })
+// A page that goes (a reload, its window closing) closes its streams: the next page numbers its own from 1 again.
+window.addEventListener('pagehide', () => {
+  for (const id of streams.keys()) ipcRenderer.send('host:stream:close', id)
+  streams.clear()
+})
 
 function listen<T>(channel: string, cb: (value: T) => void) {
   const handler = (_e: IpcRendererEvent, value: T) => cb(value)

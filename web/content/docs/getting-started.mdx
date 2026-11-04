@@ -22,7 +22,7 @@ Open Codync. The app includes the host and sets it up as a background service th
 
 ### Windows
 
-Download [codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user only, and the host starts each time you sign in to Windows. The installer isn't code-signed yet, so SmartScreen asks you to confirm once: choose **More info**, then **Run anyway**.
+Download [codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user only, and the host starts each time you sign in to Windows. It asks whether to share usage analytics from this computer ([what's shared](/docs/privacy#usage-analytics)). The installer isn't code-signed yet, so SmartScreen asks you to confirm once: choose **More info**, then **Run anyway**.
 
 Codync shows a tray icon. Left-click it to open the chat window, right-click it for the menu. Remote screen isn't available on Windows yet.
 
@@ -120,6 +120,22 @@ Open the bot and type in the box at the bottom. It says "Ask" followed by the bo
 While the bot works, a line under the last message shows what it's doing and for how long. Its reply arrives as a complete message. If it asks for approval, an approval card appears in the chat. Every tool call and step is one tap away in **Full conversation**.
 
 When the bot finishes or needs you, your iPhone gets a notification, unless the Codync app is open on it. See [Conversations](/docs/conversations).
+
+## Interface language
+
+Choose **Language** in **Settings → General** on the desktop or **Settings** on
+the iPhone or Android. You can follow your system language or choose English, Simplified
+Chinese, Traditional Chinese, Japanese, Korean, French, German, Spanish or
+**Português (Brasil)** or **Русский**. In the terminal UI, open the command palette with `Ctrl+K`
+and choose **App language…** to cycle through the choices.
+
+Each device keeps its own choice. **Follow system** uses Brazilian Portuguese
+for Portuguese system languages, including `pt` and `pt-BR`; unsupported
+languages use English. This changes the interface, not your conversations,
+bot names or commands.
+
+Queue status, routine notices and trace labels follow this choice too. Bot and
+routine names, custom tool titles and message contents stay as written.
 
 ## Next steps
 

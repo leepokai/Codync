@@ -126,7 +126,7 @@ struct AppLanguageTests {
 
 extension AppLanguageTests {
 @Test func additionalLanguagesResolveRegionsAndLoadBundledCatalogs() {
-    for language in [AppLanguage.ja, .ko, .fr, .de, .es] {
+    for language in [AppLanguage.ja, .ko, .fr, .de, .es, .ru] {
         #expect(AppLanguage.resolved(preference: .system, languages: [language.rawValue + "-XX"]) == language)
         #expect(AppLanguage.resolved(preference: language, languages: ["zh-TW"]) == language)
         let translated = L10n.tr("Settings", preference: language, systemIsChinese: false)
@@ -135,13 +135,43 @@ extension AppLanguageTests {
         #expect(L10n.tr("An unknown phrase", preference: language) == "An unknown phrase")
         #expect(AppLanguage.locale(preference: language, systemIsChinese: true).language.languageCode?.identifier == language.rawValue)
     }
-    #expect(AppLanguage.resolved(preference: .system, languages: ["pt-BR"]) == .en)
+    #expect(AppLanguage.resolved(preference: .system, languages: ["nl-NL"]) == .en)
+    #expect(AppLanguage.resolved(preference: .system, languages: ["ru_RU.UTF-8"]) == .ru)
+    #expect(AppLanguage.menuTitle(.ru, preference: .en, systemIsChinese: true) == "Русский")
 }
 
 }
 
 
 extension AppLanguageTests {
+    @Test func brazilianPortuguesePersistsAndLoadsItsBundledCatalog() {
+        let name = "AppLanguageTests.Portuguese.\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: name)!
+        defer { suite.removePersistentDomain(forName: name) }
+        AppLanguage.setPreference(.ptBR, in: suite)
+        #expect(suite.string(forKey: AppLanguage.storageKey) == "pt-BR")
+        #expect(AppLanguage.preference(in: suite) == .ptBR)
+        #expect(AppLanguage(rawValue: "pt-BR") == .ptBR)
+        #expect(AppLanguage.ptBR.catalogName == "pt-BR")
+        #expect(Array(AppLanguage.allCases.suffix(3)) == [.es, .ptBR, .ru])
+        #expect(AppLanguage.menuTitle(.ptBR, preference: .en, systemIsChinese: true) == "Português (Brasil)")
+        #expect(!AppLanguage.usesChinese(preference: .ptBR, systemIsChinese: true))
+        let locale = AppLanguage.locale(preference: .ptBR, systemIsChinese: true)
+        #expect(locale.language.languageCode?.identifier == "pt")
+        #expect(locale.region?.identifier == "BR")
+        let translated = L10n.tr("Settings", preference: AppLanguage.preference(in: suite), systemIsChinese: false)
+        #expect(translated != "Settings")
+        #expect(L10n.tr("An unknown phrase", preference: .ptBR) == "An unknown phrase")
+        for tag in ["pt", "pt-BR", "pt_BR.UTF-8", "pt-PT", "pt-AO", "pt-MZ", "PT_cv.UTF-8"] {
+            #expect(AppLanguage.resolved(preference: .system, languages: [tag]) == .ptBR)
+            #expect(L10n.tr("Settings", preference: .system, systemIsChinese: false, systemLanguages: [tag]) == translated)
+        }
+        #expect(AppLanguage.resolved(preference: .ptBR, languages: ["zh-TW"]) == .ptBR)
+        #expect(L10n.tr("Settings", preference: .en, systemLanguages: ["pt-BR"]) == "Settings")
+        #expect(AppLanguage.resolved(preference: .system, languages: ["en-US"]) == .en)
+        #expect(AppLanguage.resolved(preference: .system, languages: []) == .en)
+    }
+
     @Test func changingLanguageInvalidatesObservedTranslationConsumers() {
         let store = UserDefaults(suiteName: "language-observation-\(UUID().uuidString)")!
         let changed = Mutex(false)
@@ -154,5 +184,25 @@ extension AppLanguageTests {
         #expect(changed.withLock { $0 })
         #expect(AppLanguage.preference(in: store) == .ja)
         store.removeObject(forKey: AppLanguage.storageKey)
+    }
+}
+
+extension AppLanguageTests {
+    @Test func filledTemplatesPreserveNamesAndSubstituteValuesOnlyOnce() {
+        for language in AppLanguage.allCases where language != .system && language != .en {
+            for name in ["Plan", "connected", "Standby", "$&", "{hint}"] {
+                let expected = L10n.tr("Routine · {name}", preference: language)
+                    .replacingOccurrences(of: "{name}", with: name)
+                #expect(L10n.tr("Routine · \(name)", preference: language) == expected)
+                let title = L10n.tr("Message about “{title}”", preference: language)
+                    .replacingOccurrences(of: "{title}", with: name)
+                #expect(L10n.tr("Message about “\(name)”", preference: language) == title)
+            }
+            let hint = "Install Claude Code and run `claude auth login`."
+            let expected = L10n.tr("{name} isn't set up on this computer. {hint}", preference: language)
+                .replacingOccurrences(of: "{hint}", with: L10n.tr(hint, preference: language))
+                .replacingOccurrences(of: "{name}", with: "{hint}")
+            #expect(L10n.tr("{hint} isn't set up on this computer. \(hint)", preference: language) == expected)
+        }
     }
 }

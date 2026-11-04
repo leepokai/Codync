@@ -11,6 +11,7 @@ struct AppearanceSettings: View {
             ValueRow("Theme") {
                 ChoicePicker(selection: $appearance, options: Appearance.allCases.map { (id: $0, label: $0.label) })
             }
+            AgentLogosToggle()
         }
     }
 }

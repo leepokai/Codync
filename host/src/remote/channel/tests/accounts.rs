@@ -95,6 +95,11 @@ async fn a_computer_in_no_account_asks_then_joins_the_phones() {
                 crypto::claim_input("clm_1", "n1", "user_2", &hub.identity.computer_id(), &hub.identity.box_pub_b64());
             let sig = crypto::unb64_n::<64>(claim["sig"].as_str().unwrap()).unwrap();
             crypto::verify(&hub.identity.sign_pub(), input.as_bytes(), &sig).unwrap();
+            // Taken out again before it pulled that it joined: a state pull that still says no account brings no
+            // later join for the account it signed for.
+            hub.cloud_synced.store(true, std::sync::atomic::Ordering::Release);
+            crate::remote::owner::remember(&hub, None).unwrap();
+            assert_eq!(crate::remote::owner::joinable_by(&hub, &p.dk()).unwrap(), None);
         } else {
             assert_eq!(reply["err"]["status"], 403);
             assert!(hub.store.device(&p.dk()).is_none());
@@ -118,4 +123,31 @@ async fn a_phone_let_in_after_the_computer_joined_another_account_stays_out() {
     assert!(reply["err"]["message"].as_str().unwrap().contains("a•••@example.com's account"));
     assert!(hub.store.device(&p.dk()).is_none(), "user_2's phone stays out of user_3's computer");
     assert!(hub.pairing.locked().valid(&code), "a refused phone leaves the code");
+}
+
+#[tokio::test]
+async fn a_phone_let_in_without_joining_finishes_the_join_later() {
+    let hub = unowned_hub();
+    hub.store.kv_set("test_cloud_url", "https://dev-api.codync.dev").unwrap();
+    // Paired without a claim: the phone couldn't start one, so the computer stayed out of the account.
+    let (mut p, code) = pairing_phone(&hub).await;
+    let body = pair_body(&p, &code, "Pixel", "android", "user_2");
+    let request = asked(&hub, &mut p, body).await;
+    crate::remote::pairing_requests::decide(&hub, request["requestId"].as_str().unwrap(), true).unwrap();
+    assert!(p.recv().await.unwrap()["ok"]["claim"].is_null());
+    hub.cloud_synced.store(true, std::sync::atomic::Ordering::Release);
+
+    let mut p = Phone::direct(&hub, p.key.clone());
+    assert!(matches!(p.hello(&hub, false).await, Out::Msg(v) if v["t"] == "welcome"));
+    assert_eq!(p.call(1, "hello", json!({})).await["ok"]["joinAccount"], true);
+    let claim = p.call(2, "joinAccount", json!({"claimId": "clm_2", "nonce": "n2"})).await;
+    let input = crypto::claim_input("clm_2", "n2", "user_2", &hub.identity.computer_id(), &hub.identity.box_pub_b64());
+    let sig = crypto::unb64_n::<64>(claim["ok"]["sig"].as_str().unwrap()).unwrap();
+    crypto::verify(&hub.identity.sign_pub(), input.as_bytes(), &sig).unwrap();
+
+    // Signed once: whether that claim completed (and the computer was taken out again) or not, a state pull that
+    // still says no account brings no second join.
+    crate::remote::owner::remember(&hub, None).unwrap();
+    assert_eq!(p.call(3, "hello", json!({})).await["ok"]["joinAccount"], false);
+    assert!(p.call(4, "joinAccount", json!({"claimId": "clm_3", "nonce": "n3"})).await["err"].is_object());
 }

@@ -1806,5 +1806,8 @@
   "D removes": "D 削除",
   "S sends this now": "S これを今すぐ送信",
   "D removes the last": "D 最後のものを削除",
-  "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host} の Codync をアップデートしてください。今すぐ送信と取り消しには {version} 以降が必要です。"
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host} の Codync をアップデートしてください。今すぐ送信と取り消しには {version} 以降が必要です。",
+  "Find in conversation": "会話内を検索",
+  "Previous match": "前の一致",
+  "Next match": "次の一致"
 }

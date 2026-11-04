@@ -1806,5 +1806,8 @@
   "D removes": "D elimina",
   "S sends this now": "S envía este ahora",
   "D removes the last": "D elimina el último",
-  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Actualiza Codync en {host}: enviar ahora y retirar necesitan {version} o una versión más reciente."
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Actualiza Codync en {host}: enviar ahora y retirar necesitan {version} o una versión más reciente.",
+  "Find in conversation": "Buscar en la conversación",
+  "Previous match": "Coincidencia anterior",
+  "Next match": "Siguiente coincidencia"
 }

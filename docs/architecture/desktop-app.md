@@ -22,11 +22,11 @@ reaching the end of a history response determines when there are no earlier mess
 
 | Path | |
 |---|---|
-| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) and reloading a crashed window (`renderer-recovery.ts`) and ⌘F find in the open chat (`find.ts`: Electron's find in page, shown by `views/FindBar.tsx`) |
+| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) and reloading a crashed window (`renderer-recovery.ts`) |
 | `src/preload/` | The `window.codync` bridge (types in `src/shared/ipc.ts`) |
 | `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession` |
 | `src/renderer/components/` | Design system: controls, overlays (sheets, dialogs, menus), SF Symbol icons, character avatars, thinking orbs |
-| `src/renderer/views/` | Screens, mirroring kit's folders (`thread/`, `bots/`, `marketplace/`, `settings/`, `routines/`, `call/`) |
+| `src/renderer/views/` | Screens, mirroring kit's folders (`thread/`, `bots/`, `marketplace/`, `settings/`, `routines/`, `call/`); ⌘F find in the open chat is `FindBar.tsx` over `use-conversation-find.ts`, which searches the transcript (`data-find-root`) and paints matches with CSS custom highlights (`lib/transcript-find.ts`) |
 | `native/speech-macos/` | `codync-speech`, a Swift helper running SFSpeechRecognizer for on-device calls |
 | `tools/export-symbols.swift` | Renders the SF Symbols the app uses into masks at build time (macOS) |
 

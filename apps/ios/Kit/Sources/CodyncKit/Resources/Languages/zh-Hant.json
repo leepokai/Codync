@@ -1806,5 +1806,8 @@
   "D removes": "D 移除",
   "S sends this now": "S 立即送出這則",
   "D removes the last": "D 移除最後一則",
-  "Update Codync on {host}: sending now and taking back need {version} or newer.": "請在 {host} 上更新 Codync：立即送出和收回需要 {version} 或更新的版本。"
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "請在 {host} 上更新 Codync：立即送出和收回需要 {version} 或更新的版本。",
+  "Find in conversation": "在對話中尋找",
+  "Previous match": "上一個符合項目",
+  "Next match": "下一個符合項目"
 }

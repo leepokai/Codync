@@ -1806,5 +1806,8 @@
   "D removes": "D убирает",
   "S sends this now": "S отправляет это сейчас",
   "D removes the last": "D убирает последнее",
-  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Обновите Codync на {host}: отправке сейчас и отзыву нужна версия {version} или новее."
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Обновите Codync на {host}: отправке сейчас и отзыву нужна версия {version} или новее.",
+  "Find in conversation": "Поиск в переписке",
+  "Previous match": "Предыдущее совпадение",
+  "Next match": "Следующее совпадение"
 }

@@ -1806,5 +1806,8 @@
   "D removes": "D 제거",
   "S sends this now": "S 이것을 지금 보내기",
   "D removes the last": "D 마지막 것 제거",
-  "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host}에서 Codync를 업데이트하세요. 지금 보내기와 취소를 쓰려면 {version} 이상이 필요합니다."
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host}에서 Codync를 업데이트하세요. 지금 보내기와 취소를 쓰려면 {version} 이상이 필요합니다.",
+  "Find in conversation": "대화에서 찾기",
+  "Previous match": "이전 검색 결과",
+  "Next match": "다음 검색 결과"
 }

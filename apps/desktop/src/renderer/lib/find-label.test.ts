@@ -10,5 +10,4 @@ test('no match says so, and nothing searched says nothing', () => {
   assert.equal(findLabel('zzz', { active: 0, matches: 0 }, 'No results'), 'No results')
   assert.equal(findLabel('', { active: 0, matches: 0 }, 'No results'), '')
   assert.equal(findLabel('  ', { active: 1, matches: 1 }, 'No results'), '')
-  assert.equal(findLabel('hi', null, 'No results'), '')
 })

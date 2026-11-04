@@ -204,6 +204,10 @@ function ChatSplitView() {
   const [searching, setSearching] = useState(false)
   // Find in the open conversation: the bar's focus count while it is open.
   const [find, setFind] = useState<number | null>(null)
+  const openFind = () => {
+    if (find === null) analytics.track({ event: 'conversation_find_opened' })
+    setFind((n) => (n ?? 0) + 1)
+  }
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
@@ -256,7 +260,7 @@ function ChatSplitView() {
         if (c.kind === 'newBot' && onlineStores.length) create('bot')
         if (c.kind === 'search') setSearching(true)
         // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
-        if (c.kind === 'find') app.selection ? setFind((n) => (n ?? 0) + 1) : setSearching(true)
+        if (c.kind === 'find') app.selection ? openFind() : setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
         if (c.kind === 'voiceKey') {

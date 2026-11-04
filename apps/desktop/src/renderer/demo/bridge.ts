@@ -96,7 +96,6 @@ const bridge: CodyncBridge = {
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
   artifacts: { show: async () => {}, openInBrowser: unavailable },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
-  find: { search() {}, stop() {}, onResult: none },
   app: {
     reportError() {},
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),

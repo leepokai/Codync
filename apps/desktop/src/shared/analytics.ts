@@ -47,6 +47,8 @@ export type AnalyticsEvent =
   | { event: 'star_prompt_answered'; ask: 'first' | 'second'; starred: boolean }
   | { event: 'link_opened'; link: Link }
   | { event: 'screen_viewed'; screen: Screen }
+  | { event: 'conversation_find_opened' }
+  | { event: 'conversation_find_searched'; found: boolean }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
 

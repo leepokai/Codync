@@ -97,12 +97,13 @@ private enum ComputerOS: Hashable { case mac, linux }
 // MARK: - Install
 
 private struct InstallPage: View {
-    /// The website's downloads, for whatever the computer runs.
-    private static let downloadLink = URL(string: "https://www.codync.dev/#install")!
+    /// The website: its first button downloads for whatever the computer runs.
+    private static let websiteLink = "https://www.codync.dev"
 
     @Binding var os: ComputerOS
     let next: () -> Void
     @Environment(AccountSession.self) private var account
+    @State private var linkCopied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -127,8 +128,16 @@ private struct InstallPage: View {
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Hint("Send this link to your computer")
-                        CommandBlock(Self.downloadLink.absoluteString, records: .installLink, share: Self.downloadLink)
+                        Hint("Open the website on your computer to download Codync")
+                        Button {
+                            copyToClipboard(Self.websiteLink, records: .installLink, copied: $linkCopied)
+                        } label: {
+                            Label(L10n.tr(linkCopied ? "Copied" : "Copy website link"), systemImage: linkCopied ? "checkmark" : "doc.on.doc")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .contentTransition(.opacity)
+                        }
+                        .buttonStyle(.secondary)
                         // The same account is what lets this phone find the computer afterwards.
                         if let email = account.email {
                             Text(L10n.tr("Sign in there with {email} and it shows up here.").replacingOccurrences(of: "{email}", with: email))
@@ -187,17 +196,26 @@ private struct Hint: View {
     }
 }
 
-/// A terminal command or link with a copy button; copying it (or sharing `share`) counts as opening `records`.
+/// Copies `text`, counts as opening `records`, and says so through `copied` for a moment.
+@MainActor private func copyToClipboard(_ text: String, records: AnalyticsEvent.Link?, copied: Binding<Bool>) {
+    UIPasteboard.general.string = text
+    if let records { Analytics.shared.capture(.linkOpened(records)) }
+    withAnimation(Motion.morph) { copied.wrappedValue = true }
+    Task {
+        try? await Task.sleep(for: .seconds(1.5))
+        withAnimation(Motion.morph) { copied.wrappedValue = false }
+    }
+}
+
+/// A terminal command or link with a copy button; copying it counts as opening `records`.
 private struct CommandBlock: View {
     let command: String
     let records: AnalyticsEvent.Link?
-    let share: URL?
     @State private var copied = false
 
-    init(_ command: String, records: AnalyticsEvent.Link? = nil, share: URL? = nil) {
+    init(_ command: String, records: AnalyticsEvent.Link? = nil) {
         self.command = command
         self.records = records
-        self.share = share
     }
 
     var body: some View {
@@ -210,25 +228,9 @@ private struct CommandBlock: View {
                 .padding(.vertical, 6)
                 .contentTransition(.opacity)
             IconButton(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
-                UIPasteboard.general.string = command
-                if let records { Analytics.shared.capture(.linkOpened(records)) }
-                withAnimation(Motion.morph) { copied = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    withAnimation(Motion.morph) { copied = false }
-                }
+                copyToClipboard(command, records: records, copied: $copied)
             }
             .contentTransition(.symbolEffect(.replace))
-            if let share {
-                ShareLink(item: share) {
-                    Label(L10n.tr("Share link"), systemImage: "square.and.arrow.up")
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(IconButtonStyle())
-                .simultaneousGesture(TapGesture().onEnded {
-                    if let records { Analytics.shared.capture(.linkOpened(records)) }
-                })
-            }
         }
         .padding(.leading, 14)
         .padding(.trailing, 4)

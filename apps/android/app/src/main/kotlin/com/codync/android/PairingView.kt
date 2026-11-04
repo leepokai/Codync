@@ -1,8 +1,6 @@
 package com.codync.android
 
 import android.content.ClipData
-import android.content.Context
-import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -53,7 +51,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -118,6 +115,7 @@ private enum class ComputerOS { Mac, Linux }
 // MARK: - Install
 
 @Composable private fun InstallPage(os: ComputerOS, choose: (ComputerOS) -> Unit, email: String?, next: () -> Unit) {
+    val (linkCopied, copyLink) = rememberCopy(WEBSITE_LINK, OutboundLink.InstallLink)
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -131,8 +129,15 @@ private enum class ComputerOS { Mac, Linux }
                 Text(tr("Your bots run there. This phone is how you talk to them."), style = Type.body, color = Palette.secondary)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Hint("Send this link to your computer")
-                CommandBlock(DOWNLOAD_LINK, records = OutboundLink.InstallLink, share = true)
+                Hint("Open the website on your computer to download Codync")
+                SecondaryButton(copyLink, Modifier.fillMaxWidth()) {
+                    Crossfade(linkCopied, animationSpec = Motion.morph(), label = "Copy link") { done ->
+                        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), Alignment.CenterVertically) {
+                            Symbol(if (done) "checkmark" else "doc.on.doc", size = 18.dp, tint = Palette.text)
+                            Text(tr(if (done) "Copied" else "Copy website link"), style = Type.headline)
+                        }
+                    }
+                }
                 // The same account is what lets this phone find the computer afterwards.
                 if (email != null) Text(tr("Sign in there with {email} and it shows up here.").replace("{email}", email),
                     style = Type.subheadline, color = Palette.secondary)
@@ -179,35 +184,34 @@ private enum class ComputerOS { Mac, Linux }
 /** A small label above a `CommandBlock`. */
 @Composable private fun Hint(text: String) = Text(tr(text), style = Type.footnote, color = Palette.secondary)
 
-/** A terminal command or link with a copy button (and with `share`, the share sheet); either counts as opening `records`. */
-@Composable private fun CommandBlock(command: String, records: OutboundLink? = null, share: Boolean = false) {
+/** Whether [text] was just copied, and what copies it; copying counts as opening [records]. */
+@Composable private fun rememberCopy(text: String, records: OutboundLink?): Pair<Boolean, () -> Unit> {
     val clipboard = LocalClipboard.current
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
+    val copy: () -> Unit = {
+        scope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Command", text)))
+            records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
+            copied = true; delay(1500); copied = false
+        }
+    }
+    return copied to copy
+}
+
+/** A terminal command or link with a copy button; copying it counts as opening `records`. */
+@Composable private fun CommandBlock(command: String, records: OutboundLink? = null) {
+    val (copied, copy) = rememberCopy(command, records)
     Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.codeBackground).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SelectionContainer(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(command, style = Type.footnote.monospaced, color = Palette.text)
         }
         Crossfade(copied, animationSpec = Motion.morph(), label = "Copy") { done ->
-            IconButton(if (done) "Copied" else "Copy", if (done) "checkmark" else "doc.on.doc") {
-                scope.launch {
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Command", command)))
-                    records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
-                    copied = true; delay(1500); copied = false
-                }
-            }
-        }
-        if (share) IconButton("Share link", "square.and.arrow.up") {
-            records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
-            context.shareText(command)
+            IconButton(if (done) "Copied" else "Copy", if (done) "checkmark" else "doc.on.doc", action = copy)
         }
     }
 }
-
-private fun Context.shareText(text: String) =
-    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null))
 
 // MARK: - Scan
 
@@ -290,8 +294,8 @@ private fun Context.shareText(text: String) =
 
 internal val PAGE_TITLE = Type.system(30f, FontWeight.SemiBold).copy(letterSpacing = (-0.5).sp)
 
-/** The website's downloads, for whatever the computer runs. */
-private const val DOWNLOAD_LINK = "https://www.codync.dev/#install"
+/** The website: its first button downloads for whatever the computer runs. */
+private const val WEBSITE_LINK = "https://www.codync.dev"
 
 /** Tailscale gives every device an address in 100.64.0.0/10 on its VPN (`tun`) interface. */
 private fun tailscaleConnected(): Boolean = try {

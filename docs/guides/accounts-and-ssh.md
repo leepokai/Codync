@@ -117,8 +117,8 @@ QR pairing requires the phone and the computer to be in the same account
 from it. With computers in the account, the first page lists them (**Ask for access**: nothing
 is requested until the tap, since the user may be here to set up another computer) next to
 **Pair a new computer**, which leads to the install page. With none, or only older copies, setup
-goes straight to the install page. That page has the website's download link to copy or share
-to the computer. A computer that joins the account meanwhile brings up the first page the next
+goes straight to the install page. That page has a button that copies the website's link,
+to open on the computer. A computer that joins the account meanwhile brings up the first page the next
 time the app is opened, unless the user already chose to pair or moved on to scanning. Only
 reaching a computer or **Skip** finishes setup. The first page and the scan step always offer
 **Skip**. Skipping finishes onboarding and opens the main

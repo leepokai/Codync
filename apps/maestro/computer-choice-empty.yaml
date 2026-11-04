@@ -24,4 +24,4 @@ tags:
     visible: "Install Codync.*"
     timeout: 20000
 - assertNotVisible: "Connect a computer"
-- assertVisible: "https://www.codync.dev/#install"
+- assertVisible: "Copy website link"

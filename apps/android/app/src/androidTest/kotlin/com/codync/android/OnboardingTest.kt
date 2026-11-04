@@ -1,11 +1,14 @@
 package com.codync.android
 
+import android.content.ClipboardManager
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.CloudComputer
 import com.codync.android.core.Computer
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -87,8 +90,7 @@ class OnboardingTest {
         compose.setContent { Hosted { CodyncApp(signedIn(), emptyMap(), viewModel()) } }
         compose.onNodeWithText("Install Codync\non your computer").assertIsDisplayed()
         compose.onNodeWithText("Connect a computer").assertDoesNotExist()
-        compose.onNodeWithText("https://www.codync.dev/#install").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Share link").assertIsDisplayed()
+        compose.onNodeWithText("Copy website link").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign in there with owner@example.com and it shows up here.").assertIsDisplayed()
     }
 
@@ -139,6 +141,18 @@ class OnboardingTest {
         compose.onNodeWithText("Continue").performClick()
         compose.onNodeWithText("Skip").performClick()
         assertTrue(skipped)
+    }
+
+    @Test fun theWebsiteLinkButtonCopiesTheLinkAndSaysSo() {
+        // The page's bot never stops moving, and "Copied" lasts only a moment: step the clock by hand.
+        compose.mainClock.autoAdvance = false
+        compose.setContent { Hosted { PairingView(AccountContext(loading = false), viewModel()) } }
+        step()
+        compose.onNodeWithText("Copy website link").performClick()
+        compose.mainClock.advanceTimeBy(500)
+        compose.onNodeWithText("Copied").assertExists()
+        val clipboard = InstrumentationRegistry.getInstrumentation().targetContext.getSystemService(ClipboardManager::class.java)
+        assertEquals("https://www.codync.dev", clipboard.primaryClip?.getItemAt(0)?.text?.toString())
     }
 
     @Test fun macPairingPointsToTheMenuBarApp() {

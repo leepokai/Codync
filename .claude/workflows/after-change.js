@@ -18,7 +18,7 @@ const where = input.dir
   ? `in the change's git worktree ${input.dir}: run every command there (\`cd ${input.dir} && …\` in each call, or \`git -C ${input.dir}\`) and use absolute paths under it`
   : 'in the current directory (the change\'s git worktree)'
 const scope = `The change: ${change}
-Its diff: \`git diff ${base}\` (committed and uncommitted) plus the new files \`git status --short\` lists, ${where}. Touch nothing outside that worktree and no other agent's work.`
+Its diff: \`git diff ${base}\` (committed and uncommitted) plus the new files \`git status --short\` lists, ${where}. Touch nothing outside that worktree and no other agent's work. Host tests run one at a time: never start a test binary several times in parallel, or several copies of the suite, not even to hunt a flake (repeat it one run after another, a few times at most).`
 
 const FINDING = {
   type: 'object',
@@ -139,5 +139,5 @@ return {
   review: { found: found.length, confirmed, refuted },
   fix: { refactors, ...fixed },
   e2e: { checks, fix: e2eFix },
-  next: 'Unless an e2e check failed or a skipped fix matters: commit in this worktree, rebase on origin/dev, fast-forward dev, push origin dev, pull dev in the main checkout. Only once that merge is pushed (never before, and not at all if the merge or push fails): stop this worktree\'s `npm run dev` (its Vite, Electron app and sandbox host) and check none of it remains, then leave the worktree and, from the main checkout, delete it: `git worktree remove --force <worktree>`, `git branch -D <branch>`, then `npm run dev -- --prune` in apps/desktop (it also deletes the worktree\'s simulator).',
+  next: 'Unless an e2e check failed or a skipped fix matters: commit in this worktree, rebase on origin/dev (passing on the worktree is enough, even when dev has moved on: a rebase needs only its conflicts resolved and what they touched still building), fast-forward dev, push origin dev, pull dev in the main checkout. Only once that merge is pushed (never before, and not at all if the merge or push fails): stop this worktree\'s `npm run dev` (its Vite, Electron app and sandbox host) and check none of it remains, then leave the worktree and, from the main checkout, delete it: `git worktree remove --force <worktree>`, `git branch -D <branch>`, then `npm run dev -- --prune` in apps/desktop (it also deletes the worktree\'s simulator).',
 }

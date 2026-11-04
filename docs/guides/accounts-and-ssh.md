@@ -113,8 +113,15 @@ against a cloud that issues device certificates (or a self-hosted cloud, with
 `CODYNC_DEVICE_CERT_KEY` on the host); builds without Clerk only keep the
 pairings moved over from older versions in the signed-out context, and can't pair.
 QR pairing requires the phone and the computer to be in the same account
-(phase 2, below). The iPhone's scan step always offers **Skip**,
-including when the account has no computers. Skipping finishes onboarding and opens the main
+(phase 2, below). First-run setup on the phones waits for the account's answer, then starts
+from it. With computers in the account, the first page lists them (**Ask for access**: nothing
+is requested until the tap, since the user may be here to set up another computer) next to
+**Pair a new computer**, which leads to the install page. With none, or only older copies, setup
+goes straight to the install page. That page has a button that copies the website's link,
+to open on the computer. A computer that joins the account meanwhile brings up the first page the next
+time the app is opened, unless the user already chose to pair or moved on to scanning. Only
+reaching a computer or **Skip** finishes setup. The first page and the scan step always offer
+**Skip**. Skipping finishes onboarding and opens the main
 tabs; this choice survives relaunches and account changes. The empty Bots screen
 offers **Computers** to pair later. Skipping while adding a computer from settings
 only closes that pairing sheet. It does not grant access to a computer or change

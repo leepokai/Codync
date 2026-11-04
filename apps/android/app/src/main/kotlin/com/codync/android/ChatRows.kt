@@ -74,8 +74,9 @@ internal sealed interface ChatItem {
     data class Exchanges(override val id: String, val group: BotExchangeGroup) : ChatItem
 }
 
-/** Chat-visible entries plus time separators (gaps over an hour) and author grouping. */
-internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<ChatItem> {
+/** Chat-visible entries plus time separators (gaps over an hour) and author grouping. While the bot is [busy], queued
+ *  messages wait above the composer instead ([queuedMessages]); the send each came from doesn't show again either. */
+internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: Boolean = false): List<ChatItem> {
     val out = mutableListOf<ChatItem>()
     var last: Long? = null
     var author: String? = null
@@ -83,7 +84,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
     val units = mutableListOf<Pair<Long, Any>>()
     var run = mutableListOf<BotExchange>()
     fun flush() { if (run.isNotEmpty()) { units += run.first().createdAt to BotExchangeGroup(run); run = mutableListOf() } }
-    for (entry in entries) {
+    for (entry in if (busy) entries.filterNot(Entry::isQueued) else entries) {
         val exchange = BotExchange.of(entry)
         if (exchange == null) { flush(); units += entry.createdAt to entry; continue }
         if (run.isNotEmpty() && run.last().peerId != exchange.peerId) flush()
@@ -192,7 +193,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
                 messageMenu(context, entry, reply, null)
             }) { UserText(entry.text, quote) }
-        SendStatusLine(entry.status, state.bots.firstOrNull { it.id == entry.botId }?.status == "working")
+        SendStatusLine(entry.status)
     }
 }
 
@@ -211,10 +212,9 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun SendStatusLine(status: String?, botWorking: Boolean) {
+@Composable private fun SendStatusLine(status: String?) {
     val text = when (status) {
         "sending" -> "Sending…"
-        "queued" -> if (botWorking) "Queued until this response finishes" else "Queued"
         "cancelled" -> "Not sent — stopped"
         "delivering" -> "Delivered to the computer"
         else -> null
@@ -344,12 +344,12 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
             .background(Palette.danger.copy(alpha = 0.12f)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Symbol("exclamationmark.triangle.fill", size = 16.dp, tint = Palette.danger)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SelectionContainer { Text(text, style = Type.footnote, color = Palette.text) }
+                SelectionContainer { Text(tr(text), style = Type.footnote, color = Palette.text) }
                 if (addFallback != null && entry.data["addFallback"]?.jsonPrimitive?.booleanOrNull == true) SecondaryButton("Add a fallback", action = addFallback)
             }
         }
         "agentSwitch" in entry.data -> AgentSwitchLine(text, (entry.data["agentSwitch"] as? JsonObject)?.text("carried"))
-        else -> Text(text, Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
+        else -> Text(tr(text), Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
     }
 }
 

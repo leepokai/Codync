@@ -30,6 +30,9 @@ public final class AccountStore {
     public private(set) var stores: [ComputerID: BotStore] = [:]
     /// Everything in the account, including computers this device isn't authorized on yet.
     public private(set) var cloudComputers: [CloudComputer] = []
+    /// The account answered (or failed to) at least once, so an empty `cloudComputers` means what it says.
+    /// True from the start without a cloud: there's nothing to wait for.
+    public private(set) var cloudListLoaded: Bool
     /// Access requests waiting for approval on the computer, with the SAS to show.
     public private(set) var pendingAccess: [ComputerID: AccessTicket] = [:]
     /// The actual request approved most recently, distinct from a previously paired computer.
@@ -80,6 +83,7 @@ public final class AccountStore {
          makeStore: @escaping @MainActor (Computer) -> BotStore) {
         self.storage = storage
         self.cloud = cloud
+        cloudListLoaded = cloud == nil
         computerOrder = ComputerOrderStore(storage: storage)
         self.makeStore = makeStore
         saved = storage.computers.filter(\.isConsistent)
@@ -221,6 +225,7 @@ public final class AccountStore {
         guard let cloud, !retired else { return }
         cloudListVersion += 1
         let version = cloudListVersion
+        defer { if version == cloudListVersion { cloudListLoaded = true } }
         do {
             // Every refresh, as on Android: signing back in clears the account's signed-out mark, or its computers
             // drop this iPhone's push tickets again on their next state pull.

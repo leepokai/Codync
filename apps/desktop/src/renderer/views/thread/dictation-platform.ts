@@ -5,6 +5,7 @@ import { useStoreRef } from '../../store/context'
 import { countVoiceUsage, micPCM16k, onDeviceUnavailableReason, transcribeOnHost, VoiceSettings, wav } from '../call/voice'
 import { configured, voiceStatus } from '../settings/voice-settings'
 import { Dictation, type DictationPlatform } from './dictation'
+import { trNow } from '../../lib/l10n.ts'
 
 /**
  * Dictation's real surroundings: the speech helper and the microphone, and with `host` a provider
@@ -12,12 +13,13 @@ import { Dictation, type DictationPlatform } from './dictation'
  */
 export function dictationPlatform(host: (() => Promise<HostClient>) | null = null, report: (message: string) => void = () => {}, configureKey: () => void = () => {}): DictationPlatform {
   const client = async () => {
-    if (!host) throw new Error('Dictating with a provider needs the chat window.')
+    if (!host) throw new Error(trNow('Dictating with a provider needs the chat window.'))
     return host()
   }
   return {
     speech: window.codync.speech.available ? window.codync.speech : null,
-    noSpeech: onDeviceUnavailableReason(),
+    // Read when shown, so a language change since the window opened applies.
+    get noSpeech() { return onDeviceUnavailableReason() },
     host: host !== null,
     language: () => VoiceSettings.language() || null,
     provider: VoiceSettings.dictationProvider,

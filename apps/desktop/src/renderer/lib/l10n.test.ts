@@ -147,7 +147,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
 
 
 test('each supported locale follows regional system tags and explicit choices win', () => {
-  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru'] as const) {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it'] as const) {
     assert.equal(resolvedLanguage('system', `${language.toUpperCase()}_XX.UTF-8`), language)
     assert.equal(resolvedLanguage(language, 'zh-TW'), language)
     assert.equal(usesChinese(language, 'zh-TW'), false)
@@ -158,14 +158,14 @@ test('each supported locale follows regional system tags and explicit choices wi
     assert.equal(resetLine('resets 3h 20m', language).includes('3h 20m'), true)
     assert.notEqual(languageTitle(language, 'en', 'en'), 'Follow system')
   }
-  assert.equal(new Set(appLanguages).size, 11)
+  assert.equal(new Set(appLanguages).size, 12)
   assert.equal(resolvedLanguage('system', 'nl-NL'), 'en')
   assert.equal(translate('Settings', 'en', 'ja-JP'), 'Settings')
 })
 
 
 test('Brazilian Portuguese follows Portuguese regions and keeps its native menu name', () => {
-  assert.deepEqual(appLanguages.slice(-3), ['es', 'pt-BR', 'ru'])
+  assert.deepEqual(appLanguages.slice(-4), ['es', 'pt-BR', 'ru', 'it'])
   assert.equal(languageTitle('pt-BR', 'en', 'en'), 'Português (Brasil)')
   for (const tag of ['pt', 'pt-BR', 'pt_BR.UTF-8', 'pt-PT', 'pt-AO', 'pt-MZ', 'PT_cv.UTF-8']) {
     assert.equal(resolvedLanguage('system', tag), 'pt-BR', tag)
@@ -181,7 +181,7 @@ test('Brazilian Portuguese follows Portuguese regions and keeps its native menu 
 test('English reset text remains literal and absolute dates do not become durations', () => {
   assert.equal(resetLine('resets Sep 26 at 12pm', 'en'), 'resets Sep 26 at 12pm')
   assert.equal(resetLine('resets 3h 20m', 'en'), 'resets 3h 20m')
-  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru'] as const) {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it'] as const) {
     assert.equal(resetLine('resets Sep 26 at 12pm', language), `${translate('resets', language)} Sep 26 at 12pm`)
   }
 })
@@ -194,6 +194,27 @@ test('Russian resolves regional tags and keeps its native menu name', () => {
   }
   assert.equal(languageTitle('ru', 'en', 'en'), 'Русский')
   assert.equal(resolvedLanguage('ru', 'pt-BR'), 'ru')
+})
+
+test('Italian resolves regional tags and keeps its native menu name', () => {
+  for (const tag of ['it', 'it-IT', 'it_IT.UTF-8', 'it-CH']) {
+    assert.equal(resolvedLanguage('system', tag), 'it')
+    assert.equal(translate('Settings', 'system', tag), translate('Settings', 'it'))
+  }
+  assert.equal(languageTitle('it', 'en', 'en'), 'Italiano')
+  assert.equal(resolvedLanguage('it', 'pt-BR'), 'it')
+})
+
+test('bot, routine and message slots keep what the user wrote; other slots still translate', () => {
+  // "connected", "Reviewer" and "Settings" are catalog phrases, but as a name or a message they stay as written.
+  assert.equal(translate('Created bot connected', 'ru', false), 'Создан бот connected')
+  assert.equal(translate('Created bot Reviewer', 'ru', false), 'Создан бот Reviewer')
+  assert.equal(translate('Routine · Проверка почты', 'ru', false), 'Рутина · Проверка почты')
+  assert.equal(translate('Created bot Price $&', 'ru', false), 'Создан бот Price $&')
+  assert.equal(translate('Routine · Settings', 'ru', false), 'Рутина · Settings')
+  assert.equal(translate('Message from Reviewer: Settings', 'ru', false), 'Сообщение от Reviewer: Settings')
+  assert.equal(translate('Last run connected', 'ru', false), `${translate('Last run {status}', 'ru', false).replace('{status}', '')}${translate('connected', 'ru', false)}`)
+  assert.equal(translate('constructor', 'ru', false), 'constructor')
 })
 
 test('filled interface templates preserve user-owned names', () => {

@@ -50,6 +50,19 @@ on one line and an X that cancels (the terminal UI: `↳ “…”`, esc cancels
 placeholder reads "Reply…", and leaving the chat cancels the reply. See
 [replies](../features/groups-and-replies.md).
 
+## Queued messages
+
+While the bot works anywhere (its own chat, a room, a routine), the user's queued messages leave the transcript and
+wait above the box, oldest first, one line each: the desktop's tray tucked under the composer's top edge
+(`views/thread/QueuedMessages.tsx`), the phones' card past the + button (`Thread/QueuedMessages.swift`,
+`QueuedMessages.kt`), the terminal's band over its input (`view/queue.rs`, at most three rows). An idle bot takes the
+next message at once, so the chat keeps showing that one.
+
+Each row has icon-only Send now (`arrow.turn.down.right`) and Remove (`trash`); the terminal has `S` (send the oldest
+now) and `D` (take back the newest). A host older than 2.39.0 has neither, so the rows only show. Remove hides the
+message at once and brings it back if the host refuses. What each does on the host:
+[turns](../features/context-and-memory.md#turns).
+
 ## Draft lifetime
 
 Text is saved exactly, including leading/trailing whitespace, blank lines and emoji.

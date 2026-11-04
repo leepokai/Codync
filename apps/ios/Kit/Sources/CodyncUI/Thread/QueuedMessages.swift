@@ -1,0 +1,41 @@
+import CodyncKit
+import SwiftUI
+
+/// The user's messages waiting behind the bot's work, above the composer: each one line, sent now into the running
+/// turn (`steer`) or taken back. An older computer has neither action, so the rows only show.
+struct QueuedMessages: View {
+    let entries: [Entry]
+    @Environment(BotStore.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(entries) { entry in
+                row(entry).transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(.vertical, 2)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: entries.map(\.id))
+    }
+
+    private func row(_ entry: Entry) -> some View {
+        HStack(spacing: 2) {
+            Text(MessagePreview.text(entry.replyQuote.text))
+                .font(.subheadline)
+                .foregroundStyle(Palette.text)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, model.supportsQueueActions ? 0 : 9)
+            if model.supportsQueueActions {
+                Group {
+                    IconButton("Send now", systemImage: "arrow.turn.down.right") { model.steer(entry) }
+                    IconButton("Remove", systemImage: "trash") { model.unqueue(entry) }
+                }
+                .disabled(model.answering[entry.id] != nil)
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+    }
+}

@@ -25,7 +25,7 @@ struct ChatRow: View {
         switch entry.kind {
         case "user":
             VStack(alignment: .trailing, spacing: 4) {
-                UserBubble(entry: entry, botWorking: chat?.isWorking == true, reply: reply)
+                UserBubble(entry: entry, reply: reply)
                 ReactionsRow(entry: entry)
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
@@ -116,7 +116,6 @@ struct QuoteLine: View {
 
 struct UserBubble: View {
     let entry: Entry
-    let botWorking: Bool
     var reply: (() -> Void)?
     @Environment(BotStore.self) private var model
 
@@ -156,10 +155,6 @@ struct UserBubble: View {
         switch entry.data.status {
         case "sending":
             Text(L10n.tr("Sending…")).font(.caption2).foregroundStyle(Palette.tertiary)
-        case "queued":
-            Text(L10n.tr(botWorking ? "Queued until this response finishes" : "Queued"))
-                .font(.caption2)
-                .foregroundStyle(Palette.tertiary)
         case "failed":
             HStack(spacing: 10) {
                 Text(L10n.tr("Failed to send")).foregroundStyle(Palette.danger)

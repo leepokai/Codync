@@ -17,7 +17,7 @@ fun systemScript(tag: String): ChineseScript? {
 enum class AppLanguage(val stored: String, val title: String) {
     // The menu's order, as on the iPhone: Chinese first, then English and the rest.
     System("system", "Follow system"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"), En("en", "English"),
-    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"), PtBr("pt-BR", "Português (Brasil)"), Ru("ru", "Русский");
+    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"), PtBr("pt-BR", "Português (Brasil)"), Ru("ru", "Русский"), It("it", "Italiano");
 
     fun resolved(systemTag: String): AppLanguage {
         if (this != System) return this
@@ -98,7 +98,7 @@ private fun parseTemplate(template: String): List<Piece>? {
     return if (pieces.any { it.token != null }) pieces else null
 }
 
-private val localizableSlots = setOf("{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}")
+private val localizableSlots = setOf("{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}")
 private val placeholder = Regex("\\{[A-Za-z0-9]+\\}")
 
 private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map<String, String>, depth: Int): String? {

@@ -1,4 +1,4 @@
-use super::{AppLanguage, PREFERENCE, language_title, resolved_language, tr, translate};
+use super::{AppLanguage, HANS, PREFERENCE, language_title, resolved_language, tr, translate, translate_with};
 use crate::LockExt;
 
 #[test]
@@ -34,7 +34,7 @@ fn portuguese_system_locales_use_the_brazilian_catalog() {
 #[test]
 fn the_language_cycle_appends_portuguese_after_spanish() {
     let mut choice = AppLanguage::System;
-    for identifier in ["zh", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "pt-BR", "ru", "system"] {
+    for identifier in ["zh", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "pt-BR", "ru", "it", "system"] {
         choice = choice.next();
         assert_eq!(choice.stored(), identifier);
         assert_eq!(AppLanguage::parse(identifier), choice);
@@ -85,6 +85,14 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
 }
 
 #[test]
+fn bot_routine_and_message_slots_keep_what_the_user_wrote() {
+    assert_eq!(translate_with("Created bot connected", &HANS), "已创建机器人 connected");
+    assert!(translate_with("Created bot Reviewer", &HANS).ends_with("Reviewer"));
+    assert_eq!(translate_with("Routine · Settings", &HANS), "例行任务 · Settings");
+    assert_eq!(translate_with("Message from Reviewer: Settings", &HANS), "来自 Reviewer 的消息：Settings");
+}
+
+#[test]
 fn additional_languages_resolve_regions_and_load_catalogs() {
     for (language, table) in [
         (AppLanguage::Ja, &*super::JA),
@@ -93,11 +101,12 @@ fn additional_languages_resolve_regions_and_load_catalogs() {
         (AppLanguage::De, &*super::DE),
         (AppLanguage::Es, &*super::ES),
         (AppLanguage::Ru, &*super::RU),
+        (AppLanguage::It, &*super::IT),
     ] {
         assert_eq!(resolved_language(AppLanguage::System, &format!("{}_XX.UTF-8", language.stored())), language);
         assert_eq!(resolved_language(language, "zh_TW"), language);
-        assert_ne!(super::translate_with("Settings", table), "Settings");
-        assert_eq!(super::translate_with("Unknown phrase", table), "Unknown phrase");
+        assert_ne!(translate_with("Settings", table), "Settings");
+        assert_eq!(translate_with("Unknown phrase", table), "Unknown phrase");
     }
     assert_eq!(resolved_language(AppLanguage::System, "nl_NL"), AppLanguage::En);
 }
@@ -150,19 +159,20 @@ fn a_missing_choice_follows_the_computer() {
     assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
     assert_eq!(AppLanguage::Es.next(), AppLanguage::PtBr);
     assert_eq!(AppLanguage::PtBr.next(), AppLanguage::Ru);
-    assert_eq!(AppLanguage::Ru.next(), AppLanguage::System);
+    assert_eq!(AppLanguage::Ru.next(), AppLanguage::It);
+    assert_eq!(AppLanguage::It.next(), AppLanguage::System);
     assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
     assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
     assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));
     assert_eq!(super::system_script_of("en_US.UTF-8"), None);
-    assert_eq!(super::translate_with("Settings", &super::HANT).as_ref(), "設定");
-    assert_eq!(super::translate_with("Files", &super::HANT).as_ref(), "檔案");
+    assert_eq!(translate_with("Settings", &super::HANT).as_ref(), "設定");
+    assert_eq!(translate_with("Files", &super::HANT).as_ref(), "檔案");
 }
 
 #[test]
 fn catalogs_preserve_names_and_substitute_captured_values_once() {
     for table in [
-        &*super::HANS,
+        &*HANS,
         &*super::HANT,
         &*super::JA,
         &*super::KO,
@@ -171,17 +181,18 @@ fn catalogs_preserve_names_and_substitute_captured_values_once() {
         &*super::ES,
         &*super::PT_BR,
         &*super::RU,
+        &*super::IT,
     ] {
         for name in ["Plan", "connected", "Standby", "$&", "{hint}"] {
-            let expected = super::translate_with("Routine · {name}", table).replace("{name}", name);
-            assert_eq!(super::translate_with(&format!("Routine · {name}"), table), expected);
-            let title = super::translate_with("Message about “{title}”", table).replace("{title}", name);
-            assert_eq!(super::translate_with(&format!("Message about “{name}”"), table), title);
+            let expected = translate_with("Routine · {name}", table).replace("{name}", name);
+            assert_eq!(translate_with(&format!("Routine · {name}"), table), expected);
+            let title = translate_with("Message about “{title}”", table).replace("{title}", name);
+            assert_eq!(translate_with(&format!("Message about “{name}”"), table), title);
         }
         let hint = "Install Claude Code and run `claude auth login`.";
-        let expected = super::translate_with("{name} isn't set up on this computer. {hint}", table)
-            .replace("{hint}", &super::translate_with(hint, table))
+        let expected = translate_with("{name} isn't set up on this computer. {hint}", table)
+            .replace("{hint}", &translate_with(hint, table))
             .replace("{name}", "{hint}");
-        assert_eq!(super::translate_with(&format!("{{hint}} isn't set up on this computer. {hint}"), table), expected);
+        assert_eq!(translate_with(&format!("{{hint}} isn't set up on this computer. {hint}"), table), expected);
     }
 }

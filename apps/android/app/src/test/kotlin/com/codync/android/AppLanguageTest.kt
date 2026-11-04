@@ -9,7 +9,7 @@ import org.junit.Test
 
 class AppLanguageTest {
     @Test fun additionalLanguagesResolveRegionsAndKeepExplicitChoices() {
-        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es, AppLanguage.Ru)) {
+        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es, AppLanguage.Ru, AppLanguage.It)) {
             assertEquals(language, AppLanguage.System.resolved(language.stored + "-XX"))
             assertEquals(language, language.resolved("zh-TW"))
             assertEquals(language, AppLanguage.fromStored(language.stored))
@@ -44,6 +44,8 @@ class AppLanguageTest {
         val locales = mapOf(
             "en-US" to AppLanguage.En,
             "ru-RU" to AppLanguage.Ru,
+            "it-IT" to AppLanguage.It,
+            "it_CH.UTF-8" to AppLanguage.It,
             "zh-CN" to AppLanguage.Zh,
             "zh_Hans.UTF-8" to AppLanguage.Zh,
             "zh-TW" to AppLanguage.ZhHant,
@@ -57,7 +59,7 @@ class AppLanguageTest {
     }
 
     @Test fun unsupportedLanguagesKeepTheirFallbacks() {
-        for (tag in listOf("nl-NL", "it-IT", "unknown", "")) {
+        for (tag in listOf("nl-NL", "unknown", "")) {
             assertEquals(tag, AppLanguage.En, AppLanguage.System.resolved(tag))
         }
         assertEquals(AppLanguage.System, AppLanguage.fromStored("unknown"))

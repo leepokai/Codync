@@ -196,6 +196,18 @@ test('Russian resolves regional tags and keeps its native menu name', () => {
   assert.equal(resolvedLanguage('ru', 'pt-BR'), 'ru')
 })
 
+test('bot, routine and message slots keep what the user wrote; other slots still translate', () => {
+  // "connected", "Reviewer" and "Settings" are catalog phrases, but as a name or a message they stay as written.
+  assert.equal(translate('Created bot connected', 'ru', false), 'Создан бот connected')
+  assert.equal(translate('Created bot Reviewer', 'ru', false), 'Создан бот Reviewer')
+  assert.equal(translate('Routine · Проверка почты', 'ru', false), 'Рутина · Проверка почты')
+  assert.equal(translate('Created bot Price $&', 'ru', false), 'Создан бот Price $&')
+  assert.equal(translate('Routine · Settings', 'ru', false), 'Рутина · Settings')
+  assert.equal(translate('Message from Reviewer: Settings', 'ru', false), 'Сообщение от Reviewer: Settings')
+  assert.equal(translate('Last run connected', 'ru', false), `${translate('Last run {status}', 'ru', false).replace('{status}', '')}${translate('connected', 'ru', false)}`)
+  assert.equal(translate('constructor', 'ru', false), 'constructor')
+})
+
 test('filled interface templates preserve user-owned names', () => {
   for (const name of ['Plan', 'connected', 'Standby']) {
     assert.equal(translate(`Routine · ${name}`, 'zh', 'en'), `例行任务 · ${name}`)

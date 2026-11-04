@@ -21,7 +21,7 @@ is not translated. The desktop catalog test checks key and placeholder parity.
 
 A captured name, title, query, sign-in code or message is opaque, even when it
 matches an English interface phrase. Only app-owned `{hint}`, `{error}`,
-`{setup}`, `{kind}`, `{when}`, `{status}`, `{reason}` and `{shortcut}` slots
+`{setup}`, `{kind}`, `{when}`, `{status}`, `{reason}`, `{shortcut}` and `{changes}` slots
 translate recursively. Cloud errors use `{reason}` and `{hint}` for their
 interface text; keyboard hints use `{shortcut}`. Substitute captured values in
 one pass so a name containing another placeholder's spelling stays literal.

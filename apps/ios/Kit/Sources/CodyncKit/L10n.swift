@@ -212,7 +212,7 @@ public enum L10n {
     }
 
     private static let localizableSlots: Set<String> = [
-        "{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}",
+        "{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}",
     ]
 
     private static func fill(

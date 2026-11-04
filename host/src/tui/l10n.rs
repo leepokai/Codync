@@ -318,7 +318,15 @@ fn templated_at(text: &str, table: &HashMap<String, String>, depth: u8) -> Optio
             // Only app-owned UI slots translate recursively; names and free text stay verbatim.
             let localizable = matches!(
                 token.as_str(),
-                "{hint}" | "{error}" | "{setup}" | "{kind}" | "{when}" | "{status}" | "{reason}" | "{shortcut}"
+                "{hint}"
+                    | "{error}"
+                    | "{setup}"
+                    | "{kind}"
+                    | "{when}"
+                    | "{status}"
+                    | "{reason}"
+                    | "{shortcut}"
+                    | "{changes}"
             );
             let shown = if !localizable {
                 value

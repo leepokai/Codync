@@ -344,12 +344,12 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
             .background(Palette.danger.copy(alpha = 0.12f)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Symbol("exclamationmark.triangle.fill", size = 16.dp, tint = Palette.danger)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SelectionContainer { Text(text, style = Type.footnote, color = Palette.text) }
+                SelectionContainer { Text(tr(text), style = Type.footnote, color = Palette.text) }
                 if (addFallback != null && entry.data["addFallback"]?.jsonPrimitive?.booleanOrNull == true) SecondaryButton("Add a fallback", action = addFallback)
             }
         }
         "agentSwitch" in entry.data -> AgentSwitchLine(text, (entry.data["agentSwitch"] as? JsonObject)?.text("carried"))
-        else -> Text(text, Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
+        else -> Text(tr(text), Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
     }
 }
 

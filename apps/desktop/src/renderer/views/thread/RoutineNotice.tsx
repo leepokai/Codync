@@ -7,8 +7,8 @@ import { useStore } from '../../store/context'
 
 /** A routine's line in the chat, which opens the routine; a failed run the user can run again has a retry button. */
 export function RoutineNotice({ entry, open }: { entry: Entry; open: () => void }) {
-  const store = useStore()
   const tr = useTr()
+  const store = useStore()
   const retrying = store.answering.has(entry.id)
   return (
     <HStack gap={4} justify="center">

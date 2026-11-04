@@ -1,5 +1,6 @@
 import type { CallLink, CallSession } from './call-link'
 import { errorMessage, microphone, onDevicesChanged, PROGRESS_TAG, reconnect, VoiceEngine, VoiceSettings } from './voice'
+import { trNow } from '../../lib/l10n.ts'
 
 /**
  * OpenAI Realtime over WebRTC, this computer ↔ OpenAI directly: the microphone is a WebRTC audio
@@ -56,7 +57,7 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     try {
       const session = await this.link.start('realtime', 'openai', this.model, this.voice)
       if (this.ended) return
-      if (!session.credential) throw new Error('OpenAI sent no session credential.')
+      if (!session.credential) throw new Error(trNow('OpenAI sent no session credential.'))
       this.session = session
       await this.connect(session.credential)
     } catch (e) {
@@ -99,7 +100,7 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     const pc = new RTCPeerConnection({ bundlePolicy: 'max-bundle' })
     this.pc = pc
     const track = this.stream!.getAudioTracks()[0]
-    if (!track) throw new Error("Couldn't start the call audio.")
+    if (!track) throw new Error(trNow("Couldn't start the call audio."))
     track.enabled = !this.muted
     pc.addTrack(track, this.stream!)
     const audio = new Audio()
@@ -112,7 +113,7 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     const events = pc.createDataChannel('oai-events')
     events.onopen = () => this.opened()
     events.onmessage = (e) => typeof e.data === 'string' && this.received(e.data)
-    events.onclose = () => this.events === events && this.connected && this.dropped('Lost the connection to OpenAI.')
+    events.onclose = () => this.events === events && this.connected && this.dropped(trNow('Lost the connection to OpenAI.'))
     this.events = events
 
     const offer = await pc.createOffer()
@@ -136,7 +137,7 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     this.dropTimer = setTimeout(() => {
       if (this.ended || !this.isConnecting) return
       if (this.connected) this.dropped("Couldn't reach OpenAI.")
-      else this.fail("Couldn't reach OpenAI.", 'connection')
+      else this.fail(trNow("Couldn't reach OpenAI."), 'connection')
     }, 15_000)
   }
 
@@ -304,11 +305,11 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
         break
       case 'disconnected':
         if (this.dropTimer) clearTimeout(this.dropTimer)
-        this.dropTimer = setTimeout(() => this.dropped('Lost the connection to OpenAI.'), 5000)
+        this.dropTimer = setTimeout(() => this.dropped(trNow('Lost the connection to OpenAI.')), 5000)
         break
       case 'failed':
-        if (this.connected) this.dropped('Lost the connection to OpenAI.')
-        else this.fail("Couldn't reach OpenAI.", 'connection')
+        if (this.connected) this.dropped(trNow('Lost the connection to OpenAI.'))
+        else this.fail(trNow("Couldn't reach OpenAI."), 'connection')
         break
     }
   }

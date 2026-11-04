@@ -98,7 +98,7 @@ private fun parseTemplate(template: String): List<Piece>? {
     return if (pieces.any { it.token != null }) pieces else null
 }
 
-private val localizableSlots = setOf("{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}")
+private val localizableSlots = setOf("{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}")
 private val placeholder = Regex("\\{[A-Za-z0-9]+\\}")
 
 private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map<String, String>, depth: Int): String? {

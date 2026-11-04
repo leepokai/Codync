@@ -54,7 +54,9 @@ test('a message larger than a chunk arrives whole, and only in order', () => {
   sealer.seal(Buffer.from('a'))
   const b = sealer.seal(Buffer.from('b'))[0]
   assert.throws(() => opener.open(b.c, b.d), /out of order/)
-  assert.throws(() => sealer.seal(Buffer.alloc(1024 * 1024 + 1)), /too large/)
+  // A 5 MiB icon, base64 in JSON, goes out; past the host's 8 MiB nothing does.
+  assert.equal(sealer.seal(Buffer.alloc(Math.ceil(5 * 1024 * 1024 * 4 / 3) + 1024)).length, 27)
+  assert.throws(() => sealer.seal(Buffer.alloc(8 * 1024 * 1024 + 1)), /too large/)
 })
 
 test('the access request commits to its nonce and shows the host code', () => {

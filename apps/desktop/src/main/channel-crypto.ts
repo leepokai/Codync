@@ -7,7 +7,8 @@ import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createP
  */
 
 const CHUNK_SIZE = 256 * 1024
-const MAX_OUTBOUND = 1024 * 1024
+/** The host's largest reassembled authorized message (host `remote::channel` `MAX_INBOUND`): a 5 MiB icon in base64 JSON. */
+const MAX_OUTBOUND = 8 * 1024 * 1024
 const MAX_INBOUND = 16 * 1024 * 1024
 const MAX_COUNTER = 2 ** 32
 

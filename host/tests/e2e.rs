@@ -120,13 +120,19 @@ async fn readiness_needs_this_homes_token() {
     std::fs::remove_dir_all(home).unwrap();
 }
 
-/// The session folders oh-my-pi keeps in `agent_dir` whose names hold `home`'s own folder name.
+/// The session folders oh-my-pi keeps in `agent_dir` whose names hold `home`'s own folder name: none while
+/// it has no `sessions` folder yet. Any other read error fails the test, so an unreadable folder never passes.
 fn omp_sessions(agent_dir: &std::path::Path, home: &std::path::Path) -> Vec<String> {
     let name = home.file_name().unwrap().to_string_lossy().into_owned();
-    std::fs::read_dir(agent_dir.join("sessions"))
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+    let dir = agent_dir.join("sessions");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => panic!("reading {}: {e}", dir.display()),
+    };
+    entries
+        .map(|entry| entry.unwrap_or_else(|e| panic!("reading {}: {e}", dir.display())).file_name())
+        .map(|folder| folder.to_string_lossy().into_owned())
         .filter(|folder| folder.contains(&name))
         .collect()
 }

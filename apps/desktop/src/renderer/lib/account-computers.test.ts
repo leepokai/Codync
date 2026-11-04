@@ -33,6 +33,7 @@ Object.assign(globalThis, {
         return { ok: true, value: {} }
       },
       requestAccess: () => new Promise<AccessTicket>((resolve) => { answerAccess = resolve }),
+      cancelAccess: (computerId: string) => cloudCalls.push(`cancel ${computerId}`),
     },
   } },
 })
@@ -63,11 +64,12 @@ test('a request withdrawn before the computer answers is taken off the computer 
   const access = new AccountComputers({ setError() {} } as unknown as AppModel)
   const asking = access.ask(studio)
   access.cancel('studio')
-  assert.deepEqual(cloudCalls, [], 'no ticket yet: nothing to delete')
+  assert.deepEqual(cloudCalls, ['cancel studio'], 'no ticket yet: the main process withdraws the request it holds')
+  // The code was already on its way when Cancel reached the main process.
   answerAccess(ticket('r1'))
   await asking
   await settle()
-  assert.deepEqual(cloudCalls, ['DELETE v1/access-requests/r1'])
+  assert.deepEqual(cloudCalls, ['cancel studio', 'DELETE v1/access-requests/r1'])
   assert.equal(access.asking.has('studio'), false)
 })
 

@@ -75,7 +75,8 @@ export class AccountComputers extends Observable {
   cancel(computerId: string) {
     const ticket = this.asking.get(computerId)?.ticket
     this.set(computerId, null)
-    if (!ticket) return
+    // No code yet: the main process still holds the request, so it withdraws it.
+    if (!ticket) return window.codync.cloud.cancelAccess(computerId)
     analytics.track({ event: 'access_request_failed', reason: 'cancelled' })
     withdraw(ticket)
   }
@@ -105,8 +106,9 @@ export class AccountComputers extends Observable {
   }
 }
 
+/** One that can't be withdrawn now stays on the computer's screen only until it expires. */
 function withdraw(ticket: AccessTicket) {
-  void request('DELETE', `v1/access-requests/${ticket.requestId}`, undefined, true).catch(() => {})
+  void request('DELETE', `v1/access-requests/${ticket.requestId}`, undefined, true).catch((error: unknown) => console.warn('Could not withdraw the access request', error))
 }
 
 /** The request ended without access (as the phones count it): its reason goes out, and the error the person sees comes back. */

@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { app, ipcMain, safeStorage } from 'electron'
 import type { AccessTicket, AccountComputer, CallError } from '../shared/ipc'
 import type { AccountService } from './account'
@@ -98,9 +99,10 @@ export async function dropDeviceKey(userId: string) {
 
 /**
  * Asks `computer` to let this install in through the account (iOS and Android `requestAccess`): commits to
- * a nonce, waits for the computer's, reveals ours, and returns the 6-digit code both sides show.
+ * a nonce, waits for the computer's, reveals ours, and returns the 6-digit code both sides show. `signal`
+ * withdraws the request while the computer hasn't answered yet.
  */
-async function requestAccess(call: (method: string, path: string, body?: unknown) => Promise<CloudResult>, device: DeviceKey, computer: AccountComputer): Promise<AccessTicket> {
+async function requestAccess(call: (method: string, path: string, body?: unknown) => Promise<CloudResult>, device: DeviceKey, computer: AccountComputer, signal: AbortSignal): Promise<AccessTicket> {
   if (computerId(computer.signKey) !== computer.id) throw new Error("This computer's key doesn't match its ID.")
   const nonce = randomBytes(32)
   const created = await call('POST', `v1/computers/${computer.id}/access-requests`, { commit: sasCommit(device.publicKey, nonce) })
@@ -109,6 +111,7 @@ async function requestAccess(call: (method: string, path: string, body?: unknown
   const expiresAt = Number(created.value.expiresAt)
   try {
     for (;;) {
+      signal.throwIfAborted()
       if (Date.now() >= expiresAt) throw new Error('The request expired. Ask again.')
       const status = await call('GET', `v1/access-requests/${requestId}`)
       if (status.ok && status.value.status !== 'pending') throw new Error("The computer didn't take the request.")
@@ -117,7 +120,7 @@ async function requestAccess(call: (method: string, path: string, body?: unknown
         if (!revealed.ok) throw new Error(revealed.error.message ?? "The computer didn't take the request.")
         return { requestId, expiresAt, code: sasCode(computer.signKey, device.publicKey, nonce, status.value.hostNonce) }
       }
-      await new Promise((resolve) => setTimeout(resolve, 2_000))
+      await sleep(2_000, undefined, { signal })
     }
   } catch (error) {
     // A failed nonce exchange leaves no invisible request waiting at the computer.
@@ -145,19 +148,38 @@ export function registerCloud(account: AccountService) {
       return { ok: false, error: error as CloudFailure }
     }
   })
+  /** Access requests still waiting for their computer's code, by computer; aborting one withdraws it. */
+  const waiting = new Map<string, AbortController>()
   ipcMain.handle('cloud:requestAccess', async (_e, computer: AccountComputer) => {
+    const abort = new AbortController()
+    waiting.get(computer.id)?.abort()
+    waiting.set(computer.id, abort)
     try {
-      const { base, userId, token } = await session()
-      const call = (method: string, path: string, body?: unknown) => cloudCall(base, token, method, path, body, userId)
-      return { ok: true, value: await requestAccess(call, await identity(userId), computer) }
+      const { userId } = await session()
+      // A current token for every call, since the computer can take longer to answer than one token lasts;
+      // the request stays with the account that made it.
+      const call = async (method: string, path: string, body?: unknown): Promise<CloudResult> => {
+        try {
+          const current = await session()
+          if (current.userId !== userId) return { ok: false, error: { status: 401, code: 'signedOut', message: 'Signed in to another account.' } }
+          return await cloudCall(current.base, current.token, method, path, body, userId)
+        } catch (error) {
+          return { ok: false, error: error as CloudFailure }
+        }
+      }
+      return { ok: true, value: await requestAccess(call, await identity(userId), computer, abort.signal) }
     } catch (error) {
       return { ok: false, error: { status: 0, message: error instanceof Error ? error.message : (error as CloudFailure).message ?? 'Sign in again.' } }
+    } finally {
+      if (waiting.get(computer.id) === abort) waiting.delete(computer.id)
     }
   })
+  ipcMain.on('cloud:cancelAccess', (_e, computerId: string) => waiting.get(computerId)?.abort())
   let user = account.state.user?.userId
   account.on('change', () => {
     if (account.state.user?.userId === user) return
     user = account.state.user?.userId
+    for (const request of waiting.values()) request.abort()
     closeAccountChannels()
   })
   const device = () => {

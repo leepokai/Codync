@@ -92,7 +92,7 @@ const bridge: CodyncBridge = {
     newBot() {},
     openApp() {},
   },
-  cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }), requestAccess: unavailable },
+  cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }), requestAccess: unavailable, cancelAccess() {} },
   remote: {
     call: unavailable,
     stream: (_computer, _kind, _body, _onData, onEnd) => {

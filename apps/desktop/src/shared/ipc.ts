@@ -239,6 +239,8 @@ export interface CodyncBridge {
     request(method: string, path: string, body: unknown, signed: boolean): Promise<{ ok: true; value: unknown } | { ok: false; error: { status: number; code: string; message: string | null } }>
     /** Asks the computer to let this install in; resolves once it shows the code. Rejects with a `CallError`. */
     requestAccess(computer: AccountComputer): Promise<AccessTicket>
+    /** Withdraws the computer's request that is still waiting for its code; `requestAccess` then rejects. */
+    cancelAccess(computerId: string): void
   }
   /** An account computer's host API over the end-to-end encrypted channel, through the account's relay. */
   remote: {

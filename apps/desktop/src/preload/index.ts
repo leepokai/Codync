@@ -122,6 +122,7 @@ const bridge: CodyncBridge = {
   cloud: {
     request: (method, path, body, signed) => ipcRenderer.invoke('cloud:request', method, path, body, signed),
     requestAccess: (computer) => invoke('cloud:requestAccess', computer) as Promise<AccessTicket>,
+    cancelAccess: (computerId) => ipcRenderer.send('cloud:cancelAccess', computerId),
   },
   remote: {
     call: (computer, method, body, timeoutMs) => invoke('remote:call', computer, method, body, timeoutMs),

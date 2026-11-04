@@ -6,7 +6,7 @@ import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { ProactivePolicySection } from '../../components/ProactivePolicySection'
 import { RobotAvatar, isRobotLook } from '../../components/RobotAvatar'
-import { CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
+import { Button, CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
 import { FolderPicker } from '../../components/FolderPicker'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
@@ -17,6 +17,7 @@ import { useAgentModels } from './agent-models'
 import { AgentAccountPicker } from './AgentAccountPicker'
 import { AgentModelPicker } from './AgentModelPicker'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
+import { useAgentSetup } from './agent-status'
 import { lastPathComponent } from '../../lib/path'
 import { errorText, isValid, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
@@ -126,6 +127,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
 }) {
   const tr = useTr()
   const store = useStore()
+  const setup = useAgentSetup()
   const [pickingAvatar, setPickingAvatar] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
@@ -207,6 +209,12 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
         {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
       </AgentModelPicker>
+      {backend && backend.id !== 'custom' && backend.installed && backend.signedIn !== true ? (
+        <HStack gap={8} className="agent-signin-row fade-in">
+          <Text size="caption" tone="secondary" grow>{backend.signedIn === false ? tr('Not signed in.') : tr("We can't tell the sign-in yet.")}</Text>
+          <Button kind="secondary" onClick={() => setup.open(backend.id)}>{backend.signedIn === false ? 'Sign in' : 'Check'}</Button>
+        </HStack>
+      ) : null}
       {account}
     </VStack>
   )
@@ -236,6 +244,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           </CardSection>
           {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
         </div>
+        {setup.sheet}
       </div>
     )
   }
@@ -412,6 +421,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           }}
         />
       </Sheet>
+      {setup.sheet}
     </div>
   )
 }

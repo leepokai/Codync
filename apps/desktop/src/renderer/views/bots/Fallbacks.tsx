@@ -12,13 +12,14 @@ import { useStore } from '../../store/context'
 import { FormSheet } from '../marketplace/pieces'
 import { useAgentModels } from './agent-models'
 import { AgentModelPicker } from './AgentModelPicker'
+import { AgentStatusBadge } from './agent-status'
 import './bots.css'
 
 const ABOUT =
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel)."
 
-/** An agent as the Agent pickers list it: its logo, and "(not installed)" when it isn't. */
-export const agentChoice = (b: Backend) => ({ id: b.id, label: b.available ? b.name : `${b.name} (not installed)`, leading: <AgentIcon registry={b.registry ?? b.id} size={14} /> })
+/** An agent as the Agent pickers list it: its logo, its sign-in, and "(not installed)" when it isn't. */
+export const agentChoice = (b: Backend) => ({ id: b.id, label: b.available ? b.name : `${b.name} (not installed)`, leading: <AgentIcon registry={b.registry ?? b.id} size={14} />, status: <AgentStatusBadge backend={b} /> })
 
 /** The Agent card's first row while the bot runs on a fallback, with the way back to its own agent. */
 export function AgentStepBanner({ bot }: { bot: Bot }) {

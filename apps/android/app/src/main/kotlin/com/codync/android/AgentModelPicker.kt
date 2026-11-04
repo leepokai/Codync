@@ -2,6 +2,7 @@ package com.codync.android
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -9,11 +10,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.AgentModels
 import com.codync.android.core.Bot
@@ -40,7 +45,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
  */
 @Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
-    agents: List<Pair<String, String>> = emptyList(), chooseAgent: ((String) -> Unit)? = null,
+    agents: List<AgentChoice> = emptyList(), chooseAgent: ((String) -> Unit)? = null, onOpenAgents: (() -> Unit)? = null,
     agentDetails: @Composable () -> Unit = {}) {
     val online = state.actualConnection is LinkState.Ready
     var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
@@ -59,15 +64,15 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
     }
     var stage by remember { mutableStateOf(PickerStage.Closed) }
     var query by remember { mutableStateOf("") }
-    fun open(next: PickerStage) { query = ""; stage = next }
+    fun open(next: PickerStage) { query = ""; if (next == PickerStage.Agents) onOpenAgents?.invoke(); stage = next }
     // The agent's own "Default" entry is the same choice as no model.
     val agentDefault = catalog?.agentDefault
     val value = if (selection == agentDefault?.id) "" else selection.orEmpty()
     val selectedModel = catalog?.models?.firstOrNull { it.id == (selection ?: agentDefault?.id ?: catalog?.currentModelId) }
     val modelOptions = if (value.isNotEmpty() || catalog?.defaultModelOptions == true) selectedModel?.options.orEmpty() else emptyList()
-    val modelChoices = catalog?.options(selection)?.map { it.id.orEmpty() to it.name } ?: listOf("" to "Default")
-    val agentName = agents.firstOrNull { it.first == backend }?.second ?: backend
-    val modelName = if (value.isEmpty()) "Default" else modelChoices.firstOrNull { it.first == value }?.second ?: value
+    val modelChoices = catalog?.options(selection)?.map { AgentChoice(it.id.orEmpty(), it.name) } ?: listOf(AgentChoice("", "Default"))
+    val agentName = agents.firstOrNull { it.id == backend }?.name ?: backend
+    val modelName = if (value.isEmpty()) "Default" else modelChoices.firstOrNull { it.id == value }?.name ?: value
     val levels = modelOptions.mapNotNull { option -> option.values.firstOrNull { it.id == (options[option.id] ?: option.default) }?.name }
     val summary = (listOf(agentName, modelName) + levels + if (fastMode) listOf("Fast") else emptyList()).joinToString(" · ")
     Column(Modifier.fillMaxWidth().animateContentSize(Motion.layoutSize), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -90,14 +95,18 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                     Box(Modifier.weight(1f)) { PlainTextField(query, { query = it }, prompt = if (stage == PickerStage.Agents) "Search agents" else "Search models", singleLine = true) }
                     if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++ }
                 }
-                val choices = (if (stage == PickerStage.Agents) agents else modelChoices).filter { it.second.contains(query, ignoreCase = true) }
+                val choices = (if (stage == PickerStage.Agents) agents else modelChoices).filter { it.name.contains(query, ignoreCase = true) }
                 Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
-                    for ((id, name) in choices) Row(Modifier.fillMaxWidth().clickable {
-                        if (stage == PickerStage.Agents) { if (id != backend) chooseAgent?.invoke(id); open(PickerStage.Models) }
-                        else { if (id != value) choose(id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
+                    for (c in choices) Row(Modifier.fillMaxWidth().clickable {
+                        if (stage == PickerStage.Agents) { if (c.id != backend) chooseAgent?.invoke(c.id); open(PickerStage.Models) }
+                        else { if (c.id != value) choose(c.id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
                     }.padding(horizontal = 6.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(name, Modifier.weight(1f), style = Type.body, color = Palette.text)
-                        if (id == if (stage == PickerStage.Agents) backend else value) Symbol("checkmark", size = 12.dp, tint = Palette.text)
+                        Text(c.name, Modifier.weight(1f), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (c.signedIn) Box(Modifier.size(13.dp).clip(CircleShape).background(Palette.accentFill), contentAlignment = Alignment.Center) {
+                            Symbol("checkmark", size = 9.dp, tint = Palette.onAccent)
+                        }
+                        c.status?.let { Text(it, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        if (c.id == if (stage == PickerStage.Agents) backend else value) Symbol("checkmark", size = 12.dp, tint = Palette.text)
                     }
                     if (choices.isEmpty()) Text("No results", style = Type.caption, color = Palette.secondary)
                 }

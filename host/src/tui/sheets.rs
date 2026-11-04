@@ -274,6 +274,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     let signed_in =
         a.auth.as_ref().map_or_else(|| b.and_then(|b| b["signedIn"].as_bool()), |v| v["signedIn"].as_bool());
+    let email = b.and_then(|b| b["email"].as_str());
     let set_up = app.agent_set_up(a);
     let curated = b.is_some_and(|b| b["curated"] == true);
     let status = if a.busy {
@@ -288,7 +289,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         if curated { "Install it first.".into() } else { format!("Not set up on {} yet.", app.host) }
     } else {
         match signed_in {
-            Some(true) => "Signed in.".into(),
+            Some(true) => email.map_or_else(|| "Signed in.".to_owned(), |e| format!("Signed in as {e}.")),
             Some(false) => "Not signed in yet.".into(),
             None => format!("Couldn't tell. Skip this if you've already signed in on {}.", app.host),
         }

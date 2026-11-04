@@ -185,7 +185,7 @@ private fun setUp(backend: AgentBackend, auth: AgentAuth?) = backend.installed |
 
 private fun statusText(backend: AgentBackend, setUp: Boolean, auth: AgentAuth?, signedIn: Boolean?, checking: Boolean, host: String) = when {
     checking -> if (auth == null) "Checking with ${backend.name}… The first check can download it." else "Checking…"
-    signedIn == true -> "Signed in."
+    signedIn == true -> backend.email?.let { "Signed in as $it." } ?: "Signed in."
     backend.needsNode -> "Add Node.js first."
     !setUp -> if (backend.curated) "Install it first." else "Not set up on $host yet."
     signedIn == false -> "Not signed in yet."

@@ -526,6 +526,8 @@ export interface Backend {
   curated?: boolean
   signedIn?: boolean
   canInstall?: boolean
+  /** The signed-in account, when the agent's own files name it. */
+  email?: string | null
   /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
   node?: 'missing' | 'added' | null
 }

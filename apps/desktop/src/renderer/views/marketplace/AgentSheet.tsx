@@ -152,7 +152,7 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
 
   const statusText = checking
     ? (auth === null ? `Checking with ${backend.name}… The first check can download it.` : 'Checking…')
-    : signedIn === true ? 'Signed in.'
+    : signedIn === true ? (backend.email ? `Signed in as ${backend.email}.` : 'Signed in.')
     : nodeMissing ? 'Add Node.js first.'
     : !setUp ? (curated ? 'Install it first.' : `Not set up on ${host} yet.`)
     : signedIn === false ? 'Not signed in yet.'

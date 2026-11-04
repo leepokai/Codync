@@ -32,6 +32,9 @@ import com.codync.android.core.Resting
 import com.codync.android.core.moved
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 // A bot's fallbacks in its Agent card: the agents that carry on, in order, when its own can't answer.
 
@@ -40,15 +43,26 @@ private const val ABOUT_FALLBACKS = "When this bot's agent runs out of usage, is
     "recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent " +
     "itself (Claude Code's fallbackModel)."
 
-/** The computer's agents as the Agent picker lists them: id and name, "(not installed)" when it isn't. */
-internal fun agentChoices(state: AppState): List<Pair<String, String>> = backends(state).map { info ->
+/** An agent as the Agent pickers list it: its name, and its sign-in (desktop `agentChoice`). */
+internal data class AgentChoice(val id: String, val name: String, val status: String? = null, val signedIn: Boolean = false)
+
+/** The computer's agents as the Agent picker lists them: name, "(not installed)" when it isn't, and the sign-in. */
+internal fun agentChoices(state: AppState): List<AgentChoice> = backends(state).map { info ->
     val id = info.text("id").orEmpty()
-    id to ((info.text("name") ?: id) + if (!info.available) " (not installed)" else "")
+    AgentChoice(id, (info.text("name") ?: id) + if (!info.available) " (not installed)" else "", agentStatus(info),
+        signedIn = info["signedIn"]?.jsonPrimitive?.booleanOrNull == true)
+}
+
+/** The sign-in as the Agent picker lists it: the account when signed in, a reminder when installed but signed out (desktop `AgentStatusBadge`). */
+internal fun agentStatus(info: JsonObject): String? = when (info["signedIn"]?.jsonPrimitive?.booleanOrNull) {
+    true -> info.text("email") ?: "Signed in"
+    false -> if (info["installed"]?.jsonPrimitive?.booleanOrNull == true) "Not signed in" else null
+    else -> null
 }
 
 /** The agents a new fallback can use: not the bot's own, nor one already in the list. */
 private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) =
-    agentChoices(state).filter { (id, _) -> id != own && list.none { it.backend == id } }
+    agentChoices(state).filter { it.id != own && list.none { f -> f.backend == it.id } }
 
 /** The Agent card's first row while the bot runs on a fallback: which one, until when, and Switch back. */
 @Composable internal fun FallbackBanner(state: AppState, store: AppStore, bot: Bot, step: AgentStep) {
@@ -89,7 +103,7 @@ private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) 
 }
 
 @Composable private fun FallbackRow(state: AppState, number: Int, fallback: Fallback, rest: Resting?, inUse: Boolean, menu: () -> List<MenuItem>) {
-    val name = agentChoices(state).firstOrNull { it.first == fallback.backend }?.second ?: backendName(state, fallback.backend)
+    val name = agentChoices(state).firstOrNull { it.id == fallback.backend }?.name ?: backendName(state, fallback.backend)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("$number", style = Type.subheadline.monospacedDigit, color = Palette.secondary)
         AgentIcon(agentRegistry(state, fallback.backend), 22.dp)
@@ -112,7 +126,7 @@ private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) 
     val choices = remember { fallbackChoices(state, own, list) }
     // An installed agent first, as on the other apps.
     val installed = remember { agentBackends(state).filter { it.available }.map { it.id } }
-    var backend by remember { mutableStateOf((choices.firstOrNull { it.first in installed } ?: choices.firstOrNull())?.first.orEmpty()) }
+    var backend by remember { mutableStateOf((choices.firstOrNull { it.id in installed } ?: choices.firstOrNull())?.id.orEmpty()) }
     var model by remember(backend) { mutableStateOf<String?>(null) }
     var options by remember(backend) { mutableStateOf(emptyMap<String, String>()) }
     Column(Modifier.fillMaxSize()) {

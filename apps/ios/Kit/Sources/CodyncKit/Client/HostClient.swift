@@ -347,6 +347,11 @@ public extension HostClient {
         try await call("usage", ["refresh": refresh])
     }
 
+    /// The last `days` days on this computer. A host without it fails the call, and the card stays hidden.
+    func weekSummary(days: Int = 7) async throws -> WeekSummary {
+        try await call("weekSummary", ["days": days])
+    }
+
     func listDirs(_ path: String?) async throws -> DirListing {
         struct Body: Encodable { var path: String? }
         return try await call("listDirs", Body(path: path))

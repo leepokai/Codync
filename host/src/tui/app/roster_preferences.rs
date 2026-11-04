@@ -27,6 +27,9 @@ fn path(computer: &str) -> Result<PathBuf> {
 
 impl App {
     pub(super) fn load_roster_preferences(&mut self, computer: &str) {
+        if self.demo {
+            return;
+        }
         if self.roster_tools.preferences_context.as_deref() == Some(computer) {
             return;
         }
@@ -48,6 +51,9 @@ impl App {
     }
 
     pub(super) fn save_roster_preferences(&mut self) {
+        if self.demo {
+            return;
+        }
         let Some(computer) = &self.roster_tools.preferences_context else { return };
         let saved = (|| -> Result<()> {
             let target = path(computer)?;

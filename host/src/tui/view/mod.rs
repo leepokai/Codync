@@ -9,7 +9,9 @@
 mod activity;
 mod analytics;
 mod bot_chat;
+mod beliefs;
 mod buffer;
+mod channels;
 mod chat;
 mod computer_access;
 mod fallbacks;
@@ -19,12 +21,14 @@ mod help;
 mod lead_agent;
 mod network;
 mod network_rules;
+mod proposals;
 mod new_bot;
 mod overlay;
 mod pair;
 mod permission;
 mod roster;
 mod roster_tools;
+mod rules;
 mod skill;
 mod style;
 mod time;
@@ -155,10 +159,18 @@ fn status_line(buf: &mut Buffer, r: Rect, app: &mut App) {
         x = put(buf, x, r.y, 4, &c[i].to_string(), t.secondary.patch(t.panel)) + 2;
         app.hits.clicks.push((Rect::new(start, r.y, x - start, 1), Click::Filter(filter)));
     }
+    if app.demo {
+        x = put(buf, x, r.y, 24, "DEMO · sample data", t.amber.patch(t.panel)) + 2;
+    }
     if !app.online {
         x = put(buf, x, r.y, 20, "offline", t.amber.patch(t.panel)) + 2;
     } else if app.mismatch.is_some() {
         x = put(buf, x, r.y, 20, "needs update", t.red.patch(t.panel)) + 2;
+    }
+    if app.online
+        && let Some(alert) = super::app::health::alert(&app.health)
+    {
+        x = put(buf, x, r.y, 44, &alert, t.amber.patch(t.panel)) + 2;
     }
     let hint = if insert { "↵ send · esc nav" } else { "? keys" };
     let mut right = rput(buf, r.right() - 1, r.y, hint, t.dim.patch(t.panel)).saturating_sub(3);

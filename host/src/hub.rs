@@ -21,6 +21,7 @@ use tokio::sync::{broadcast, watch};
 mod documents;
 pub mod flows;
 mod order;
+mod profile;
 mod reactions;
 mod stop;
 mod sync;
@@ -79,6 +80,8 @@ pub struct Hub {
     pub routines: crate::routines::Routines,
     /// Daily token limits and what each bot used today (`budget`).
     pub budget: crate::budget::Budgets,
+    /// Memory, CPU and disk of this computer, and the memory of the agents started here (`health`).
+    pub health: crate::health::Monitor,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
@@ -137,6 +140,10 @@ impl Hub {
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
             budget: crate::budget::Budgets::load(&store),
+            health: crate::health::Monitor::new(
+                Box::new(crate::health::System::new(service::data_dir())),
+                crate::health::Monitor::saved_thresholds(&store),
+            ),
             team: crate::chat::team::Requests::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
@@ -265,6 +272,7 @@ impl Hub {
                 return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
             }
         }
+        Self::settle_profile(None, &mut cfg);
         crate::agent::fallback::tidy(&mut cfg);
         validate(&cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
@@ -272,6 +280,7 @@ impl Hub {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
+        self.set_profile_budget(&cfg);
         crate::network::publish(self);
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
@@ -313,6 +322,7 @@ impl Hub {
         if cfg.is_group() {
             cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
         }
+        Self::settle_profile(Some(&row.config), &mut cfg);
         crate::agent::fallback::tidy(&mut cfg);
         validate(&cfg)?;
         let mut edit = crate::chat::instruction_history::begin(&row.config, &cfg, patch, &self.store)?;
@@ -331,6 +341,9 @@ impl Hub {
                 edit.undo(&self.store)?;
             }
             return Err(error);
+        }
+        if cfg.security_profile != row.config.security_profile {
+            self.set_profile_budget(&cfg);
         }
         crate::network::publish(self);
         if !cfg.is_group() {

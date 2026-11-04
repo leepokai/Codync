@@ -278,7 +278,7 @@ export class FakeHost {
           dreams: [], projectMemory: null, memoryRev: 0,
         }
       case 'routines':
-        return { routines: [], runs: [] }
+        return { routines: story.routines(String(b.botId ?? ''), Date.now()), runs: [] }
       case 'skills':
       case 'connectors':
       case 'marketSkills':

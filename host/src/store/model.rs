@@ -197,9 +197,30 @@ pub struct BotConfig {
     /// The user's rules for the agent's permission requests, first match wins (see `agent::approval_rules`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub approval_rules: Vec<crate::agent::approval_rules::ApprovalRule>,
+    /// A command (build, tests, typecheck) run in the workspace after each turn: the turn counts as done only if it passes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify_command: Option<String>,
+    /// The model routine runs and check-ins use instead of `model`: a cheaper one for work nobody is waiting on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_model: Option<String>,
+    /// Saver: once its daily token budget reaches the warning level, a new session of the bot starts on its
+    /// background model, until the next day.
+    #[serde(default)]
+    pub saver: bool,
+    /// The bot's soul, persona and heartbeat, written by the user (see `agent::personality`).
+    #[serde(default, skip_serializing_if = "crate::agent::personality::Personality::is_empty")]
+    pub personality: crate::agent::personality::Personality,
     /// Per-category action policy matrix (`files`, `shell`, `browse`, `browser`, `apps`, `bots`, `routines`, Idea 43).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub action_rules: BTreeMap<ActionClass, RulePolicy>,
+    /// Whether `action_rules` are enforced as approval rules (`approval_rules::quick_rules`). Off until the person turns
+    /// them on, so rules a role preset stored earlier change nothing.
+    #[serde(default)]
+    pub action_rules_on: bool,
+    /// The security profile the bot follows (`agent::security_profile`), until its rules or Approvals setting are
+    /// changed away from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_profile: Option<crate::agent::security_profile::SecurityProfile>,
     /// Proactive check-ins, quiet hours, daily budget and background app toggle (Ideas 41, 44).
     #[serde(default)]
     pub proactive: ProactiveSettings,

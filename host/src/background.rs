@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 pub fn start(hub: &Arc<Hub>) {
     tokio::spawn(crate::slack::run(hub.clone()));
+    tokio::spawn(crate::telegram::run(hub.clone()));
+    tokio::spawn(crate::health::run(hub.clone()));
     tokio::spawn({
         let hub = hub.clone();
         async move {
@@ -18,6 +20,8 @@ pub fn start(hub: &Arc<Hub>) {
     tokio::spawn(market::automatic_loop(hub.clone()));
     tokio::spawn(voice::refresh_loop(hub.clone()));
     tokio::spawn(crate::chat::calls::sweep_loop(hub.clone()));
+    tokio::spawn(crate::chat::takeover::sweep_loop(hub.clone()));
+    tokio::spawn(crate::chat::recap::run(hub.clone()));
     tokio::spawn({
         let hub = hub.clone();
         async move { market::agent_sign_in::refresh(&hub).await }

@@ -38,6 +38,20 @@ data class Bot(
     val computer: Boolean = false,
     /** The bot can create bots (which can too) and change its own setup and the bots it created (the built-in `manage` tools); null from an older host. */
     val manageTeam: Boolean? = null,
+    /** A command run in the workspace after each turn: the turn counts as done only if it passes; null when none. */
+    val verifyCommand: String? = null,
+    /** The model routine runs and check-ins use instead of [model]; null when none. */
+    val backgroundModel: String? = null,
+    /** Saver: at 80 percent of the daily token budget, new sessions start on [backgroundModel] until tomorrow; null from an older host. */
+    val saver: Boolean? = null,
+    /** The user's rules for the agent's permission requests, first match first. */
+    val approvalRules: List<ApprovalRule> = emptyList(),
+    /** Whether the quick rules ([actionRules]) are enforced; null from an older host. */
+    val actionRulesOn: Boolean? = null,
+    /** The security profile it follows, until its rules are changed away from it; null when none (or an older host). */
+    val securityProfile: String? = null,
+    /** The bot's character, written by the user. */
+    val personality: Personality = Personality(),
     /** The user's other computers list this bot and may message it; null from an older host. */
     val offeredToNetwork: Boolean? = null,
     /** The user's cloud assistant lists this bot and may message it; null from an older host. */

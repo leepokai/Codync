@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.LinkState
 import com.codync.android.core.UsageProvider
 import com.codync.android.core.UsageReport
+import com.codync.android.core.WeekSummary
 import com.codync.android.core.UsageWindow
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -48,12 +49,15 @@ import kotlin.math.roundToInt
  * Usage limits, opened from the State tab (iOS `UsageSheet` + `UsageView`): one card per
  * provider, the tightest limit as a big bar, every limit listed below. Pull down to refresh.
  */
-@Composable fun UsageScreen(state: AppState, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit) {
+@Composable fun UsageScreen(state: AppState, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit,
+    week: suspend () -> WeekSummary? = { null }) {
     val dismiss = LocalDismissModal.current
     val report = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() ?: UsageReport() }
     val online = state.actualConnection is LinkState.Ready
     // Opening Usage asks the computer for a current report (it answers from cache when it can).
     LaunchedEffect(online) { if (online) refresh(false) }
+    var summary by remember { mutableStateOf<WeekSummary?>(null) }
+    LaunchedEffect(online) { if (online) summary = week() }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(leading = { IconButton("Close", "xmark", action = dismiss) },
             title = { Text("Usage", style = Type.body.semibold, color = Palette.text) })
@@ -64,9 +68,27 @@ import kotlin.math.roundToInt
         PullToRefresh({ if (online) reload() }, Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 for (provider in report.providers) key(provider.id) { ProviderCard(provider) }
+                summary?.takeIf { it.activeBots > 0 }?.let { WeekCard(it) }
                 if (report.providers.isEmpty()) EmptyUsage("No usage yet", "Your computer reads plan limits from the agents installed on it.")
             }
         }
+    }
+}
+
+/** The last seven days, as counts: what was said, done and approved. */
+@Composable private fun WeekCard(week: WeekSummary) {
+    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(20.dp)).background(Palette.surface).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(tr("Your week"), style = Type.subheadline.semibold, color = Palette.text)
+        DetailRow("Messages you sent", week.messages.toString())
+        DetailRow("Replies from your bots", week.replies.toString())
+        DetailRow("Tool calls", week.tools.toString())
+        DetailRow("File edits", week.fileEdits.toString())
+        DetailRow("Approvals answered", "${week.approvalsAnswered} / ${week.approvalsAsked}")
+        if (week.approvalsWaiting > 0) DetailRow("Approvals still waiting", week.approvalsWaiting.toString())
+        val anonymous = tr("Bot")
+        if (week.topBots.isNotEmpty()) Text("${tr("Busiest")}: ${week.topBots.joinToString { it.name.ifBlank { anonymous } }}",
+            style = Type.caption, color = Palette.tertiary)
     }
 }
 

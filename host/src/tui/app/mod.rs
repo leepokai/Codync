@@ -1,12 +1,17 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
+mod always;
 mod analytics;
 mod bot;
+pub mod beliefs;
+pub mod channels;
 mod editor;
 mod events;
 mod exchange;
 mod fallbacks;
 mod forms;
+pub mod health;
+pub mod proposals;
 mod input;
 mod model;
 mod navigate;
@@ -14,14 +19,20 @@ mod new_bot;
 mod overlay_keys;
 mod roster_preferences;
 pub mod roster_tools;
+mod rules;
 mod slash;
 mod steps;
 mod ui;
 
+pub use always::AlwaysSheet;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
+pub use beliefs::BeliefsSheet;
+pub use channels::ChannelsSheet;
+pub use proposals::ProposalsSheet;
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
+pub use rules::{Mode, QUICK_CLASSES, RulesSheet};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
 pub use ui::{
@@ -63,6 +74,13 @@ pub struct App {
     pub bots: HashMap<String, Bot>,
     pub entries: HashMap<String, BTreeMap<i64, Entry>>,
     pub usage: Value,
+    /// The last seven days (`weekSummary`), read when the usage sheet opens; null until then.
+    pub week: Value,
+    /// `hostHealth`, for the header; null from an older host.
+    pub health: Value,
+    health_asked: Option<Instant>,
+    /// The security profiles the host offers (`securityProfiles`), read when they are first needed.
+    pub profiles: Vec<Value>,
     pub screen: Value,
     /// This computer's network (`networkView`'s shape); null on hosts without one.
     pub network: Value,
@@ -98,6 +116,10 @@ pub struct App {
     pub frame: u64,
     pub term_focused: bool,
     pub quit: bool,
+    /// This is the demo's app: its client answers from a script and nothing is read from or written to the device.
+    pub demo: bool,
+    /// The person asked to try the demo; the main loop starts it.
+    pub demo_toggle: bool,
     pub hits: Hits,
     pub width: Width,
     /// Chat/trace viewport heights from the last draw, for page scrolling.
@@ -149,12 +171,18 @@ impl App {
             url,
             host: String::new(),
             home: String::new(),
+            demo: false,
+            demo_toggle: false,
             online: false,
             error: None,
             mismatch: None,
             bots: HashMap::new(),
             entries: HashMap::new(),
             usage: Value::Null,
+            week: Value::Null,
+            health: Value::Null,
+            health_asked: None,
+            profiles: Vec::new(),
             screen: Value::Null,
             network: Value::Null,
             backends: vec![],
@@ -394,6 +422,10 @@ impl App {
             self.selected = Some(id);
         }
         let now = Instant::now();
+        if self.online && self.health_asked.is_none_or(|at| at.elapsed() >= health::REFRESH) {
+            self.health_asked = Some(now);
+            self.call("hostHealth", json!({}), After::Health);
+        }
         self.toasts.retain(|t| t.until > now);
         if self.hint.as_ref().is_some_and(|(_, until)| *until <= now) {
             self.hint = None;

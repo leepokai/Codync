@@ -13,6 +13,7 @@ pub mod reply;
 
 mod event;
 mod permission;
+mod question;
 mod session;
 mod tool;
 
@@ -47,6 +48,8 @@ pub fn is_external(cfg: &BotConfig) -> bool {
 pub enum Decision {
     Allow,
     Deny,
+    /// The index of the option picked on a question card.
+    Pick(usize),
 }
 
 impl Decision {
@@ -54,6 +57,7 @@ impl Decision {
         match self {
             Self::Allow => "allow",
             Self::Deny => "deny",
+            Self::Pick(_) => "pick",
         }
     }
 }
@@ -78,6 +82,13 @@ pub async fn ingest(hub: &Arc<Hub>, body: &Value) -> Value {
     let Some(event) = event::Event::parse(body) else { return json!({"decision": null}) };
     if event.name == "PermissionRequest" {
         return json!({"decision": permission::request(hub, &event).await.map(Decision::as_str)});
+    }
+    // Only the hook installed to wait (`hook --ask`) asks; the plain one only reports.
+    if body["ask"].as_bool() == Some(true) && event.name == "PreToolUse" {
+        if let Some(verdict) = question::ask(hub, &event).await {
+            return json!({"decision": null, "preToolUse": verdict});
+        }
+        return json!({"decision": null});
     }
     session::record(hub, &event);
     json!({"decision": null})

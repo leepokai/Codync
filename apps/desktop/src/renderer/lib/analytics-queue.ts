@@ -12,12 +12,19 @@ export class AnalyticsQueue {
   private sender: AnalyticsSender | null = null
   private sending = false
   private readonly limit: number
+  private quiet = false
 
   constructor(limit = 100) {
     this.limit = limit
   }
 
+  /** In demo mode nothing the person does is counted. */
+  setQuiet(quiet: boolean) {
+    this.quiet = quiet
+  }
+
   track(event: AnalyticsEvent) {
+    if (this.quiet) return
     this.pending.push(event)
     if (this.pending.length > this.limit) this.pending.shift()
     void this.flush()

@@ -268,6 +268,15 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 let hint =
                     if status == "draft" { " · o shows it · e edits · K keeps this chat" } else { " · o shows it" };
                 format!("{}{hint}", e.notice_text())
+            } else if let Some(paused) = e.data["pausedTurn"].as_object() {
+                // Half done: the slash menu offers /continue while the card can still be used.
+                let open = paused.get("status").is_some_and(|s| s == "waiting");
+                let hint = match (open, paused.get("canContinue").is_some_and(|c| c == true)) {
+                    (true, true) => " · /continue goes on",
+                    (true, false) => " · say what remains",
+                    _ => " · continued",
+                };
+                format!("⏸ {}{hint}", e.notice_text())
             } else if e.data["agentSwitch"].is_object() {
                 // Another agent took over (or the bot's own came back): `o` shows what it was told.
                 let hint = if unfoldable(e).is_some() { " · o shows what it carried" } else { "" };

@@ -6,18 +6,28 @@ use serde_json::{Value, json};
 
 use super::{After, App, COLORS, Editor, NewBot, NewBotField, Overlay, SHAPES, cycle};
 
-const ORDER: [NewBotField; 5] =
-    [NewBotField::Name, NewBotField::Purpose, NewBotField::Agent, NewBotField::Color, NewBotField::Shape];
+const ORDER: [NewBotField; 6] = [
+    NewBotField::Name,
+    NewBotField::Purpose,
+    NewBotField::Agent,
+    NewBotField::Profile,
+    NewBotField::Color,
+    NewBotField::Shape,
+];
 
 impl App {
     pub(super) fn new_bot(&mut self) {
         // A random look, out of every color with every shape.
         let looks = COLORS.len() * SHAPES.len();
         let n = usize::try_from(crate::store::now_ms()).unwrap_or(0) % looks;
+        if self.profiles.is_empty() {
+            self.call("securityProfiles", json!({}), After::Profiles);
+        }
         self.overlays.push(Overlay::NewBot(NewBot {
             name: Editor::default(),
             purpose: Editor::default(),
             backend: None,
+            profile: None,
             color: n % COLORS.len(),
             shape: n / COLORS.len(),
             field: NewBotField::Name,
@@ -42,6 +52,9 @@ impl App {
             (KeyCode::Left | KeyCode::Right, NewBotField::Agent) => {
                 n.backend = self.next_agent(n.backend.as_deref(), d);
             }
+            (KeyCode::Left | KeyCode::Right, NewBotField::Profile) => {
+                n.profile = self.next_profile(n.profile.as_deref(), d);
+            }
             (_, NewBotField::Name) => {
                 n.name.key(k);
             }
@@ -56,6 +69,20 @@ impl App {
     /// The agents a new bot can start on: the ones that run here and the ones Codync knows.
     pub(in crate::tui) fn new_bot_agents(&self) -> Vec<&Value> {
         self.backends.iter().filter(|b| b["available"] == true || b["curated"] == true).collect()
+    }
+
+    /// The profile `d` steps from `current`, through "the host's default" (`None`) and back.
+    pub(super) fn next_profile(&self, current: Option<&str>, d: isize) -> Option<String> {
+        let ids: Vec<Option<&str>> =
+            std::iter::once(None).chain(self.profiles.iter().map(|p| p["id"].as_str())).collect();
+        let at = ids.iter().position(|id| *id == current).unwrap_or(0);
+        ids[cycle(at, d, ids.len())].map(str::to_owned)
+    }
+
+    /// A profile's title and one-sentence summary, from what the host sent.
+    pub(in crate::tui) fn profile_text(&self, id: &str) -> Option<(String, String)> {
+        let p = self.profiles.iter().find(|p| p["id"] == id)?;
+        Some((p["title"].as_str()?.to_owned(), p["summary"].as_str()?.to_owned()))
     }
 
     /// The agent `d` steps from `current`, through "the host's pick" (`None`) and back.
@@ -86,6 +113,7 @@ impl NewBot {
             "backend": self.backend,
             "cwd": "",
             "permission": "auto",
+            "securityProfile": self.profile,
             "notify": true,
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],
@@ -116,7 +144,8 @@ mod tests {
             n = next;
         }
         assert_eq!((n.field, n.purpose.text.as_str()), (NewBotField::Purpose, "P"));
-        for k in [KeyCode::Tab, KeyCode::Tab, KeyCode::Right] {
+        // Purpose, then Agent, Profile, and Color.
+        for k in [KeyCode::Tab, KeyCode::Tab, KeyCode::Tab, KeyCode::Right] {
             let Some(Overlay::NewBot(next)) = app.new_bot_key(n, KeyEvent::from(k)) else { panic!("stays open") };
             n = next;
         }
@@ -135,6 +164,24 @@ mod tests {
         assert!(body["connectors"].is_null() && body["skills"].is_null(), "the host turns every one on");
         let Some(Overlay::NewBot(n)) = app.new_bot_key(n, KeyEvent::from(KeyCode::Enter)) else { panic!("saving") };
         assert!(n.saving);
+    }
+
+    #[tokio::test]
+    async fn arrows_on_the_profile_step_through_the_hosts_profiles_and_back_to_its_default() {
+        let mut app = test_app();
+        app.profiles = vec![
+            json!({"id": "readOnly", "title": "Read-only", "summary": "x"}),
+            json!({"id": "full", "title": "Full access", "summary": "y"}),
+        ];
+        assert_eq!(app.next_profile(None, 1).as_deref(), Some("readOnly"));
+        assert_eq!(app.next_profile(Some("readOnly"), 1).as_deref(), Some("full"));
+        assert_eq!(app.next_profile(Some("full"), 1), None, "back to the host's default");
+        assert_eq!(app.next_profile(None, -1).as_deref(), Some("full"));
+        assert_eq!(app.profile_text("full"), Some(("Full access".into(), "y".into())));
+        app.new_bot();
+        let mut n = top(&mut app);
+        n.profile = Some("readOnly".into());
+        assert_eq!(n.body()["securityProfile"], "readOnly", "the choice goes to the host");
     }
 
     #[tokio::test]

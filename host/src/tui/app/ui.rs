@@ -58,6 +58,11 @@ pub enum Action {
     RefreshAgents,
     Pair,
     Network,
+    Rules,
+    Channels,
+    Beliefs,
+    Proposals,
+    Demo,
     Usage,
     CheckUpdate,
     Analytics,
@@ -68,7 +73,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 21] = [
+pub const ACTIONS: [(&str, &str, Action); 26] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -80,6 +85,11 @@ pub const ACTIONS: [(&str, &str, Action); 21] = [
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
+    ("Approval rules of this bot…", "", Action::Rules),
+    ("Channels: Telegram and Slack…", "", Action::Channels),
+    ("What this bot knows about you…", "", Action::Beliefs),
+    ("Skills this bot proposes…", "", Action::Proposals),
+    ("Demo mode: try it, or leave it", "", Action::Demo),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
@@ -129,6 +139,7 @@ pub enum NewBotField {
     Name,
     Purpose,
     Agent,
+    Profile,
     Color,
     Shape,
 }
@@ -141,6 +152,8 @@ pub struct NewBot {
     pub purpose: Editor,
     /// `None`: the host picks the agent.
     pub backend: Option<String>,
+    /// The security profile (`None`: the host's default, which approves everything).
+    pub profile: Option<String>,
     pub color: usize,
     pub shape: usize,
     pub field: NewBotField,
@@ -170,6 +183,12 @@ pub use crate::store::{AVATAR_COLORS as COLORS, AVATAR_SHAPES as SHAPES};
 pub enum Field {
     Name,
     Instructions,
+    Check,
+    Soul,
+    Persona,
+    Heartbeat,
+    Background,
+    Saver,
     Agent,
     Account,
     Model,
@@ -190,9 +209,15 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 20] = [
+pub const FIELDS: [Field; 26] = [
     Field::Name,
     Field::Instructions,
+    Field::Check,
+    Field::Soul,
+    Field::Persona,
+    Field::Heartbeat,
+    Field::Background,
+    Field::Saver,
     Field::Agent,
     Field::Account,
     Field::Model,
@@ -224,6 +249,11 @@ pub struct Form {
     pub bot_id: String,
     pub name: Editor,
     pub instructions: Editor,
+    /// What the user writes about how the bot works: check before done, soul, persona, heartbeat, background
+    /// model (see [`Field::slot`]).
+    pub character: [Editor; 5],
+    /// `None`: the host has no saver.
+    pub saver: Option<bool>,
     pub backend: String,
     pub account: Option<String>,
     pub account_scope: String,
@@ -258,9 +288,38 @@ pub struct Form {
     pub opened: serde_json::Value,
 }
 
+impl Field {
+    /// Where a text field of the bot's character keeps its editor in [`Form::character`].
+    pub fn slot(self) -> Option<usize> {
+        match self {
+            Self::Check => Some(0),
+            Self::Soul => Some(1),
+            Self::Persona => Some(2),
+            Self::Heartbeat => Some(3),
+            Self::Background => Some(4),
+            _ => None,
+        }
+    }
+
+    /// Whether Shift+Enter starts a new line in it.
+    pub fn multiline(self) -> bool {
+        matches!(self, Self::Instructions | Self::Soul | Self::Persona | Self::Heartbeat)
+    }
+}
+
 impl Form {
     pub fn current(&self) -> Field {
         FIELDS[self.field]
+    }
+
+    /// The text editor behind `field`, when it is one.
+    pub fn editor_mut(&mut self, field: Field) -> Option<&mut Editor> {
+        match field {
+            Field::Name => Some(&mut self.name),
+            Field::Instructions => Some(&mut self.instructions),
+            Field::Model => Some(&mut self.model),
+            other => other.slot().map(|slot| &mut self.character[slot]),
+        }
     }
 
     /// The settings picked for the model now in the field; another model has none yet.
@@ -319,6 +378,9 @@ pub enum PairCode {
 }
 
 pub enum Overlay {
+    Channels(Box<super::ChannelsSheet>),
+    Beliefs(Box<super::BeliefsSheet>),
+    Proposals(Box<super::ProposalsSheet>),
     Computer(Box<super::super::manage::computer::ComputerSheet>),
     McpTools(Box<super::super::manage::mcp_tools::McpToolsSheet>),
     RosterTools,
@@ -347,6 +409,10 @@ pub enum Overlay {
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
+    /// A bot's approval rules.
+    Rules(Box<super::rules::RulesSheet>),
+    /// "Always allow" on a card: the rule to keep, to edit.
+    Always(Box<super::always::AlwaysSheet>),
 }
 
 pub struct Toast {

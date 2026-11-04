@@ -7,7 +7,7 @@ use ratatui::style::{Modifier, Style};
 
 use super::super::app::{COLORS, NewBot, NewBotField, SHAPES};
 use super::super::l10n::tr;
-use super::super::md::width as w;
+use super::super::md::{truncate, width as w};
 use super::buffer::{centered, frame_box, put, rput, u};
 use super::overlay::input_line;
 use super::style::{FACE, bot_color, face_style, theme};
@@ -16,9 +16,16 @@ use super::style::{FACE, bot_color, face_style, theme};
 const LOOKS_W: usize = 6 + 2 + COLORS.len() * 3 + 1;
 
 /// `agent`: the picked agent's name; `None` while the host picks it.
-pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot, agent: Option<&str>) {
+/// `profile`: the picked security profile's title and sentence; `None` while the host's default applies.
+pub(super) fn new_bot_view(
+    buf: &mut Buffer,
+    area: Rect,
+    n: &NewBot,
+    agent: Option<&str>,
+    profile: Option<&(String, String)>,
+) {
     let t = theme();
-    let r = centered(area, 56, 22);
+    let r = centered(area, 60, 25);
     let inner = frame_box(buf, r, t.text, t.panel, Some((tr("New bot").as_ref(), t.text)));
     let mid = |width: usize| inner.x + inner.width.saturating_sub(u(width)) / 2;
     for (y, row) in (inner.y + 1..).zip(FACE) {
@@ -52,8 +59,16 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot, agent: Opti
     let agent = if n.field == NewBotField::Agent { format!("‹ {agent} ›") } else { format!("  {agent}") };
     let x = put(buf, x0, y + 3, 6, tr("Agent ").as_ref(), label(NewBotField::Agent));
     put(buf, x, y + 3, u(LOOKS_W).saturating_sub(6), &agent, label(NewBotField::Agent));
+    let title =
+        profile.map_or_else(|| tr("Default: approves everything").into_owned(), |(title, _)| tr(title).into_owned());
+    let title = if n.field == NewBotField::Profile { format!("‹ {title} ›") } else { format!("  {title}") };
+    let x = put(buf, x0, y + 4, 9, tr("Profile ").as_ref(), label(NewBotField::Profile));
+    put(buf, x, y + 4, u(LOOKS_W).saturating_sub(9), &title, label(NewBotField::Profile));
+    if let Some((_, sentence)) = profile {
+        put(buf, x0, y + 5, u(LOOKS_W), &truncate(&tr(sentence), LOOKS_W), t.dim.patch(t.panel));
+    }
     let on_color = n.field == NewBotField::Color;
-    let y = y + 5;
+    let y = y + 7;
     let mut x = put(buf, x0, y, 6, tr("Color ").as_ref(), label(NewBotField::Color));
     x = put(buf, x, y, 2, if on_color { "‹ " } else { "  " }, label(NewBotField::Color));
     for (ci, c) in COLORS.iter().enumerate() {

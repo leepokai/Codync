@@ -57,6 +57,7 @@ import com.codync.android.design.*
         { CharacterAvatar(draft.avatarShape, draft.avatarColor, 96.dp) }) {
         AvatarPicker(draft.avatarShape, draft.avatarColor, { draft = draft.copy(avatarShape = it) }, { draft = draft.copy(avatarColor = it) })
         PurposeField(draft.description) { draft = draft.copy(description = it) }
+        SecurityProfileChooser(state, store, draft, null) { draft = it }
         AgentAndModel(state, store, draft) { draft = agentDefaults.edited(draft, it) }
         Suggestions(catalog?.bots.orEmpty().filter { it.featured }) { draft = draft.from(it) }
         if (!online) Text("Connect this computer to create the bot.", style = Type.caption, color = Palette.warning)

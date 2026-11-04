@@ -56,7 +56,21 @@ impl App {
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
             Action::Network => self.open_network(),
-            Action::Usage => self.overlays.push(Overlay::Usage(0)),
+            Action::Rules => self.open_rules(),
+            Action::Channels => self.open_channels(),
+            Action::Beliefs => self.open_beliefs(),
+            Action::Proposals => self.open_proposals(),
+            Action::Demo => {
+                if self.demo {
+                    self.quit = true;
+                } else {
+                    self.demo_toggle = true;
+                }
+            }
+            Action::Usage => {
+                self.overlays.push(Overlay::Usage(0));
+                self.call("weekSummary", json!({"days": 7}), After::Week);
+            }
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
@@ -137,6 +151,11 @@ impl App {
             Overlay::Skill(s) => self.skill_key(s, k),
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
+            Overlay::Rules(s) => self.approval_rules_key(s, k),
+            Overlay::Channels(s) => self.channels_key(s, k),
+            Overlay::Beliefs(s) => self.beliefs_key(s, k),
+            Overlay::Proposals(s) => self.proposals_key(s, k),
+            Overlay::Always(s) => self.always_key(s, k),
             // A new code: after a failure, or in place of the one shown.
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
                 self.call("pairing", json!({}), After::Pairing);

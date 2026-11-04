@@ -5,8 +5,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 pub(crate) mod ingress;
+mod socket;
+#[cfg(test)]
+#[path = "socket_tests.rs"]
+mod socket_tests;
 mod worker;
-pub(crate) use worker::{claim_prompt, run};
+pub(crate) use worker::claim_prompt;
+
+/// Delivers replies and, when the app has an app-level token, listens over Socket Mode.
+pub(crate) async fn run(hub: Arc<Hub>) {
+    tokio::join!(worker::run(hub.clone()), socket::run(hub, socket::Endpoint::slack()));
+}
 const SLOT: &str = "slack.channel";
 pub const METHODS: &[&str] = &["slackStatus", "setSlackChannel", "disconnectSlack"];
 
@@ -23,7 +32,11 @@ struct Config {
     workspace_id: String,
     bot_user_id: String,
     bot_token: String,
+    /// Empty when the app uses Socket Mode only: the HTTP endpoint then refuses every request.
     signing_secret: String,
+    /// The app-level `xapp-` token that opens a Socket Mode connection; empty to receive events over HTTP.
+    #[serde(default)]
+    app_token: String,
     bindings: Vec<Binding>,
     #[serde(default)]
     generation: String,
@@ -48,15 +61,22 @@ fn slack_id(value: &str, prefix: &[char]) -> bool {
         && value.starts_with(prefix)
         && value.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
 }
+/// A signing secret is 32 hex digits; it may be left out only when Socket Mode brings the events.
+fn signing_secret_ok(c: &Config) -> bool {
+    if c.signing_secret.is_empty() {
+        return !c.app_token.is_empty();
+    }
+    c.signing_secret.len() == 32 && c.signing_secret.bytes().all(|b| b.is_ascii_hexdigit())
+}
 fn validate(hub: &Hub, c: &Config) -> Result<()> {
     if !slack_id(&c.workspace_id, &['T'])
         || !slack_id(&c.bot_user_id, &['U', 'W'])
         || !c.bot_token.starts_with("xoxb-")
         || c.bot_token.len() > 8192
-        || c.signing_secret.len() != 32
-        || !c.signing_secret.bytes().all(|b| b.is_ascii_hexdigit())
+        || !signing_secret_ok(c)
+        || (!c.app_token.is_empty() && (!c.app_token.starts_with("xapp-") || c.app_token.len() > 8192))
     {
-        bail!("Workspace, bot user, bot token or signing secret is invalid.");
+        bail!("Workspace, bot user, bot token, app token or signing secret is invalid.");
     }
     if c.bindings.is_empty() || c.bindings.len() > 50 {
         bail!("Configure 1–50 channel bindings.");
@@ -125,6 +145,7 @@ pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Va
             }
         }
     }
-    Ok(json!({"configured":c.is_some(),"workspaceId":c.as_ref().map(|c|&c.workspace_id),
+    Ok(json!({"configured":c.is_some(),"socketMode":c.as_ref().is_some_and(|c|!c.app_token.is_empty()),
+        "workspaceId":c.as_ref().map(|c|&c.workspace_id),
         "bindings":c.as_ref().map(|c|&c.bindings),"deliveries":hub.store.slack_deliveries()?,"webhookPath":"/hooks/slack"}))
 }

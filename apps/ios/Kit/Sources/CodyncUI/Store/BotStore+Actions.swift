@@ -306,6 +306,12 @@ extension BotStore {
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }
     }
 
+    /// The last seven days on this computer; nil when the host can't say (an older one) or can't be reached.
+    public func weekSummary() async -> WeekSummary? {
+        guard !retired, let client else { return nil }
+        return try? await client.weekSummary()
+    }
+
     /// Reads the network again; the host asks the other computers when what it heard is stale, and
     /// the `network` event brings what they answer.
     public func refreshNetwork() async {

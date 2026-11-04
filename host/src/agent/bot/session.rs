@@ -12,11 +12,22 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
+/// The session a scheduled check-in uses when the bot has a background model: the model is fixed when a session
+/// starts, so a check-in can only run on it from a session of its own.
+const CHECK_IN_SLOT: &str = "check-in";
+
 impl Actor {
+    /// Whether the running turn is a scheduled check-in that has a background model to run on.
+    fn own_check_in_session(&self) -> bool {
+        self.proactive_turn && self.cfg.background_model.as_deref().is_some_and(|m| !m.trim().is_empty())
+    }
+
     /// Which session the running turn uses: a side conversation (see `side_slot`) or a routine run has one of
     /// its own (by its slot); everything else uses the main one.
     pub(super) fn slot(&self) -> Option<String> {
-        self.side_slot(&self.lane).or_else(|| self.active_routine.as_deref().map(crate::routines::session_slot))
+        self.side_slot(&self.lane)
+            .or_else(|| self.active_routine.as_deref().map(crate::routines::session_slot))
+            .or_else(|| self.own_check_in_session().then(|| CHECK_IN_SLOT.to_owned()))
     }
 
     /// A side conversation's own session: a document's (`doc:<id>`, `doc-group:<group>:<id>` in a group) or a
@@ -212,6 +223,7 @@ impl Actor {
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 match self.start_candidate(candidate, &env, budget, &progress).await {
                     Ok(conn) => {
+                        self.hub.health.set_agent(&self.cfg.id, conn.acp.pid());
                         self.conn = Some(conn);
                         break;
                     }
@@ -361,7 +373,11 @@ impl Actor {
     async fn finish_session_model(&mut self, sid: &str) -> Result<()> {
         let Some(conn) = self.conn.as_ref() else { bail!("agent not running") };
         let Some(response) = conn.pending_models.get(sid) else { return Ok(()) };
-        let options = select_model(&conn.acp, response, sid, &self.cfg).await?;
+        let cheap = self.active_routine.is_some()
+            || self.proactive_turn
+            || (self.cfg.saver && self.hub.budget.saving(&self.cfg.id, crate::store::now_ms()));
+        let cfg = if cheap { super::launch::for_background(&self.cfg) } else { self.cfg.clone() };
+        let options = select_model(&conn.acp, response, sid, &cfg).await?;
         self.note_options(sid, &options, Listing::Session);
         if let Some(conn) = self.conn.as_mut() {
             conn.pending_models.remove(sid);

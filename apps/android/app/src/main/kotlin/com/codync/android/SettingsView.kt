@@ -55,12 +55,14 @@ import com.codync.android.design.*
     val navAutoHide by NavigationPreferences.autoHide.collectAsState()
     var confirmStartOver by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
+    var channels by remember { mutableStateOf(false) }
     LaunchedEffect(reselectToken) { if (reselectToken > 0) scroll.animateScrollTo(0) }
     LaunchedEffect(active) { if (active) store.refreshCloud() }
     CardForm(Modifier.background(Palette.background).statusBarsPadding(), PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = bottomInset), scroll) {
         Text(tr("Settings"), Modifier.semantics { heading() }, style = Type.largeTitle.bold, color = Palette.text)
         if (computers != null) CardSection {
             row { RowLabel("Computer management", "desktopcomputer", chevron = true, modifier = Modifier.plainButton(action = computers)) }
+            row { RowLabel("Channels", "paperplane", chevron = true, modifier = Modifier.plainButton { channels = true }) }
         }
         AppearanceSection()
         val appLanguage = LocalAppLanguage.current
@@ -106,6 +108,12 @@ import com.codync.android.design.*
                 }
             }
         }
+        CardSection(footer = "Look around with sample bots, a session, an approval and a routine. Nothing is saved or sent, and leaving brings back exactly what you had.") {
+            row {
+                val demo by DemoMode.active.collectAsState()
+                SecondaryButton(if (demo) "Exit demo mode" else "Try demo mode") { if (demo) DemoMode.exit() else DemoMode.enter() }
+            }
+        }
         CardSection {
             row { ValueRow("App version", BuildConfig.VERSION_NAME) }
             row { LinkButton("Source code") { uri.open("https://github.com/leepokai/Codync", OutboundLink.Github) } }
@@ -121,6 +129,7 @@ import com.codync.android.design.*
         }
     }
     CodyncSheet(aboutAnalytics, { aboutAnalytics = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { AnalyticsSheet() }
+    CodyncSheet(channels, { channels = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { ChannelsSheet(state, store) }
     CodyncDialog("Start over?", confirmStartOver, { confirmStartOver = false },
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {
         listOf(DialogAction("Start over", destructive = true, action = store::startOver))

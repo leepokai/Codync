@@ -50,6 +50,12 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         let lab = match field {
             Field::Name => "Name",
             Field::Instructions => "Instructions",
+            Field::Check => "Check before done",
+            Field::Soul => "Soul",
+            Field::Persona => "Persona",
+            Field::Heartbeat => "Heartbeat",
+            Field::Background => "Background model",
+            Field::Saver => "Saver",
             Field::Agent => "Agent",
             Field::Account => "Account",
             Field::Model => "Model",
@@ -71,7 +77,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         };
         let label = tr(lab);
         put(buf, fx, y, label_w, &label, if active { t.bold } else { t.secondary }.patch(t.panel));
-        let rows = if *field == Field::Instructions { 3 } else { 1 };
+        let rows =
+            if matches!(field, Field::Instructions | Field::Soul | Field::Persona | Field::Heartbeat) { 3 } else { 1 };
         if active {
             restyle(buf, Rect::new(vx.saturating_sub(1), y, vw + 1, rows), t.sel);
         }
@@ -104,6 +111,18 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Instructions => {
                 let hint = tr("e.g. Reviews PRs. Never pushes without asking.");
                 text_field(buf, &f.instructions, &hint, y);
+            }
+            Field::Check | Field::Soul | Field::Persona | Field::Heartbeat | Field::Background => {
+                let hint = match field {
+                    Field::Check => "e.g. npm test",
+                    Field::Soul => "values and boundaries; you write it, the bot can't",
+                    Field::Persona => "e.g. Dry and brief. No emoji.",
+                    Field::Heartbeat => "what to do when it checks in on its own",
+                    _ => "‹ › a cheaper model for routines and check-ins",
+                };
+                if let Some(slot) = field.slot() {
+                    text_field(buf, &f.character[slot], &tr(hint), y);
+                }
             }
             Field::Account => {
                 let label = if f.backend != "antigravity" {
@@ -262,6 +281,14 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 let s = if on.is_some() && !applies { format!("{s}  · {}", tr(off_here)) } else { s.into() };
                 put(buf, vx, y, vw, &s, t.text.patch(base));
             }
+            Field::Saver => {
+                let s = match f.saver {
+                    Some(true) => "◉ On at 80% of the daily budget   ○ Off",
+                    Some(false) => "○ On at 80% of the daily budget   ◉ Off",
+                    None => "Not available on this computer's host",
+                };
+                put(buf, vx, y, vw, s, t.text.patch(base));
+            }
             Field::Notify => {
                 let s = if f.notify { "◉ Done and needs-you   ○ Off" } else { "○ Done and needs-you   ◉ Off" };
                 put(buf, vx, y, vw, s, t.text.patch(base));
@@ -358,12 +385,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         | Field::Shape
         | Field::Approvals
         | Field::Notify
+        | Field::Saver
         | Field::Computer
         | Field::Team
         | Field::Network
         | Field::Assistants => "←→ change · tab next field",
-        Field::Instructions => "⇧↵ new line · tab next field",
-        Field::Name => "tab next field · ^s save",
+        Field::Instructions | Field::Soul | Field::Persona | Field::Heartbeat => "⇧↵ new line · tab next field",
+        Field::Name | Field::Check | Field::Background => "tab next field · ^s save",
     };
     rput(buf, inner.right(), by, hint, t.dim.patch(t.panel));
 }

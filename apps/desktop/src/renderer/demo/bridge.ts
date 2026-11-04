@@ -75,7 +75,7 @@ const bridge: CodyncBridge = {
     enabled: async () => false,
     setEnabled: async () => false,
     setSummary() {},
-    state: async () => ({ screen: { notch: null }, summary: { bots: [], permissions: [], usage: [] } }),
+    state: async () => ({ screen: { notch: null }, summary: { bots: [], permissions: [], usage: [], health: null } }),
     onSummary: none,
     onScreen: none,
     onHover: none,

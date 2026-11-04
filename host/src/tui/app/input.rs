@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::editor::move_line;
 use super::{
-    After, App, Click, Confirm, ConfirmAct, Editor, Field, Focus, Goto, GroupField, Kind, Mark, NewBotField, Overlay,
+    After, App, Click, Confirm, ConfirmAct, Editor, Focus, Goto, GroupField, Kind, Mark, NewBotField, Overlay,
     PendingSend, Status, TraceMode, Width, mismatch_text, page, tilde,
 };
 
@@ -48,13 +48,13 @@ impl App {
                 GroupField::About => Some(&mut g.about),
                 GroupField::Bots => None,
             },
-            Overlay::Form(f) => match f.current() {
-                Field::Name => Some(&mut f.name),
-                Field::Instructions => Some(&mut f.instructions),
-                Field::Model => Some(&mut f.model),
-                _ => None,
-            },
+            Overlay::Form(f) => {
+                let field = f.current();
+                f.editor_mut(field)
+            }
             Overlay::Market(m) => Some(&mut m.query),
+            Overlay::Rules(s) => (s.mode != super::rules::Mode::List).then_some(&mut s.editor),
+            Overlay::Always(s) => s.refusal.is_none().then_some(&mut s.editor),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
             Overlay::Routine(f) => Some(match f.field {
                 super::super::manage::RoutineField::Name => &mut f.name,

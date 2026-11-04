@@ -3,7 +3,9 @@
 //! crate; this module runs them in the host: the files on disk, the session opening, the bot's memory tools, the
 //! apps' read-only view, dreaming, and the one-time moves from the memory Codync kept before.
 
+mod agent_import;
 mod api;
+mod beliefs;
 #[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
 pub mod budget;
 mod dates;
@@ -15,7 +17,9 @@ mod import;
 mod tools;
 pub mod turns;
 
+pub use agent_import::import as import_agent_memory;
 pub use api::call;
+pub use beliefs::call as belief_call;
 pub use dates::ymd;
 pub use dream::{DreamEvent, spawn_dreamer};
 pub use import::import_old_memory;

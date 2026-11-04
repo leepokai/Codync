@@ -11,6 +11,8 @@ use super::{After, App, Bot, Editor};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlashAction {
     Fast,
+    /// Goes on with a turn that stopped half done (`continueTurn`).
+    Continue,
     Skill,
 }
 
@@ -29,7 +31,7 @@ impl SlashCommand {
         match self.action {
             SlashAction::Skill if self.detail.is_empty() => self.title.clone(),
             SlashAction::Skill => self.detail.replace('\n', " "),
-            SlashAction::Fast => format!("{} · {}", self.title, self.detail),
+            SlashAction::Fast | SlashAction::Continue => format!("{} · {}", self.title, self.detail),
         }
     }
 }
@@ -46,15 +48,40 @@ impl App {
         self.reached().into_iter().filter(|b| b.fast_shown()).collect()
     }
 
-    /// Fast mode, when the bot (or any member of a group) offers it.
+    /// The newest pause card of the selected bot that can still be continued: the id of the entry.
+    fn paused_card(&self) -> Option<String> {
+        let bot = self.bot().filter(|b| !b.group)?;
+        self.entries.get(&bot.id)?.values().rev().find_map(|e| {
+            let paused = &e.data["pausedTurn"];
+            (paused["status"] == "waiting" && paused["canContinue"] == true).then(|| e.id.clone())
+        })
+    }
+
+    /// Continuing a half-done turn, when the selected bot has one; and Fast mode, when the bot (or any member of
+    /// a group) offers it.
     fn built_in(&self) -> Vec<SlashCommand> {
+        let mut commands = Vec::new();
+        if self.paused_card().is_some() {
+            commands.push(SlashCommand {
+                name: "continue".into(),
+                title: "Continue".into(),
+                detail: "Go on with the turn that stopped half done".into(),
+                action: SlashAction::Continue,
+            });
+        }
         let bots = self.fast_bots();
         let detail = match bots.as_slice() {
-            [] => return vec![],
+            [] => return commands,
             [bot] if self.bot().is_some_and(|b| !b.group) => bot.fast_detail(),
             _ => group_fast_detail(&bots),
         };
-        vec![SlashCommand { name: "fast".into(), title: "Fast mode".into(), detail, action: SlashAction::Fast }]
+        commands.push(SlashCommand {
+            name: "fast".into(),
+            title: "Fast mode".into(),
+            detail,
+            action: SlashAction::Fast,
+        });
+        commands
     }
 
     /// Built-in commands, then the skills the bot (or any member of a group) has on, whose name
@@ -132,6 +159,13 @@ impl App {
                 self.flash(if on { "Fast mode off" } else { "Fast mode on" });
                 String::new()
             }
+            SlashAction::Continue => {
+                if let Some(entry) = self.paused_card() {
+                    self.call("continueTurn", json!({"entryId": entry}), After::Nothing);
+                    self.flash("Continuing…");
+                }
+                String::new()
+            }
             SlashAction::Skill => format!("/{} ", command.name),
         };
         if let Some(key) = self.selected.clone() {
@@ -197,6 +231,28 @@ mod tests {
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "offered until the agent says otherwise");
         app.bots.get_mut("b").expect("the bot").fast_support = "unsupported".into();
         assert_eq!(names(&app), ["pdf", "docx"], "no Fast mode on offer");
+    }
+
+    #[tokio::test]
+    async fn a_waiting_pause_card_adds_continue_until_it_is_used() {
+        let mut app = app_with(&json!({"id": "b", "name": "Bot", "skills": [], "fastModeSupport": "unsupported"}));
+        let card = |id: &str, seq: i64, status: &str, can: bool| super::super::Entry {
+            id: id.into(),
+            seq,
+            turn: 1,
+            kind: super::super::Kind::Notice,
+            data: json!({"text": "The agent used all its steps.", "pausedTurn": {"verdict": "paused", "status": status, "round": 0, "canContinue": can}}),
+            created_at: 0,
+        };
+        app.drafts.insert("b".into(), super::Editor::with("/"));
+        assert!(names(&app).is_empty(), "no card, no command");
+        app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "waiting", true));
+        assert_eq!(names(&app), ["continue"]);
+        assert_eq!(app.paused_card().as_deref(), Some("c1"));
+        app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "continued", true));
+        assert!(names(&app).is_empty(), "a used card offers nothing");
+        app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "waiting", false));
+        assert!(names(&app).is_empty(), "a card that reached its limit offers nothing");
     }
 
     #[tokio::test]

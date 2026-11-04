@@ -1,0 +1,18 @@
+.rule-row,
+.rule-try {
+  width: 100%;
+}
+
+.rule-pattern {
+  flex: 1;
+  min-width: 0;
+}
+
+.rule-number {
+  min-width: 18px;
+  text-align: right;
+}
+
+.rule-quick-name {
+  min-width: 120px;
+}

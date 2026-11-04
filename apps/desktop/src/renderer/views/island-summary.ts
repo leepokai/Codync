@@ -4,6 +4,7 @@ import { folderName, isGroup, isWorking, type Bot, type Entry } from '@shared/mo
 import { useModels } from '../lib/observable'
 import { refKey, type AppModel, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
+import { healthAlert } from '@shared/health'
 import { botDetail } from './tray-summary'
 import { optionLabel, permissionHeadline, sortedOptions } from './thread/PermissionCard'
 
@@ -19,6 +20,12 @@ let pending: ReturnType<typeof setTimeout> | null = null
  */
 export function useIslandSummary(app: AppModel) {
   useModels([...app.stores.values()])
+  // The computer's health changes on its own: look again every so often.
+  useEffect(() => {
+    void app.local?.refreshHealth()
+    const timer = setInterval(() => void app.local?.refreshHealth(), 15_000)
+    return () => clearInterval(timer)
+  }, [app.local])
   useEffect(() => {
     if (pending) return
     pending = setTimeout(() => {
@@ -40,6 +47,7 @@ function islandSummary(app: AppModel): IslandSummary {
       .map((i) => islandBot(i.store, i.bot, refKey(i.ref), many ? `${i.bot.name} · ${i.computer.name}` : i.bot.name)),
     permissions: app.roster.flatMap(pendingCards),
     usage: app.local?.usage.providers ?? [],
+    health: healthAlert(app.local?.health ?? null),
   }
 }
 

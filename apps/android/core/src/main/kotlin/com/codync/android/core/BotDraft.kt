@@ -40,9 +40,23 @@ data class BotDraft(
     /** Null where the host has none (an older one), so it isn't sent. */
     val fallbacks: List<Fallback>? = null,
     val selfFallbacks: Boolean? = null,
+    /** A command run in the workspace after each turn: the turn counts as done only if it passes. Null where the host has none. */
+    val verifyCommand: String? = null,
+    /** The model routine runs and check-ins use instead of [model]. Null where the host has none. */
+    val backgroundModel: String? = null,
+    /** Null where the host has none, so it isn't sent. */
+    val saver: Boolean? = null,
+    /** Null where the host has none, so it isn't sent. */
+    val personality: Personality? = null,
     /** Null where the host has none, or on a new bot, so it isn't sent. */
     val offeredToNetwork: Boolean? = null,
     val reachableByAssistants: Boolean? = null,
+    /** The rules as the form has them; null on a new bot, which has none to send. */
+    val approvalRules: List<ApprovalRule>? = null,
+    /** Null where the host has no quick rules, so it isn't sent. */
+    val actionRulesOn: Boolean? = null,
+    /** The profile picked in the form; null when none, so nothing is sent. */
+    val securityProfile: String? = null,
 ) {
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
@@ -50,7 +64,8 @@ data class BotDraft(
     /** On agent [id]: its model starts over, and it leaves the fallbacks (each agent appears once in the chain). */
     fun withAgent(id: String): BotDraft = copy(backend = id, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id })
     fun body(): JsonObject {
-        val normalized = copy(command = command.takeIf { backend == "custom" }, account = account.takeIf { backend == "antigravity" })
+        val normalized = copy(command = command.takeIf { backend == "custom" }, account = account.takeIf { backend == "antigravity" },
+            approvalRules = approvalRules?.let(ApprovalRules::clean))
         // updateBot merges a patch: null clears model, command or the connector choice, but an unset
         // switch or fallback list must stay out (the host's booleans and lists don't take null).
         return JsonObject(WireJson.encodeToJsonElement(normalized).jsonObject.filterNot { (key, value) -> value == JsonNull && key in UNSET })
@@ -75,7 +90,7 @@ data class BotDraft(
     companion object {
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
-        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "proactive", "offeredToNetwork", "reachableByAssistants")
+        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "proactive", "actionRulesOn", "securityProfile", "offeredToNetwork", "reachableByAssistants", "verifyCommand", "backgroundModel", "saver", "personality")
         /** Who reaches a bot belongs to its computer, not its setup, and neither do this computer's specifics. */
         private val TEMPLATE_SKIPS =
             setOf("id", "pinned", "hidden", "account", "manageTeam", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
@@ -87,6 +102,6 @@ data class BotDraft(
             bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.model,
             bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.account,
             bot.manageTeam ?: false, bot.isChief, bot.chiefBotId, bot.computerPermissions, bot.fallbacks, bot.selfFallbacks,
-            bot.offeredToNetwork, bot.reachableByAssistants)
+            bot.verifyCommand, bot.backgroundModel, bot.saver, bot.personality, bot.offeredToNetwork, bot.reachableByAssistants, bot.approvalRules, bot.actionRulesOn, bot.securityProfile)
     }
 }

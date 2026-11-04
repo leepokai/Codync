@@ -21,12 +21,16 @@ import { ComputersView } from './ComputersView'
 import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
 import { UsageLimits } from './UsageLimits'
+import { WeekSummaryView } from './WeekSummaryView'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
 import { FormSheet } from '../marketplace/pieces'
 import { AnalyticsSheet } from './AnalyticsSheet'
 import { N8nSettings } from './N8nSettings'
 import { DiagnosticsView } from './DiagnosticsView'
+import { AgentImportSection } from './AgentImportSection'
+import { ChannelsSection } from './ChannelsSection'
+import { DemoSection } from './DemoSection'
 import { ResearchSettingsSection } from './ResearchSettingsSection'
 import { HiddenBotsSection } from './HiddenBotsSection'
 
@@ -237,6 +241,9 @@ function GeneralSettings() {
       </CardSection>
       <PrivacySettings />
       {window.codync.platform === 'win32' ? <ResearchSettingsSection /> : null}
+      <ChannelsSection />
+      <AgentImportSection />
+      <DemoSection />
       <HiddenBotsSection />
     </CardForm>
   )
@@ -283,6 +290,7 @@ function UsageLimitsList() {
           </HStack>
         ) : null,
         <UsageLimits key={store.computer.id} usage={store.usage} />,
+        <WeekSummaryView key={`${store.computer.id}-week`} store={store} />,
       ])}
     </>
   )

@@ -167,4 +167,45 @@ mod tests {
         let yesterday = Ledger { last: at(9) - 24 * HOUR_MS, day: "2025-12-31".into(), count: 2 };
         assert!(decide(&s, Some(yesterday), at(12)).1, "a new day starts a new budget");
     }
+
+    /// A host with one bot that has check-ins on every hour.
+    fn hub_with_check_ins() -> (Arc<Hub>, String, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("codync-proactive-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
+        let hub = Hub::new(store, "proactive-test".into(), identity, "t".into(), 0);
+        let mut cfg: crate::store::BotConfig =
+            serde_json::from_value(serde_json::json!({"id": "b1", "name": "B", "backend": "claude"})).expect("bot");
+        cfg.proactive = settings(1, 4);
+        hub.store.save_bot(&cfg).expect("saved");
+        (hub, cfg.id, dir)
+    }
+
+    #[test]
+    fn turning_check_ins_on_starts_the_ledger_without_saying_anything_and_the_first_one_stays_internal() {
+        let (hub, id, dir) = hub_with_check_ins();
+        // The first look only starts the ledger: a new bot waits one interval.
+        check_in(&hub, at(10));
+        let ledger = hub.store.kv_get(&key(&id)).expect("a ledger for the bot");
+        assert!(ledger.contains("\"count\":0"), "{ledger}");
+        assert!(
+            hub.store.entries_since(0, 50).expect("entries").iter().all(|e| e.kind != "user"),
+            "nothing was sent yet"
+        );
+        // An hour later it is due: the message it sends is internal, from the scheduler, and never shown as a chat message.
+        check_in(&hub, at(11) + 1);
+        let sent: Vec<_> =
+            hub.store.entries_since(0, 50).expect("entries").into_iter().filter(|e| e.kind == "user").collect();
+        assert_eq!(sent.len(), 1, "one check-in");
+        assert_eq!(
+            (sent[0].data["from"].as_str(), sent[0].data["internal"].as_bool()),
+            (Some("proactive"), Some(true))
+        );
+        assert!(crate::store::is_internal(&sent[0].data), "no client lists it");
+        // This host has no running bot to take the message, so the check-in could not start: it is not counted, and the
+        // next tick asks again.
+        assert!(hub.store.kv_get(&key(&id)).expect("ledger").contains("\"count\":0"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

@@ -1,5 +1,6 @@
 //! Agent → client: `session/update`s, permission requests and streamed text mapped onto entries.
 
+use super::approval_age;
 use super::fast_mode::Listing;
 use super::stall::ToolOutcome;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
@@ -184,7 +185,7 @@ impl Actor {
     }
 
     pub(super) async fn on_permission(&mut self, rpc_id: Value, params: Value) {
-        use crate::agent::approval_rules::{self, Decision};
+        use crate::agent::approval_rules::{self, Decision, Outcome};
         let options = params["options"].as_array().cloned().unwrap_or_default();
         let tool = &params["toolCall"];
         let title = tool["title"]
@@ -201,23 +202,38 @@ impl Actor {
             raw["command"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
         });
         let kind = tool["kind"].as_str().unwrap_or("other");
-        // The user's rules first, then the bot's general setting.
-        let rule =
-            approval_rules::decide(&self.cfg.approval_rules, kind, command.as_deref().unwrap_or(&title)).cloned();
-        let decision = rule.as_ref().map(|r| r.decision);
-        if decision == Some(Decision::Deny) {
-            let pattern = rule.as_ref().map(|r| r.pattern.as_str()).unwrap_or_default();
-            let notice = json!({"text": format!("Denied by your rule \"{pattern}\": {title}"), "style": "info"});
-            self.hub.add_entry(&self.lane, EntryKind::Notice, self.turn.unwrap_or(0), &notice);
-            if !self.pick_option(&rpc_id, &options, &["reject_once", "reject_always"], false).await
-                && let Some(conn) = &self.conn
-            {
-                let _ = conn.acp.respond(rpc_id, json!({"outcome": {"outcome": "cancelled"}})).await;
+        // The forbidden commands, then the user's rules, then the bot's general setting: one decision, the same one the
+        // rule editor's tester gives.
+        let quick =
+            if self.cfg.action_rules_on { approval_rules::quick_rules(&self.cfg.action_rules) } else { Vec::new() };
+        let evaluation = approval_rules::evaluate(
+            &self.cfg.approval_rules,
+            &quick,
+            self.cfg.permission,
+            kind,
+            command.as_deref(),
+            &title,
+        );
+        match &evaluation.outcome {
+            Outcome::Forbidden { pattern } => {
+                self.refuse(rpc_id, &options, &format!("Blocked command (\"{pattern}\"), never allowed: {title}"))
+                    .await;
+                return;
             }
-            return;
+            Outcome::Rule { decision: Decision::Deny, pattern, .. } => {
+                self.refuse(rpc_id, &options, &format!("Denied by your rule \"{pattern}\": {title}")).await;
+                return;
+            }
+            _ => {}
         }
-        let allowed =
-            decision == Some(Decision::Allow) || (decision.is_none() && self.cfg.permission == Permission::Auto);
+        let rule_pattern = match &evaluation.outcome {
+            Outcome::Rule { pattern, .. } => Some(pattern.clone()),
+            _ => None,
+        };
+        let allowed = matches!(
+            evaluation.outcome,
+            Outcome::Rule { decision: Decision::Allow, .. } | Outcome::Setting { permission: Permission::Auto }
+        );
         // Like the bot's automatic setting always did: with no allow option, its first option.
         if allowed && self.pick_option(&rpc_id, &options, &["allow_once", "allow_always"], true).await {
             return;
@@ -235,7 +251,7 @@ impl Actor {
             "status": "pending",
             "selected": Value::Null,
             // The rule that asked for this card, when one did (the bot itself approves everything).
-            "rule": rule.as_ref().map(|r| r.pattern.clone()),
+            "rule": rule_pattern,
         });
         self.show_card(&title, data, Answer::Agent(rpc_id));
     }
@@ -261,29 +277,13 @@ impl Actor {
         let created = self.add(EntryKind::Permission, turn, data);
         if let Some(e) = &created {
             self.perms.insert(e.id.clone(), answer);
+            self.waiting.asked(&e.id, Instant::now());
         }
         self.hub.set_runtime(&self.cfg.id, |r| {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Needs approval: {title}");
         });
-        // What a phone needs to answer the card without opening it: its id and the options the card itself
-        // shows, so a button can never offer something the card doesn't.
-        let approval = created.map(|e| {
-            let options = e.data["options"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .take(3)
-                .filter_map(|o| {
-                    Some(json!({
-                        "optionId": o["optionId"].as_str()?,
-                        "name": acp::truncate(o["name"].as_str()?, 60),
-                        "kind": o["kind"].as_str().unwrap_or(""),
-                    }))
-                })
-                .collect::<Vec<_>>();
-            json!({"entryId": e.id, "options": options})
-        });
+        let approval = created.map(|e| approval_age::approval_payload(&e.id, &e.data));
         // Tapping it opens where the card is: the group, for a room turn.
         let target = self.hub.store.bot(&self.lane.chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
         push::notify_with(
@@ -299,7 +299,7 @@ impl Actor {
 
     /// Answers permission request `rpc_id` with its first option of one of `kinds`, in that order
     /// (with `any`, its first option when none fits); false when there's no such option or agent.
-    async fn pick_option(&self, rpc_id: &Value, options: &[Value], kinds: &[&str], any: bool) -> bool {
+    pub(super) async fn pick_option(&self, rpc_id: &Value, options: &[Value], kinds: &[&str], any: bool) -> bool {
         let pick = kinds
             .iter()
             .find_map(|k| options.iter().find(|o| o["kind"] == *k))
@@ -324,6 +324,7 @@ impl Actor {
     }
 
     pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
+        self.waiting.answered(entry_id);
         let Some(answer) = self.perms.remove(entry_id) else {
             // No agent waits on it any more (its process went away): close the card, so it
             // can't be answered as if it still mattered.

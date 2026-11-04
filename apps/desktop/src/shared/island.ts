@@ -58,6 +58,8 @@ export interface IslandSummary {
   permissions: IslandPermission[]
   /** This computer's plan limits (Claude, Codex), as the menu bar shows them. */
   usage: UsageProvider[]
+  /** One line when the computer is short of memory (`healthAlert`), else null. */
+  health: string | null
 }
 
 /** The display the island sits on: the notch's size in points, or null at a plain top edge. */

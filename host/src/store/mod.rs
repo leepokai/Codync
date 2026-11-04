@@ -29,6 +29,7 @@ mod setup;
 mod visibility;
 pub use visibility::is_internal;
 pub(crate) mod slack;
+pub(crate) mod week;
 
 pub use apps::{AppLink, AppLinkMode, BotApp};
 pub use computer_activity::{ComputerActivity, ComputerActivityResult};
@@ -37,9 +38,10 @@ pub use documents::{Document, DocumentDraft, ReviewDecision, ReviewStatus};
 pub use flow_steps::{FlowRun, FlowStep, NewStep, StepStatus};
 pub use flows::{FlowChange, FlowLink};
 pub use model::{
-    AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, Entry, EntryKind, Fallback, Lane, Permission,
-    ProactiveSettings, lane_key, message_text, run_session_key,
+    AVATAR_COLORS, AVATAR_SHAPES, ActionClass, BotConfig, BotKind, BotRow, Entry, EntryKind, Fallback, Lane,
+    Permission, ProactiveSettings, RulePolicy, lane_key, message_text, run_session_key,
 };
+pub use week::Week;
 
 use crate::LockExt;
 use anyhow::Result;

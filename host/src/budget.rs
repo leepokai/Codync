@@ -138,6 +138,18 @@ impl Budgets {
         crossed
     }
 
+    /// Whether `bot`'s budget, or the fleet's, has reached its warning level today: the point where a bot with the
+    /// saver on starts spending less (see `agent::bot::session`).
+    pub fn saving(&self, bot: &str, now_ms: i64) -> bool {
+        let day = day_of(now_ms);
+        let state = self.0.locked();
+        [bot, FLEET].into_iter().any(|key| {
+            let Some(limit) = state.limits.get(key) else { return false };
+            let used = state.tallies.get(key).filter(|t| t.day == day).map_or(0, |t| t.tokens);
+            level(used, *limit) != Level::Within
+        })
+    }
+
     /// Today's limits and use, for the clients.
     pub fn status(&self, now_ms: i64) -> Value {
         let day = day_of(now_ms);
@@ -164,6 +176,19 @@ mod tests {
 
     fn state(limit: u64) -> State {
         State { limits: HashMap::from([("a".to_owned(), limit)]), ..State::default() }
+    }
+
+    #[test]
+    fn the_saver_starts_at_the_warning_level_and_ends_with_the_day() {
+        let budgets = Budgets(Mutex::new(state(100)));
+        let today = 5 * DAY_MS;
+        assert!(!budgets.saving("a", today), "nothing used yet");
+        budgets.0.locked().add("a", 5, 79);
+        assert!(!budgets.saving("a", today), "just under the warning");
+        budgets.0.locked().add("a", 5, 1);
+        assert!(budgets.saving("a", today), "80 % is the warning level");
+        assert!(!budgets.saving("a", today + DAY_MS), "tomorrow starts clean");
+        assert!(!budgets.saving("other", today), "a bot with no limit of its own is not affected");
     }
 
     #[test]

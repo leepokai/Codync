@@ -81,6 +81,12 @@ export function Overview({ model }: { model: IslandModel }) {
                 <span className="truncate">{step.title}</span>
               </span>
             ))}
+            {model.summary.health ? (
+              <span className="island-step island-health">
+                <Icon name="exclamationmark.triangle" size={12} scaled={false} />
+                <span className="truncate">{model.summary.health}</span>
+              </span>
+            ) : null}
           </span>
         </span>
       </button>

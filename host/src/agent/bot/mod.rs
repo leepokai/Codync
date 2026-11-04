@@ -16,6 +16,7 @@
 //! written to the group's transcript; see `group`). A routine run talks in its chat
 //! from a session of its own (see `session`).
 
+mod approval_age;
 mod cmd;
 mod compaction;
 mod fallback;
@@ -24,10 +25,12 @@ mod files;
 mod launch;
 mod lifecycle;
 mod outcome;
+pub(crate) mod pause;
 mod proactive;
 #[cfg(test)]
 mod proactive_tests;
 mod queue;
+mod refuse;
 mod results;
 mod session;
 mod skill_use;
@@ -36,6 +39,8 @@ mod stall;
 mod tool_entry;
 mod turn;
 mod updates;
+mod verdict;
+mod verify;
 mod watchdog;
 
 pub use cmd::Cmd;
@@ -137,6 +142,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         reacted: Reacted::No,
         files: files::FileShares::default(),
         perms: HashMap::new(),
+        waiting: approval_age::Waiting::default(),
+        continuation: 0,
         stop_requested: false,
         cancel_deadline: None,
         exit_tail: None,
@@ -319,6 +326,10 @@ struct Actor {
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
+    /// How long each open approval card has waited.
+    waiting: approval_age::Waiting,
+    /// Continuations from a pause card in a row, counting the running turn (0 for any other turn).
+    continuation: u32,
     stop_requested: bool,
     /// A cancelled turn still running past this stops its agent process.
     cancel_deadline: Option<Instant>,
@@ -375,6 +386,7 @@ impl Actor {
                     while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
                         self.on_incoming(Some(inc)).await;
                     }
+                    let done = self.verified(done).await;
                     if let Err(error) = &done && self.fall_back(error, &done_tx).await {
                         continue;
                     }
@@ -391,6 +403,7 @@ impl Actor {
                 _ = flush_tick.tick() => {
                     self.flush(false);
                     self.expire_abandoned().await;
+                    self.age_approvals().await;
                     if self.routine_completion.is_some() && self.retry_routine_completion() {
                         self.set_inflight(false);
                         self.next_in_queue(&done_tx).await;

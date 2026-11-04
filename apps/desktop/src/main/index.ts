@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell } from 'electron'
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
+import { registerAgentImport } from './agent-import'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
 import { registerHostProxy } from './host-proxy'
@@ -157,6 +158,7 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:name', (e) => (e.returnValue = app.getName()))
   ipcMain.on('app:scheme', (e) => (e.returnValue = identity.scheme))
   registerFileSaves()
+  registerAgentImport()
   registerArtifacts()
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))

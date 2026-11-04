@@ -64,3 +64,7 @@
 .diff-line {
   white-space: pre;
 }
+.permission-always {
+  margin-top: 4px;
+  padding: 12px 16px 4px;
+}

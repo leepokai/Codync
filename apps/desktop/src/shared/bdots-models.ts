@@ -244,7 +244,7 @@ export function collectPendingDecisions(entries: Iterable<DecisionEntry>): Pendi
         allowOptionId: option('allow_once'),
         denyOptionId: option('reject_once'),
       })
-    } else if (handoff && handoff.status !== 'resolved' && handoff.status !== 'cancelled') {
+    } else if (handoff && !['resolved', 'cancelled', 'expired'].includes(handoff.status ?? '')) {
       out.push({ entryId: e.id, botId: e.botId, kind: 'handoff', title: 'Human takeover requested', detail: handoff.reason ?? '', createdAt: e.createdAt })
     } else if (e.kind === 'notice' && e.data.style === 'error' && e.seq > (lastReply.get(e.botId) ?? -1)) {
       out.push({ entryId: e.id, botId: e.botId, kind: 'incident', title: 'Agent error', detail: e.data.text ?? '', createdAt: e.createdAt })

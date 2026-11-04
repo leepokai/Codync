@@ -22,6 +22,8 @@ pub enum AlertKind {
     Done,
     NeedsInput,
     Failed,
+    /// A turn stopped half done (out of steps, or its answer cut): not finished, and not a failure.
+    Paused,
 }
 
 /// (bot id, kind) → last alert.
@@ -135,11 +137,13 @@ pub fn notify_with(
         AlertKind::NeedsInput => "A bot needs your response. Open Codync to review.",
         AlertKind::Done => "Your task is complete. Open Codync to read the result.",
         AlertKind::Failed => "A task could not finish. Open Codync to review the issue.",
+        AlertKind::Paused => "A task paused before it was done. Open Codync to continue it.",
     };
     let subtitle = match kind {
         AlertKind::Done => "Task complete",
         AlertKind::NeedsInput => "Response needed",
         AlertKind::Failed => "Task failed",
+        AlertKind::Paused => "Paused halfway",
     };
     let mut secret = json!({"title": crate::agent::acp::truncate(title, 80), "subtitle": subtitle,
         "body": crate::agent::acp::truncate(body, 400)});

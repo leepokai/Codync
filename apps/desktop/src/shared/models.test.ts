@@ -137,9 +137,10 @@ test('collectPendingDecisions, collectDeliverables, WORKER_ROLE_TEMPLATES and po
 test('collectPendingDecisions reads takeovers and unanswered errors from the entries the host writes', () => {
   const handoff = message('notice', { text: 'Human takeover requested: log in', takeoverRequest: { reason: 'log in', status: 'waiting' } }, 'h')
   const done = message('notice', { text: 'x', takeoverRequest: { reason: 'old', status: 'resolved' } }, 'hd')
+  const lapsed = message('notice', { text: 'x', takeoverRequest: { reason: 'late', status: 'expired' } }, 'hx')
   const failure = message('notice', { text: 'The agent stopped', style: 'error' }, 'e')
   const ids = (list: ReturnType<typeof collectPendingDecisions>) => list.map((d) => d.entryId).sort()
-  assert.deepEqual(ids(collectPendingDecisions([handoff, done, failure])), ['e', 'h'])
+  assert.deepEqual(ids(collectPendingDecisions([handoff, done, lapsed, failure])), ['e', 'h'])
   const reply = { ...message('agent', { text: 'Back on it' }, 'a'), seq: failure.seq + 1 }
   assert.deepEqual(ids(collectPendingDecisions([handoff, done, failure, reply])), ['h'])
 })

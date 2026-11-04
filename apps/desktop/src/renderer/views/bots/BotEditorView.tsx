@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
-import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { draftOf, type Bot, type BotDraft, type DirListing, type Personality } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { ProactivePolicySection } from '../../components/ProactivePolicySection'
@@ -22,6 +22,9 @@ import { errorText, isValid, normalized, useFollowSaved, usePlugins, type Plugin
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
+import { ApprovalRulesEditor } from './ApprovalRulesEditor'
+import { SecurityProfilePicker } from './SecurityProfilePicker'
+import { profileRules } from '@shared/security-profiles'
 import { NetworkSwitches } from './NetworkSwitches'
 import { ProactiveCheckIns } from './ProactiveCheckIns'
 import './bots.css'
@@ -128,6 +131,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
+  const setLayer = (layer: keyof Personality, value: string) =>
+    onChange((d) => ({ ...d, personality: { soul: '', persona: '', heartbeat: '', ...d.personality, [layer]: value } }))
   // Options belong to one model.
   const setModel = useCallback((model: string | null) => onChange((d) => (d.model === model ? d : { ...d, model, modelOptions: {} })), [onChange])
   const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
@@ -139,10 +144,48 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const connectors = plugins?.connectors ?? []
   const skills = plugins?.skills ?? []
 
+  // The agent's own models; a model that is set but not listed (an older host, another agent) stays pickable.
+  const backgroundChoices = [
+    { id: '', label: 'The bot\'s own model' },
+    ...(models.catalog?.models ?? []).map((m) => ({ id: m.id, label: m.name })),
+    ...(draft.backgroundModel && !models.catalog?.models.some((m) => m.id === draft.backgroundModel)
+      ? [{ id: draft.backgroundModel, label: draft.backgroundModel }]
+      : []),
+  ]
+  const loadProfiles = useCallback(() => store.securityProfiles(), [store])
   const instructions = (
-    <Field label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
-      <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
-    </Field>
+    <>
+      <Field label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
+        <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
+      </Field>
+      <Field label="Check before done" detail="A command run in the workspace after each turn. If it fails, the turn doesn't count as done.">
+        <AutoTextArea className="field-box" value={draft.verifyCommand ?? ''} placeholder="e.g. npm test" minRows={1} maxRows={3} onChange={(v) => set('verifyCommand', v)} />
+      </Field>
+      <Field label="Soul" detail="Values and boundaries that never change. Written by you; the bot can't edit it.">
+        <AutoTextArea className="field-box" value={draft.personality?.soul ?? ''} placeholder="e.g. Honest, careful with other people's data." minRows={2} maxRows={8} onChange={(v) => setLayer('soul', v)} />
+      </Field>
+      <Field label="Persona" detail="Its voice and manner.">
+        <AutoTextArea className="field-box" value={draft.personality?.persona ?? ''} placeholder="e.g. Dry and brief. No emoji." minRows={2} maxRows={8} onChange={(v) => setLayer('persona', v)} />
+      </Field>
+      <Field label="Heartbeat" detail="What it does when it checks in on its own.">
+        <AutoTextArea className="field-box" value={draft.personality?.heartbeat ?? ''} placeholder="e.g. Look for failing tests and say only if something broke." minRows={2} maxRows={8} onChange={(v) => setLayer('heartbeat', v)} />
+      </Field>
+      <Field label="Background model" detail="A cheaper model for routines and check-ins, where nobody is waiting.">
+        <ChoicePicker
+          selection={draft.backgroundModel ?? ''}
+          options={backgroundChoices}
+          onChange={(id) => set('backgroundModel', id || null)}
+        />
+      </Field>
+      {draft.backgroundModel ? (
+        <SwitchRow
+          title="Saver"
+          detail="At 80 percent of this bot's daily token budget, new sessions start on the background model until tomorrow."
+          on={draft.saver ?? false}
+          onChange={(on) => set('saver', on)}
+        />
+      ) : null}
+    </>
   )
   const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
   // An account (its own agent sign-in) belongs to one agent, so another agent starts on the default one.
@@ -252,6 +295,19 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               </Pill>
             </DropdownMenu>
           </ValueRow>
+          <SecurityProfilePicker
+            selection={draft.securityProfile ?? null}
+            saved={saved?.securityProfile ?? null}
+            load={loadProfiles}
+            onChange={(profile) =>
+              onChange((d) => ({
+                ...d,
+                securityProfile: profile?.id ?? null,
+                // The form shows what the profile will write; the host writes it on save.
+                ...(profile ? { permission: profile.permission, approvalRules: profileRules(profile) } : {}),
+              }))
+            }
+          />
           <ValueRow
             label="Permissions"
             detail={
@@ -269,6 +325,17 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               onChange={(id) => set('permission', id)}
             />
           </ValueRow>
+          <ApprovalRulesEditor
+            rules={draft.approvalRules ?? []}
+            onChange={(rules) => set('approvalRules', rules)}
+            test={(command, rules) =>
+              draft.id
+                ? store.testApprovalRule(draft.id, command, rules, draft.actionRulesOn === undefined ? undefined : { on: draft.actionRulesOn, policies: draft.actionRules ?? {} })
+                : Promise.resolve(null)
+            }
+            quick={draft.actionRulesOn === undefined ? undefined : { on: draft.actionRulesOn, policies: draft.actionRules ?? {} }}
+            onQuick={(next) => onChange((d) => ({ ...d, actionRulesOn: next.on, actionRules: next.policies }))}
+          />
         </CardSection>
 
         <CardSection title="Activity">

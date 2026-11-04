@@ -45,7 +45,7 @@ pub(in crate::tui) fn usage_scroll_max(app: &App, height: u16) -> usize {
     let providers = app.usage["providers"].as_array().cloned().unwrap_or_default();
     let rows = lines(&providers).len();
     let (_, fits) = sheet(Rect::new(0, 0, 80, height), rows);
-    rows.saturating_sub(fits)
+    rows.saturating_sub(fits.saturating_sub(usize::from(week_line(&app.week).is_some())))
 }
 
 pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
@@ -53,6 +53,8 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
     let providers = app.usage["providers"].as_array().cloned().unwrap_or_default();
     let lines = lines(&providers);
     let (r, fits) = sheet(area, lines.len());
+    // The week's line takes the row above the footer.
+    let fits = fits.saturating_sub(usize::from(week_line(&app.week).is_some()));
     let inner = frame_box(buf, r, t.text, t.panel, Some((tr("Usage").as_ref(), t.text)));
     let top = inner.y + 1;
     if providers.is_empty() {
@@ -81,7 +83,38 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
     } else {
         "Read from the agents on this computer. esc close"
     };
+    if let Some(line) = week_line(&app.week) {
+        put(
+            buf,
+            inner.x,
+            inner.bottom() - 2,
+            inner.width,
+            &truncate(&line, usize::from(inner.width)),
+            t.secondary.patch(t.panel),
+        );
+    }
     put(buf, inner.x, inner.bottom() - 1, inner.width, footer, t.dim.patch(t.panel));
+}
+
+/// "Your week: …" from the host's `weekSummary`; nothing for a week without activity or a host that lacks it.
+fn week_line(week: &Value) -> Option<String> {
+    if week["activeBots"].as_i64().unwrap_or(0) == 0 {
+        return None;
+    }
+    let n = |key: &str| week[key].as_i64().unwrap_or(0);
+    Some(format!(
+        "{}: {} {} · {} {} · {} {} · {}/{} {}",
+        tr("Your week"),
+        n("messages"),
+        tr("messages"),
+        n("replies"),
+        tr("replies"),
+        n("fileEdits"),
+        tr("file edits"),
+        n("approvalsAnswered"),
+        n("approvalsAsked"),
+        tr("approvals"),
+    ))
 }
 
 /// One limit: its label, a bar with the percent and when it resets; or its note.
@@ -134,8 +167,17 @@ pub(in crate::tui) fn when_future(ms: i64) -> String {
 mod tests {
     use super::super::super::app::App;
     use super::super::super::net::Client;
-    use super::usage_scroll_max;
-    use serde_json::json;
+    use super::{usage_scroll_max, week_line};
+    use serde_json::{Value, json};
+
+    #[test]
+    fn the_week_line_counts_and_hides_for_an_empty_week() {
+        assert_eq!(week_line(&Value::Null), None);
+        assert_eq!(week_line(&json!({"activeBots": 0, "messages": 5})), None);
+        let week = json!({"activeBots": 2, "messages": 12, "replies": 11, "fileEdits": 3, "approvalsAnswered": 3, "approvalsAsked": 4});
+        let line = week_line(&week).expect("a week with activity");
+        assert!(line.contains("12 messages") && line.contains("3/4 approvals"), "{line}");
+    }
 
     #[tokio::test]
     async fn five_providers_scroll_on_a_small_terminal() {

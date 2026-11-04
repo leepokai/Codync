@@ -17,6 +17,7 @@ impl Actor {
             Cmd::RefreshTools => {
                 self.tools_changed = true;
             }
+            Cmd::FreeMemory => self.free_memory().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => {
                 if self.hub.store.entry(&entry_id).is_some_and(|e| {
@@ -365,7 +366,11 @@ impl Actor {
         let invited = self.invite_sign_in(e);
         if !invited {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
-            self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"));
+            let text = match e.downcast_ref::<crate::health::Refused>() {
+                Some(refused) => refused.to_string(),
+                None => format!("Couldn't start the agent: {e:#}"),
+            };
+            self.failure_notice(e, &text);
         }
         self.record_user_result(if invited { "waitingForSignIn" } else { "failed" }, None, "start_failed");
         // What the chain carried in (a recap, a takeover) was this turn's; the user's handoff waits for the next.

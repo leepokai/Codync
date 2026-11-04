@@ -360,6 +360,8 @@ private fun resolveSinglePermission(bot: Bot, entry: Entry, busy: Set<String>): 
         "edit", "delete", "move" -> "Wants to change files"
         "fetch" -> "Wants to access the web"
         "read", "search" -> "Wants to read files"
+        "question" -> "Asks you a question"
+        "plan" -> "Wants your approval of a plan"
         else -> "Wants to use a tool"
     }
     return BotAttentionItem.DirectPermission(

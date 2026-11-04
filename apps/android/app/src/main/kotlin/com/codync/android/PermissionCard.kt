@@ -51,6 +51,8 @@ import kotlinx.serialization.json.jsonPrimitive
         "edit", "delete", "move" -> "Wants to change files"
         "fetch" -> "Wants to access the web"
         "read", "search" -> "Wants to read files"
+        "question" -> "Asks you a question"
+        "plan" -> "Wants your approval of a plan"
         else -> "Wants to use a tool"
     }
     val diffs = (d["diffs"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
@@ -78,7 +80,10 @@ import kotlinx.serialization.json.jsonPrimitive
         }
         if (pending) {
             val rank = mapOf("allow_once" to 0, "allow_always" to 1, "reject_once" to 2, "reject_always" to 3)
-            val options = (d["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            val offered = (d["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            // "Always allow" is a standing permission: a thumb on a phone doesn't grant one. The computer's apps do, with
+            // the rule it would keep in front of the person; the phone keeps "Allow once" (unless that is all there is).
+            val options = offered.filter { it.text("kind") != "allow_always" || offered.none { o -> o.text("kind") == "allow_once" } }
                 .sortedBy { rank[it.text("kind")] ?: 9 }
             Column(Modifier.padding(top = 4.dp).fillMaxWidth().clip(RoundedRectangle(14.dp)).background(Palette.background)) {
                 for ((index, option) in options.withIndex()) {

@@ -41,21 +41,26 @@ const MAX_DIFF_TOTAL: usize = 512 * 1024;
 /// A reply is a short JSON object; anything longer is not one.
 const MAX_RESPONSE: usize = 8 * 1024;
 
-pub async fn run(port: u16, agent: String, event: Option<String>) -> ExitCode {
+pub async fn run(port: u16, agent: String, event: Option<String>, ask: bool) -> ExitCode {
     // Codync's own bots run this same agent: their events are the host's own business.
     if std::env::var_os(OWN_AGENT_ENV).is_some() {
         return ExitCode::SUCCESS;
     }
     let mut raw = Vec::new();
     let _ = std::io::stdin().read_to_end(&mut raw);
-    let Some(event) = prepare(&raw, &agent, event.as_deref().unwrap_or_default()) else {
+    let Some(event) = prepare(&raw, &agent, event.as_deref().unwrap_or_default(), ask) else {
         // An agent that needs JSON still gets its "no opinion".
         print(reply::stdout(&agent, normalize::event(event.as_deref().unwrap_or_default()), None));
         return ExitCode::SUCCESS;
     };
-    let waits = event.name == "PermissionRequest" && reply::takes_decisions(&agent);
-    let decision = talk(port, &event.line, waits).await;
-    print(reply::stdout(&agent, &event.name, decision.as_deref()));
+    let waits = (event.name == "PermissionRequest" && reply::takes_decisions(&agent)) || event.asks;
+    let answer = talk(port, &event.line, waits).await;
+    if event.asks {
+        print(answer.as_ref().and_then(reply::pre_tool));
+    } else {
+        let decision = answer.as_ref().and_then(decision_in);
+        print(reply::stdout(&agent, &event.name, decision.as_deref()));
+    }
     ExitCode::SUCCESS
 }
 
@@ -73,10 +78,15 @@ struct Event {
     line: String,
     /// The canonical event name.
     name: String,
+    /// A question or a plan of Claude Code that a person may answer from a Codync client.
+    asks: bool,
 }
 
+/// The tools whose answer a person may give from a client.
+const ASKED_TOOLS: &[&str] = &["AskUserQuestion", "ExitPlanMode"];
+
 /// The payload to forward, from the raw stdin bytes. Pure, so tests need no host.
-fn prepare(raw: &[u8], agent: &str, event: &str) -> Option<Event> {
+fn prepare(raw: &[u8], agent: &str, event: &str, ask: bool) -> Option<Event> {
     let raw = raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(raw);
     let mut payload = serde_json::from_slice::<Value>(raw).ok()?;
     let map = payload.as_object_mut()?;
@@ -102,12 +112,15 @@ fn prepare(raw: &[u8], agent: &str, event: &str) -> Option<Event> {
         .find_map(|k| env(k).filter(|v| !v.is_empty()))
         .unwrap_or_default();
     let stdout_is_terminal = env("TERM_PROGRAM").unwrap_or_default();
+    let tool = payload.get("tool_name").and_then(Value::as_str).unwrap_or_default();
+    let asks = ask && agent.is_empty() && name == "PreToolUse" && ASKED_TOOLS.contains(&tool);
     let envelope = json!({
         "agent": agent,
+        "ask": asks,
         "terminal": {"program": stdout_is_terminal, "session": terminal},
         "payload": payload,
     });
-    Some(Event { line: envelope.to_string(), name })
+    Some(Event { line: envelope.to_string(), name, asks })
 }
 
 /// Caps every string, except the edit text of a finished `Edit` / `MultiEdit` / `Write`, which the chat's diff needs
@@ -178,8 +191,8 @@ fn cut(s: &mut String, max: usize) -> bool {
     true
 }
 
-/// Posts the event and returns the person's decision, if the host had one in time.
-async fn talk(port: u16, body: &str, waits: bool) -> Option<String> {
+/// Posts the event and returns the host's reply, if it had one in time and the event is one that waits for it.
+async fn talk(port: u16, body: &str, waits: bool) -> Option<Value> {
     let token = std::fs::read_to_string(service::data_dir().join("token")).ok()?;
     let token = token.trim().to_owned();
     let request = format!(
@@ -189,7 +202,7 @@ async fn talk(port: u16, body: &str, waits: bool) -> Option<String> {
     );
     let budget = if waits { DECISION_BUDGET } else { FIRE_AND_FORGET_BUDGET };
     let sent = tokio::time::timeout(budget, exchange(port, &request)).await.ok().flatten()?;
-    decision_of(&sent).filter(|_| waits)
+    reply_of(&sent).filter(|_| waits)
 }
 
 async fn exchange(port: u16, request: &str) -> Option<String> {
@@ -231,14 +244,22 @@ fn content_length(head: &str) -> usize {
         .unwrap_or(0)
 }
 
-/// `{"decision": "allow"}` → `allow`. A failed request, a non-200 answer or no decision is no decision.
-fn decision_of(response: &str) -> Option<String> {
+/// The host's JSON reply; a failed request or a non-200 answer is no reply.
+fn reply_of(response: &str) -> Option<Value> {
     let (head, body) = split_response(response.as_bytes())?;
     if !head.starts_with("HTTP/1.1 200") {
         return None;
     }
-    let body = std::str::from_utf8(body).ok()?;
-    let reply: Value = serde_json::from_str(body).ok()?;
+    serde_json::from_str(std::str::from_utf8(body).ok()?).ok()
+}
+
+/// `{"decision": "allow"}` → `allow`. A failed request, a non-200 answer or no decision is no decision.
+#[cfg(test)]
+fn decision_of(response: &str) -> Option<String> {
+    decision_in(&reply_of(response)?)
+}
+
+fn decision_in(reply: &Value) -> Option<String> {
     match reply.get("decision")?.as_str()? {
         "allow" => Some("allow".to_owned()),
         "deny" => Some("deny".to_owned()),
@@ -284,7 +305,7 @@ mod tests {
     use super::*;
 
     fn forwarded(raw: &str, agent: &str, event: &str) -> (Value, Event) {
-        let ev = prepare(raw.as_bytes(), agent, event).expect("forwarded");
+        let ev = prepare(raw.as_bytes(), agent, event, false).expect("forwarded");
         let v = serde_json::from_str(ev.line.trim_end()).unwrap();
         (v, ev)
     }
@@ -320,7 +341,7 @@ mod tests {
     #[test]
     fn what_cannot_be_read_is_not_forwarded() {
         for raw in ["", "not json", "[1,2]"] {
-            assert!(prepare(raw.as_bytes(), "", "").is_none(), "{raw}");
+            assert!(prepare(raw.as_bytes(), "", "", false).is_none(), "{raw}");
         }
     }
 
@@ -365,5 +386,16 @@ mod tests {
         assert_eq!(decision_of("HTTP/1.1 200 OK\r\n\r\n{\"decision\":null}"), None);
         assert_eq!(decision_of("garbage"), None);
         assert_eq!(content_length("HTTP/1.1 200 OK\r\nContent-Length: 12\r\n"), 12);
+    }
+
+    #[test]
+    fn only_the_waiting_hook_of_claude_code_asks_about_questions_and_plans() {
+        let raw = |tool: &str| format!(r#"{{"hook_event_name":"PreToolUse","tool_name":"{tool}","tool_input":{{}}}}"#);
+        let asks = |tool: &str, agent: &str, ask: bool| prepare(raw(tool).as_bytes(), agent, "", ask).unwrap().asks;
+        assert!(asks("AskUserQuestion", "", true));
+        assert!(asks("ExitPlanMode", "", true));
+        assert!(!asks("AskUserQuestion", "", false), "the plain hook only reports");
+        assert!(!asks("Bash", "", true));
+        assert!(!asks("AskUserQuestion", "codex", true));
     }
 }

@@ -67,7 +67,8 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
             let agent = n.backend.as_deref().map(|id| {
                 app.backends.iter().find(|b| b["id"] == id).and_then(|b| b["name"].as_str()).unwrap_or(id).to_owned()
             });
-            new_bot_view(buf, area, n, agent.as_deref());
+            let profile = n.profile.as_deref().and_then(|id| app.profile_text(id));
+            new_bot_view(buf, area, n, agent.as_deref(), profile.as_ref());
         }
         Overlay::Folder(p) => {
             let t = theme();
@@ -149,6 +150,11 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Skill(s) => super::skill::skill(buf, area, app, s),
         Overlay::Analytics(s) => super::analytics::analytics(buf, area, s),
         Overlay::Network(n) => super::network::network(buf, area, n),
+        Overlay::Rules(s) => super::rules::rules(buf, area, s),
+        Overlay::Channels(s) => super::channels::channels(buf, area, s),
+        Overlay::Beliefs(s) => super::beliefs::beliefs(buf, area, s),
+        Overlay::Proposals(s) => super::proposals::proposals(buf, area, s),
+        Overlay::Always(s) => super::rules::always(buf, area, s),
     }
 }
 

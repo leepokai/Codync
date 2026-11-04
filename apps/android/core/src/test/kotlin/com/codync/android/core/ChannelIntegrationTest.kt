@@ -205,7 +205,8 @@ class ChannelIntegrationTest {
         enqueueHost(burst = 600)
         val connected = HostConnector.connect(computer(), identity())
         try {
-            val events = withTimeout(8_000) { connected.events().onEach { delay(2) }.take(600).toList() }
+            // 600 delays of 2 ms last 9 s where the clock ticks every 15 ms (Windows): the budget must outlast that.
+            val events = withTimeout(30_000) { connected.events().onEach { delay(2) }.take(600).toList() }
             assertEquals((0 until 600).map(Int::toLong), events.map { it.getValue("index").jsonPrimitive.long })
             assertEquals(cid, connected.call("hello").jsonObject.text("computerId"))
         } finally { connected.close() }
@@ -213,7 +214,7 @@ class ChannelIntegrationTest {
 
     @Test fun `direct-only waits for a cold handshake beyond the relay fallback budget`() = runBlocking {
         enqueueHost(welcomeDelay = 1800)
-        val connected = withTimeout(5_000) { HostConnector.connect(computer().copy(route = ConnectionRoute.DirectOnly), identity()) }
+        val connected = withTimeout(30_000) { HostConnector.connect(computer().copy(route = ConnectionRoute.DirectOnly), identity()) }
         try { assertEquals(cid, connected.call("hello").jsonObject.text("computerId")) }
         finally { connected.close() }
     }

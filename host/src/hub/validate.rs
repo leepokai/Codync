@@ -20,6 +20,13 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
         bail!("the lead bot can't be hidden");
     }
     crate::agent::approval_rules::validate(&cfg.approval_rules)?;
+    cfg.personality.validate()?;
+    if cfg.verify_command.as_deref().is_some_and(|c| c.chars().count() > 500) {
+        bail!("The check command is at most 500 characters");
+    }
+    if cfg.background_model.as_deref().is_some_and(|m| m.chars().count() > 200) {
+        bail!("The background model is at most 200 characters");
+    }
     if !cfg.cwd.is_empty() && !std::path::Path::new(&cfg.cwd).is_dir() {
         bail!("workspace folder does not exist: {}", cfg.cwd);
     }

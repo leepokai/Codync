@@ -124,3 +124,14 @@ fn a_card_lists_the_routines_before_the_instructions() {
         "Name: Scout\nRoutines:\n• Scan (Every 30 minutes): Scan it\nInstructions:\nWatches the repo."
     );
 }
+
+/// What only the person writes: a managing bot must have no way to set these on itself or on another bot.
+#[test]
+fn a_managing_bot_cannot_set_what_only_the_user_writes() {
+    let user_only = ["verifyCommand", "backgroundModel", "personality", "approvalRules", "actionRules"];
+    let schema = tools().to_string();
+    for key in user_only {
+        assert!(FIELDS.iter().all(|(wire, _)| *wire != key), "{key} is a field a manager may set");
+        assert!(!schema.contains(&format!("\"{key}\"")), "{key} is in a manage tool's schema");
+    }
+}

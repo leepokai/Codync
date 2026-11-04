@@ -121,6 +121,9 @@ const bridge: CodyncBridge = {
     show: (id, html) => ipcRenderer.invoke('artifacts:show', id, html),
     openInBrowser: (id, html) => ipcRenderer.invoke('artifacts:openInBrowser', id, html),
   },
+  agentImport: {
+    pick: () => ipcRenderer.invoke('agentImport:pick'),
+  },
   files: {
     begin: (file) => ipcRenderer.invoke('files:begin', file),
     write: (id, offset, data) => ipcRenderer.invoke('files:write', id, offset, data),

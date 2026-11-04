@@ -54,10 +54,10 @@ internal enum class FormPart { All, Often, Rarely }
                     }
                     AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) })
                 }
-                CardSection("Profile") { nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot) }
+                CardSection("Profile") { nameRow(draft, change); instructionsRow(state, store, draft, change); createdByRow(state, bot) }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot); computerRow(state, online)
-                    agentRows(state, store, draft, change, bot) { addingFallback = true }; placeRows(draft, change) { folders = true }
+                    agentRows(state, store, draft, change, bot) { addingFallback = true }; placeRows(state, store, draft, bot?.securityProfile, change) { folders = true }
                 }
                 CardSection("Activity") {
                     notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -67,7 +67,7 @@ internal enum class FormPart { All, Often, Rarely }
                 state.error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
             }
             FormPart.Often -> {
-                CardSection("Instructions") { instructionsRow(draft, change) }
+                CardSection("Instructions") { instructionsRow(state, store, draft, change) }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot)
                     agentRows(state, store, draft, change, bot) { addingFallback = true }
@@ -80,7 +80,7 @@ internal enum class FormPart { All, Often, Rarely }
                     nameRow(draft, change); createdByRow(state, bot)
                 }
                 // The agent and its model are on the Details page; what's left is where it works.
-                CardSection("Workspace") { computerRow(state, online); placeRows(draft, change) { folders = true } }
+                CardSection("Workspace") { computerRow(state, online); placeRows(state, store, draft, bot?.securityProfile, change) { folders = true } }
                 CardSection("Activity") { notifyRow(draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change) }
                 Plugins(state, draft, change) { viewingSkill = it }
             }
@@ -104,10 +104,13 @@ internal enum class FormPart { All, Often, Rarely }
 private fun CardRows.nameRow(draft: BotDraft, change: (BotDraft) -> Unit) =
     row { Field("Name") { FieldBox(draft.name, { change(draft.copy(name = it)) }, "Name") } }
 
-private fun CardRows.instructionsRow(draft: BotDraft, change: (BotDraft) -> Unit) = row {
-    Field("Standing instructions", "Rules that always apply. Put task-specific requests in the chat instead.") {
-        FieldBox(draft.description, { change(draft.copy(description = it)) }, "e.g. Reviews PRs. Never pushes without asking.", 3, 8)
+private fun CardRows.instructionsRow(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit) {
+    row {
+        Field("Standing instructions", "Rules that always apply. Put task-specific requests in the chat instead.") {
+            FieldBox(draft.description, { change(draft.copy(description = it)) }, "e.g. Reviews PRs. Never pushes without asking.", 3, 8)
+        }
     }
+    characterRows(state, store, draft, change)
 }
 
 private fun CardRows.createdByRow(state: AppState, bot: Bot?) {
@@ -157,7 +160,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
 }
 
 /** Where the bot works and what it may do there without asking. */
-private fun CardRows.placeRows(draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
+private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, savedProfile: String?, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
     row {
         ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
             else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
@@ -182,6 +185,7 @@ private fun CardRows.placeRows(draft: BotDraft, change: (BotDraft) -> Unit, choo
                 label = "Permissions")
         }
     }
+    approvalRulesRows(state, store, draft, savedProfile, change)
 }
 
 private fun CardRows.notifyRow(draft: BotDraft, change: (BotDraft) -> Unit) =

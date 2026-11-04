@@ -8,6 +8,9 @@ import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
 import { AppModel } from './store/app-model'
 import { AppContext } from './store/context'
+import { demoMode } from './store/demo-mode'
+import { useModel } from './lib/observable'
+import { DemoBadge } from './views/DemoBadge'
 import { applyTextSize, prefs } from './lib/prefs'
 import { account } from './store/account'
 import { errorReport } from '@shared/error-report'
@@ -17,6 +20,14 @@ const report = (error: unknown, mechanism: string) => window.codync.app.reportEr
 // An error event without an error (the ResizeObserver loop notice) has nothing to report.
 window.addEventListener('error', (e) => { if (e.error != null) report(e.error, 'onerror') })
 window.addEventListener('unhandledrejection', (e) => report(e.reason, 'unhandledrejection'))
+
+/** The chat window: the real model, or the demo's while the person tries it (the real one keeps running underneath). */
+function ChatRoot({ app }: { app: AppModel }) {
+  const demo = useModel(demoMode).model
+  return demo
+    ? <AppContext.Provider value={demo}><ChatWindow key="demo" /><DemoBadge /></AppContext.Provider>
+    : <AppContext.Provider value={app}><ChatWindow /></AppContext.Provider>
+}
 
 const page = new URLSearchParams(location.search).get('window') ?? 'chat'
 document.title = window.codync.appName
@@ -40,5 +51,5 @@ if (page === 'screen') {
   const app = new AppModel(page !== 'pairing')
   void app.start()
   if (page !== 'pairing') void account.start()
-  root.render(<AppContext.Provider value={app}>{page === 'pairing' ? <PairingWindow /> : <ChatWindow />}</AppContext.Provider>)
+  root.render(page === 'pairing' ? <AppContext.Provider value={app}><PairingWindow /></AppContext.Provider> : <ChatRoot app={app} />)
 }

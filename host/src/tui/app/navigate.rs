@@ -92,7 +92,8 @@ impl App {
         }
     }
 
-    pub(super) fn answer(&mut self, entry: &str, option: &str) {
+    /// Sends the answer to card `entry`; an "always allow" may carry the rule the person kept.
+    pub(super) fn send_answer(&mut self, entry: &str, option: &str, rule: Option<Value>) {
         if option == "approve"
             && self
                 .entries
@@ -108,11 +109,11 @@ impl App {
             return;
         }
         self.answering.insert(entry.to_owned(), option.to_owned());
-        self.call(
-            "respondPermission",
-            json!({"entryId": entry, "optionId": option}),
-            After::Answered(entry.to_owned()),
-        );
+        let mut body = json!({"entryId": entry, "optionId": option});
+        if let Some(rule) = rule {
+            body["rule"] = rule;
+        }
+        self.call("respondPermission", body, After::Answered(entry.to_owned()));
     }
 
     pub(super) fn answer_kind(&mut self, key: char) {

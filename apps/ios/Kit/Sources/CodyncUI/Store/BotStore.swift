@@ -101,6 +101,8 @@ public final class BotStore {
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
+    /// Its `hello` says this phone paired without the computer joining the account (`Hello.joinAccount`).
+    var onJoinAccount: (@MainActor (HostClient) -> Void)?
 
     public let storage: SharedStore.Context
     /// Opens a channel to the computer as it is now: its route, and the addresses and keys merged since.
@@ -211,6 +213,10 @@ public final class BotStore {
             return $0.lastAt > $1.lastAt
         }
     }
+
+    /// The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+    /// `hello`: it names the logos, and without it every badge would be the same generic one.
+    public var mixesAgents: Bool { hello != nil && bots.values.filter { !$0.hidden }.mixesAgents }
 
     /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
     public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }

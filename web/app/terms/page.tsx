@@ -16,7 +16,7 @@ export default function Terms() {
         </Section>
 
         <Section title="2. The service">
-          Codync is made by Leeporic LLC (&quot;we&quot;, &quot;us&quot;). It is free, open-source software (Apache License 2.0) that lets you message AI agents running on your own computer from your iPhone, Android phone, Mac, Windows PC or Linux desktop.
+          Codync is an independent open-source project by leepokai (&quot;we&quot;, &quot;us&quot;). It is free, open-source software (Apache License 2.0) that lets you message AI agents running on your own computer from your iPhone, Android phone, Mac, Windows PC or Linux desktop.
         </Section>
 
         <Section title="3. Your responsibility">

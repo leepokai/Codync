@@ -232,10 +232,15 @@ impl Analytics {
     }
 
     pub fn set_enabled(&self, store: &Store, on: bool) -> Result<()> {
-        store.kv_set(KV_ENABLED, if on { "1" } else { "0" })?;
+        save_choice(store, on)?;
         *self.enabled.locked() = on;
         Ok(())
     }
+}
+
+/// Saves the owner's choice; a host that isn't running reads it when it starts (`Analytics::load`).
+pub fn save_choice(store: &Store, on: bool) -> Result<()> {
+    store.kv_set(KV_ENABLED, if on { "1" } else { "0" })
 }
 
 /// A phone's platform as the catalog names it.
@@ -383,6 +388,8 @@ mod tests {
         assert!(Analytics::load(&store).state());
         Analytics::load(&store).set_enabled(&store, false).unwrap();
         assert!(!Analytics::load(&store).state(), "an off stays off");
+        save_choice(&store, true).unwrap();
+        assert!(Analytics::load(&store).state(), "a choice saved before the host starts counts");
     }
 
     #[test]

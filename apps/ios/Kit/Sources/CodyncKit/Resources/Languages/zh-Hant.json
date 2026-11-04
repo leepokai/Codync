@@ -1524,5 +1524,7 @@
   "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "代碼 {code} 已複製。貼到登入頁後，按 Enter 檢查。Ctrl+X 取消。",
   "Sign in instead of using a saved token": "改用登入，不再用已存的 token",
   "↵ sign in instead of the token": "↵ 改用登入，不再用 token",
-  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "代碼 {code} 已複製：到 {url} 貼上後，按 Enter 檢查。Ctrl+X 取消。"
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "代碼 {code} 已複製：到 {url} 貼上後，按 Enter 檢查。Ctrl+X 取消。",
+  "Show agent logos": "顯示智慧體標誌",
+  "Marks each bot with its agent's logo when your bots use more than one agent.": "當你的 bot 使用不只一種智慧體時，在每個 bot 上標出它的智慧體標誌。"
 }

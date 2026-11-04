@@ -34,7 +34,7 @@ Some hosted connectors ask you to sign in with your account on that service. The
 - On the iPhone, it opens in the system sign-in sheet.
 - In the desktop app, it opens in your browser on the computer.
 
-The tokens stay on the computer and are refreshed when they expire. Until someone signs in, bots don't get the connector, and your library shows a **Sign in** button for it.
+The tokens stay on the computer and are refreshed when they expire. If the service can't be reached for a refresh, the connector stays signed in and Codync tries again on its next use; you only need to sign in again when the service ends the sign-in. Until someone signs in, bots don't get the connector, and your library shows a **Sign in** button for it.
 
 GitHub signs in with a short code instead. Codync shows the code; press **Copy and open**, paste the code on the GitHub page that opens, and authorize Codync. The connector is ready as soon as GitHub confirms. In the terminal, the code is copied and shown at the bottom while GitHub's page opens, or next to the page's address when the terminal can't open a browser.
 

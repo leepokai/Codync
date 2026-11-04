@@ -232,7 +232,7 @@ struct NoticeRow: View {
         let text = entry.data.text ?? ""
         // A call an older app logged, with no conversation to open.
         if let seconds = entry.data.callSeconds {
-            Label("\(L10n.tr(text)) · \(String(format: "%02d:%02d", seconds / 60, seconds % 60))", systemImage: "waveform")
+            Label(L10n.tr(text) + callLength(seconds), systemImage: "waveform")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Palette.secondary)
                 .frame(maxWidth: .infinity)

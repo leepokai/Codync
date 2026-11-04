@@ -51,10 +51,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.codync.android.core.Bot
 import com.codync.android.core.ComputerSelection
 import com.codync.android.core.LinkState
+import com.codync.android.core.mixesAgents
+import com.codync.android.core.runningAgent
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import kotlinx.serialization.json.JsonPrimitive
@@ -126,6 +129,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
         }
     }
     val toggleSection = { name: String -> folded = if (name in folded) folded - name else folded + name; FoldedSections.save(context, folded) }
+    val agentLogos by AppearancePreferences.agentLogos.collectAsStateWithLifecycle()
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         ScrollEdge(Edge.Top, top + 64.dp)
@@ -166,7 +170,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
                         extensions = { extensions(id) })
                 }
                 if (grouped && (movingComputer || id in collapsed)) continue
-                botLines(state, store, roster, folded, grouped, RosterActions(toggleSection,
+                botLines(state, store, roster, folded, grouped, agentLogos, RosterActions(toggleSection,
                     rename = { name -> naming = SectionNaming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },
                     newSection = { bot -> naming = SectionNaming("New section", "") { store.setSection(bot.id, it) } },
@@ -203,11 +207,15 @@ private class RosterActions(val toggleSection: (String) -> Unit, val rename: (St
     val newSection: (Bot) -> Unit, val edit: (Bot) -> Unit, val delete: (Bot) -> Unit)
 
 /** One computer's bots: pinned ones, then each section's heading with its bots (none while folded), then the bots in no section. */
-private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, grouped: Boolean, actions: RosterActions) {
+private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, grouped: Boolean,
+    agentLogos: Boolean, actions: RosterActions) {
     val id = state.computer.id
     val sectionReorder = roster.sections
     val reorder = roster.reorder
     val sections = menuSections(state.bots)
+    // The agent's logo marks each avatar only while the computer's bots mix agents. Not before hello: it names
+    // the logos, and without it every badge would be the same generic one.
+    val logos = agentLogos && state.hello != null && roster(state.bots).mixesAgents()
     items(rosterLines(reorder.shown(roster(state.bots)), folded, sectionReorder.shown, sectionReorder.dragged != null), key = { "$id:${it.key}" }) { line ->
         when (line) {
             // Folding drops the section's rows from the list; animateItem fades them out and slides the rest up.
@@ -220,10 +228,11 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
             is RosterLine.Row -> {
                 val bot = line.bot
                 val lifted = reorder.dragged == bot.id
+                val agent = bot.runningAgent.takeIf { logos && bot.kind != "group" }?.let { AgentMark(agentRegistry(state, it), backendName(state, it)) }
                 Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
                     .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
                         else Modifier.animateItem())) {
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, edit = { actions.edit(bot) },
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, agent, edit = { actions.edit(bot) },
                         delete = { actions.delete(bot) }, newSection = { actions.newSection(bot) })
                 }
             }
@@ -291,9 +300,9 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
 private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section == other.section)
 
 @Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, sections: List<String>, grouped: Boolean,
-    edit: () -> Unit, delete: () -> Unit, newSection: () -> Unit) {
+    agent: AgentMark?, edit: () -> Unit, delete: () -> Unit, newSection: () -> Unit) {
     Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
-        Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state) }
+        Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state, agent) }
     }) {
         listOfNotNull(
             MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
@@ -323,15 +332,15 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
             CustomAccessibilityAction(title) { moved(roster(state.bots), bot.id, offset)?.let(store::reorder) != null }
         }
     }) {
-        BotRow(bot, state)
+        BotRow(bot, state, agent)
     }
 }
 
-/** One bot: avatar with its status dot, name and day, then the live activity or last message. */
-@Composable internal fun BotRow(bot: Bot, state: AppState) {
+/** One bot: avatar with its status dot (and [agent]'s logo, if any), name and day, then the live activity or last message. */
+@Composable internal fun BotRow(bot: Bot, state: AppState, agent: AgentMark? = null) {
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        AvatarWithStatus(bot, state.bots, 46.dp)
+        AvatarWithStatus(bot, state.bots, 46.dp, agent)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

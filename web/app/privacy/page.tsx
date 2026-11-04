@@ -9,10 +9,10 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: November 2, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: November 3, 2026</p>
 
         <Section title="Overview">
-          Codync is made by Leeporic LLC (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
+          Codync is an independent open-source project by leepokai (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
         </Section>
 
         <Section title="What stays on your devices">
@@ -42,7 +42,7 @@ export default function Privacy() {
 
         <Section title="Data we collect">
           <p className="mb-2">
-            Usage analytics; the registration of each computer that uses our relay (its name, platform, device type, Codync version, public keys and when it was last online), with the public keys of the devices allowed to use it; and the account data described under Codync account. Analytics are on by default; turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
+            Usage analytics; the registration of each computer that uses our relay (its name, platform, device type, Codync version, public keys and when it was last online), with the public keys of the devices allowed to use it; and the account data described under Codync account. Analytics are on by default (the Windows installer asks first); turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>What we record:</strong> which features you use, such as opening the app and its screens, setting up and pairing a device (and whether you allow notifications), creating or deleting a bot, sending a message (with the number of attachments, not the files), starting a routine or a voice call, and installing a connector from the catalog. Each event carries the app version, the platform and the agent and model a bot uses.</li>

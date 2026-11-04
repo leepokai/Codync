@@ -1524,5 +1524,7 @@
   "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels.": "Code {code} kopiert. Auf der Anmeldeseite einfügen, dann mit Enter prüfen. Ctrl+X bricht ab.",
   "Sign in instead of using a saved token": "Anmelden statt eines gespeicherten Tokens",
   "↵ sign in instead of the token": "↵ anmelden statt Token",
-  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "Code {code} kopiert: auf {url} einfügen, dann mit Enter prüfen. Ctrl+X bricht ab."
+  "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels.": "Code {code} kopiert: auf {url} einfügen, dann mit Enter prüfen. Ctrl+X bricht ab.",
+  "Show agent logos": "Agent-Logos anzeigen",
+  "Marks each bot with its agent's logo when your bots use more than one agent.": "Zeigt bei jedem Bot das Logo seines Agenten, wenn deine Bots mehr als einen Agenten nutzen."
 }

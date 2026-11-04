@@ -287,10 +287,11 @@ final class AppStore {
         accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
         accounts.onRosterChanged = { [weak accounts] roster in
             BotsWidgetFeed.update(roster, storage: storage)
-            let current = Set((accounts?.stores ?? [:]).filter { $0.value.rosterIsCurrent }.keys)
+            let stores = accounts?.stores ?? [:]
             var pushed = storage.pushedUnread
             IconBadge.show(IconBadge.settle(roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) },
-                                            current: current, pushed: &pushed))
+                                            paired: Set(stores.keys), current: Set(stores.filter { $0.value.rosterIsCurrent }.keys),
+                                            pushed: &pushed))
             storage.pushedUnread = pushed
             if roster.isEmpty {
                 LiveActivities.shared.endAll()

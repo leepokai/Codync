@@ -14,10 +14,11 @@ public enum IconBadge {
         pushed.values.reduce(0, +) + count(snapshot.filter { pushed[$0.computerId] == nil }.map(\.bot))
     }
 
-    /// The app's badge: alerts' totals are kept only for computers whose roster isn't current yet
+    /// The app's badge: alerts' totals are kept only for paired computers whose roster isn't current yet
     /// (`pushed` is updated in place), and stand in for those computers' cached unread.
-    public static func settle(_ roster: [BotSnapshot], current: Set<ComputerID>, pushed: inout [ComputerID: Int]) -> Int {
-        pushed = pushed.filter { !current.contains($0.key) }
+    public static func settle(_ roster: [BotSnapshot], paired: Set<ComputerID>, current: Set<ComputerID>,
+                              pushed: inout [ComputerID: Int]) -> Int {
+        pushed = pushed.filter { paired.contains($0.key) && !current.contains($0.key) }
         return count(pushed: pushed, snapshot: roster)
     }
 

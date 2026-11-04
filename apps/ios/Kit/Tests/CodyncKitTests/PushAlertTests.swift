@@ -25,7 +25,8 @@ import Testing
     // B's alert keeps A's earlier one instead of falling back to A's snapshot.
     #expect(IconBadge.count(pushed: ["a": 2, "b": 1], snapshot: snapshot) == 6)
     // The app opens: A's roster catches up (its live 5 replaces its alert); B, still unreachable, keeps its alert's 1.
-    var pushed = ["a": 2, "b": 1]
-    #expect(IconBadge.settle(snapshot, current: ["a"], pushed: &pushed) == 9)
+    var pushed = ["a": 2, "b": 1, "gone": 4]
+    #expect(IconBadge.settle(snapshot, paired: ["a", "b", "c"], current: ["a"], pushed: &pushed) == 9)
+    // A computer removed from this phone counts no more.
     #expect(pushed == ["b": 1])
 }

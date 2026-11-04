@@ -325,18 +325,27 @@ impl N8n {
             return;
         }
         let store = &hub.store;
-        let result = self.mcp_setup_inner(store, generation, hub).await;
-        let mcp = match result {
-            Ok(cookie) => {
-                *self.session.locked() = Some(cookie);
-                true
-            }
+        let (cookie, key) = match self.mcp_setup_inner(store).await {
+            Ok(session) => session,
             Err(e) => {
                 tracing::warn!(error = format!("{e:#}"), "setting up the n8n instance's MCP server");
+                return;
+            }
+        };
+        // A stop in the meantime: the session and the connector go away with the instance.
+        if self.generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        // The editor's auto-login only needs the session: it is published even when the
+        // connector below cannot be written, as its vault may be locked.
+        *self.session.locked() = Some(cookie);
+        *self.mcp.locked() = match self.connect_bots(store, hub, &key).await {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!(error = format!("{e:#}"), "registering the n8n connector for the bots");
                 false
             }
         };
-        *self.mcp.locked() = mcp;
         self.broadcast();
     }
 
@@ -365,8 +374,9 @@ impl N8n {
         }
     }
 
-    /// Owner, login, MCP access, API key and the bots' connector; returns the session cookie.
-    async fn mcp_setup_inner(&self, store: &Store, generation: u64, hub: &Arc<Hub>) -> Result<String> {
+    /// Owner, login, MCP access and the API key; returns the editor's session cookie and
+    /// the key the bots' connector authenticates with.
+    async fn mcp_setup_inner(&self, store: &Store) -> Result<(String, String)> {
         let port = self.settings.locked().port;
         let base = format!("http://127.0.0.1:{port}");
         let client = reqwest::Client::builder().cookie_store(true).build().context("building the n8n client")?;
@@ -426,32 +436,27 @@ impl N8n {
             key
         } else {
             let body = get_json(&client, &format!("{base}/rest/mcp/api-key"), "reading the n8n MCP API key").await?;
-            let mut key = body["apiKey"]
-                .as_str()
-                .filter(|k| !k.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| anyhow!("no MCP API key in the n8n reply"))?;
+            let mut key =
+                api_key_field(&body).map(str::to_owned).ok_or_else(|| anyhow!("no MCP API key in the n8n reply"))?;
             // A redacted reply (`******…`) means a key exists and we don't have it: rotate.
             if key.starts_with('*') {
                 let body =
                     post_json(&client, &format!("{base}/rest/mcp/api-key/rotate"), "rotating the n8n MCP API key")
                         .await?;
-                key = body["apiKey"]
-                    .as_str()
-                    .filter(|k| !k.is_empty() && !k.starts_with('*'))
+                key = api_key_field(&body)
+                    .filter(|k| !k.starts_with('*'))
                     .map(str::to_owned)
                     .ok_or_else(|| anyhow!("no raw MCP API key in the n8n rotation reply"))?;
             }
             store.kv_set(KV_MCP_KEY, &key)?;
             key
         };
+        Ok((cookie, key))
+    }
 
-        // A stop in the meantime: the connector goes away with the instance.
-        if self.generation.load(Ordering::SeqCst) != generation {
-            bail!("the n8n instance stopped while its MCP server was being set up");
-        }
-
-        // The bots' connector: one for this instance, upserted so port and key changes follow.
+    /// The bots' connector: one for this instance, upserted so port and key changes follow.
+    async fn connect_bots(&self, store: &Store, hub: &Arc<Hub>, key: &str) -> Result<()> {
+        let port = self.settings.locked().port;
         let mut headers = BTreeMap::new();
         headers.insert("Authorization".to_owned(), format!("Bearer {key}"));
         let connector = crate::market::Connector {
@@ -462,7 +467,7 @@ impl N8n {
             command: None,
             args: vec![],
             env: BTreeMap::new(),
-            url: Some(format!("{base}/mcp-server/http")),
+            url: Some(format!("http://127.0.0.1:{port}/mcp-server/http")),
             headers,
             oauth: None,
         };
@@ -474,7 +479,7 @@ impl N8n {
             Ok(())
         })?;
         crate::market::turn_on(hub, crate::market::Installed::Connectors, &[CONNECTOR_ID.to_owned()], None)?;
-        Ok(cookie)
+        Ok(())
     }
 
     /// A watchdog: the instance died on its own, so the state says what it last printed.
@@ -626,6 +631,13 @@ async fn post_json(client: &reqwest::Client, url: &str, what: &str) -> Result<Va
     resp.error_for_status()?.json().await.with_context(|| what.to_string())
 }
 
+/// The `apiKey` of an n8n MCP reply: the instance's REST layer nests the key's
+/// entity under `data`, with the bare top-level field as the fallback.
+fn api_key_field(body: &Value) -> Option<&str> {
+    let nested = body.get("data").and_then(|data| data.get("apiKey"));
+    nested.or_else(|| body.get("apiKey"))?.as_str().filter(|k| !k.is_empty())
+}
+
 /// The instance owner's password: random, with the required digit and upper.
 fn owner_password() -> String {
     let raw = uuid::Uuid::new_v4().simple().to_string();
@@ -667,6 +679,25 @@ mod tests {
         assert_eq!(s["state"], "stopped");
         assert_eq!(s["port"], DEFAULT_PORT);
         assert!(s["url"].is_null());
+    }
+
+    #[test]
+    fn the_api_key_reads_the_wrapped_and_bare_reply_shapes() {
+        // The instance's REST layer nests the key's entity under `data`.
+        let wrapped = json!({
+            "data": {
+                "id": "FfkIiFUdqNaIryui",
+                "label": "MCP Server API Key",
+                "apiKey": "mcp_raw_key_1234",
+                "audience": "mcp-server-api"
+            }
+        });
+        assert_eq!(api_key_field(&wrapped), Some("mcp_raw_key_1234"));
+        assert_eq!(api_key_field(&json!({ "apiKey": "mcp_raw_key_5678" })), Some("mcp_raw_key_5678"));
+        // A redacted reply is still the key's field; the caller decides what to do with it.
+        assert_eq!(api_key_field(&json!({ "data": { "apiKey": "******T73M" } })), Some("******T73M"));
+        assert_eq!(api_key_field(&json!({ "data": {} })), None);
+        assert_eq!(api_key_field(&json!({ "data": { "apiKey": "" } })), None);
     }
 
     #[test]

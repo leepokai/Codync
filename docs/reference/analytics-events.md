@@ -93,6 +93,7 @@ host answers and sends it once the host is up.
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
 | `connectors_imported` | host | `importConnectors` | `count` |
 | `connector_removed` | host | `removeConnector` | — |
+| `connector_updated` | host | `updateConnector`, whether or not the edit was saved | `outcome` (`ready`: how it runs changed and it passed its check; `saved`: name or description only; `failed`); on failure `error` (`invalid`, `refused`, `wont_start`, `conflict`, `other`). Never the connector, its fields, values or the error's message |
 | `connector_signin_started` | host | `connectorSignIn` | — |
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |

@@ -48,7 +48,7 @@ In the **Connectors** section, choose **Custom connector**, above the registry l
 
 - **Command:** a command line that starts an MCP server. It runs on the computer in the bot's project folder, and quotes work like in a shell. Put keys under **Environment**, one `KEY=value` per line.
 - **URL:** a hosted MCP server. Add headers under **Headers**, one `Name: value` per line, or leave them empty if the service has you sign in.
-- **Config:** paste an MCP config from a README or another app (Claude, Cursor, VS Code), such as an `mcpServers` block. Every server in it is added.
+- **Config:** paste an MCP config from a README or another app (Claude, Cursor, VS Code), such as an `mcpServers` block. Every server in it is added. If one isn't valid, for example its `args` aren't all text, none are, and the error names that server.
 
 Everything you enter is saved on that computer only.
 

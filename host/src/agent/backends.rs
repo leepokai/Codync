@@ -172,7 +172,11 @@ pub fn exit_reason(backend: &str, stderr_tail: &str) -> Option<String> {
         Some(h) => {
             // Codync's own npm: the computer may have no `npm` of its own.
             let update = match h.install.filter(|i| matches!(i, Install::Npm(_))).and_then(Install::command) {
-                Some(install) => format!("Update it (run `{install}@latest` on this computer) and try again."),
+                // `Install::command` quotes for `cmd`: PowerShell would need `&` before a quoted path.
+                Some(install) => {
+                    let shell = if cfg!(windows) { " in Command Prompt" } else { "" };
+                    format!("Update it (run `{install}@latest`{shell} on this computer) and try again.")
+                }
                 None => "Update it and try again.".to_owned(),
             };
             Some(format!("The {} on this computer is too old to run in Codync. {update}", h.name))

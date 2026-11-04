@@ -15,16 +15,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::Duration;
 
+mod tools;
+pub use tools::{INSTRUCTIONS, call, enabled_for, tools};
+
 const API: &str = "https://backend.composio.dev/api/v3.1";
 const TIMEOUT: Duration = Duration::from_secs(30);
 /// Connector ids for Composio apps: `composio-<toolkit slug>`.
 pub const PREFIX: &str = "composio-";
 const SLOT: &str = "composio";
 pub const KEY_URL: &str = "https://platform.composio.dev";
-
-pub const INSTRUCTIONS: &str = "Act in the user's connected apps through Composio. Find a tool with \
-`search_tools`, read its parameters with `get_tool`, then run it with `execute`. Tool slugs look like \
-GMAIL_SEND_EMAIL. Only the apps listed by `list_apps` are available to you.";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -389,132 +388,6 @@ pub async fn disconnect(store: &Store, toolkit: &str) -> Result<()> {
     }
     refresh(store).await?;
     Ok(())
-}
-
-// MARK: tools for bots
-
-/// MCP tools of the built-in `composio` server.
-pub fn tools() -> Value {
-    json!([
-        {
-            "name": "list_apps",
-            "description": "The connected apps you may use.",
-            "inputSchema": {"type": "object", "properties": {}},
-            "annotations": {"readOnlyHint": true},
-        },
-        {
-            "name": "search_tools",
-            "description": "Find tools in the connected apps by what they do, e.g. \"send an email\" or \"create an issue\".",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "What you want to do."},
-                    "app": {"type": "string", "description": "Limit to one app (its slug from list_apps)."},
-                },
-                "required": ["query"],
-            },
-            "annotations": {"readOnlyHint": true},
-        },
-        {
-            "name": "get_tool",
-            "description": "A tool's description and input parameters (JSON Schema).",
-            "inputSchema": {"type": "object", "properties": {"slug": {"type": "string"}}, "required": ["slug"]},
-            "annotations": {"readOnlyHint": true},
-        },
-        {
-            "name": "execute",
-            "description": "Run a tool with arguments that match its input parameters.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {"slug": {"type": "string"}, "arguments": {"type": "object"}},
-                "required": ["slug", "arguments"],
-            },
-        },
-    ])
-}
-
-/// Toolkits bot `bot` may use: its `composio-*` connectors that are connected.
-fn allowed(store: &Store, bot: &str) -> Result<Vec<Connection>> {
-    let row = store.bot(bot)?.ok_or_else(|| anyhow!("unknown bot"))?;
-    let on: Vec<&str> = row.config.connectors.iter().filter_map(|id| id.strip_prefix(PREFIX)).collect();
-    Ok(connections(store)?.into_iter().filter(|c| c.active() && on.contains(&c.toolkit.as_str())).collect())
-}
-
-/// Toolkits a bot has turned on, for its MCP server list (none: no server).
-pub fn enabled_for(store: &Store, connectors: &[String]) -> Result<bool> {
-    if !connectors.iter().any(|s| s.starts_with(PREFIX)) {
-        return Ok(false);
-    }
-    let conns = connections(store)?;
-    Ok(connectors
-        .iter()
-        .filter_map(|id| id.strip_prefix(PREFIX))
-        .any(|t| conns.iter().any(|c| c.active() && c.toolkit == t)))
-}
-
-/// A tool call from a bot's `composio` MCP server.
-pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<Value> {
-    let c = config(store)?;
-    let apps = allowed(store, bot)?;
-    if apps.is_empty() {
-        bail!("No connected apps are turned on for this bot.");
-    }
-    let app_of = |toolkit: &str| apps.iter().find(|a| a.toolkit.eq_ignore_ascii_case(toolkit));
-    match name {
-        "list_apps" => Ok(json!(apps.iter().map(|a| json!({"slug": a.toolkit, "name": a.name})).collect::<Vec<_>>())),
-        "search_tools" => {
-            let query = args["query"].as_str().unwrap_or_default();
-            let targets: Vec<&Connection> = match args["app"].as_str().filter(|s| !s.is_empty()) {
-                Some(app) => {
-                    vec![app_of(app).ok_or_else(|| anyhow!("`{app}` isn't one of your apps (see list_apps)"))?]
-                }
-                None => apps.iter().collect(),
-            };
-            let mut found = vec![];
-            for app in targets.iter().take(8) {
-                let v =
-                    get(&c.key, "/tools", &[("toolkit_slug", &app.toolkit), ("query", query), ("limit", "8")]).await?;
-                for t in v["items"].as_array().into_iter().flatten() {
-                    found.push(json!({
-                        "slug": t["slug"], "name": t["name"], "app": app.toolkit,
-                        "description": t["description"].as_str().map(|d| crate::agent::acp::truncate(d, 300)),
-                    }));
-                }
-            }
-            Ok(json!(found))
-        }
-        "get_tool" => {
-            let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
-            let t = tool(&c.key, slug).await?;
-            let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
-            app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
-            Ok(
-                json!({"slug": t["slug"], "name": t["name"], "description": t["description"], "input_parameters": t["input_parameters"]}),
-            )
-        }
-        "execute" => {
-            let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
-            let t = tool(&c.key, slug).await?;
-            let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
-            let app = app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
-            let arguments = args.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
-            let v = post(
-                &c.key,
-                &format!("/tools/execute/{slug}"),
-                &json!({"user_id": c.user_id, "connected_account_id": app.id, "arguments": arguments}),
-            )
-            .await?;
-            if v["successful"] == false {
-                bail!("{}", text(&v["error"]).unwrap_or_else(|| "the tool failed".into()));
-            }
-            Ok(v["data"].clone())
-        }
-        other => bail!("unknown tool {other}"),
-    }
-}
-
-async fn tool(key: &str, slug: &str) -> Result<Value> {
-    get(key, &format!("/tools/{slug}"), &[("toolkit_versions", "latest")]).await
 }
 
 #[cfg(test)]

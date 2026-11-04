@@ -90,6 +90,8 @@ export class AccountComputers extends Observable {
         if (error instanceof CloudError && error.status === 0) return { status: 'pending' }
         throw error
       })
+      // Withdrawn while the status was on its way: the withdrawal already counted.
+      if (this.asking.get(computerId)?.ticket !== ticket) return false
       if (status.status === 'approved') return true
       if (status.status === 'denied') throw failed('denied')
       if (status.status !== 'pending') throw failed(status.status === 'cancelled' ? 'cancelled' : 'expired')

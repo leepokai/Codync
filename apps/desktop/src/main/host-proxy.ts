@@ -5,7 +5,7 @@ import { noteAnalyticsSetting } from './analytics'
 // Loopback HTTP + SSE for the renderer. The host has no CORS (it's a loopback API for local
 // apps), so requests leave from the main process.
 
-/** Open streams by `<window>:<id>`: each window's page numbers its streams from 1. */
+/** Open streams by `<window>:<id>`: each page names its streams with random ids. */
 const streams = new Map<string, AbortController>()
 
 function isLoopback(url: string) {

@@ -222,7 +222,7 @@ export class HostClient {
     return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(call ? { call } : {}) })).entry
   }
 
-  /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */
+  /** Bytes per `upload` call: base64 of it stays well under the channel's 8 MiB message. */
   static uploadChunk = 384 * 1024
 
   async upload(botId: string, uploadId: string, name: string, data: Uint8Array) {

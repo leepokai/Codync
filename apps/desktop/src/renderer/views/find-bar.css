@@ -1,0 +1,25 @@
+/* Find in the conversation: floats under the top chrome, above the chat, filled with the floating-layer outline. */
+.find-bar {
+  position: absolute;
+  top: 60px;
+  right: 16px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--background);
+  box-shadow: var(--shadow-m);
+}
+.find-bar input {
+  width: 180px;
+  min-width: 0;
+}
+.find-count {
+  flex: none;
+  min-width: 36px;
+  text-align: right;
+}

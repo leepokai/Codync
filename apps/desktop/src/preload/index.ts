@@ -135,6 +135,11 @@ const bridge: CodyncBridge = {
     finish: (id) => ipcRenderer.invoke('files:finish', id),
     cancel: (id) => ipcRenderer.invoke('files:cancel', id),
   },
+  find: {
+    search: (text, forward, step) => ipcRenderer.send('find:search', text, forward, step),
+    stop: () => ipcRenderer.send('find:stop'),
+    onResult: (cb) => listen('find:result', cb),
+  },
   app: {
     reportError: (report) => ipcRenderer.send('app:reportError', report),
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),

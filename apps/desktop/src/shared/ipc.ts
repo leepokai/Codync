@@ -83,6 +83,12 @@ export interface TraySummary {
   language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru' | 'it'
 }
 
+/** Where the find stands: the match shown (1-based, 0 when none) out of all of them. */
+export interface FindResult {
+  active: number
+  matches: number
+}
+
 /** Things the tray menu (or the app menu) asks the window to do. */
 export type WindowCommand =
   | { kind: 'openBot'; ref: string }
@@ -98,6 +104,10 @@ export type WindowCommand =
   | { kind: 'networkSettings' }
   | { kind: 'newBot' }
   | { kind: 'search' }
+  /** ⌘F: the find bar over the open conversation. */
+  | { kind: 'find' }
+  /** ⌘G / ⇧⌘G: the next or previous match of the open find bar. */
+  | { kind: 'findStep'; forward: boolean }
   | { kind: 'toggleSidebar' }
   | { kind: 'toggleDetails' }
   | { kind: 'refresh' }
@@ -245,6 +255,13 @@ export interface CodyncBridge {
     write(id: string, offset: number, data: Uint8Array): Promise<void>
     finish(id: string): Promise<void>
     cancel(id: string): Promise<void>
+  }
+  /** Find in the conversation on screen (Electron's find in page). */
+  find: {
+    /** Highlights `text`; `step` moves on to the following (or previous) match of the text already searched. */
+    search(text: string, forward: boolean, step: boolean): void
+    stop(): void
+    onResult(cb: (result: FindResult) => void): () => void
   }
   app: {
     /** Error tracking: an uncaught error in this window (shared/error-report.ts). */

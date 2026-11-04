@@ -8,6 +8,7 @@ import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
+import { registerFind } from './find'
 import { registerHostProxy } from './host-proxy'
 import { readClipboardFiles, readFiles } from './files'
 import { Tray } from './tray'
@@ -133,7 +134,10 @@ function menu() {
         { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => send({ kind: 'stepTextSize', up: null }, false) },
         { type: 'separator' },
         { label: 'New Bot', accelerator: 'CmdOrCtrl+N', click: () => send({ kind: 'newBot' }) },
-        { label: 'Search Bots', accelerator: 'CmdOrCtrl+F', click: () => send({ kind: 'search' }) },
+        { label: 'Search Bots', accelerator: 'CmdOrCtrl+K', click: () => send({ kind: 'search' }) },
+        { label: 'Find in Conversation', accelerator: 'CmdOrCtrl+F', click: () => send({ kind: 'find' }) },
+        { label: 'Find Next', accelerator: 'CmdOrCtrl+G', click: () => send({ kind: 'findStep', forward: true }, false) },
+        { label: 'Find Previous', accelerator: 'Shift+CmdOrCtrl+G', click: () => send({ kind: 'findStep', forward: false }, false) },
         { label: 'Toggle Sidebar', accelerator: 'Ctrl+CmdOrCtrl+S', click: () => send({ kind: 'toggleSidebar' }, false) },
         { label: 'Conversation Details', accelerator: 'Alt+CmdOrCtrl+I', click: () => send({ kind: 'toggleDetails' }, false) },
         { label: 'Refresh', accelerator: 'CmdOrCtrl+R', click: () => send({ kind: 'refresh' }, false) },
@@ -155,6 +159,7 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:scheme', (e) => (e.returnValue = identity.scheme))
   registerFileSaves()
   registerArtifacts()
+  registerFind()
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:openedAtLogin', (e) => (e.returnValue = openedAtLogin()))

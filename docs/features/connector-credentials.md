@@ -62,10 +62,11 @@ Editing a custom local connector (`updateConnector`, loopback only, no form in t
 apps) keeps its id and each bot's choice. Omitted fields stay; `command` is an
 executable path, never split into arguments; `args` replaces the list and `args: []`
 clears it; `env` merges, with `null` removing a key. The readiness check runs on the
-edited copy and the edit is saved only if it passes, so a typo can't break a working
-connector and an error always means nothing changed. Bots that have the connector on
-then rebuild their tools for their next turn. Registry and remote connectors are
-refused (`host/src/market/connector_update.rs`).
+edited copy and exactly that copy is saved if it passes, so a typo can't break a working
+connector and an error means the edit changed nothing. A save by anything else during the
+check refuses the edit, so overlapping edits never combine into settings nobody checked.
+Bots that have the connector on then rebuild their tools for their next turn. Registry and
+remote connectors are refused (`host/src/market/connector_update.rs`).
 
 ## Conversation requests
 

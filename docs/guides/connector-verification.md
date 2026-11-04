@@ -26,8 +26,10 @@ its id or bot assignments. Omitted fields keep their values, including `args` wh
 only `command` changes. The update's `command` is an executable path; pass arguments
 separately in `args`, or `args: []` to clear them. Unlike installation, updates
 do not split a command line. `env` merges entries, with `null` removing a key.
-The host checks the edited copy first and saves it only if it starts, so an error
-means nothing changed. Bots using the connector then refresh their tools.
+The host checks the edited copy first and saves exactly that copy if it starts, so an
+error means the edit changed nothing. If the connector was saved by something else
+during the check, the edit is refused and can be sent again, so overlapping edits never
+combine into settings nobody checked. Bots using the connector then refresh their tools.
 
 ## Recorded result: 2026-10-05, macOS
 

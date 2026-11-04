@@ -6,21 +6,26 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 
 /// Edits an installed local connector: omitted fields keep their value, `args` replaces the
-/// argument list, and `env` merges, with `null` removing a key. The edit is saved only once the
-/// edited connector starts, so an error always means the connector is as it was.
+/// argument list, and `env` merges, with `null` removing a key. Exactly what started is what gets
+/// saved, so an error means this edit changed nothing, and overlapping edits never combine.
 ///
 /// Registry installs rebuild their command line from the registry, and a remote connector's
 /// URL and OAuth handling are the registry's or the user's to redo, so those are refused here.
 pub async fn update_custom_connector(store: &crate::store::Store, b: &Value, port: u16) -> Result<Value> {
     let id = b["id"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`id` is required"))?;
-    let mut edited = connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
+    let before = connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
+    let mut edited = before.clone();
     apply(&mut edited, b)?;
     let check = verify::check_connector(store, &edited, port).await?;
-    // The check can take a minute, so the edit goes onto what's saved by then, not onto the copy.
     let connector = update_connectors(store, |all| {
         let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
-        apply(c, b)?;
-        Ok(c.public())
+        // The check can take a minute: a save in between means it didn't prove what would be saved now.
+        if *c != before {
+            bail!("{} changed while it was being checked: try again", before.name);
+        }
+        let public = edited.public();
+        *c = edited;
+        Ok(public)
     })?;
     Ok(json!({"connector": connector, "verify": check}))
 }
@@ -173,16 +178,49 @@ mod tests {
         assert!(err.to_string().contains("MCP registry"), "{err}");
     }
 
+    /// A connector whose MCP server really starts, and the path of that server's script.
+    fn startable() -> (Connector, String) {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py");
+        let fixture = fixture.to_str().expect("utf-8 path").to_owned();
+        let mut c = local();
+        c.command = Some(if cfg!(windows) { "python" } else { "python3" }.to_owned());
+        c.args = vec![fixture.clone()];
+        c.env = [("API_KEY".to_owned(), "test-private-key".to_owned())].into();
+        (c, fixture)
+    }
+
+    #[tokio::test]
+    async fn overlapping_edits_never_save_a_combination_nobody_checked() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
+        let (saved, fixture) = startable();
+        save_connectors(&store, std::slice::from_ref(&saved)).expect("save");
+
+        // Each reads the saved connector before either check ends, as two edits a minute apart can.
+        let description = json!({"id": "local", "description": "edited"});
+        let args = json!({"id": "local", "args": ["-u", &fixture]});
+        let results =
+            tokio::join!(update_custom_connector(&store, &description, 0), update_custom_connector(&store, &args, 0));
+
+        let mut expected = saved;
+        match results {
+            (Ok(_), Err(refused)) => {
+                assert!(refused.to_string().contains("try again"), "{refused}");
+                expected.description = "edited".to_owned();
+            }
+            (Err(refused), Ok(_)) => {
+                assert!(refused.to_string().contains("try again"), "{refused}");
+                expected.args = vec!["-u".to_owned(), fixture];
+            }
+            (first, second) => panic!("one edit lands and one is refused: {first:?}, {second:?}"),
+        }
+        assert_eq!(connectors(&store).expect("read"), [expected], "only the checked edit is saved");
+    }
+
     #[tokio::test]
     async fn an_edit_is_saved_only_once_the_connector_starts() {
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
-        let python = if cfg!(windows) { "python" } else { "python3" };
-        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py");
-        let fixture = fixture.to_str().expect("utf-8 path");
-        let mut saved = local();
-        saved.command = Some(python.to_owned());
-        saved.args = vec![fixture.to_owned()];
-        saved.env = [("API_KEY".to_owned(), "test-private-key".to_owned())].into();
+        let (mut saved, fixture) = startable();
+        let fixture = fixture.as_str();
         save_connectors(&store, std::slice::from_ref(&saved)).expect("save");
         let stored = || connectors(&store).expect("read");
 

@@ -180,6 +180,7 @@ final class AppStore {
         marketplace = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -206,6 +207,7 @@ final class AppStore {
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         generation += 1
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -283,8 +285,14 @@ final class AppStore {
             store.onUsageChanged = { _, _ in WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage") }
         }
         accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
-        accounts.onRosterChanged = { roster in
+        accounts.onRosterChanged = { [weak accounts] roster in
             BotsWidgetFeed.update(roster, storage: storage)
+            let stores = accounts?.stores ?? [:]
+            var pushed = storage.pushedUnread
+            IconBadge.show(IconBadge.settle(roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) },
+                                            paired: Set(stores.keys), current: Set(stores.filter { $0.value.rosterIsCurrent }.keys),
+                                            pushed: &pushed))
+            storage.pushedUnread = pushed
             if roster.isEmpty {
                 LiveActivities.shared.endAll()
                 WidgetCenter.shared.reloadAllTimelines()

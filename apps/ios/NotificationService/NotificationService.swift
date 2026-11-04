@@ -27,6 +27,14 @@ final class NotificationService: UNNotificationServiceExtension {
         content.title = alert.title
         content.subtitle = alert.subtitle ?? ""
         content.body = alert.body
+        if let unread = alert.unread {
+            // A computer removed while the app was closed counts no more.
+            let paired = Set(store.computers.map(\.id))
+            var pushed = store.pushedUnread.filter { paired.contains($0.key) }
+            pushed[computerId] = unread
+            store.pushedUnread = pushed
+            content.badge = IconBadge.count(pushed: pushed, snapshot: store.bots) as NSNumber
+        }
         contentHandler(Self.fromBot(content, alert: alert, botId: info["botId"] as? String, computerId: computerId, store: store))
     }
 

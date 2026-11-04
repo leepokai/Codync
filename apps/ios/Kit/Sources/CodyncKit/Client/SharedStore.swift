@@ -47,7 +47,7 @@ public enum SharedStore {
             self.suite = suite
         }
 
-        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer"]
+        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer", "pushedUnread"]
         fileprivate func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
         public static func digest(_ value: String) -> String {
             SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -73,6 +73,12 @@ public enum SharedStore {
         public var bots: [BotSnapshot] {
             get { read([BotSnapshot].self, "bots") ?? [] }
             nonmutating set { write(newValue, "bots") }
+        }
+        /// Each computer's unread total from its latest alert while the app was away; the app drops a
+        /// computer's once its roster has caught up with the host (`IconBadge.settle`).
+        public var pushedUnread: [ComputerID: Int] {
+            get { read([ComputerID: Int].self, "pushedUnread") ?? [:] }
+            nonmutating set { write(newValue, "pushedUnread") }
         }
         public var usage: [ComputerID: Usage] {
             get { read([ComputerID: Usage].self, "usage") ?? [:] }

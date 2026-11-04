@@ -127,6 +127,8 @@ async function startHost() {
   // 0.0.0.0 so step 7 can prove a non-loopback bearer token is refused.
   host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], {
     CODYNC_HOME: home,
+    // oh-my-pi keeps its probe sessions here, removed with `tmp`, not in the user's ~/.omp.
+    PI_CODING_AGENT_DIR: join(tmp, "pi-agent"),
     CODYNC_CLOUD_URL: CLOUD,
     CODYNC_DEVICE_CERT_KEY: certPub,
     CODYNC_AGENT_CHECKS: "off",

@@ -1,0 +1,218 @@
+/* A bot's routine flow (RoutineFlowView): the canvas, its nodes and edges, the list and the inspector.
+   Design after Openstark's diagram board, written with this app's tokens. */
+.routine-flow {
+  min-width: 0;
+}
+.flow-state {
+  padding: 14px;
+}
+.flow-body {
+  height: min(560px, 62vh);
+  min-height: 320px;
+}
+.flow-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.flow-menu-button {
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--bubble-user);
+  color: var(--text);
+  font: inherit;
+}
+
+/* The canvas */
+.flow-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  background-image: radial-gradient(rgba(var(--text-rgb), 0.12) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.flow-viewport:active {
+  cursor: grabbing;
+}
+.flow-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  transform-origin: 0 0;
+}
+.flow-edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.flow-edge {
+  fill: none;
+  stroke: var(--stroke-strong);
+  stroke-width: 2;
+}
+.flow-edge[data-kind='start'] {
+  stroke-dasharray: 5 5;
+}
+.flow-edge[data-kind='wire'] {
+  stroke: var(--accent);
+  stroke-dasharray: 3 4;
+}
+.flow-edge[data-selected='true'] {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.flow-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.flow-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--chrome-fill);
+  box-shadow: var(--shadow-m);
+}
+
+/* A node */
+.flow-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 220px;
+  min-height: 96px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-m);
+  background: var(--sheet);
+  box-shadow: var(--shadow-s);
+  cursor: grab;
+  outline: none;
+}
+.flow-node[data-kind='routine'] {
+  background: var(--group);
+}
+.flow-node[data-selected='true'],
+.flow-node:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-m);
+}
+.flow-node[data-target='true'] {
+  box-shadow: 0 0 0 2px var(--added), var(--shadow-m);
+}
+.flow-port {
+  position: absolute;
+  right: -7px;
+  top: calc(50% - 7px);
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  cursor: crosshair;
+}
+.flow-port:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Status chips: icon and words */
+.flow-status {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(var(--text-rgb), 0.07);
+  color: var(--secondary);
+}
+.flow-status[data-status='running'] {
+  color: var(--accent);
+}
+.flow-status[data-status='succeeded'] {
+  color: var(--added);
+}
+.flow-status[data-status='failed'] {
+  color: var(--danger);
+}
+
+/* The list that mirrors the canvas */
+.flow-list {
+  padding: 10px;
+}
+.flow-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.flow-row:hover,
+.flow-row[data-selected='true'] {
+  background: rgba(var(--text-rgb), 0.08);
+}
+.flow-row:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.flow-row-indent {
+  min-width: 0;
+}
+.flow-row-indent[data-depth='1'] { padding-left: 16px; }
+.flow-row-indent[data-depth='2'] { padding-left: 32px; }
+.flow-row-indent[data-depth='3'] { padding-left: 48px; }
+.flow-row-indent[data-depth='4'] { padding-left: 64px; }
+.flow-row-indent[data-depth='5'],
+.flow-row-indent[data-depth='6'],
+.flow-row-indent[data-depth='7'],
+.flow-row-indent[data-depth='8'] { padding-left: 80px; }
+
+/* The inspector */
+.flow-inspector {
+  flex: 0 0 260px;
+  width: 260px;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.flow-instruction {
+  min-height: 96px;
+}
+.flow-step {
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+  background: rgba(var(--text-rgb), 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-node,
+  .flow-layer {
+    transition: none;
+  }
+}

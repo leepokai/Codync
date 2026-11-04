@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, IconButton, Switch } from '../../components/Controls'
+import { Button, IconButton, SegmentedChoice, Switch } from '../../components/Controls'
 import { Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -10,6 +10,7 @@ import { RoutineEditorView } from './RoutineEditorView'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
 import { RoutineRunHistory } from './RoutineRunHistory'
+import { RoutineFlowView } from './flow/RoutineFlowView'
 
 
 /** The open editor: on a routine, or (`routineId` null) setting up a new one. `id` is one per opening. */
@@ -25,6 +26,7 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
   const [routines, setRoutines] = useState<Routine[]>([])
   const [runs, setRuns] = useState<RoutineRun[]>([])
   const [editing, setEditing] = useState<EditorTarget | null>(null)
+  const [view, setView] = useState<'list' | 'flow'>('list')
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -119,41 +121,46 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
         <IconButton title="Set up a routine" icon="plus" disabled={store.isOffline} onClick={() => open(null)} />
         {onClose ? <IconButton title="Close routines" icon="xmark" onClick={onClose} /> : null}
       </HStack>
-      {loadError ? <HStack gap={8}><Text size="caption" tone="danger">{loadError}</Text>{window.codync.platform === 'win32' ? <Button kind="secondary" onClick={() => void load()}>Retry loading routines</Button> : null}</HStack> : null}
-      {error ? <Text size="caption" tone="danger" className="routines-error">{error}</Text> : null}
-      {routines.length === 0 ? (
-        <Text as="div" size="callout" tone="secondary" className="outlined-card routines-empty">
-          {loaded ? tr(`No routines yet. Ask the bot for one, or set it up yourself with +.`) : tr(`Loading routines…`)}
-        </Text>
-      ) : (
-        <VStack gap={8}>
-          {routines.map((routine) => (
-            <VStack key={routine.id} gap={8}>
-            <HStack gap={12} className="outlined-card routines-card">
-              <button className="routine-row" onClick={() => open(routine.id)}>
-                <Text tone="text">{routine.name}</Text>
-                <Text size="caption" tone={routine.lastError ? 'danger' : 'secondary'}>{summary(routine)}</Text>
-              </button>
-              <HStack as="span" align="stretch" aria-label={routine.name}>
-                <Switch on={routine.enabled} disabled={busy || store.isOffline} onChange={(on) => void action('setRoutineEnabled', routine, on)} />
+      <SegmentedChoice selection={view} options={[{ id: 'list', label: 'List' }, { id: 'flow', label: 'Flow' }]} onChange={setView} />
+      {view === 'flow' ? <RoutineFlowView botId={botId} /> : (
+        <>
+        {loadError ? <HStack gap={8}><Text size="caption" tone="danger">{loadError}</Text>{window.codync.platform === 'win32' ? <Button kind="secondary" onClick={() => void load()}>Retry loading routines</Button> : null}</HStack> : null}
+        {error ? <Text size="caption" tone="danger" className="routines-error">{error}</Text> : null}
+        {routines.length === 0 ? (
+          <Text as="div" size="callout" tone="secondary" className="outlined-card routines-empty">
+            {loaded ? tr(`No routines yet. Ask the bot for one, or set it up yourself with +.`) : tr(`Loading routines…`)}
+          </Text>
+        ) : (
+          <VStack gap={8}>
+            {routines.map((routine) => (
+              <VStack key={routine.id} gap={8}>
+              <HStack gap={12} className="outlined-card routines-card">
+                <button className="routine-row" onClick={() => open(routine.id)}>
+                  <Text tone="text">{routine.name}</Text>
+                  <Text size="caption" tone={routine.lastError ? 'danger' : 'secondary'}>{summary(routine)}</Text>
+                </button>
+                <HStack as="span" align="stretch" aria-label={routine.name}>
+                  <Switch on={routine.enabled} disabled={busy || store.isOffline} onChange={(on) => void action('setRoutineEnabled', routine, on)} />
+                </HStack>
               </HStack>
-            </HStack>
-            {window.codync.platform === 'win32' ? <RoutineRunHistory name={routine.name} runs={runs.filter((run) => run.routineId === routine.id)} /> : null}
-            </VStack>
-          ))}
-        </VStack>
+              {window.codync.platform === 'win32' ? <RoutineRunHistory name={routine.name} runs={runs.filter((run) => run.routineId === routine.id)} /> : null}
+              </VStack>
+            ))}
+          </VStack>
+        )}
+        {/* A routine opened before the list arrived waits for it. */}
+        <Sheet open={editing !== null && (editing.routineId === null || editingRoutine !== null)} onClose={() => setEditing(null)} width={540}>
+          {editing ? (
+            <RoutineEditorView
+              key={editing.id}
+              botId={botId}
+              routine={editingRoutine}
+              saved={(saved) => onSaved(editing, saved)}
+            />
+          ) : null}
+        </Sheet>
+        </>
       )}
-      {/* A routine opened before the list arrived waits for it. */}
-      <Sheet open={editing !== null && (editing.routineId === null || editingRoutine !== null)} onClose={() => setEditing(null)} width={540}>
-        {editing ? (
-          <RoutineEditorView
-            key={editing.id}
-            botId={botId}
-            routine={editingRoutine}
-            saved={(saved) => onSaved(editing, saved)}
-          />
-        ) : null}
-      </Sheet>
     </VStack>
   )
 }

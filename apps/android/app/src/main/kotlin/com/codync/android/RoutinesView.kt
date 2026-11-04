@@ -73,6 +73,7 @@ import kotlinx.coroutines.launch
     val busy = "routines:${bot.id}" in state.busy
     // The open editor: on a routine (its id), or "" setting up a new one.
     var editing by remember(bot.id) { mutableStateOf(initialId) }
+    var flow by remember(bot.id) { mutableStateOf(false) }
     var runHistory by remember(bot.id) { mutableStateOf<Map<String, RoutineHistorySelection>>(emptyMap()) }
     LaunchedEffect(bot.id, online) { if (online) while (true) { store.loadRoutines(bot.id); delay(3_000) } }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -81,6 +82,8 @@ import kotlinx.coroutines.launch
             IconButton("Ask the bot for a routine", "text.bubble", enabled = online) { store.editDraft(bot.id, null, "I want a routine that "); leave() }
             IconButton("Set up a routine", "plus", enabled = online) { editing = "" }
         }
+        SegmentedChoice(flow, listOf(false to tr("List"), true to tr("Flow")), { flow = it })
+        if (flow) RoutineFlowView(bot, state, store) else {
         val routines = listing?.routines.orEmpty()
         if (routines.isEmpty()) Text(tr(if (listing != null) "No routines yet. Ask the bot for one, or set it up yourself with +." else "Loading routines…"),
             Modifier.outlinedCard(vertical = 14.dp), style = Type.system(12f).copy(lineHeight = Type.system(12f).lineHeight * 1.25f), color = Palette.secondary)
@@ -99,6 +102,7 @@ import kotlinx.coroutines.launch
                     runHistory = runHistory + (routine.id to selection)
                 }
             }
+        }
         }
     }
     // Item-based, so the editor always gets the routine it was opened on; it opens once that routine is listed.

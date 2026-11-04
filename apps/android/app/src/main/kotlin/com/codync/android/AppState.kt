@@ -51,6 +51,9 @@ data class AppState(
     val busy: Set<String> = emptySet(),
     val historyComplete: Set<String> = emptySet(),
     val routines: Map<String, RoutineListing> = emptyMap(),
+    /** Each bot's routine-flow canvas as last fetched, and the newest `routineFlow` rev heard for it (a canvas on screen loads again when it moves). */
+    val flows: Map<String, FlowCanvas> = emptyMap(),
+    val flowRevs: Map<String, Long> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */

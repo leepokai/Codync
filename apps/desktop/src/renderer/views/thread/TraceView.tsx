@@ -40,7 +40,7 @@ export function TraceView({ botId }: { botId: string }) {
           {sorted.map(([turn, entries]) => (
             <VStack key={turn} gap={8}>
               <Text as="div" size="compactSecondary" weight="semibold" tone="text" truncate className="trace-turn-title">
-                {entries.find((e) => e.kind === 'user')?.data.text ?? `Turn ${turn}`}
+                {entries.find((e) => e.kind === 'user')?.data.text ?? tr('Turn {turn}').replaceAll('{turn}', () => String(turn))}
               </Text>
               <CardSection>
                 {entries.map((e) => (
@@ -105,7 +105,7 @@ export function TraceRow({ entry, unfolded }: { entry: Entry; unfolded: boolean 
       return (
         <VStack gap={6}>
           <Label icon={<Icon name="checklist" size={11} weight="bold" />} weight="bold">
-            Plan
+            {tr('Plan')}
           </Label>
           {(d.entries ?? []).map((item, i) => (
             <Label
@@ -127,9 +127,11 @@ export function TraceRow({ entry, unfolded }: { entry: Entry; unfolded: boolean 
     case 'permission':
       return (
         <Label icon={<Icon name="hand.raised" size={11} color="var(--secondary)" />} tone="secondary">
-          {d.title ?? 'Approval'}
+          {d.title ?? tr('Approval')}
         </Label>
       )
+    case 'notice':
+      return <Text size="footnote" tone="tertiary">{tr(d.text ?? '')}</Text>
     default:
       return <Text size="footnote" tone="tertiary">{d.text ?? ''}</Text>
   }
@@ -144,12 +146,13 @@ export function ToolRow({ data }: { data: EntryData }) {
   const tr = useTr()
   const [expanded, setExpanded] = useState(false)
   const hasBody = !!data.output || !!data.diffs?.length
+  const title = data.title ?? 'Tool'
   const label = (
     <HStack as="span" gap={8} grow>
       <IconSlot width={18} tone="secondary">
         <Icon name={toolIcon(data.toolKind)} size={10} />
       </IconSlot>
-      <Text size="subheadline" tone="text" lines={2} grow>{data.title ?? tr(`Tool`)}</Text>
+      <Text size="subheadline" tone="text" lines={2} grow>{title === 'Tool' ? tr('Tool') : title}</Text>
       {data.status === 'completed' ? (
         <Icon name="checkmark" size={10} color="var(--accent)" />
       ) : data.status === 'failed' ? (

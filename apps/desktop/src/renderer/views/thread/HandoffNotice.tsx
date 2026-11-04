@@ -77,7 +77,7 @@ export function HandoffNotice({ entry, card }: { entry: Entry; card: HandoffCard
           />
           <CardForm>
             <CardSection footer="Your next message starts a fresh conversation that begins with this.">
-              <Field value={draft} onChange={setDraft} label="Handoff" lines={[10, 24]} mono />
+              <Field value={draft} onChange={setDraft} label={tr('Handoff')} lines={[10, 24]} mono />
             </CardSection>
           </CardForm>
         </SheetPage>}

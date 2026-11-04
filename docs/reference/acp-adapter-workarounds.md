@@ -97,3 +97,8 @@ Not one adapter's bug: the protocol leaves these open, and the host covers them 
   (`host/src/agent/bot/compaction.rs`).
 - Mode ids have no fixed meaning: Auto is found by id or name, and Goose's `auto` (approves everything) is hidden
   (`host/src/agent/modes.rs`).
+- No way in ACP v1 to hand a running turn another message: *Send now* uses the agents' own `_session/steering`
+  (advertised in the top-level `_meta.steering.supported`; claude-acp, codex-acp, omp) with `idleBehavior:
+  "promptRequired"`, and stops the turn for agents without it (`host/src/agent/bot/steer.rs`). Move to the standard
+  once ACP v2's prompts during active work and the `delivery` RFD
+  ([agent-client-protocol#1261](https://github.com/agentclientprotocol/agent-client-protocol/pull/1261)) are stable.

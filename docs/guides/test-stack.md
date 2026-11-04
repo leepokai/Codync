@@ -2,6 +2,20 @@
 
 How the end-to-end (e2e) checks drive the apps: Playwright for the desktop app, Maestro for the iPhone and Android apps, and Computer Use only for the native steps neither can reach. Unit and component tests stay as they are (`npm run typecheck && npm test`, `cargo test`, the Swift tests in `apps/ios/Kit`, the Gradle checks).
 
+## Host tests
+
+`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`).
+
+Run them one at a time: never start a test binary several times in parallel, or several copies of the suite, not even to hunt a flake. Repeat it one run after another, a few times at most. On 2026-11-04 parallel repeats left about 200 `claude -p /usage` processes behind, using 55 GB on a 32 GB Mac, and froze it.
+
+## Real agents
+
+Everyday tests use the fake agents, which only answer the way we expect. Run the real ones too, one short turn per agent on the cheapest model, with nothing in parallel (it uses your own plan), when:
+
+1. The registry version of `claude-acp` or `codex-acp` moves ([ACP adapter workarounds](../reference/acp-adapter-workarounds.md)).
+2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
+3. Before a release.
+
 ## Desktop: Playwright
 
 Playwright attaches to the worktree's running sandbox over the DevTools protocol. It doesn't launch Electron itself: the sandbox already owns the host, data, sign-in and single-instance lock, and an app launched without them would open against the shared Codync Dev.
@@ -24,7 +38,7 @@ maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-ta
 
 The devices are the worktree's own simulator `Codync <sandbox name>` and the shared `codync_worktree` emulator, under its lock ([worktree sandboxes](dev-app.md#worktree-sandboxes)). Install the worktree's builds first: `xcodebuild … -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd` for the simulator, `./gradlew :app:assembleDebug` for the emulator.
 
-A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it and signs the app out, so run such a flow in a Maestro run of its own, after the sign-in.
+A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it and signs the app out, so run such a flow in a Maestro run of its own, after the sign-in. Signed in isn't past first-run setup: `agent-logos.yaml` skips the choice page when it's there. The `computer-choice` flows need setup unfinished (fresh app data) and each finishes or changes it, so each gets its own run with its own start: `computer-choice` and `computer-choice-skip` with a computer in the account (`npm run dev -- --cloud`), `computer-choice-empty` without one.
 
 Two things that look like failures but aren't the app's:
 

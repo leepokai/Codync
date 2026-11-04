@@ -97,8 +97,10 @@ data class Bot(
     /** A group's bots, in member order, from [bots]. */
     fun memberBots(bots: List<Bot>): List<Bot> = members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
 
+    /** Working anywhere: its own chat, a room or a routine. */
+    val isWorking: Boolean get() = status in listOf("working", "needsInput")
     /** Working right now in this chat (its own, or a group it's in). */
-    fun isWorking(chat: String): Boolean = status in listOf("working", "needsInput") && (workingChat ?: id) == chat
+    fun isWorking(chat: String): Boolean = isWorking && (workingChat ?: id) == chat
 }
 
 object HostClient {

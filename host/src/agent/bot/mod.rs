@@ -28,6 +28,7 @@ mod modes;
 mod pi_tools;
 mod queue;
 mod session;
+mod steer;
 mod tool_entry;
 mod turn;
 mod updates;
@@ -111,6 +112,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         first_prompt: None,
         turn: None,
         queue: VecDeque::new(),
+        steers_in_flight: HashMap::new(),
         active_request: None,
         reply_hops: None,
         active_prompt: false,
@@ -121,6 +123,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         last_text: None,
         sent: Vec::new(),
         reacted: Reacted::No,
+        joined: false,
         files: files::FileShares::default(),
         perms: HashMap::new(),
         stop_requested: false,
@@ -149,6 +152,8 @@ struct SessionCaps {
     system_prompt: bool,
     /// ACP `additionalDirectories`: folders outside `cwd` the agent may work in, here the memory folders.
     additional_directories: bool,
+    /// `_session/steering` (not in ACP v1 yet): a message joins the running turn (see `steer`).
+    steering: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -283,6 +288,8 @@ struct Actor {
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
     queue: VecDeque<Queued>,
+    /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
+    steers_in_flight: HashMap<String, steer::InFlight>,
     active_request: Option<crate::chat::team::BotRequest>,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
@@ -293,11 +300,16 @@ struct Actor {
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,
+    /// What it wrote last this turn, since its last `send_message` or `react`.
     last_text: Option<String>,
     /// Messages the bot sent the user this turn (`send_message`); none: its last text is the reply.
     sent: Vec<String>,
     /// The bot's `react` this turn; with no message sent, it is the reply.
     reacted: Reacted,
+    /// A steered message joined this turn: its last text is a reply even after a `send_message` or `react`.
+    // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
+    // many beats a reply lost.
+    joined: bool,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,

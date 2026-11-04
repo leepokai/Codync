@@ -265,7 +265,7 @@ impl App {
     }
 
     /// Whether the host is `since` or newer; says what to update when it isn't (`why`, with `{host}` and `{version}`).
-    fn host_supports(&mut self, since: &str, why: &str) -> bool {
+    pub(super) fn host_supports(&mut self, since: &str, why: &str) -> bool {
         if self.host_version.is_empty() {
             self.flash("Still connecting: try again in a moment.");
             return false;

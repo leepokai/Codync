@@ -308,6 +308,8 @@ export interface EntryData {
   final?: boolean
   /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */
   status?: string
+  /** user: taken back from the queue before it went out (`unqueue`); no view reads it (`withoutRemoved`). */
+  removed?: boolean
   clientNonce?: string
   title?: string
   toolKind?: string
@@ -356,6 +358,21 @@ export interface Entry {
   data: EntryData
   createdAt: number
   updatedAt: number
+}
+
+const shownOf = new WeakMap<Entry[], Entry[]>()
+
+/**
+ * `list` as the views read it, without the messages taken back (`unqueue`): the store keeps those for its rev guard
+ * against a late response. One array per list, because the chat's memos depend on its identity.
+ */
+export function withoutRemoved(list: Entry[]): Entry[] {
+  let shown = shownOf.get(list)
+  if (!shown) {
+    shown = list.filter((e) => !e.data.removed)
+    shownOf.set(list, shown)
+  }
+  return shown
 }
 
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */

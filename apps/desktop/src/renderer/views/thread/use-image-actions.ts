@@ -36,9 +36,9 @@ export function copyNameOf(source: ImageSource) {
 }
 
 /** What replaces a message's plain Copy when it holds a picture: copy the picture, or just its name. */
-export function imageCopyItems(store: BotStore, source: ImageSource): MenuItem[] {
+export function imageCopyItems(store: BotStore, source: ImageSource, copy: () => void = () => void copyImageOf(store, source)): MenuItem[] {
   return [
-    { title: 'Copy image', icon: 'photo.on.rectangle', action: () => void copyImageOf(store, source) },
+    { title: 'Copy image', icon: 'photo.on.rectangle', action: copy },
     { title: 'Copy name', icon: 'square.on.square', action: () => copyNameOf(source) },
   ]
 }

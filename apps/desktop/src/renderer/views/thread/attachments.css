@@ -78,6 +78,10 @@
   border-radius: var(--radius-l);
   max-width: 380px;
 }
+.file-card-image-menu {
+  display: flex;
+  align-self: flex-start;
+}
 .file-card-image {
   display: flex;
   align-self: flex-start;

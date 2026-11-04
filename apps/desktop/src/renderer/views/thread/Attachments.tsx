@@ -7,6 +7,7 @@ import { Text } from '../../components/Text'
 import { analytics } from '../../store/analytics'
 import { useStoreRef } from '../../store/context'
 import { ImageContextMenu } from './ImageContextMenu'
+import { leavingViewer } from './message-copy'
 import { imageBytes, useImageCopy, type MessageMenu } from './use-image-actions'
 import { ZoomableImage } from './ZoomableImage'
 import './attachments.css'
@@ -67,19 +68,19 @@ export type ImageSource = { file: Attachment; botId: string } | { file: SharedFi
 /** A picture full size, in a sheet: zoom it, copy it, and with `actions` (a shared file's download) next to the close button. */
 export function AttachmentViewer({ source, close, actions, menu }: { source: ImageSource | null; close: () => void; actions?: ReactNode; menu?: MessageMenu }) {
   const id = source?.file.id
+  // Each opening is a new page, even one that starts while the sheet is still closing (which keeps its last content).
+  const shown = useRef<string>(undefined)
+  const opening = useRef(0)
+  if (id && id !== shown.current) opening.current++
+  shown.current = id
   useEffect(() => {
     if (id) analytics.track({ event: 'image_preview_opened' })
   }, [id])
   return (
     <Sheet open={source !== null} onClose={close} width={1040} height={800}>
-      {source ? <ViewerPage source={source} actions={actions} menu={menu && leavingViewer(menu, close)} /> : null}
+      {source ? <ViewerPage key={opening.current} source={source} actions={actions} menu={menu && leavingViewer(menu, close)} /> : null}
     </Sheet>
   )
-}
-
-/** The message's menu in the viewer: what it does leaves the viewer first (Reply, what it did), reactions stay. */
-function leavingViewer(menu: MessageMenu, close: () => void): MessageMenu {
-  return { ...menu, items: () => menu.items().map((item) => ({ ...item, action: () => { close(); item.action() } })) }
 }
 
 function ViewerPage({ source, actions, menu }: { source: ImageSource; actions?: ReactNode; menu?: MessageMenu }) {
@@ -103,7 +104,7 @@ function ViewerPage({ source, actions, menu }: { source: ImageSource; actions?: 
           </>
         }
       />
-      <ImageContextMenu source={source} menu={menu} className="attachment-viewer">
+      <ImageContextMenu source={source} menu={menu} copyImage={() => void copy.copy()} className="attachment-viewer">
         <ZoomableImage onZoom={reportZoom}>
           <AttachmentImage source={source} fit="full" />
         </ZoomableImage>

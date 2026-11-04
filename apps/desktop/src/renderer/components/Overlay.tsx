@@ -149,7 +149,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
   return createPortal(
     <DismissContext.Provider value={onClose}>
       <ModalTitleContext.Provider value={titleId}>
-        <div ref={layer} className={`modal-card ${shown ? 'shown' : ''}`} role="dialog" aria-modal aria-labelledby={titleId}>
+        <div ref={layer} className={`modal-card ${shown ? 'shown' : ''}`} role="dialog" aria-modal aria-labelledby={titleId} onContextMenu={(e) => e.stopPropagation()}>
           <div className="modal-dim" onClick={dismissOnDim ? onClose : undefined} />
           <div className="modal-content" data-modal-card tabIndex={-1} style={{ width, height, maxHeight }}>
             {open ? children : last.current}
@@ -387,7 +387,7 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   if (!mounted || !rect) return null
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
-    <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
+    <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}>
       <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
         <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
       </div>

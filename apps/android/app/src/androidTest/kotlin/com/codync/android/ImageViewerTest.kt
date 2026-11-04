@@ -99,6 +99,13 @@ class ImageViewerTest {
         compose.waitUntil(5_000) { viewerOpen() }
     }
 
+    @Test fun aCopyStartedInTheViewerFinishesAfterItCloses() {
+        openViewer()
+        compose.onNodeWithContentDescription("Copy image").performClick()
+        compose.onNodeWithContentDescription("Close").performClick()
+        compose.waitUntil(5_000) { clipboard.primaryClip?.getItemAt(0)?.uri != null }
+    }
+
     @Test fun zoomedInADragMovesThePictureAndAtFitItClosesTheViewer() {
         openViewer()
         assertFalse(zoomedIn())
@@ -130,6 +137,11 @@ class ImageViewerTest {
         compose.onNodeWithContentDescription("👍").performClick()
         compose.waitForIdle()
         assertTrue(viewerOpen())
+        // The menu's Copy image flashes the header button, as tapping it does.
+        picture.performTouchInput { longClick() }
+        compose.onNodeWithText("Copy image").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Copied").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { viewerOpen() }
         picture.performTouchInput { longClick() }
         compose.onNodeWithText("Reply").performClick()
         compose.waitUntil(5_000) { !viewerOpen() }

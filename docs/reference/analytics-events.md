@@ -66,7 +66,7 @@ host answers and sends it once the host is up.
 |---|---|---|---|
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
 | `image_preview_opened` | host `track` (desktop), iOS, Android | A picture in a chat or the Library opens full size | — |
-| `image_preview_action` | host `track` (desktop), iOS, Android | Something is done in the full-size viewer, at most one `zoom` per opening | `action` (`zoom`/`copy_image`/`copy_name`/`download`); never the picture or its name |
+| `image_preview_action` | host `track` (desktop), iOS, Android | Something is done to a picture: zoomed in the full-size viewer (at most one `zoom` per opening), or copied or downloaded (`copy_image` and `copy_name` also from a picture's menu in a chat; `download` only in the viewer) | `action` (`zoom`/`copy_image`/`copy_name`/`download`); never the picture or its name |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `bots_imported` | host | `importBots` (bots it makes send no `bot_created`) | `source` (`grok-bot`/`openbot`/`other`), `bots`, `groups` (counts) |
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values |

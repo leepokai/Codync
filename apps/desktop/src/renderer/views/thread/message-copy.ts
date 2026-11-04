@@ -1,19 +1,20 @@
 import { isImageName, showsAsImage, type Entry } from '../../../shared/models.ts'
 import type { ImageSource } from './Attachments'
-
-/** The first picture a message holds: one a bot shared, or one sent with it. */
-function imageOf(entry: Entry): ImageSource | null {
-  const shared = entry.data.files?.find(showsAsImage)
-  if (shared) return { file: shared, entryId: entry.id }
-  const sent = entry.data.attachments?.find((file) => isImageName(file.name))
-  return sent ? { file: sent, botId: entry.botId } : null
-}
+import type { MessageMenu } from './use-image-actions'
 
 /**
- * The picture a message's Copy copies instead of its text: the picture of a bot's shared file (even with a caption), or a sent
- * picture with no text. A message with text and a picture keeps copying the text; one with no picture has nothing else to copy.
+ * The picture a message's Copy copies instead of its text: a bot's shared file when it is the message's only file (even with a
+ * caption), or a sent picture when it is the only attachment and there is no text. Anything else (text with a picture, several
+ * files) keeps copying the text: each picture's own menu copies that picture.
  */
 export function copiedPicture(entry: Entry): ImageSource | null {
-  const picture = imageOf(entry)
-  return picture && (entry.data.files?.length || !entry.data.text) ? picture : null
+  const { files, attachments, text } = entry.data
+  if (files?.length === 1) return showsAsImage(files[0]) ? { file: files[0], entryId: entry.id } : null
+  if (attachments?.length === 1 && !text) return isImageName(attachments[0].name) ? { file: attachments[0], botId: entry.botId } : null
+  return null
+}
+
+/** A message's menu inside the open viewer: what its items do leaves the viewer first (Reply, what it did); reactions stay. */
+export function leavingViewer(menu: MessageMenu, close: () => void): MessageMenu {
+  return { ...menu, items: () => menu.items().map((item) => ({ ...item, action: () => { close(); item.action() } })) }
 }

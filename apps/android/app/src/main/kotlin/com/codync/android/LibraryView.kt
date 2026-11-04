@@ -100,15 +100,11 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** A file the user attached: an image opens full size, as in the chat, and holding it copies it or its name; another file
- *  only shows. */
+/** A file the user attached: an image opens full size, as in the chat; another file only shows. */
 @Composable private fun AttachmentRow(file: Attachment, botId: String, state: AppState, store: AppStore, openImage: () -> Unit) {
-    // As the chat's picture: the tap is the row's own button, the hold the menu's.
-    if (file.isImage) Box(Modifier.contextActions { imageCopyItems(store, file.imageSource(botId, store)) }) {
-        LibraryRow(Modifier.plainButton(action = openImage), {
-            AttachmentImage(file, botId, 144, state, store, Modifier.size(36.dp).clip(RoundedRectangle(8.dp)), ContentScale.Crop)
-        }) { NameAndDetail(file.name, formatBytes(file.size)) }
-    }
+    if (file.isImage) LibraryRow(Modifier.plainButton(action = openImage), {
+        AttachmentImage(file, botId, 144, state, store, Modifier.size(36.dp).clip(RoundedRectangle(8.dp)), ContentScale.Crop)
+    }) { NameAndDetail(file.name, formatBytes(file.size)) }
     else LibraryRow(Modifier.semantics(mergeDescendants = true) {}, { Symbol(AttachmentIcon.symbol(file.name), size = 22.dp, tint = Palette.secondary) }) {
         NameAndDetail(file.name, formatBytes(file.size))
     }

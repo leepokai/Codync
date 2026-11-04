@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
-import { FIT, panBy, pinchFactor, pinchStep, toggleZoom, zoomBy, type Touch, type Zoom } from '../../lib/image-zoom'
+import { FIT, clampZoom, panBy, pinchFactor, pinchStep, toggleZoom, zoomBy, type Touch, type Zoom } from '../../lib/image-zoom'
 
 const KEY_STEP = 1.25
 
@@ -18,7 +18,8 @@ export function useImageZoom(onZoom?: () => void) {
   const apply = useCallback((next: Zoom, changesScale = false) => {
     current.current = next
     setZoom(next)
-    if (changesScale) zoomed.current?.()
+    // Counted when the picture is actually zoomed in, not when a zoom out or reset leaves it at fit.
+    if (changesScale && next.scale > 1) zoomed.current?.()
   }, [])
 
   /** The box, the picture's fit size (its layout size: the zoom is a transform), and a screen point from the box's center. */
@@ -45,6 +46,18 @@ export function useImageZoom(onZoom?: () => void) {
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
+  }, [apply, measure])
+
+  // The window resizing leaves the picture where it was: keep it inside the new box.
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      const m = measure()
+      apply(clampZoom(current.current, m.box, m.picture))
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [apply, measure])
 
   useEffect(() => {

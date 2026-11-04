@@ -50,12 +50,15 @@ private fun AppStore.setDownload(fileId: String, download: FileDownloadState?) =
     it.copy(fileDownloads = if (download == null) it.fileDownloads - fileId else it.fileDownloads + (fileId to download))
 }
 
-/** Picture `source` itself on the clipboard (desktop `copyImageOf`), its original file fetched first if it isn't cached yet. */
-internal suspend fun AppStore.copyImage(source: ImageSource) {
+/**
+ * Picture `source` itself on the clipboard (desktop `copyImageOf`), its original file fetched first if it isn't cached yet.
+ * It runs in the store's scope, so closing the viewer that asked doesn't stop it; the caller only waits for how it went.
+ */
+internal suspend fun AppStore.copyImage(source: ImageSource) = contextScope.async {
     val file = source.load()
     withContext(Dispatchers.IO) { attachments.copyImage(file, source.name) }
     Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage))
-}
+}.await()
 
 /** Copy image from a menu: a failure shows as the store's error. */
 internal fun AppStore.copyImageLater(source: ImageSource) = action("copy:" + source.id) { copyImage(source) }

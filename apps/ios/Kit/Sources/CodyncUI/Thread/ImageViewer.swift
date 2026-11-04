@@ -36,11 +36,14 @@ struct AttachmentViewer: View {
     @Environment(\.dismissModal) private var dismiss
     @State private var zoom = ImageZoom.fit
     @State private var zoomReported = false
+    @State private var copied: CopyResult?
+    @State private var copying: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
             ModalHeader { Text(verbatim: viewing.source.name) } trailing: {
-                CopyImageButton(source: viewing.source)
+                IconButton(copied?.title ?? "Copy image", systemImage: copied?.symbol ?? "doc.on.doc", action: copyImage)
                 if case .shared(let file, let entryId, let botId) = viewing.source {
                     ViewerDownloadButton(file: file, entryId: entryId, botId: botId)
                 }
@@ -48,7 +51,7 @@ struct AttachmentViewer: View {
             ZoomableImage(zoom: $zoom) { AttachmentImage(viewing.source, maxPixels: 4096) }
                 .accessibilityLabel(Text(verbatim: viewing.source.name))
                 .contextActions(reactions: menu?.reactions) {
-                    let copy = ImageCopy.menuItems(viewing.source, model: model)
+                    let copy = ImageCopy.menuItems(viewing.source, copyImage: copyImage)
                     return menu?.items(copy: copy) ?? copy
                 }
                 .padding(12)
@@ -66,6 +69,23 @@ struct AttachmentViewer: View {
         .fileExportSheet(model, botId: viewing.source.botId)
     }
 
+    /// The copy button and the menu's Copy image: copies the picture, then the button shows for a moment whether that
+    /// worked.
+    private func copyImage() {
+        copying?.cancel()
+        copying = Task {
+            let done = await ImageCopy.image(viewing.source, model: model)
+            showCopy(done ? .copied : .failed)
+            // Cancelled by a newer copy, which shows its own result.
+            try? await Task.sleep(for: CopyResult.shownFor)
+            if !Task.isCancelled { showCopy(nil) }
+        }
+    }
+
+    private func showCopy(_ result: CopyResult?) {
+        withAnimation(Motion.reduced(Motion.hover, reduceMotion)) { copied = result }
+    }
+
     /// The message's menu, its reactions as they are now (the sheet keeps the message as it was when opened).
     private var menu: MessageMenu? {
         guard let menu = viewing.menu else { return nil }
@@ -74,38 +94,13 @@ struct AttachmentViewer: View {
     }
 }
 
-/// The viewer's copy button: copies the picture, then shows for a moment whether that worked.
-private struct CopyImageButton: View {
-    let source: ImageSource
-    @Environment(BotStore.self) private var model
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var result: Result?
-    @State private var copying: Task<Void, Never>?
+/// What the viewer's copy button shows for a moment after a copy.
+private enum CopyResult {
+    case copied, failed
 
-    enum Result {
-        case copied, failed
-
-        static let shownFor = Duration.seconds(1.5)
-        var title: String { self == .copied ? "Copied" : "Couldn't copy image" }
-        var symbol: String { self == .copied ? "checkmark" : "exclamationmark.circle" }
-    }
-
-    var body: some View {
-        IconButton(result?.title ?? "Copy image", systemImage: result?.symbol ?? "doc.on.doc") {
-            copying?.cancel()
-            copying = Task {
-                let copied = await ImageCopy.image(source, model: model)
-                show(copied ? .copied : .failed)
-                // Cancelled by a newer copy, which shows its own result.
-                try? await Task.sleep(for: Result.shownFor)
-                if !Task.isCancelled { show(nil) }
-            }
-        }
-    }
-
-    private func show(_ result: Result?) {
-        withAnimation(Motion.reduced(Motion.hover, reduceMotion)) { self.result = result }
-    }
+    static let shownFor = Duration.seconds(1.5)
+    var title: String { self == .copied ? "Copied" : "Couldn't copy image" }
+    var symbol: String { self == .copied ? "checkmark" : "exclamationmark.circle" }
 }
 
 /// A shared file's Download button, beside the viewer's close button: the same states as on its card.

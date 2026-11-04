@@ -1810,7 +1810,7 @@
   "Add {name} to your account first": "请先将 {name} 加入你的账户",
   "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "你的手机会通过账户从任何地方连接 {name}。加入后也会开启此功能。",
   "Use your own relay": "使用自己的中继",
-  "Copy image": "拷贝图片",
-  "Copy name": "拷贝名称",
-  "Couldn't copy image": "无法拷贝图片"
+  "Copy image": "复制图片",
+  "Copy name": "复制名称",
+  "Couldn't copy image": "无法复制图片"
 }

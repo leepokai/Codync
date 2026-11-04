@@ -49,7 +49,7 @@ export function FileDownloadCard({ entry, file, menu }: { entry: Entry; file: Sh
   const image: ImageSource = { file, entryId: entry.id }
   return <VStack gap={12} className="file-card">
     {showsAsImage(file) ? <>
-      <ImageContextMenu source={image} menu={menu}>
+      <ImageContextMenu source={image} menu={menu} className="file-card-image-menu">
         <button className="file-card-image" aria-label={file.name} onClick={() => setViewing(true)}>
           <AttachmentImage source={image} fit="thumbnail" />
         </button>

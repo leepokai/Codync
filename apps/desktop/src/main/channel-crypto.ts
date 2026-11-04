@@ -1,9 +1,11 @@
-import { createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey, diffieHellman, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
+import { createHash, createPrivateKey, createPublicKey, diffieHellman, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
 
 /**
  * Protocol-v1 primitives of the end-to-end channel between a device and a host (host `remote::crypto`,
  * the phones' `RelayCrypto`): the handshake, its frames and the access-request code. Checked against
- * the shared vectors in `docs/reference/fixtures/remote-relay-vectors.json`.
+ * the shared vectors in `docs/reference/fixtures/remote-relay-vectors.json`. The frames use noble's
+ * ChaCha20-Poly1305: Electron's crypto (BoringSSL) doesn't have that cipher.
  */
 
 const CHUNK_SIZE = 256 * 1024
@@ -105,18 +107,13 @@ function frameParams(counter: number) {
 
 export function sealFrame(key: Buffer, counter: number, last: boolean, chunk: Buffer) {
   const { nonce, aad } = frameParams(counter)
-  const cipher = createCipheriv('chacha20-poly1305', key, nonce, { authTagLength: 16 })
-  cipher.setAAD(aad, { plaintextLength: chunk.length + 1 })
-  return Buffer.concat([cipher.update(Buffer.from([last ? 0 : 1])), cipher.update(chunk), cipher.final(), cipher.getAuthTag()])
+  return Buffer.from(chacha20poly1305(key, nonce, aad).encrypt(Buffer.concat([Buffer.from([last ? 0 : 1]), chunk])))
 }
 
 export function openFrame(key: Buffer, counter: number, data: Buffer): { last: boolean; chunk: Buffer } {
   if (data.length < 17) throw new Error('Malformed encrypted frame')
   const { nonce, aad } = frameParams(counter)
-  const decipher = createDecipheriv('chacha20-poly1305', key, nonce, { authTagLength: 16 })
-  decipher.setAAD(aad, { plaintextLength: data.length - 16 })
-  decipher.setAuthTag(data.subarray(-16))
-  const plain = Buffer.concat([decipher.update(data.subarray(0, -16)), decipher.final()])
+  const plain = Buffer.from(chacha20poly1305(key, nonce, aad).decrypt(data))
   if (plain[0] !== 0 && plain[0] !== 1) throw new Error('Invalid chunk flag')
   return { last: plain[0] === 0, chunk: plain.subarray(1) }
 }

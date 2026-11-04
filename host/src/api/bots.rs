@@ -4,7 +4,7 @@ use super::devices::Caller;
 use super::str_arg;
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
-use crate::store::{EntryKind, Lane};
+use crate::store::{BotKind, EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::ops::ControlFlow;
@@ -160,6 +160,25 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             })
             .await??;
             json!({"bot": saved})
+        }
+        // The roster as clients build bot menus from the API (the n8n node): the agents,
+        // not the groups; hidden bots stay out, as in the roster.
+        "botList" => {
+            let bots = hub
+                .store
+                .bots()?
+                .into_iter()
+                .filter(|row| !row.deleted && !row.config.hidden && row.config.kind != BotKind::Group)
+                .map(|row| {
+                    json!({
+                        "id": row.config.id,
+                        "name": row.config.name,
+                        "description": row.config.description,
+                        "external": crate::external::is_external(&row.config),
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({"bots": bots})
         }
         // The roster as the user dragged it, top first.
         "reorderBots" => {
@@ -379,4 +398,67 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LockExt;
+    use crate::remote::identity::Identity;
+    use crate::store::Store;
+
+    /// A hub on an in-memory store; the bot list reads the store, nothing else.
+    fn fixture() -> (Arc<Hub>, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("codync-botlist-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        // Keep connector defaults independent of the person's credential manager.
+        *store.secret_key.locked() = Some(zeroize::Zeroizing::new(vec![0; 32]));
+        let hub = Hub::new(store, "botlist-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        (hub, dir)
+    }
+
+    async fn list(hub: &Arc<Hub>) -> Value {
+        match call(hub, &Caller::Local, "botList", json!({})).await.unwrap() {
+            ControlFlow::Break(v) => v,
+            ControlFlow::Continue(_) => panic!("botList fell through the route"),
+        }
+    }
+
+    async fn make(hub: &Arc<Hub>, name: &str) -> Value {
+        let cfg = crate::agent::new_bot::with_defaults(hub, json!({"name": name})).await.unwrap();
+        hub.create_bot(cfg).unwrap()
+    }
+
+    #[tokio::test]
+    async fn bot_list_lists_the_agents_the_roster_shows() {
+        let (hub, dir) = fixture();
+        let alpha = make(&hub, "Alpha").await;
+        let beta = make(&hub, "Beta").await;
+        let alpha_id = alpha["id"].as_str().unwrap().to_owned();
+        let beta_id = beta["id"].as_str().unwrap().to_owned();
+        // A group is a conversation, not an agent the node may message.
+        let mut group_cfg = crate::agent::new_bot::with_defaults(&hub, json!({"name": "Team"})).await.unwrap();
+        group_cfg.kind = BotKind::Group;
+        group_cfg.members = vec![alpha_id.clone(), beta_id.clone()];
+        hub.create_bot(group_cfg).unwrap();
+
+        let out = list(&hub).await;
+        let ids: Vec<&str> = out["bots"].as_array().unwrap().iter().map(|b| b["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec![alpha_id.as_str(), beta_id.as_str()], "groups stay out of the list");
+        let entry = &out["bots"].as_array().unwrap()[0];
+        assert_eq!(entry["name"], "Alpha");
+        assert_eq!(entry["external"], false);
+
+        // Hidden bots stay out, as in the roster.
+        hub.update_bot(&json!({"id": beta_id, "hidden": true})).unwrap();
+        let out = list(&hub).await;
+        let ids: Vec<&str> = out["bots"].as_array().unwrap().iter().map(|b| b["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec![alpha_id.as_str()]);
+
+        // Deleted bots stay out too.
+        hub.delete_bot(&alpha_id).unwrap();
+        assert_eq!(list(&hub).await["bots"].as_array().unwrap().len(), 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

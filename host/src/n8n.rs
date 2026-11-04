@@ -70,10 +70,14 @@ pub struct N8n {
     /// a newer stop or start already set.
     generation: AtomicU64,
     events: broadcast::Sender<Value>,
+    /// What the instance's Codync node reaches back to: this host's loopback URL.
+    host_url: String,
+    /// This host's loopback bearer token, for the same node.
+    host_token: String,
 }
 
 impl N8n {
-    pub fn new(store: &Store, events: broadcast::Sender<Value>) -> Self {
+    pub fn new(store: &Store, events: broadcast::Sender<Value>, host_url: String, host_token: String) -> Self {
         let settings = Settings {
             path: kv(store, KV_PATH).map(PathBuf::from),
             port: kv(store, KV_PORT).and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_PORT),
@@ -86,6 +90,8 @@ impl N8n {
             log: Mutex::default(),
             generation: AtomicU64::new(0),
             events,
+            host_url,
+            host_token,
         }
     }
 
@@ -233,6 +239,7 @@ impl N8n {
         let user_folder = service::data_dir().join("n8n");
         migrate_data_dir(&user_folder).await?;
         tokio::fs::create_dir_all(&user_folder).await.context("preparing the n8n data folder")?;
+        install_node_package(&user_folder).await?;
 
         let mut command = Command::new(&node);
         command
@@ -244,6 +251,10 @@ impl N8n {
             .env("AUTOMAN_PROTOCOL", "http")
             .env("AUTOMAN_DIAGNOSTICS_ENABLED", "false")
             .env("NODE_ENV", "production")
+            // The Codync node in this instance's editor: the host it talks to, with
+            // its loopback token, so workflows need no configured credential.
+            .env("CODYNC_HOST_URL", &self.host_url)
+            .env("CODYNC_HOST_TOKEN", &self.host_token)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         Process::prepare(&mut command);
@@ -358,6 +369,26 @@ async fn migrate_data_dir(dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The Codync node's package: what the host writes into the instance's custom folder
+/// (always scanned) so the editor offers the Codync Bot node with no install step.
+const NODE_PACKAGE: [(&str, &str); 3] = [
+    ("package.json", include_str!("../n8n-nodes-codync/package.json")),
+    ("dist/CodyncBot.node.js", include_str!("../n8n-nodes-codync/dist/CodyncBot.node.js")),
+    ("dist/CodyncApi.credentials.js", include_str!("../n8n-nodes-codync/dist/CodyncApi.credentials.js")),
+];
+
+/// Writes the package over itself, so it tracks this host's version on every start.
+async fn install_node_package(user_folder: &Path) -> Result<()> {
+    for (rel, contents) in NODE_PACKAGE {
+        let file = user_folder.join("custom/node_modules/n8n-nodes-codync").join(rel);
+        if let Some(parent) = file.parent() {
+            tokio::fs::create_dir_all(parent).await.with_context(|| format!("preparing {}", parent.display()))?;
+        }
+        tokio::fs::write(&file, contents).await.with_context(|| format!("writing the Codync node ({rel})"))?;
+    }
+    Ok(())
+}
+
 /// `message — what the instance last printed`, when there is a print to cite.
 fn with_tail(message: String, tail: &str) -> String {
     if tail.is_empty() { message } else { format!("{message} — {tail}") }
@@ -407,7 +438,7 @@ mod tests {
     fn settings_default_to_off_and_the_usual_port() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = N8n::new(&store, events);
+        let a = N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into());
         let s = a.state();
         assert_eq!(s["enabled"], false);
         assert_eq!(s["state"], "stopped");
@@ -419,7 +450,7 @@ mod tests {
     fn the_path_must_be_an_install() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = Arc::new(N8n::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into()));
         let rt = tokio::runtime::Runtime::new().unwrap();
         let bad = std::env::temp_dir().join(format!("n8n-not-{}", uuid::Uuid::new_v4()));
         rt.block_on(a.set_path(&store, &bad.to_string_lossy())).unwrap_err();
@@ -434,7 +465,7 @@ mod tests {
     fn the_port_stays_in_the_user_range() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = Arc::new(N8n::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into()));
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(a.set_port(&store, 80)).unwrap_err();
         rt.block_on(a.set_port(&store, 5679)).unwrap();
@@ -445,7 +476,7 @@ mod tests {
     fn a_settings_change_reaches_the_clients() {
         let store = temp_store();
         let (events, mut rx) = broadcast::channel(8);
-        let a = Arc::new(N8n::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into()));
         let rt = tokio::runtime::Runtime::new().unwrap();
         let good = std::env::temp_dir().join(format!("n8n-good-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(good.join("packages/cli/bin")).unwrap();
@@ -467,7 +498,7 @@ mod tests {
     fn enabling_persists_and_reflects() {
         let store = temp_store();
         let (events, _) = broadcast::channel(8);
-        let a = Arc::new(N8n::new(&store, events));
+        let a = Arc::new(N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into()));
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             a.enable(&store).unwrap();
@@ -484,7 +515,7 @@ mod tests {
         store.kv_set("automan.port", "5679").unwrap();
         store.kv_set("automan.enabled", "1").unwrap();
         let (events, _) = broadcast::channel(8);
-        let a = N8n::new(&store, events);
+        let a = N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into());
         let s = a.state();
         assert_eq!(s["path"], "C:\\n8n-install");
         assert_eq!(s["port"], 5679);
@@ -496,5 +527,23 @@ mod tests {
         assert!(store.kv_get("automan.path").is_none());
         assert!(store.kv_get("automan.port").is_none());
         assert!(store.kv_get("automan.enabled").is_none());
+    }
+
+    #[tokio::test]
+    async fn the_codync_node_package_is_written_where_the_instance_scans_it() {
+        let dir = std::env::temp_dir().join(format!("n8n-pkg-{}", uuid::Uuid::new_v4()));
+        install_node_package(&dir).await.unwrap();
+        let pkg = dir.join("custom/node_modules/n8n-nodes-codync");
+        assert_eq!(
+            std::fs::read_to_string(pkg.join("package.json")).unwrap(),
+            include_str!("../n8n-nodes-codync/package.json")
+        );
+        let node = std::fs::read_to_string(pkg.join("dist/CodyncBot.node.js")).unwrap();
+        assert!(node.contains("module.exports = { CodyncBot }"), "the loader instantiates by class name");
+        let cred = std::fs::read_to_string(pkg.join("dist/CodyncApi.credentials.js")).unwrap();
+        assert!(cred.contains("name = 'codyncApi'"));
+        // A start over an existing folder keeps the package at this host's version.
+        install_node_package(&dir).await.unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

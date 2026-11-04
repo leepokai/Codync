@@ -129,7 +129,8 @@ impl Hub {
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
-        let n8n = Arc::new(crate::n8n::N8n::new(&store, events.clone()));
+        let n8n =
+            Arc::new(crate::n8n::N8n::new(&store, events.clone(), format!("http://127.0.0.1:{port}"), token.clone()));
         Arc::new(Self {
             computer: crate::computer::Access::default(),
             analytics: crate::analytics::Analytics::load(&store),

@@ -24,7 +24,12 @@ Type in the box at the bottom and send.
 
 Each chat keeps its own draft on each device, and the draft comes back when you return to the chat or reopen the app. Drafts aren't synced between devices.
 
-**While the bot works**, the box reads "Queue a message for" followed by the bot's name. Messages you send then show **Queued until this response finishes**, and they reach the agent together as its next turn.
+**While the bot works**, the box reads "Queue a message for" followed by the bot's name. Messages you send then wait in a list just above the box, which scrolls once it gets long, and they reach the agent together as its next turn. Each waiting message has two buttons:
+
+- **Send now** (the turning arrow) hands it to the bot right away. Claude, Codex and omp bots take it into the reply they're working on, which then answers it too; with other agents, that reply stops and the bot starts on your message. While the bot is busy with something else, such as a routine, a group or another bot's request, the message goes first in line.
+- **Remove** (the trash can) takes it back: neither it nor its files reach the bot.
+
+In the terminal, the waiting messages show above the input; press `esc`, then `S` to send the oldest one now or `D` to take back the newest.
 
 **When the computer is offline**, the iPhone can still take a text message: it shows **Waiting for the computer to come online** and goes out when the computer is back. It waits in the Codync relay, encrypted for your computer, for up to 24 hours; after that it shows **Failed to send**. Tap the cancel button beside it to take it back. A message with files can't wait; its send button stays off until the computer is online.
 

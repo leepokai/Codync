@@ -21,6 +21,16 @@ class FallbacksTest {
         assertNull(old.fallbacks); assertNull(old.selfFallbacks); assertNull(old.agentStep); assertTrue(old.resting.isEmpty())
     }
 
+    @Test fun `bots mix agents when they run more than one, counting a fallback and leaving groups out`() {
+        fun bot(json: String) = HostClient.decode(Json.parseToJsonElement(json).jsonObject)
+        val claude = bot("""{"id":"a","name":"A","backend":"claude"}""")
+        val onCodex = bot("""{"id":"b","name":"B","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}}""")
+        val group = bot("""{"id":"g","name":"G","kind":"group","backend":"codex"}""")
+        assertEquals("codex", onCodex.runningAgent)
+        assertFalse(listOf(claude, bot("""{"id":"c","name":"C","backend":"claude"}"""), group).mixesAgents())
+        assertTrue(listOf(claude, onCodex).mixesAgents())
+    }
+
     @Test fun `fallbacks move one place within the list, never past either end`() {
         val list = listOf(Fallback("codex"), Fallback("gemini"), Fallback("opencode"))
         assertEquals(listOf("gemini", "codex", "opencode"), list.moved(1, -1).map { it.backend })

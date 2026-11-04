@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MAX_FALLBACKS, moveFallback, restLine, restOf, stepBanner } from '@shared/fallbacks'
+import { MAX_FALLBACKS, moveFallback, restLine, restOf, runningAgent, stepBanner } from '@shared/fallbacks'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, DropdownMenu, IconButton } from '../../components/Controls'
@@ -25,7 +25,7 @@ export function AgentStepBanner({ bot }: { bot: Bot }) {
   const store = useStore()
   return (
     <HStack gap={8} className="fade-in">
-      <AgentIcon registry={store.agentRegistry(bot.agentStep?.agent ?? bot.backend)} size={14} />
+      <AgentIcon registry={store.agentRegistry(runningAgent(bot))} size={14} />
       <Text tone="text" grow>{stepBanner(bot, (a) => store.backendName(a), Date.now())}</Text>
       <Button kind="secondary" className="fallback-switch-back" onClick={() => store.switchBack(bot.id)}>Switch back</Button>
     </HStack>
@@ -114,7 +114,7 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
       {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
       <DropdownMenu
         className="icon-button fallback-menu"
-        title="More"
+        title={tr('More')}
         items={() => [
           ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
           ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),

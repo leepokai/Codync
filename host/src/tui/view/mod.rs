@@ -23,6 +23,7 @@ mod new_bot;
 mod overlay;
 mod pair;
 mod permission;
+mod queue;
 mod roster;
 mod skill;
 mod style;

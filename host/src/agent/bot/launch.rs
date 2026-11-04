@@ -157,6 +157,8 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         close: init["agentCapabilities"]["sessionCapabilities"]["close"].is_object(),
         system_prompt: init["agentCapabilities"]["sessionCapabilities"]["systemPrompt"].is_object(),
         additional_directories: init["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"].is_object(),
+        // Claude's, Codex's and omp's adapters say so in the top-level `_meta`.
+        steering: init["_meta"]["steering"]["supported"] == true,
     };
     Ok(Conn {
         acp,

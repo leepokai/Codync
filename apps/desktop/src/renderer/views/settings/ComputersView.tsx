@@ -8,6 +8,7 @@ import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
+import { analytics } from '../../store/analytics'
 import type { CloudComputer } from '../../store/cloud'
 import type { BotStore } from '../../store/bot-store'
 import { StoreContext, useApp } from '../../store/context'
@@ -93,7 +94,7 @@ export function ComputersView() {
         message={removingOlder
           ? tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removing.name)
           // Offline may only mean asleep: removal unclaims it, and its own app won't add it back by itself.
-          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', removing?.name ?? 'a computer')}`}
+          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', () => removing?.name ?? tr('a computer'))}`}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removing.computerId) }] : []}
         onClose={() => setRemoving(null)}
       />
@@ -114,6 +115,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
   const [showVoice, setShowVoice] = useState(false)
   const [confirmUnclaim, setConfirmUnclaim] = useState(false)
   const [confirmAutoApproval, setConfirmAutoApproval] = useState(false)
+  const [askAccount, setAskAccount] = useState(false)
   const cloud = store.cloud
   const owner = cloud?.owner ?? null
   const autoApproval = cloud?.approval === 'auto'
@@ -135,6 +137,14 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         store.setError(errorText(e))
       }
     })
+
+  // Turning it on asks to add a computer that would be in no account (`joinsAccountOnEnable`). Signed out, the welcome
+  // covers Settings and a build without accounts has none to join; a saved session still restoring makes the switch wait.
+  const asksAccount = cloud?.joinsAccountOnEnable === true
+  const setReach = (on: boolean) => {
+    if (on && asksAccount && account.isSignedIn) setAskAccount(true)
+    else void run(() => app.cloud.setCloud(store, on))
+  }
 
   // A private relay has no accounts: no claim, no access requests.
   const privateRelay = cloud?.relay === 'private'
@@ -186,7 +196,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
           // Until the host gives its cloud status, there's no way to tell its relay or account.
           ...(cloud
             ? [
-                <Switch key="cloud" className="settings-appear" on={cloud.enabled} disabled={busy || !manageable} onChange={(on) => run(() => app.cloud.setCloud(store, on))}>
+                <Switch key="cloud" className="settings-appear" on={cloud.enabled} disabled={busy || !manageable || (asksAccount && !cloud.enabled && !account.isReady)} onChange={setReach}>
                   <span className="settings-stack">
                     <Text>{tr(`Reach from anywhere`)}</Text>
                     <Text size="caption" tone={cloud.lastError ? 'attention' : 'secondary'}>{cloudLine}</Text>
@@ -268,6 +278,17 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         message={tr("Any device signed in to your account gets full control of {name}: its files, terminals and bots, with no check here. If someone gets into your account, or Codync's cloud is ever compromised, they could add their own device and you'd have no chance to stop it. Devices paired with a QR code aren't affected.").replaceAll('{name}', name)}
         actions={[{ title: 'Skip the check', destructive: true, action: () => setApproval('auto') }]}
         onClose={() => setConfirmAutoApproval(false)}
+      />
+      <Dialog
+        open={askAccount}
+        title={tr('Add {name} to your account first').replaceAll('{name}', () => name)}
+        message={tr('Your phone reaches {name} from anywhere through your account. Adding it also turns this on.').replaceAll('{name}', () => name)}
+        actions={[
+          { title: 'Add to account', action: () => void run(() => app.cloud.addFromReach(store)) },
+          { title: 'Use your own relay', action: () => void run(() => app.cloud.useOwnRelay(store)) },
+        ]}
+        onCancel={() => analytics.track({ event: 'reach_account_answered', outcome: 'cancelled' })}
+        onClose={() => setAskAccount(false)}
       />
       <Dialog
         open={confirmUnclaim}
@@ -365,9 +386,9 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
   const save = async () => {
     const isInt = (s: string) => /^-?\d+$/.test(s)
     const portText = port.trim()
-    if (portText && !isInt(portText)) return setProblem('The SSH port must be a number.')
+    if (portText && !isInt(portText)) return setProblem(tr('The SSH port must be a number.'))
     const remote = remotePort.trim()
-    if (!isInt(remote)) return setProblem('The Codync port must be a number.')
+    if (!isInt(remote)) return setProblem(tr('The Codync port must be a number.'))
     const u = user.trim()
     const p: SSHProfile = {
       ...profile,
@@ -392,15 +413,15 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
   return (
     // Return in a field saves (the default action).
     <VStack className="settings-ssh-editor" onKeyDown={(e) => e.key === 'Enter' && e.target instanceof HTMLInputElement && void save()}>
-      <ModalHeader icon="terminal" title={isNew ? 'Add SSH computer' : 'Edit SSH computer'} trailing={<IconButton title={isNew ? 'Add' : 'Save'} icon="checkmark" onClick={() => void save()} />} />
+      <ModalHeader icon="terminal" title={tr(isNew ? 'Add SSH computer' : 'Edit SSH computer')} trailing={<IconButton title={tr(isNew ? 'Add' : 'Save')} icon="checkmark" onClick={() => void save()} />} />
       <VStack gap={16} className="settings-ssh-editor-body">
         <CardSection>
-          {field('Name', profile.name, (name) => setProfile({ ...profile, name }), 'Optional')}
-          {field('Host', profile.host, (host) => setProfile({ ...profile, host }), 'SSH alias or hostname')}
-          {field('User', user, setUser, 'From SSH config')}
-          {field('SSH port', port, setPort, 'From SSH config')}
+          {field('Name', profile.name, (name) => setProfile({ ...profile, name }), tr('Optional'))}
+          {field(tr('Host'), profile.host, (host) => setProfile({ ...profile, host }), tr('SSH alias or hostname'))}
+          {field(tr('User'), user, setUser, tr('From SSH config'))}
+          {field(tr('SSH port'), port, setPort, tr('From SSH config'))}
           <div className="settings-row">
-            <span>Key</span>
+            <span>{tr('Key')}</span>
             <Spacer />
             <Text tone="secondary">{profile.identityFile?.split(/[\\/]/).pop() ?? tr(`ssh-agent / SSH config`)}</Text>
             <IconButton
@@ -414,7 +435,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
               </HStack>
             ) : null}
           </div>
-          {field('Codync port', remotePort, setRemotePort, '')}
+          {field(tr('Codync port'), remotePort, setRemotePort, '')}
         </CardSection>
         <Text size="caption" tone="secondary">
           {tr(`Codync opens an SSH tunnel to codync-host on that computer's loopback. It uses your SSH config and ssh-agent; agent forwarding stays off.`)}

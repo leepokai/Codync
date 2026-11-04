@@ -170,7 +170,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
     }
   }, [store, backend?.id, step, method?.id])
 
-  const name = backend?.name ?? 'the agent'
+  const name = backend?.name ?? tr('the agent')
   const title = step === 'node' ? 'Add Node.js' : step === 'install' ? `Install ${name}` : (method?.name ?? `Sign in to ${name}`)
   return (
     <SheetPage>
@@ -184,12 +184,12 @@ export function SetupTerminalView({ backend, step, method, back }: {
         ) : exitCode !== null ? (
           <>
             <Icon name={exitCode === 0 ? 'checkmark.circle.fill' : 'exclamationmark.circle.fill'} size={10} color={exitCode === 0 ? 'var(--added)' : 'var(--warning)'} />
-            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr(`Finished.`) : `Ended with an error (${exitCode}).`}</Text>
+            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr('Finished.') : tr('Ended with an error ({code}).').replaceAll('{code}', () => String(exitCode))}</Text>
           </>
         ) : (
           <>
             <ThinkingOrb size={14} color="var(--secondary)" />
-            <Text tone="secondary" lines={2}>Running on {store.hostName}. Links open on this device.</Text>
+            <Text tone="secondary" lines={2}>{tr('Running on {name}. Links open on this device.').replaceAll('{name}', () => store.hostName)}</Text>
           </>
         )}
         <Spacer />

@@ -311,6 +311,7 @@ impl Actor {
         self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}))
             .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         self.sent.push(text);
+        self.last_text = None;
         self.set_activity("Working…");
         Ok(())
     }
@@ -340,6 +341,7 @@ impl Actor {
         if crate::chat::reactions::reacted_lately(&self.hub, &self.lane, &self.cfg.id, &target)? {
             if in_chat {
                 self.reacted = Reacted::Refused;
+                self.last_text = None;
             }
             anyhow::bail!(
                 "you reacted in this chat a moment ago and reactions stay rare: no reaction this time. If the message \
@@ -349,6 +351,7 @@ impl Actor {
         self.hub.bot_react(&target, &self.cfg.id, emoji)?;
         if in_chat {
             self.reacted = Reacted::With(emoji.trim().to_owned());
+            self.last_text = None;
         }
         Ok(())
     }

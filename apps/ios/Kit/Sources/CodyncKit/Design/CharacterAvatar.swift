@@ -321,6 +321,29 @@ public struct GroupAvatar: View {
     }
 }
 
+/// A bot's character, or a group's `members` (Android `BotAvatar`).
+public struct BotAvatar: View {
+    let bot: Bot
+    let members: [Bot]
+    let size: CGFloat
+    let animated: Bool
+
+    public init(bot: Bot, members: [Bot] = [], size: CGFloat = 44, animated: Bool = true) {
+        self.bot = bot
+        self.members = members
+        self.size = size
+        self.animated = animated
+    }
+
+    public var body: some View {
+        if bot.isGroup && bot.customIcon == nil {
+            GroupAvatar(members: members, size: size, animated: animated)
+        } else {
+            CharacterAvatar(bot: bot, size: size, animated: animated)
+        }
+    }
+}
+
 /// Avatar with the roster status dot: lime = unread, orange = needs you.
 /// A group shows its `members`.
 public struct AvatarWithStatus: View {
@@ -335,9 +358,7 @@ public struct AvatarWithStatus: View {
     }
 
     public var body: some View {
-        Group {
-            if bot.isGroup && bot.customIcon == nil { GroupAvatar(members: members, size: size) } else { CharacterAvatar(bot: bot, size: size) }
-        }
+        BotAvatar(bot: bot, members: members, size: size)
             .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
                 if bot.needsInput {
                     Image(systemName: "exclamationmark")

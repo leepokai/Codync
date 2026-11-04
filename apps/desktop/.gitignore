@@ -1,6 +1,7 @@
 node_modules/
 out/
 dist/
+test-results/
 # SF Symbols masks: generated on macOS at build time (npm run icons), never committed.
 src/renderer/public/symbols/
 native/speech-macos/.build/

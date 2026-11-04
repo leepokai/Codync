@@ -25,6 +25,9 @@
   background: var(--surface);
   border-radius: var(--radius-l) var(--radius-l) 0 0;
   padding: 4px 6px calc(var(--queued-tuck) + 2px) 14px;
+  /* A long queue scrolls, so every row stays in reach: about four and a half rows, plus the padding. */
+  max-height: calc(4.5 * 32px + var(--queued-tuck) + 6px);
+  overflow-y: auto;
 }
 .queued-row-body {
   min-height: 32px;

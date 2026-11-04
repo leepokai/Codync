@@ -61,6 +61,8 @@ class AppStore internal constructor(
     internal var callWait: Job? = null
     internal val transportRequired: Boolean get() = foreground || state.value.voice != null
     internal val sends = mutableSetOf<String>()
+    /** The message sent from here last: its row in the queue scrolls into view ([QueuedMessages]). */
+    internal var lastSentNonce: String? = null
     internal val actions = mutableMapOf<String, Job>()
     /** The bots as the mirror last had them; the state shows them with [pendingSectionMoves] laid over (`withMoves`). */
     internal var mirrorBots: List<Bot> = emptyList()

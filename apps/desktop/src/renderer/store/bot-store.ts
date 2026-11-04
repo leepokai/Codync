@@ -56,9 +56,13 @@ export class BotStore extends BotSync {
 
   private outgoingFiles = new Map<string, OutgoingFile[]>()
 
+  /** The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`). */
+  lastSentNonce: string | null = null
+
   send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, call = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
+    this.lastSentNonce = nonce
     const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
     if (call) data.call = call
     if (replyTo) data.replyTo = replyTo

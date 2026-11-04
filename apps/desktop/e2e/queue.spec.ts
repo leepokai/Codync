@@ -19,6 +19,51 @@ async function type(page: Page, text: string) {
   await page.locator('.composer textarea').press('Enter')
 }
 
+test('a long queue scrolls, with its oldest message in reach', async () => {
+  const { browser, page } = await attach()
+  const name = `Long queue e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}' steer 120`, connectors: [], skills: [], notify: false,
+    })
+    botId = bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+    await api(page, 'send', { botId, text: 'first' })
+    await expect.poll(() => started(page, bot.id, 'first')).toBe(true)
+    for (let i = 1; i <= 40; i++) await api(page, 'send', { botId, text: `Waiting ${i}` })
+    const queued = page.locator('.queued-row')
+    await expect(queued).toHaveCount(40)
+
+    await expect(page.locator('.composer textarea')).toBeInViewport()
+    const list = page.locator('.queued-list')
+    const box = await list.boundingBox()
+    expect(box!.y).toBeGreaterThan(0)
+    expect(box!.height).toBeLessThan(260)
+    const row = (text: string) => queued.filter({ hasText: new RegExp(`^${text}$`) })
+    await expect(row('Waiting 1')).toBeInViewport()
+    await expect(row('Waiting 40')).not.toBeInViewport()
+
+    await list.hover()
+    await page.mouse.wheel(0, 2000)
+    await expect(row('Waiting 40')).toBeInViewport()
+    await row('Waiting 40').getByRole('button', { name: 'Remove' }).click()
+    await expect(queued).toHaveCount(39)
+    await page.mouse.wheel(0, -2000)
+    await expect(row('Waiting 1')).toBeInViewport()
+
+    // One typed here scrolls into view; the ones the computer got from elsewhere didn't.
+    await type(page, 'typed here')
+    await expect(row('typed here')).toBeInViewport()
+  } finally {
+    if (botId) {
+      await api(page, 'stop', { botId }).catch(() => {})
+      await api(page, 'deleteBot', { botId }).catch(() => {})
+    }
+    await browser.close()
+  }
+})
+
 test('a message sent while the bot works waits above the composer, then goes out now or is taken back', async () => {
   const { browser, page } = await attach()
   const name = `Queue e2e ${Date.now()}`

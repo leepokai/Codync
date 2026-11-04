@@ -47,3 +47,42 @@ onFlowComplete:
 - tapOn: "Remove"
 - assertNotVisible: "never sent"
 - assertNotVisible: "Remove"
+# A long queue scrolls: its oldest message and the box both stay on screen, and every row can be reached.
+# Swipes start on the second row under the bot's status: the iPhone reports rows scrolled out of the box at their places
+# up and down the screen, where a swipe down from the first one pulls down Notification Center.
+- runScript:
+    file: queue.js
+    env:
+      FILL: "25"
+- assertVisible: "Waiting 1"
+- assertVisible: "Queue a message for.*"
+- takeScreenshot: queue-long
+- repeat:
+    while:
+      notVisible: "Waiting 25"
+    times: 8
+    commands:
+      - swipe:
+          from:
+            text: "Waiting .*"
+            below: "Writing a reply.*"
+            index: 1
+          direction: UP
+- assertVisible: "Waiting 25"
+- repeat:
+    while:
+      notVisible: "Waiting 1"
+    times: 8
+    commands:
+      - swipe:
+          from:
+            text: "Waiting .*"
+            below: "Writing a reply.*"
+            index: 1
+          direction: DOWN
+- assertVisible: "Waiting 1"
+# One typed here scrolls into view; the ones the computer got from elsewhere didn't.
+- tapOn: "Queue a message for.*"
+- inputText: "typed here"
+- tapOn: "Send"
+- assertVisible: "typed here"

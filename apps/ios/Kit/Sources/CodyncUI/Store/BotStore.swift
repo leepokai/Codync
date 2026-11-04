@@ -111,6 +111,8 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`).
+    @ObservationIgnored var lastSentNonce: String?
     /// Section moves shown but not answered yet, oldest first.
     @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 

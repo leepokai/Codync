@@ -43,11 +43,26 @@ export class AccountComputers extends Observable {
         const cached = this.app.computers.find((x) => x.id === c.computerId)
         const computer: Computer = { id: c.computerId, name: c.name, signKey: c.signKey, urls: [], cloud: account.cloudURL, device: c.device ?? null, color: cached?.color ?? null }
         this.attached.add(c.computerId)
-        this.app.attach(computer, new BotStore(computer, false, () => new RelayTransport({ id: c.computerId, signKey: c.signKey })))
+        const store = new BotStore(computer, false, () => new RelayTransport({ id: c.computerId, signKey: c.signKey }))
+        this.app.attach(computer, store)
+        this.relistWhenRefused(store)
       }
     } finally {
       this.syncing = false
     }
+  }
+
+  /**
+   * A computer that turns this app away (its grant went) has the account listed again, which lets its store go
+   * and shows it as one to ask for access, as the phones do.
+   */
+  private relistWhenRefused(store: BotStore) {
+    let refused = false
+    store.subscribe(() => {
+      const now = store.connection.kind === 'unauthorized'
+      if (now && !refused) void this.app.cloud.refresh(true)
+      refused = now
+    })
   }
 
   /** Asks `computer` to let this app in; its bots open once it's approved there. */

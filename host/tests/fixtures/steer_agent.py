@@ -1,12 +1,13 @@
 """ACP agent whose turn waits: a steered message joins it, a cancel stops it, or it ends after `seconds`.
 
-Args: `steer|sends|late|limit|next|refuse|lingers|plain seconds [answer_delay]`. With `steer` it advertises
+Args: `steer|sends|late|sends-late|limit|next|refuse|lingers|plain seconds [answer_delay]`. With `steer` it advertises
 `_session/steering` (top-level `_meta`, as Claude's and Codex's adapters do) and takes a steered message into its
 running turn; with `sends` it also calls `send_message` before it takes the message and again after, before its last
-text; with `late` it ends that turn before answering; with `limit` that turn then fails the way Claude's adapter
-reports a usage limit; with `next` it advertises steering too but always answers that the message needs a turn of its
-own; with `refuse` it answers a steer with an error; with `lingers` it takes two seconds to wind down after a cancel. It
-answers a steer after `answer_delay` seconds. Every request is logged to requests.jsonl in its folder.
+text; with `late` it ends that turn before answering; `sends-late` does both, calling `send_message` once; with `limit`
+that turn then fails the way Claude's adapter reports a usage limit; with `next` it advertises steering too but always
+answers that the message needs a turn of its own; with `refuse` it answers a steer with an error; with `lingers` it
+takes two seconds to wind down after a cancel. It answers a steer after `answer_delay` seconds, so a turn shorter than
+that ends first. Every request is logged to requests.jsonl in its folder.
 """
 
 import json
@@ -57,7 +58,7 @@ def run(rid):
     wake = threading.Event()
     turn.update(wake=wake, steered=None, cancelled=False)
     say("Working")
-    if MODE == "sends":
+    if MODE in ("sends", "sends-late"):
         send_message("Before it joined")
     wake.wait(SECONDS)
     turn["wake"] = None
@@ -86,7 +87,7 @@ def steer(message):
         send({"id": message["id"], "result": {"outcome": "promptRequired", "reason": "noRunningTurn"}})
         return
     turn["steered"] = message["params"]["prompt"][0]["text"]
-    if MODE == "late":
+    if MODE in ("late", "sends-late"):
         wake.set()
         time.sleep(0.5)
     send({"id": message["id"], "result": {"outcome": "injected"}})

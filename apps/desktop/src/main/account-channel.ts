@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain, type WebContents } from 'electron'
 import type { AccountComputer, CallError } from '../shared/ipc'
 import { computerId, FrameOpener, FrameSealer, Handshake, type DeviceKey } from './channel-crypto'
 
@@ -216,26 +216,32 @@ export function registerAccountChannels(signer: RelaySigner) {
         (error: CallError) => ({ ok: false, error }),
       ),
   )
-  /** Each open stream's cancel; registered at once, so a close that comes while the channel opens still counts. */
-  const streams = new Map<string, () => void>()
+  /** Each open stream's cancel by `<window>:<id>`; registered at once, so a close that comes while the channel opens still counts. */
+  const streams = new Map<string, { owner: WebContents; cancel: () => void }>()
+  const close = (key: string) => {
+    streams.get(key)?.cancel()
+    streams.delete(key)
+  }
   ipcMain.on('remote:stream:open', (e, id: string, computer: AccountComputer, kind: string, body: unknown) => {
+    const key = `${e.sender.id}:${id}`
     const send = (channelName: string, payload: unknown) => {
       if (!e.sender.isDestroyed()) e.sender.send(channelName, id, payload)
     }
     const onEnd = (error: CallError | null) => {
-      streams.delete(id)
+      streams.delete(key)
       send('host:stream:end', error)
     }
-    const pending = () => {}
-    streams.set(id, pending)
+    const pending = { owner: e.sender, cancel: () => {} }
+    streams.set(key, pending)
     channel(signer, computer).then((c) => {
-      if (streams.get(id) !== pending) return
-      streams.set(id, c.subscribe(kind, body, { onEvent: (event) => send('host:stream:data', JSON.stringify(event)), onEnd }))
-    }, (error: CallError) => streams.get(id) === pending && onEnd(error))
+      if (streams.get(key) !== pending) return
+      streams.set(key, { owner: e.sender, cancel: c.subscribe(kind, body, { onEvent: (event) => send('host:stream:data', JSON.stringify(event)), onEnd }) })
+    }, (error: CallError) => streams.get(key) === pending && onEnd(error))
   })
-  ipcMain.on('remote:stream:close', (_e, id: string) => {
-    streams.get(id)?.()
-    streams.delete(id)
+  ipcMain.on('remote:stream:close', (e, id: string) => close(`${e.sender.id}:${id}`))
+  // A crashed page never says its streams went (preload/index.ts does on unload): left open, they'd hold the host's subscriptions.
+  app.on('render-process-gone', (_e, contents: WebContents) => {
+    for (const [key, s] of streams) if (s.owner === contents) close(key)
   })
   ipcMain.on('remote:close', (_e, computerId: string) => drop(computerId, { status: 0, message: 'Closed.' }))
 }

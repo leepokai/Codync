@@ -73,20 +73,28 @@ function host(socket: FakeSocket, signer = hostSeed) {
 }
 
 type CallResult = { ok: true; value: unknown } | { ok: false; error: { status: number; message: string } }
-type Sender = { isDestroyed(): boolean; send(...args: unknown[]): void }
+type Sender = { id: number; isDestroyed(): boolean; send(...args: unknown[]): void }
 type Handlers = {
   'remote:call': (e: object, c: typeof computer, method: string, body: unknown, timeoutMs: number) => Promise<CallResult>
   'remote:stream:open': (e: { sender: Sender }, id: string, c: typeof computer, kind: string, body: unknown) => void
   'remote:close': (e: object, computerId: string) => void
-  'remote:stream:close': (e: object, id: string) => void
+  'remote:stream:close': (e: { sender: Sender }, id: string) => void
+  'render-process-gone': (e: object, contents: Sender) => void
 }
 const handlers = new Map<string, Function>()
 const handler = <K extends keyof Handlers>(name: K) => handlers.get(name) as Handlers[K]
 const ipcMain = { handle: (name: string, fn: Function) => handlers.set(name, fn), on: (name: string, fn: Function) => handlers.set(name, fn) }
+const app = { on: (name: string, fn: Function) => handlers.set(name, fn) }
 const { registerAccountChannels, closeAccountChannels } = loadMainModule<typeof AccountChannelModule>('account-channel', {
-  electron: { ipcMain },
+  electron: { ipcMain, app },
   './channel-crypto': channelCrypto,
 }, { WebSocket: FakeSocket, URL, Buffer, JSON, setTimeout, clearTimeout, setInterval, clearInterval })
+let windows = 0
+/** A window's page: what the main process sent it. */
+function page() {
+  const sender = { id: ++windows, sent: [] as unknown[][], isDestroyed: () => false, send: (...args: unknown[]) => sender.sent.push(args) }
+  return sender
+}
 registerAccountChannels({ relay: () => 'https://cloud.test', device: async () => device, sign: async (url: URL) => `sig for ${url.pathname}` })
 
 /** Starts a call and returns the socket it opened, past `presence`. */
@@ -114,7 +122,7 @@ test('a call reaches the computer through the relay, encrypted end to end', asyn
   assert.equal(JSON.stringify(await result), '{"ok":true,"value":{"name":"Studio"}}')
 
   // The next call reuses the channel, and a subscription's events arrive until it ends.
-  const sender = { sent: [] as unknown[][], isDestroyed: () => false, send: (...args: unknown[]) => sender.sent.push(args) }
+  const sender = page()
   handler('remote:stream:open')({ sender }, 's1', computer, 'events', { since: 3, client: 'desktop' })
   await settle()
   assert.equal(FakeSocket.last, socket)
@@ -182,9 +190,9 @@ test('concurrent first calls share one socket, which closes when its computer is
 
 test('a stream closed while its channel is still opening never subscribes', async () => {
   FakeSocket.last = null
-  const sender = { sent: [] as unknown[][], isDestroyed: () => false, send: (...args: unknown[]) => sender.sent.push(args) }
+  const sender = page()
   handler('remote:stream:open')({ sender }, 's2', computer, 'events', { since: 0, client: 'desktop' })
-  handler('remote:stream:close')({}, 's2')
+  handler('remote:stream:close')({ sender }, 's2')
   await settle()
   const socket = FakeSocket.last!
   socket.receive({ t: 'presence', online: true })
@@ -192,5 +200,28 @@ test('a stream closed while its channel is still opening never subscribes', asyn
   await settle()
   assert.deepEqual(h.inbox(), [])
   assert.deepEqual(sender.sent, [])
+  closeAccountChannels()
+})
+
+test("a crashed page's streams are cancelled at the computer, and another window's stream with the same id stays", async () => {
+  FakeSocket.last = null
+  const crashed = page()
+  const other = page()
+  handler('remote:stream:open')({ sender: crashed }, 's1', computer, 'events', {})
+  handler('remote:stream:open')({ sender: other }, 's1', computer, 'events', {})
+  await settle()
+  const socket = FakeSocket.last!
+  socket.receive({ t: 'presence', online: true })
+  const h = host(socket)
+  await settle()
+  const [mine, theirs] = h.inbox() as { id: number; sub: string }[]
+  assert.deepEqual([mine.sub, theirs.sub], ['events', 'events'])
+
+  handler('render-process-gone')({}, crashed)
+  await settle()
+  assert.deepEqual(h.inbox(), [{ id: mine.id, cancel: true }])
+  h.reply({ id: theirs.id, ev: { kind: 'still here' } })
+  assert.deepEqual(other.sent, [['host:stream:data', 's1', '{"kind":"still here"}']])
+  assert.deepEqual(crashed.sent, [])
   closeAccountChannels()
 })

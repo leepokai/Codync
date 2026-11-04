@@ -2,8 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { sshBridge } from './ssh'
 import type { AccessTicket, CallError, CodyncBridge, HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
 
-let streamId = 0
-const streams = new Map<string, { onData: (line: string) => void; onEnd: (error: CallError | null) => void }>()
+/** Open streams by id, each with the close that ends it in the main process. */
+const streams = new Map<string, { onData: (line: string) => void; onEnd: (error: CallError | null) => void; close: () => void }>()
 
 ipcRenderer.on('host:stream:data', (_e, id: string, line: string) => streams.get(id)?.onData(line))
 ipcRenderer.on('host:stream:end', (_e, id: string, error: CallError | null) => {
@@ -11,10 +11,9 @@ ipcRenderer.on('host:stream:end', (_e, id: string, error: CallError | null) => {
   streams.delete(id)
   s?.onEnd(error)
 })
-// A page that goes (a reload, its window closing) closes its streams: the next page numbers its own from 1 again.
+// A page that goes (a reload, its window closing) closes its streams, local and remote alike.
 window.addEventListener('pagehide', () => {
-  for (const id of streams.keys()) ipcRenderer.send('host:stream:close', id)
-  streams.clear()
+  for (const s of [...streams.values()]) s.close()
 })
 
 function listen<T>(channel: string, cb: (value: T) => void) {
@@ -32,13 +31,15 @@ async function invoke(channel: string, ...args: unknown[]) {
 
 /** Lines from a stream the main process runs (`<prefix>:stream:open`), until `onEnd` or the returned close. */
 function openStream(prefix: string, args: unknown[], onData: (line: string) => void, onEnd: (error: CallError | null) => void) {
-  const id = `s${++streamId}`
-  streams.set(id, { onData, onEnd })
-  ipcRenderer.send(`${prefix}:stream:open`, id, ...args)
-  return () => {
+  // Unique across reloads: a late line for a stream of the page before never reaches one of this page.
+  const id = crypto.randomUUID()
+  const close = () => {
     if (!streams.delete(id)) return
     ipcRenderer.send(`${prefix}:stream:close`, id)
   }
+  streams.set(id, { onData, onEnd, close })
+  ipcRenderer.send(`${prefix}:stream:open`, id, ...args)
+  return close
 }
 
 // A dev sandbox starts past onboarding (`skip`: only a window that never chose is seeded) or back at

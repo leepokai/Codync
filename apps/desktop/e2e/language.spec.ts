@@ -1,0 +1,19 @@
+import { test, expect } from '@playwright/test'
+import { attach } from './sandbox.ts'
+
+test('choosing Italiano translates the interface', async () => {
+  const { browser, page } = await attach()
+  try {
+    await page.locator('.sidebar-account').click()
+    await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+    await page.locator('.choice-picker[title="Follow system"]').click()
+    await page.getByText('Italiano', { exact: true }).click()
+    await expect(page.locator('.choice-picker[title="Italiano"]')).toBeVisible()
+    await expect(page.getByText('Lingua app', { exact: true })).toBeVisible()
+    await expect(page.getByText('App language', { exact: true })).toHaveCount(0)
+  } finally {
+    await page.evaluate(() => localStorage.removeItem('appLanguage'))
+    await page.reload()
+    await browser.close()
+  }
+})

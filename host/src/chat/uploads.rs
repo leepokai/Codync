@@ -89,6 +89,11 @@ pub fn read(root: &Path, upload: &str, offset: u64, len: usize) -> Result<(Vec<u
     Ok((data, size))
 }
 
+/// Deletes an upload and its folder.
+pub fn remove(root: &Path, upload: &str) -> Result<()> {
+    std::fs::remove_dir_all(dir(root, upload)?).context("deleting the upload")
+}
+
 /// What the agent reads after the message text.
 pub fn prompt_suffix(paths: &[PathBuf]) -> String {
     let list: Vec<String> = paths.iter().map(|p| format!("- {}", p.display())).collect();
@@ -98,6 +103,17 @@ pub fn prompt_suffix(paths: &[PathBuf]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removing_an_upload_stays_inside_the_folder() {
+        let root = std::env::temp_dir().join(format!("codync-uploads-{}", uuid::Uuid::new_v4()));
+        let upload = uuid::Uuid::new_v4().to_string();
+        append(&root, &upload, "a.txt", 0, b"hi", true).expect("upload");
+        assert!(remove(&root, "../other").is_err());
+        remove(&root, &upload).expect("remove");
+        assert!(resolve(&root, &upload).is_err());
+        std::fs::remove_dir_all(&root).expect("clean up");
+    }
 
     #[test]
     fn names_stay_inside_the_folder() {

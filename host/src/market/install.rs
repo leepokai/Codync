@@ -163,7 +163,7 @@ pub async fn install_connector(store: &crate::store::Store, name: &str, option: 
 
 /// A server that's installed already stays as it is when the call brings no values and runs it the
 /// same way (Add again after its sign-in or check failed); otherwise it's rebuilt with the new ones.
-pub(super) async fn install_server(
+async fn install_server(
     store: &crate::store::Store,
     server: &Value,
     name: &str,
@@ -351,29 +351,8 @@ async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| anyhow!("give a command or a URL"))?;
-    (c.command, c.args) = split_command(line, b.get("args"))?;
+    (c.command, c.args) = super::command_line::split_command(line, b.get("args"))?;
     Ok(c)
-}
-
-/// A `command` line and an optional `args` list: the program, then its arguments.
-/// Without `args` the line is split like a shell would (quotes work).
-pub(super) fn split_command(line: &str, args: Option<&Value>) -> Result<(Option<String>, Vec<String>)> {
-    let line = line.trim();
-    if line.is_empty() {
-        bail!("give a command");
-    }
-    let words = match args {
-        Some(args) => {
-            let mut words = vec![line.to_owned()];
-            for a in args.as_array().ok_or_else(|| anyhow!("`args` are strings"))? {
-                words.push(a.as_str().ok_or_else(|| anyhow!("`args` are strings"))?.to_owned());
-            }
-            words
-        }
-        None => shlex::split(line).ok_or_else(|| anyhow!("the command has an unclosed quote"))?,
-    };
-    let mut words = words.into_iter();
-    Ok((words.next(), words.collect()))
 }
 
 /// Installed MCP servers, then the apps connected through Composio.

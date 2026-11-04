@@ -105,6 +105,36 @@ fn settings_routines_screen_and_devices() {
 }
 
 #[test]
+fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
+    use crate::market::connector_update::EditFailure;
+    let edit = json!({"id": "mine", "command": "/Users/me/bin/server", "env": {"API_KEY": "secret"}});
+    let (event, p) = observe(&Caller::Local, "updateConnector", &edit).expect("tracked");
+    assert_eq!(event, Event::ConnectorUpdated);
+    let saved = |answer: Value| Value::Object(answered(event, p.clone(), &answer).expect("reported"));
+    let checked = json!({"connector": {"id": "mine"}, "verify": {"status": "ready"}});
+    assert_eq!(saved(checked), json!({"client": "local", "outcome": "ready"}));
+    let unchecked = json!({"connector": {"id": "mine"}, "verify": null});
+    assert_eq!(saved(unchecked), json!({"client": "local", "outcome": "saved"}));
+
+    let refused = |error: anyhow::Error| {
+        let (event, p) = failed(event, p.clone(), &error).expect("reported");
+        assert_eq!(event, Event::ConnectorUpdated);
+        Value::Object(p)
+    };
+    for (failure, category) in [
+        (EditFailure::Invalid, "invalid"),
+        (EditFailure::Refused, "refused"),
+        (EditFailure::WontStart, "wont_start"),
+        (EditFailure::Conflict, "conflict"),
+    ] {
+        let reported = refused(failure.error("/Users/me/bin/server won't start"));
+        assert_eq!(reported, json!({"client": "local", "outcome": "failed", "error": category}));
+    }
+    let locked = refused(anyhow::anyhow!("the vault is locked"));
+    assert_eq!(locked, json!({"client": "local", "outcome": "failed", "error": "other"}));
+}
+
+#[test]
 fn connectors_skills_and_agents() {
     assert_eq!(
         props("removeConnector", &json!({"id": "github"})),
@@ -260,7 +290,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
 fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
     let failed_call = |method: &str, b: &Value| {
         let (event, p) = observe(&Caller::Local, method, b)?;
-        failed(event, p).map(|(e, p)| (e, Value::Object(p)))
+        failed(event, p, &anyhow::anyhow!("refused")).map(|(e, p)| (e, Value::Object(p)))
     };
     assert_eq!(
         failed_call("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
@@ -271,18 +301,4 @@ fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
         Some((Event::NetworkFailed, json!({"action": "remove", "client": "local", "stage": "action"})))
     );
     assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
-}
-
-#[test]
-fn connector_edits_report_outcomes_without_configuration_or_credentials() {
-    let body = json!({"id":"private-id", "name":"private-name", "url":"https://private.example/secret",
-                     "headers":{"Authorization":"private-token"},"env":{"KEY":"private-key"}});
-    let (event, properties) = observe(&Caller::Local, "updateConnector", &body).unwrap();
-    assert_eq!(event, Event::ConnectorUpdated);
-    assert_eq!(Value::Object(properties.clone()), json!({"client":"local"}));
-    let success = answered(event, properties.clone(), &json!({"connector":body,"verify":{"status":"ready"}})).unwrap();
-    assert_eq!(Value::Object(success), json!({"client":"local","outcome":"ready"}));
-    let (event, failure) = failed(event, properties).unwrap();
-    assert_eq!(event, Event::ConnectorUpdated);
-    assert_eq!(Value::Object(failure), json!({"client":"local","outcome":"failed","error":"edit_or_verify"}));
 }

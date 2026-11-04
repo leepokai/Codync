@@ -39,8 +39,22 @@ async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions(
         *target.lock().unwrap() = json!({"url":replacement,"headers":{"X-Key":"new-key"},"authRevision":"after"});
         let message = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
         let mut session = Some("old-private-session".into());
-        assert!(remote.forward(&message, &mut session).await.unwrap_err().to_string().contains("endpoint changed"));
-        assert!(remote.post_legacy(&old_url, &message).await.unwrap_err().to_string().contains("endpoint changed"));
+        assert!(
+            remote
+                .forward(&message, &mut session)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("connection settings changed")
+        );
+        assert!(
+            remote
+                .post_legacy(&old_url, &message)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("connection settings changed")
+        );
         assert!(requests.lock().unwrap().is_empty(), "no request to either MCP endpoint");
         // A newly started proxy can use the edited endpoint and its explicit credentials.
         let restarted = Remote { endpoint: Mutex::new(None), ..remote };

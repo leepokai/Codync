@@ -4,6 +4,42 @@ use crate::store::Store;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
+async fn save_edit(store: &Store, b: &Value) -> Result<Value> {
+    let id = b["id"].as_str().unwrap().trim();
+    let before = connectors(store)?.into_iter().find(|c| c.id == id).unwrap();
+    let (connector, _) = save_remote(store, &before, b).await?;
+    Ok(connector.public())
+}
+
+#[tokio::test]
+async fn remote_metadata_changes_do_not_attempt_a_handshake() {
+    let (store, mut old) = fixture();
+    old.oauth = Some(oauth::OAuth::default());
+    save_connectors(&store, std::slice::from_ref(&old)).unwrap();
+    let reply = update_connector(&store, "remote", &json!({"name":"Renamed","description":"new"}), 0).await.unwrap();
+    assert!(reply["verify"].is_null());
+    assert_eq!(reply["connector"]["name"], "Renamed");
+    let saved = connectors(&store).unwrap().remove(0);
+    assert_eq!(saved.url, old.url);
+    assert_eq!(saved.headers, old.headers);
+    assert_eq!(saved.oauth, old.oauth);
+    assert_eq!(saved.auth_revision, old.auth_revision);
+}
+
+#[tokio::test]
+async fn local_edits_still_check_before_saving_through_the_shared_entry_point() {
+    let (store, mut old) = fixture();
+    old.command = Some("python3".into());
+    old.url = None;
+    old.oauth = None;
+    save_connectors(&store, std::slice::from_ref(&old)).unwrap();
+    let error = update_connector(&store, "remote", &json!({"command":"/nonexistent/codync-edit-fixture"}), 0)
+        .await
+        .unwrap_err();
+    assert_eq!(error.downcast_ref::<connector_update::EditFailed>().unwrap().category(), "wont_start");
+    assert_eq!(connectors(&store).unwrap(), [old]);
+}
+
 fn fixture() -> (Store, Connector) {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
     let c: Connector = serde_json::from_value(json!({
@@ -19,7 +55,7 @@ fn fixture() -> (Store, Connector) {
 #[tokio::test]
 async fn remote_metadata_and_headers_preserve_identity_and_sign_in() {
     let (store, original) = fixture();
-    let public = update_connector(
+    let public = save_edit(
         &store,
         &json!({"id":" remote ","name":"Renamed",
         "headers":{"x-api-key":"rotated", "X-Mode":null, "X-New":"new"}}),
@@ -30,7 +66,7 @@ async fn remote_metadata_and_headers_preserve_identity_and_sign_in() {
     assert_eq!(updated.id, original.id);
     assert_eq!(updated.url, original.url);
     assert_eq!(updated.oauth, original.oauth);
-    assert_eq!(updated.auth_revision, original.auth_revision);
+    assert_ne!(updated.auth_revision, original.auth_revision, "changed headers invalidate stale checks and proxies");
     assert_eq!(updated.description, original.description);
     assert_eq!(
         updated.headers,
@@ -70,7 +106,7 @@ async fn invalid_remote_edits_leave_encrypted_storage_unchanged() {
         let mut request = patch.clone();
         request["id"] = json!("remote");
         request["description"] = request.get("description").cloned().unwrap_or(json!("must not save"));
-        assert!(update_connector(&store, &request).await.is_err(), "accepted {patch}");
+        assert!(save_edit(&store, &request).await.is_err(), "accepted {patch}");
         assert_eq!(connectors(&store).unwrap().as_slice(), std::slice::from_ref(&original));
         assert_eq!(store.kv_get("connectors"), ciphertext);
     }
@@ -113,8 +149,7 @@ async fn replacement_endpoint_receives_only_explicit_headers_and_requires_new_si
     let url = format!("http://{}/mcp", listener.local_addr().unwrap());
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let (store, old) = fixture();
-    let public =
-        update_connector(&store, &json!({"id":old.id,"url":url,"headers":{"X-New":"explicit"}})).await.unwrap();
+    let public = save_edit(&store, &json!({"id":old.id,"url":url,"headers":{"X-New":"explicit"}})).await.unwrap();
     let c = connectors(&store).unwrap().remove(0);
     assert_eq!(c.oauth, Some(oauth::OAuth::default()));
     assert_eq!(public["auth"], "signedOut");
@@ -151,7 +186,7 @@ async fn discovery_does_not_overwrite_a_concurrent_edit() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/mcp", listener.local_addr().unwrap());
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let error = update_connector(&store, &json!({"id":old.id,"url":url,"headers":{}})).await.unwrap_err();
+    let error = save_edit(&store, &json!({"id":old.id,"url":url,"headers":{}})).await.unwrap_err();
     assert!(error.to_string().contains("changed during"));
     let current = connectors(&store).unwrap().remove(0);
     assert_eq!(current.description, "concurrent");
@@ -213,7 +248,7 @@ async fn transport_fields_and_registry_definitions_cannot_be_changed_through_the
     c.registry_name = Some("test/remote".into());
     save_connectors(&store, std::slice::from_ref(&c)).unwrap();
     assert!(
-        update_connector(&store, &json!({"id":c.id,"headers":{"X-New":"value"}}))
+        update_connector(&store, &c.id, &json!({"headers":{"X-New":"value"}}), 0)
             .await
             .unwrap_err()
             .to_string()
@@ -225,7 +260,108 @@ async fn transport_fields_and_registry_definitions_cannot_be_changed_through_the
     c.oauth = None;
     save_connectors(&store, std::slice::from_ref(&c)).unwrap();
     for patch in [json!({"id":c.id,"url":"https://new.example/mcp"}), json!({"id":c.id,"headers":{}})] {
-        assert!(update_connector(&store, &patch).await.unwrap_err().to_string().contains("local connector"));
+        assert!(update_connector(&store, &c.id, &patch, 0).await.unwrap_err().to_string().contains("local connector"));
         assert_eq!(connectors(&store).unwrap().as_slice(), std::slice::from_ref(&c));
     }
+}
+
+#[tokio::test]
+async fn verification_cannot_report_ready_for_a_concurrent_replacement() {
+    for before_check in [true, false] {
+        let (store, original) = fixture();
+        let (saved, _) = save_remote(&store, &original, &json!({"headers":{"X-Mode":"first"}})).await.unwrap();
+        let replacement = prepare(&saved, &json!({"headers":{"X-Mode":"second"}})).unwrap();
+        if before_check {
+            save_connectors(&store, std::slice::from_ref(&replacement)).unwrap();
+        }
+        let ran = std::sync::atomic::AtomicBool::new(false);
+        let result = checked_remote(&store, &saved, async {
+            ran.store(true, std::sync::atomic::Ordering::SeqCst);
+            save_connectors(&store, std::slice::from_ref(&replacement)).unwrap();
+            Ok(json!({"status":"ready","toolCount":3}))
+        })
+        .await;
+        let error = result.unwrap_err();
+        assert_eq!(error.downcast_ref::<connector_update::EditFailed>().unwrap().category(), "conflict");
+        assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), !before_check);
+        assert_eq!(connectors(&store).unwrap(), [replacement]);
+    }
+}
+
+#[tokio::test]
+async fn returning_to_previous_headers_cannot_revive_an_old_readiness_check() {
+    let (store, original) = fixture();
+    let result = checked_remote(&store, &original, async {
+        let (changed, _) = save_remote(&store, &original, &json!({"headers":{"X-Mode":"write"}})).await.unwrap();
+        let (returned, _) = save_remote(&store, &changed, &json!({"headers":{"X-Mode":"read"}})).await.unwrap();
+        assert_eq!(returned.headers, original.headers);
+        assert_eq!(returned.oauth, original.oauth);
+        assert_ne!(returned.auth_revision, original.auth_revision);
+        Ok(json!({"status":"ready"}))
+    })
+    .await;
+    assert_eq!(result.unwrap_err().downcast_ref::<connector_update::EditFailed>().unwrap().category(), "conflict");
+}
+
+#[tokio::test]
+async fn readiness_allows_token_refresh_but_rejects_sign_out_or_a_new_registration() {
+    for change in ["refresh", "sign-out", "registration"] {
+        let (store, original) = fixture();
+        let result = checked_remote(&store, &original, async {
+            update_connectors(&store, |all| {
+                let oauth = all[0].oauth.as_mut().unwrap();
+                match change {
+                    "refresh" => {
+                        oauth.access_token = "rotated-private-token".into();
+                        oauth.refresh_token = Some("rotated-private-refresh".into());
+                        oauth.expires_at = Some(9_999_999_999);
+                    }
+                    "sign-out" => oauth.access_token.clear(),
+                    _ => oauth.client_id = "different-client".into(),
+                }
+                Ok(())
+            })
+            .unwrap();
+            Ok(json!({"status":"ready"}))
+        })
+        .await;
+        if change == "refresh" {
+            let reply = result.unwrap();
+            assert_eq!(reply["verify"]["status"], "ready");
+            assert!(!reply.to_string().contains("private"));
+        } else {
+            assert_eq!(
+                result.unwrap_err().downcast_ref::<connector_update::EditFailed>().unwrap().category(),
+                "conflict"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn retrying_a_saved_url_after_sign_in_requests_readiness_and_refresh() {
+    let (store, mut old) = fixture();
+    old.oauth = Some(oauth::OAuth::default());
+    save_connectors(&store, std::slice::from_ref(&old)).unwrap();
+    // The first edit stays saved when sign-in is missing.
+    let edit = json!({"headers":{"X-New":"private"}});
+    assert!(update_connector(&store, &old.id, &edit, 0).await.unwrap_err().to_string().contains("Sign in"));
+    // An unchanged URL must recheck, not silently return verify:null.
+    let retry = json!({"url":old.url});
+    assert!(update_connector(&store, &old.id, &retry, 0).await.unwrap_err().to_string().contains("Sign in"));
+    update_connectors(&store, |all| {
+        all[0].oauth.as_mut().unwrap().access_token = "signed-in-private".into();
+        Ok(())
+    })
+    .unwrap();
+    let current = connectors(&store).unwrap().remove(0);
+    let (saved, needs_check) = save_remote(&store, &current, &retry).await.unwrap();
+    assert!(needs_check, "the retry must reach verification and the API's refresh path");
+    assert_eq!(saved.headers["X-New"], "private", "retry needs no credential replay");
+    assert_eq!(saved.auth_revision, current.auth_revision, "retry doesn't invalidate the new grant");
+    // Scripted readiness isolates recovery from real-provider OAuth and the OS keychain.
+    let reply = checked_remote(&store, &saved, async { Ok(json!({"status":"ready"})) }).await.unwrap();
+    assert_eq!(reply["verify"]["status"], "ready", "a non-null result permits the existing bot refresh path");
+    let (_, metadata_check) = save_remote(&store, &saved, &json!({"description":"metadata"})).await.unwrap();
+    assert!(!metadata_check, "metadata alone must not restart bots");
 }

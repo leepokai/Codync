@@ -25,14 +25,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                     }
                     let value = value
                         .as_str()
-                        .filter(|s| !s.is_empty() && s.len() <= 64 * 1024)
+                        .filter(|s| !s.is_empty() && s.len() <= market::MAX_CREDENTIAL_BYTES)
                         .ok_or_else(|| anyhow!("Invalid credential value"))?;
                     values.insert(key.clone(), value.to_owned());
                 }
                 Ok(())
             })?;
             let ready = market::verify::verify(&hub.store, id, hub.port).await?;
-            refresh_tools_for_bots_using(hub, id)?;
+            refresh_tools_for_bots_using(hub, id);
             ready
         }
         "credentialStatus" => market::passwords::status(&hub.store)?,
@@ -140,13 +140,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"connector": c})
         }
         "updateConnector" => {
-            let id = str_arg(&b, "id")?.trim().to_owned();
-            let connector = market::update_connector(&hub.store, &b).await?;
-            // Same contract as a credential change: prove the edited definition starts, then
-            // let the bots that have it turned on rebuild their tools for the next turn.
-            let verify = market::verify::verify(&hub.store, &id, hub.port).await?;
-            refresh_tools_for_bots_using(hub, &id)?;
-            json!({"connector": connector, "verify": verify})
+            let id = str_arg(&b, "id")?;
+            let updated = market::update_connector(&hub.store, id.trim(), &b, hub.port).await?;
+            // Without a check how it runs didn't change, so no bot has anything to pick up.
+            if !updated["verify"].is_null() {
+                refresh_tools_for_bots_using(hub, id.trim());
+            }
+            updated
         }
         "connectorSignIn" => {
             // The browser can only reach this host's loopback page when it runs on this computer.
@@ -197,13 +197,21 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     }))
 }
 
-/// A connector reaches an agent as part of its tools, so a bot that has it turned on asks
-/// for them again: the new definition runs from its next turn, and no other bot is touched.
-fn refresh_tools_for_bots_using(hub: &Hub, id: &str) -> Result<()> {
-    for row in hub.store.bots()? {
-        if !row.deleted && !row.config.is_group() && row.config.connectors.iter().any(|c| c == id) {
-            hub.send_cmd(&row.config.id, Cmd::RefreshTools)?;
+/// A connector reaches an agent as part of its tools, so a bot that has it turned on asks for them
+/// again. An agent that can resume restarts whole before its next turn; one that can't keeps its
+/// session and the old definition until its next new session. No other bot is touched. The change
+/// is already saved, so a bot that can't hear of it is logged and doesn't stop the others.
+fn refresh_tools_for_bots_using(hub: &Hub, id: &str) {
+    let bots = match market::bots_using(&hub.store, id) {
+        Ok(bots) => bots,
+        Err(error) => {
+            tracing::warn!(connector = id, error = format!("{error:#}"), "couldn't list the bots using a connector");
+            return;
+        }
+    };
+    for row in bots {
+        if let Err(error) = hub.send_cmd(&row.config.id, Cmd::RefreshTools) {
+            tracing::warn!(bot = %row.config.id, error = format!("{error:#}"), "couldn't refresh a bot's tools");
         }
     }
-    Ok(())
 }

@@ -10,6 +10,7 @@ import { prefs, usePref } from '../lib/prefs'
 import { dueStarAsk } from '../lib/star-ask'
 import { useStarAsk } from '../lib/use-star-ask'
 import { useApp } from '../store/context'
+import { useTr } from '../lib/use-language'
 import './star-prompt.css'
 
 const copy = {
@@ -29,6 +30,7 @@ const copy = {
  * Starring ends it.
  */
 export function StarPrompt() {
+  const tr = useTr()
   const app = useApp()
   const local = useModel(app.local)
   const [onboarded] = usePref(prefs.onboardingDone)
@@ -49,11 +51,11 @@ export function StarPrompt() {
       <VStack className="star-prompt">
         <ModalHeader
           icon={<Icon name="star.fill" size={22} className="star-prompt-symbol" />}
-          title={text.title}
+          title={tr(text.title)}
           onClose={null}
         />
         <VStack gap={16} className="star-prompt-body">
-          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{text.message}</Text>
+          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{tr(text.message)}</Text>
           <HStack gap={10}>
             <img src={appIcon} alt="" className="star-prompt-app-icon" draggable={false} />
             <Text size="callout" tone="secondary">github.com/leepokai/Codync</Text>

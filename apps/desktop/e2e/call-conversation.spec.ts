@@ -1,23 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import type { HostSnapshot } from '../src/shared/ipc.ts'
-import { attach } from './sandbox.ts'
-
-type Host = {
-  snapshot(): Promise<HostSnapshot>
-  call(baseURL: string, token: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
-}
-
-/** POST /api/<method> on the sandbox host, through the bridge the renderer uses. */
-function api<T>(page: Page, method: string, body: unknown): Promise<T> {
-  return page.evaluate(async ([method, body]) => {
-    const host = (window as unknown as { codync: { host: Host } }).codync.host
-    const local = (await host.snapshot()).local
-    if (!local) throw new Error('The sandbox host has not answered yet.')
-    return host.call(local.baseURL, local.token, method, body, 30_000)
-  }, [method, body] as const) as Promise<T>
-}
+import { api, attach } from './sandbox.ts'
 
 /** A call the host has ended, with what was said on it, as its line in the chat. */
 async function endedCall(page: Page, botId: string, seconds: number, said: ['user' | 'voice', string][]) {

@@ -100,7 +100,7 @@ impl Remote {
             use crate::LockExt;
             let mut endpoint = self.endpoint.locked();
             if endpoint.as_ref().is_some_and(|original| original != &identity) {
-                anyhow::bail!("The connector endpoint changed. Restart its tools before continuing.");
+                anyhow::bail!("The connector connection settings changed. Restart its tools before continuing.");
             }
             *endpoint = Some(identity);
         }

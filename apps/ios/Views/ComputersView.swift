@@ -326,11 +326,12 @@ private struct CodyncVersionRow: View {
 }
 
 /// A computer in the account that this iPhone can't use yet.
-private struct AccountComputerRow: View {
+struct AccountComputerRow: View {
     let computer: CloudComputer
     let ticket: AccessTicket?
     let ask: () -> Void
-    let revoke: () -> Void
+    /// Takes back an earlier install's approval first; without it, asking offers to replace that approval.
+    var revoke: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -343,7 +344,7 @@ private struct AccountComputerRow: View {
             Spacer()
             if ticket != nil {
                 Button(L10n.tr("Code"), action: ask).buttonStyle(.secondary)
-            } else if computer.isGranted {
+            } else if computer.isGranted, let revoke {
                 Button(L10n.tr("Revoke"), role: .destructive, action: revoke).buttonStyle(.secondary)
             } else {
                 Button(L10n.tr("Ask for access"), action: ask).buttonStyle(.secondary)
@@ -356,7 +357,7 @@ private struct AccountComputerRow: View {
         let online = computer.isOnline ? "Online" : "Offline"
         if let ticket { return "Waiting for your OK on the computer · \(ticket.code)" }
         return switch computer.access {
-        case "granted": "Approved for an earlier install of Codync. Revoke it, then ask again."
+        case "granted" where revoke != nil: "Approved for an earlier install of Codync. Revoke it, then ask again."
         case "pending": "\(online) · A request is waiting"
         default: "\(online) · In your account"
         }

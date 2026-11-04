@@ -19,16 +19,6 @@ SQLite, Keychain and MCP subprocesses. `--network` additionally exercises live
 providers. `--slow` waits for the production 90-second handshake timeout.
 Failures produce a nonzero exit code; live provider failures are not skipped.
 
-## Editing a custom local connector
-
-Edit a custom local connector through `updateConnector` without changing its id
-or bot assignments. Omitted fields keep their values, including `args` when only
-`command` changes. The update's `command` is an executable path; pass arguments
-separately in `args`, or `args: []` to clear them. Unlike installation, updates
-do not split a command line. `env` merges entries, with `null` removing a key.
-The host saves a valid edit before verification; a failed handshake does not
-roll back that edit. Bot tool refresh occurs only after verification succeeds.
-
 ## Editing a custom remote connector
 
 `updateConnector` also accepts `name`, `description`, `url` and `headers` for a
@@ -46,8 +36,16 @@ replacement credentials. A fresh tool process uses the edited endpoint. HTTPS is
 URLs with user information or fragments and invalid headers are refused.
 
 Discovery never overwrites a concurrent edit or credential refresh: the caller
-must reread and retry. As with local edits, valid remote changes are saved before
-verification; a failed check leaves them saved without refreshing bots. Registry
+must reread and retry. Verification checks the saved definition before and after
+the handshake; another edit cannot supply its readiness result. Token refreshes
+may advance the same grant, but sign-out or a new registration invalidates the check.
+URL or header changes advance the revision, including when values are later restored. Remote URL or header changes are saved before
+verification so OAuth can use the new endpoint. A failed check leaves them saved
+without refreshing bots; local runtime edits instead check before saving.
+Changing only a name or description performs no check and returns `verify: null`.
+Explicit `url` or `headers` requests verification even when unchanged. After
+sign-in, repeat `updateConnector` with the current URL to verify and refresh bots
+without resending credential values. Registry
 connectors are still managed through reinstall, pending the registry-input work.
 
 ## Recorded result: 2026-10-05, macOS
@@ -71,6 +69,11 @@ not a released-build certification.
   tools in a real subprocess. Public listings omit credentials and command args.
 - Check the connector record is encrypted in SQLite; restart the host and verify
   it can recover credentials through the OS Keychain.
+- Edit a custom local connector through `updateConnector` (what an edit does:
+  [connector credentials](../features/connector-credentials.md)): new `args` keep
+  the id, verify as ready and `connectorRuntime` returns the new command line; an edit
+  that won't start leaves what's saved as it was. Bot assignments and the bots' tool
+  refresh are not covered here (`host/src/market/connector_update.rs` tests them).
 - Import a pasted `mcpServers` configuration and verify the resulting connector.
 - Reject a missing runtime and a malformed MCP initialize response.
 - Verify authenticated remote MCP using JSON and streamable HTTP SSE responses,

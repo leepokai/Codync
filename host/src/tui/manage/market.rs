@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Confirm, ConfirmAct, Editor, Overlay, fuzzy};
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::{Fields, Input, Market, Reply, Row, Submit, TABS, Tab, ctrl, s};
 
 /// Registry rows kept loaded under the cursor on Connectors, about the list's height.
@@ -240,7 +240,7 @@ impl App {
                         if o["kind"] == "remote" {
                             tr("Hosted by {name}").replace("{name}", &title)
                         } else {
-                            tr("On {name} ({kind})").replace("{name}", &host).replace("{kind}", &s(o, "kind"))
+                            fill(&tr("On {name} ({kind})"), &[("name", &host), ("kind", &s(o, "kind"))])
                         }
                     })
                     .collect();

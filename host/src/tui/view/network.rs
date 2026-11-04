@@ -7,7 +7,7 @@ use ratatui::text::Span;
 use serde_json::Value;
 
 use super::super::app::Editor;
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::super::manage::{CONNECTORS, NetworkSheet, Recovery, Setup, SetupField, Step};
 use super::super::md;
 use super::buffer::{centered, frame_box, hline, put, put_line, restyle, rput};
@@ -56,7 +56,7 @@ fn recovery(buf: &mut Buffer, body: Rect, r: &Recovery) -> &'static str {
     let note = tr(
         "It makes another computer the owner of {network} if {name} is lost. It's shown only once and kept on no computer.",
     );
-    wrapped(buf, body, &mut y, &note.replace("{network}", &r.network).replace("{name}", &r.computer), t.secondary);
+    wrapped(buf, body, &mut y, &fill(&note, &[("network", &r.network), ("name", &r.computer)]), t.secondary);
     "y copy · s I saved it"
 }
 
@@ -70,9 +70,10 @@ fn invite_step(buf: &mut Buffer, body: Rect, n: &NetworkSheet, invite: Option<&(
         Some((code, until)) => {
             wrapped(buf, body, &mut y, code, t.bold);
             y += 1;
-            let note = tr("One use. Works until {time} while {name} stays on.")
-                .replace("{time}", &clock(*until))
-                .replace("{name}", &n.computer());
+            let note = fill(
+                &tr("One use. Works until {time} while {name} stays on."),
+                &[("time", &clock(*until)), ("name", &n.computer())],
+            );
             line(buf, body, &mut y, &note, t.secondary);
             line(buf, body, &mut y, &tr("On the other computer, choose Join with invite under Network."), t.secondary);
         }

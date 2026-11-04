@@ -14,6 +14,7 @@ public enum IconBadge {
         pushed + count(snapshot.filter { $0.computerId != computerId }.map(\.bot))
     }
 
+    /// iOS keeps the count but shows it only once the app may notify (the push switch asks for that).
     public static func show(_ count: Int) {
         UNUserNotificationCenter.current().setBadgeCount(count) { error in
             if let error {

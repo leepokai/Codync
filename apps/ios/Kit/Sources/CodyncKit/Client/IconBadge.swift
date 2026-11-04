@@ -8,10 +8,10 @@ public enum IconBadge {
         roster.reduce(0) { $0 + $1.unread }
     }
 
-    /// A push's count for its computer, plus the other computers' from the last roster the app saw
-    /// (the App Group snapshot, which holds no hidden bots).
-    public static func count(pushed: Int, computerId: ComputerID, snapshot: [BotSnapshot]) -> Int {
-        pushed + count(snapshot.filter { $0.computerId != computerId }.map(\.bot))
+    /// The alerts' totals for the computers that sent one since the app last saw the roster, plus the
+    /// other computers' unread from that roster (the App Group snapshot, which holds no hidden bots).
+    public static func count(pushed: [ComputerID: Int], snapshot: [BotSnapshot]) -> Int {
+        pushed.values.reduce(0, +) + count(snapshot.filter { pushed[$0.computerId] == nil }.map(\.bot))
     }
 
     /// iOS keeps the count but shows it only once the app may notify (the push switch asks for that).

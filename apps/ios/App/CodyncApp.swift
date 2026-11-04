@@ -287,6 +287,8 @@ final class AppStore {
         accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
         accounts.onRosterChanged = { roster in
             BotsWidgetFeed.update(roster, storage: storage)
+            // The live roster is newer than any alert's count.
+            storage.pushedUnread = [:]
             IconBadge.show(IconBadge.count(roster.map(\.bot)))
             if roster.isEmpty {
                 LiveActivities.shared.endAll()

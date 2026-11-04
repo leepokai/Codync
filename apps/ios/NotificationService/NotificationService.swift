@@ -28,7 +28,10 @@ final class NotificationService: UNNotificationServiceExtension {
         content.subtitle = alert.subtitle ?? ""
         content.body = alert.body
         if let unread = alert.unread {
-            content.badge = IconBadge.count(pushed: unread, computerId: computerId, snapshot: store.bots) as NSNumber
+            var pushed = store.pushedUnread
+            pushed[computerId] = unread
+            store.pushedUnread = pushed
+            content.badge = IconBadge.count(pushed: pushed, snapshot: store.bots) as NSNumber
         }
         contentHandler(Self.fromBot(content, alert: alert, botId: info["botId"] as? String, computerId: computerId, store: store))
     }

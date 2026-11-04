@@ -13,13 +13,15 @@ import Testing
     #expect(group.from == "b")
 }
 
-@Test func iconBadgeAddsThePushedCountToTheOtherComputersUnread() throws {
+@Test func iconBadgeAddsEveryComputersLatestAlertToTheRestOfTheRoster() throws {
     let alert = try JSONDecoder().decode(PushAlert.self, from: Data(#"{"title":"Reviewer","body":"Done.","unread":2}"#.utf8))
     #expect(alert.unread == 2)
     func bot(_ json: String) throws -> Bot { try JSONDecoder().decode(Bot.self, from: Data(json.utf8)) }
-    let stale = try bot(#"{"id":"a","unread":5}"#)
-    let other = try bot(#"{"id":"b","unread":3}"#)
-    let snapshot = [BotSnapshot(computerId: "this", bot: stale), BotSnapshot(computerId: "other", bot: other)]
-    // The sending computer's count replaces its stale snapshot.
-    #expect(IconBadge.count(pushed: alert.unread ?? 0, computerId: "this", snapshot: snapshot) == 5)
+    let snapshot = [BotSnapshot(computerId: "a", bot: try bot(#"{"id":"x","unread":5}"#)),
+                    BotSnapshot(computerId: "b", bot: try bot(#"{"id":"y","unread":0}"#)),
+                    BotSnapshot(computerId: "c", bot: try bot(#"{"id":"z","unread":3}"#))]
+    // A's alert replaces its stale snapshot.
+    #expect(IconBadge.count(pushed: ["a": 2], snapshot: snapshot) == 5)
+    // B's alert keeps A's earlier one instead of falling back to A's snapshot.
+    #expect(IconBadge.count(pushed: ["a": 2, "b": 1], snapshot: snapshot) == 6)
 }

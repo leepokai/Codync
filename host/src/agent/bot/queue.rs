@@ -19,6 +19,9 @@ impl Actor {
             }
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await,
+            Cmd::Steer { entry_id } => self.steer(entry_id).await,
+            Cmd::Steered { entry_id, outcome } => self.steered(&entry_id, &outcome),
+            Cmd::Unqueue { entry_id } => self.unqueue(&entry_id),
             Cmd::Group(turn) => {
                 // The room asks again: this turn answers for any still waiting there.
                 self.queue.retain(|q| !matches!(q, Queued::Group(g) if g.lane == turn.lane));
@@ -183,7 +186,12 @@ impl Actor {
             self.restart_agent().await;
         }
         let main = Lane::main(&self.cfg.id);
-        while self.turn.is_none() && self.routine_completion.is_none() && !self.queue.is_empty() {
+        // A message being steered is the running turn's or the next one's once the agent answers (`steer`).
+        while self.turn.is_none()
+            && self.routine_completion.is_none()
+            && self.steers_in_flight.is_empty()
+            && !self.queue.is_empty()
+        {
             match self.queue.front() {
                 Some(Queued::Routine(_)) => {
                     let Some(Queued::Routine(id)) = self.queue.pop_front() else { unreachable!("front is a routine") };

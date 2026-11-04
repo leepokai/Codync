@@ -169,6 +169,8 @@ Versions are defined in `apps/project.yml` (`MARKETING_VERSION`), `host/Cargo.to
 
 Greptile reviews every PR into `dev` or `main` when it opens and on each push (`.greptile/config.json`), and posts a *Greptile Review* check beside CI. Before the release PR merges into `main`, check each finding against the code and have the agent that owns that area fix it. `@greptileai review` on the PR asks for a fresh review.
 
+Before a release, run the real agents once ([test stack](test-stack.md#real-agents)).
+
 Auto Tag (`.github/workflows/auto-tag.yml`) creates each `v*` release right after pushing the tag, before the host and desktop jobs upload to it. Releases go up without GitHub's *latest* mark: the release gate gives it to the newest fully uploaded release the App Store's iPhone app works with, so downloads, updaters and Homebrew wait for App Review when a release needs a newer iPhone app ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)). Its description comes from `tools/release-notes.sh`: the `## Summary` of the PR that merged the version bump into `main` (or the PR's opening text without that heading), else the `feat`/`fix` commits since the previous tag, followed by GitHub's generated PR list and compare link. Write the release PR's Summary for people reading the release page. The same description is posted to the Discord server's #releases channel through the webhook in the `DISCORD_RELEASES_WEBHOOK` secret (a failed post only leaves a warning on the run); each `@login` there whose GitHub account is linked on the Discord Worker becomes a mention that pings them (`DISCORD_MENTIONS_SECRET`, [discord/README.md](../../discord/README.md)).
 
 ## codync-mem releases

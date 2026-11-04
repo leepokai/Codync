@@ -9,6 +9,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ## 2.39.0
 ### zh-Hant
 - 第一次設定時，如果帳號裡已有電腦，可以向它申請訪問，或配對一臺新電腦（例如 VPS）。安裝頁也能一鍵複製網站連結，到電腦上下載。
+- bot 工作中送出的訊息會排在輸入框上方：按箭頭立即送給 bot（Claude、Codex 會直接併進正在寫的回覆），按垃圾桶收回。
 - bot 用了不只一種智慧體時，列表會在頭像左下角標出各自的智慧體標誌，可在「設定 › 外觀」關閉。
 - 修正語音通話中，bot 唸完回覆、要再聽你說話時 app 可能閃退的問題。
 - 語音通話的對話紀錄更好讀：最上方顯示是跟哪個 bot、什麼時候、通話多久，語音說的話也更清楚。
@@ -23,6 +24,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 
 ### en-US
 - First-time setup now checks your account: ask a computer already in it for access, or pair a new one, like a VPS. The install page also has a button that copies the website link, to download on your computer.
+- Messages you send while a bot works wait above the message box: tap the arrow to hand one over now (Claude and Codex take it into the reply they're writing), or the trash can to take it back.
 - When your bots use more than one agent, the bot list marks each avatar with its agent's logo. Turn it off in Settings › Appearance.
 - Fixed a crash in voice calls when the bot finished reading a reply and started listening again.
 - A call's conversation is easier to read: the bot, when the call ended and how long it lasted sit at the top, and the voice's words are clearer.

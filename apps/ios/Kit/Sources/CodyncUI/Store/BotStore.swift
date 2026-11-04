@@ -234,6 +234,13 @@ public final class BotStore {
 
     static let leadChoiceHost = "2.33.0"
 
+    /// From host 2.38.1 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
+    public var supportsQueueActions: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.queueActionsHost) } ?? false
+    }
+
+    static let queueActionsHost = "2.38.1"
+
     static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).

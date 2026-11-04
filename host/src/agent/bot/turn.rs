@@ -451,7 +451,7 @@ impl Actor {
     }
 
     /// What started the turn that is starting or running.
-    fn source(&self) -> TurnSource {
+    pub(super) fn source(&self) -> TurnSource {
         if self.active_routine.is_some() {
             TurnSource::Routine
         } else if self.active_group.is_some() {

@@ -66,6 +66,8 @@ class AppStore internal constructor(
     internal var mirrorBots: List<Bot> = emptyList()
     /** Section moves shown but not answered yet, oldest first. */
     internal val pendingSectionMoves = mutableListOf<SectionMove>()
+    /** Queued messages taken back here, by the `rev` they had; the state shows them removed until a newer one (`withRemovals`). */
+    internal val pendingRemovals = mutableMapOf<String, Long>()
     internal var pluginsRefreshAgain = false
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
@@ -113,6 +115,7 @@ class AppStore internal constructor(
         actions.clear(); sends.clear(); downloadLocks.clear()
         // A cancelled section move never heard back: it would lie over the next mirror for good.
         pendingSectionMoves.clear(); mirrorBots = emptyList()
+        pendingRemovals.clear()
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
@@ -147,7 +150,7 @@ class AppStore internal constructor(
         // Like iOS, a screen state this app can't read is a host without remote screen.
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
         mirrorBots = snapshot.bots
-        mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = snapshot.entries,
+        mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = withRemovals(snapshot.entries, pendingRemovals),
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev, icons = snapshot.icons,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
         if (voiceBinding != null && snapshot.bots.none { it.id == voiceBinding?.botId && !it.deleted }) endVoice("Voice chat ended because its bot was removed.")

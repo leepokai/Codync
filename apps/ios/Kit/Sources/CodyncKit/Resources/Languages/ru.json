@@ -1797,5 +1797,15 @@
   "{name} approved this iPhone": "{name}: этот iPhone подтверждён",
   "This phone already has approval. If access no longer works, request a new approval on the computer.": "У этого телефона уже есть подтверждение. Если доступ перестал работать, запросите новое подтверждение на компьютере.",
   "This replaces this phone's current approval. The computer must be online to show the new code.": "Это заменит текущее подтверждение этого телефона. Чтобы показать новый код, компьютер должен быть в сети.",
-  "Request new approval": "Запросить новое подтверждение"
+  "Request new approval": "Запросить новое подтверждение",
+  "Send now": "Отправить сейчас",
+  "Sending now…": "Отправляем сейчас…",
+  "No message waiting": "Нет ожидающих сообщений",
+  "Removed": "Убрано",
+  "queued": "в очереди",
+  "S sends now": "S отправляет сейчас",
+  "D removes": "D убирает",
+  "S sends this now": "S отправляет это сейчас",
+  "D removes the last": "D убирает последнее",
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Обновите Codync на {host}: отправке сейчас и отзыву нужна версия {version} или новее."
 }

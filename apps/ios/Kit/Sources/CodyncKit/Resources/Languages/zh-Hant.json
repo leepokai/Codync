@@ -1797,5 +1797,15 @@
   "{name} approved this iPhone": "{name} 已同意這臺 iPhone",
   "This phone already has approval. If access no longer works, request a new approval on the computer.": "這臺手機已獲同意。如果訪問不再有效，請重新申請，由電腦同意。",
   "This replaces this phone's current approval. The computer must be online to show the new code.": "這會取代這臺手機目前的同意。電腦必須在線上才能顯示新的碼。",
-  "Request new approval": "重新申請同意"
+  "Request new approval": "重新申請同意",
+  "Send now": "立即送出",
+  "Sending now…": "正在立即送出…",
+  "No message waiting": "沒有等待中的訊息",
+  "Removed": "已移除",
+  "queued": "排隊中",
+  "S sends now": "S 立即送出",
+  "D removes": "D 移除",
+  "S sends this now": "S 立即送出這則",
+  "D removes the last": "D 移除最後一則",
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "請在 {host} 上更新 Codync：立即送出和收回需要 {version} 或更新的版本。"
 }

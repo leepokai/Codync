@@ -82,7 +82,9 @@ pub fn draft(hub: &Hub, cfg: &BotConfig, session: &str, reason: Reason) -> Resul
 }
 
 fn build(store: &Store, bot: &str, session: &str) -> Result<String> {
-    let entries = store.history(bot, i64::MAX, READ)?;
+    // A message the user took back before it went out (`unqueue`) was never asked.
+    let entries: Vec<_> =
+        store.history(bot, i64::MAX, READ)?.into_iter().filter(|e| e.data["removed"] != true).collect();
     let user = EntryKind::User.as_str();
     let requests: Vec<(String, String)> = entries
         .iter()

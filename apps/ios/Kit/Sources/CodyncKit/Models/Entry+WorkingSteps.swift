@@ -21,9 +21,16 @@ public extension Entry {
         return t.isEmpty || t == "(pass)" || t == "pass"
     }
 
-    /// The turn running now while the bot works in this chat; a queued message already holds the next turn.
+    /// A chat's entries grouped by turn, oldest turn first (Full conversation); one taken back from the queue never had
+    /// a turn.
+    static func traceTurns(_ entries: [Entry]) -> [(key: Int64, value: [Entry])] {
+        Dictionary(grouping: entries.filter { $0.data.removed != true }, by: \.turn).sorted { $0.key < $1.key }
+    }
+
+    /// The turn running now while the bot works in this chat; a queued message already holds the next turn, and so
+    /// does one taken back from the queue.
     static func runningTurn(_ entries: [Entry], working: Bool) -> Int64? {
-        working ? entries.filter { $0.data.status != "queued" }.map(\.turn).max() : nil
+        working ? entries.filter { $0.data.status != "queued" && $0.data.removed != true }.map(\.turn).max() : nil
     }
 
     /// What the running turn has done so far, in order.

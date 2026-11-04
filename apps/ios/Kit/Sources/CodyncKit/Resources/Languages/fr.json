@@ -1797,5 +1797,15 @@
   "{name} approved this iPhone": "{name} a approuvé cet iPhone",
   "This phone already has approval. If access no longer works, request a new approval on the computer.": "Ce téléphone est déjà approuvé. Si l’accès ne fonctionne plus, demandez une nouvelle approbation sur l’ordinateur.",
   "This replaces this phone's current approval. The computer must be online to show the new code.": "Cela remplace l’approbation actuelle de ce téléphone. L’ordinateur doit être en ligne pour afficher le nouveau code.",
-  "Request new approval": "Demander une nouvelle approbation"
+  "Request new approval": "Demander une nouvelle approbation",
+  "Send now": "Envoyer maintenant",
+  "Sending now…": "Envoi immédiat…",
+  "No message waiting": "Aucun message en attente",
+  "Removed": "Retiré",
+  "queued": "en attente",
+  "S sends now": "S envoie maintenant",
+  "D removes": "D retire",
+  "S sends this now": "S envoie celui-ci maintenant",
+  "D removes the last": "D retire le dernier",
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Mettez à jour Codync sur {host} : l’envoi immédiat et le retrait nécessitent {version} ou une version plus récente."
 }

@@ -1797,5 +1797,15 @@
   "{name} approved this iPhone": "{name} がこの iPhone を承認しました",
   "This phone already has approval. If access no longer works, request a new approval on the computer.": "この電話はすでに承認されています。アクセスできなくなった場合は、コンピュータで新しい承認をリクエストしてください。",
   "This replaces this phone's current approval. The computer must be online to show the new code.": "この電話の現在の承認が置き換えられます。新しいコードを表示するには、コンピュータがオンラインである必要があります。",
-  "Request new approval": "新しい承認をリクエスト"
+  "Request new approval": "新しい承認をリクエスト",
+  "Send now": "今すぐ送信",
+  "Sending now…": "今すぐ送信中…",
+  "No message waiting": "待機中のメッセージはありません",
+  "Removed": "削除しました",
+  "queued": "待機中",
+  "S sends now": "S 今すぐ送信",
+  "D removes": "D 削除",
+  "S sends this now": "S これを今すぐ送信",
+  "D removes the last": "D 最後のものを削除",
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host} の Codync をアップデートしてください。今すぐ送信と取り消しには {version} 以降が必要です。"
 }

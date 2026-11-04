@@ -117,7 +117,8 @@ import com.kyant.shapes.Capsule
             // An artifact's viewer has its own box for the same draft; two would overwrite each other.
             else if (viewing == null) MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
                 onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
-                replyTo = replyTo, cancelReply = { replyId = null })
+                replyTo = replyTo, cancelReply = { replyId = null },
+                queued = queuedMessages(state.entries.filter { it.botId == bot.id && it.isChat }.hidingCalls(), bot.isWorking))
         }
     }) {
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
@@ -205,7 +206,8 @@ import com.kyant.shapes.Capsule
     val entries = state.entries.filter { it.botId == bot.id && it.isChat }.hidingCalls()
     // A call's message that failed to send stays here, to be sent again.
     val pending = state.pending.filter { it.botId == bot.id && (it.call == null || it.status == SendStatus.Failed) }
-    val items = chatItems(entries, pending)
+    // Messages waiting behind the bot's work show above the composer instead.
+    val items = chatItems(entries, pending, busy = bot.isWorking)
     val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
     val more = bot.id !in state.historyComplete
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()

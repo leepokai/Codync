@@ -37,6 +37,13 @@ test('the running turn is the newest one, not a queued message waiting for the n
   assert.equal(runningTurn(entries, false), undefined)
 })
 
+test('a message taken back from the queue doesn’t move the running turn on', () => {
+  const entries = [entry('u1', 1, 'user'), entry('t1', 1, 'thought'), entry('gone', 2, 'user', 'cancelled', { removed: true })]
+  assert.equal(runningTurn(entries, true), 1)
+  assert.deepEqual(workingSteps(entries).map((e) => e.id), ['t1'])
+  assert.deepEqual(traceTurns(entries).map(([turn]) => turn), [1], 'nor shows as a turn of its own')
+})
+
 test('the trace follows new steps only while scrolled to the end', () => {
   assert.equal(scrolledToEnd({ scrollHeight: 1000, scrollTop: 600, clientHeight: 400 }), true)
   assert.equal(scrolledToEnd({ scrollHeight: 1000, scrollTop: 595, clientHeight: 400 }), true)

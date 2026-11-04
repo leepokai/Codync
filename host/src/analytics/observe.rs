@@ -96,6 +96,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::MessageSent
         }
         "stop" => Event::TurnStopped,
+        "unqueue" => Event::QueuedMessageRemoved,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,
         "react" => Event::ReactionAdded,

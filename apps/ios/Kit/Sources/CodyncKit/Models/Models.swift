@@ -40,7 +40,8 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
     /// conversation going, and a kept handoff changed nothing.
     public var isChat: Bool {
         switch kind {
-        case "user", "permission": true
+        case "user": data.removed != true
+        case "permission": true
         case "notice": data.memory == nil && data.memoryFile == nil && data.compaction == nil && data.handoff?.status != "kept"
         case "agent": data.final == true
         default: false

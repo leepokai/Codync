@@ -308,6 +308,8 @@ export interface EntryData {
   final?: boolean
   /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */
   status?: string
+  /** user: taken back from the queue before it went out (`unqueue`); the chat no longer shows it. */
+  removed?: boolean
   clientNonce?: string
   title?: string
   toolKind?: string
@@ -362,6 +364,8 @@ export interface Entry {
 export function isChat(e: Entry): boolean {
   switch (e.kind) {
     case 'user':
+      // One the user took back from the queue (`unqueue`) is gone.
+      return !e.data.removed
     case 'permission':
       return true
     case 'notice':

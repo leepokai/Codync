@@ -254,6 +254,21 @@ export class BotStore extends BotSync {
     })
   }
 
+  /** Has a queued message handled now (`steer`): the computer's update takes it out of the queue. */
+  steer(entry: Entry) {
+    this.answer(entry, 'steer', (c) => c.call('steer', { botId: entry.botId, entryId: entry.id }))
+  }
+
+  /** Takes back a queued message (`unqueue`): gone at once, back if the computer refuses. */
+  unqueue(entry: Entry) {
+    const show = (e: Entry) => {
+      this.upsert(e)
+      this.changed()
+    }
+    show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
+    this.perform((c) => c.call('unqueue', { botId: entry.botId, entryId: entry.id }), true, () => show(entry))
+  }
+
   /** Saves the user's version of a handoff that hasn't been sent; whether it did. */
   async editHandoff(entry: Entry, text: string) {
     try {

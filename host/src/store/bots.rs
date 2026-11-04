@@ -1,5 +1,6 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
+use super::entries::NOT_REMOVED;
 use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
 use super::{Store, logged, next_rev};
 use crate::LockExt;
@@ -131,10 +132,12 @@ impl Store {
     pub fn last_message(&self, id: &str) -> Option<LastMessage> {
         let c = self.db.locked();
         let row = c.query_row(
-            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
-               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
-               json_extract(data, '$.call') IS NULL
-             ORDER BY seq DESC LIMIT 1",
+            &format!(
+                "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
+                   (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
+                   json_extract(data, '$.call') IS NULL AND {NOT_REMOVED}
+                 ORDER BY seq DESC LIMIT 1"
+            ),
             [id],
             |r| {
                 let kind: String = r.get(0)?;
@@ -210,7 +213,7 @@ mod tests {
             .unwrap();
         assert!(a.rev > u.rev);
         assert_eq!(s.unread("b1", 0), 0, "narration is not unread");
-        let a2 = s.update_entry(&a.id, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
+        let a2 = s.update_entry(&a.id, None, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
         assert_eq!(s.unread("b1", 0), 1);
         assert_eq!(s.entries_since(a2.rev - 1, 500).unwrap().len(), 1);
         assert_eq!(s.entries_since(0, 1).unwrap().len(), 1, "fresh sync is capped per bot");

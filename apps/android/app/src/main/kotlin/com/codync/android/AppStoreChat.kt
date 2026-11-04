@@ -163,6 +163,27 @@ fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + ent
     delay(2_000)
 }
 
+/** A queued message goes now: into the running turn when the agent can take it, else as the next turn (the host decides). */
+internal fun AppStore.steer(entry: Entry) = command("steer", body("botId" to entry.botId, "entryId" to entry.id), "steer:" + entry.id)
+
+/** A queued message never goes out: gone at once, back if the computer refuses (its error shows). */
+internal fun AppStore.unqueue(entry: Entry) {
+    fun show(shown: Entry) = mutableState.update { state -> state.copy(entries = state.entries.map { if (it.id == shown.id) shown else it }) }
+    pendingRemovals[entry.id] = entry.rev
+    show(entry.markedRemoved())
+    command("unqueue", body("botId" to entry.botId, "entryId" to entry.id), "unqueue:" + entry.id, onFailure = {
+        pendingRemovals.remove(entry.id)
+        show(entry)
+    })
+}
+
+private fun Entry.markedRemoved() = copy(data = JsonObject(data + ("removed" to JsonPrimitive(true))))
+
+/** [entries] as they show while [pending] messages (with the `rev` each had) wait for the computer: its newer copy of one
+ *  says what became of it (removed, or sent because the agent had taken it first). */
+internal fun withRemovals(entries: List<Entry>, pending: Map<String, Long>): List<Entry> =
+    if (pending.isEmpty()) entries else entries.map { if (pending[it.id] == it.rev) it.markedRemoved() else it }
+
 /** Carries on with the bot's current conversation instead of the handoff. */
 internal fun AppStore.keepConversation(entry: Entry) = command("keepConversation", body("entryId" to entry.id), "handoff:" + entry.id)
 

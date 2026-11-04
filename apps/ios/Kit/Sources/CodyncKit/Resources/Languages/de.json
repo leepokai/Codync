@@ -1797,5 +1797,15 @@
   "{name} approved this iPhone": "{name} hat dieses iPhone genehmigt",
   "This phone already has approval. If access no longer works, request a new approval on the computer.": "Dieses Telefon ist bereits genehmigt. Falls der Zugang nicht mehr funktioniert, fordere auf dem Computer eine neue Genehmigung an.",
   "This replaces this phone's current approval. The computer must be online to show the new code.": "Das ersetzt die aktuelle Genehmigung dieses Telefons. Der Computer muss online sein, um den neuen Code anzuzeigen.",
-  "Request new approval": "Neue Genehmigung anfordern"
+  "Request new approval": "Neue Genehmigung anfordern",
+  "Send now": "Jetzt senden",
+  "Sending now…": "Wird jetzt gesendet…",
+  "No message waiting": "Keine Nachricht wartet",
+  "Removed": "Entfernt",
+  "queued": "wartet",
+  "S sends now": "S sendet jetzt",
+  "D removes": "D entfernt",
+  "S sends this now": "S sendet diese jetzt",
+  "D removes the last": "D entfernt die letzte",
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Aktualisiere Codync auf {host}: Jetzt senden und Zurücknehmen brauchen {version} oder neuer."
 }

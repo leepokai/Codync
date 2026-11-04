@@ -1797,5 +1797,15 @@
   "{name} approved this iPhone": "{name}이(가) 이 iPhone을 승인했습니다",
   "This phone already has approval. If access no longer works, request a new approval on the computer.": "이 휴대폰은 이미 승인되었습니다. 접근이 더 이상 되지 않으면 컴퓨터에서 새 승인을 요청하세요.",
   "This replaces this phone's current approval. The computer must be online to show the new code.": "이 휴대폰의 현재 승인을 대체합니다. 새 코드를 표시하려면 컴퓨터가 온라인 상태여야 합니다.",
-  "Request new approval": "새 승인 요청"
+  "Request new approval": "새 승인 요청",
+  "Send now": "지금 보내기",
+  "Sending now…": "지금 보내는 중…",
+  "No message waiting": "대기 중인 메시지 없음",
+  "Removed": "제거됨",
+  "queued": "대기 중",
+  "S sends now": "S 지금 보내기",
+  "D removes": "D 제거",
+  "S sends this now": "S 이것을 지금 보내기",
+  "D removes the last": "D 마지막 것 제거",
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host}에서 Codync를 업데이트하세요. 지금 보내기와 취소를 쓰려면 {version} 이상이 필요합니다."
 }

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { draftOf, isGroup, isWorkingIn, type Bot, type BotDraft, type Entry } from '@shared/models'
+import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -20,6 +20,8 @@ import { ChatRow, TimeSeparator } from './ChatRows'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
+import { QueuedMessages } from './QueuedMessages'
+import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
@@ -191,13 +193,16 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             </div>
           ) : artifactId ? null : (
             // The artifact over the chat has its own box (two would both take the voice shortcut).
-            <Composer
-              botId={botId}
-              reply={replyTo}
-              cancelReply={cancelReply}
-              onCall={!calling && bot ? () => setCalling(true) : null}
-              onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
-            />
+            <>
+              <QueuedMessages botId={botId} />
+              <Composer
+                botId={botId}
+                reply={replyTo}
+                cancelReply={cancelReply}
+                onCall={!calling && bot ? () => setCalling(true) : null}
+                onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
+              />
+            </>
           )}
         </div>
         {calling ? (
@@ -286,8 +291,10 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   const live = !!bot && isWorkingIn(bot, botId) && !store.isOffline
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
   const entries = store.allEntries(botId)
-  // What voice calls carried shows in each call's conversation, not in the chat.
-  const all = useMemo(() => buildChat(hidingCalls(entries)), [entries])
+  // What voice calls carried shows in each call's conversation, not in the chat; what waits for the bot, in the queue.
+  const working = !!bot && isWorking(bot)
+  const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])
+  const all = useMemo(() => chatOf(entries), [chatOf, entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
@@ -327,7 +334,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
     if (at === 0) {
       const anchor = list[0]?.id
       await store.loadOlder(botId)
-      list = buildChat(hidingCalls(store.allEntries(botId)))
+      list = chatOf(store.allEntries(botId))
       at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
     }
     if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)

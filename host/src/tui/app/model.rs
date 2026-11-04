@@ -224,6 +224,11 @@ impl Entry {
         self.kind == Kind::Permission && self.data["status"] == "pending"
     }
 
+    /// A message of the user's waiting for its turn: it shows above the composer, not in the chat.
+    pub fn queued(&self) -> bool {
+        self.kind == Kind::User && self.data["status"] == "queued"
+    }
+
     /// Approval options in the apps' order: allow once, allow always, reject once, reject always.
     pub fn options(&self) -> Vec<(String, String, String)> {
         let rank = |k: &str| match k {

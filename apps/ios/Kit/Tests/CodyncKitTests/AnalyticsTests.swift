@@ -61,6 +61,10 @@ import Testing
     // Multi-word values are snake_case, as in the catalog.
     #expect(try json(.signInFailed(.google, reason: .cancelled)) == #"{"provider":"google","reason":"cancelled"}"#)
     #expect(try json(.screenViewed(.botDetails)) == #"{"screen":"bot_details"}"#)
+    #expect(try json(.imagePreviewAction(.copyImage)) == #"{"action":"copy_image"}"#)
+    #expect(try json(.imagePreviewOpened) == "{}")
+    #expect(AnalyticsEvent.imagePreviewOpened.name == "image_preview_opened")
+    #expect(AnalyticsEvent.imagePreviewAction(.zoom).name == "image_preview_action")
     #expect(try json(.voiceCallStarted(.onDevice)) == #"{"engine":"on_device"}"#)
     #expect(try json(.voiceCallQuality(.gemini, readyMs: 1200, reconnects: 1, stuck: .none, failure: .connection))
         == #"{"engine":"gemini","failure":"connection","ready_ms":1200,"reconnects":1,"stuck":"none"}"#)

@@ -18,6 +18,8 @@ public struct ThreadView: View {
     @State var openCall: Entry?
     @State var editingGroup = false
     @State var details: DetailsRequest?
+    /// A picture in the chat, full size.
+    @State var viewingImage: ImageViewing?
     @State var calling = false
     @State var callSpeaking = false
     @State var interruptCall: (() -> Void)?
@@ -67,13 +69,14 @@ public struct ThreadView: View {
         chrome(chat)
             .readingConversation(botId)
             .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
-                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
+                           && openArtifact == nil && openCall == nil && details == nil && viewingImage == nil && !editingGroup
                            && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
-            // The details sheet's Library presents its own downloads.
-            .fileExportSheet(model, botId: botId, active: details == nil)
+            // The details sheet's Library and the picture viewer present their own downloads.
+            .fileExportSheet(model, botId: botId, active: details == nil && viewingImage == nil)
+            .imageViewer($viewingImage)
             .codyncSheet(isPresented: $showTrace) {
                 TraceView(botId: botId)
             }
@@ -98,6 +101,7 @@ public struct ThreadView: View {
         openArtifact = nil
         editingGroup = false
         details = nil
+        viewingImage = nil
         if model.fileDownloads.export?.botId == botId { model.fileDownloads.dismissExport() }
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { calling = true }
     }

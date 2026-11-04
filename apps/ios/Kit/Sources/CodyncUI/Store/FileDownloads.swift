@@ -75,6 +75,16 @@ public final class FileDownloads {
 
     public func cancel(_ id: String) { tasks[id]?.cancel(); states[id] = nil }
 
+    public func isDownloading(_ id: String) -> Bool {
+        if case .downloading = states[id] { return true }
+        return false
+    }
+
+    /// A file's Download button (its card, Library row or picture viewer): saves it, or stops its download under way.
+    public func toggle(client: HostClient?, entryId: String, botId: String, file: SharedFile) {
+        if isDownloading(file.id) { cancel(file.id) } else { save(client: client, entryId: entryId, botId: botId, file: file) }
+    }
+
     /// The native share sheet has finished using the verified temporary file.
     public func dismissExport() {
         export = nil

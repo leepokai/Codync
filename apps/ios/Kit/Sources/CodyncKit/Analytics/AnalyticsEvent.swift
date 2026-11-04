@@ -27,6 +27,10 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// never), reconnects, the first phase stuck too long, why it failed.
     case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
     case screenViewed(Screen)
+    /// A picture in a chat or the Library opened full size.
+    case imagePreviewOpened
+    /// Something done in the full-size viewer, or a picture copied from a message's menu; at most one `zoom` per opening.
+    case imagePreviewAction(ImageAction)
     case reviewOpportunity(completed: Int)
     case reviewCancelled(ReviewCancellation)
     case reviewRequested(completed: Int)
@@ -47,6 +51,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Link: String, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
+    public enum ImageAction: String, Sendable { case zoom, copyImage = "copy_image", copyName = "copy_name", download }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
     public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
@@ -121,6 +126,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceCallStarted: "voice_call_started"
         case .voiceCallQuality: "voice_call_quality"
         case .screenViewed: "screen_viewed"
+        case .imagePreviewOpened: "image_preview_opened"
+        case .imagePreviewAction: "image_preview_action"
         case .reviewOpportunity: "review_opportunity"
         case .reviewCancelled: "review_cancelled"
         case .reviewRequested: "review_requested"
@@ -139,7 +146,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .onboardingCompleted(via): return ["via": .string(via.rawValue)]
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
-        case .signedOut, .accessRequested: return [:]
+        case .signedOut, .accessRequested, .imagePreviewOpened: return [:]
+        case let .imagePreviewAction(action): return ["action": .string(action.rawValue)]
         case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .computerPaired(via, computer):

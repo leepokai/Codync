@@ -2,7 +2,7 @@ import { isBelow } from '../../../shared/compat.ts'
 import type { Entry } from '../../../shared/models.ts'
 
 /** The first host that steers a queued message (`steer`) and takes one back (`unqueue`). */
-const STEER_HOST = '2.38.1'
+const STEER_HOST = '2.39.0'
 
 /** Whether the computer's host can steer and take back queued messages; an older one only queues them. */
 export function canSteer(hostVersion: string | undefined): boolean {

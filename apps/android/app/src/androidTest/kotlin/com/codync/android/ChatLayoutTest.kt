@@ -124,7 +124,7 @@ class ChatLayoutTest {
         val second = "And run the linter before you finish."
         val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot),
             connection = LinkState.Ready(HostRoute.Direct), actualConnection = LinkState.Ready(HostRoute.Direct),
-            historyComplete = setOf(bot.id), hello = buildJsonObject { put("version", "2.38.1") }, entries = listOf(
+            historyComplete = setOf(bot.id), hello = buildJsonObject { put("version", "2.39.0") }, entries = listOf(
                 user("asked", 1, "Add a weekly totals helper.", "sent"), user("queued-1", 2, first, "queued"), user("queued-2", 3, second, "queued")))
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
         // Each waits once, on the composer, oldest first; the chat shows only what went out.

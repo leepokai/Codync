@@ -16,7 +16,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 語音通話中語音辨識偶爾出錯時，會送出已聽到的內容並繼續聆聽，不再直接結束通話。
 - 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
 - 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
-- 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
+- 用 QR Code 配對的電腦如果當下沒能加入帳號，下次連上時會自動補上。
 - 語音通話的對話紀錄更好讀，通話列在 bot 沒說話時也會顯示一排靜止的點。
 - 排隊狀態、例行任務和執行紀錄會跟隨介面語言，名稱與訊息保留原文。
 - 新增義大利文介面：可在設定選擇「Italiano」，或跟隨系統的義大利文語言。
@@ -24,7 +24,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ### en-US
 - Messages sent while a bot works wait above the box: send now or take back.
-- First-time setup offers your account's computers or a new one, plus a website link to copy.
+- First-time setup offers your account's computers or a new one.
 - When bots use different agents, the list shows each one's logo (off in Settings).
 - Fixed a crash when the connection dropped.
 - A one-off speech error no longer ends a voice call.

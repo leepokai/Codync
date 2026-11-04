@@ -5,7 +5,7 @@ use super::{After, App, Entry};
 use serde_json::json;
 
 /// The first host that sends a queued message now and takes one back.
-const STEER_SINCE: &str = "2.38.1";
+const STEER_SINCE: &str = "2.39.0";
 
 impl App {
     /// `bot`'s queued messages, oldest (the next to go) first.
@@ -92,8 +92,8 @@ mod tests {
         entry(&mut app, "q", 1, &json!({"text": "one", "status": "queued"}));
         app.host_version = "2.38.0".into();
         assert!(!app.queue_keys());
-        assert_eq!(hint(&mut app, 'S'), "Update Codync on test: sending now and taking back need 2.38.1 or newer.");
-        app.host_version = "2.38.1".into();
+        assert_eq!(hint(&mut app, 'S'), "Update Codync on test: sending now and taking back need 2.39.0 or newer.");
+        app.host_version = "2.39.0".into();
         assert!(app.queue_keys());
         assert_eq!(hint(&mut app, 'S'), "Sending now…");
         assert_eq!(hint(&mut app, 'D'), "Removed");

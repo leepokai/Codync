@@ -170,7 +170,7 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(!store.supportsQueueActions) // The host hasn't answered yet.
     store.hostVersion = HostVersion(version: "2.38.0")
     #expect(!store.supportsQueueActions)
-    store.hostVersion = HostVersion(version: "2.38.1")
+    store.hostVersion = HostVersion(version: "2.39.0")
     #expect(store.supportsQueueActions)
 }
 

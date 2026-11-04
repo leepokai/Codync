@@ -59,7 +59,7 @@ wait above the box, oldest first, one line each: the desktop's tray tucked under
 next message at once, so the chat keeps showing that one.
 
 Each row has icon-only Send now (`arrow.turn.down.right`) and Remove (`trash`); the terminal has `S` (send the oldest
-now) and `D` (take back the newest). A host older than 2.38.1 has neither, so the rows only show. Remove hides the
+now) and `D` (take back the newest). A host older than 2.39.0 has neither, so the rows only show. Remove hides the
 message at once and brings it back if the host refuses. What each does on the host:
 [turns](../features/context-and-memory.md#turns).
 

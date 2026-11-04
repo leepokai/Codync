@@ -1518,7 +1518,6 @@
   "↵ sign in": "↵ accedi",
   "↵ sign in instead of the token": "↵ accedi al posto del token",
   "Queued": "In coda",
-  "Queued until this response finishes": "In coda fino al termine di questa risposta",
   "Routine · {name}": "Routine · {name}",
   "Tool": "Strumento",
   "Turn {turn}": "Turno {turn}",
@@ -1797,5 +1796,15 @@
   "{name} approved this iPhone": "{name} ha approvato questo iPhone",
   "This phone already has approval. If access no longer works, request a new approval on the computer.": "Questo telefono è già approvato. Se l'accesso non funziona più, richiedi una nuova approvazione sul computer.",
   "This replaces this phone's current approval. The computer must be online to show the new code.": "Sostituisce l'approvazione attuale di questo telefono. Il computer deve essere online per mostrare il nuovo codice.",
-  "Request new approval": "Richiedi nuova approvazione"
+  "Request new approval": "Richiedi nuova approvazione",
+  "Send now": "Invia ora",
+  "Sending now…": "Invio immediato…",
+  "No message waiting": "Nessun messaggio in attesa",
+  "Removed": "Rimosso",
+  "queued": "in coda",
+  "S sends now": "S invia ora",
+  "D removes": "D rimuove",
+  "S sends this now": "S invia questo ora",
+  "D removes the last": "D rimuove l'ultimo",
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Aggiorna Codync su {host}: per inviare subito e ritirare un messaggio serve la versione {version} o successiva."
 }

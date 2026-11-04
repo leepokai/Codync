@@ -28,6 +28,6 @@ test('a message taken back is gone from what the views read, in one array per li
 test('only a host that steers gets the queue’s buttons', () => {
   assert.equal(canSteer(undefined), false)
   assert.equal(canSteer('2.38.0'), false)
-  assert.equal(canSteer('2.38.1'), true)
+  assert.equal(canSteer('2.39.0'), true)
   assert.equal(canSteer('2.40.2'), true)
 })

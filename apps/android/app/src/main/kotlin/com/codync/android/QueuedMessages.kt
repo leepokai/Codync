@@ -34,7 +34,7 @@ internal fun queuedMessages(chat: List<Entry>, working: Boolean): List<Entry> =
     if (working) chat.filter(Entry::isQueued).sortedBy(Entry::seq) else emptyList()
 
 /** The first host version that takes a queued message now (`steer`) or back (`unqueue`). */
-private const val STEER_HOST = "2.38.1"
+private const val STEER_HOST = "2.39.0"
 
 /** An older host has neither, so its queued messages only show; before its `hello` (offline) the actions stay hidden too. */
 internal val AppState.supportsQueueActions: Boolean

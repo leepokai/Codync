@@ -546,6 +546,10 @@ export interface N8nState {
   url: string | null
   port: number
   path: string | null
+  /** Whether the instance's MCP server is connected to the bots. */
+  mcp: boolean
+  /** The instance's session cookie: the editor signs in with it. */
+  auth: string | null
 }
 
 export interface Hello {

@@ -206,16 +206,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "n8nStatus" => hub.n8n.state(),
         "n8nStart" => {
-            hub.n8n.enable(&hub.store)?;
+            hub.n8n.enable(hub)?;
             hub.n8n.state()
         }
         "n8nStop" => {
-            hub.n8n.stop().await;
+            hub.n8n.stop(&hub.store).await;
             hub.n8n.state()
         }
         "setN8nEnabled" => {
             if b["enabled"].as_bool().context("`enabled` must be a boolean")? {
-                hub.n8n.enable(&hub.store)?;
+                hub.n8n.enable(hub)?;
             } else {
                 hub.n8n.disable(&hub.store).await?;
             }

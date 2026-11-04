@@ -21,7 +21,7 @@ export class FakeHost {
   private nextReply = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
   private analytics = true
-  private n8n: N8nState = { enabled: false, state: 'stopped', error: null, url: null, port: 5679, path: null }
+  private n8n: N8nState = { enabled: false, state: 'stopped', error: null, url: null, port: 5679, path: null, mcp: false, auth: null }
 
   constructor(
     readonly version: string,

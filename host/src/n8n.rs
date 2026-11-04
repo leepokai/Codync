@@ -8,10 +8,12 @@
 use crate::LockExt;
 use crate::agent::backends;
 use crate::agent::process::Process;
+use crate::hub::Hub;
 use crate::service;
 use crate::store::Store;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -33,6 +35,16 @@ const KV_ENABLED: &str = "n8n.enabled";
 /// The settings' keys under the pre-rename name, read once and moved to the new keys.
 const LEGACY_KV: [(&str, &str); 3] =
     [("automan.path", KV_PATH), ("automan.port", KV_PORT), ("automan.enabled", KV_ENABLED)];
+/// The instance's owner and MCP API key, which the host creates on a first start and keeps.
+const KV_OWNER_EMAIL: &str = "n8n.owner.email";
+const KV_OWNER_PASSWORD: &str = "n8n.owner.password";
+const KV_MCP_KEY: &str = "n8n.mcpApiKey";
+/// The owner the host creates for an instance that doesn't have one yet.
+const OWNER_EMAIL: &str = "owner@codync.local";
+/// The instance's session cookie; the desktop's editor logs in with it.
+const AUTH_COOKIE: &str = "automan-auth";
+/// The instance's MCP server in the bots' MCP list.
+const CONNECTOR_ID: &str = "n8n";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum State {
@@ -74,6 +86,10 @@ pub struct N8n {
     host_url: String,
     /// This host's loopback bearer token, for the same node.
     host_token: String,
+    /// The instance's session cookie (`automan-auth=<jwt>`): the desktop's editor's auto-login.
+    session: Mutex<Option<String>>,
+    /// Whether the instance's MCP server is registered as a connector for the bots.
+    mcp: Mutex<bool>,
 }
 
 impl N8n {
@@ -92,13 +108,17 @@ impl N8n {
             events,
             host_url,
             host_token,
+            session: Mutex::default(),
+            mcp: Mutex::default(),
         }
     }
 
-    /// What clients show: the settings, the state, and where the editor runs.
+    /// What clients show: the settings, the state, where the editor runs, and its auto-login.
     pub fn state(&self) -> Value {
         let s = self.settings.locked();
         let st = self.state.locked();
+        let auth = self.session.locked().clone();
+        let mcp = *self.mcp.locked();
         json!({
             "enabled": s.enabled,
             "state": st.name(),
@@ -106,6 +126,8 @@ impl N8n {
             "url": s.path.is_some().then(|| format!("http://127.0.0.1:{}", s.port)),
             "port": s.port,
             "path": s.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            "mcp": mcp,
+            "auth": auth,
         })
     }
 
@@ -144,27 +166,33 @@ impl N8n {
 
     /// Kicks off a start when it isn't already under way; the run happens in the background.
     /// Only starts when the service is on.
-    pub fn start(self: &Arc<Self>) {
+    pub fn start(self: &Arc<Self>, hub: &Arc<Hub>) {
         if !self.enabled() || self.active() {
             return;
         }
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.set_state(State::Starting);
-        tokio::spawn(self.clone().run(generation));
+        tokio::spawn(self.clone().run(generation, hub.clone()));
     }
 
     /// Turns the service on (it starts with the host from now on) and, if it isn't running, starts it.
-    pub fn enable(self: &Arc<Self>, store: &Store) -> Result<()> {
+    pub fn enable(self: &Arc<Self>, hub: &Arc<Hub>) -> Result<()> {
         self.settings.locked().enabled = true;
-        self.persist(store)?;
-        self.start();
+        self.persist(&hub.store)?;
+        self.start(hub);
         Ok(())
     }
 
     /// Stops the instance (it stays on for the next host start), waiting for it to go.
-    pub async fn stop(&self) {
+    pub async fn stop(&self, store: &Store) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.stop_process().await;
+        // A stopped instance has no MCP server: the bots lose the connector with it.
+        if let Err(e) = crate::market::remove_connector(store, CONNECTOR_ID) {
+            tracing::warn!(error = format!("{e:#}"), "removing the n8n connector");
+        }
+        *self.session.locked() = None;
+        *self.mcp.locked() = false;
         self.set_state(State::Stopped);
     }
 
@@ -172,7 +200,7 @@ impl N8n {
     pub async fn disable(self: &Arc<Self>, store: &Store) -> Result<()> {
         self.settings.locked().enabled = false;
         self.persist(store)?;
-        self.stop().await;
+        self.stop(store).await;
         // The state may not have moved (already stopped), but the switch did.
         self.broadcast();
         Ok(())
@@ -183,7 +211,7 @@ impl N8n {
         check_install(&path)?;
         self.settings.locked().path = Some(path);
         self.persist(store)?;
-        self.after_settings_change().await;
+        self.after_settings_change(store).await;
         Ok(())
     }
 
@@ -191,15 +219,15 @@ impl N8n {
         ensure!(port >= 1024, "that port is reserved; pick one of 1024 or higher");
         self.settings.locked().port = port;
         self.persist(store)?;
-        self.after_settings_change().await;
+        self.after_settings_change(store).await;
         Ok(())
     }
 
     /// A setting changed: a running instance comes back with the new value, and the clients
     /// get the new snapshot even when the state name didn't move.
-    async fn after_settings_change(&self) {
+    async fn after_settings_change(&self, store: &Store) {
         if self.active() {
-            self.stop().await;
+            self.stop(store).await;
         } else if matches!(*self.state.locked(), State::Error(_)) {
             // The error belongs to the old settings.
             self.set_state(State::Stopped);
@@ -214,9 +242,10 @@ impl N8n {
         }
     }
 
-    /// The start's whole life: launch, wait for readiness, then watch for a crash.
-    async fn run(self: Arc<Self>, generation: u64) {
-        match self.launch(generation).await {
+    /// The start's whole life: launch, wait for readiness, wire the MCP connector, then watch
+    /// for a crash.
+    async fn run(self: Arc<Self>, generation: u64, hub: Arc<Hub>) {
+        match self.launch(generation, &hub).await {
             Ok(()) => self.watch_exit(generation),
             Err(e) if self.generation.load(Ordering::SeqCst) == generation => {
                 let tail = self.log_tail();
@@ -226,7 +255,7 @@ impl N8n {
         }
     }
 
-    async fn launch(self: &Arc<Self>, generation: u64) -> Result<()> {
+    async fn launch(self: &Arc<Self>, generation: u64, hub: &Arc<Hub>) -> Result<()> {
         let (path, port) = {
             let s = self.settings.locked();
             let path = s.path.clone().context("no n8n folder set yet")?;
@@ -283,7 +312,140 @@ impl N8n {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         self.set_state(State::Running);
+        // The instance is up: the bots get its MCP server, the editor its auto-login.
+        self.mcp_setup(generation, hub).await;
         Ok(())
+    }
+
+    /// The instance is ready: its owner, session, MCP access and the bots' connector.
+    /// Best effort — a failure shows in the state and the logs, never in the instance.
+    async fn mcp_setup(&self, generation: u64, hub: &Arc<Hub>) {
+        let store = &hub.store;
+        let result = self.mcp_setup_inner(store, generation, hub).await;
+        let mcp = match result {
+            Ok(cookie) => {
+                *self.session.locked() = Some(cookie);
+                true
+            }
+            Err(e) => {
+                tracing::warn!(error = format!("{e:#}"), "setting up the n8n instance's MCP server");
+                false
+            }
+        };
+        *self.mcp.locked() = mcp;
+        self.broadcast();
+    }
+
+    /// Owner, login, MCP access, API key and the bots' connector; returns the session cookie.
+    async fn mcp_setup_inner(&self, store: &Store, generation: u64, hub: &Arc<Hub>) -> Result<String> {
+        let port = self.settings.locked().port;
+        let base = format!("http://127.0.0.1:{port}");
+        let client = reqwest::Client::builder().cookie_store(true).build().context("building the n8n client")?;
+
+        // The instance's owner: this host's, created on the first start and kept from then on.
+        let (email, password) =
+            if let (Some(email), Some(password)) = (store.kv_get(KV_OWNER_EMAIL), store.kv_get(KV_OWNER_PASSWORD)) {
+                (email, password)
+            } else {
+                let email = OWNER_EMAIL.to_owned();
+                let password = owner_password();
+                let resp = client
+                    .post(format!("{base}/rest/owner/setup"))
+                    .json(&json!({
+                        "email": email,
+                        "firstName": "Codync",
+                        "lastName": "Host",
+                        "password": password,
+                    }))
+                    .send()
+                    .await
+                    .context("creating the n8n instance's owner")?;
+                let status = resp.status();
+                if status.as_u16() == 400 {
+                    bail!("the n8n instance already has an owner, so its MCP server stays out of the bots");
+                }
+                resp.error_for_status().with_context(|| format!("creating the n8n instance's owner ({status})"))?;
+                store.kv_set(KV_OWNER_EMAIL, &email)?;
+                store.kv_set(KV_OWNER_PASSWORD, &password)?;
+                (email, password)
+            };
+
+        // The session cookie the desktop's editor logs in with.
+        let resp = client
+            .post(format!("{base}/rest/login"))
+            .json(&json!({ "emailOrLdapLoginId": email, "password": password }))
+            .send()
+            .await
+            .context("logging into the n8n instance")?;
+        let status = resp.status();
+        let cookie = cookie_value(resp.headers(), AUTH_COOKIE);
+        resp.error_for_status().with_context(|| format!("logging into the n8n instance ({status})"))?;
+        let cookie = cookie.ok_or_else(|| anyhow!("the n8n login set no {AUTH_COOKIE} cookie"))?;
+
+        // MCP access is off by default.
+        let resp = client
+            .patch(format!("{base}/rest/mcp/settings"))
+            .json(&json!({ "mcpAccessEnabled": true }))
+            .send()
+            .await
+            .context("turning the n8n MCP server on")?;
+        let status = resp.status();
+        resp.error_for_status().with_context(|| format!("turning the n8n MCP server on ({status})"))?;
+
+        // The API key: raw only at creation, or after a rotation.
+        let key = if let Some(key) = store.kv_get(KV_MCP_KEY) {
+            key
+        } else {
+            let body = get_json(&client, &format!("{base}/rest/mcp/api-key"), "reading the n8n MCP API key").await?;
+            let mut key = body["apiKey"]
+                .as_str()
+                .filter(|k| !k.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| anyhow!("no MCP API key in the n8n reply"))?;
+            // A redacted reply (`******…`) means a key exists and we don't have it: rotate.
+            if key.starts_with('*') {
+                let body =
+                    post_json(&client, &format!("{base}/rest/mcp/api-key/rotate"), "rotating the n8n MCP API key")
+                        .await?;
+                key = body["apiKey"]
+                    .as_str()
+                    .filter(|k| !k.is_empty() && !k.starts_with('*'))
+                    .map(str::to_owned)
+                    .ok_or_else(|| anyhow!("no raw MCP API key in the n8n rotation reply"))?;
+            }
+            store.kv_set(KV_MCP_KEY, &key)?;
+            key
+        };
+
+        // A stop in the meantime: the connector goes away with the instance.
+        if self.generation.load(Ordering::SeqCst) != generation {
+            bail!("the n8n instance stopped while its MCP server was being set up");
+        }
+
+        // The bots' connector: one for this instance, upserted so port and key changes follow.
+        let mut headers = BTreeMap::new();
+        headers.insert("Authorization".to_owned(), format!("Bearer {key}"));
+        let connector = crate::market::Connector {
+            id: CONNECTOR_ID.to_owned(),
+            name: CONNECTOR_ID.to_owned(),
+            description: "The n8n instance on this computer".to_owned(),
+            registry_name: None,
+            command: None,
+            args: vec![],
+            env: BTreeMap::new(),
+            url: Some(format!("{base}/mcp-server/http")),
+            headers,
+            oauth: None,
+        };
+        crate::market::update_connectors(store, |all| {
+            match all.iter_mut().find(|c| c.id == CONNECTOR_ID) {
+                Some(existing) => *existing = connector.clone(),
+                None => all.push(connector.clone()),
+            }
+            Ok(())
+        })?;
+        crate::market::turn_on(hub, crate::market::Installed::Connectors, &[CONNECTOR_ID.to_owned()], None)?;
+        Ok(cookie)
     }
 
     /// A watchdog: the instance died on its own, so the state says what it last printed.
@@ -423,6 +585,38 @@ async fn health(url: &str) -> bool {
     matches!(crate::http().get(url).timeout(Duration::from_secs(2)).send().await.ok(), Some(r) if r.status().is_success())
 }
 
+/// A GET whose JSON reply is the answer; `what` is the error's context.
+async fn get_json(client: &reqwest::Client, url: &str, what: &str) -> Result<Value> {
+    let resp = client.get(url).send().await.with_context(|| what.to_string())?;
+    resp.error_for_status()?.json().await.with_context(|| what.to_string())
+}
+
+/// A POST with no body, for the same shape of reply.
+async fn post_json(client: &reqwest::Client, url: &str, what: &str) -> Result<Value> {
+    let resp = client.post(url).send().await.with_context(|| what.to_string())?;
+    resp.error_for_status()?.json().await.with_context(|| what.to_string())
+}
+
+/// The instance owner's password: random, with the required digit and upper.
+fn owner_password() -> String {
+    let raw = uuid::Uuid::new_v4().simple().to_string();
+    let mut out = String::with_capacity(24);
+    out.push('C');
+    out.push('0');
+    out.extend(raw.bytes().take(22).map(char::from));
+    out
+}
+
+/// The value of `name` among a reply's `Set-Cookie` headers.
+fn cookie_value(headers: &axum::http::HeaderMap, name: &str) -> Option<String> {
+    let prefix = format!("{name}=");
+    headers
+        .get_all(axum::http::header::SET_COOKIE)
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .find_map(|h| h.split(';').next()?.trim().strip_prefix(&prefix).map(str::to_owned))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,16 +690,28 @@ mod tests {
 
     #[test]
     fn enabling_persists_and_reflects() {
-        let store = temp_store();
+        let dir = std::env::temp_dir().join(format!("n8n-enable-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("codync.db")).unwrap();
+        // Keep connector defaults independent of the person's credential manager.
+        *store.secret_key.locked() = Some(zeroize::Zeroizing::new(vec![0; 32]));
         let (events, _) = broadcast::channel(8);
         let a = Arc::new(N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into()));
+        let hub = Hub::new(
+            store,
+            "n8n-enable".into(),
+            crate::remote::identity::Identity::load_or_create(&dir).unwrap(),
+            "test".into(),
+            0,
+        );
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            a.enable(&store).unwrap();
-            assert_eq!(store.kv_get(KV_ENABLED).as_deref(), Some("1"));
-            a.disable(&store).await.unwrap();
-            assert_eq!(store.kv_get(KV_ENABLED).as_deref(), Some("0"));
+            a.enable(&hub).unwrap();
+            assert_eq!(hub.store.kv_get(KV_ENABLED).as_deref(), Some("1"));
+            a.disable(&hub.store).await.unwrap();
+            assert_eq!(hub.store.kv_get(KV_ENABLED).as_deref(), Some("0"));
         });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -545,5 +751,27 @@ mod tests {
         // A start over an existing folder keeps the package at this host's version.
         install_node_package(&dir).await.unwrap();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_session_cookie_comes_out_of_the_set_cookie_header() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.append(axum::http::header::SET_COOKIE, axum::http::HeaderValue::from_static("other=xyz; Path=/"));
+        headers.append(
+            axum::http::header::SET_COOKIE,
+            axum::http::HeaderValue::from_static("automan-auth=abc123; Path=/; HttpOnly"),
+        );
+        assert_eq!(cookie_value(&headers, AUTH_COOKIE).as_deref(), Some("abc123"));
+        assert_eq!(cookie_value(&headers, "missing").as_deref(), None);
+    }
+
+    #[test]
+    fn the_owner_password_meets_the_instances_rules() {
+        for _ in 0..50 {
+            let p = owner_password();
+            assert!((8..=64).contains(&p.len()));
+            assert!(p.chars().any(|c| c.is_ascii_uppercase()), "needs an upper: {p}");
+            assert!(p.chars().any(|c| c.is_ascii_digit()), "needs a digit: {p}");
+        }
     }
 }

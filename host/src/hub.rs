@@ -187,7 +187,7 @@ impl Hub {
         crate::routines::start(self);
         crate::analytics::start(self);
         // The n8n instance starts with the host when its service is on.
-        self.n8n.start();
+        self.n8n.start(self);
         Ok(())
     }
 
@@ -212,7 +212,7 @@ impl Hub {
         if tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks)).await.is_err() {
             tracing::warn!("some bots didn't stop within 5 s");
         }
-        self.n8n.stop().await;
+        self.n8n.stop(&self.store).await;
         self.keep_awake.locked().set(false);
     }
 

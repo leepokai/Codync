@@ -156,6 +156,8 @@ export function normalizeN8n(raw: N8nState | undefined): N8nState | null {
     url: raw.url ?? null,
     port: raw.port ?? 5679,
     path: raw.path ?? null,
+    mcp: raw.mcp ?? false,
+    auth: raw.auth ?? null,
   }
 }
 

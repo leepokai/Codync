@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { BrowserWindow, ipcMain, nativeTheme, session, shell } from 'electron'
 import { join } from 'node:path'
 import type { N8nState } from '../shared/models'
 import type { HostController } from './host-controller'
@@ -35,6 +35,15 @@ export function registerN8n(host: HostController, rendererURL: (page: string) =>
       }
     }
     return destination === pageLocation.href
+  }
+
+  /**
+   * The instance's own session cookie logs the editor in, so the editor opens on the
+   * canvas instead of the owner's sign-in. The cookie belongs to the instance's origin.
+   */
+  async function login(url: string, cookie: string | null) {
+    if (!cookie) return
+    await session.defaultSession.cookies.set({ url, name: 'automan-auth', value: cookie, httpOnly: true, path: '/' })
   }
 
   function createWindow() {
@@ -84,6 +93,7 @@ export function registerN8n(host: HostController, rendererURL: (page: string) =>
     if (win.isDestroyed()) return
     if (s?.state === 'running' && s.url) {
       editorOrigin = new URL(s.url).origin
+      await login(s.url, s.auth)
       await win.loadURL(s.url)
     } else {
       editorOrigin = null
@@ -120,6 +130,7 @@ export function registerN8n(host: HostController, rendererURL: (page: string) =>
     if (!s || s.state !== 'running' || !s.url) throw new Error('The n8n instance is not running yet.')
     if (win.isDestroyed()) return
     editorOrigin = new URL(s.url).origin
+    await login(s.url, s.auth)
     await win.loadURL(s.url)
   })
 }

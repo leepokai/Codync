@@ -125,6 +125,9 @@ function N8nSettingsBody() {
             </Button>
           </HStack>
         </ValueRow>
+        {running ? (
+          <ValueRow label="MCP server" detail={live?.mcp ? tr('Connected') : tr('Not connected')} />
+        ) : null}
       </CardSection>
       {starting ? (
         <CardSection>

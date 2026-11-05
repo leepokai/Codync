@@ -103,7 +103,7 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     let long = json!({"name": "x", "instructions": "a".repeat(MAX_INSTRUCTIONS_CHARS)});
     assert!(refused("lead", "create_bot", long).await.contains("too long for its approval card"));
     assert_eq!(hub.store.bots().unwrap().len(), 3, "a refused change creates nothing");
-    assert_eq!(hub.routines.list("dev")["routines"], json!([]));
+    assert_eq!(hub.routines.list("dev", |_| false)["routines"], json!([]));
     // Bots that bots made stop at MAX_CREATED, so managers making managers can't multiply without end.
     for n in 1..MAX_CREATED {
         let cfg: BotConfig =

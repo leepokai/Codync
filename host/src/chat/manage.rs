@@ -233,7 +233,7 @@ fn setup(hub: &Hub, cfg: &BotConfig) -> Value {
         "id": cfg.id, "name": cfg.name, "instructions": cfg.description, "agent": cfg.backend, "model": cfg.model,
         "modelOptions": cfg.model_options, "fallbacks": crate::chat::fallbacks::wire(&cfg.fallbacks), "avatarColor": cfg.avatar_color, "avatarShape": cfg.avatar_shape,
         "folder": folder, "hidden": cfg.hidden, "approvals": cfg.permission, "manageTeam": cfg.manage_team, "createdBy": cfg.created_by,
-        "routines": hub.routines.list(&cfg.id)["routines"],
+        "routines": hub.routines.list(&cfg.id, |_| false)["routines"],
     })
 }
 

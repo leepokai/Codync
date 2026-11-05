@@ -44,7 +44,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, command: &Command) -> String {
             }
         }
         Command::Routines => {
-            let list = hub.routines.list(bot);
+            let list = hub.routines.list(bot, |id| hub.runtime(id).status == BotStatus::NeedsInput);
             let lines: Vec<String> = list["routines"]
                 .as_array()
                 .into_iter()

@@ -3,7 +3,7 @@ use super::{Arc, Context, Hub, Result, Value, bail, json, required};
 
 pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
-        "list_routines" => Ok(hub.routines.list(bot)),
+        "list_routines" => Ok(hub.routines.list(bot, |id| hub.runtime(id).status == crate::hub::BotStatus::NeedsInput)),
         "save_routine" => hub.routines.save(hub, bot, args),
         "set_routine_enabled" => hub.routines.set_enabled(
             &hub.store,

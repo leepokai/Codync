@@ -16,6 +16,8 @@ pub(super) fn routine() -> Routine {
         last_error: None,
         watch: vec![],
         idle_runs: 0,
+        missed_policy: default_missed_policy(),
+        limit_policy: default_limit_policy(),
     }
 }
 #[test]
@@ -36,8 +38,8 @@ fn pending_runs_survive_restart_but_running_runs_are_not_duplicated() {
     let restored = Routines::default();
     restored.restore(&store).unwrap();
     let state = restored.state.locked();
-    assert!(state.runs[0].status == Status::Pending);
-    assert!(state.runs[1].status == Status::Recovering);
+    assert_eq!(state.runs[0].status, Status::Pending);
+    assert_eq!(state.runs[1].status, Status::Recovering);
 }
 #[test]
 fn pause_cancels_pending_and_resume_recalculates_schedule() {
@@ -52,7 +54,7 @@ fn pause_cancels_pending_and_resume_recalculates_schedule() {
         })
         .unwrap();
     routines.set_enabled(&store, "bot", "routine", false).unwrap();
-    assert!(routines.state.locked().runs[0].status == Status::Cancelled);
+    assert_eq!(routines.state.locked().runs[0].status, Status::Cancelled);
     routines.set_enabled(&store, "bot", "routine", true).unwrap();
     assert!(routines.state.locked().routines[0].next_runs[0].unwrap() > now_ms());
 }
@@ -92,4 +94,37 @@ fn a_delivery_while_a_retry_waits_is_queued() {
     let third = routines.enqueue(&store, "bot", "routine", json!({"text": "third"}), None, false);
     assert_eq!(third.unwrap_err().downcast::<Refused>().unwrap(), Refused::Busy, "the queued delivery is");
     assert_eq!(routines.state.locked().runs.len(), 2);
+}
+
+#[test]
+fn the_calendar_holds_past_runs_and_upcoming_occurrences() {
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let routines = Routines::default();
+    let now = now_ms();
+    let mut r = routine();
+    r.triggers = vec![Trigger::Interval { seconds: 3600 }];
+    r.next_runs = vec![Some(now + 3_600_000)];
+    routines
+        .change(&store, |s| {
+            let mut run = new_run(&r, Value::Null, None);
+            run.scheduled_for = Some(now - 1_000);
+            run.status = Status::Succeeded;
+            s.routines.push(r);
+            s.runs.push(run);
+            Ok(())
+        })
+        .unwrap();
+    let cal = routines.calendar("bot", now - 2_000, now + 3 * 86_400_000).unwrap();
+    assert_eq!(cal["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(cal["runs"][0]["at"], now - 1_000);
+    assert_eq!(cal["runs"][0]["status"], json!("succeeded"));
+    let scheduled = cal["scheduled"].as_array().unwrap();
+    assert_eq!(scheduled.len(), 72, "three days of hourly occurrences");
+    assert_eq!(scheduled[0]["at"], now + 3_600_000);
+    assert_eq!(scheduled.last().unwrap()["at"], now + 72 * 3_600_000);
+    assert!(routines.calendar("bot", 0, now + 61 * 86_400_000).is_err(), "the window is capped at 60 days");
+    assert!(
+        routines.calendar("other", now, now + 86_400_000).unwrap()["scheduled"].is_null()
+            || routines.calendar("other", now, now + 86_400_000).unwrap()["scheduled"].as_array().unwrap().is_empty()
+    );
 }

@@ -5,6 +5,7 @@ mod editor;
 mod failed;
 pub mod flow;
 mod idle;
+pub(crate) use editor::days_in_month;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
 pub mod hooks;
 use hooks::Refused;
@@ -27,13 +28,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::HashSet,
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 
 const STATE_KEY: &str = "routines.v1";
 const MAX_FINISHED_RUNS: usize = 1000;
+/// What a routine does with the occurrences that came due while the host was away: record them
+/// and drop them (`skip`), or run the newest one when the host comes back (`runOnce`).
+pub const MISSED_POLICIES: [&str; 2] = ["skip", "runOnce"];
+/// What a due run does while the daily token limit is used up: hold until it resets (`wait`),
+/// or drop it (`skip`).
+pub const LIMIT_POLICIES: [&str; 2] = ["wait", "skip"];
 fn default_timeout() -> u64 {
     3600
+}
+fn default_missed_policy() -> String {
+    "skip".into()
+}
+fn default_limit_policy() -> String {
+    "wait".into()
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -60,9 +74,13 @@ pub struct Routine {
     /// Finished runs in a row that ran nothing that changes anything (`idle.rs`).
     #[serde(default)]
     pub idle_runs: u32,
+    #[serde(default = "default_missed_policy")]
+    pub missed_policy: String,
+    #[serde(default = "default_limit_policy")]
+    pub limit_policy: String,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Status {
     Pending,
@@ -78,6 +96,10 @@ pub enum Status {
 impl Status {
     fn active(self) -> bool {
         matches!(self, Self::Pending | Self::Starting | Self::Running | Self::Recovering)
+    }
+    /// The run holds the bot's turn: starting, running, or resuming after a restart.
+    fn in_turn(self) -> bool {
+        matches!(self, Self::Starting | Self::Running | Self::Recovering)
     }
 }
 
@@ -111,6 +133,13 @@ pub struct Run {
     /// This failed run can be retried by the user, so it keeps its event until then.
     #[serde(default)]
     pub retryable: bool,
+    /// The occurrence this run stands for, when its schedule named one: a run that started well
+    /// after it ran late, and a skipped one names the occurrences it dropped.
+    #[serde(default)]
+    pub scheduled_for: Option<i64>,
+    /// Occurrences that came due and did not run; the run's `status` says what happened to them.
+    #[serde(default)]
+    pub missed: Option<schedule::Missed>,
 }
 
 impl Run {
@@ -232,14 +261,102 @@ impl Routines {
         Ok(result)
     }
 
-    pub fn list(&self, bot: &str) -> Value {
+    pub fn list(&self, bot: &str, attention: impl Fn(&str) -> bool) -> Value {
         let state = self.state.locked();
+        let runs = state
+            .runs
+            .iter()
+            .rev()
+            .filter(|r| r.bot_id == bot)
+            .take(200)
+            .map(|run| {
+                let in_turn = run.status.in_turn();
+                let mut run = serde_json::to_value(run).unwrap_or(Value::Null);
+                // The bot asks a question mid-run: the run waits on the user until it answers.
+                run["needsAttention"] = json!(in_turn && attention(bot));
+                run
+            })
+            .collect::<Vec<_>>();
         json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
-            "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
+            "runs": runs})
     }
 
     pub fn owns(&self, bot: &str, id: &str) -> bool {
         self.state.locked().routines.iter().any(|r| r.id == id && r.bot_id == bot && !r.deleted)
+    }
+
+    /// The bot's calendar for [from, to]: the runs that stand for moments in the window, and the
+    /// clock occurrences of its enabled routines that are still to come.
+    pub fn calendar(&self, bot: &str, from: i64, to: i64) -> Result<Value> {
+        if to.saturating_sub(from) > 60 * 86_400_000 {
+            bail!("the calendar window must be at most 60 days");
+        }
+        let state = self.state.locked();
+        let runs = state
+            .runs
+            .iter()
+            .filter(|r| r.bot_id == bot)
+            .filter_map(|run| {
+                let at = run.scheduled_for.unwrap_or(run.created_at);
+                (from..=to).contains(&at).then(|| {
+                    json!({"id": run.id, "routineId": run.routine_id, "at": at, "status": run.status,
+                            "skipped": run.status == Status::Cancelled && run.scheduled_for.is_some()})
+                })
+            })
+            .collect::<Vec<_>>();
+        let now = now_ms();
+        let mut scheduled: Vec<Value> = vec![];
+        for r in state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted && r.enabled) {
+            for (trigger, next) in r.triggers.iter().zip(&r.next_runs) {
+                match trigger {
+                    Trigger::Interval { seconds } => {
+                        let Some(step) = seconds.checked_mul(1000).filter(|s| *s > 0) else {
+                            continue;
+                        };
+                        let mut at = next.unwrap_or(now);
+                        if at <= now {
+                            at += (now.saturating_sub(at) / step + 1) * step;
+                        }
+                        while at <= to && scheduled.len() < 1000 {
+                            scheduled.push(json!({"routineId": r.id, "at": at}));
+                            at += step;
+                        }
+                    }
+                    Trigger::Once { at } => {
+                        if *at > now && *at <= to {
+                            scheduled.push(json!({"routineId": r.id, "at": at}));
+                        }
+                    }
+                    Trigger::Cron { expression, time_zone } => {
+                        let (Ok(zone), Ok(cron)) =
+                            (time_zone.parse::<chrono_tz::Tz>(), croner::Cron::from_str(expression))
+                        else {
+                            continue;
+                        };
+                        let Some(mut t) =
+                            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(now).map(|d| d.with_timezone(&zone))
+                        else {
+                            continue;
+                        };
+                        while let Ok(next) = cron.find_next_occurrence(&t, false) {
+                            t = next;
+                            let at = t.timestamp_millis();
+                            if at > to || scheduled.len() >= 1000 {
+                                break;
+                            }
+                            scheduled.push(json!({"routineId": r.id, "at": at}));
+                        }
+                    }
+                    Trigger::Webhook | Trigger::Event { .. } | Trigger::Watch { .. } => {}
+                }
+            }
+        }
+        scheduled.sort_by_key(|e| e["at"].as_i64().unwrap_or(0));
+        Ok(json!({
+            "routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
+            "runs": runs,
+            "scheduled": scheduled,
+        }))
     }
 
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
@@ -292,6 +409,20 @@ impl Routines {
                 timeout_seconds: timeout
                     .unwrap_or_else(|| old.as_ref().map_or_else(default_timeout, |r| r.timeout_seconds)),
                 last_error: None,
+                missed_policy: policy(
+                    body["missedPolicy"].as_str(),
+                    &MISSED_POLICIES,
+                    old.as_ref(),
+                    |r| r.missed_policy.as_str(),
+                    "skip",
+                ),
+                limit_policy: policy(
+                    body["limitPolicy"].as_str(),
+                    &LIMIT_POLICIES,
+                    old.as_ref(),
+                    |r| r.limit_policy.as_str(),
+                    "wait",
+                ),
             };
             if !(1..=86_400).contains(&r.timeout_seconds) {
                 bail!("timeoutSeconds must be between 1 and 86400");
@@ -455,9 +586,23 @@ impl Routines {
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
     body[key].as_str().with_context(|| format!("{key} is required"))
 }
+/// A routine policy as the save body names it: the valid name it gives, else the routine's own,
+/// else the default for a new one.
+fn policy(
+    value: Option<&str>,
+    valid: &[&str],
+    old: Option<&Routine>,
+    of: impl Fn(&Routine) -> &str,
+    default: &str,
+) -> String {
+    match value.filter(|p| valid.contains(p)) {
+        Some(name) => name.to_owned(),
+        None => old.map_or_else(|| default.to_owned(), |r| of(r).to_owned()),
+    }
+}
 pub(crate) fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
-        "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
+        "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,"missedPolicy":r.missed_policy,"limitPolicy":r.limit_policy,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
@@ -478,7 +623,20 @@ fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
         not_before: None,
         retry_at: None,
         retryable: false,
+        scheduled_for: None,
+        missed: None,
     }
+}
+
+/// A due occurrence the routine will not run: it stays in the history with what it stood for.
+pub(crate) fn cancelled_record(r: &Routine, at: i64, missed: Option<schedule::Missed>, reason: Option<String>) -> Run {
+    let mut run = new_run(r, Value::Null, None);
+    run.status = Status::Cancelled;
+    run.finished_at = Some(now_ms());
+    run.scheduled_for = Some(at);
+    run.missed = missed;
+    run.detail = reason;
+    run
 }
 
 /// A paused routine still takes test runs.

@@ -63,6 +63,11 @@ pub fn day_of(now_ms: i64) -> i64 {
     now_ms.div_euclid(DAY_MS)
 }
 
+/// The moment the daily tally resets: the start of the next UTC day after `now_ms`.
+pub fn next_day(now_ms: i64) -> i64 {
+    (day_of(now_ms) + 1) * DAY_MS
+}
+
 fn level(used: u64, limit: u64) -> Level {
     if used >= limit {
         Level::Exceeded
@@ -147,6 +152,18 @@ impl Budgets {
             let Some(limit) = state.limits.get(key) else { return false };
             let used = state.tallies.get(key).filter(|t| t.day == day).map_or(0, |t| t.tokens);
             level(used, *limit) != Level::Within
+        })
+    }
+
+    /// Whether `bot`'s budget, or the fleet's, has reached its limit today: the point where a due routine run
+    /// holds for the reset or skips, by the routine's `limitPolicy`.
+    pub fn exceeded(&self, bot: &str, now_ms: i64) -> bool {
+        let day = day_of(now_ms);
+        let state = self.0.locked();
+        [bot, FLEET].into_iter().any(|key| {
+            let Some(limit) = state.limits.get(key) else { return false };
+            let used = state.tallies.get(key).filter(|t| t.day == day).map_or(0, |t| t.tokens);
+            level(used, *limit) == Level::Exceeded
         })
     }
 

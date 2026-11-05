@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::ChildStdin;
@@ -25,6 +25,8 @@ const EXIT_GRACE: Duration = Duration::from_secs(10);
 
 /// Agents [`Acp::kill`] is still stopping, for the host to wait for before it exits.
 static STOPPING: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> = std::sync::Mutex::new(Vec::new());
+/// Every agent started, for the host to stop whichever are left before it exits.
+static STARTED: std::sync::Mutex<Vec<Weak<Acp>>> = std::sync::Mutex::new(Vec::new());
 
 pub enum Incoming {
     Notification { method: String, params: Value },
@@ -175,7 +177,8 @@ pub struct Acp {
     pending: Pending,
     /// Owns the agent's whole process tree: dropping it kills what the agent started.
     child: Arc<tokio::sync::Mutex<Process>>,
-    /// The process (and, on Unix, process group) leader.
+    /// The process and process group leader.
+    #[cfg(unix)]
     pid: Option<u32>,
 }
 
@@ -204,6 +207,7 @@ impl Acp {
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
+        #[cfg(unix)]
         let pid = child.id();
         let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
         Process::monitor(&child);
@@ -271,13 +275,23 @@ impl Acp {
             next_id: AtomicI64::new(1),
             pending,
             child,
+            #[cfg(unix)]
             pid,
         });
+        note_started(&acp);
         Ok((acp, rx))
     }
 
+    #[cfg(unix)]
     pub fn pid(&self) -> Option<u32> {
         self.pid
+    }
+
+    /// Everything still running in the agent's job.
+    #[cfg(windows)]
+    pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
+        let members = self.child.lock().await.job_members()?;
+        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -340,6 +354,20 @@ pub async fn stopped() {
     futures::future::join_all(tasks).await;
 }
 
+/// Stops every agent left and waits for them, before the host exits: `process::exit` drops no process, and Cursor's agent
+/// outlives its closed stdin. The bots stop their own, so this is for a sign-in check or a model list still under way.
+pub async fn stop_all() {
+    let started: Vec<_> = std::mem::take(&mut *STARTED.locked()).iter().filter_map(Weak::upgrade).collect();
+    futures::future::join_all(started.iter().map(|acp| acp.kill())).await;
+    stopped().await;
+}
+
+fn note_started(acp: &Arc<Acp>) {
+    let mut started = STARTED.locked();
+    started.retain(|acp| acp.strong_count() > 0);
+    started.push(Arc::downgrade(acp));
+}
+
 /// The result for a `session/request_permission`: the option picked, or `cancelled` without one.
 pub fn permission_answer(option_id: Option<&str>) -> Value {
     match option_id {
@@ -377,158 +405,4 @@ pub fn truncate(s: &str, max: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    async fn descendant_agent() -> (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>) {
-        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/process_agent.py");
-        let python = if cfg!(windows) { "python" } else { "python3" };
-        let command = format!("{python} -u {}", crate::shell::quote(&script.display().to_string()));
-        let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
-        let ready = tokio::time::timeout(Duration::from_secs(15), rx.recv()).await;
-        let ready = ready.unwrap();
-        assert!(matches!(ready, Some(Incoming::Notification { method, .. }) if method == "ready"));
-        (acp, rx)
-    }
-
-    async fn assert_descendant_pipes_close(mut rx: mpsc::UnboundedReceiver<Incoming>) {
-        let closed = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
-        let closed = closed.unwrap();
-        assert!(matches!(closed, Some(Incoming::Closed { .. })));
-    }
-
-    #[tokio::test]
-    async fn leader_exit_releases_descendants_without_waiting_for_stdout_eof() {
-        let (acp, rx) = descendant_agent().await;
-        let notified = acp.notify("exit", json!({})).await;
-        notified.unwrap();
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[tokio::test]
-    async fn dropping_an_agent_releases_its_process_tree() {
-        let (acp, rx) = descendant_agent().await;
-        drop(acp);
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[tokio::test]
-    async fn actor_unwinding_releases_its_process_tree() {
-        let (acp, rx) = descendant_agent().await;
-        let task = tokio::spawn(async move {
-            let _owned = acp;
-            panic!("simulated actor panic");
-        });
-        let panicked = task.await;
-        assert!(panicked.unwrap_err().is_panic());
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[tokio::test]
-    async fn timed_out_requests_do_not_accumulate_pending_answers() {
-        let (acp, rx) = descendant_agent().await;
-        for _ in 0..10 {
-            let response = tokio::time::timeout(Duration::from_millis(10), acp.request("never", json!({}))).await;
-            assert!(response.is_err());
-            assert_eq!(acp.pending.locked().len(), 0);
-        }
-        acp.kill().await;
-        stopped().await;
-        assert_descendant_pipes_close(rx).await;
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_stopped_agent_that_exits_cleanly_does_not_hold_the_host_for_the_grace_period() {
-        let (acp, mut rx) = Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
-        let started = tokio::time::Instant::now();
-        acp.kill().await;
-        stopped().await;
-        assert!(started.elapsed() < EXIT_GRACE / 2, "stopping waited out the grace period");
-        assert!(matches!(rx.recv().await, Some(Incoming::Closed { .. })));
-    }
-
-    #[test]
-    fn content_text_flattens_blocks() {
-        let v = json!([
-            {"type": "content", "content": {"type": "text", "text": "a"}},
-            {"type": "diff", "path": "/x"},
-            {"type": "text", "text": "b"}
-        ]);
-        assert_eq!(content_text(&v), "a\nb");
-        assert_eq!(truncate("héllo", 2), "h…");
-    }
-
-    #[tokio::test]
-    async fn an_error_keeps_the_adapters_category_only_when_it_is_an_identifier() {
-        let kind = |data: Value| async move {
-            let (tx, rx) = oneshot::channel();
-            let _ = tx.send(Err(json!({"code": -32603, "message": "Internal error", "data": data})));
-            let e = Answer { id: 0, pending: Pending::default(), rx: Some(rx) }
-                .response()
-                .await
-                .expect_err("an error answer");
-            e.downcast::<RpcError>().expect("an RpcError").kind
-        };
-        assert_eq!(kind(json!({"errorKind": "rate_limit"})).await.as_deref(), Some("rate_limit"));
-        assert_eq!(kind(json!({"errorKind": "Usage: /Users/me"})).await, None);
-        assert_eq!(kind(json!({"errorKind": ""})).await, None);
-        assert_eq!(kind(json!("details")).await, None);
-        assert_eq!(
-            kind(json!({"codexErrorInfo": "usageLimitExceeded"})).await.as_deref(),
-            Some("usage_limit_exceeded")
-        );
-        assert_eq!(
-            kind(json!({"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 502}}})).await.as_deref(),
-            Some("http_connection_failed")
-        );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn stopping_an_agent_closes_its_descendants_pipes() {
-        let (acp, mut rx) = Acp::spawn(
-            r#"sh -c 'sleep 60 & echo "{\"jsonrpc\":\"2.0\",\"method\":\"ready\"}"; read line'"#,
-            "/tmp",
-            &[],
-        )
-        .unwrap();
-        let ready = tokio::time::timeout(Duration::from_secs(3), rx.recv()).await.unwrap();
-        assert!(matches!(ready, Some(Incoming::Notification { .. })));
-        acp.kill().await;
-        // Killing only the shell leaves sleep holding stdout for 60 seconds.
-        let closed = tokio::time::timeout(EXIT_GRACE + Duration::from_secs(3), rx.recv()).await.unwrap();
-        assert!(matches!(closed, Some(Incoming::Closed { .. })));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_stopped_agent_finishes_by_itself_first() {
-        // The adapter exits on its closed stdin; the CLI it started saves its login a second later.
-        let (acp, mut rx) = Acp::spawn(
-            r#"sh -c 'read line; (sleep 1; echo "{\"jsonrpc\":\"2.0\",\"method\":\"saved\"}") &'"#,
-            "/tmp",
-            &[],
-        )
-        .unwrap();
-        acp.kill().await;
-        let saved = tokio::time::timeout(EXIT_GRACE, rx.recv()).await.unwrap();
-        assert!(matches!(saved, Some(Incoming::Notification { method, .. }) if method == "saved"));
-        assert!(acp.notify("x", json!({})).await.is_err(), "a stopped agent takes no more messages");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn request_response_roundtrip() {
-        // A fake agent: answers `initialize`, then sends a notification and exits.
-        let script = r#"read l; id=$(echo "$l" | sed 's/.*"id":\([0-9]*\).*/\1/'); echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"ok\":true}}"; echo '{"jsonrpc":"2.0","method":"session/update","params":{"x":1}}'"#;
-        let (acp, mut rx) = Acp::spawn(&format!("sh -c '{}'", script.replace('\'', "'\\''")), "/tmp", &[]).unwrap();
-        let res = acp.request("initialize", json!({})).await.unwrap();
-        assert_eq!(res["ok"], true);
-        match rx.recv().await.unwrap() {
-            Incoming::Notification { method, .. } => assert_eq!(method, "session/update"),
-            _ => panic!("expected notification"),
-        }
-        assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
-    }
-}
+mod tests;

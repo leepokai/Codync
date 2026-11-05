@@ -15,6 +15,7 @@ import { DEFAULT_TEXT_SIZE, prefs, TEXT_SIZES, usePref } from '../../lib/prefs'
 import { useAccount } from '../../store/account'
 import { useScreenViewed } from '../../store/analytics'
 import { StoreContext, useApp } from '../../store/context'
+import { SwitchRow } from '../bots/parts'
 import { ComputerBadge } from '../ComputerBadge'
 import { UpdateButton, useUpdates } from '../UpdateButton'
 import { ComputersView } from './ComputersView'
@@ -107,7 +108,7 @@ function PageContent({ page }: { page: SettingsPage }) {
         </StoreContext.Provider>
       ) : (
         <CardForm>
-          <Text tone="secondary">{tr(isMac ? "Voice keys are kept by This Mac's host, which isn't running." : `Voice keys are kept by ${thisMac}'s host, which isn't running.`)}</Text>
+          <Text tone="secondary">{tr(isMac ? "Voice keys are kept by This Mac's host, which isn't running." : "Voice keys are kept by {computer}'s host, which isn't running.").replaceAll('{computer}', () => thisMac)}</Text>
         </CardForm>
       )
     case 'usage':
@@ -131,6 +132,7 @@ function GeneralSettings() {
   const systemLanguage = typeof navigator === 'undefined' ? 'en' : navigator.language
   const [usageIconStyle, setUsageIconStyle] = usePref(prefs.usageIconStyle)
   const [compact, setCompact] = usePref(prefs.sidebarCompact)
+  const [agentLogos, setAgentLogos] = usePref(prefs.agentLogos)
   const [thinkingDetails, setThinkingDetails] = usePref(prefs.thinkingDetails)
   const [showInDock, setShowInDock] = useState(true)
   useEffect(() => void window.codync.app.showInDock().then(setShowInDock), [])
@@ -191,6 +193,7 @@ function GeneralSettings() {
         <Switch on={compact} onChange={setCompact}>
           Compact sidebar
         </Switch>
+        <SwitchRow title="Show agent logos" detail="Marks each bot with its agent's logo when your bots use more than one agent." on={agentLogos} onChange={setAgentLogos} />
       </CardSection>
       <CardSection
         title="Language"
@@ -283,6 +286,7 @@ function UsageLimitsList() {
 
 /** The app's update check and preferences, the same as the menu bar's Updates menu. */
 function UpdateSettings() {
+  const tr = useTr()
   const updates = useUpdates()
   if (!updates) return null
   const footer = updates.supported ? null : 'Updates are available in release builds.'
@@ -302,7 +306,7 @@ function UpdateSettings() {
           ...(updates.downloadPercent !== null
             ? [
                 <div key="progress" className="settings-row settings-appear">
-                  <ProgressBar value={updates.downloadPercent / 100} label={`Downloading Codync ${updates.availableVersion ?? ''}`} />
+                  <ProgressBar value={updates.downloadPercent / 100} label={tr('Downloading Codync {version}').replaceAll('{version}', () => updates.availableVersion ?? '')} />
                 </div>,
               ]
             : []),

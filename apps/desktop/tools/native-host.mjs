@@ -21,8 +21,10 @@ const out = join(root, 'build/native')
 const tool = (name) => execFileSync('rustup', ['which', name], { cwd: host, encoding: 'utf8' }).trim()
 const [cargo, rustc] = [tool('cargo'), tool('rustc')]
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit', env: { ...process.env, CODYNC_ENV: env, RUSTC: rustc } })
-// Codync Dev builds in the host's `dev-app` profile: seconds to rebuild instead of minutes.
-const profile = env === 'dev' ? 'dev-app' : 'release'
+// Codync Dev builds in the host's `dev-app` profile: seconds to rebuild instead of minutes. Windows CI
+// dry runs pick it too through CODYNC_HOST_PROFILE (release-desktop.yml), since nothing they build ships.
+const profile = process.env.CODYNC_HOST_PROFILE ?? (env === 'dev' ? 'dev-app' : 'release')
+if (!['dev-app', 'release'].includes(profile)) throw new Error(`unknown host profile ${profile}`)
 const build = (target) => run(cargo, ['build', '--profile', profile, '--manifest-path', join(host, 'Cargo.toml'), '--target', target])
 const built = (target, name) => join(host, 'target', target, profile, name)
 mkdirSync(out, { recursive: true })

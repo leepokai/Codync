@@ -38,7 +38,9 @@ for line in sys.stdin:
     with open(f"{NAME}.jsonl", "a", encoding="utf-8") as log:
         log.write(json.dumps({"method": method, "params": params}) + "\n")
     if method == "initialize":
-        send({"id": message["id"], "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": True}}})
+        # Both ways to reopen a session, like codex-acp; only `session/load` is answered, as the host should prefer it.
+        capabilities = {"loadSession": True, "sessionCapabilities": {"resume": {}}}
+        send({"id": message["id"], "result": {"protocolVersion": 1, "agentCapabilities": capabilities}})
     elif method == "session/new":
         sessions += 1
         send({"id": message["id"], "result": {"sessionId": f"{NAME}-s{sessions}"}})

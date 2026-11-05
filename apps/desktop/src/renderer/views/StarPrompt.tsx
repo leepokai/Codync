@@ -7,9 +7,9 @@ import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModel } from '../lib/observable'
 import { prefs, usePref } from '../lib/prefs'
-import { dueStarAsk } from '../lib/star-ask'
 import { useStarAsk } from '../lib/use-star-ask'
 import { useApp } from '../store/context'
+import { useTr } from '../lib/use-language'
 import './star-prompt.css'
 
 const copy = {
@@ -19,27 +19,28 @@ const copy = {
   },
   second: {
     title: 'Enjoying Codync?',
-    message: "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.",
+    message: 'If Codync saves you trips to your desk, a star on GitHub helps other people find it.',
   },
 }
 
 /**
- * Reminds once a week after the setup invitation; also covers older installations
- * that have not seen the setup invitation.
+ * Invites again at the fifth prompt after the setup invitation; also covers older
+ * installations that have not seen the setup invitation.
  * Starring ends it.
  */
 export function StarPrompt() {
+  const tr = useTr()
   const app = useApp()
   const local = useModel(app.local)
   const [onboarded] = usePref(prefs.onboardingDone)
-  const { state, answer } = useStarAsk()
-  const [closed, setClosed] = useState(false)
-  const due = dueStarAsk(state, Date.now())
-  const open = due !== null && onboarded && !closed && local?.connection.kind === 'online'
+  const { due, prompts, answer } = useStarAsk()
+  // The prompt count when this sheet last closed: the next ask waits for a later prompt, so two never follow each other.
+  const [closedAt, setClosedAt] = useState(-1)
+  const open = due !== null && onboarded && prompts > closedAt && local?.connection.kind === 'online'
 
   const finish = (starred: boolean) => {
-    if (closed || !due) return
-    setClosed(true)
+    if (!open) return
+    setClosedAt(prompts)
     answer(starred)
   }
 
@@ -49,11 +50,11 @@ export function StarPrompt() {
       <VStack className="star-prompt">
         <ModalHeader
           icon={<Icon name="star.fill" size={22} className="star-prompt-symbol" />}
-          title={text.title}
+          title={tr(text.title)}
           onClose={null}
         />
         <VStack gap={16} className="star-prompt-body">
-          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{text.message}</Text>
+          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{tr(text.message)}</Text>
           <HStack gap={10}>
             <img src={appIcon} alt="" className="star-prompt-app-icon" draggable={false} />
             <Text size="callout" tone="secondary">github.com/leepokai/Codync</Text>

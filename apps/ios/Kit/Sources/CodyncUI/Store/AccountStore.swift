@@ -30,6 +30,9 @@ public final class AccountStore {
     public private(set) var stores: [ComputerID: BotStore] = [:]
     /// Everything in the account, including computers this device isn't authorized on yet.
     public private(set) var cloudComputers: [CloudComputer] = []
+    /// The account answered (or failed to) at least once, so an empty `cloudComputers` means what it says.
+    /// True from the start without a cloud: there's nothing to wait for.
+    public private(set) var cloudListLoaded: Bool
     /// Access requests waiting for approval on the computer, with the SAS to show.
     public private(set) var pendingAccess: [ComputerID: AccessTicket] = [:]
     /// The actual request approved most recently, distinct from a previously paired computer.
@@ -65,6 +68,8 @@ public final class AccountStore {
     private var asks: [ComputerID: Task<AccessTicket, any Error>] = [:]
     /// The account's word for this device's key, kept in memory for this context.
     private var certificate: DeviceCertificate?
+    /// Computers joining this account (`joinAccount`).
+    private var joining: Set<ComputerID> = []
     private var isActive = true
     private var retired = false
 
@@ -78,6 +83,7 @@ public final class AccountStore {
          makeStore: @escaping @MainActor (Computer) -> BotStore) {
         self.storage = storage
         self.cloud = cloud
+        cloudListLoaded = cloud == nil
         computerOrder = ComputerOrderStore(storage: storage)
         self.makeStore = makeStore
         saved = storage.computers.filter(\.isConsistent)
@@ -108,7 +114,7 @@ public final class AccountStore {
         let identity = try DeviceIdentity.load(context: storage)
         guard let cloud else { throw Self.noCertificate }
         let certificate = try await pairingCertificate(cloud, deviceName: deviceName, platform: platform)
-        // Without a claim the computer still pairs; it just doesn't join the account.
+        // Without a claim the computer still pairs; it joins the account on a later connection (`Hello.joinAccount`).
         let claim: CloudClaim?
         do { claim = try await cloud.createClaim() } catch {
             log.info("pairing without a claim: \(error.localizedDescription, privacy: .public)")
@@ -124,7 +130,7 @@ public final class AccountStore {
         save(computer)
         open(computer)
         if let claim, let signed = paired.claim {
-            Task { await joinAccount(claimId: claim.claimId, signed: signed, cloud: cloud) }
+            joinAccount(computer.id) { _ in (claim, signed) }
         }
         return computer
     }
@@ -155,16 +161,23 @@ public final class AccountStore {
         }
     }
 
-    /// The computer signed this account's claim while letting this phone in: the phone, which holds the
-    /// account's session, completes it. Best effort: without it the computer stays paired, outside the account.
-    private func joinAccount(claimId: String, signed: Data, cloud: CloudClient) async {
-        do {
-            try await cloud.completeClaim(claimId: claimId, claim: signed)
-        } catch {
-            log.error("paired computer didn't join the account: \(error.localizedDescription, privacy: .public)")
-            return
+    /// The computer signs this account's claim (`sign`: while letting this phone in, or later through
+    /// `joinAccount` when its `hello` asks), and the phone, which holds the account's session, completes it.
+    /// One at a time per computer; the computer decides whether a join that failed here is asked for again.
+    private func joinAccount(_ id: ComputerID, sign: @escaping @MainActor (CloudClient) async throws -> (CloudClaim, Data)) {
+        guard let cloud, !retired, joining.insert(id).inserted else { return }
+        Task {
+            defer { joining.remove(id) }
+            do {
+                let (claim, signed) = try await sign(cloud)
+                try await cloud.completeClaim(claimId: claim.claimId, claim: signed)
+            } catch {
+                log.error("paired computer didn't join the account: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            guard !retired else { return }
+            await refreshCloud()
         }
-        await refreshCloud()
     }
 
     public func forget(_ id: ComputerID) {
@@ -212,6 +225,7 @@ public final class AccountStore {
         guard let cloud, !retired else { return }
         cloudListVersion += 1
         let version = cloudListVersion
+        defer { if version == cloudListVersion { cloudListLoaded = true } }
         do {
             // Every refresh, as on Android: signing back in clears the account's signed-out mark, or its computers
             // drop this iPhone's push tickets again on their next state pull.
@@ -432,6 +446,12 @@ public final class AccountStore {
         }
         store.onComputerChanged = { [weak self] computer in self?.computerChanged(computer) }
         store.onRosterChanged = { [weak self] in self?.rosterChanged() }
+        store.onJoinAccount = { [weak self] client in
+            self?.joinAccount(id) { cloud in
+                let claim = try await cloud.createClaim()
+                return (claim, try await client.joinAccount(claim))
+            }
+        }
         stores[id] = store
         if isActive { store.setActive(true) }
     }

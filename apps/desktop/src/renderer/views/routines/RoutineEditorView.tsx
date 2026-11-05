@@ -44,8 +44,8 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const keepsOriginal = routine ? (routine.triggers.length === 1 ? !['cron', 'webhook'].includes(routine.triggers[0]!.type) : routine.triggers.length > 0) : false
   const options = [
     ...(keepsOriginal ? [{ id: 'keep', label: 'Set by bot' }] : []),
-    { id: 'cron', label: 'Schedule' },
-    { id: 'webhook', label: 'Webhook' },
+    { id: 'cron', label: tr('Schedule') },
+    { id: 'webhook', label: tr('Webhook') },
   ]
   const canSave = !!name.trim() && !!instruction.trim() && !store.isOffline && !busy && loaded && sameDraft(checkedSchedule, schedule) && previewError === null
 
@@ -144,7 +144,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
         return routine && routine.triggers.some((t) => t.type === 'webhook' || t.type === 'event') ? (
           <RoutineWebhookPanel botId={botId} routineId={routine.id} />
         ) : (
-          <Note icon="link" title="Runs each time something is posted to its URL." detail="Save to get the URL and key." />
+          <Note icon="link" title={tr('Runs each time something is posted to its URL.')} detail={tr('Save to get the URL and key.')} />
         )
       default:
         return <Note icon="sparkles" title={routine?.triggerDescriptions.join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
@@ -153,7 +153,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
 
   return (
     <VStack className="routine-editor">
-      <ModalHeader icon={schedule.kind === 'webhook' ? 'link' : 'clock'} title={routine ? 'Edit routine' : 'Set up a routine'} />
+      <ModalHeader icon={schedule.kind === 'webhook' ? 'link' : 'clock'} title={tr(routine ? 'Edit routine' : 'Set up a routine')} />
       {/* The card fits the form; it scrolls only when taller than the window allows. */}
       <fieldset className="routine-form" disabled={busy || !loaded}>
         <VStack gap={24} className="routine-form-body">
@@ -161,7 +161,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             <Field label="Name">
               <input className="routine-input" value={name} placeholder="e.g. Morning summary" onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Instruction">
+            <Field label={tr('Instruction')}>
               <textarea className="routine-input" value={instruction} placeholder="Describe what this bot should do each time it runs." onChange={(e) => setInstruction(e.target.value)} />
             </Field>
           </VStack>
@@ -186,12 +186,12 @@ export function RoutineEditorView({ botId, routine, saved }: {
                 <Icon name="chevron.down" size={10} weight="semibold" />
               </span>
               <Spacer />
-              {!advanced ? <Text tone="tertiary">Timeout {durationText(timeout)}</Text> : null}
+              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout))}</Text> : null}
             </button>
             {advanced ? (
               <div className="routine-fade">
                 <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
-                  <LabeledRow label="Timeout">
+                  <LabeledRow label={tr('Timeout')}>
                     <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
                     <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
                   </LabeledRow>
@@ -231,7 +231,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             <>
               <IconButton title="Delete routine" icon="trash" onClick={() => setConfirmDelete(true)} />
               <IconButton
-                title={started ? 'Started' : 'Test run'}
+                title={tr(started ? 'Started' : 'Test run')}
                 icon={started ? 'checkmark' : 'play.circle'}
                 disabled={started || store.isOffline}
                 onClick={async () => {
@@ -246,9 +246,9 @@ export function RoutineEditorView({ botId, routine, saved }: {
             </>
           ) : null}
           <Spacer />
-          <Button disabled={!canSave} onClick={() => void save()} title={`Save (${saveShortcut})`}>
+          <Button disabled={!canSave} onClick={() => void save()} title={tr('Save ({shortcut})').replaceAll('{shortcut}', () => saveShortcut)}>
             {busy ? <Spinner size={12} /> : null}
-            {busy ? 'Saving…' : routine ? 'Save changes' : 'Create routine'}
+            {tr(busy ? 'Saving…' : routine ? 'Save changes' : 'Create routine')}
             {busy ? null : <span className="button-shortcut">{saveShortcut}</span>}
           </Button>
         </HStack>

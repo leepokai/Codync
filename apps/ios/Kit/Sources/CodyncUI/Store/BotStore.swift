@@ -97,10 +97,14 @@ public final class BotStore {
     public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     /// A message to the bot from this phone moved along (the Live Activity follows it).
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
+    /// A prompt reached the computer or its mailbox.
+    var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
     /// A bot appeared, changed or went away.
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
+    /// Its `hello` says this phone paired without the computer joining the account (`Hello.joinAccount`).
+    var onJoinAccount: (@MainActor (HostClient) -> Void)?
 
     public let storage: SharedStore.Context
     /// Opens a channel to the computer as it is now: its route, and the addresses and keys merged since.
@@ -109,6 +113,8 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`).
+    @ObservationIgnored var lastSentNonce: String?
     /// Section moves shown but not answered yet, oldest first.
     @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 
@@ -212,6 +218,10 @@ public final class BotStore {
         }
     }
 
+    /// The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+    /// `hello`: it names the logos, and without it every badge would be the same generic one.
+    public var mixesAgents: Bool { hello != nil && bots.values.filter { !$0.hidden }.mixesAgents }
+
     /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
     public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }
 
@@ -227,6 +237,13 @@ public final class BotStore {
     }
 
     static let leadChoiceHost = "2.33.0"
+
+    /// From host 2.39.0 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
+    public var supportsQueueActions: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.queueActionsHost) } ?? false
+    }
+
+    static let queueActionsHost = "2.39.0"
 
     static let sectionsHost = "2.32.0"
 
@@ -248,7 +265,9 @@ public final class BotStore {
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
-    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard
+    /// against a late response.
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
     public func canLoadOlder(_ botId: String) -> Bool {
         !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }

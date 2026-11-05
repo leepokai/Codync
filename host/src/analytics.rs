@@ -24,7 +24,7 @@ mod turns;
 pub use lifecycle::{KV_STARTED, Via, device_paired, host_started, phone_connected};
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
-pub use turns::{TurnOutcome, TurnSource, agent_fell_back, turn_finished};
+pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, message_steered, turn_finished};
 
 const KV_ENABLED: &str = "analytics_enabled";
 /// The account the install id was last merged into (one `$identify` per account).
@@ -64,6 +64,9 @@ pub enum Event {
     SectionRenamed,
     BotDeleted,
     MessageSent,
+    /// The user had a queued message handled now (`agent::bot::steer`).
+    MessageSteered,
+    QueuedMessageRemoved,
     TurnStopped,
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
@@ -81,12 +84,15 @@ pub enum Event {
     VoiceCallFinished,
     /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
     VoiceCallQuality,
+    /// A desktop window's crashed page loaded again, or crashed too often and stays down.
+    WindowRecovery,
     RemoteScreenOpened,
     ScreenTakenOver,
     ConnectorInstalled,
     ConnectorsImported,
     BotsImported,
     ConnectorRemoved,
+    ConnectorUpdated,
     ConnectorSigninStarted,
     SkillInstalled,
     SkillRemoved,
@@ -97,6 +103,8 @@ pub enum Event {
     AgentSetupStarted,
     AgentSignedIn,
     SettingChanged,
+    /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
+    ReachAccountAnswered,
     HostUpdateInstalled,
     /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
     NetworkJoined,
@@ -133,6 +141,8 @@ impl Event {
             Self::SectionRenamed => "section_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
+            Self::MessageSteered => "message_steered",
+            Self::QueuedMessageRemoved => "queued_message_removed",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
@@ -148,12 +158,14 @@ impl Event {
             Self::VoiceCallStarted => "voice_call_started",
             Self::VoiceCallFinished => "voice_call_finished",
             Self::VoiceCallQuality => "voice_call_quality",
+            Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
             Self::ConnectorsImported => "connectors_imported",
             Self::BotsImported => "bots_imported",
             Self::ConnectorRemoved => "connector_removed",
+            Self::ConnectorUpdated => "connector_updated",
             Self::ConnectorSigninStarted => "connector_signin_started",
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
@@ -163,6 +175,7 @@ impl Event {
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::SettingChanged => "setting_changed",
+            Self::ReachAccountAnswered => "reach_account_answered",
             Self::HostUpdateInstalled => "host_update_installed",
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",
@@ -232,10 +245,15 @@ impl Analytics {
     }
 
     pub fn set_enabled(&self, store: &Store, on: bool) -> Result<()> {
-        store.kv_set(KV_ENABLED, if on { "1" } else { "0" })?;
+        save_choice(store, on)?;
         *self.enabled.locked() = on;
         Ok(())
     }
+}
+
+/// Saves the owner's choice; a host that isn't running reads it when it starts (`Analytics::load`).
+pub fn save_choice(store: &Store, on: bool) -> Result<()> {
+    store.kv_set(KV_ENABLED, if on { "1" } else { "0" })
 }
 
 /// A phone's platform as the catalog names it.
@@ -383,6 +401,8 @@ mod tests {
         assert!(Analytics::load(&store).state());
         Analytics::load(&store).set_enabled(&store, false).unwrap();
         assert!(!Analytics::load(&store).state(), "an off stays off");
+        save_choice(&store, true).unwrap();
+        assert!(Analytics::load(&store).state(), "a choice saved before the host starts counts");
     }
 
     #[test]

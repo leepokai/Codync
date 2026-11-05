@@ -6,12 +6,9 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.38.0
+## 2.39.1
 ### zh-Hant
-- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
-
-- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
+- 現在會在你從這支 iPhone 送出第五則訊息後，邀請你到 App Store 評分，一年最多兩次。
 
 ### en-US
-- Choose Português (Brasil) in Settings, or follow your Portuguese system language.
-- Choose Русский in Settings, or follow your Russian system language.
+- Codync now invites you to rate it on the App Store after your fifth message from this iPhone, at most twice a year.

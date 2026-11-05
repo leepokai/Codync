@@ -10,20 +10,34 @@ use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
+use std::sync::atomic::Ordering;
 
 const OWNER: &str = "account_owner";
+/// The accounts this computer signed a claim for since its account last changed (`note_signed`).
+const SIGNED: &str = "account_claims_signed";
 
 /// The account as last seen from the cloud; `None` when the computer isn't in one (or never heard yet), and
 /// with the Codync cloud off or a private relay, where it is in no account either (as its status says).
 pub fn owner(store: &Store) -> Option<Owner> {
     cloud::current(store).filter(|address| address.kind == RelayKind::Codync)?;
+    recorded(store)
+}
+
+/// The account last recorded, whichever relay is in use now.
+fn recorded(store: &Store) -> Option<Owner> {
     store.kv_get(OWNER).and_then(|v| serde_json::from_str::<Option<Owner>>(&v).ok()).flatten()
+}
+
+/// `CloudStatus::joins_account_on_enable`: read from what's saved, as the status says nothing of it with the cloud off.
+pub fn joins_account_on_enable(store: &Store) -> bool {
+    cloud::when_on(store).is_some_and(|address| address.kind == RelayKind::Codync) && recorded(store).is_none()
 }
 
 /// Records the account the cloud reports. When it is another one than before (joining one, moving, or leaving),
 /// every device let in for another account goes; joining a first account keeps the phones paired before devices
 /// recorded their account. The first record after an upgrade only records. The devices go first, so a failure
-/// leaves the old account recorded and the next pull tries again.
+/// leaves the old account recorded and the next pull tries again. Any change of account also forgets the accounts
+/// claims were signed for before it (`note_signed`).
 pub fn remember(hub: &Hub, now: Option<&Owner>) -> Result<()> {
     let saved = serde_json::to_string(&now)?;
     let _change = hub.cloud.account.locked();
@@ -31,11 +45,12 @@ pub fn remember(hub: &Hub, now: Option<&Owner>) -> Result<()> {
     if before.as_deref() == Some(saved.as_str()) {
         return Ok(());
     }
-    if let Some(before) = before {
-        let before = serde_json::from_str::<Option<Owner>>(&before).ok().flatten().map(|o| o.user_id);
-        let now = now.map(|o| o.user_id.as_str());
-        if before.as_deref() != now {
-            let gone = hub.store.keep_devices_of(now, before.is_none())?;
+    let before_user =
+        before.as_deref().and_then(|b| serde_json::from_str::<Option<Owner>>(b).ok().flatten()).map(|o| o.user_id);
+    let now_user = now.map(|o| o.user_id.as_str());
+    if before_user.as_deref() != now_user {
+        if before.is_some() {
+            let gone = hub.store.keep_devices_of(now_user, before_user.is_none())?;
             tracing::info!(
                 devices = gone.len(),
                 "the computer changed its account; the old account's devices are gone"
@@ -44,6 +59,7 @@ pub fn remember(hub: &Hub, now: Option<&Owner>) -> Result<()> {
                 hub.auth_changed();
             }
         }
+        hub.store.kv_delete(SIGNED)?;
     }
     hub.store.kv_set(OWNER, &saved)
 }
@@ -67,8 +83,40 @@ pub fn out_of_account(hub: &Hub) -> Result<()> {
     Ok(())
 }
 
+/// The account the device `key` may bring this computer into (`joinAccount`), when a pairing let the phone in
+/// without the computer signing a claim for its account (the phone couldn't start one, or the cloud was off or a
+/// private relay). Only on the Codync cloud, with this connection's state pulled and no account yet, for the account
+/// the phone paired from, only when no device of another account would lose access by it, and never for an account
+/// this computer signed a claim for since its account last changed (`note_signed`).
+pub fn joinable_by(hub: &Hub, key: &str) -> Result<Option<String>> {
+    if cloud::codync_url(hub).is_err() || !hub.cloud_synced.load(Ordering::Acquire) || owner(&hub.store).is_some() {
+        return Ok(None);
+    }
+    let Some(account) = hub.store.device(key).and_then(|d| d.account) else { return Ok(None) };
+    let devices = hub.store.devices()?;
+    let alone = devices.iter().all(|d| d.account.as_ref().is_none_or(|a| *a == account));
+    Ok((alone && !signed_for(&hub.store)?.contains(&account)).then_some(account))
+}
+
+/// Notes the account a claim is about to be signed for. That claim may complete and the computer be taken out of
+/// the account again before it pulls its state, which then still says no account: until its account changes, the
+/// computer doesn't offer that account a later join, so it never comes back into an account it was taken out of.
+fn note_signed(hub: &Hub, user_id: &str) -> Result<()> {
+    let _change = hub.cloud.account.locked();
+    let mut signed = signed_for(&hub.store)?;
+    if !signed.iter().any(|u| u == user_id) {
+        signed.push(user_id.to_owned());
+        hub.store.kv_set(SIGNED, &serde_json::to_string(&signed)?)?;
+    }
+    Ok(())
+}
+
+fn signed_for(store: &Store) -> Result<Vec<String>> {
+    store.kv_read(SIGNED)?.map_or(Ok(vec![]), |s| Ok(serde_json::from_str(&s)?))
+}
+
 /// Signs this computer into an account claim (§4.2 A) for a signed-in app to complete: the desktop app's
-/// Add to account, or a phone pairing with a computer in no account.
+/// Add to account, a phone pairing with a computer in no account, or a phone finishing that join later.
 pub async fn sign_claim(hub: &Hub, claim_id: &str, nonce: &str, user_id: &str) -> Result<Value> {
     cloud::require_accounts(&hub.store)?;
     for (k, v) in [("claimId", claim_id), ("nonce", nonce), ("userId", user_id)] {
@@ -77,6 +125,7 @@ pub async fn sign_claim(hub: &Hub, claim_id: &str, nonce: &str, user_id: &str) -
             bail!("`{k}` is invalid");
         }
     }
+    note_signed(hub, user_id)?;
     let computer_id = hub.identity.computer_id();
     let box_key = hub.identity.box_pub_b64();
     let input = crypto::claim_input(claim_id, nonce, user_id, &computer_id, &box_key);
@@ -165,6 +214,52 @@ mod tests {
         device(&hub, "theirs", Some("user_b"));
         remember(&hub, Some(&account("user_a"))).unwrap();
         assert_eq!(keys(&hub), ["legacy", "mine"]);
+    }
+
+    #[test]
+    fn a_phone_brings_a_computer_in_no_account_into_the_account_it_paired_from() {
+        let hub = hub();
+        device(&hub, "mine", Some("user_a"));
+        device(&hub, "legacy", None);
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "not before this connection's state pull");
+        hub.cloud_synced.store(true, Ordering::Release);
+        assert_eq!(joinable_by(&hub, "mine").unwrap().as_deref(), Some("user_a"));
+        assert_eq!(
+            joinable_by(&hub, "legacy").unwrap(),
+            None,
+            "a phone that paired before devices recorded their account"
+        );
+        assert_eq!(joinable_by(&hub, "local").unwrap(), None);
+        device(&hub, "theirs", Some("user_b"));
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "another account's phone would lose access");
+        hub.store.remove_device("theirs").unwrap();
+        remember(&hub, Some(&account("user_a"))).unwrap();
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "already in an account");
+        remember(&hub, None).unwrap();
+        device(&hub, "mine", Some("user_a"));
+        hub.store.kv_set("cloud_enabled", "false").unwrap();
+        assert_eq!(joinable_by(&hub, "mine").unwrap(), None, "no account with the cloud off");
+    }
+
+    #[test]
+    fn a_computer_taken_out_before_it_heard_it_joined_stays_out() {
+        let hub = hub();
+        remember(&hub, None).unwrap();
+        hub.cloud_synced.store(true, Ordering::Release);
+        device(&hub, "a", Some("user_a"));
+        device(&hub, "b", Some("user_a"));
+        // Phone a's claim completes and the computer is taken out again, both between two state pulls.
+        note_signed(&hub, "user_a").unwrap();
+        remember(&hub, None).unwrap();
+        assert_eq!(joinable_by(&hub, "a").unwrap(), None);
+        assert_eq!(joinable_by(&hub, "b").unwrap(), None, "nor through another phone of that account");
+
+        // Seen in the account and taken out, its phones go: one let in again may bring it back.
+        remember(&hub, Some(&account("user_a"))).unwrap();
+        remember(&hub, None).unwrap();
+        assert!(hub.store.device("a").is_none());
+        device(&hub, "a", Some("user_a"));
+        assert_eq!(joinable_by(&hub, "a").unwrap().as_deref(), Some("user_a"));
     }
 
     #[test]

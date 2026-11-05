@@ -21,6 +21,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
     case es
     case ptBR = "pt-BR"
     case ru
+    case it
 
     public var catalogName: String { self == .zh ? "zh-Hans" : rawValue }
 
@@ -73,7 +74,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
     public static func usesChinese(preference: AppLanguage, systemIsChinese: Bool) -> Bool {
         switch preference {
         case .zh, .zhHant: true
-        case .en, .ja, .ko, .fr, .de, .es, .ptBR, .ru: false
+        case .en, .ja, .ko, .fr, .de, .es, .ptBR, .ru, .it: false
         case .system: systemIsChinese
         }
     }
@@ -83,7 +84,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
         switch preference {
         case .zh: return Locale(identifier: "zh-Hans")
         case .zhHant: return Locale(identifier: "zh-Hant")
-        case .en, .ja, .ko, .fr, .de, .es, .ptBR, .ru: return Locale(identifier: preference.rawValue)
+        case .en, .ja, .ko, .fr, .de, .es, .ptBR, .ru, .it: return Locale(identifier: preference.rawValue)
         case .system:
             return Locale(identifier: resolved(preference: .system).catalogName)
         }
@@ -103,6 +104,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
         case .es: "Español"
         case .ptBR: "Português (Brasil)"
         case .ru: "Русский"
+        case .it: "Italiano"
         }
     }
 }
@@ -113,7 +115,7 @@ public enum L10n {
 
     private static let hans = load("zh-Hans")
     private static let hant = load("zh-Hant")
-    private static let catalogs = Dictionary(uniqueKeysWithValues: [AppLanguage.ja, .ko, .fr, .de, .es, .ptBR, .ru].map { ($0, load($0.catalogName)) })
+    private static let catalogs = Dictionary(uniqueKeysWithValues: [AppLanguage.ja, .ko, .fr, .de, .es, .ptBR, .ru, .it].map { ($0, load($0.catalogName)) })
 
     /// A missing or malformed table is logged and left empty, so the interface stays in English.
     private static func load(_ name: String) -> [String: String] {
@@ -127,6 +129,11 @@ public enum L10n {
             log.error("\(name, privacy: .public) phrases failed to load: \(error, privacy: .public)")
             return [:]
         }
+    }
+
+    /// Fills a template's `{key}`s in one pass: a device named "{code}" stays as written.
+    public static func fill(_ template: String, _ values: [String: String]) -> String {
+        template.replacing(/\{(\w+)\}/) { match in values[String(match.1)] ?? String(match.0) }
     }
 
     public static func tr(
@@ -153,7 +160,7 @@ public enum L10n {
         case .zh: return (hans, [:])
         case .zhHant: return (hant, hans)
         case .en: return nil
-        case .ja, .ko, .fr, .de, .es, .ptBR, .ru: return (catalogs[preference] ?? [:], [:])
+        case .ja, .ko, .fr, .de, .es, .ptBR, .ru, .it: return (catalogs[preference] ?? [:], [:])
         case .system:
             if !systemIsChinese {
                 let resolved = AppLanguage.resolved(preference: .system, languages: systemLanguages)
@@ -211,6 +218,10 @@ public enum L10n {
         return nil
     }
 
+    private static let localizableSlots: Set<String> = [
+        "{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}",
+    ]
+
     private static func fill(
         _ text: String,
         pieces: [Piece],
@@ -240,12 +251,16 @@ public enum L10n {
             pos = end
         }
         guard pos == text.endIndex else { return nil }
-        var result = phrase
+        var values: [String: String] = [:]
         for (token, value) in caps {
-            let inner = primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value
-            result = result.replacingOccurrences(of: token, with: inner)
+            // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+            let localizable = localizableSlots.contains(token)
+            let inner = localizable ? (primary[value] ?? fallback[value] ?? (depth == 0 ? nested(value, primary: primary, fallback: fallback) : nil) ?? value) : value
+            values[token] = inner
         }
-        return result
+        return phrase.replacing(#/\{[A-Za-z0-9]+\}/#) { match in
+            values[String(match.output)] ?? String(match.output)
+        }
     }
 
     /// One more template pass, for a setup hint inside an error. It does not look inside its own slots.

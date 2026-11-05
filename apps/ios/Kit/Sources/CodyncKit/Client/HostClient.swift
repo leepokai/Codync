@@ -156,6 +156,12 @@ public extension HostClient {
         let _: Empty = try await call("installHostUpdate")
     }
 
+    /// The computer signs `claim` for the account this phone paired from (`Hello.joinAccount`), as JSON to
+    /// pass on to `CloudClient.completeClaim` as it came.
+    func joinAccount(_ claim: CloudClaim) async throws -> Data {
+        try await transport.call("joinAccount", body: try Self.encoder.encode(claim), timeout: 20)
+    }
+
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
         struct Body: Encodable { var botId: String; var beforeSeq: Int64; var limit: Int }
         struct Res: Decodable { var entries: [Entry] }
@@ -334,6 +340,16 @@ public extension HostClient {
 
     func stop(_ botId: String) async throws {
         let _: Empty = try await call("stop", ["botId": botId])
+    }
+
+    /// A queued message, now: into the running turn when the agent can take it, else as the next one (host 2.39.0).
+    func steer(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("steer", ["botId": botId, "entryId": entryId])
+    }
+
+    /// A queued message taken back: it never goes out (host 2.39.0).
+    func unqueue(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
     }
 
     func respondPermission(entryId: String, optionId: String?) async throws {

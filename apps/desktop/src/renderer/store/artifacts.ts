@@ -1,6 +1,7 @@
 import { readArtifactHTML, type Artifact, type LibraryItem } from '@shared/artifacts'
 import { FILE_CHUNK_SIZE } from '../../shared/files.ts'
 import type { HostClient } from '../client/host-client'
+import { trNow } from '../lib/l10n.ts'
 
 /** An artifact's HTML as last read; `updatedAt` and `sha256` name the version it is. */
 export interface ArtifactHTML { updatedAt: number; sha256: string; bytes: Uint8Array }
@@ -26,7 +27,7 @@ export class Artifacts {
 
   /** The chat's Library (`library`); its artifacts join the ones known here. */
   async library(client: HostClient | null, botId: string): Promise<LibraryItem[]> {
-    if (!client) throw new Error('Connect to this computer to see its library')
+    if (!client) throw new Error(trNow('Connect to this computer to see its library'))
     const { items } = await client.library(botId)
     for (const item of items) if (item.kind === 'artifact') this.upsert(item.artifact)
     return items
@@ -43,7 +44,7 @@ export class Artifacts {
   }
 
   async rename(client: HostClient | null, botId: string, id: string, title: string) {
-    if (!client) throw new Error('Connect to this computer to rename the artifact')
+    if (!client) throw new Error(trNow('Connect to this computer to rename the artifact'))
     this.upsert((await client.renameArtifact(botId, id, title)).artifact)
   }
 
@@ -73,7 +74,7 @@ export class Artifacts {
   private async newest(client: HostClient | null, artifact: Artifact): Promise<ArtifactHTML> {
     const cached = this.html.get(artifact.id)
     if (cached && this.current(artifact.id)) return cached
-    if (!client) throw new Error('Connect to this computer to open the artifact')
+    if (!client) throw new Error(trNow('Connect to this computer to open the artifact'))
     return this.fetch(client, artifact.botId, artifact.id)
   }
 

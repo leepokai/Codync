@@ -27,15 +27,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// never), reconnects, the first phase stuck too long, why it failed.
     case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
     case screenViewed(Screen)
-    case reviewOpportunity(completed: Int)
-    case reviewCancelled(ReviewCancellation)
-    case reviewRequested(completed: Int)
+    case reviewRequested(prompts: Int)
     case reviewLinkOpened
 
-    public enum ReviewCancellation: String, Sendable { case background, interaction, unavailable }
-
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
-    public enum OnboardingStep: String, Sendable { case welcome, install, scan }
+    public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
     public enum OnboardingVia: String, Sendable { case paired, account, skipped }
     public enum SignInProvider: String, Sendable { case apple, google, github }
     public enum SignInFailure: String, Sendable { case cancelled, verification, error }
@@ -45,7 +41,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum PromptSource: String, Sendable { case settings, widgets }
     public enum Setting: String, Sendable { case push, liveActivities = "live_activities" }
     public enum Link: String, Sendable {
-        case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command"
+        case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
@@ -121,8 +117,6 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceCallStarted: "voice_call_started"
         case .voiceCallQuality: "voice_call_quality"
         case .screenViewed: "screen_viewed"
-        case .reviewOpportunity: "review_opportunity"
-        case .reviewCancelled: "review_cancelled"
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
         }
@@ -155,9 +149,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
                                                 "stuck": .string(stuck.rawValue), "failure": .string(failure.rawValue)]
             p["ready_ms"] = readyMs.map(Analytics.Value.int)
             return p
-        case let .reviewOpportunity(completed), let .reviewRequested(completed):
-            return ["completed_interactions": .int(completed), "policy": .string("v1"), "trigger": .string("return_to_bots")]
-        case let .reviewCancelled(reason): return ["reason": .string(reason.rawValue), "policy": .string("v1")]
+        case let .reviewRequested(prompts):
+            return ["prompts": .int(prompts), "policy": .string("v2")]
         case .reviewLinkOpened: return ["source": .string("settings")]
         case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
         }

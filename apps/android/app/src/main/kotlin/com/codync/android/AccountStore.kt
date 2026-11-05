@@ -28,6 +28,8 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
     internal var cloud: CloudClient? = null
     /** The account proof pairing sends, kept for this account context while it lasts. */
     internal var deviceCertificate: DeviceCertificate? = null
+    /** Computers joining this account ([joinAccount]). */
+    internal val joining: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private var sessionJob: Job? = null
     internal var linkJob: Job? = null
     internal var pairingJob: Job? = null
@@ -87,7 +89,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             val lead = withContext(Dispatchers.IO) { local.shortcutLead() }
             mutableState.update { AccountContext(contextId = local.referenceId, generation = it.generation + 1, account = it.account,
                 computers = computers, lastComputerId = last, shortcutLeadComputer = lead, tasks = PushPreferences.tasks(getApplication()),
-                setupComplete = complete || computers.isNotEmpty()) }
+                setupComplete = complete || computers.isNotEmpty() || Analytics.onboarded) }
             // A computer that can't open (damaged drafts) is reported; the others, the cloud and the widgets go on.
             for (computer in computers) try { open(computer) }
                 catch (error: CancellationException) { throw error }
@@ -100,7 +102,11 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             observeShortcut()
             refreshCloud()
         } catch (error: CancellationException) { throw error }
-        catch (error: Exception) { showError(error) }
+        catch (error: Exception) {
+            showError(error)
+            // No refresh follows: setup would wait on it forever.
+            mutableState.update { it.copy(cloudLoaded = true) }
+        }
     }
 
     /**
@@ -152,7 +158,9 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             for (other in stores.value) if (other !== opened) other.openBot(null)
             mutableState.update { it.copy(removedChat = false) }
             noteActive(opened.id)
-        }, usageRead = ::publishUsage)
+        }, usageRead = ::publishUsage, joinAccount = { sign ->
+            joinAccount(computer.id) { client -> client.createClaim().let { claim -> claim to sign(claim) } }
+        })
         store.open()
         mutableStores.update { list -> list.filter { it.id != computer.id } + store }
         sortStores()

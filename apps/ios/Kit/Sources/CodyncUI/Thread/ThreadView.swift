@@ -43,6 +43,7 @@ public struct ThreadView: View {
                         .transition(.opacity)
                 } else {
                     Composer(botId: botId, replyingTo: $replyingTo,
+                             queued: model.chat(botId).hidingCalls().queue(working: busy),
                              onCall: !calling && bot != nil ? { calling = true } : nil,
                              onInterrupt: callSpeaking ? interruptCall : nil)
                 }
@@ -65,9 +66,6 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
-            .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
-                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
-                           && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -291,9 +289,7 @@ struct IntroCard: View {
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text(bot.managedWorkspace
                  ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
-                 : L10n.tr("{agent} in {path}")
-                    .replacingOccurrences(of: "{agent}", with: model.backendName(bot.backend))
-                    .replacingOccurrences(of: "{path}", with: bot.cwd))
+                 : L10n.fill(L10n.tr("{agent} in {path}"), ["agent": model.backendName(bot.backend), "path": bot.cwd]))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -321,13 +317,16 @@ extension ThreadView {
     }
 
     private var working: Bool { bot?.isWorking(in: botId) == true && !model.isOffline }
+    /// The bot works anywhere (a room, a routine): the user's messages here wait above the composer.
+    private var busy: Bool { bot?.isWorking == true }
 
     /// iPhone's messages: all this device has, earlier ones from the computer as the reader
     /// scrolls up; the chat follows the newest message until they scroll away, and a reply is
     /// revealed steadily as it's written.
     var transcript: some View {
         // What voice calls carried shows in each call's conversation, not in the chat.
-        let items = ChatItem.build(model.chat(botId).hidingCalls())
+        // Messages waiting behind the bot's work show above the composer instead.
+        let items = ChatItem.build(model.chat(botId).hidingCalls().hidingQueue(working: busy))
         var rows: [ConversationRow] = []
         if moreOnComputer {
             rows.append(ConversationRow("earlier") {

@@ -28,6 +28,7 @@ struct BotListView: View {
     @AppStorage("collapsedRosterSections") private var collapsedRosterSections = ""
 
     @AppStorage("rosterSectionOrder") private var sectionOrderData = Data()
+    @AppStorage(AgentLogos.storageKey) private var agentLogos = true
     private var sectionOrder: RosterSectionOrder {
         get { RosterSectionOrder(data: sectionOrderData) }
         nonmutating set { sectionOrderData = newValue.data }
@@ -172,8 +173,6 @@ struct BotListView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         }
-        .reviewInvitation(blocked: creating != nil || editing != nil || editingGroup != nil
-                          || confirmDelete != nil || lifted != nil)
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 0)
@@ -338,9 +337,12 @@ struct BotListView: View {
         let bot = item.bot
         let line = RosterLine.bot(item, store)
         let card = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        // The agent's logo marks the avatar only while the computer's bots mix agents.
+        let agent = agentLogos && !bot.isGroup && store.mixesAgents ? bot.runningAgent : nil
+        let name = agent.map { "\(bot.name), \(store.backendName($0))" } ?? bot.name
         // A plain button instead of a NavigationLink: same push, no chevron.
         return Button { accounts.selection = item.ref } label: {
-            BotRow(bot: bot)
+            BotRow(bot: bot, agent: agent)
                 .environment(store)
         }
         .buttonStyle(.plain)
@@ -350,7 +352,7 @@ struct BotListView: View {
         .contentShape([.dragPreview, .contextMenuPreview], card)
         .padding(.horizontal, -8)
         .itemProvider { lift(line) }
-        .accessibilityLabel(accounts.computers.count > 1 ? "\(bot.name), on \(store.hostName)" : bot.name)
+        .accessibilityLabel(accounts.computers.count > 1 ? "\(name), on \(store.hostName)" : name)
         .accessibilityActions {
             Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
             Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }

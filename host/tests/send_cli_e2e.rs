@@ -39,6 +39,32 @@ async fn sends_plain_text_json_and_an_unwaited_acknowledgement() {
 }
 
 #[tokio::test]
+async fn a_message_steered_into_the_running_turn_gets_that_turns_reply() {
+    let host = Host::start().await;
+    // It only writes text: the bot's activity doesn't change while the turn takes the message in.
+    let bot = host.fixture_bot("Steers", "steer_agent.py", "steer 30").await;
+    host.call("send", json!({"botId": bot, "text": "first"})).await;
+    common::eventually("the agent got the first prompt", Duration::from_mins(1), async || {
+        host.requests(&bot, "session/prompt").len() == 1
+    })
+    .await;
+    let steer_it = async {
+        let waiting = async || {
+            let history = host.call("history", json!({"botId": bot})).await;
+            history["entries"].as_array().unwrap().iter().find(|e| e["data"]["text"] == "second").cloned()
+        };
+        common::eventually("the second message waits", Duration::from_secs(20), async || waiting().await.is_some())
+            .await;
+        host.call("steer", json!({"botId": bot, "entryId": waiting().await.unwrap()["id"]})).await;
+    };
+    let wait = ["--bot", &bot, "--wait", "--json", "--timeout", "20", "second"];
+    let (output, ()) = tokio::join!(host.run(&wait), steer_it);
+    let result = json_output(&output, 0);
+    assert_eq!(result["status"], "completed");
+    assert!(result["reply"].as_str().unwrap().contains("Got: "), "{result}");
+}
+
+#[tokio::test]
 async fn a_turn_without_a_text_reply_completes_when_the_bot_is_idle() {
     let host = Host::start().await;
     let bot = host.bot("Silent").await;

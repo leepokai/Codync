@@ -76,7 +76,9 @@ def token():
         os.environ["ASC_PRIVATE_KEY"], algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"]})
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, attempts=5):
+    """One API call. A GET that hits App Store Connect's passing 5xx or 429 is retried (v2.38.0 died
+    on one 500 mid-wait); writes are not, so nothing is sent twice."""
     if method != "GET" and DRY_RUN:
         print(f"DRY_RUN {method} {path} {json.dumps(body)}")
         return {"data": {"id": "dry-run"}}
@@ -87,6 +89,10 @@ def call(method, path, body=None):
         with urllib.request.urlopen(req) as res:
             raw = res.read()
     except urllib.error.HTTPError as e:
+        if method == "GET" and (e.code >= 500 or e.code == 429) and attempts > 1:
+            print(f"GET {path} -> {e.code}; retrying", flush=True)
+            time.sleep(30)
+            return call(method, path, body, attempts - 1)
         sys.exit(f"{method} {path} -> {e.code}\n{e.read().decode()}")
     return json.loads(raw) if raw else {}
 

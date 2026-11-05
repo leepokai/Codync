@@ -16,6 +16,7 @@ import {
 import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
+import { prefs } from '../lib/prefs'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
 import { BotSync, sleep } from './bot-sync'
@@ -56,9 +57,13 @@ export class BotStore extends BotSync {
 
   private outgoingFiles = new Map<string, OutgoingFile[]>()
 
+  /** The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`). */
+  lastSentNonce: string | null = null
+
   send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, call = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
+    this.lastSentNonce = nonce
     const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
     if (call) data.call = call
     if (replyTo) data.replyTo = replyTo
@@ -91,6 +96,8 @@ export class BotStore extends BotSync {
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
         this.changed()
+        // Only once it arrived, so a resend counts once.
+        if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')
@@ -112,15 +119,19 @@ export class BotStore extends BotSync {
     const files = (entry.data.clientNonce && this.outgoingFiles.get(entry.data.clientNonce)) || []
     const text = entry.data.text ?? ''
     if (!text && !files.length) return
-    this.entries.set(entry.botId, this.allEntries(entry.botId).filter((e) => e.id !== entry.id))
+    this.dropEntry(entry)
     this.send(text, entry.botId, { files, nonce: entry.data.clientNonce, replyTo: entry.data.replyTo })
   }
 
   discard(entry: Entry) {
     if (entry.data.clientNonce) this.outgoingFiles.delete(entry.data.clientNonce)
-    this.entries.set(entry.botId, this.allEntries(entry.botId).filter((e) => e.id !== entry.id))
+    this.dropEntry(entry)
     this.changed()
     this.scheduleSave()
+  }
+
+  private dropEntry(entry: Entry) {
+    this.entries.set(entry.botId, (this.entries.get(entry.botId) ?? []).filter((e) => e.id !== entry.id))
   }
 
   private markLocal(nonce: string, botId: string, status: string) {
@@ -252,6 +263,21 @@ export class BotStore extends BotSync {
       // The card's own update follows on the events stream; hold the spinner until then.
       await sleep(2000)
     })
+  }
+
+  /** Has a queued message handled now (`steer`): the computer's update takes it out of the queue. */
+  steer(entry: Entry) {
+    this.answer(entry, 'steer', (c) => c.call('steer', { botId: entry.botId, entryId: entry.id }))
+  }
+
+  /** Takes back a queued message (`unqueue`): gone at once, back if the computer refuses. */
+  unqueue(entry: Entry) {
+    const show = (e: Entry) => {
+      this.upsert(e)
+      this.changed()
+    }
+    show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
+    this.perform((c) => c.call('unqueue', { botId: entry.botId, entryId: entry.id }), true, () => show(entry))
   }
 
   /** Saves the user's version of a handoff that hasn't been sent; whether it did. */

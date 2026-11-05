@@ -19,6 +19,7 @@
 
 pub mod agent_sign_in;
 pub mod composio;
+pub mod connector_update;
 pub mod logins;
 pub mod oauth;
 pub mod passwords;
@@ -26,6 +27,7 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
+mod command_line;
 mod install;
 mod registry;
 mod skills;
@@ -55,6 +57,9 @@ const UA: &str = concat!("codync-host/", env!("CARGO_PKG_VERSION"));
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// Registry search is slow (often 20-30 s); lookups by name are fast.
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// The largest value a connector keeps in its environment or headers.
+pub const MAX_CREDENTIAL_BYTES: usize = 64 * 1024;
 
 // MARK: stored items
 
@@ -192,6 +197,13 @@ pub fn connector_ids(store: &crate::store::Store) -> Result<Vec<String>> {
         .flatten()
         .filter_map(|c| c["id"].as_str().map(str::to_owned))
         .collect())
+}
+
+/// The bots that have this connector turned on.
+pub fn bots_using(store: &crate::store::Store, id: &str) -> Result<Vec<crate::store::BotRow>> {
+    let mut bots = store.bots()?;
+    bots.retain(|row| !row.deleted && !row.config.is_group() && row.config.connectors.iter().any(|c| c == id));
+    Ok(bots)
 }
 
 /// What the computer installs for its bots.

@@ -26,7 +26,7 @@ Show the code on the computer:
 - **Terminal:** run `codync-host pair`. It prints the QR code in the terminal, and waits to answer when the computer asks about a phone (see below). `codync-host pair --json` prints the link instead and doesn't wait.
 - **Terminal UI:** press `^k` and choose **Pair a phone…**.
 
-Then, on the iPhone, scan it from the welcome screen, or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning, or type the short code `codync-host pair` prints, like `QRTX-4821`.
+Then, on the iPhone, scan it during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer), or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning, or type the short code `codync-host pair` prints, like `QRTX-4821`.
 
 A code works once and expires after 10 minutes. If it has expired, show a new one on the computer. Pairing works over any route, including the relay.
 
@@ -34,7 +34,8 @@ Pairing checks your account, so a phone and a computer pair only when they're in
 
 - **The computer is in your account:** the phone is let in right away.
 - **The computer is in someone else's account:** the phone says whose (for example *k•••@example.com*). Move the computer to your account on that computer, or sign in to that account.
-- **The computer isn't in an account yet:** the computer asks first, for 90 seconds. The desktop app asks whether to let the phone in, and the terminal UI and `codync-host pair` ask you to answer `y`. Without any of them (`codync-host pair --json`, a script, SSH with no terminal), run `codync-host access approve <code>` with the 6 digits the phone shows. Check that the phone shows the same 6-digit code, then let it in. The computer joins your account; with its cloud off or on a private relay, the phone gets in and the computer stays out of any account.
+- **The computer isn't in an account yet:** the computer asks first, for 90 seconds. The desktop app asks whether to let the phone in, and the terminal UI and `codync-host pair` ask you to answer `y`. Without any of them (`codync-host pair --json`, a script, SSH with no terminal), run `codync-host access approve <code>` with the 6 digits the phone shows. Check that the phone shows the same 6-digit code, then let it in. The computer joins your account. While its cloud is off or it uses a private relay, the phone gets in and the computer stays out of any account.
+- **The computer let the phone in but didn't join your account** (the phone couldn't reach the Codync cloud while pairing, or the computer's cloud was off or on a private relay): the next time the phone connects while the computer is on the Codync cloud, the computer joins your account on its own, as long as no phone of another account is paired with it. If it still isn't in your account after that, pair it again. A computer taken out of your account isn't brought back this way.
 
 Changing the account a computer belongs to (moving it, or **Remove from account**) takes away access from every device of the old account. A computer joining its first account keeps the phones that were already paired.
 
@@ -43,7 +44,7 @@ Changing the account a computer belongs to (moving it, or **Remove from account*
 The iPhone, Android and desktop apps ask you to sign in with Apple, Google or GitHub before you use them. Signing in doesn't give any device access by itself. It lets your phone find the computers in your account without scanning a code:
 
 1. On the computer, sign in to the desktop app. The computer joins your account. For an SSH computer, choose **Add to account** on its card in **Settings → Computers**.
-2. On the iPhone, sign in with the same account and open **Manage computers**. Your account's computers are listed there. Tap **Ask for access**. The phone shows a 6-digit code.
+2. On the iPhone, sign in with the same account. The first time, the first page lists your account's computers; after that, they're in **Manage computers**. Tap **Ask for access**. The phone shows a 6-digit code. (Setting up another computer, like a VPS? Tap **Pair a new computer** on that first page.)
 3. On the computer, an **Access request** opens with a code. Choose **Approve** only if it matches the code on your phone exactly. If it doesn't, choose **Deny**: someone may be trying to get in.
 
 On a computer without the desktop app, use `codync-host access` to list requests and `codync-host access approve <code>` to approve one.
@@ -85,11 +86,15 @@ With the relay off:
 - Devices approved through your account can't connect. Devices paired with a QR code still can.
 - Deliveries to public routine webhooks no longer reach the computer. Local ones keep working. The relay still accepts deliveries at the old public URLs and keeps them, readable, for up to 72 hours; they run if you turn the relay back on within that time. To stop them, remove the URL from the sender, or delete the routine or replace its key while the relay is on.
 
+## Turning the relay on
+
+In the desktop app, open **Settings → Computers** and turn on **Reach from anywhere** on the computer's card. A computer in no account has to join yours first: Codync asks you to add it, and adding it turns the relay on too. **Use your own relay** in the same window turns it on without joining your account, since your own relay has no accounts. Until you set **Relay address**, it connects through the Codync relay; see [Your own relay](#your-own-relay). On a computer without the desktop app, run `codync-host cloud --enable`.
+
 ## Your own relay
 
 You can run a relay yourself and point a computer at it, instead of the Codync relay on Cloudflare. Chat stays end-to-end encrypted either way. The relay still cannot read it. How to set one up on a server is in the [private relay README](https://github.com/leepokai/Codync/blob/main/private-relay/README.md).
 
-On the computer, open **Settings → Computers**, turn on **Reach from anywhere**, and set **Relay address** to your relay, such as `https://relay.example.com`. A **Relay token** field then appears: paste the token the relay was started with. The field never shows the token again; it says it's saved, and typing a new one replaces it. On a computer without the desktop app:
+On the computer, open **Settings → Computers**, turn on **Reach from anywhere** (choose **Use your own relay** if Codync asks you to add the computer to your account), and set **Relay address** to your relay, such as `https://relay.example.com`. A **Relay token** field then appears: paste the token the relay was started with. The field never shows the token again; it says it's saved, and typing a new one replaces it. On a computer without the desktop app:
 
 ```sh
 codync-host cloud --url https://relay.example.com --token
@@ -158,5 +163,5 @@ Webhook deliveries are **not** end-to-end encrypted. The relay receives them ove
 
 - **On the computer:** in **Settings → Computers**, the list **Devices that can use** the computer has **Revoke access** for each device. Without the desktop app, use `codync-host devices` to list devices and `codync-host devices revoke <key>` to remove one. The device disconnects right away and has to pair or ask again.
 - **On the iPhone:** in **Manage computers**, remove a paired computer, or revoke this phone's account access to one. The computer keeps its bots and chats.
-- **Remove from account** on a computer's card disconnects every device of the account, phones paired with a QR code included. They have to pair again.
-- **A computer that's gone** (reset, reinstalled or given away) stays offline in your account. In the desktop app, **Settings → Computers** lists it under **Other computers in your account**; choose **Remove from account** on its row. Any offline computer has it, so first make sure it's gone rather than asleep: every device of the account loses access, and it rejoins only when you add it again on that computer. Only the desktop app removes a computer from the account; on a phone you can only forget a computer you paired with a QR code.
+- **Remove from account** on a computer's card disconnects every device of the account, phones paired with a QR code included. They have to pair again. On a computer without the desktop app, run `codync-host cloud --leave` in a terminal there; it asks before it removes anything.
+- **A computer that's gone** (reset, reinstalled or given away) stays offline in your account. In the desktop app, **Settings → Computers** lists it under **Other computers in your account**; choose **Remove from account** on its row. Any offline computer has it, so first make sure it's gone rather than asleep: every device of the account loses access, and it rejoins only when you add it again on that computer. Only the desktop app removes a computer that's gone, from another computer; on a phone you can only forget a computer you paired with a QR code.

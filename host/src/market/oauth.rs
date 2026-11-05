@@ -308,6 +308,19 @@ fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
     })
 }
 
+/// Forgets a connector's tokens and its registration: the next sign-in registers again.
+fn unregister(store: &Store, c: &Connector) -> Result<Connector> {
+    update(store, &c.id, c.url.as_deref(), |c| {
+        if let Some(o) = &mut c.oauth {
+            *o = OAuth::default();
+        }
+    })
+}
+
+fn signed_out(c: &Connector) -> anyhow::Error {
+    anyhow!("Sign in to {} in Extensions first.", c.name)
+}
+
 /// What the `remote` MCP proxy sends to connector `id`: its URL and headers, with a fresh token.
 /// `stale`: the server just said 401, so refresh even if the token looks valid.
 pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
@@ -318,16 +331,16 @@ pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
         headers.insert(k.clone(), market::passwords::resolve(store, v).await?);
     }
     if let Some(o) = &c.oauth {
-        let o = fresh(store, &c, o, stale).await?;
+        let o = fresh(store, &c, &url, o, stale).await?;
         headers.insert("Authorization".into(), format!("Bearer {}", o.access_token));
     }
     Ok(json!({"url": url, "headers": headers}))
 }
 
-async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<OAuth> {
-    let signed_out = || anyhow!("Sign in to {} in Extensions first.", c.name);
+/// `o`, or a new token when it's about to expire (or `stale`). `url`: the connector's.
+async fn fresh(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) -> Result<OAuth> {
     if !o.signed_in() {
-        return Err(signed_out());
+        return Err(signed_out(c));
     }
     let expiring = o.expires_at.is_some_and(|t| t <= now() + EARLY);
     if !stale && !expiring {
@@ -335,109 +348,79 @@ async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<O
     }
     let _one = REFRESH.lock().await;
     // Someone else may have refreshed while we waited.
-    let current =
-        market::connectors(store)?.into_iter().find(|x| is_at(x, &c.id, c.url.as_deref())).and_then(|x| x.oauth);
+    let current = market::connectors(store)?.into_iter().find(|x| is_at(x, &c.id, Some(url))).and_then(|x| x.oauth);
     if let Some(cur) = &current
         && cur.access_token != o.access_token
         && cur.signed_in()
     {
         return Ok(cur.clone());
     }
-    let Some(refresh) = o.refresh_token.clone() else {
+    renew(store, c, url, o, stale).await
+}
+
+/// Trades the refresh token for a new access token. A server that can't answer now leaves the sign-in as is.
+async fn renew(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) -> Result<OAuth> {
+    let Some(refresh) = o.refresh_token.as_deref() else {
         sign_out(store, c)?;
-        return Err(signed_out());
+        return Err(signed_out(c));
     };
-    match token_request(o, &[("grant_type", "refresh_token"), ("refresh_token", &refresh)]).await {
-        Ok(v) => Ok(update(store, &c.id, c.url.as_deref(), |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
+    // The old token still works until it expires.
+    let retry = || match o.expires_at {
+        Some(t) if !stale && t > now() => Ok(o.clone()),
+        _ => Err(anyhow!("Couldn't renew the sign-in to {}. Try again in a moment.", c.name)),
+    };
+    let form = [("grant_type", "refresh_token"), ("refresh_token", refresh), ("resource", url)];
+    let (status, v) = match token_post(o, &form).await {
+        Ok(answer) => answer,
         Err(error) => {
             tracing::warn!(connector = %c.id, error = format!("{error:#}"), "token refresh failed");
+            return retry();
+        }
+    };
+    let renewal = renewal(status, &v);
+    if renewal != Renewal::Renewed {
+        tracing::warn!(connector = %c.id, %status, error = v["error"].as_str().unwrap_or_default(), "token refresh refused");
+    }
+    match renewal {
+        Renewal::Renewed => Ok(update(store, &c.id, Some(url), |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
+        Renewal::Retry => retry(),
+        Renewal::Revoked => {
             sign_out(store, c)?;
-            Err(signed_out())
+            Err(signed_out(c))
+        }
+        Renewal::Unregistered => {
+            unregister(store, c)?;
+            Err(signed_out(c))
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// What the token endpoint's answer to a refresh means (RFC 6749 §5.2).
+#[derive(Debug, PartialEq)]
+enum Renewal {
+    Renewed,
+    /// The server is down or busy, or something in front of it answered: ask again later.
+    Retry,
+    /// The server ended the sign-in.
+    Revoked,
+    /// The server no longer knows Codync's client.
+    Unregistered,
+}
 
-    #[test]
-    fn form_values_are_encoded() {
-        assert_eq!(encode("a b&c=d/+"), "a+b%26c%3Dd%2F%2B");
+fn renewal(status: reqwest::StatusCode, v: &Value) -> Renewal {
+    if status.is_success() && v["access_token"].is_string() {
+        return Renewal::Renewed;
     }
-
-    /// A sign-in to "notes" at `https://notes.example/mcp`, waiting for its code under `state`.
-    fn pend(state: &str) {
-        let pending = Pending {
-            connector: "notes".into(),
-            verifier: "v".into(),
-            redirect_uri: loopback_uri(1),
-            resource: "https://notes.example/mcp".into(),
-            started: Instant::now(),
-        };
-        PENDING.locked().get_or_insert_with(HashMap::new).insert(state.into(), pending);
+    if status.is_server_error() || matches!(status.as_u16(), 408 | 429) {
+        return Renewal::Retry;
     }
-
-    #[tokio::test]
-    async fn unknown_state_is_refused() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let err = finish(&store, "nope", Some("code"), None).await.unwrap_err();
-        assert!(err.to_string().contains("expired"));
-    }
-
-    #[tokio::test]
-    async fn a_connector_replaced_during_sign_in_gets_no_code() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        // Removed while the sign-in page was open, and another server added under the same id.
-        let c: Connector = serde_json::from_value(json!({
-            "id": "notes", "name": "Notes", "url": "https://other.example/mcp",
-            "oauth": {"clientId": "theirs", "tokenEndpoint": "http://127.0.0.1:1/token"},
-        }))
-        .unwrap();
-        market::save_connectors(&store, &[c]).unwrap();
-        pend("replaced");
-        let err = finish(&store, "replaced", Some("code"), None).await.unwrap_err();
-        assert_eq!(err.to_string(), "unknown connector");
-    }
-
-    #[tokio::test]
-    async fn the_token_is_saved_only_while_the_connector_is_unchanged() {
-        use axum::{Json, Router, routing};
-        use std::sync::atomic::{AtomicBool, Ordering};
-        let store = Arc::new(Store::open(std::path::Path::new(":memory:")).unwrap());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let token_endpoint = format!("http://{}/token", listener.local_addr().unwrap());
-        let original: Connector = serde_json::from_value(json!({
-            "id": "notes", "name": "Notes", "url": "https://notes.example/mcp",
-            "oauth": {"clientId": "ours", "tokenEndpoint": token_endpoint},
-        }))
-        .unwrap();
-        market::save_connectors(&store, &[original]).unwrap();
-        // The second answer comes only after the connector was removed and another added under its id.
-        let shared = store.clone();
-        let answered = Arc::new(AtomicBool::new(false));
-        let router = Router::new().route(
-            "/token",
-            routing::post(move || async move {
-                if answered.swap(true, Ordering::SeqCst) {
-                    let other: Connector = serde_json::from_value(json!({
-                        "id": "notes", "name": "Notes", "url": "https://other.example/mcp",
-                    }))
-                    .unwrap();
-                    market::save_connectors(&shared, &[other]).unwrap();
-                }
-                Json(json!({"access_token": "notes-token"}))
-            }),
-        );
-        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        pend("unchanged");
-        let saved = finish(&store, "unchanged", Some("code"), None).await.unwrap();
-        assert_eq!(saved.oauth.unwrap().access_token, "notes-token");
-        pend("replaced-mid-request");
-        let err = finish(&store, "replaced-mid-request", Some("code"), None).await.unwrap_err();
-        assert_eq!(err.to_string(), "unknown connector");
-        let left = market::connectors(&store).unwrap();
-        assert_eq!(left[0].url.as_deref(), Some("https://other.example/mcp"));
-        assert!(left[0].oauth.is_none(), "the replacement got the token");
+    match v["error"].as_str() {
+        // Not an OAuth error (a proxy's page, say): nothing is known about the grant.
+        None | Some("temporarily_unavailable") => Renewal::Retry,
+        Some("invalid_client") => Renewal::Unregistered,
+        Some(_) => Renewal::Revoked,
     }
 }
+
+#[cfg(test)]
+mod tests;

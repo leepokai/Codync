@@ -47,16 +47,15 @@
 .reasoning-value { flex: 1; min-width: 0; text-align: center; overflow-wrap: anywhere; font-size: var(--text-callout); font-weight: 500; color: var(--text); }
 .reasoning-heading .agent-picker-default { display: flex; align-items: center; gap: 5px; }
 .reasoning-slider { position: relative; height: 36px; margin-top: 6px; }
-.reasoning-track { position: absolute; inset: 3px 0; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface); }
-.reasoning-fill { height: 100%; width: calc(15px + (100% - 30px) * var(--effort-position)); background: color-mix(in srgb, var(--text) 14%, var(--surface)); }
-.reasoning-stops { position: absolute; inset: 0 15px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+.reasoning-track { position: absolute; inset: 0; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface); }
+.reasoning-halftone { position: absolute; inset: 0; background: var(--text); opacity: .5; mask-image: radial-gradient(circle, #000 1px, transparent 1.2px), linear-gradient(to right, transparent, #000); mask-size: 6px 6px, 100% 100%; mask-composite: intersect; clip-path: inset(0 calc((100% - 36px) * (1 - var(--effort-position))) 0 0 round 18px); transition: clip-path var(--hover), opacity var(--hover); }
+.reasoning-stops { position: absolute; inset: 0 16px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
 .reasoning-stops > span { width: 4px; height: 4px; border-radius: 50%; background: var(--secondary); }
 .reasoning-slider input { appearance: none; position: absolute; inset: 0; width: 100%; height: 36px; margin: 0; padding: 0; background: transparent; cursor: pointer; }
 .reasoning-slider input::-webkit-slider-runnable-track { height: 36px; background: transparent; }
-.reasoning-slider input::-webkit-slider-thumb { appearance: none; width: 30px; height: 30px; margin-top: 3px; border-radius: 50%; background: var(--text); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
+.reasoning-slider input::-webkit-slider-thumb { appearance: none; width: 36px; height: 36px; border-radius: 50%; background: var(--text); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
 .reasoning-slider input:focus-visible { outline: 2px solid var(--secondary); outline-offset: 3px; border-radius: var(--radius-pill); }
-.reasoning-slider.unknown input::-webkit-slider-thumb { opacity: 0; }
-.reasoning-slider.unknown .reasoning-fill { opacity: 0; }
+.reasoning-slider.unknown input::-webkit-slider-thumb, .reasoning-slider.unknown .reasoning-halftone { opacity: 0; }
 
 /* Brief feedback for discrete changes; the actual range remains keyboard accessible. */
 .agent-picker-text-change { display: inline-block; animation: agent-picker-text-in 120ms ease-out; }
@@ -64,9 +63,8 @@
   from { opacity: .35; transform: translateY(2px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.reasoning-fill { transition: width var(--hover), opacity var(--hover); }
 .reasoning-thumb {
-  position: absolute; top: 3px; left: calc((100% - 30px) * var(--effort-position));
+  position: absolute; top: 3px; left: calc(3px + (100% - 36px) * var(--effort-position));
   width: 30px; height: 30px; border-radius: 50%; background: var(--text);
   box-shadow: 0 1px 4px rgb(0 0 0 / .15); pointer-events: none;
   transition: left var(--hover), opacity var(--hover);

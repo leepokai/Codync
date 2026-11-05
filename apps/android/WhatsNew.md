@@ -7,6 +7,13 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.39.1
+### zh-Hant
+- 推理強度滑桿新增漸層點陣，讓不同強度更容易辨識。
+
+### en-US
+- The reasoning effort slider now uses a dotted gradient to make levels easier to distinguish.
+
 ## 2.39.0
 ### zh-Hant
 - 第一次設定時，如果帳號裡已有電腦，可以向它申請訪問，或配對一臺新電腦（例如 VPS）。安裝頁也能一鍵複製網站連結，到電腦上下載。

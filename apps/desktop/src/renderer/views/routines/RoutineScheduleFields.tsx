@@ -85,7 +85,13 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
         <VStack key="Hourly" gap={10}>
           {schedule.windowStart === null && schedule.windowEnd === null ? (
             <LabeledRow label="At minute">
-              <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
+              <HStack gap={8}>
+                <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
+                {/* The window the TUI starts from: the workday, 09:00 to 18:00. */}
+                <Button kind="secondary" title="Only run between two times" onClick={() => update({ windowStart: 9 * 60, windowEnd: 18 * 60 })}>
+                  Window
+                </Button>
+              </HStack>
             </LabeledRow>
           ) : (
             // A window's start sets the minute of every run in it.

@@ -61,7 +61,13 @@ import java.util.Date
         }
         when {
             schedule.calendarStyle == "hourly" && schedule.windowStart == null && schedule.windowEnd == null -> {
-                Field("Minute past the hour") { MinutePicker(schedule.minute) { change(schedule.copy(minute = it)) } }
+                Field("Minute past the hour") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        MinutePicker(schedule.minute) { change(schedule.copy(minute = it)) }
+                        // The window the TUI starts from: the workday, 09:00 to 18:00.
+                        LinkButton("Window") { change(schedule.copy(windowStart = 9 * 60, windowEnd = 18 * 60)) }
+                    }
+                }
                 Field("Every") {
                     ChoicePicker(schedule.everyHours, RoutineSchedule.everyHours, { change(schedule.copy(everyHours = it)) }, label = "Every")
                 }

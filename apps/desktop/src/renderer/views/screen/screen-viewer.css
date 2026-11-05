@@ -1,0 +1,174 @@
+/* The Remote screen window: a bar above a dark stage that holds the rounded video and, under it, the mode switch. */
+.screen-viewer {
+  height: 100vh;
+  background: #0d0d0f;
+  color: var(--text);
+}
+.screen-bar {
+  flex: none;
+  padding: 8px 12px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+}
+.screen-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.screen-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--attention);
+  flex: none;
+}
+.screen-status.ok .screen-dot { background: var(--added); }
+.screen-status.error .screen-dot { background: var(--danger); }
+.screen-agent {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  min-width: 0;
+}
+.screen-displays {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.screen-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  /* Wheel and drags belong to the remote screen, never to the page. */
+  overscroll-behavior: none;
+  user-select: none;
+}
+.screen-video {
+  position: absolute;
+  display: block;
+  border-radius: var(--radius-m);
+  background: #000;
+  pointer-events: none;
+}
+/* Takes the keyboard (and an IME's text) without showing: focus stays here while the window is active. */
+.screen-keys {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  resize: none;
+  pointer-events: none;
+}
+.screen-notice {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  max-width: 420px;
+  padding: 32px;
+  text-align: center;
+  pointer-events: none;
+}
+.screen-notice:has(button) { pointer-events: auto; }
+.screen-notice.dim {
+  inset: auto 0 72px;
+  padding: 8px 16px;
+  width: fit-content;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.6);
+}
+.screen-note {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  max-width: min(520px, 90%);
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  pointer-events: none;
+}
+
+.screen-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+/* View | Take control: one pill, the chosen side lit. */
+.screen-mode {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(14px);
+}
+.screen-mode-option {
+  height: 30px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+  transition: background-color var(--hover), color var(--hover);
+}
+.screen-mode-option:hover:not(:disabled):not(.on) { color: #fff; }
+.screen-mode-option.on { background: rgba(255, 255, 255, 0.92); color: #000; }
+.screen-mode-option:disabled { opacity: 0.4; cursor: default; }
+
+/* The details panel's Computer tab: a live preview card and its caption. */
+.screen-thumb-tab { align-items: stretch; }
+.screen-thumb {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-l);
+  background: #141416;
+  /* Always dark, whatever the theme: its text and controls take the light ink. */
+  --text: #fff;
+  --secondary: rgba(255, 255, 255, 0.65);
+  color: #fff;
+  cursor: pointer;
+  user-select: none;
+}
+/* A preview only looks: the video takes no pointer, only the buttons over it do. */
+.screen-thumb-video {
+  position: absolute;
+  display: block;
+  background: #000;
+  pointer-events: none;
+}
+.screen-thumb .screen-notice { padding: 12px; max-width: none; }
+.screen-thumb-open {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: var(--radius-pill);
+  background: rgba(20, 20, 22, 0.78);
+  backdrop-filter: blur(14px);
+  color: #fff;
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.screen-thumb:hover .screen-thumb-open,
+.screen-thumb-open:focus-visible { opacity: 1; }
+.screen-thumb-caption { text-align: center; overflow-wrap: anywhere; }

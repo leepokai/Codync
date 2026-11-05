@@ -96,6 +96,7 @@ const bridge: CodyncBridge = {
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
   artifacts: { show: async () => {}, openInBrowser: unavailable },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
+  screenViewer: { open() {}, report() {}, close() {}, openWindows: async () => [], onWindowsChanged: none },
   app: {
     reportError() {},
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
@@ -103,6 +104,7 @@ const bridge: CodyncBridge = {
     pickFiles: async () => [],
     pickExport: async () => null,
     readClipboardFiles: async () => [],
+    readClipboardText: async () => '',
     setTraySummary() {},
     showWindow() {},
     onCommand: none,

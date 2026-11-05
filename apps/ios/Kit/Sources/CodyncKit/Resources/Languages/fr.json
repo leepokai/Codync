@@ -1809,5 +1809,17 @@
   "Update Codync on {host}: sending now and taking back need {version} or newer.": "Mettez à jour Codync sur {host} : l’envoi immédiat et le retrait nécessitent {version} ou une version plus récente.",
   "Add {name} to your account first": "Ajoutez d'abord {name} à votre compte",
   "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "Votre téléphone accède à {name} de partout via votre compte. L'ajouter active aussi cette option.",
-  "Use your own relay": "Utiliser votre propre relais"
+  "Use your own relay": "Utiliser votre propre relais",
+  "Open in a window": "Ouvrir dans une fenêtre",
+  "Show": "Afficher",
+  "Take control": "Prendre le contrôle",
+  "View": "Voir",
+  "{name} screen": "Écran de {name}",
+  "Send my clipboard": "Envoyer mon presse-papiers",
+  "Copy from computer": "Copier depuis l’ordinateur",
+  "Hand back to bots": "Rendre la main aux bots",
+  "Take over": "Prendre la main",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Impossible de se connecter à l’écran distant. Vérifiez la connexion de l’ordinateur et réessayez.",
+  "Couldn't reconnect to the remote screen.": "Impossible de se reconnecter à l’écran distant.",
+  "Couldn't reach the computer.": "Impossible de joindre l’ordinateur."
 }

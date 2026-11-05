@@ -1809,5 +1809,17 @@
   "Update Codync on {host}: sending now and taking back need {version} or newer.": "请在 {host} 上更新 Codync：立即发送和收回需要 {version} 或更高版本。",
   "Add {name} to your account first": "请先将 {name} 加入你的账户",
   "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "你的手机会通过账户从任何地方连接 {name}。加入后也会开启此功能。",
-  "Use your own relay": "使用自己的中继"
+  "Use your own relay": "使用自己的中继",
+  "Open in a window": "已在窗口中打开",
+  "Show": "显示",
+  "Take control": "接管控制",
+  "View": "查看",
+  "{name} screen": "{name} 的屏幕",
+  "Send my clipboard": "发送我的剪贴板",
+  "Copy from computer": "从电脑复制",
+  "Hand back to bots": "交还给机器人",
+  "Take over": "接管",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "无法连接到远程屏幕。请检查电脑的网络连接后重试。",
+  "Couldn't reconnect to the remote screen.": "无法重新连接到远程屏幕。",
+  "Couldn't reach the computer.": "无法连接到这台电脑。"
 }

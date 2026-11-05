@@ -1809,5 +1809,17 @@
   "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host} の Codync をアップデートしてください。今すぐ送信と取り消しには {version} 以降が必要です。",
   "Add {name} to your account first": "先に {name} をアカウントに追加してください",
   "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "スマートフォンはアカウントを通じてどこからでも {name} にアクセスします。追加すると、この機能もオンになります。",
-  "Use your own relay": "自分のリレーを使う"
+  "Use your own relay": "自分のリレーを使う",
+  "Open in a window": "ウインドウで開いています",
+  "Show": "表示",
+  "Take control": "操作する",
+  "View": "表示のみ",
+  "{name} screen": "{name}の画面",
+  "Send my clipboard": "自分のクリップボードを送信",
+  "Copy from computer": "コンピュータからコピー",
+  "Hand back to bots": "ボットに返す",
+  "Take over": "操作を引き継ぐ",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "リモート画面に接続できませんでした。コンピュータの接続を確認して、もう一度お試しください。",
+  "Couldn't reconnect to the remote screen.": "リモート画面に再接続できませんでした。",
+  "Couldn't reach the computer.": "コンピュータに接続できませんでした。"
 }

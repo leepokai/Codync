@@ -1809,5 +1809,17 @@
   "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host}에서 Codync를 업데이트하세요. 지금 보내기와 취소를 쓰려면 {version} 이상이 필요합니다.",
   "Add {name} to your account first": "먼저 {name}을(를) 계정에 추가하세요",
   "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "휴대폰은 계정을 통해 어디서나 {name}에 접근합니다. 추가하면 이 기능도 켜집니다.",
-  "Use your own relay": "내 릴레이 사용"
+  "Use your own relay": "내 릴레이 사용",
+  "Open in a window": "창에서 열림",
+  "Show": "표시",
+  "Take control": "직접 제어",
+  "View": "보기",
+  "{name} screen": "{name} 화면",
+  "Send my clipboard": "내 클립보드 보내기",
+  "Copy from computer": "컴퓨터에서 복사",
+  "Hand back to bots": "봇에게 돌려주기",
+  "Take over": "제어권 가져오기",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "원격 화면에 연결하지 못했습니다. 컴퓨터의 연결을 확인한 뒤 다시 시도하세요.",
+  "Couldn't reconnect to the remote screen.": "원격 화면에 다시 연결하지 못했습니다.",
+  "Couldn't reach the computer.": "컴퓨터에 연결하지 못했습니다."
 }

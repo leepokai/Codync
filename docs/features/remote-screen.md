@@ -23,7 +23,7 @@ held and the system rotation lock. The Rotate button remains available for an
 explicit override. Closing the last viewer restores the app's portrait layout.
 The video fits the available bounds, and touch coordinates use the resized viewport.
 
-The iPad already supports all orientations. The desktop app and the TUI do not
+The iPad already supports all orientations. The desktop app's viewer and the TUI do not
 use the iPhone viewer or its orientation policy; the capture helpers stream the
 computer display without choosing the phone's orientation.
 
@@ -44,7 +44,7 @@ back to the bots, then reconnects when the app returns.
 - A trickle session accepts one offer and one candidate subscription. Each direction permits 128 candidates of at most 4096 bytes followed by one `complete` event. Candidates include `candidate`, `sdpMLineIndex` and optional `sdpMid`; `type` distinguishes `candidate` and `complete`. The subscription starts with `ready` and may report `error` before ending. It never uses the shared chat broadcast.
 - Both directions buffer candidates until the phone installs its answer. Native candidate additions and upload acknowledgments are awaited in order. Completion follows every candidate; Apple WebRTC records completion at app level because its native API has no usable null-candidate operation. The finite connection deadline remains in place.
 - Overflow and candidate protocol errors end the attempt. Signaling loss ends an unfinished negotiation; once ICE connects or both directions deliver completion (including the phone upload acknowledgment), it detaches the candidate subscription and leaves media and input running. Credentials, Screen authorization and the on/off switch continue to govern the viewer independently. Recovery reserves a fresh session rather than resubscribing, reoffering or replaying an uncertain candidate addition. The phone waits for a ready host channel before spending one of its three recovery attempts; a successful answer alone does not reset that budget. A permanently stopped channel ends recovery with its authorization or update error. Closing, disabling screen access, changing helpers or removing Screen authorization closes media.
-- Android negotiates the same way (`core` `ScreenSignaling`, `ScreenCandidate`, `ScreenRoute`); desktop, terminal UI and Apple Watch have no remote-screen viewer. Their screen-helper management and permission controls are unaffected. Cloud and relay forwarding already carry the encrypted subscription and RPC frames; they need no signaling changes.
+- Android negotiates the same way (`core` `ScreenSignaling`, `ScreenCandidate`, `ScreenRoute`). The terminal UI and Apple Watch have no remote-screen viewer; their screen-helper management and permission controls are unaffected. The desktop viewer is described under [Desktop viewer](#desktop-viewer). Cloud and relay forwarding already carry the encrypted subscription and RPC frames; they need no signaling changes.
 - Phone viewers: iOS in `apps/ios/Kit/Sources/CodyncUI/Screen/`. Android keeps the same structure in `apps/android/app/.../Screen*.kt`, with gesture-to-input and viewport logic in `core` (`ScreenControl`, `ScreenViewport`). Both offer hardware H.264 first, High then Constrained Baseline.
 - The Linux helper answers with the packetized H.264 payload the phone offers, feeds the encoder 8-bit 4:2:0 video and timestamps capture on the system clock. It answers before capture starts, so the profile is negotiated before the encoder fixes its output.
 - Screen access is on by default on macOS and on Linux while a graphical session (Wayland or X11) is running; headless servers stay off. Turning it on or off is remembered. Enabling through `setScreenEnabled` requires a loopback caller. Interactive OS permission prompts must be completed on the computer.
@@ -68,8 +68,21 @@ connects or both directions acknowledge completion leaves WebRTC running.
 
 Android core owns `ScreenCandidate` and `ScreenSignaling`; the app's
 `ScreenSession` connects them to native WebRTC. The iOS implementation and
-host/helper contract are covered by PR #40. Desktop, terminal UI and Watch have
-no viewer and receive no client signaling changes here.
+host/helper contract are covered by PR #40. The terminal UI and Watch have
+no viewer and receive no client signaling changes here; the desktop viewer uses complete SDP
+([below](#desktop-viewer)).
+
+## Desktop viewer
+
+The desktop app (`apps/desktop/src/renderer/views/screen/`) views and controls another computer it manages over SSH, from a window of its own (`src/main/screen-viewer.ts`, one per computer; opened by the **Remote screen** button on the computer's Settings → Computers card and its sidebar heading, shown when the computer is online, `enabled && connected && capture`, and is not this computer). It speaks the phones' protocol: `screenPrepare` → offer → `screenOffer` → answer, `screenClose`, `screenTakeover`, input on the `input` / `input-fast` data channels (`move`, `down`/`up` with `count` and `modifiers`, `scroll` in pixels, `key`, `text`, `clipboard`, `view`).
+
+- **Complete SDP, not trickle.** The desktop reaches a host through the loopback HTTP API, which has no `screenCandidates` stream (only the encrypted channel does), so it sends `screenPrepare {relay, trickle: false}` and offers once ICE gathering is complete (10 second cap), the phones' fallback for older hosts.
+- **`relay` follows the host channel** (`screenRelay`): true only for a cloud channel. Every desktop route is loopback (this computer or an SSH tunnel), so it is false and the media path has no STUN or TURN: it works across a LAN or Tailscale, not across NAT.
+- **Direct mode only.** The point under the pointer is the display point (`ScreenViewport` at zoom 1, letterboxed inside the window's insets: the rounded video keeps clear of the edges and of the mode switch; a press in a bar or an inset is not sent; a held button follows the pointer past the edge, clamped). The video is requested at the box size in device pixels (`view` with `long`/`short`).
+- **Keys.** The protocol has press only, no key-up: letters and Shift+letters go as `text`, chords (Cmd, Ctrl, Option plus a key) as `key` with the physical letter, special keys by name, Cmd+V (Ctrl+V off the Mac) types the local clipboard as `text`. Blur, going view only and closing lift a held mouse button.
+- **View / Take control.** A switch under the video. View sends no input at all (pointer, wheel, keys, Cmd+V, text) and does not call `screenTakeover`; Take control is the full behavior including the takeover (bots may still look). A window opens in View while a bot is using the screen (`agentBot`) or when the computer doesn't allow control, and in Take control otherwise (`openingMode`); the choice then survives reconnects.
+- **Preview.** A chat's details panel has a **Computer** tab (same predicate as the header button): a live, view-only, 16:10-until-the-first-frame card with the caption "{name} screen"; hover shows an Open pill, a click opens the window. It is its own view-only session (the host allows several viewers per caller; there is no takeover). It ends when the tab or panel closes, the bot changes or the app window is hidden or minimized, and while the computer's window is open (the main process announces open windows on `screenViewer:windows`) the card says "Open in a window" with a Show button; closing the window reconnects it.
+- **Lifecycle.** Up to three reconnects on a fresh session (the replacement is reserved before the old one closes), reset only when ICE connects; a 403 or 426 ends it at once; credentials renew five minutes before expiry; closing the window, or the viewer, calls `screenClose` (the main process repeats it if the window dies first).
 
 ## Cloud setup
 

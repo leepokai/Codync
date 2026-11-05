@@ -135,6 +135,7 @@ impl Hub {
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
         let n8n =
             Arc::new(crate::n8n::N8n::new(&store, events.clone(), format!("http://127.0.0.1:{port}"), token.clone()));
+        let usage = crate::usage::load(&store);
         Arc::new(Self {
             computer: crate::computer::Access::default(),
             analytics: crate::analytics::Analytics::load(&store),
@@ -159,7 +160,7 @@ impl Hub {
             bots: Mutex::default(),
             runtime: Mutex::default(),
             phone_clients: AtomicUsize::new(0),
-            usage: Mutex::default(),
+            usage: Mutex::new(usage),
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
             pairing: Mutex::default(),
@@ -178,6 +179,13 @@ impl Hub {
         bot::recover_results(self)?;
         // Approval cards and queued sends from a previous run can't be honored anymore.
         self.store.expire_pending()?;
+        // A reading that hovered at a threshold used to leave one memory banner per
+        // sample; keep the newest per chat so the thread reads as one line.
+        match self.store.coalesce_health_notices() {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(banners = n, "coalesced repeated memory notices"),
+            Err(error) => tracing::warn!(error = format!("{error:#}"), "couldn't coalesce memory notices"),
+        }
         crate::chat::memory::import_old_memory(self);
         self.routines.restore(&self.store)?;
         crate::routines::flow::recover(self)?;
@@ -586,6 +594,7 @@ impl Hub {
     }
 
     pub fn set_usage(&self, usage: Usage) {
+        crate::usage::save(&self.store, &usage);
         let _ = self.events.send(json!({"type": "usage", "usage": usage}));
         *self.usage.locked() = usage;
     }

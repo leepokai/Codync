@@ -29,6 +29,9 @@ const PERSIST: u8 = 4;
 /// A reading older than this says nothing about now.
 const FRESH_MS: i64 = 60_000;
 const KV_THRESHOLDS: &str = "health.thresholds";
+/// Memory must fall this many points below a threshold before the level drops,
+/// so a reading that hovers at the limit doesn't flip every sample.
+const HYSTERESIS: u8 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,10 +55,28 @@ impl Thresholds {
         (1..99).contains(&self.warn) && self.warn < self.critical && self.critical <= 99
     }
 
+    #[cfg(test)]
     pub fn level(self, used: u8) -> Level {
         if used >= self.critical {
             Level::Critical
         } else if used >= self.warn {
+            Level::Warning
+        } else {
+            Level::Normal
+        }
+    }
+
+    /// The level now, keeping the previous one until memory falls [`HYSTERESIS`]
+    /// points below the threshold that raised it. Without it a reading that
+    /// oscillates around 85 % would flip between warning and limit every sample,
+    /// and the chat would fill with one notice per sample.
+    pub fn level_from(self, used: u8, previous: Level) -> Level {
+        let critical =
+            if previous == Level::Critical { self.critical.saturating_sub(HYSTERESIS) } else { self.critical };
+        let warn = if previous == Level::Normal { self.warn } else { self.warn.saturating_sub(HYSTERESIS) };
+        if used >= critical {
+            Level::Critical
+        } else if used >= warn {
             Level::Warning
         } else {
             Level::Normal
@@ -279,7 +300,7 @@ impl Monitor {
         state.thresholds = thresholds;
         state.last = state.last.take().map(|mut s| {
             s.thresholds = thresholds;
-            s.level = thresholds.level(s.ram_used_percent);
+            s.level = thresholds.level_from(s.ram_used_percent, s.level);
             s
         });
         Ok(())
@@ -296,8 +317,8 @@ impl Monitor {
         state.tracks.retain(|pid, _| alive.contains(pid));
         let used = reading.ram_used_percent();
         let thresholds = state.thresholds;
-        let level = thresholds.level(used);
         let before = state.last.as_ref().map_or(Level::Normal, |s| s.level);
+        let level = thresholds.level_from(used, before);
         let mut growth = Vec::new();
         for agent in &reading.agents {
             let verdict = state.tracks.entry(agent.pid).or_default().observe(agent.rss);
@@ -331,17 +352,31 @@ pub fn level_text(level: Level, used: u8, thresholds: Thresholds) -> Option<(Str
     match level {
         Level::Normal => None,
         Level::Warning => Some((
-            format!(
-                "This computer's memory is {used} % full (warning from {} %). Close what you don't need; at {} % Codync stops starting new turns.",
-                thresholds.warn, thresholds.critical
-            ),
+            if used >= thresholds.warn {
+                format!(
+                    "This computer's memory is {used} % full (warning from {} %). Close what you don't need; at {} % Codync stops starting new turns.",
+                    thresholds.warn, thresholds.critical
+                )
+            } else {
+                format!(
+                    "This computer's memory is {used} % full and easing below the {} % warning level.",
+                    thresholds.warn
+                )
+            },
             NoticeStyle::Info,
         )),
         Level::Critical => Some((
-            format!(
-                "This computer's memory is {used} % full, above the {} % limit. Codync is not starting new turns and is freeing the agents that are idle.",
-                thresholds.critical
-            ),
+            if used >= thresholds.critical {
+                format!(
+                    "This computer's memory is {used} % full, above the {} % limit. Codync is not starting new turns and is freeing the agents that are idle.",
+                    thresholds.critical
+                )
+            } else {
+                format!(
+                    "This computer's memory is {used} % full and easing. Codync keeps new turns paused until it falls below {} %.",
+                    thresholds.critical.saturating_sub(HYSTERESIS)
+                )
+            },
             NoticeStyle::Error,
         )),
     }
@@ -371,13 +406,57 @@ fn say(hub: &Hub, bot: &str, text: &str, style: NoticeStyle) {
     hub.add_entry(&Lane::main(bot), EntryKind::Notice, turn, &json!({"text": text, "style": style}));
 }
 
+/// The computer's memory banner for `bot`: one notice per episode. A new
+/// reading, of any level, updates the same row in place, so a reading that
+/// hovers around a threshold never adds another row to the chat.
+fn say_health(hub: &Hub, bot: &str, text: &str, style: NoticeStyle, level: &str) {
+    let data = json!({"text": text, "style": style, "health": true, "level": level});
+    let lane = Lane::main(bot);
+    if let Some(last) = hub.store.last_health_notice(&lane)
+        && last.data["level"] != "normal"
+    {
+        hub.set_entry(&last.id, &data);
+        return;
+    }
+    let turn = hub.store.max_turn(bot);
+    hub.add_entry(&lane, EntryKind::Notice, turn, &data);
+}
+
+/// Memory came back down: turn the episode's banner into a recovery line, so
+/// the chat reads "back to normal" instead of leaving the last alarm standing.
+fn recover_health(hub: &Hub, bot: &str, used: u8) {
+    let lane = Lane::main(bot);
+    let Some(last) = hub.store.last_health_notice(&lane) else { return };
+    if last.data["level"] == "normal" {
+        return;
+    }
+    let data = json!({
+        "text": format!("This computer's memory is back to normal ({used} % full)."),
+        "style": NoticeStyle::Info,
+        "health": true,
+        "level": "normal",
+    });
+    hub.set_entry(&last.id, &data);
+}
+
 fn act(hub: &Arc<Hub>, findings: &Findings) {
     let Some(snapshot) = hub.health.snapshot() else { return };
     let working: Vec<String> = snapshot.reading.agents.iter().map(|a| a.bot_id.clone()).collect();
     if let Some((_, level)) = findings.level_changed {
         if let Some((text, style)) = level_text(level, snapshot.ram_used_percent, snapshot.thresholds) {
+            let name = match level {
+                Level::Warning => "warning",
+                Level::Critical => "critical",
+                Level::Normal => "normal",
+            };
             for bot in &working {
-                say(hub, bot, &text, style);
+                say_health(hub, bot, &text, style, name);
+            }
+        } else if level == Level::Normal {
+            // `level_text` has no line for Normal: turn the episode's banner into
+            // a recovery line, so the chat doesn't leave the last alarm standing.
+            for bot in &working {
+                recover_health(hub, bot, snapshot.ram_used_percent);
             }
         }
         if level == Level::Critical {

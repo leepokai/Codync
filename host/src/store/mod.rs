@@ -124,10 +124,10 @@ impl Store {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    pub(super) fn temp_store() -> Store {
+    pub(crate) fn temp_store() -> Store {
         let dir = std::env::temp_dir().join(format!("codync-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         Store::open(&dir.join("t.db")).unwrap()

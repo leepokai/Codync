@@ -16,7 +16,10 @@ Memory in use against two levels the person can change (`setHealthThresholds`, d
 | an agent's memory | an agent above 1.5 GB that uses at least twice the least of its last six samples is told in its chat; if that persists for four samples in a row it is stopped, with a notice |
 
 A reading older than a minute says nothing about now, so a stalled sampler never blocks work. A level is announced when it
-changes, not at every sample.
+changes, not at every sample. To keep a reading that hovers at the limit from flipping every 10 seconds, the level falls
+only 3 points below the threshold that raised it (critical until below 82 %, warning until below 67 %), and each chat has
+**one** memory banner that is updated in place: a lower reading says it is easing, and coming back to normal turns the same
+line into "back to normal". Older duplicate banners are coalesced when the host starts.
 
 ## Where it shows
 

@@ -58,6 +58,23 @@ fn levels_follow_the_thresholds_and_the_thresholds_must_make_sense() {
 }
 
 #[test]
+fn a_reading_that_hovers_at_the_limit_does_not_flip_every_sample() {
+    let t = Thresholds::DEFAULT;
+    // From a warning, 85 % is the limit, and it stays the limit until 82 %.
+    assert_eq!(t.level_from(84, Level::Warning), Level::Warning);
+    assert_eq!(t.level_from(85, Level::Warning), Level::Critical);
+    assert_eq!(t.level_from(84, Level::Critical), Level::Critical);
+    assert_eq!(t.level_from(82, Level::Critical), Level::Critical);
+    assert_eq!(t.level_from(81, Level::Critical), Level::Warning);
+    // From a warning, it stays one until 3 points below the warning level.
+    assert_eq!(t.level_from(69, Level::Warning), Level::Warning);
+    assert_eq!(t.level_from(66, Level::Warning), Level::Normal);
+    // From normal, the thresholds themselves apply.
+    assert_eq!(t.level_from(69, Level::Normal), Level::Normal);
+    assert_eq!(t.level_from(70, Level::Normal), Level::Warning);
+}
+
+#[test]
 fn memory_at_ninety_percent_refuses_new_turns_and_says_why_until_it_frees_up() {
     let computer = Simulated::default();
     let monitor = monitor(&computer);
@@ -106,6 +123,9 @@ fn the_chat_is_told_in_words_a_person_can_use() {
     let (critical, style) = level_text(Level::Critical, 91, t).expect("a limit");
     assert!(critical.contains("not starting new turns") && critical.contains("idle"), "{critical}");
     assert!(matches!(style, NoticeStyle::Error));
+    let (easing, _) = level_text(Level::Critical, 83, t).expect("still at the limit");
+    assert!(easing.contains("easing") && easing.contains("below 82 %"), "{easing}");
+    assert!(!easing.contains("above the 85"), "a reading under the limit must not claim to be above it");
 }
 
 #[test]

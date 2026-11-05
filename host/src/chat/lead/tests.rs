@@ -113,7 +113,7 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
                 resets_text: None,
                 text: None,
             }],
-            source: "agent",
+            source: "agent".into(),
             status: None,
             updated_at: 0,
         }],

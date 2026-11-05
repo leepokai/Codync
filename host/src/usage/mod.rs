@@ -18,6 +18,7 @@ mod codex;
 mod command;
 mod cursor;
 mod gemini;
+mod grok;
 mod junie;
 mod kimi;
 mod kiro;
@@ -29,13 +30,18 @@ pub use claude::{ingest_claude_rate_limit, ingest_statusline};
 
 use crate::LockExt;
 use crate::hub::Hub;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
 const POLL_EVERY: Duration = Duration::from_mins(5);
+/// The last reading, so the counters are on screen while a fresh probe runs.
+const KV_USAGE: &str = "usage.cache";
 /// The timer and several clients can ask for a reading at once: one probe owns it.
 static REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// When the last probe finished. A client that waited for the one in flight
+/// gets its result instead of starting another probe right away.
+static LAST_REFRESH: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 /// Usage of a plan above which background work (dreaming, the lead's check-ins) waits.
 const HEADROOM_PERCENT: f64 = 75.0;
 
@@ -50,12 +56,12 @@ fn over_headroom(windows: &[Window]) -> bool {
 }
 
 /// Everything the apps show about limits (wire shape of the `usage` event).
-#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Usage {
     pub providers: Vec<Provider>,
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Provider {
     pub id: String,
@@ -63,14 +69,14 @@ pub struct Provider {
     pub windows: Vec<Window>,
     /// Where the numbers came from: `claude` (CLI), `statusline`, `agent`, `sessions`,
     /// or a short phrase for the other agents.
-    pub source: &'static str,
+    pub source: String,
     pub updated_at: i64,
     /// Why a provider has no windows (`unsupported`, `unavailable`), when it can't report.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<&'static str>,
+    pub status: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Window {
     pub id: String,
@@ -112,7 +118,7 @@ impl Usage {
             id: id.into(),
             name: name.into(),
             windows,
-            source,
+            source: source.into(),
             updated_at: crate::store::now_ms(),
             status: None,
         });
@@ -132,7 +138,7 @@ impl Usage {
             id: id.into(),
             name: name.into(),
             windows,
-            source,
+            source: source.into(),
             updated_at: crate::store::now_ms(),
             status: None,
         });
@@ -153,10 +159,29 @@ pub async fn poll(hub: Arc<Hub>) {
     }
 }
 
+/// The last reading saved on this computer, so a restart shows the counters
+/// immediately instead of waiting a minute for the first probe.
+pub fn load(store: &crate::store::Store) -> Usage {
+    store.kv_read(KV_USAGE).ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+}
+
+pub fn save(store: &crate::store::Store, usage: &Usage) {
+    if let Ok(raw) = serde_json::to_string(usage) {
+        let _ = store.kv_set(KV_USAGE, &raw);
+    }
+}
+
 pub async fn refresh(hub: &Hub) {
-    // The timer and several clients can request a refresh together. One probe owns
-    // the work; every caller still receives the most recently observed report.
-    let Ok(_refresh) = REFRESH.try_lock() else { return };
+    // The timer and several clients can request a refresh together. One probe
+    // owns the work; the others wait for it and then receive its result, so a
+    // manual refresh never answers with a half-filled list.
+    let Ok(_refresh) = REFRESH.try_lock() else {
+        let _done = REFRESH.lock().await;
+        return;
+    };
+    if LAST_REFRESH.locked().is_some_and(|last| last.elapsed() < Duration::from_secs(2)) {
+        return;
+    }
     // Antigravity's adapters report per account; the language server below fills a base reading when they can't.
     antigravity::refresh(hub).await;
     let (
@@ -172,8 +197,9 @@ pub async fn refresh(hub: &Hub) {
         junie,
         cursor_windows,
         gemini_windows,
+        grok_windows,
     ) = tokio::join!(
-        tokio::task::spawn_blocking(codex::collect),
+        codex::collect(),
         claude::collect(),
         omp::collect(),
         amp::collect(),
@@ -185,8 +211,9 @@ pub async fn refresh(hub: &Hub) {
         tokio::task::spawn_blocking(junie::collect),
         cursor::collect(),
         gemini::collect(),
+        grok::collect(),
     );
-    apply(hub, joined(codex), "codex", "Codex", "sessions");
+    apply(hub, codex, "codex", "Codex", "codex");
     apply(hub, claude, "claude", "Claude", "claude");
     apply(hub, omp_windows, "omp", "oh-my-pi", "omp usage");
     apply(hub, amp_windows, "amp", "Amp", "amp usage");
@@ -198,6 +225,72 @@ pub async fn refresh(hub: &Hub) {
     apply(hub, joined(junie), "junie", "Junie", "JetBrains IDE");
     apply(hub, cursor_windows, "cursor", "Cursor", "Cursor");
     apply(hub, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
+    apply(hub, grok_windows, "grok", "Grok", "grok billing");
+    ensure_connected(hub).await;
+    *LAST_REFRESH.locked() = Some(std::time::Instant::now());
+}
+
+/// A connected agent that couldn't report is still shown, with its status, so
+/// its counters don't silently disappear from the sidebar and Settings.
+async fn ensure_connected(hub: &Hub) {
+    let connected = tokio::task::spawn_blocking(crate::agent::backends::list).await.unwrap_or_default();
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for backend in connected {
+        if backend["installed"] != true || backend["signedIn"] != true {
+            continue;
+        }
+        let Some(id) = backend["id"].as_str() else { continue };
+        let Some(name) = reported_name(id) else { continue };
+        wanted.push((id.to_owned(), name.to_owned()));
+    }
+    let mut usage = hub.usage.locked().clone();
+    // Gemini (Antigravity) and Gemini CLI are the same Google account: when the
+    // plan is already reported, a second "unavailable" row only adds noise.
+    let gemini_covered = usage.providers.iter().any(|p| p.id == "antigravity" && !p.windows.is_empty());
+    let wanted: Vec<(String, String)> =
+        wanted.into_iter().filter(|(id, _)| !(gemini_covered && id == "gemini")).collect();
+    let ids: Vec<&str> = wanted.iter().map(|(id, _)| id.as_str()).collect();
+    let before = usage.providers.len();
+    usage.providers.retain(|p| p.source != "agent" || ids.contains(&p.id.as_str()));
+    let mut changed = usage.providers.len() != before;
+    for (id, name) in wanted {
+        if usage.providers.iter().any(|p| p.id == id) {
+            continue;
+        }
+        usage.providers.push(Provider {
+            id,
+            name,
+            windows: Vec::new(),
+            source: "agent".into(),
+            updated_at: crate::store::now_ms(),
+            status: Some("unavailable".into()),
+        });
+        changed = true;
+    }
+    if changed {
+        usage.providers.sort_by(|a, b| a.id.cmp(&b.id));
+        hub.set_usage(usage);
+    }
+}
+
+/// The agents whose plan limits Codync can read, by backend id.
+fn reported_name(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "claude" => "Claude",
+        "codex" => "Codex",
+        "grok" => "Grok",
+        "gemini" => "Gemini CLI",
+        "antigravity" => "Gemini",
+        "cursor" => "Cursor",
+        "opencode" => "OpenCode",
+        "kimi" => "Kimi Code",
+        "amp" => "Amp",
+        "kiro" => "Kiro CLI",
+        "omp" => "oh-my-pi",
+        "vibe" => "Mistral Vibe",
+        "junie" => "Junie",
+        _ => return None,
+    })
 }
 
 fn joined(result: Result<Option<Vec<Window>>, tokio::task::JoinError>) -> Option<Vec<Window>> {
@@ -241,7 +334,7 @@ mod tests {
         );
         u.merge("claude", "Claude", "statusline", vec![Window::new("five_hour", "5-hour", 12.0, None)]);
         let c = &u.providers[0];
-        assert_eq!((c.windows.len(), c.source), (2, "statusline"));
+        assert_eq!((c.windows.len(), c.source.as_str()), (2, "statusline"));
         assert!((c.windows[0].percent - 12.0).abs() < f64::EPSILON, "five_hour updated");
         assert_eq!(serde_json::to_value(&u).unwrap()["providers"][0]["windows"][1]["resetsAt"], Value::Null);
     }
@@ -276,5 +369,20 @@ mod tests {
         let note = Window { percent: 99.0, ..Window::note("cost", "Cost today", "$9") };
         assert!(!over_headroom(&[note]));
         assert!(over_headroom(&[Window::new("five_hour", "5-hour", 80.0, None)]));
+    }
+
+    #[test]
+    fn a_saved_reading_comes_back_after_a_restart() {
+        let store = crate::store::tests::temp_store();
+        let mut usage = Usage::default();
+        usage.replace(
+            "grok",
+            "Grok",
+            "grok billing",
+            vec![Window::new("grok", "Weekly", 42.0, Some(1_794_096_000_000))],
+        );
+        save(&store, &usage);
+        assert_eq!(load(&store), usage);
+        assert_eq!(load(&crate::store::tests::temp_store()), Usage::default(), "another computer starts empty");
     }
 }

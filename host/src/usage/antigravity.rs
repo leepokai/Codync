@@ -25,8 +25,8 @@ pub(super) async fn refresh(hub: &Hub) {
             return;
         }
     };
-    let mut targets = vec![(None, "Antigravity".to_owned())];
-    targets.extend(profiles.into_iter().map(|p| (Some(p.id), format!("Antigravity · {}", p.name))));
+    let mut targets = vec![(None, "Gemini".to_owned())];
+    targets.extend(profiles.into_iter().map(|p| (Some(p.id), format!("Gemini · {}", p.name))));
     let ids: Vec<_> = targets.iter().map(|(account, _)| report_id(account.as_deref())).collect();
     let mut usage = hub.usage.locked().clone();
     usage.providers.retain(|p| !p.id.starts_with("antigravity:") || ids.contains(&p.id));
@@ -49,9 +49,9 @@ pub(super) async fn refresh(hub: &Hub) {
             id,
             name,
             windows,
-            source: "antigravity",
+            source: "antigravity".into(),
             updated_at: crate::store::now_ms(),
-            status,
+            status: status.map(str::to_owned),
         });
         usage.providers.sort_by(|a, b| a.id.cmp(&b.id));
         hub.set_usage(usage);

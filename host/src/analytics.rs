@@ -80,6 +80,14 @@ pub enum Event {
     RoutineDeleted,
     RoutineRun,
     RoutineRetried,
+    /// A bot's `start_dev_server` ended (`outcome`).
+    DevServerStarted,
+    /// A dev server ended (`by`).
+    DevServerStopped,
+    /// A person acted on a dev server (`action`).
+    DevServerAction,
+    /// A bot left a server running through its own shell, not `start_dev_server`.
+    DevServerDetected,
     VoiceCallStarted,
     VoiceCallFinished,
     /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
@@ -155,6 +163,10 @@ impl Event {
             Self::RoutineDeleted => "routine_deleted",
             Self::RoutineRun => "routine_run",
             Self::RoutineRetried => "routine_retried",
+            Self::DevServerStarted => "dev_server_started",
+            Self::DevServerStopped => "dev_server_stopped",
+            Self::DevServerAction => "dev_server_action",
+            Self::DevServerDetected => "dev_server_detected",
             Self::VoiceCallStarted => "voice_call_started",
             Self::VoiceCallFinished => "voice_call_finished",
             Self::VoiceCallQuality => "voice_call_quality",

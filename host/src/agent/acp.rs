@@ -177,7 +177,8 @@ pub struct Acp {
     pending: Pending,
     /// Owns the agent's whole process tree: dropping it kills what the agent started.
     child: Arc<tokio::sync::Mutex<Process>>,
-    /// The process (and, on Unix, process group) leader.
+    /// The process and process group leader.
+    #[cfg(unix)]
     pid: Option<u32>,
 }
 
@@ -197,15 +198,13 @@ impl Acp {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        // Its own group, so `kill` can stop everything it started.
-        #[cfg(unix)]
-        process.process_group(0);
-        #[cfg(windows)]
-        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
+        // So `kill` can stop everything it started.
+        super::process::own_tree(&mut process);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
+        #[cfg(unix)]
         let pid = child.id();
         let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
         Process::monitor(&child);
@@ -273,14 +272,23 @@ impl Acp {
             next_id: AtomicI64::new(1),
             pending,
             child,
+            #[cfg(unix)]
             pid,
         });
         note_started(&acp);
         Ok((acp, rx))
     }
 
+    #[cfg(unix)]
     pub fn pid(&self) -> Option<u32> {
         self.pid
+    }
+
+    /// Everything still running in the agent's job.
+    #[cfg(windows)]
+    pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
+        let members = self.child.lock().await.job_members()?;
+        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
     }
 
     async fn write(&self, msg: Value) -> Result<()> {

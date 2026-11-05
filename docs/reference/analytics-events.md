@@ -57,7 +57,7 @@ host answers and sends it once the host is up.
 | `phone_connected` | host | A paired phone connects, at most once per phone per UTC day | `platform` |
 | `notifications_answered` | iOS, Android | The system notification prompt was answered | `granted`, `source` (`settings`/`widgets`/`automatic`) |
 | `notification_opened` | iOS, Android | A Codync notification was tapped | `kind` (`done`/`needs_input`/`failed`) |
-| `star_prompt_answered` | host `track` (desktop) | The GitHub star setup invitation or reminder was answered or closed | `ask` (`first`/`second`), `starred` |
+| `star_prompt_answered` | host `track` (desktop) | The GitHub star setup invitation or the fifth-prompt invitation was answered or closed | `ask` (`first`/`second`), `starred` |
 | `link_opened` | host `track` (desktop), iOS, Android | An outbound link was opened (`install_command`: an install command copied; `install_link`: the phone's website link copied) | `link` (`github`/`docs`/`issues`/`discord`/`app_store`/`demo`/`tailscale`/`privacy`/`support`/`install_command`/`install_link`/`product_hunt`) |
 
 ## Using Codync
@@ -86,6 +86,10 @@ host answers and sends it once the host is up.
 | `routine_deleted` | host | `deleteRoutine` | — |
 | `routine_run` | host | `runRoutine` | — |
 | `routine_retried` | host | `retryRoutineRun` (the retry button on a failed run's notice) | — |
+| `dev_server_started` | host | A bot's `start_dev_server` finished | `outcome` (`port`, `no_port`, `exited`, `refused`, `limit`, `failed`) |
+| `dev_server_stopped` | host | A dev server ended | `by` (`user`, `bot`, `restart`, `exited`, `failed`) |
+| `dev_server_action` | host (`devServerStop`, `devServerRestart`, `devServerRemove`, `devServerLogs`), host `track` (desktop, terminal UI), iOS, Android | Someone acted on a dev server | `action` (`stop`, `restart`, `remove`, `logs`, `open`, `copy`) |
+| `dev_server_detected` | host | A bot left a listening program running through its own shell | `kind` (`shell`) |
 | `voice_call_started` | host `track` (desktop), iOS, Android | A voice call starts, with the engine it really uses after any fallback | `engine` (`on_device`; `openai`/`gemini` realtime; `cloud`: cloud speech to text and back) |
 | `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
@@ -168,9 +172,7 @@ opt-out. Android sends only `review_link_opened` until it has the invitation. No
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `review_opportunity` | An eligible, viewed result is followed by returning to Bots | `completed_interactions` (count), `policy: v1`, `trigger: return_to_bots` |
-| `review_cancelled` | An opportunity is abandoned before StoreKit | `reason: background / interaction / unavailable`, `policy: v1` |
-| `review_requested` | The persisted cooldown is consumed and StoreKit is about to be called | `completed_interactions` (count), `policy: v1`, `trigger: return_to_bots` |
+| `review_requested` | The persisted cooldown is consumed and StoreKit is about to be called | `prompts` (count), `policy: v2` |
 | `review_link_opened` | The person taps Rate on the App Store (Android: Rate on Google Play) in Settings | `source: settings` |
 
 `review_requested` does not mean the system displayed a prompt or the person submitted a

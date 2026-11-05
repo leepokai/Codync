@@ -197,7 +197,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
 - A request turn (the recipient's) doesn't set the restart marker: its pending notices become interrupted errors instead of automatically replaying work. A reply turn is the sender's own chat turn and sets it, so it resumes like a user turn.
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
-  the next turn). `session/new`, `session/load` and `session/fork` get three minutes before the agent is
+  the next turn). `session/new`, `session/load`, `session/resume` and `session/fork` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
   that can't keeps its session, and its next new session gets them.
 - `turn.inflight.<bot>` records when the running turn in the bot's chat started. If the host stops mid-turn (update, crash, restart), the next

@@ -34,6 +34,12 @@ impl Host {
         Self { child, home, base, token }
     }
 
+    /// Kills the host outright, as a crash would. `restart` starts it again.
+    pub fn crash(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+
     /// Stops the host, lets `between` change its files, and starts it again on the same data.
     pub async fn restart(&mut self, between: impl FnOnce(&std::path::Path)) {
         super::stop(&mut self.child);

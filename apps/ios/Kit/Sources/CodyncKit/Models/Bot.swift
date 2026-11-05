@@ -84,6 +84,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var agentStep: AgentStep?
     /// Agents of its chain resting now.
     public var resting: [AgentRest] = []
+    /// What it keeps running on the computer. Empty from an older host, and for a group.
+    public var devServers: [DevServer] = []
     public var unread: Int
     /// Marked unread from the roster: it stays unread on screen until opened again or marked read.
     public var keptUnread: Bool = false
@@ -154,6 +156,7 @@ extension Bot {
         workingChat = try c.decodeIfPresent(String.self, forKey: .workingChat)
         agentStep = try? c.decodeIfPresent(AgentStep.self, forKey: .agentStep)
         resting = (try? c.decodeIfPresent([AgentRest].self, forKey: .resting)) ?? []
+        devServers = (try? c.decodeIfPresent([DevServer].self, forKey: .devServers)) ?? []
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         keptUnread = try c.decodeIfPresent(Bool.self, forKey: .keptUnread) ?? false
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)

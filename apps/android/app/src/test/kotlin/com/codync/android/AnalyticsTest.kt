@@ -25,6 +25,8 @@ class AnalyticsTest {
         assertEquals("""{"setting":"live_activities","on":false}""", json(AnalyticsEvent.SettingChanged(PhoneSetting.LiveActivities, false)))
         assertEquals("""{"via":"link","computer":"fbfcd4f4fe9f876c"}""", json(AnalyticsEvent.ComputerPaired(PairedVia.Link, "tZ1WMzsVltt-fj7mUDwZsg")))
         assertEquals("{}", json(AnalyticsEvent.SignedOut))
+        assertEquals("dev_server_action", AnalyticsEvent.DevServerAction(DevServerUse.Copy).name)
+        assertEquals("""{"action":"copy"}""", json(AnalyticsEvent.DevServerAction(DevServerUse.Copy)))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
         assertEquals("""{"computers":2,"keys":"moved"}""", json(AnalyticsEvent.SignedOutPairingsMoved(2, MovedKeys.Moved)))

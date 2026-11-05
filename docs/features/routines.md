@@ -88,10 +88,11 @@ its reply, which is the result, all in the turn the notice takes when the run be
 message sent meanwhile gets the next one). It runs in a fresh agent session of its own
 (`routines::session_slot`, kept in kv `lane.session.<bot>@<bot>/routine-<run>` so a
 restart can resume it, and forgotten once the run's outcome is saved). When the run ends, the agent stops if nothing else has a
-session open (it ran just for the run; not on Windows, see
-[agent processes](../architecture/conversation-runtime.md)); otherwise only the run's
+session open (it ran just for the run) and nothing it started holds it, see
+[agent processes](../architecture/conversation-runtime.md); otherwise only the run's
 session closes (agents that can close sessions). Either way a frequent schedule
-doesn't keep a set of MCP servers alive per run. A successful run alerts with its
+doesn't keep a set of MCP servers alive per run, except on Codex while another session
+is open: it keeps a closed session's until the agent stops. A successful run alerts with its
 reply through normal encrypted push delivery; a failed or interrupted one leaves a
 "Routine could not finish" notice. Returning `(pass)` or no text completes silently.
 Replying to a run's result goes to the bot's main session, with the result quoted. A test run can run a paused routine. Pausing or
@@ -135,7 +136,7 @@ host checks the run's turn for a tool call whose ACP kind isn't `read`, `search`
 
 Each run has a timeout (default one hour, configurable from 1 to 86400 seconds).
 A hung agent is terminated so subsequent work can proceed. When the time limit cuts
-session setup short, an agent that can load sessions is stopped too, so a session it was
+session setup short, an agent that can reopen sessions is stopped too, so a session it was
 still opening can't stay open unknown to the host; one that can't keeps running with the
 sessions it has. A run's outcome is
 saved before it is reported, and a failure notice has a stable transcript ID, so a

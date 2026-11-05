@@ -16,8 +16,10 @@ import {
 import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
+import { prefs } from '../lib/prefs'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
+import { DevServerCommands } from './dev-servers'
 import { BotSync, sleep } from './bot-sync'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
@@ -51,6 +53,7 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 export class BotStore extends BotSync {
   readonly fileDownloads = new FileDownloads(() => this.changed())
   readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
+  readonly devServers = new DevServerCommands((op) => this.perform(op), (op) => this.withLink(op))
 
   override retire() { this.fileDownloads.retire(); super.retire() }
 
@@ -95,6 +98,8 @@ export class BotStore extends BotSync {
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
         this.changed()
+        // Only once it arrived, so a resend counts once.
+        if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')

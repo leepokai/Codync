@@ -85,6 +85,17 @@ extension BotStore {
     /// The bot's own agent again, off the fallback it runs on.
     public func switchBack(_ botId: String) { perform(replay: true) { try await $0.switchBack(botId) } }
 
+    // MARK: dev servers
+
+    /// A refusal shows; the bot's next update shows the rest.
+    public func devServerAction(_ action: DevServer.Action, botId: String, id: String) {
+        perform { try await $0.devServer(action, botId: botId, id: id) }
+    }
+
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        try await withLink(replay: true) { try await $0.devServerLogs(botId: botId, id: id) }
+    }
+
     // MARK: remote screen
 
     /// Takes control from bots (they can still look) or hands it back.

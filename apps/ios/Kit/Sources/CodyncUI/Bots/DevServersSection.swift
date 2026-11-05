@@ -70,6 +70,7 @@ private struct DevServerRow: View {
         case .onlyOnComputer: MenuItem("Only reachable on the computer", enabled: false) {}
         case .startedByShell: MenuItem("Started through the bot's shell: it stops with the bot", enabled: false) {}
         case .open: MenuItem("Open", icon: "arrow.up.right") { if let address = server.remoteAddress { open(address) } }
+        case let .openAddress(address): MenuItem(DevServer.addressTitle(address), icon: "arrow.up.right", verbatim: true) { open(address) }
         case .copyAddress: MenuItem("Copy address", icon: "doc.on.doc") { copyAddress() }
         case .logs: MenuItem("Logs", icon: "doc.text", action: showLogs)
         case .restart: MenuItem("Restart", icon: "arrow.clockwise") { act(.restart) }

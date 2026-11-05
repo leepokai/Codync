@@ -50,6 +50,23 @@ impl DevServer {
         self.status == Status::Running && !self.ports.is_empty()
     }
 
+    /// The port to use: on its computer the first, what a browser there opens; elsewhere the first that other devices
+    /// can reach, or the first if none listens beyond its computer.
+    fn port_from(&self, here: bool) -> Option<&DevServerPort> {
+        let beyond = if here { None } else { self.ports.iter().find(|port| !port.remote.is_empty()) };
+        beyond.or_else(|| self.ports.first())
+    }
+
+    /// Where it can be reached from elsewhere, a line each: every address, since this device may reach only some of them.
+    pub fn reachable(&self) -> Vec<String> {
+        let Some(port) = self.port_from(false).filter(|_| self.opens()) else { return Vec::new() };
+        if port.remote.is_empty() {
+            vec![format!("{} · {}", port.local, tr(ONLY_ON_COMPUTER))]
+        } else {
+            port.remote.clone()
+        }
+    }
+
     fn restarts(&self) -> bool {
         self.managed && self.status != Status::Starting
     }
@@ -209,21 +226,17 @@ impl App {
 
     /// In this computer's browser. Anywhere else (a tunnel looks the same from here) shows where it can be reached.
     fn open_dev_server(&mut self, server: &DevServer) {
-        let Some(port) = server.ports.first() else { return };
-        if self.on_this_computer && open_browser(&port.local, &self.url) {
+        if self.on_this_computer && server.port_from(true).is_some_and(|port| open_browser(&port.local, &self.url)) {
             self.track_dev_server(DevServerAction::Open);
             return;
         }
-        let address = match port.remote.first() {
-            Some(address) => address.clone(),
-            None => format!("{} · {}", port.local, tr(ONLY_ON_COMPUTER)),
-        };
-        self.hint = Some((address, std::time::Instant::now() + std::time::Duration::from_secs(5)));
+        self.hint =
+            Some((server.reachable().join(" · "), std::time::Instant::now() + std::time::Duration::from_secs(5)));
     }
 
     fn copy_dev_server(&mut self, server: &DevServer) {
-        let Some(port) = server.ports.first() else { return };
         let here = self.on_this_computer;
+        let Some(port) = server.port_from(here) else { return };
         copy(if here { &port.local } else { port.remote.first().unwrap_or(&port.local) });
         self.track_dev_server(DevServerAction::Copy);
         self.flash(if here || !port.remote.is_empty() { "Copied" } else { ONLY_ON_COMPUTER });
@@ -236,7 +249,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{DevServer, DevServerPort, DevServerSummary, Status, summary};
+    use super::{DevServer, DevServerPort, DevServerSummary, Status, summary, tr};
 
     fn server(status: Status, port: Option<u16>) -> DevServer {
         DevServer {
@@ -265,6 +278,43 @@ mod tests {
         assert_eq!(summary(&[failed.clone(), server(Status::Starting, None)]), Some(DevServerSummary::Starting));
         assert_eq!(summary(std::slice::from_ref(&failed)), Some(DevServerSummary::Failed));
         assert_eq!(summary(&[failed, server(Status::Running, Some(1))]), Some(DevServerSummary::Running(":1".into())));
+    }
+
+    #[test]
+    fn elsewhere_it_shows_every_address_or_says_it_stays_on_the_computer() {
+        let port = |remote: &[&str]| DevServerPort {
+            port: 5173,
+            local: "http://localhost:5173".into(),
+            remote: remote.iter().map(ToString::to_string).collect(),
+        };
+        let with = |ports| DevServer { ports, ..server(Status::Running, None) };
+        let (tailscale, lan) = ("http://100.64.0.1:5173", "http://192.168.1.20:5173");
+        assert_eq!(with(vec![port(&[lan])]).reachable(), [lan]);
+        assert_eq!(with(vec![port(&[tailscale, lan])]).reachable(), [tailscale, lan]);
+        let only_here = with(vec![port(&[])]).reachable();
+        assert!(only_here[0].starts_with("http://localhost:5173 · "), "{only_here:?}");
+        // The first port listens only on the computer; the second doesn't.
+        assert_eq!(with(vec![port(&[]), port(&[lan])]).reachable(), [lan]);
+        assert!(with(vec![]).reachable().is_empty());
+        let stopped = DevServer { ports: vec![port(&[lan])], ..server(Status::Stopped, None) };
+        assert!(stopped.reachable().is_empty());
+    }
+
+    #[test]
+    fn on_its_computer_it_uses_the_first_port_and_elsewhere_the_first_others_can_reach() {
+        let port = |port, remote: &[&str]| DevServerPort {
+            port,
+            remote: remote.iter().map(ToString::to_string).collect(),
+            ..Default::default()
+        };
+        let mixed = DevServer {
+            ports: vec![port(3000, &[]), port(5173, &["http://192.168.1.20:5173"])],
+            ..server(Status::Running, None)
+        };
+        assert_eq!(mixed.port_from(true).map(|p| p.port), Some(3000));
+        assert_eq!(mixed.port_from(false).map(|p| p.port), Some(5173));
+        let only_here = DevServer { ports: vec![port(3000, &[])], ..server(Status::Running, None) };
+        assert_eq!(only_here.port_from(false).map(|p| p.port), Some(3000));
     }
 
     #[test]
@@ -297,9 +347,10 @@ mod tests {
     #[test]
     fn the_sheet_says_how_it_ended_or_that_it_ends_with_the_bot() {
         let failed = DevServer { exit_code: Some(3), ..server(Status::Failed, None) };
-        assert_eq!(failed.note(), "Exit code 3");
+        // Through `tr`: another test may have set the process's language.
+        assert_eq!(failed.note(), tr("Exit code {code}").replace("{code}", "3"));
         assert_eq!(server(Status::Running, None).note(), "");
         let shell = DevServer { managed: false, ..server(Status::Running, None) };
-        assert_eq!(shell.note(), "Started through the bot's shell: it stops with the bot");
+        assert_eq!(shell.note(), tr("Started through the bot's shell: it stops with the bot"));
     }
 }

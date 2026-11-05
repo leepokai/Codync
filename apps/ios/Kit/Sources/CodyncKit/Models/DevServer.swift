@@ -32,7 +32,7 @@ public struct DevServer: Codable, Identifiable, Hashable, Sendable {
 
     /// A line of its menu.
     public enum MenuRow: Equatable, Sendable {
-        case onlyOnComputer, open, copyAddress, logs, restart, start, startedByShell, stop, remove
+        case onlyOnComputer, open, openAddress(String), copyAddress, logs, restart, start, startedByShell, stop, remove
     }
 
     public var id: String
@@ -47,9 +47,17 @@ public struct DevServer: Codable, Identifiable, Hashable, Sendable {
 }
 
 public extension DevServer {
-    /// Where a phone can reach it while it runs; nil when it listens only on its computer.
-    var remoteAddress: String? {
-        status == .running ? ports.lazy.compactMap(\.remote.first).first : nil
+    /// Where a phone can reach it while it runs, best first: the first port that has any.
+    var remoteAddresses: [String] {
+        status == .running ? ports.first { !$0.remote.isEmpty }?.remote ?? [] : []
+    }
+
+    /// The best of them; nil when it listens only on its computer.
+    var remoteAddress: String? { remoteAddresses.first }
+
+    /// An address as a menu row shows it.
+    static func addressTitle(_ address: String) -> String {
+        String(address.trimmingPrefix("http://"))
     }
 
     /// Its row's value: its ports, or a phrase to look up.
@@ -69,12 +77,19 @@ public extension DevServer {
         return managed && !listens ? .logs : nil
     }
 
-    /// Only what applies. A server the bot started through its shell can only be opened or stopped.
+    /// Only what applies. A server the bot started through its shell can only be opened or stopped. A tap opens the first
+    /// address, which this phone may not reach (a computer's Tailscale address, without Tailscale here), so when there are
+    /// more each one is a row.
     var menuRows: [MenuRow] {
         let live = status == .running || status == .starting
         var rows: [MenuRow] = []
         if status == .running, !ports.isEmpty, remoteAddress == nil { rows.append(.onlyOnComputer) }
-        if remoteAddress != nil { rows += [.open, .copyAddress] }
+        if remoteAddresses.count > 1 {
+            rows += remoteAddresses.map(MenuRow.openAddress)
+        } else if remoteAddress != nil {
+            rows.append(.open)
+        }
+        if remoteAddress != nil { rows.append(.copyAddress) }
         if managed {
             rows.append(.logs)
             if status != .starting { rows.append(live ? .restart : .start) }

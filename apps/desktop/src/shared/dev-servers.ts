@@ -50,10 +50,18 @@ export function devServerSummary(servers: DevServer[]): DevServerSummary {
  * computer. Anywhere else (a phone, or a desktop attached over SSH, whose loopback is a tunnel) can't use `local`.
  */
 export function devServerAddress(server: DevServer, onThisComputer: boolean): string | null {
-  const port = server.ports[0]
-  if (server.status !== 'running' || !port) return null
-  return onThisComputer ? port.local : port.remote[0] ?? null
+  if (server.status !== 'running') return null
+  return onThisComputer ? server.ports[0]?.local ?? null : devServerRemote(server)[0] ?? null
 }
+
+/** Where other devices can reach it while it runs, best first: the first port that has any. */
+export function devServerRemote(server: DevServer): string[] {
+  if (server.status !== 'running') return []
+  return server.ports.find((port) => port.remote.length > 0)?.remote ?? []
+}
+
+/** An address as a menu row shows it. */
+export const devServerAddressTitle = (address: string) => address.replace(/^http:\/\//, '')
 
 /** Its row's value: its ports, or a phrase to look up. */
 export function devServerValue(server: DevServer): string {
@@ -75,12 +83,18 @@ export function devServerClick(server: DevServer, onThisComputer: boolean): DevS
   return server.managed && !listens ? { kind: 'logs' } : { kind: 'menu' }
 }
 
-export type DevServerMenuRow = 'copyAddress' | 'logs' | 'restart' | 'start' | 'stop' | 'remove'
+export type DevServerMenuRow = { open: string } | 'copyAddress' | 'logs' | 'restart' | 'start' | 'stop' | 'remove'
 
-/** Only what applies. A server the bot started through its shell can only be opened or stopped. */
-export function devServerMenuRows(server: DevServer): DevServerMenuRow[] {
+/**
+ * Only what applies. A server the bot started through its shell can only be opened or stopped. Elsewhere, a click opens
+ * the first address, which this device may not reach (a computer's Tailscale address, without Tailscale here), so when
+ * there are more each one is a row. On its own computer `local` always works.
+ */
+export function devServerMenuRows(server: DevServer, onThisComputer: boolean): DevServerMenuRow[] {
   const live = server.status === 'running' || server.status === 'starting'
   const rows: DevServerMenuRow[] = []
+  const addresses = onThisComputer ? [] : devServerRemote(server)
+  if (addresses.length > 1) rows.push(...addresses.map((address) => ({ open: address })))
   if (live && server.ports.length > 0) rows.push('copyAddress')
   if (server.managed) {
     rows.push('logs')

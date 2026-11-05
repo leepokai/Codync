@@ -108,11 +108,12 @@ white, and color comes from the bots.
   `⋯`, which on the desktop shows only when the row is hovered.
 - **Other devices:** a server listening only on its computer can't be opened from a phone, or from a desktop over SSH
   (`store === app.local`, not `isLoopback`: an SSH store is loopback through its tunnel). Its menu says so. A server on all
-  interfaces opens at its first `remote` address.
+  interfaces opens at its first `remote` address, which this device may not reach (a Tailscale address, without Tailscale
+  here), so with several the menu lists each one to open, in place of `Open`.
 - **Logs:** a sheet with the last 200 lines and a refresh button; for a failed server, its exit code.
 - **Terminal:** `/servers` or a click on the port opens a sheet instead of a section; keys in `tui/manage/dev_servers.rs`,
   the footer listing those that apply to the selected server. `codync-host tui --url` may be a tunnel, which looks local,
-  so it shows the address instead of opening a browser.
+  so its sheet lists the selected server's addresses, one line each, instead of opening a browser.
 
 Each client: desktop `views/thread/DevServersSection.tsx` and `src/shared/dev-servers.ts`; iPhone
 `CodyncUI/Bots/DevServersSection.swift`; Android `DevServersSection.kt`; terminal `tui/manage/dev_servers.rs` and

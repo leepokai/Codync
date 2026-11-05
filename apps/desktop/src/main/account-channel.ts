@@ -1,6 +1,8 @@
 import { app, ipcMain, type WebContents } from 'electron'
+import WebSocket from 'ws'
 import type { AccountComputer, CallError } from '../shared/ipc'
 import { computerId, FrameOpener, FrameSealer, Handshake, type DeviceKey } from './channel-crypto'
+import { RelayPacer } from './relay-pacer'
 
 /**
  * The account's other computers, reached as the phones reach them: the end-to-end encrypted channel
@@ -33,25 +35,34 @@ class AccountChannel {
   private ids = 0
   private calls = new Map<number, Pending>()
   private subscriptions = new Map<number, Subscription>()
-  private pings: NodeJS.Timeout
+  private out: RelayPacer
+  private heard = true
+  private heartbeat: NodeJS.Timeout
   failure: CallError | null = null
 
-  constructor(url: string, signature: string, private readonly signKey: string, private readonly device: DeviceKey) {
+  constructor(url: string, signature: string, private readonly computerId: string, private readonly signKey: string, private readonly device: DeviceKey) {
     this.ready.promise.catch(() => {})
-    // Node's WebSocket (undici) takes request headers; the DOM typing the app compiles against doesn't know them.
-    const init = { headers: { 'Codync-Sig': signature } } as unknown as string[]
-    this.socket = new WebSocket(url, init)
-    this.socket.onmessage = (e) => {
+    this.socket = new WebSocket(url, { headers: { 'Codync-Sig': signature } })
+    this.out = new RelayPacer((text) => this.socket.readyState === WebSocket.OPEN && this.socket.send(text))
+    this.socket.on('message', (data) => {
+      this.heard = true
       try {
-        this.receive(JSON.parse(String(e.data)) as Wire)
+        this.receive(JSON.parse(String(data)) as Wire)
       } catch (error) {
         this.fail({ status: 0, message: error instanceof Error ? error.message : String(error) })
       }
-    }
-    this.socket.onclose = (e) => this.fail(closeError(e.code, e.reason))
-    this.socket.onerror = () => this.fail(unreachable)
-    // The relay answers these exact bytes itself; they keep the link alive while the chat is quiet.
-    this.pings = setInterval(() => this.socket.readyState === WebSocket.OPEN && this.socket.send('{"t":"ping"}'), 30_000)
+    })
+    // Node's own WebSocket hides why an upgrade failed; the relay's 403 means this device isn't let in.
+    this.socket.on('unexpected-response', (_request, response) => this.fail(upgradeError(computerId, response.statusCode)))
+    this.socket.on('close', (code, reason) => this.fail(closeError(code, String(reason))))
+    this.socket.on('error', () => this.fail(unreachable))
+    // The relay answers these exact bytes itself, so a link that heard nothing since the last one is dead (a
+    // network change can leave it open but deaf): it fails, and the next call opens a fresh one.
+    this.heartbeat = setInterval(() => {
+      if (!this.heard) return this.fail(unreachable)
+      this.heard = false
+      this.out.send('{"t":"ping"}')
+    }, 30_000)
   }
 
   private receive(wire: Wire) {
@@ -60,7 +71,7 @@ class AccountChannel {
         if (!wire.online) this.fail({ status: 0, message: 'The computer is offline.' })
         else if (!this.handshake && !this.sealer) {
           this.handshake = new Handshake(this.signKey, this.device)
-          this.socket.send(JSON.stringify(this.handshake.hello()))
+          this.out.send(JSON.stringify(this.handshake.hello()))
         } else this.fail({ status: 0, message: 'The computer restarted. Connecting again…' })
         return
       case 'welcome': {
@@ -70,6 +81,7 @@ class AccountChannel {
         this.sealer = new FrameSealer(keys.d2h)
         this.opener = new FrameOpener(keys.h2d)
         clearTimeout(this.deadline)
+        refusals.delete(this.computerId)
         this.ready.resolve()
         return
       }
@@ -107,7 +119,7 @@ class AccountChannel {
   private async send(message: Record<string, unknown>) {
     await this.ready.promise
     if (!this.sealer || this.failure) throw this.failure ?? unreachable
-    for (const frame of this.sealer.seal(Buffer.from(JSON.stringify(message)))) this.socket.send(JSON.stringify({ t: 'f', ...frame }))
+    for (const frame of this.sealer.seal(Buffer.from(JSON.stringify(message)))) this.out.send(JSON.stringify({ t: 'f', ...frame }))
   }
 
   call(method: string, body: unknown, timeoutMs: number): Promise<unknown> {
@@ -141,7 +153,8 @@ class AccountChannel {
   fail(error: CallError) {
     if (this.failure) return
     this.failure = error
-    clearInterval(this.pings)
+    clearInterval(this.heartbeat)
+    this.out.stop()
     clearTimeout(this.deadline)
     this.ready.reject(error)
     this.socket.close()
@@ -167,6 +180,20 @@ function closeError(code: number, reason: string): CallError {
   return unreachable
 }
 
+/** Upgrades the relay refused with 403 per computer since its last handshake. */
+const refusals = new Map<string, number>()
+
+/**
+ * An upgrade the relay answered without a socket. Its 403 means the account no longer lets this device reach the
+ * computer; right after an approval it can briefly lag, so only a fourth refusal in a row counts (as the phones do).
+ */
+function upgradeError(computerId: string, status: number | undefined): CallError {
+  if (status !== 403) return unreachable
+  const count = (refusals.get(computerId) ?? 0) + 1
+  refusals.set(computerId, count)
+  return count > 3 ? refused() : unreachable
+}
+
 export interface RelaySigner {
   /** The account's relay (its cloud URL), or null when signed out. */
   relay(): string | null
@@ -183,7 +210,7 @@ async function open(signer: RelaySigner, computer: AccountComputer): Promise<Acc
   if (!base) throw { status: 401, message: 'Sign in again to reach your account.' } satisfies CallError
   const url = new URL(`v1/relay/device/${computer.id}?v=1`, `${base}/`)
   const [device, signature] = await Promise.all([signer.device(), signer.sign(url)])
-  return new AccountChannel(url.href.replace(/^http/, 'ws'), signature, computer.signKey, device)
+  return new AccountChannel(url.href.replace(/^http/, 'ws'), signature, computer.id, computer.signKey, device)
 }
 
 async function channel(signer: RelaySigner, computer: AccountComputer): Promise<AccountChannel> {

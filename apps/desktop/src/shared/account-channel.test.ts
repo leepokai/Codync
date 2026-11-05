@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import * as crypto from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
 import { test } from 'node:test'
 import * as channelCrypto from '../main/channel-crypto.ts'
+import * as relayPacer from '../main/relay-pacer.ts'
 import { loadMainModule, settle } from './test-support/main-module.ts'
 import type * as AccountChannelModule from '../main/account-channel.ts'
 
@@ -13,18 +15,16 @@ const hostKey = v.keys.hostSignPub as string
 const computer = { id: computerId(hostKey), signKey: hostKey }
 const device = signingKey(Buffer.from(v.keys.deviceSignSeed, 'base64url'))
 
-/** The relay's socket as the channel sees it; the test plays the relay and the host. */
-class FakeSocket {
+/** The relay's socket as the channel sees it (`ws`); the test plays the relay and the host. */
+class FakeSocket extends EventEmitter {
   static OPEN = 1
   static last: FakeSocket | null = null
   readyState = 1
   sent: Record<string, unknown>[] = []
   url: string
   headers: Record<string, string>
-  onmessage: ((e: { data: string }) => void) | null = null
-  onclose: ((e: { code: number; reason: string }) => void) | null = null
-  onerror: (() => void) | null = null
   constructor(url: string, init: { headers: Record<string, string> }) {
+    super()
     this.url = url
     this.headers = init.headers
     FakeSocket.last = this
@@ -36,7 +36,7 @@ class FakeSocket {
     this.readyState = 3
   }
   receive(message: unknown) {
-    this.onmessage?.({ data: JSON.stringify(message) })
+    this.emit('message', Buffer.from(JSON.stringify(message)))
   }
 }
 
@@ -85,10 +85,17 @@ const handlers = new Map<string, Function>()
 const handler = <K extends keyof Handlers>(name: K) => handlers.get(name) as Handlers[K]
 const ipcMain = { handle: (name: string, fn: Function) => handlers.set(name, fn), on: (name: string, fn: Function) => handlers.set(name, fn) }
 const app = { on: (name: string, fn: Function) => handlers.set(name, fn) }
+/** The last channel's heartbeat, run by hand instead of every 30 s. */
+let beat = () => {}
 const { registerAccountChannels, closeAccountChannels } = loadMainModule<typeof AccountChannelModule>('account-channel', {
   electron: { ipcMain, app },
+  ws: FakeSocket,
   './channel-crypto': channelCrypto,
-}, { WebSocket: FakeSocket, URL, Buffer, JSON, setTimeout, clearTimeout, setInterval, clearInterval })
+  './relay-pacer': relayPacer,
+}, {
+  URL, Buffer, JSON, setTimeout, clearTimeout, clearInterval: () => {},
+  setInterval: (fn: () => void) => (beat = fn),
+})
 let windows = 0
 /** A window's page: what the main process sent it. */
 function page() {
@@ -169,6 +176,43 @@ test('a computer that restarts mid-link fails its calls; the next one opens a fr
   assert.notEqual(next.socket, socket)
   closeAccountChannels()
   await next.result
+})
+
+test('a link that hears nothing back between two pings fails its calls; the next call opens a fresh one', async () => {
+  const { socket, result } = await connect('hello')
+  host(socket)
+  await settle()
+  beat()
+  assert.deepEqual(socket.sent.at(-1), { t: 'ping' })
+  beat()
+  const answer = await result
+  assert.ok(!answer.ok)
+  assert.equal(answer.error.status, 0)
+  const next = await connect('hello')
+  assert.notEqual(next.socket, socket)
+  closeAccountChannels()
+  await next.result
+})
+
+test("a relay that keeps refusing this device's link ends its calls with 401; a few refusals right after approval stay retryable", async () => {
+  const refusedUpgrade = async () => {
+    FakeSocket.last = null
+    const result = handler('remote:call')({}, computer, 'hello', {}, 5_000)
+    await settle()
+    FakeSocket.last!.emit('unexpected-response', {}, { statusCode: 403 })
+    return (await result) as Extract<CallResult, { ok: false }>
+  }
+  for (let i = 0; i < 3; i++) assert.equal((await refusedUpgrade()).error.status, 0)
+  assert.equal((await refusedUpgrade()).error.status, 401)
+
+  // A completed handshake starts the count over.
+  const { socket, result } = await connect('hello')
+  host(socket)
+  await settle()
+  closeAccountChannels()
+  await result
+  assert.equal((await refusedUpgrade()).error.status, 0)
+  closeAccountChannels()
 })
 
 test('concurrent first calls share one socket, which closes when its computer is let go', async () => {

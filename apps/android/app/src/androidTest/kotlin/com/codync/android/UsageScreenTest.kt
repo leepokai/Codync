@@ -21,7 +21,7 @@ class UsageScreenTest {
         val refreshes = mutableListOf<Boolean>()
         var closed = false
         compose.setContent { Hosted { CompositionLocalProvider(LocalDismissModal provides { closed = true }) {
-            UsageScreen(state.value, { refreshes.add(it) }, { refreshes.add(true) })
+            UsageScreen(state.value, { refreshes.add(it) }, { refreshes.add(true) }, { _, _ -> })
         } } }
         compose.onNodeWithText("Future provider").assertIsDisplayed()
         compose.onNodeWithText("Monthly").assertIsDisplayed()
@@ -44,11 +44,39 @@ class UsageScreenTest {
 
     @Test fun usageExplainsWhenThereIsNoComputerOrNoReportYet() {
         val state = mutableStateOf<AppState?>(null)
-        compose.setContent { Hosted { UsageScreen(state.value, {}, {}) } }
+        compose.setContent { Hosted { UsageScreen(state.value, {}, {}, { _, _ -> }) } }
         compose.onNodeWithText("No computer yet").assertIsDisplayed()
         compose.onNodeWithText("Usage shows up once a computer is connected.").assertIsDisplayed()
         compose.runOnUiThread { state.value = AppState(Computer("fixture", "Acceptance computer", "fixture"), loading = false) }
         compose.onNodeWithText("No usage yet").assertIsDisplayed()
-        compose.onNodeWithText("Your computer reads plan limits from the agents installed on it.").assertIsDisplayed()
+        compose.onNodeWithText("Your computer reads plan limits from the agents your bots run and the ones you turn on.").assertIsDisplayed()
+    }
+
+    @Test fun theChooserListsTheAgentsAndATapReachesTheHostThenTheCardFoldsAway() {
+        val usage = { providers: String, shown: Boolean ->
+            WireJson.parseToJsonElement("""{"providers":[$providers],"services":[{"id":"claude","name":"Claude","shown":$shown},{"id":"cursor","name":"Cursor","shown":false},{"id":"amp","name":"Amp","shown":true}]}""").jsonObject
+        }
+        val card = """{"id":"claude","name":"Claude","source":"claude","updatedAt":1,"windows":[{"id":"week","label":"Weekly","percent":10}]}"""
+        val computer = Computer("fixture", "Acceptance computer", "fixture")
+        val state = mutableStateOf(AppState(computer, loading = false, usage = usage(card, true), actualConnection = LinkState.ComputerOffline(null)))
+        val changes = mutableListOf<Pair<String, Boolean>>()
+        compose.setContent { Hosted { UsageScreen(state.value, {}, {}, { id, shown -> changes.add(id to shown) }) } }
+        compose.onNodeWithText("Show usage for").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("No reading yet").assertExists()
+        compose.onNodeWithText("Cursor").performScrollTo().performClick()
+        assertEquals(listOf("cursor" to true), changes)
+        // The card names its tightest limit and lists it too.
+        compose.onAllNodesWithText("Weekly").onFirst().assertExists()
+        compose.runOnUiThread { state.value = state.value.copy(usage = usage("", false)) }
+        compose.waitForIdle()
+        compose.onNodeWithText("Weekly").assertDoesNotExist()
+    }
+
+    @Test fun aHostWithNoListShowsNoSwitches() {
+        val usage = WireJson.parseToJsonElement("""{"providers":[]}""").jsonObject
+        val state = AppState(Computer("fixture", "Acceptance computer", "fixture"), loading = false, usage = usage)
+        compose.setContent { Hosted { UsageScreen(state, {}, {}, { _, _ -> }) } }
+        compose.onNodeWithText("No usage yet").assertIsDisplayed()
+        compose.onNodeWithText("Show usage for").assertDoesNotExist()
     }
 }

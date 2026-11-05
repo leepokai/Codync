@@ -1402,7 +1402,7 @@
   "Your coding agents, as teammates.": "I tuoi agenti di coding, come compagni di squadra.",
   "Your computer": "Il tuo computer",
   "Your computer is ready": "Il tuo computer è pronto",
-  "Your computer reads plan limits from the agents installed on it.": "Il tuo computer legge i limiti del piano dagli agenti installati.",
+  "Your computer reads plan limits from the agents your bots run and the ones you turn on.": "Il tuo computer legge i limiti del piano dagli agenti usati dai tuoi bot e da quelli che attivi.",
   "Your launcher couldn't add it. Add it from the Home Screen instead.": "Il launcher non è riuscito ad aggiungerlo. Aggiungilo dalla schermata Home.",
   "Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines.": "Il tuo agente principale è il tuo primo punto di contatto. Segue i tuoi obiettivi e le attività incompiute, suggerisce i prossimi passi utili e coordina il lavoro con gli altri bot. L'agente principale configurato da Codync ha una routine Check in che viene eseguita due volte al giorno per impostazione predefinita; puoi modificarla o metterla in pausa in Routine.",
   "Your messages, prompts, code, files, file names or paths, bot names, credentials, or anything your agents produce.": "I tuoi messaggi, prompt, codice, file, nomi e percorsi dei file, nomi dei bot, credenziali o qualsiasi cosa producano i tuoi agenti.",
@@ -1834,5 +1834,14 @@
   "r start": "r Avvia",
   "s stop": "s arresta",
   "x remove": "x rimuovi",
-  "esc close": "esc chiudi"
+  "esc close": "esc chiudi",
+  "Show usage for": "Mostra l'utilizzo di",
+  "On by default for the agents your bots run.": "Attivo di default per gli agenti usati dai tuoi bot.",
+  "No reading yet": "Ancora nessun dato",
+  "Premium requests": "Richieste premium",
+  "Balance": "Saldo",
+  "Credits": "Crediti",
+  "Prepaid": "Prepagato",
+  "Monthly": "Mensile",
+  "Completions": "Completamenti"
 }

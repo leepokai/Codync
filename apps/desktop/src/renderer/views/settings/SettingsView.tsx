@@ -21,7 +21,7 @@ import { UpdateButton, useUpdates } from '../UpdateButton'
 import { ComputersView } from './ComputersView'
 import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
-import { UsageLimits } from './UsageLimits'
+import { UsageChooser, UsageLimits } from './UsageLimits'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
 import { FormSheet } from '../marketplace/pieces'
@@ -267,7 +267,7 @@ function UsageLimitsList() {
   const tr = useTr()
   const app = useApp()
   const stores = app.computers.flatMap((c) => app.store(c.id) ?? [])
-  const withUsage = stores.filter((s) => s.usage.providers.length > 0)
+  const withUsage = stores.filter((s) => s.usage.providers.length > 0 || s.usage.services?.length)
   if (withUsage.length === 0) return <Text tone="secondary">{tr(`No usage information yet.`)}</Text>
   return (
     <>
@@ -279,6 +279,13 @@ function UsageLimitsList() {
           </HStack>
         ) : null,
         <UsageLimits key={store.computer.id} usage={store.usage} />,
+        store.usage.services?.length ? (
+          <UsageChooser
+            key={`${store.computer.id}-chooser`}
+            usage={store.usage}
+            onChange={(id, shown) => void store.setUsageShown(id, shown).catch((e: unknown) => app.setError(errorText(e)))}
+          />
+        ) : null,
       ])}
     </>
   )

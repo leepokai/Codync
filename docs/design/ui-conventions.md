@@ -44,7 +44,7 @@ The tray menu is Electron's native `Menu` (`apps/desktop/src/main/tray.ts`), the
 The menu retains host installation/restart, bot conversation/stop actions, approval review, usage limits, remote-screen permissions, open-at-login and quit. Pairing opens a separate titled window because its QR needs a persistent scanning surface. The chat window retains its own UI conventions.
 
 Usage limits appear directly in the top-level menu, grouped by provider with native section headers. Show each window's used percentage (`{percent}% used`), reset time when available, and the provider's last update; do not hide them in submenus. The account menu's
-Usage row shows no number; it opens Settings' Usage page with the same per-provider bars.
+Usage row shows no number; it opens Settings' Usage page with the same per-provider bars. Below the bars, that page and the phones' Usage screen list the computer's agents with a switch each ([which agents show](../features/usage-limits.md#which-agents-show)).
 
 ## Account menu and Settings (desktop)
 

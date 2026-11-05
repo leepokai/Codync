@@ -38,6 +38,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Cloud assistants](features/cloud-assistants.md) (ChatGPT, Claude and others message the bots through the Codync connector)
 - [codync-network and cloud assistants: design](design/codync-network.md) (why iroh, connectors and relays, trust, addresses, quiet letters, the connector's choices, next steps)
 - [Context and memory](features/context-and-memory.md)
+- [Usage limits](features/usage-limits.md) (which agents show, how each one is read, and which can't be)
 - [Bot memory and compaction](design/bot-memory.md) (design; storage, gate and dreaming built, compaction to come)
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
 - [Bot workspaces](features/bot-workspaces.md)

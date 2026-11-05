@@ -461,6 +461,15 @@ extension BotStore {
         try await ready().listDirs(path)
     }
 
+    /// Whether this computer lists one agent's limits.
+    public func setUsageShown(_ id: String, shown: Bool) async {
+        do {
+            setUsage(try await ready().setUsageShown(id, shown: shown))
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     public func refreshUsage() async {
         guard !retired, let client else { return }
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }

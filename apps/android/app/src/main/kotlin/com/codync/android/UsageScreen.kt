@@ -1,6 +1,7 @@
 package com.codync.android
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -49,7 +50,7 @@ import kotlin.math.roundToInt
  * provider, the tightest limit as a big bar, every limit listed below. Pull down to refresh.
  */
 @Composable fun UsageScreen(state: AppState?, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit,
-    trailing: @Composable () -> Unit = {}) {
+    setShown: (id: String, shown: Boolean) -> Unit, trailing: @Composable () -> Unit = {}) {
     val dismiss = LocalDismissModal.current
     val report = remember(state?.usage) { state?.let { runCatching { UsageReport.decode(it.usage) }.getOrNull() } ?: UsageReport() }
     val online = state?.actualConnection is LinkState.Ready
@@ -64,8 +65,9 @@ import kotlin.math.roundToInt
         }
         PullToRefresh({ if (online) reload() }, Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                for (provider in report.providers) key(provider.id) { ProviderCard(provider) }
-                if (report.providers.isEmpty()) EmptyUsage("No usage yet", "Your computer reads plan limits from the agents installed on it.")
+                ProviderCards(report.providers)
+                if (report.providers.isEmpty()) EmptyUsage("No usage yet", "Your computer reads plan limits from the agents your bots run and the ones you turn on.")
+                if (report.services.isNotEmpty()) UsageChooser(report, setShown)
             }
         }
     }
@@ -74,6 +76,47 @@ import kotlin.math.roundToInt
 @Composable private fun EmptyUsage(title: String, message: String) =
     EmptyState("chart.bar", title, Modifier.fillMaxWidth().padding(top = 60.dp), message)
 
+/** The cards, each folding in or out as its agent turns on or off. */
+@Composable private fun ProviderCards(providers: List<UsageProvider>) {
+    val atFirst = remember { providers.map { it.id }.toSet() }
+    // Every card seen, so that one turned off can still fold away.
+    val seen = remember { java.util.TreeMap<String, UsageProvider>() }
+    providers.forEach { seen[it.id] = it }
+    for ((id, provider) in seen) key(id) {
+        val showing = remember { MutableTransitionState(id in atFirst) }
+        showing.targetState = providers.any { it.id == id }
+        AnimatedVisibility(showing, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
+            exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) { ProviderCard(provider) }
+    }
+}
+
+/** Which agents' limits this computer lists. */
+@Composable private fun UsageChooser(report: UsageReport, setShown: (id: String, shown: Boolean) -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(20.dp)).background(Palette.surface).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(tr("Show usage for"), style = Type.subheadline.semibold, color = Palette.text)
+        for (service in report.services) key(service.id) {
+            CodyncSwitch(service.shown, { setShown(service.id, it) }, Modifier.fillMaxWidth()) {
+                ProviderTile(service.provider)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(service.name, style = Type.subheadline, color = Palette.text)
+                    if (service.shown && report.providers.none { it.id == service.id }) {
+                        Text(tr("No reading yet"), style = Type.caption, color = Palette.tertiary)
+                    }
+                }
+            }
+        }
+        Text(tr("On by default for the agents your bots run."), style = Type.caption, color = Palette.tertiary)
+    }
+}
+
+/** An agent's mascot or logo on its tinted tile. */
+@Composable private fun ProviderTile(provider: UsageProvider) {
+    Box(Modifier.size(34.dp).clip(RoundedRectangle(10.dp)).background(provider.tint().copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+        ProviderMascot(provider, 22.dp)
+    }
+}
+
 @Composable private fun ProviderCard(provider: UsageProvider) {
     var collapsed by rememberSaveable(provider.id) { mutableStateOf(false) }
     val turn by animateFloatAsState(if (collapsed) 180f else 0f, Motion.layout(), label = "Collapse")
@@ -81,9 +124,7 @@ import kotlin.math.roundToInt
     Column(Modifier.fillMaxWidth().clip(RoundedRectangle(20.dp)).background(Palette.surface).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(34.dp).clip(RoundedRectangle(10.dp)).background(provider.tint().copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
-                ProviderMascot(provider, 22.dp)
-            }
+            ProviderTile(provider)
             Text(provider.name, Modifier.weight(1f), style = Type.subheadline.semibold, color = Palette.text)
             IconButton(if (collapsed) "Expand" else "Collapse", "chevron.up", Modifier.rotate(turn)) { collapsed = !collapsed }
         }

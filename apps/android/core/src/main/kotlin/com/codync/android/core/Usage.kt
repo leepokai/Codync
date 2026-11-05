@@ -9,12 +9,21 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-@Serializable data class UsageReport(val providers: List<UsageProvider> = emptyList()) {
+/** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
+@Serializable data class UsageService(val id: String, val name: String, val shown: Boolean = false, val registry: String? = null) {
+    /** What a mascot needs of an agent that may have no reading. */
+    val provider: UsageProvider get() = UsageProvider(id, name, registry = registry)
+}
+
+/** `services` is absent from a host older than the chooser. */
+@Serializable data class UsageReport(val providers: List<UsageProvider> = emptyList(), val services: List<UsageService> = emptyList()) {
     companion object { fun decode(value: JsonElement): UsageReport = WireJson.decodeFromJsonElement(value) }
 }
 
 @Serializable data class UsageProvider(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(),
-    val source: String = "", val updatedAt: Long? = null) {
+    val source: String = "", val updatedAt: Long? = null,
+    /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
+    val registry: String? = null) {
     val limits: List<UsageWindow> get() = windows.filter { it.text.isNullOrBlank() }
     val tightest: UsageWindow? get() = limits.filter { it.percent?.isFinite() == true }.maxByOrNull { requireNotNull(it.percent) }
     val sourceLabel: String get() = when (source) {

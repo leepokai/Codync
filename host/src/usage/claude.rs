@@ -62,10 +62,7 @@ fn report_window(limit: &Value) -> Option<Window> {
         }
         _ => return None,
     };
-    let resets = limit["resets_at"]
-        .as_str()
-        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-        .map(|t| t.timestamp_millis());
+    let resets = limit["resets_at"].as_str().and_then(super::iso_ms);
     Some(Window::new(id, label, limit["percent"].as_f64()?, resets))
 }
 

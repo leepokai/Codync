@@ -77,7 +77,7 @@ pub fn events_stream(
         "hostId": hub.host_id,
         "computerId": hub.identity.computer_id(),
         "rev": hub.store.current_rev(),
-        "usage": hub.usage.locked().clone(),
+        "usage": hub.usage.locked().visible(),
         "screen": hub.screen.state(),
         // Live state like the two above: a `network` event sent before this stream began is in it.
         "network": crate::network::status(hub),

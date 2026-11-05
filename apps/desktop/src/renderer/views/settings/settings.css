@@ -164,6 +164,14 @@
   flex: none;
   text-align: right;
 }
+/* Room for a mascot's alert, which sits just above it, inside the fold's clip. */
+.settings-usage-provider {
+  padding-top: 3px;
+}
+.settings-usage-chooser {
+  margin-top: 18px;
+  font-size: var(--text-callout);
+}
 
 /* Computers & devices. */
 .settings-computers {

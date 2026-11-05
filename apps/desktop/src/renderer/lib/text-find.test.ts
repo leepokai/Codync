@@ -27,6 +27,13 @@ test('different blocks are kept apart', () => {
   assert.equal(findSpans(runs, 'end').length, 1)
 })
 
+test('a character that lowercases to more than one does not disable the search', () => {
+  assert.deepEqual(matchStarts('İstanbul and week', 'week'), [13])
+  assert.deepEqual(findSpans([run('İstanbul and week')], 'week'), [{ from: { run: 0, offset: 13 }, to: { run: 0, offset: 17 } }])
+  // A match on part of the character covers the whole of it.
+  assert.deepEqual(findSpans([run('xİy')], 'i'), [{ from: { run: 0, offset: 1 }, to: { run: 0, offset: 2 } }])
+})
+
 test('nothing to find, nothing found', () => {
   assert.deepEqual(findSpans([run('hello')], 'zzz'), [])
   assert.deepEqual(findSpans([], 'a'), [])

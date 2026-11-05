@@ -440,7 +440,7 @@ function ChatSplitView() {
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
-        {find !== null && selected ? <FindBar focusKey={find} onClose={() => setFind(null)} /> : null}
+        {find !== null && selectedBot ? <FindBar focusKey={find} onClose={() => setFind(null)} /> : null}
       </main>
 
       {showAccount ? (

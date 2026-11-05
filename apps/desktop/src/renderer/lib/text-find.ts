@@ -25,15 +25,38 @@ export function joinRuns(runs: TextRun[]): JoinedRuns {
   return { text, starts }
 }
 
-/** Where `query` begins in `text`, ignoring case; overlapping matches don't count twice. */
-export function matchStarts(text: string, query: string): number[] {
+export interface Match {
+  start: number
+  end: number
+}
+
+/**
+ * Where `query` is in `text`, ignoring case; overlapping matches don't count twice. Each character is lowercased on its
+ * own, so one that changes length (`İ` becomes two) shifts only itself, and the positions still point into `text`.
+ */
+export function matchRanges(text: string, query: string): Match[] {
   const needle = query.toLocaleLowerCase()
-  const hay = text.toLocaleLowerCase()
-  // Lowercasing can change a text's length (some scripts); positions then wouldn't line up.
-  if (!needle || hay.length !== text.length) return []
-  const found: number[] = []
-  for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + needle.length)) found.push(at)
+  if (!needle) return []
+  let hay = ''
+  /** For each unit of `hay`, where its character starts in `text` and ends. */
+  const origin: Match[] = []
+  for (let at = 0; at < text.length; ) {
+    const char = String.fromCodePoint(text.codePointAt(at)!)
+    const lower = char.toLocaleLowerCase()
+    for (let i = 0; i < lower.length; i++) origin.push({ start: at, end: at + char.length })
+    hay += lower
+    at += char.length
+  }
+  const found: Match[] = []
+  for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + needle.length)) {
+    found.push({ start: origin[at]!.start, end: origin[at + needle.length - 1]!.end })
+  }
   return found
+}
+
+/** Where `query` begins in `text`, ignoring case. */
+export function matchStarts(text: string, query: string): number[] {
+  return matchRanges(text, query).map((m) => m.start)
 }
 
 export interface RunPoint {
@@ -60,10 +83,9 @@ export interface MatchSpan {
 /** Every match of `query` in the runs, as where it starts and ends. */
 export function findSpans(runs: TextRun[], query: string): MatchSpan[] {
   const joined = joinRuns(runs)
-  const length = query.length
-  return matchStarts(joined.text, query).flatMap((at) => {
-    const from = locate(joined, runs, at, false)
-    const to = locate(joined, runs, at + length, true)
+  return matchRanges(joined.text, query).flatMap(({ start, end }) => {
+    const from = locate(joined, runs, start, false)
+    const to = locate(joined, runs, end, true)
     return from && to ? [{ from, to }] : []
   })
 }

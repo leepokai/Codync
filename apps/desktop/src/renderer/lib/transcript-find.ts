@@ -48,7 +48,21 @@ export function clearPaint() {
   CSS.highlights.delete('find-active')
 }
 
-/** Scrolls the match to the middle of the conversation. */
+/** The nearest ancestor that scrolls vertically. */
+function scroller(from: Element | null): Element | null {
+  for (let el = from; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el
+  }
+  return null
+}
+
+/** Scrolls the match itself (not the block it sits in: a long message or code block holds many) to the middle of the conversation. */
 export function reveal(range: Range) {
-  range.startContainer.parentElement?.scrollIntoView({ block: 'center' })
+  const parent = range.startContainer.parentElement
+  const view = scroller(parent)
+  const rect = range.getBoundingClientRect()
+  if (!view || (rect.width === 0 && rect.height === 0)) return void parent?.scrollIntoView({ block: 'center' })
+  const box = view.getBoundingClientRect()
+  view.scrollBy({ top: rect.top - box.top - (view.clientHeight - rect.height) / 2 })
 }

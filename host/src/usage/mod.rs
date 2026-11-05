@@ -24,6 +24,7 @@ mod opencode;
 mod vibe;
 
 pub use claude::{ingest_claude_rate_limit, ingest_statusline};
+pub(crate) use command::strip_ansi;
 
 use crate::LockExt;
 use crate::hub::Hub;

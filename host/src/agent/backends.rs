@@ -149,6 +149,11 @@ pub fn belongs_to_other(backend: &str, program: &str) -> bool {
         && !HARNESSES.iter().any(|h| own(h) && h.bins.contains(&name))
 }
 
+/// The CLI names `backend`'s harness goes by.
+pub fn bins(backend: &str) -> &'static [&'static str] {
+    HARNESSES.iter().find(|h| h.answers_to(backend)).map_or(&[], |h| h.bins)
+}
+
 pub fn is_known(id: &str) -> bool {
     harness(id).is_some() || registry::agent(id).is_some()
 }

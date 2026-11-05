@@ -116,6 +116,8 @@ pub struct Hub {
     pub terms: Arc<crate::agent::term::Terms>,
     /// Model lists being fetched (`agentModels`).
     pub model_lists: crate::agent::auth::InFlight,
+    /// The programs bots keep running, and what they left running through their own shells.
+    pub dev_servers: crate::dev_servers::DevServers,
 }
 
 impl Hub {
@@ -156,6 +158,7 @@ impl Hub {
             screen,
             terms: Arc::default(),
             model_lists: crate::agent::auth::InFlight::default(),
+            dev_servers: crate::dev_servers::DevServers::default(),
         })
     }
 
@@ -199,6 +202,7 @@ impl Hub {
         if tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks)).await.is_err() {
             tracing::warn!("some bots didn't stop within 5 s");
         }
+        self.dev_servers.shutdown().await;
         self.keep_awake.locked().set(false);
     }
 
@@ -287,6 +291,7 @@ impl Hub {
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
         self.runtime.locked().remove(id);
+        self.dev_servers.forget_bot(&self.store, id);
         {
             let _g = self.emit_lock.locked();
             let rev = self.store.delete_bot(id)?;

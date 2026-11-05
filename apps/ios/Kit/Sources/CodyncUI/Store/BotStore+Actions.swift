@@ -207,7 +207,7 @@ extension BotStore {
         bots[botId]?.keptUnread = false
         // A refused read gives the hold back, so the chat isn't read on screen behind the error.
         let reading = Task {
-            _ = await attempt(replay: true, undo: { self.bots[botId]?.keptUnread = bot.keptUnread }) {
+            _ = await attempt(replay: true, undo: { self.restoreUnread(botId, from: bot) }) {
                 _ = await marking?.value
                 try await $0.markRead(botId)
             }
@@ -248,6 +248,13 @@ extension BotStore {
     func settleUnreadHold(_ bot: Bot) {
         guard let pending = markingUnread[bot.id], bot.keptUnread || bot.rev >= pending.from ?? .max else { return }
         markingUnread[bot.id] = nil
+    }
+
+    /// A refused read: the hold and what was unread come back, keeping any count that grew meanwhile.
+    func restoreUnread(_ botId: String, from bot: Bot) {
+        guard let now = bots[botId] else { return }
+        bots[botId]?.unread = max(bot.unread, now.unread)
+        bots[botId]?.keptUnread = bot.keptUnread
     }
 
     /// Whether automatic reads leave this chat alone.

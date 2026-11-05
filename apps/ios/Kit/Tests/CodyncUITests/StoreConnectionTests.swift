@@ -148,7 +148,7 @@ import Testing
     #expect(await until { !store.heldUnread("b1") })
 }
 
-@MainActor @Test func refusedMarkAsReadGivesTheHoldBack() async throws {
+@MainActor @Test func refusedMarkAsReadGivesTheHoldAndCountBack() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let fake = FakeRemote(.ready(.direct))
@@ -156,12 +156,14 @@ import Testing
     store.setActive(true)
     defer { store.setActive(false) }
     #expect(await until { await fake.subscribed })
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":1,"keptUnread":true}}"#)
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":3,"keptUnread":true}}"#)
     #expect(await until { store.connection == .online && store.bots["b1"]?.keptUnread == true })
     await fake.setReadRefusal(true)
     store.markAllRead("b1")
     #expect(store.bots["b1"]?.keptUnread == false)
+    #expect(store.bots["b1"]?.unread == 0)
     #expect(await until { store.bots["b1"]?.keptUnread == true })
+    #expect(store.bots["b1"]?.unread == 3)
     #expect(store.heldUnread("b1"))
 }
 

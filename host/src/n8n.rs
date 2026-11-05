@@ -320,7 +320,7 @@ impl N8n {
     }
 
     /// The instance is ready: its owner, session, MCP access and the bots' connector.
-    /// Best effort â€” a failure shows in the state and the logs, never in the instance.
+    /// Best effort: a failure shows in the state and the logs, never in the instance.
     async fn mcp_setup(&self, generation: u64, hub: &Arc<Hub>) {
         if !self.rest_ready(generation).await {
             tracing::warn!("the n8n instance's REST API was not ready yet; its MCP server waits for the next start");
@@ -357,7 +357,7 @@ impl N8n {
     }
 
     /// The REST API mounts a while after `/healthz` answers (it runs migrations first);
-    /// wait until one of its routes answers anything but a 404 â€” the unauthenticated
+    /// wait until one of its routes answers anything but a 404: the unauthenticated
     /// `GET /rest/login` answers 401 once the router is up.
     async fn rest_ready(&self, generation: u64) -> bool {
         let port = self.settings.locked().port;
@@ -610,9 +610,9 @@ async fn install_node_package(user_folder: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `message â€” what the instance last printed`, when there is a print to cite.
+/// `message - what the instance last printed`, when there is a print to cite.
 fn with_tail(message: String, tail: &str) -> String {
-    if tail.is_empty() { message } else { format!("{message} â€” {tail}") }
+    if tail.is_empty() { message } else { format!("{message} — {tail}") }
 }
 
 /// `: what the instance last printed`, for messages that end on the tail.

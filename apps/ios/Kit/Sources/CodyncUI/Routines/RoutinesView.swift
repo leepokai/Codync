@@ -107,12 +107,18 @@ struct RoutinesView: View {
 
     /// The row's second line: what's happening now, else when it runs.
     private func summary(_ routine: Routine) -> String {
-        if let active = runs.first(where: { $0.routineId == routine.id && $0.isActive }) { return runLabel(active) }
+        if let active = runs.first(where: { $0.routineId == routine.id && $0.isActive }) { return active.label }
         if routine.lastError != nil { return "Schedule needs attention" }
-        if let last = runs.first(where: { $0.routineId == routine.id }), ["failed", "interrupted"].contains(last.status) {
-            return "Last run \(runLabel(last).lowercased())"
+        if let last = runs.first(where: { $0.routineId == routine.id }),
+           ["failed", "interrupted"].contains(last.status) || isSkipped(last) {
+            return "Last run \(last.label.lowercased())"
         }
         return routine.triggerDescriptions.joined(separator: " · ")
+    }
+
+    /// A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped.
+    private func isSkipped(_ run: RoutineRun) -> Bool {
+        run.status == "cancelled" && (run.scheduledFor != nil || run.missed != nil)
     }
 
     private var askInChat: some View {
@@ -120,24 +126,6 @@ struct RoutinesView: View {
             edit("I want a routine that ")
         }
         .disabled(model.isOffline)
-    }
-
-    private func runLabel(_ run: RoutineRun) -> String {
-        switch run.status {
-        case "pending": run.notBefore.map(retrying) ?? "Queued"
-        case "starting": "Starting"
-        case "running": "Running"
-        case "recovering": "Resuming after restart"
-        case "failed": "Failed"
-        case "interrupted": "Interrupted"
-        default: run.status.capitalized
-        }
-    }
-
-    /// A retry of a run that failed before acting, waiting until `at` (Unix ms).
-    private func retrying(_ at: Int64) -> String {
-        let date = Date(milliseconds: at)
-        return date > .now ? "Retrying at \(date.formatted(date: .omitted, time: .shortened))" : "Retrying"
     }
 
     private func animate(_ change: () -> Void) { withAnimation(Motion.reduced(Motion.layout, reduceMotion), change) }

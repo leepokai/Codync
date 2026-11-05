@@ -85,10 +85,10 @@ import Testing
     #expect(TimeZones.offset("Asia/Taipei") == "GMT+8")
 }
 
-@Test func routineRepeatKeepsTheFiveChoicesAndOpensTheRestAsCustom() {
-    #expect(RoutineScheduleDraft.repeatChoices.map(\.id) == ["hourly", "daily", "weekdays", "weekly", "custom"])
+@Test func routineRepeatKeepsTheSixChoicesAndOpensTheRestAsCustom() {
+    #expect(RoutineScheduleDraft.repeatChoices.map(\.id) == ["hourly", "daily", "weekdays", "weekly", "yearly", "custom"])
     var draft = RoutineScheduleDraft()
-    for style in ["hourly", "daily", "weekdays", "weekly", "custom"] {
+    for style in ["hourly", "daily", "weekdays", "weekly", "yearly", "custom"] {
         draft.calendarStyle = style
         #expect(draft.forMobileEditor().calendarStyle == style)
     }
@@ -113,4 +113,54 @@ import Testing
     let cron = RoutineTrigger(type: "cron", expression: "0 9 * * 1-5", timeZone: "UTC")
     #expect(RoutineSchedulePreview(draft: draft, triggers: [cron], summary: "").cronExpression == "0 9 * * 1-5")
     #expect(RoutineSchedulePreview(draft: draft, triggers: [RoutineTrigger(type: "webhook")], summary: "").cronExpression == nil)
+}
+
+@Test func aRunSaysWhatItStoodForSkippedMissedOrWaitingOnTheUser() throws {
+    func run(_ status: String, extra: String = "") -> RoutineRun {
+        let json = #"""
+        {"id":"r","routineId":"x","botId":"b","status":"\#(status)","createdAt":0,\#(extra)}
+        """#
+        return try JSONDecoder().decode(RoutineRun.self, from: Data(json.utf8))
+    }
+    #expect(try run("pending").label == "Queued")
+    #expect(try run("running").label == "Running")
+    #expect(try run("running", extra: #"needsAttention":true"#).label == "Waiting on you")
+    // A cancelled run that stands for a due occurrence is a skipped one, and says how many it dropped.
+    #expect(try run("cancelled", extra: #"scheduledFor":1"#).label == "Skipped")
+    #expect(try run("cancelled", extra: #"scheduledFor":1,"missed":{"count":2,"until":2}"#).label == "Skipped · 2 missed")
+    #expect(try run("cancelled", extra: #"missed":{"count":3}"#).label == "Skipped · 3 missed")
+    // A cancelled run with no occurrence just stopped.
+    #expect(try run("cancelled").label == "Cancelled")
+    // A failure that also dropped occurrences keeps both facts.
+    #expect(try run("failed", extra: #"missed":{"count":1}"#).label == "Failed · 1 missed")
+}
+
+@Test func theScheduleDraftCarriesTheYearlyDateAndTheHourlyWindow() throws {
+    var draft = RoutineScheduleDraft()
+    #expect(draft.yearMonth == 1)
+    #expect(draft.everyHours == 1)
+    #expect(draft.windowStart == nil)
+    #expect(draft.windowEnd == nil)
+    draft.calendarStyle = "yearly"
+    draft.yearMonth = 2
+    draft.monthDay = 29
+    draft.everyHours = 2
+    draft.windowStart = 540
+    draft.windowEnd = 1080
+    let encoded = try JSONEncoder().encode(draft)
+    let restored = try JSONDecoder().decode(RoutineScheduleDraft.self, from: encoded)
+    #expect(restored == draft)
+    #expect(restored.yearMonth == 2)
+    #expect(restored.windowStart == 540)
+    #expect(restored.windowEnd == 1080)
+}
+
+@Test func aRoutineDecodesItsPoliciesWhenTheHostSendsThem() throws {
+    let with = Data(#"{"id":"r","botId":"b","name":"Check","instruction":"Check","triggers":[],"enabled":true,"createdAt":0,"updatedAt":0,"triggerDescriptions":[],"missedPolicy":"runOnce","limitPolicy":"skip"}"#.utf8)
+    #expect(try JSONDecoder().decode(Routine.self, from: with).missedPolicy == "runOnce")
+    #expect(try JSONDecoder().decode(Routine.self, from: with).limitPolicy == "skip")
+    // An older host sends nothing; the fields stay unset and an edit keeps the saved policies.
+    let without = Data(#"{"id":"r","botId":"b","name":"Check","instruction":"Check","triggers":[],"enabled":true,"createdAt":0,"updatedAt":0,"triggerDescriptions":[]}"#.utf8)
+    #expect(try JSONDecoder().decode(Routine.self, from: without).missedPolicy == nil)
+    #expect(try JSONDecoder().decode(Routine.self, from: without).limitPolicy == nil)
 }

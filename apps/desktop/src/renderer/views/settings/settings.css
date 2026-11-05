@@ -141,28 +141,51 @@
   font-weight: 700;
 }
 .settings-usage-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
   font-size: var(--text-callout);
   font-weight: 400;
-  white-space: nowrap;
+  white-space: normal;
+}
+.settings-usage-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 .settings-usage-title {
-  width: 64px;
-  flex: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
 }
 .settings-usage-percent {
-  width: 36px;
   flex: none;
+  width: auto;
   text-align: right;
 }
 .settings-usage-note {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   text-align: right;
 }
+.settings-usage-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.settings-usage-line .progress-track.usage-bar {
+  flex: 1 1 auto;
+  min-width: 40px;
+}
 .settings-usage-reset {
-  width: 130px;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 58%;
+  width: auto;
   text-align: right;
+  line-height: 1.2;
 }
 
 /* Computers & devices. */

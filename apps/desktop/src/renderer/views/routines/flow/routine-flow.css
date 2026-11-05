@@ -344,7 +344,9 @@
 /* The inspector */
 .flow-inspector {
   flex: 0 0 260px;
+  box-sizing: border-box;
   width: 260px;
+  max-width: 100%;
   overflow-y: auto;
   padding: 12px;
   border-radius: var(--radius-m);

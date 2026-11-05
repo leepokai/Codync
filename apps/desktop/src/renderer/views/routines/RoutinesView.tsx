@@ -170,7 +170,7 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
         </Sheet>
         </>
       )}
-      <Sheet open={canvasOpen} onClose={() => setCanvasOpen(false)} width={1120} height={760}>
+      <Sheet open={canvasOpen} onClose={() => setCanvasOpen(false)} width={Math.min(1120, window.innerWidth - 40)} height={Math.min(760, window.innerHeight - 40)}>
         <VStack gap={14} className="routine-flow-sheet">
           <ModalHeader
             icon="clock.arrow.circlepath"

@@ -508,7 +508,7 @@ function ChatSplitView() {
           </StoreContext.Provider>
         ) : null}
       </Sheet>
-      <Sheet open={canvasOpen && !!selectedBot && !!selectedStore} onClose={() => setCanvasOpen(false)} width={1120} height={760}>
+      <Sheet open={canvasOpen && !!selectedBot && !!selectedStore} onClose={() => setCanvasOpen(false)} width={Math.min(1120, windowSize.width - 40)} height={Math.min(760, windowSize.height - 40)}>
         {selectedBot && selectedStore ? (
           <StoreContext.Provider value={selectedStore}>
             <VStack gap={14} className="routine-flow-sheet">

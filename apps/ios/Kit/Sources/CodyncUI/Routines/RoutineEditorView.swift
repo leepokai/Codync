@@ -231,7 +231,14 @@ struct RoutineEditorView: View {
         case "hourly":
             if schedule.windowStart == nil && schedule.windowEnd == nil {
                 Field("At minute") {
-                    ChoicePicker(selection: $schedule.minute, options: (0..<60).map { (id: $0, label: String(format: ":%02d", $0)) })
+                    HStack(spacing: 8) {
+                        ChoicePicker(selection: $schedule.minute, options: (0..<60).map { (id: $0, label: String(format: ":%02d", $0)) })
+                        // The window the TUI starts from: the workday, 09:00 to 18:00.
+                        IconButton("Only run between two times", systemImage: "clock") {
+                            schedule.windowStart = 9 * 60
+                            schedule.windowEnd = 18 * 60
+                        }
+                    }
                 }
             } else {
                 // A window's start sets the minute of every run in it.
@@ -248,10 +255,10 @@ struct RoutineEditorView: View {
                         }
                     }
                 }
-                Field("Every") {
-                    ChoicePicker(selection: $schedule.everyHours,
-                                 options: [1, 2, 3, 4, 6, 8, 12].map { (id: $0, label: $0 == 1 ? "hour" : "\($0) hours") })
-                }
+            }
+            Field("Every") {
+                ChoicePicker(selection: $schedule.everyHours,
+                             options: [1, 2, 3, 4, 6, 8, 12].map { (id: $0, label: $0 == 1 ? "hour" : "\($0) hours") })
             }
         case "daily", "weekdays":
             timeField

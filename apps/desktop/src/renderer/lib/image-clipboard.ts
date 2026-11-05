@@ -8,6 +8,15 @@ export function imageType(name: string) {
 }
 
 /** The clipboard takes PNG for pictures: other formats are drawn and re-encoded. */
+/** Which step of a copy failed: turning the picture into PNG, or writing the clipboard. */
+export class ImageCopyError extends Error {
+  readonly kind: 'convert' | 'clipboard'
+  constructor(kind: 'convert' | 'clipboard', cause: unknown) {
+    super(kind === 'convert' ? 'The picture could not be converted' : 'The clipboard did not take the picture', { cause })
+    this.kind = kind
+  }
+}
+
 async function asPng(bytes: Uint8Array, name: string): Promise<Blob> {
   const type = imageType(name)
   const blob = new Blob([bytes as BlobPart], { type })
@@ -25,5 +34,6 @@ async function asPng(bytes: Uint8Array, name: string): Promise<Blob> {
 }
 
 export async function copyImage(bytes: Uint8Array, name: string) {
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': await asPng(bytes, name) })])
+  const png = await asPng(bytes, name).catch((error) => { throw new ImageCopyError('convert', error) })
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).catch((error) => { throw new ImageCopyError('clipboard', error) })
 }

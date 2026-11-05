@@ -33,9 +33,9 @@ internal fun imageCopyItems(copyImage: () -> Unit, copyName: () -> Unit) = listO
     MenuItem("Copy image", icon = "photo.on.rectangle", action = copyImage),
     MenuItem("Copy name", icon = "square.on.square", action = copyName))
 
-/** [imageCopyItems] for `source` in a chat or the Library: a failed copy shows as the store's error. */
+/** [imageCopyItems] for `source` in a chat or the Library: a failed copy shows in the app's error dialog. */
 internal fun imageCopyItems(store: AppStore, source: ImageSource) =
-    imageCopyItems({ store.copyImageLater(source) }) { store.copyImageName(source) }
+    imageCopyItems({ store.copyImageLater(source) }) { store.copyImageName(source, ImageFrom.Menu) }
 
 internal val quickReactions = listOf("👍", "❤️", "😂", "🎉", "👀", "✅")
 

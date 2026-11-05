@@ -33,7 +33,7 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - The desktop viewer zooms (trackpad pinch or ctrl + wheel, two fingers on a touch screen,
   double-click, `+` / `-` / `0`) and moves the picture by dragging or scrolling once zoomed in.
   The header has Copy image (the picture itself on the clipboard, re-encoded as PNG when it is
-  another format) and, for a bot-shared file, the file's Download button next to the close button.
+  another format) and, for a bot-shared file, the file's Download button next to the close button; while that file downloads or fails, its progress or error shows under the header. A Copy image from a picture's menu that fails says "Couldn't copy image" for a moment.
   Right-click on a picture, in the chat or the viewer, opens its message's own menu (reactions, Reply, what it did) with Copy turned into Copy image and Copy name. iPhone and
   Android open a picture in a sheet that zooms the same way (pinch, drag once zoomed in, double-tap
   to 2.5x and back; at fit size a swipe down still closes it), with Copy image (the picture

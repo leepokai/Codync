@@ -74,6 +74,11 @@ pub enum Reported {
     ImagePreviewOpened,
     ImagePreviewAction {
         action: ImageAction,
+        from: ImageFrom,
+        outcome: ImageOutcome,
+        /// Why a copy or download failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ImageFailure>,
     },
     VoiceCallStarted {
         engine: Engine,
@@ -167,6 +172,38 @@ pub enum ImageAction {
     CopyImage,
     CopyName,
     Download,
+    #[serde(other)]
+    Other,
+}
+
+/// Where it was done: inside the full-size viewer, or from a picture's menu in a chat or the Library.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFrom {
+    Viewer,
+    Menu,
+    #[serde(other)]
+    Other,
+}
+
+/// How a picture action ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageOutcome {
+    Done,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// Why a picture copy or download failed: its bytes weren't there, couldn't be converted, the clipboard refused them, or the transfer broke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFailure {
+    Unavailable,
+    Convert,
+    Clipboard,
+    Transfer,
     #[serde(other)]
     Other,
 }
@@ -350,7 +387,12 @@ mod tests {
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
             (json!({"event": "image_preview_opened", "app": "desktop"}), Event::ImagePreviewOpened),
             (
-                json!({"event": "image_preview_action", "app": "desktop", "action": "copy_image"}),
+                json!({"event": "image_preview_action", "app": "desktop", "action": "copy_image", "from": "menu", "outcome": "done"}),
+                Event::ImagePreviewAction,
+            ),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "download", "from": "viewer",
+                    "outcome": "failed", "error": "transfer"}),
                 Event::ImagePreviewAction,
             ),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),

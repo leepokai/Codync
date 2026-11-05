@@ -25,6 +25,10 @@ export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'dem
 
 /** What was done in the full-size picture viewer. */
 export type ImageAction = 'zoom' | 'copy_image' | 'copy_name' | 'download'
+/** Where it was done: inside the full-size viewer, or from a picture's menu in a chat or the Library. */
+export type ImageFrom = 'viewer' | 'menu'
+/** Why a picture copy or download failed: its bytes weren't there, couldn't be converted, the clipboard refused them, or the transfer broke. */
+export type ImageFailure = 'unavailable' | 'convert' | 'clipboard' | 'transfer'
 
 export type SignInProvider = 'apple' | 'google' | 'github'
 
@@ -58,7 +62,7 @@ export type AnalyticsEvent =
   | { event: 'link_opened'; link: Link }
   | { event: 'screen_viewed'; screen: Screen }
   | { event: 'image_preview_opened' }
-  | { event: 'image_preview_action'; action: ImageAction }
+  | { event: 'image_preview_action'; action: ImageAction; from: ImageFrom; outcome: 'done' | 'failed'; error?: ImageFailure }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }

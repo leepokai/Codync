@@ -57,10 +57,10 @@ import com.kyant.shapes.RoundedRectangle
 }
 
 /** A shared file's download button, on its card and in its viewer: downloads (again after a failure or a save), or cancels
- *  the download under way. `started` runs as a download starts. */
-@Composable internal fun DownloadButton(entry: Entry, file: SharedFile, state: AppState, store: AppStore, started: () -> Unit = {}) {
+ *  the download under way. In the image viewer (`inViewer`) its end is reported. */
+@Composable internal fun DownloadButton(entry: Entry, file: SharedFile, state: AppState, store: AppStore, inViewer: Boolean = false) {
     val busy = state.fileDownloads[file.id] is FileDownloadState.Downloading
-    Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else { started(); store.saveFile(entry.id, entry.botId, file) } }
+    Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file, inViewer) }
         .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
         Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
     }

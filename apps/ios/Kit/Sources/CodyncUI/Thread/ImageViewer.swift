@@ -48,10 +48,11 @@ struct AttachmentViewer: View {
                     ViewerDownloadButton(file: file, entryId: entryId, botId: botId)
                 }
             }
+            if case .shared(let file, _, _) = viewing.source { ViewerDownloadStatus(file: file) }
             ZoomableImage(zoom: $zoom) { AttachmentImage(viewing.source, maxPixels: 4096) }
                 .accessibilityLabel(Text(verbatim: viewing.source.name))
                 .contextActions(reactions: menu?.reactions) {
-                    let copy = ImageCopy.menuItems(viewing.source, copyImage: copyImage)
+                    let copy = ImageCopy.menuItems(viewing.source, from: .viewer, copyImage: copyImage)
                     return menu?.items(copy: copy) ?? copy
                 }
                 .padding(12)
@@ -63,7 +64,7 @@ struct AttachmentViewer: View {
         .onChange(of: zoom.scale) {
             guard !zoomReported else { return }
             zoomReported = true
-            Analytics.shared.capture(.imagePreviewAction(.zoom))
+            Analytics.shared.capture(.imagePreviewAction(.zoom, from: .viewer))
         }
         // A download of this chat that finishes while the picture is open shares from here.
         .fileExportSheet(model, botId: viewing.source.botId)
@@ -74,7 +75,7 @@ struct AttachmentViewer: View {
     private func copyImage() {
         copying?.cancel()
         copying = Task {
-            let done = await ImageCopy.image(viewing.source, model: model)
+            let done = await ImageCopy.image(viewing.source, model: model, from: .viewer)
             showCopy(done ? .copied : .failed)
             // Cancelled by a newer copy, which shows its own result.
             try? await Task.sleep(for: CopyResult.shownFor)
@@ -113,8 +114,36 @@ private struct ViewerDownloadButton: View {
     var body: some View {
         let state = model.fileDownloads.states[file.id]
         IconButton(FileDownloadCard.action(state), systemImage: FileDownloadCard.symbol(state)) {
-            if !model.fileDownloads.isDownloading(file.id) { Analytics.shared.capture(.imagePreviewAction(.download)) }
-            Motion.animate { model.fileDownloads.toggle(client: model.client, entryId: entryId, botId: botId, file: file) }
+            Motion.animate {
+                model.fileDownloads.toggle(client: model.client, entryId: entryId, botId: botId, file: file) { outcome in
+                    Analytics.shared.capture(.imagePreviewAction(.download, from: .viewer, outcome: outcome))
+                }
+            }
         }
+    }
+}
+
+/// How a shared file's download is going, under the viewer's header (its card is hidden behind the sheet): shown
+/// only while it downloads or after it failed.
+private struct ViewerDownloadStatus: View {
+    let file: SharedFile
+    @Environment(BotStore.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let state = model.fileDownloads.states[file.id]
+        let failed: Bool = { if case .failed = state { return true } else { return false } }()
+        let shown = failed || model.fileDownloads.isDownloading(file.id)
+        Group {
+            if shown {
+                Text(FileDownloadCard.detail(state, size: file.size))
+                    .font(.caption2)
+                    .foregroundStyle(failed ? Palette.danger : Palette.secondary)
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: shown)
     }
 }

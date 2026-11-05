@@ -88,9 +88,13 @@ internal sealed class AnalyticsEvent(val name: String) {
     }
     /** A picture in a chat or the Library opened full size. Never the picture or its name. */
     data object ImagePreviewOpened : AnalyticsEvent("image_preview_opened")
-    /** Something done to a picture (at most one `zoom` per opening). Never the picture or its name. */
-    data class ImagePreviewAction(val action: ImageAction) : AnalyticsEvent("image_preview_action") {
-        override val properties get() = mapOf("action" to action.json)
+    /**
+     * Something done to a picture (at most one `zoom` per opening), where from, and how it went: `error` is set only when it
+     * failed. Never the picture or its name.
+     */
+    data class ImagePreviewAction(val action: ImageAction, val from: ImageFrom, val error: ImageError? = null) : AnalyticsEvent("image_preview_action") {
+        override val properties get() = mapOf("action" to action.json, "from" to from.json,
+            "outcome" to JsonPrimitive(if (error == null) "done" else "failed")) + listOfNotNull(error?.let { "error" to it.json })
     }
 }
 
@@ -190,6 +194,14 @@ internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
 
 internal enum class ImageAction(override val wire: String) : CatalogValue {
     Zoom("zoom"), CopyImage("copy_image"), CopyName("copy_name"), Download("download"),
+}
+
+/** Where a picture action was done: the full-size viewer, or a picture's long-press menu in a chat or the Library. */
+internal enum class ImageFrom(override val wire: String) : CatalogValue { Viewer("viewer"), Menu("menu") }
+
+/** Why a picture action failed: its file isn't there, couldn't be read, the clipboard refused it, or a download failed. */
+internal enum class ImageError(override val wire: String) : CatalogValue {
+    Unavailable("unavailable"), Convert("convert"), Clipboard("clipboard"), Transfer("transfer")
 }
 
 /** `screen_viewed` values (the catalog's *Screens* table, iOS/Android column). */

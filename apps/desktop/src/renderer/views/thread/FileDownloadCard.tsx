@@ -7,6 +7,7 @@ import { IconButtonBase } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { analytics } from '../../store/analytics'
+import { imageActionEvent } from '../../lib/image-analytics.ts'
 import { AttachmentImage, AttachmentViewer, attachmentSymbol, byteCount, type ImageSource } from './Attachments'
 import { ImageContextMenu } from './ImageContextMenu'
 import type { MessageMenu } from './use-image-actions'
@@ -33,12 +34,14 @@ function DownloadButton({ entry, file, inViewer = false }: { entry: Entry; file:
   const store = useStore()
   const state = store.fileDownloads.states.get(file.id)
   const busy = state?.kind === 'downloading'
-  const start = () => {
+  const start = async () => {
     if (busy) return store.fileDownloads.cancel(file.id)
-    if (inViewer) analytics.track({ event: 'image_preview_action', action: 'download' })
-    void store.fileDownloads.save(store.client, entry.id, file)
+    await store.fileDownloads.save(store.client, entry.id, file)
+    // Reported once it ends, and only the viewer's button: a cancel (no new state) or a save that never started says nothing.
+    const ended = store.fileDownloads.states.get(file.id)
+    if (inViewer && ended && ended !== state && ended.kind !== 'downloading') analytics.track(imageActionEvent('download', 'viewer', ended.kind === 'failed' ? 'transfer' : undefined))
   }
-  return <IconButtonBase title={downloadAction(state)} icon={busy ? 'xmark' : 'arrow.down.to.line'} size={inViewer ? 28 : 36} onClick={start} />
+  return <IconButtonBase title={downloadAction(state)} icon={busy ? 'xmark' : 'arrow.down.to.line'} size={inViewer ? 28 : 36} onClick={() => void start()} />
 }
 
 export function FileDownloadCard({ entry, file, menu }: { entry: Entry; file: SharedFile; menu?: MessageMenu }) {
@@ -54,7 +57,13 @@ export function FileDownloadCard({ entry, file, menu }: { entry: Entry; file: Sh
           <AttachmentImage source={image} fit="thumbnail" />
         </button>
       </ImageContextMenu>
-      <AttachmentViewer source={viewing ? image : null} close={() => setViewing(false)} menu={menu} actions={<DownloadButton entry={entry} file={file} inViewer />} />
+      <AttachmentViewer
+        source={viewing ? image : null}
+        close={() => setViewing(false)}
+        menu={menu}
+        actions={<DownloadButton entry={entry} file={file} inViewer />}
+        note={state ? <Text as="div" size="caption2" tone={state.kind === 'failed' ? 'danger' : 'secondary'} role={state.kind === 'failed' ? 'alert' : 'status'} className="attachment-viewer-note">{detail}</Text> : undefined}
+      />
     </> : null}
     <HStack gap={12}>
       <Icon name={attachmentSymbol(file.name)} size={24} color="var(--secondary)" />

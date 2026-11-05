@@ -30,7 +30,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// A picture in a chat or the Library opened full size.
     case imagePreviewOpened
     /// Something done in the full-size viewer, or a picture copied from a message's menu; at most one `zoom` per opening.
-    case imagePreviewAction(ImageAction)
+    /// A download is reported when it ends, not when it starts.
+    case imagePreviewAction(ImageAction, from: ImageFrom, outcome: ImageOutcome = .done)
     case reviewRequested(prompts: Int)
     case reviewLinkOpened
 
@@ -48,6 +49,15 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
     public enum ImageAction: String, Sendable { case zoom, copyImage = "copy_image", copyName = "copy_name", download }
+    /// Where it was done: inside the full-size viewer, or from a picture's menu in a chat while the viewer is closed.
+    public enum ImageFrom: String, Sendable { case viewer, menu }
+    /// How it went; `zoom` and `copy_name` are always done.
+    public enum ImageOutcome: Equatable, Sendable {
+        case done, failed(ImageError)
+    }
+    /// Why a picture action failed: its bytes aren't there, it couldn't be read or encoded, the pasteboard write
+    /// failed, or a download failed. Never the picture or its name.
+    public enum ImageError: String, Sendable { case unavailable, convert, clipboard, transfer }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
     public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
@@ -141,7 +151,13 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested, .imagePreviewOpened: return [:]
-        case let .imagePreviewAction(action): return ["action": .string(action.rawValue)]
+        case let .imagePreviewAction(action, from, outcome):
+            var p: [String: Analytics.Value] = ["action": .string(action.rawValue), "from": .string(from.rawValue)]
+            switch outcome {
+            case .done: p["outcome"] = .string("done")
+            case let .failed(error): p["outcome"] = .string("failed"); p["error"] = .string(error.rawValue)
+            }
+            return p
         case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .computerPaired(via, computer):

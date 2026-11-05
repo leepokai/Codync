@@ -40,14 +40,14 @@ import kotlinx.coroutines.launch
 /** An image a bot shared full size, in a sheet while `file` is set, with its card's Download button by the close button. */
 @Composable internal fun SharedImageSheet(file: SharedFile?, entry: Entry, menu: MessageMenu, state: AppState, store: AppStore, dismiss: () -> Unit) {
     ImageSheet(file, { it.imageSource(entry.id, store) }, menu, state, store, dismiss,
-        detail = { shown -> state.fileDownloads[shown.id]?.let { detail(shown, it) } }) { shown ->
-        DownloadButton(entry, shown, state, store) { Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Download)) }
+        detail = { shown -> state.fileDownloads[shown.id]?.takeIf { it !is FileDownloadState.Saved }?.let { detail(shown, it) } }) { shown ->
+        DownloadButton(entry, shown, state, store, inViewer = true)
     }
 }
 
 /**
  * A picture full size (iOS `AttachmentViewer`), in a sheet while `item` is set: it zooms, the header copies it, and holding
- * it opens its message's menu with Copy image and Copy name. `detail` is a line under the name; `trailing`, buttons
+ * it opens its message's menu with Copy image and Copy name. `detail` is a line under the name (a shared file's download while it runs or failed); `trailing`, buttons
  * before the close button.
  */
 @Composable private fun <T : Any> ImageSheet(item: T?, source: (T) -> ImageSource, menu: MessageMenu?, state: AppState, store: AppStore,
@@ -71,7 +71,7 @@ import kotlinx.coroutines.launch
                 .semantics { contentDescription = picture.name }, contentAlignment = Alignment.Center) {
                 if (bitmap == null) ImagePlaceholder()
                 else ZoomableImage(bitmap, open, Modifier.fillMaxSize()) {
-                    if (!zoomReported) { zoomReported = true; Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Zoom)) }
+                    if (!zoomReported) { zoomReported = true; Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Zoom, ImageFrom.Viewer)) }
                 }
             }
         }
@@ -100,7 +100,7 @@ internal enum class CopyResult(val title: String, val symbol: String) {
     fun copy() {
         flash?.cancel()
         flash = scope.launch {
-            result = try { store.copyImage(source); CopyResult.Copied }
+            result = try { store.copyImage(source, ImageFrom.Viewer); CopyResult.Copied }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { android.util.Log.w("Codync", "Couldn't copy an image", error); CopyResult.Failed }
             delay(FLASH_MS)
@@ -109,7 +109,7 @@ internal enum class CopyResult(val title: String, val symbol: String) {
     }
 
     /** Copy image and Copy name for the picture's menu; Copy image here also shows on the button. */
-    fun items() = imageCopyItems(::copy) { store.copyImageName(source) }
+    fun items() = imageCopyItems(::copy) { store.copyImageName(source, ImageFrom.Viewer) }
 
     companion object {
         const val FLASH_MS = 1_500L

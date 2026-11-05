@@ -4,6 +4,7 @@ import { Icon } from '../../components/Icon'
 import { IconButtonBase, ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { imageActionEvent } from '../../lib/image-analytics.ts'
 import { analytics } from '../../store/analytics'
 import { useStoreRef } from '../../store/context'
 import { ImageContextMenu } from './ImageContextMenu'
@@ -66,7 +67,7 @@ export function AttachmentList({ attachments, botId, menu }: { attachments: Atta
 export type ImageSource = { file: Attachment; botId: string } | { file: SharedFile; entryId: string }
 
 /** A picture full size, in a sheet: zoom it, copy it, and with `actions` (a shared file's download) next to the close button. */
-export function AttachmentViewer({ source, close, actions, menu }: { source: ImageSource | null; close: () => void; actions?: ReactNode; menu?: MessageMenu }) {
+export function AttachmentViewer({ source, close, actions, note, menu }: { source: ImageSource | null; close: () => void; actions?: ReactNode; note?: ReactNode; menu?: MessageMenu }) {
   const id = source?.file.id
   // Each opening is a new page, even one that starts while the sheet is still closing (which keeps its last content).
   const shown = useRef<string>(undefined)
@@ -78,19 +79,19 @@ export function AttachmentViewer({ source, close, actions, menu }: { source: Ima
   }, [id])
   return (
     <Sheet open={source !== null} onClose={close} width={1040} height={800}>
-      {source ? <ViewerPage key={opening.current} source={source} actions={actions} menu={menu && leavingViewer(menu, close)} /> : null}
+      {source ? <ViewerPage key={opening.current} source={source} actions={actions} note={note} menu={menu && leavingViewer(menu, close)} /> : null}
     </Sheet>
   )
 }
 
-function ViewerPage({ source, actions, menu }: { source: ImageSource; actions?: ReactNode; menu?: MessageMenu }) {
+function ViewerPage({ source, actions, note, menu }: { source: ImageSource; actions?: ReactNode; note?: ReactNode; menu?: MessageMenu }) {
   const copy = useImageCopy(source)
   // Zooming is counted once per opening, not per pinch step.
   const zoomed = useRef(false)
   const reportZoom = () => {
     if (zoomed.current) return
     zoomed.current = true
-    analytics.track({ event: 'image_preview_action', action: 'zoom' })
+    analytics.track(imageActionEvent('zoom', 'viewer'))
   }
   const [title, icon] = copy.done === 'image' ? ['Copied', 'checkmark'] : copy.done === 'failed' ? ["Couldn't copy image", 'exclamationmark.circle'] : ['Copy image', 'doc.on.doc']
   return (
@@ -104,6 +105,7 @@ function ViewerPage({ source, actions, menu }: { source: ImageSource; actions?: 
           </>
         }
       />
+      {note}
       <ImageContextMenu source={source} menu={menu} copyImage={() => void copy.copy()} className="attachment-viewer">
         <ZoomableImage onZoom={reportZoom}>
           <AttachmentImage source={source} fit="full" />

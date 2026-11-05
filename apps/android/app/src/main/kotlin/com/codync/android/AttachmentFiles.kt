@@ -100,15 +100,18 @@ class AttachmentFiles(private val context: Context, private val directory: File)
     }
 
     /**
-     * Picture [source] itself on the clipboard (iOS `UIPasteboard` image): a copy named [name] in a `shareFolder`, as a
-     * `content://` link the app that pastes reads through the FileProvider. The clipboard grants it that read.
+     * Picture [source] itself as a clip (iOS `UIPasteboard` image): a copy named [name] in a `shareFolder`, as a
+     * `content://` link the app that pastes reads through the FileProvider. The clipboard grants it that read once
+     * [putOnClipboard] has it.
      */
-    fun copyImage(source: File, name: String) {
+    fun stageImage(source: File, name: String): ClipData {
         val copy = File(shareFolder().apply { mkdirs() }, cleanName(name))
         source.copyTo(copy, overwrite = true)
-        val clip = ClipData.newUri(context.contentResolver, copy.name, uri(copy))
-        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+        return ClipData.newUri(context.contentResolver, copy.name, uri(copy))
     }
+
+    /** [clip] as the clipboard's current item. */
+    fun putOnClipboard(clip: ClipData) = context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
 
     private fun uri(shared: File) = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
 

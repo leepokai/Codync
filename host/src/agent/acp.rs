@@ -309,8 +309,8 @@ impl Acp {
         let process = self.child.lock().await;
         let members = process.job_members()?;
         drop(process);
-        let listed = tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?;
-        listed
+        let listing = tokio::task::spawn_blocking(move || super::process_windows::named(&members));
+        listing.await?
     }
 
     /// Frozen before session creation, so later background work cannot become part of the agent.

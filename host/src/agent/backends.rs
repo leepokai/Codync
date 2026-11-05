@@ -50,7 +50,7 @@ pub struct Harness {
 pub enum Install {
     /// A vendor install script (`curl … | bash`), Unix only.
     Script(&'static str),
-    /// Vendor install scripts for Unix and for Windows (PowerShell).
+    /// Vendor install scripts for Unix and for Windows (`PowerShell`).
     Scripts { unix: &'static str, windows: &'static str },
     /// A global npm package, installed on the computer's Node or else Codync's (`codync-host npm`).
     Npm(&'static str),

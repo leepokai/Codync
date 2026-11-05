@@ -117,9 +117,16 @@ fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a
     (model, Vec::new())
 }
 
-/// Spawns an ACP agent and completes the `initialize` handshake.
-pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
+/// Ownership is registered before any handshake await, so cancellation cannot lose its cleanup barrier.
+pub(crate) async fn start_agent(
+    command: &str,
+    cwd: &str,
+    env: &[(String, String)],
+    budget: Duration,
+    on_spawn: impl FnOnce(std::sync::Arc<Acp>),
+) -> Result<Conn> {
     let (acp, rx) = Acp::spawn(command, cwd, env)?;
+    on_spawn(acp.clone());
     let init = tokio::time::timeout(
         budget,
         acp.request(
@@ -143,11 +150,11 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
     let init = match init {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
-            acp.kill().await;
+            acp.stop_and_wait().await?;
             return Err(e);
         }
         Err(_) => {
-            acp.kill().await;
+            acp.stop_and_wait().await?;
             let message = format!("the agent didn't answer the ACP handshake within {}s", budget.as_secs());
             return Err(acp::Failure::error(acp::FailureKind::Timeout, message));
         }
@@ -171,6 +178,9 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         sessions,
         adapter: adapter(&init),
         loaded: HashMap::new(),
+        allocations: 0,
+        untracked_allocations: 0,
+        pending_models: HashMap::new(),
         started: Instant::now(),
         opening: false,
         fast_options: HashMap::new(),

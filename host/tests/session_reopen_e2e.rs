@@ -45,7 +45,7 @@ async fn an_agent_that_only_resumes_keeps_its_conversation_and_gives_sessions_ba
 }
 
 #[tokio::test]
-async fn a_model_refused_after_a_resume_leaves_the_session_to_resume_again() {
+async fn a_model_refused_after_resume_retries_selection_on_the_same_allocation() {
     if common::python_missing() {
         return;
     }
@@ -66,6 +66,47 @@ async fn a_model_refused_after_a_resume_leaves_the_session_to_resume_again() {
 
     std::fs::remove_file(&refused).unwrap();
     host.reply(&bot, "three").await;
-    assert_eq!(host.requests(&bot, "session/resume").len(), 2);
-    assert_eq!(host.requests(&bot, "session/new").len(), 1, "the agent refused to resume a session it still held");
+    // The host tracks the resumed allocation before model selection: retry selects its model again,
+    // without trying to resume an already active session or creating another tool set.
+    assert_eq!(host.requests(&bot, "session/resume").len(), 1);
+    assert_eq!(host.requests(&bot, "session/set_config_option").len(), 3);
+    assert_eq!(host.requests(&bot, "session/new").len(), 1);
+}
+
+#[tokio::test]
+async fn a_resume_without_model_metadata_keeps_the_configured_model_without_legacy_selection() {
+    if common::python_missing() {
+        return;
+    }
+    let mut host = Host::start().await;
+    let bot = host.fixture_bot("Empty resume", "resume_agent.py", "--empty-resume").await;
+    host.call("updateBot", json!({"id":bot,"model":"fixture"})).await;
+    host.reply(&bot, "one").await;
+    host.restart(|_| {}).await;
+    host.reply(&bot, "two").await;
+    assert_eq!(host.requests(&bot, "session/new").len(), 1);
+    assert_eq!(host.requests(&bot, "session/resume").len(), 1);
+    assert_eq!(host.requests(&bot, "session/set_config_option").len(), 1);
+    assert_eq!(host.requests(&bot, "session/set_model").len(), 0);
+}
+
+#[tokio::test]
+async fn a_resume_with_only_modes_reapplies_the_saved_mode_without_selecting_a_model() {
+    if common::python_missing() {
+        return;
+    }
+    let mut host = Host::start().await;
+    let bot = host.fixture_bot("Modes resume", "resume_agent.py", "--modes-only-resume").await;
+    host.call("updateBot", json!({"id": bot, "model": "fixture", "mode": "plan"})).await;
+    host.reply(&bot, "one").await;
+    host.restart(|_| {}).await;
+    host.reply(&bot, "two").await;
+    let modes = host.requests(&bot, "session/set_mode");
+    assert_eq!(modes.len(), 2, "both allocations must apply the saved mode");
+    assert!(modes.iter().all(|r| r["params"]["modeId"] == "plan"));
+    assert_eq!(modes[0]["params"]["sessionId"], modes[1]["params"]["sessionId"]);
+    assert_eq!(host.requests(&bot, "session/new").len(), 1);
+    assert_eq!(host.requests(&bot, "session/resume").len(), 1);
+    assert_eq!(host.requests(&bot, "session/set_config_option").len(), 1);
+    assert_eq!(host.requests(&bot, "session/set_model").len(), 0);
 }

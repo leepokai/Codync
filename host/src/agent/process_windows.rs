@@ -4,7 +4,7 @@ use super::process::JobProcess;
 use anyhow::{Context, Result, bail};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use tokio::process::Child;
-use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+use windows_sys::Win32::Foundation::{ERROR_INVALID_PARAMETER, FILETIME, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD,
     THREADENTRY32, Thread32First, Thread32Next,
@@ -12,7 +12,9 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
 use windows_sys::Win32::System::JobObjects::{
     JOBOBJECT_BASIC_PROCESS_ID_LIST, JobObjectBasicProcessIdList, QueryInformationJobObject,
 };
-use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+use windows_sys::Win32::System::Threading::{
+    GetProcessTimes, OpenProcess, OpenThread, PROCESS_QUERY_LIMITED_INFORMATION, ResumeThread, THREAD_SUSPEND_RESUME,
+};
 
 /// More processes than any agent runs; a job past it fails the listing, which counts as busy.
 const MOST_PROCESSES: usize = 1024;
@@ -67,17 +69,48 @@ pub(super) fn named(members: &[u32]) -> Result<Vec<JobProcess>> {
     let mut present = unsafe { Process32FirstW(snapshot.as_raw_handle(), &raw mut entry) };
     while present != 0 {
         if members.contains(&entry.th32ProcessID) {
+            let Some(created) = creation_time(entry.th32ProcessID)? else {
+                // SAFETY: snapshot and entry remain valid while advancing past an exited process.
+                present = unsafe { Process32NextW(snapshot.as_raw_handle(), &raw mut entry) };
+                continue;
+            };
             let end = entry.szExeFile.iter().position(|c| *c == 0).unwrap_or(entry.szExeFile.len());
             processes.push(JobProcess {
                 pid: entry.th32ProcessID,
                 parent: entry.th32ParentProcessID,
                 name: String::from_utf16_lossy(&entry.szExeFile[..end]),
+                created,
             });
         }
         // SAFETY: the snapshot and writable entry remain valid during iteration.
         present = unsafe { Process32NextW(snapshot.as_raw_handle(), &raw mut entry) };
     }
     Ok(processes)
+}
+
+/// Process IDs alone are reusable; the kernel creation time identifies the same allocation.
+fn creation_time(pid: u32) -> std::io::Result<Option<u64>> {
+    // SAFETY: opens only a query handle to this process; no pointer is supplied.
+    let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if raw.is_null() {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == i32::try_from(ERROR_INVALID_PARAMETER).ok() {
+            return Ok(None); // The process exited after the snapshot.
+        }
+        return Err(error);
+    }
+    // SAFETY: OpenProcess transferred a unique valid handle to us.
+    let process = unsafe { OwnedHandle::from_raw_handle(raw) };
+    let (mut created, mut exited, mut kernel, mut user) =
+        (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+    // SAFETY: the handle has query rights and each output points to an initialized FILETIME.
+    let queried = unsafe {
+        GetProcessTimes(process.as_raw_handle(), &raw mut created, &raw mut exited, &raw mut kernel, &raw mut user)
+    };
+    if queried == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(Some((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime)))
 }
 
 pub(super) fn resume(child: &Child) -> Result<()> {

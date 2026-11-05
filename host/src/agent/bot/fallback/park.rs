@@ -67,9 +67,7 @@ impl Actor {
             None => store.kv_delete(&parked_key(&bot, &from)),
         });
         logged(&bot, "park the agent's session", saved);
-        if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
-        }
+        self.stop_agent().await;
         // A routine run's session belongs to the agent it ran on.
         for slot in self.run_slots() {
             self.set_session(Some(&slot), None);

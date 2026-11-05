@@ -17,22 +17,31 @@ pub(crate) struct JobProcess {
     pub(crate) pid: u32,
     pub(crate) parent: u32,
     pub(crate) name: String,
+    /// Kernel creation time disambiguates reused process IDs.
+    pub(crate) created: u64,
 }
 
 pub(super) struct Process {
-    // Drop the tree before Child can reap the leader and make its PID reusable.
     tree: Tree,
-    child: Child,
+    // Unix Drop transfers the child with its tree, pinning the session ID through fallback cleanup.
+    child: Option<Child>,
     stopping: bool,
+    #[cfg(all(test, unix))]
+    fail_stop: bool,
 }
 
 impl Process {
     pub(super) fn new(child: Child) -> Result<Self> {
         let tree = Tree::new(&child)?;
-        let owned = Self { tree, child, stopping: false };
         #[cfg(windows)]
-        super::process_windows::resume(&owned.child)?;
-        Ok(owned)
+        super::process_windows::resume(&child)?;
+        Ok(Self {
+            tree,
+            child: Some(child),
+            stopping: false,
+            #[cfg(all(test, unix))]
+            fail_stop: false,
+        })
     }
 
     pub(super) fn monitor(child: &Arc<Mutex<Self>>) {
@@ -46,13 +55,17 @@ impl Process {
                 }
                 match process.exited() {
                     Ok(true) => {
-                        process.kill().await;
+                        if let Err(error) = process.kill().await {
+                            tracing::warn!(%error, "couldn't clean up exited agent");
+                        }
                         break;
                     }
                     Ok(false) => {}
                     Err(error) => {
                         tracing::warn!(%error, "couldn't observe agent process exit");
-                        process.kill().await;
+                        if let Err(error) = process.kill().await {
+                            tracing::warn!(%error, "couldn't clean up exited agent");
+                        }
                         break;
                     }
                 }
@@ -65,7 +78,7 @@ impl Process {
 
     #[cfg(unix)]
     fn exited(&self) -> std::io::Result<bool> {
-        let Some(pid) = self.child.id() else { return Ok(true) };
+        let Some(pid) = self.child.as_ref().and_then(Child::id) else { return Ok(true) };
         // SAFETY: zero is a valid siginfo value; waitid writes only into this object.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
         // Keep the leader unreaped until its group is killed, preventing PID reuse.
@@ -90,7 +103,7 @@ impl Process {
     #[cfg(windows)]
     fn exited(&self) -> std::io::Result<bool> {
         use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0};
-        let Some(handle) = self.child.raw_handle() else { return Ok(true) };
+        let Some(handle) = self.child.as_ref().and_then(Child::raw_handle) else { return Ok(true) };
         // SAFETY: the child owns this valid process handle; a zero timeout cannot block.
         let status = unsafe { windows_sys::Win32::System::Threading::WaitForSingleObject(handle, 0) };
         if status == WAIT_FAILED {
@@ -110,85 +123,63 @@ impl Process {
         !std::mem::replace(&mut self.stopping, true)
     }
 
+    #[cfg(all(test, unix))]
+    pub(super) fn fail_next_stop(&mut self) {
+        self.fail_stop = true;
+    }
+
+    pub(super) fn retry_stop(&mut self) {
+        self.stopping = false;
+    }
+
     /// Gives the leader and everything it started until `grace` runs out to finish by themselves,
     /// then kills what is left. Returns as soon as nothing is left.
-    pub(super) async fn stop_within(&mut self, grace: Duration) {
+    pub(super) async fn stop_within(&mut self, grace: Duration) -> Result<()> {
+        #[cfg(all(test, unix))]
+        if std::mem::take(&mut self.fail_stop) {
+            anyhow::bail!("injected cleanup failure");
+        }
         let deadline = Instant::now() + grace;
         while !self.exited().unwrap_or(true) && Instant::now() < deadline {
             tokio::time::sleep(POLL).await;
         }
         #[cfg(unix)]
-        if self.exited().unwrap_or(false) {
-            // Reaped, the leader no longer pins its PID: only a live group member does, and
-            // that is what `drained` waits out.
-            let _ = self.child.wait().await;
-            self.tree.drained(deadline).await;
-        }
-        self.kill().await;
+        self.tree.grace(deadline).await?;
+        // Keep the Unix leader unreaped until every owned group has been signalled.
+        // Its session ID cannot then be reused for an unrelated process.
+        self.kill().await
     }
 
-    pub(super) async fn kill(&mut self) {
-        if let Err(error) = self.tree.terminate() {
-            tracing::warn!(%error, "couldn't terminate agent descendants");
-        }
-        let result = tokio::time::timeout(REAP_TIMEOUT, self.child.kill()).await;
+    pub(super) async fn kill(&mut self) -> Result<()> {
+        let terminated = self.tree.terminate_within(Instant::now() + REAP_TIMEOUT).await;
+        terminated.context("terminating agent descendants")?;
+        // On Unix keep the unreaped leader pinning the session ID until all owned groups drain.
+        #[cfg(unix)]
+        self.tree.drained(Instant::now() + REAP_TIMEOUT).await?;
+        let child = self.child.as_mut().context("agent process already released")?;
+        let result = tokio::time::timeout(REAP_TIMEOUT, child.kill()).await?;
         match result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) if error.kind() == std::io::ErrorKind::InvalidInput => {}
-            Ok(Err(error)) => tracing::warn!(%error, "couldn't reap agent process"),
-            Err(error) => tracing::warn!(%error, "agent process did not exit before the cleanup deadline"),
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {}
+            Err(error) => return Err(error).context("reaping agent process"),
         }
-    }
-}
-
-#[cfg(unix)]
-struct Tree {
-    group: Option<libc::pid_t>,
-}
-
-#[cfg(unix)]
-impl Tree {
-    fn new(child: &Child) -> Result<Self> {
-        let pid = child.id().context("agent exited before process ownership was established")?;
-        Ok(Self { group: Some(libc::pid_t::try_from(pid)?) })
-    }
-
-    /// Waits until the group has no process left, or `deadline`; an empty group is forgotten so
-    /// its (reusable) ID is never signalled.
-    async fn drained(&mut self, deadline: Instant) {
-        let Some(group) = self.group else { return };
-        // SAFETY: signal 0 sends nothing; it only checks that the group still has a process.
-        let running = || unsafe { libc::killpg(group, 0) } == 0;
-        while running() && Instant::now() < deadline {
-            tokio::time::sleep(POLL).await;
-        }
-        if !running() {
-            self.group = None;
-        }
-    }
-
-    fn terminate(&mut self) -> std::io::Result<()> {
-        let Some(group) = self.group.take() else { return Ok(()) };
-        // SAFETY: spawn put this still-owned, unreaped child in its own process group.
-        // A negative PID signals that group. No pointer or shared memory is involved.
-        if unsafe { libc::kill(-group, libc::SIGKILL) } == -1 {
-            let error = std::io::Error::last_os_error();
-            if error.raw_os_error() != Some(libc::ESRCH) {
-                return Err(error);
-            }
-        }
+        #[cfg(windows)]
+        self.tree.drained(Instant::now() + REAP_TIMEOUT).await?;
         Ok(())
     }
 }
 
 #[cfg(unix)]
-impl Drop for Tree {
+impl Drop for Process {
     fn drop(&mut self) {
-        if let Err(error) = self.terminate() {
-            tracing::warn!(%error, "couldn't release agent process group");
+        if let Some(child) = self.child.take() {
+            self.tree.release_on_drop(child);
         }
     }
 }
+
+#[cfg(unix)]
+use super::process_unix::Tree;
 
 #[cfg(windows)]
 struct Tree {
@@ -231,6 +222,38 @@ impl Tree {
             return Err(std::io::Error::last_os_error()).context("owning agent process descendants");
         }
         Ok(Self { handle })
+    }
+
+    fn terminate_within(&mut self, _deadline: Instant) -> std::future::Ready<Result<()>> {
+        std::future::ready(self.terminate().context("terminating agent job"))
+    }
+
+    async fn drained(&mut self, deadline: Instant) -> Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JobObjectBasicAccountingInformation, QueryInformationJobObject,
+        };
+        loop {
+            let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+            // SAFETY: the job is owned; info is writable with the exact structure size.
+            let ok = unsafe {
+                QueryInformationJobObject(
+                    self.handle.as_raw_handle(),
+                    JobObjectBasicAccountingInformation,
+                    std::ptr::from_mut(&mut info).cast(),
+                    u32::try_from(size_of_val(&info))?,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok == 0 {
+                return Err(std::io::Error::last_os_error()).context("reading agent job");
+            }
+            if info.ActiveProcesses == 0 {
+                return Ok(());
+            }
+            anyhow::ensure!(Instant::now() < deadline, "agent job did not drain before cleanup deadline");
+            tokio::time::sleep(POLL).await;
+        }
     }
 
     fn terminate(&mut self) -> std::io::Result<()> {

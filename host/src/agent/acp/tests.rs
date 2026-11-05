@@ -32,6 +32,30 @@ async fn dropping_an_agent_releases_its_process_tree() {
     assert_descendant_pipes_close(rx).await;
 }
 
+#[cfg(unix)]
+#[test]
+fn fallback_cleanup_runs_even_when_the_runtime_blocking_pool_is_full() {
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().max_blocking_threads(1).build().unwrap();
+    let (acp, rx) = runtime.block_on(descendant_agent());
+    let (entered, started) = std::sync::mpsc::channel();
+    let (release, gate) = std::sync::mpsc::channel::<()>();
+    let blocker = runtime.spawn_blocking(move || {
+        entered.send(()).unwrap();
+        let _ = gate.recv();
+    });
+    started.recv_timeout(Duration::from_secs(5)).unwrap();
+    runtime.block_on(async {
+        drop(acp);
+        assert_descendant_pipes_close(rx).await;
+    });
+    drop(release);
+    runtime.block_on(async {
+        let finished = blocker.await;
+        finished.unwrap();
+        stopped().await;
+    });
+}
+
 #[tokio::test]
 async fn actor_unwinding_releases_its_process_tree() {
     let (acp, rx) = descendant_agent().await;
@@ -121,6 +145,7 @@ async fn an_agents_job_lists_what_it_started() {
     loop {
         let listed = acp.job_processes().await.unwrap();
         if let Some(ping) = listed.iter().find(|p| p.name.eq_ignore_ascii_case("ping.exe")) {
+            assert!(ping.created > 0, "native creation time identifies this process allocation");
             let shell = listed.iter().find(|p| p.pid == ping.parent).expect("what started ping is in the job");
             assert!(shell.name.eq_ignore_ascii_case("cmd.exe"), "{}", shell.name);
             return;
@@ -156,4 +181,22 @@ async fn request_response_roundtrip() {
         _ => panic!("expected notification"),
     }
     assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_transient_cleanup_failure_keeps_ownership_and_can_be_retried() {
+    let (acp, _) = Acp::spawn("sleep 60", "/tmp", &[]).unwrap();
+    let pid = i32::try_from(acp.pid().unwrap()).unwrap();
+    let mut process = acp.child.lock().await;
+    process.fail_next_stop();
+    drop(process);
+    let first = acp.stop_and_wait().await;
+    assert!(first.is_err());
+    // SAFETY: signal zero tests existence without signalling.
+    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "the failed cleanup still owns a live allocation");
+    let second = acp.stop_and_wait().await;
+    second.unwrap();
+    // SAFETY: signal zero tests existence without signalling.
+    assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "retry actually stopped the allocation");
 }

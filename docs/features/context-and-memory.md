@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until a rollover (Fresh conversations), a host-side `newSession`, a failed resume, or an agent/command/folder change (the apps offer no New session); each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until a rollover (Fresh conversations), a host-side `newSession`, or an agent/command/folder change (the apps offer no New session); each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
@@ -210,8 +210,9 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   than system text.
 - The harness writes every summary. Codync chooses when the bot's own chat compacts and what it asks the summary
   to keep, and re-applies the instructions afterwards; it can't make a harness keep anything.
-- A session a harness has deleted (for example, one cleaned up after a month) can't be resumed. The bot
-  starts fresh, but its memory remains.
+- A session a harness has deleted (for example, one cleaned up after a month) can't be resumed. A failed
+  resume preserves the saved session ID and returns an error. Retry if the failure is temporary; explicitly
+  start a fresh conversation when the old one is no longer available. Long-term memory remains.
 - Memory search is a substring scan, not semantic vectors. A voice call's transcript feeds dreaming from the call's
   line: what the user said counts as their own words (spoken, not typed), the voice's lines and what it relayed to
   the bot (`from: voice`) are context only ([voice call](voice-call.md#the-call-on-the-host)). Group rooms don't

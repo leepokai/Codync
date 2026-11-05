@@ -17,5 +17,9 @@ pub mod term;
 pub mod workspace;
 
 mod process;
+#[cfg(unix)]
+mod process_table;
+#[cfg(unix)]
+mod process_unix;
 #[cfg(windows)]
 mod process_windows;

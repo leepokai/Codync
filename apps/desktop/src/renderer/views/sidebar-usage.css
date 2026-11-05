@@ -9,9 +9,17 @@
 .sidebar-usage-toggle {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 4px 8px 4px 0;
+}
+.sidebar-usage-toggle-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 0 6px 14px;
   border: 0;
   background: none;
   color: var(--secondary);
@@ -19,13 +27,31 @@
   font-size: var(--text-callout);
   font-weight: 600;
   cursor: pointer;
+  text-align: left;
 }
-.sidebar-usage-toggle:hover {
+.sidebar-usage-toggle-main:hover {
   color: var(--text);
 }
-.sidebar-usage-toggle:focus-visible {
+.sidebar-usage-toggle-main:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+  border-radius: var(--radius-s);
+}
+.sidebar-usage-refresh {
+  flex: none;
+  color: var(--tertiary);
+}
+.sidebar-usage-refresh:hover {
+  color: var(--text);
+}
+.sidebar-usage-refresh.is-busy svg {
+  animation: sidebar-usage-turn 900ms linear infinite;
+}
+@keyframes sidebar-usage-turn {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-usage-refresh.is-busy svg { animation: none; }
 }
 .sidebar-usage-name {
   flex: none;
@@ -84,9 +110,17 @@
 .sidebar-usage-window .progress-track.usage-bar {
   flex: none;
   width: 100%;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.sidebar-usage-window-head > :first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.sidebar-usage-window-head > :last-child {
+  flex: none;
 }
 .sidebar-usage-reset {
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 /* The footer floats over the sidebar's bottom; clear it. */

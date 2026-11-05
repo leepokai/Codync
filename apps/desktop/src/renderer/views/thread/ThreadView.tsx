@@ -15,6 +15,7 @@ import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
 import { buildChat, rowIn, useArrivals, type ChatItem } from './chat-items'
+import { newestHealthNotices } from './health-notices'
 import { BotConversationView, BotMessageRow } from './BotConversation'
 import { CallConversationView, CallLineRow } from '../call/CallRows'
 import { hidingCalls } from '@shared/calls'
@@ -303,7 +304,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
   const entries = store.chatEntries(botId)
   // What voice calls carried shows in each call's conversation, not in the chat.
-  const all = useMemo(() => buildChat(hidingCalls(entries)), [entries])
+  const all = useMemo(() => buildChat(hidingCalls(newestHealthNotices(entries))), [entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
@@ -344,7 +345,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
     if (at === 0) {
       const anchor = list[0]?.id
       await store.loadOlder(botId)
-      list = buildChat(hidingCalls(store.chatEntries(botId)))
+      list = buildChat(hidingCalls(newestHealthNotices(store.chatEntries(botId))))
       at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
     }
     if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)

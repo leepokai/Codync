@@ -155,40 +155,39 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       : []),
   ]
   const loadProfiles = useCallback(() => store.securityProfiles(), [store])
-  const instructions = (
-    <>
-      <Field label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
+  const instructions = [
+      <Field key="standing" label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
         <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
-      </Field>
-      <Field label="Check before done" detail="A command run in the workspace after each turn. If it fails, the turn doesn't count as done.">
+      </Field>,
+      <Field key="check" label="Check before done" detail="A command run in the workspace after each turn. If it fails, the turn doesn't count as done.">
         <AutoTextArea className="field-box" value={draft.verifyCommand ?? ''} placeholder="e.g. npm test" minRows={1} maxRows={3} onChange={(v) => set('verifyCommand', v)} />
-      </Field>
-      <Field label="Soul" detail="Values and boundaries that never change. Written by you; the bot can't edit it.">
+      </Field>,
+      <Field key="soul" label="Soul" detail="Values and boundaries that never change. Written by you; the bot can't edit it.">
         <AutoTextArea className="field-box" value={draft.personality?.soul ?? ''} placeholder="e.g. Honest, careful with other people's data." minRows={2} maxRows={8} onChange={(v) => setLayer('soul', v)} />
-      </Field>
-      <Field label="Persona" detail="Its voice and manner.">
+      </Field>,
+      <Field key="persona" label="Persona" detail="Its voice and manner.">
         <AutoTextArea className="field-box" value={draft.personality?.persona ?? ''} placeholder="e.g. Dry and brief. No emoji." minRows={2} maxRows={8} onChange={(v) => setLayer('persona', v)} />
-      </Field>
-      <Field label="Heartbeat" detail="What it does when it checks in on its own.">
+      </Field>,
+      <Field key="heartbeat" label="Heartbeat" detail="What it does when it checks in on its own.">
         <AutoTextArea className="field-box" value={draft.personality?.heartbeat ?? ''} placeholder="e.g. Look for failing tests and say only if something broke." minRows={2} maxRows={8} onChange={(v) => setLayer('heartbeat', v)} />
-      </Field>
-      <Field label="Background model" detail="A cheaper model for routines and check-ins, where nobody is waiting.">
+      </Field>,
+      <Field key="background" label="Background model" detail="A cheaper model for routines and check-ins, where nobody is waiting.">
         <ChoicePicker
           selection={draft.backgroundModel ?? ''}
           options={backgroundChoices}
           onChange={(id) => set('backgroundModel', id || null)}
         />
-      </Field>
-      {draft.backgroundModel ? (
+      </Field>,
+      draft.backgroundModel ? (
         <SwitchRow
+          key="saver"
           title="Saver"
           detail="At 80 percent of this bot's daily token budget, new sessions start on the background model until tomorrow."
           on={draft.saver ?? false}
           onChange={(on) => set('saver', on)}
         />
-      ) : null}
-    </>
-  )
+      ) : null,
+    ]
   const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
   // An account (its own agent sign-in) belongs to one agent, so another agent starts on the default one.
   const account = (

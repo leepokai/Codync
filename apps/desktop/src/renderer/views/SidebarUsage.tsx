@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Usage } from '@shared/models'
+import { IconButton } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import { HStack } from '../components/Stack'
 import { Text } from '../components/Text'
@@ -14,20 +15,40 @@ import './sidebar-usage.css'
  * The sidebar's Usage section: every connector's plan windows, always visible
  * under the roster. The same reading the island and Settings show, as a column.
  */
-export function SidebarUsage({ usage }: { usage: Usage }) {
+export function SidebarUsage({ usage, onRefresh }: { usage: Usage; onRefresh?: () => Promise<void> }) {
   const tr = useTr()
   const resetLine = useResetLine()
   const [style] = usePref(prefs.usageIconStyle)
   const [open, setOpen] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const providers = usage.providers
+  const refresh = async () => {
+    if (refreshing || !onRefresh) return
+    setRefreshing(true)
+    try {
+      await onRefresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }
   return (
     <section className="sidebar-usage">
-      <button type="button" className="sidebar-usage-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <Icon name="gauge.with.dots.needle.33percent" size={13} />
-        <span className="sidebar-usage-name">{tr('Usage')}</span>
-        {providers.length ? <span className="sidebar-usage-count">{providers.length}</span> : null}
-        <Icon name={open ? 'chevron.up' : 'chevron.down'} size={11} className="sidebar-usage-chevron" />
-      </button>
+      <div className="sidebar-usage-toggle">
+        <button type="button" className="sidebar-usage-toggle-main" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Icon name="gauge.with.dots.needle.33percent" size={13} />
+          <span className="sidebar-usage-name">{tr('Usage')}</span>
+          {providers.length ? <span className="sidebar-usage-count">{providers.length}</span> : null}
+          <Icon name={open ? 'chevron.up' : 'chevron.down'} size={11} className="sidebar-usage-chevron" />
+        </button>
+        <IconButton
+          title={tr('Refresh usage')}
+          icon="arrow.clockwise"
+          size={24}
+          disabled={refreshing}
+          className={refreshing ? 'sidebar-usage-refresh is-busy' : 'sidebar-usage-refresh'}
+          onClick={() => void refresh()}
+        />
+      </div>
       {open ? (
         providers.length === 0 ? (
           <Text tone="secondary" size="caption" className="sidebar-usage-empty">

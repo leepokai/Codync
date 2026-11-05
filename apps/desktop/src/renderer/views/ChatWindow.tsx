@@ -406,7 +406,7 @@ function ChatSplitView() {
             </div>
           ) : null}
         </div>
-        {compact ? null : <SidebarUsage usage={app.local?.usage ?? { providers: [] }} />}
+        {compact ? null : <SidebarUsage usage={app.local?.usage ?? { providers: [] }} onRefresh={() => app.local?.refreshUsage() ?? Promise.resolve()} />}
         {compact ? (
           <div className="rail-actions">
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />

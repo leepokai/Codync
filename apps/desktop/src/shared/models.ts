@@ -403,6 +403,10 @@ export interface EntryData {
   runId?: string
   /** notice: a failed routine run the user can run again (`retryRoutineRun`). */
   retry?: boolean
+  /** notice: the computer's current health banner; the host updates it in place. */
+  health?: boolean
+  /** notice: `warning`, `critical` or `normal`, with `health`. */
+  level?: string
   text?: string
   final?: boolean
   /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */

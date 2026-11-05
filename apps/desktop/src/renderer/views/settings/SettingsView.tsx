@@ -6,7 +6,7 @@ import { VOICE_SHORTCUTS, type VoiceShortcut } from '@shared/voice-shortcut'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, ProgressBar, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { useDismiss } from '../../components/Overlay'
-import { HStack, IconSlot, VStack } from '../../components/Stack'
+import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { appLanguages, languageTitle } from '../../lib/l10n'
@@ -278,10 +278,30 @@ function UsageLimitsList() {
   const tr = useTr()
   const app = useApp()
   const stores = app.computers.flatMap((c) => app.store(c.id) ?? [])
+  const [refreshing, setRefreshing] = useState(false)
   const withUsage = stores.filter((s) => s.usage.providers.length > 0)
-  if (withUsage.length === 0) return <Text tone="secondary">{tr(`No usage information yet.`)}</Text>
+  const refresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      await Promise.all(stores.map((s) => s.refreshUsage()))
+    } finally {
+      setRefreshing(false)
+    }
+  }
+  const header = (
+    <HStack gap={8}>
+      <Text size="callout" tone="secondary">{tr('Plan limits reported by each connected agent.')}</Text>
+      <Spacer />
+      <Button kind="secondary" disabled={refreshing} onClick={() => void refresh()}>
+        {refreshing ? tr('Refreshing…') : tr('Refresh')}
+      </Button>
+    </HStack>
+  )
+  if (withUsage.length === 0) return <VStack gap={10}>{header}<Text tone="secondary">{tr(`No usage information yet.`)}</Text></VStack>
   return (
-    <>
+    <VStack gap={14}>
+      {header}
       {withUsage.flatMap((store) => [
         stores.length > 1 ? (
           <HStack key={`${store.computer.id}-label`} gap={6} className="settings-usage-computer">
@@ -292,7 +312,7 @@ function UsageLimitsList() {
         <UsageLimits key={store.computer.id} usage={store.usage} />,
         <WeekSummaryView key={`${store.computer.id}-week`} store={store} />,
       ])}
-    </>
+    </VStack>
   )
 }
 

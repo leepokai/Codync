@@ -620,7 +620,11 @@ export class BotStore extends BotSync {
   async refreshUsage() {
     if (this.retired || !this.client) return
     try {
-      this.usage = await this.client.call<Usage>('usage', { refresh: true })
+      const next = await this.client.call<Usage>('usage', { refresh: true })
+      // A probe already in flight answers with the store it had before it
+      // started (often empty on launch). Keep what is on screen until a real
+      // reading arrives instead of flashing "No usage".
+      if (next.providers.length > 0 || this.usage.providers.length === 0) this.usage = next
       this.changed()
     } catch {}
   }

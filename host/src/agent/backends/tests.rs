@@ -1,5 +1,6 @@
 use super::search_path::TestSearchPath;
 use super::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 struct TempDir(PathBuf);
@@ -49,6 +50,20 @@ fn an_installed_cli_comes_before_the_registry_build() {
             "{id}: the installed CLI first, the registry build kept for a CLI too old for ACP"
         );
     }
+}
+
+#[test]
+fn a_harness_the_registry_also_lists_shows_once() {
+    let dir = TempDir::new();
+    let _path = TestSearchPath::set(dir.0.clone());
+    let agents: Vec<_> =
+        HARNESSES.iter().map(|h| h.id).chain(["unknown-agent"]).map(|id| json!({"id": id, "name": id})).collect();
+    registry::set_cache(Some(json!({"agents": agents})));
+    let listed = list();
+    registry::set_cache(None);
+    let ids: Vec<_> = listed.iter().filter_map(|b| b["id"].as_str()).collect();
+    assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len(), "clients key their lists by id: {ids:?}");
+    assert!(ids.contains(&"unknown-agent"), "a registry agent we don't know by name is still offered");
 }
 
 #[test]

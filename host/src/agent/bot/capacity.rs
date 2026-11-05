@@ -1,6 +1,6 @@
 //! Bound live tool allocations independently of whether a busy bot ever becomes idle.
 
-use super::lifecycle::background_work;
+use super::background_work::background_work;
 use super::{Actor, Instructions};
 use anyhow::{Result, ensure};
 
@@ -29,7 +29,7 @@ impl Actor {
         };
         let conn = self.conn.as_ref().expect("snapshot keeps the connection");
         let full = conn.loaded.len() + conn.untracked_allocations >= MAX_SESSIONS;
-        let exhausted = conn.allocations >= MAX_ALLOCATIONS && conn.sessions.load;
+        let exhausted = conn.allocations >= MAX_ALLOCATIONS && conn.sessions.reopen.is_some();
         if !refresh && !full && !exhausted {
             return Ok(());
         }
@@ -37,7 +37,7 @@ impl Actor {
             // Never close a main session we cannot load again. A refresh always names a reloadable session.
             let victim = if refresh {
                 current.clone()
-            } else if conn.sessions.load {
+            } else if conn.sessions.reopen.is_some() {
                 conn.loaded.iter().min_by_key(|(_, at)| *at).map(|(sid, _)| sid.clone())
             } else {
                 None
@@ -55,11 +55,11 @@ impl Actor {
     pub(super) async fn recycle_agent(&mut self, reason: &'static str) -> Result<()> {
         let Some(conn) = &self.conn else { return Ok(()) };
         ensure!(
-            conn.sessions.load,
+            conn.sessions.reopen.is_some(),
             "The agent cannot resume conversations; choose a resumable agent before opening more sessions"
         );
         ensure!(
-            !background_work(conn.acp.pid()).await,
+            !background_work(&conn.acp).await,
             "The agent has background work; stop it before opening more sessions"
         );
         self.retire_agent(reason).await

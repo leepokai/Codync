@@ -113,6 +113,23 @@ async fn stopping_an_agent_closes_its_descendants_pipes() {
     assert!(matches!(closed, Some(Incoming::Closed { .. })));
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn an_agents_job_lists_what_it_started() {
+    let (acp, _rx) = Acp::spawn("ping -n 30 127.0.0.1", ".", &[]).unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let listed = acp.job_processes().await.unwrap();
+        if let Some(ping) = listed.iter().find(|p| p.name.eq_ignore_ascii_case("ping.exe")) {
+            let shell = listed.iter().find(|p| p.pid == ping.parent).expect("what started ping is in the job");
+            assert!(shell.name.eq_ignore_ascii_case("cmd.exe"), "{}", shell.name);
+            return;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "ping never showed up in the job");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn a_stopped_agent_finishes_by_itself_first() {

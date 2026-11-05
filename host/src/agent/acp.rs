@@ -177,7 +177,7 @@ pub struct Acp {
     pending: Pending,
     /// Owns the agent's whole process tree: dropping it kills what the agent started.
     child: Arc<tokio::sync::Mutex<Process>>,
-    /// The process (and, on Unix, process group) leader.
+    /// The allocation's process leader, also its Unix session leader.
     pid: Option<u32>,
     stopped: tokio::sync::watch::Sender<Option<std::result::Result<(), String>>>,
 }
@@ -291,6 +291,13 @@ impl Acp {
 
     pub fn pid(&self) -> Option<u32> {
         self.pid
+    }
+
+    /// Everything still running in the agent's job.
+    #[cfg(windows)]
+    pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
+        let members = self.child.lock().await.job_members()?;
+        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
     }
 
     async fn write(&self, msg: Value) -> Result<()> {

@@ -1,4 +1,4 @@
-//! The bot's ACP sessions: starting its agent, new/load, routine runs' sessions.
+//! The bot's ACP sessions: starting its agent, new/reopen, routine runs' sessions.
 
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
@@ -168,7 +168,7 @@ impl Actor {
             crate::market::vault::unlock(self.hub.clone()).await?;
         }
         // An agent that can't resume keeps its session; its next new session gets the new tools.
-        if self.tools_changed && self.conn.as_ref().is_some_and(|c| c.sessions.load) {
+        if self.tools_changed && self.conn.as_ref().is_some_and(|c| c.sessions.reopen.is_some()) {
             self.recycle_agent("tools_changed").await?;
             self.tools_changed = false;
         }
@@ -242,11 +242,11 @@ impl Actor {
                 self.turn_session = Some(sid);
                 return Ok(());
             }
-            if !conn.sessions.load {
+            let Some(reopen) = conn.sessions.reopen else {
                 tracing::info!(bot = %self.cfg.id, "the agent can't resume sessions; starting a fresh one");
                 self.set_session(slot, None);
                 return Box::pin(self.ensure_session(slot)).await;
-            }
+            };
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
             let mut params = self.session_params(&servers, Some(&sid));
             if let Some(s) = &snapshot {
@@ -255,7 +255,7 @@ impl Actor {
             if instructions == Instructions::SystemPrompt {
                 params["systemPrompt"] = system_prompt(&self.snapshot(&sid).await?.system);
             }
-            let res = self.session_request("session/load", params).await;
+            let res = self.session_request(reopen, params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             // The agent replays history as session/update before answering; drop it.
             while let Ok(inc) = conn.rx.try_recv() {
@@ -269,7 +269,11 @@ impl Actor {
                     // keeps one for all its sessions), so the bot's own is set again.
                     conn.loaded.insert(sid.clone(), Instant::now());
                     conn.renamed.insert(sid.clone(), renamed);
-                    conn.pending_models.insert(sid.clone(), res);
+                    // A reopen may return no model metadata: the harness keeps its model, and may
+                    // not implement legacy selection. Only retry setup the response actually describes.
+                    if res.get("configOptions").is_some() || res.get("models").is_some() {
+                        conn.pending_models.insert(sid.clone(), res);
+                    }
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
                         context::mark_announced(&self.hub.store, &self.cfg.id, &s, s.system_identity.clone())?;
@@ -332,17 +336,17 @@ impl Actor {
     /// would otherwise hold the bot, and its Stop, forever.
     pub(super) async fn session_request(&mut self, method: &str, params: Value) -> Result<Value> {
         let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
-        conn.opening = matches!(method, "session/new" | "session/load");
+        conn.opening = matches!(method, "session/new" | "session/load" | "session/resume");
         if conn.opening {
             conn.allocations += 1;
             conn.untracked_allocations += 1;
         }
         let timeout = if method == "session/close" { Duration::from_secs(10) } else { SESSION_TIMEOUT };
-        let loading_saved = method == "session/load" && params["sessionId"].is_string();
+        let loading_saved = matches!(method, "session/load" | "session/resume") && params["sessionId"].is_string();
         let answered = tokio::time::timeout(timeout, conn.acp.request(method, params)).await;
         conn.opening = false;
         if let Ok(result) = answered {
-            if matches!(method, "session/new" | "session/load")
+            if matches!(method, "session/new" | "session/load" | "session/resume")
                 && result
                     .as_ref()
                     .is_ok_and(|r| loading_saved || r["sessionId"].as_str().is_some_and(|s| !s.is_empty()))
@@ -363,7 +367,7 @@ impl Actor {
         if !std::mem::take(&mut conn.opening) {
             return;
         }
-        if !conn.sessions.load {
+        if conn.sessions.reopen.is_none() {
             // ponytail: that session lasts until the agent next stops; keep the cut-short request's Answer past the
             // time limit and session/close the id it returns, if that ever matters.
             tracing::warn!(bot = %self.cfg.id, "a session request was cut short; the agent can't resume, so it keeps running");
@@ -380,5 +384,5 @@ impl Actor {
     }
 }
 
-/// How long `session/new` and `session/load` may take.
+/// How long opening a session (`session/new`, `session/load`, `session/resume`) may take.
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);

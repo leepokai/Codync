@@ -1,6 +1,7 @@
 //! Shared by the end-to-end tests.
 
 pub mod host;
+pub mod steer;
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};

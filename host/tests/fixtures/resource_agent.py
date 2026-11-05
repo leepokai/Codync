@@ -36,13 +36,15 @@ for line in sys.stdin:
     req = json.loads(line)
     method, params = req.get('method'), req.get('params', {})
     if method == 'initialize':
-        caps = dict(loadSession='--no-load' not in sys.argv,
+        caps = dict(loadSession='--no-load' not in sys.argv and '--resume-only' not in sys.argv,
                     sessionCapabilities={} if '--no-close' in sys.argv else dict(close={}))
+        if '--resume-only' in sys.argv:
+            caps['sessionCapabilities']['resume'] = {}
         result = dict(agentCapabilities=caps)
         if '--claude' in sys.argv:
             result['agentCapabilities']['_meta'] = dict(claudeCode={})
         answer(req, result)
-    elif method in ('session/new', 'session/load'):
+    elif method in ('session/new', 'session/load', 'session/resume'):
         sid = params.get('sessionId') or str(uuid.uuid4())
         if method == 'session/load' and (root / 'fail-load').exists():
             log('load_failed', session=sid)
@@ -52,7 +54,10 @@ for line in sys.stdin:
         state_file.write_text(json.dumps(sessions))
         allocate(sid)
         log(method, session=sid)
-        answer(req, dict(sessionId=sid) if method == 'session/new' else {})
+        result = dict(sessionId=sid) if method == 'session/new' else {}
+        if '--model-options' in sys.argv:
+            result['models'] = dict(currentModelId='fixture-model', availableModels=[dict(modelId='fixture-model', name='Fixture')])
+        answer(req, result)
     elif method == 'session/close':
         if '--fail-close' in sys.argv:
             answer(req, error=dict(code=-32000, message='fixture cannot close'))

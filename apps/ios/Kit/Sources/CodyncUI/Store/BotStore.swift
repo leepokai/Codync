@@ -97,6 +97,8 @@ public final class BotStore {
     public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     /// A message to the bot from this phone moved along (the Live Activity follows it).
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
+    /// A prompt reached the computer or its mailbox.
+    var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
     /// A bot appeared, changed or went away.
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
@@ -111,6 +113,8 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`).
+    @ObservationIgnored var lastSentNonce: String?
     /// Section moves shown but not answered yet, oldest first.
     @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 

@@ -186,7 +186,7 @@ async fn refreshing_the_same_session_releases_its_previous_tool_allocation() {
 
 async fn model_bot(host: &Host, args: &str) -> String {
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/resource_agent.py");
-    let command = format!("{} {args}", common::python_agent(&fixture));
+    let command = format!("{} {args} --model-options", common::python_agent(&fixture));
     let saved = host
         .call(
             "createBot",
@@ -235,4 +235,24 @@ async fn failed_model_setup_after_resume_reuses_the_loaded_session() {
     assert_eq!(rows.iter().filter(|r| r["event"] == "allocated").count(), allocations);
     let prompts: Vec<_> = rows.iter().filter(|r| r["event"] == "prompt").collect();
     assert_eq!(prompts.first().unwrap()["session"], prompts.last().unwrap()["session"]);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn resume_only_agents_apply_the_same_budget_and_keep_their_main_conversation() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("resource-resume-only", "resource_agent.py", "--resume-only --no-close").await;
+    reply(&host, &bot, "Main").await;
+    let id = routine(&host, &bot).await;
+    for n in 1..=10 {
+        run(&host, &bot, &id, n).await;
+        reply(&host, &bot, "Continue main").await;
+        let rows = events(&host, &bot);
+        assert_old_workers_gone(&rows);
+        let prompts: Vec<_> = rows.iter().filter(|r| r["event"] == "prompt").collect();
+        assert_eq!(prompts.first().unwrap()["session"], prompts.last().unwrap()["session"]);
+    }
+    let rows = events(&host, &bot);
+    assert_eq!(rows.iter().filter(|r| r["event"] == "session/resume").count(), 10);
+    assert!(!rows.iter().any(|r| r["event"] == "session/load"));
 }

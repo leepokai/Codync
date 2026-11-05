@@ -65,7 +65,8 @@ class UsageScreenTest {
         compose.onNodeWithText("No reading yet").assertExists()
         compose.onNodeWithText("Cursor").performScrollTo().performClick()
         assertEquals(listOf("cursor" to true), changes)
-        compose.onNodeWithText("Weekly").assertExists()
+        // The card names its tightest limit and lists it too.
+        compose.onAllNodesWithText("Weekly").onFirst().assertExists()
         compose.runOnUiThread { state.value = state.value.copy(usage = usage("", false)) }
         compose.waitForIdle()
         compose.onNodeWithText("Weekly").assertDoesNotExist()

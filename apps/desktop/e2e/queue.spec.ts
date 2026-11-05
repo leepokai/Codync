@@ -1,10 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { resolve } from 'node:path'
 import { canSteer } from '../src/renderer/views/thread/queued-messages.ts'
-import { api, attach } from './sandbox.ts'
-
-// A scripted agent whose turn waits until a steered message joins it (host/tests/fixtures/steer_agent.py).
-const agent = resolve(__dirname, '../../../host/tests/fixtures/steer_agent.py')
+import { api, attach, steerBot, typeMessage } from './sandbox.ts'
 
 type History = { entries: { kind: string; data: { text?: string; status?: string } }[] }
 
@@ -14,10 +10,48 @@ async function started(page: Page, botId: string, text: string): Promise<boolean
   return entries.some((e) => e.kind === 'user' && e.data.text === text && e.data.status === 'sent')
 }
 
-async function type(page: Page, text: string) {
-  await page.locator('.composer textarea').fill(text)
-  await page.locator('.composer textarea').press('Enter')
-}
+test('a long queue scrolls, with its oldest message in reach', async () => {
+  const { browser, page } = await attach()
+  const name = `Long queue e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const bot = await steerBot(page, name, 120)
+    botId = bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+    await api(page, 'send', { botId, text: 'first' })
+    await expect.poll(() => started(page, bot.id, 'first')).toBe(true)
+    for (let i = 1; i <= 40; i++) await api(page, 'send', { botId, text: `Waiting ${i}` })
+    const queued = page.locator('.queued-row')
+    await expect(queued).toHaveCount(40)
+
+    await expect(page.locator('.composer textarea')).toBeInViewport()
+    const list = page.locator('.queued-list')
+    const box = await list.boundingBox()
+    expect(box!.y).toBeGreaterThan(0)
+    expect(box!.height).toBeLessThan(260)
+    const row = (text: string) => queued.filter({ hasText: new RegExp(`^${text}$`) })
+    await expect(row('Waiting 1')).toBeInViewport()
+    await expect(row('Waiting 40')).not.toBeInViewport()
+
+    await list.hover()
+    await page.mouse.wheel(0, 2000)
+    await expect(row('Waiting 40')).toBeInViewport()
+    await row('Waiting 40').getByRole('button', { name: 'Remove' }).click()
+    await expect(queued).toHaveCount(39)
+    await page.mouse.wheel(0, -2000)
+    await expect(row('Waiting 1')).toBeInViewport()
+
+    // One typed here scrolls into view; the ones the computer got from elsewhere didn't.
+    await typeMessage(page, 'typed here')
+    await expect(row('typed here')).toBeInViewport()
+  } finally {
+    if (botId) {
+      await api(page, 'stop', { botId }).catch(() => {})
+      await api(page, 'deleteBot', { botId }).catch(() => {})
+    }
+    await browser.close()
+  }
+})
 
 test('a message sent while the bot works waits above the composer, then goes out now or is taken back', async () => {
   const { browser, page } = await attach()
@@ -26,9 +60,7 @@ test('a message sent while the bot works waits above the composer, then goes out
   try {
     const { version } = await api<{ version: string }>(page, 'hello', {})
     test.skip(!canSteer(version), `the sandbox host (${version}) can't steer yet`)
-    const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}' steer 30`, connectors: [], skills: [], notify: false,
-    })
+    const bot = await steerBot(page, name, 30)
     botId = bot.id
     await page.locator('.roster-row', { hasText: name }).click()
     const transcript = page.locator('.transcript')
@@ -36,7 +68,7 @@ test('a message sent while the bot works waits above the composer, then goes out
 
     await api(page, 'send', { botId, text: 'first' })
     await expect.poll(() => started(page, bot.id, 'first')).toBe(true)
-    await type(page, 'second')
+    await typeMessage(page, 'second')
     await expect(queued.filter({ hasText: 'second' })).toBeVisible()
     await expect(transcript).not.toContainText('second')
     await queued.filter({ hasText: 'second' }).getByRole('button', { name: 'Send now' }).click()
@@ -47,7 +79,7 @@ test('a message sent while the bot works waits above the composer, then goes out
 
     await api(page, 'send', { botId, text: 'third' })
     await expect.poll(() => started(page, bot.id, 'third')).toBe(true)
-    await type(page, 'never sent')
+    await typeMessage(page, 'never sent')
     await queued.filter({ hasText: 'never sent' }).getByRole('button', { name: 'Remove' }).click()
     await expect(queued).toHaveCount(0)
     await expect(transcript).not.toContainText('never sent')

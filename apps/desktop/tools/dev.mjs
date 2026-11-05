@@ -171,7 +171,8 @@ async function sandbox() {
 
   const host = buildHost()
   const log = join(home, 'host.log')
-  const hostEnv = { ...childEnv(), CODYNC_HOME: home, ...(flags.cloud ? {} : { CODYNC_CLOUD: 'off' }) }
+  // CODYNC_VAULT: the credential key goes with the sandbox folder, so Keychain neither keeps it nor asks about it.
+  const hostEnv = { ...childEnv(), CODYNC_HOME: home, CODYNC_VAULT: 'folder', ...(flags.cloud ? {} : { CODYNC_CLOUD: 'off' }) }
   const out = openSync(log, 'a')
   const hostProcess = spawn(host, ['serve', '--port', String(port)], { env: hostEnv, stdio: ['ignore', out, out] })
   hostProcess.on('error', (e) => fail(`Couldn't start ${host}: ${e.message}`))

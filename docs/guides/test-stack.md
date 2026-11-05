@@ -4,7 +4,7 @@ How the end-to-end (e2e) checks drive the apps: Playwright for the desktop app, 
 
 ## Host tests
 
-`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`).
+`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`). `tests/common` also sets `CODYNC_VAULT=folder`, so a test's credential key stays out of the system's credential store and goes with its data; `tools/check-connectors.py` keeps a real Keychain key on purpose.
 
 They also start it with `CODYNC_EXIT_WITH_STDIN=1` and hold its stdin open: the host shuts down when that pipe closes, so a run that fails, times out or is killed stops every host it started instead of leaving it running without a parent. The service's own host never sets it.
 

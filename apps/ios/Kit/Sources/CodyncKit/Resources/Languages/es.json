@@ -49,6 +49,7 @@
   "Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.": "Se conecta por Wi-Fi, a través de Tailscale o desde cualquier lugar a través de Cloudflare, por sí solo. Cifrado de extremo a extremo.",
   "Connecting": "Conectando",
   "Connecting…": "Conectando…",
+  "If Codync saves you trips to your desk, a star on GitHub helps other people find it.": "Si Codync te ahorra viajes a tu escritorio, una estrella en GitHub ayuda a otras personas a encontrarlo.",
   "Updating…": "Actualizando…",
   "Connection": "Conexión",
   "Continue": "Continuar",
@@ -1744,7 +1745,6 @@
   "Works once, until {time}": "Funciona una vez, hasta {time}",
   "Yellow": "Amarillo",
   "You wrote it": "Lo escribiste tú",
-  "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.": "Llevas un tiempo usando Codync. Si te ahorra viajes a tu escritorio, una estrella en GitHub ayuda a otras personas a encontrarlo.",
   "Your bots are idle. Message one from here, or open Codync.": "Tus bots están inactivos. Escribe a uno desde aquí o abre Codync.",
   "Your computer is offline.": "Tu computadora está desconectada.",
   "a computer": "una computadora",
@@ -1806,5 +1806,8 @@
   "D removes": "D elimina",
   "S sends this now": "S envía este ahora",
   "D removes the last": "D elimina el último",
-  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Actualiza Codync en {host}: enviar ahora y retirar necesitan {version} o una versión más reciente."
+  "Update Codync on {host}: sending now and taking back need {version} or newer.": "Actualiza Codync en {host}: enviar ahora y retirar necesitan {version} o una versión más reciente.",
+  "Add {name} to your account first": "Primero añade {name} a tu cuenta",
+  "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "Tu teléfono accede a {name} desde cualquier lugar a través de tu cuenta. Al añadirlo también se activa esta opción.",
+  "Use your own relay": "Usar tu propio relé"
 }

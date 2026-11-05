@@ -66,9 +66,6 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
-            .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
-                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
-                           && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -292,9 +289,7 @@ struct IntroCard: View {
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text(bot.managedWorkspace
                  ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
-                 : L10n.tr("{agent} in {path}")
-                    .replacingOccurrences(of: "{agent}", with: model.backendName(bot.backend))
-                    .replacingOccurrences(of: "{path}", with: bot.cwd))
+                 : L10n.fill(L10n.tr("{agent} in {path}"), ["agent": model.backendName(bot.backend), "path": bot.cwd]))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)

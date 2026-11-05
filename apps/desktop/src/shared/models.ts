@@ -596,6 +596,8 @@ export interface CloudStatus {
   assistants?: boolean | null
   /** In no account while it could join one: a signed-in phone that pairs asks to bring it into its account. Absent from older hosts. */
   canJoinAccount?: boolean | null
+  /** Turned on, the cloud would leave it in no account on a Codync cloud; known with the cloud off too. Absent from older hosts, which just turn on. */
+  joinsAccountOnEnable?: boolean | null
 }
 
 export interface ClaimSignature {

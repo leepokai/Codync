@@ -1,56 +1,16 @@
-//! A real host with the user's messages queued behind a running turn: steered into it (and on to a fallback with it),
-//! interrupting a turn whose agent can't steer, first in line behind other work, left for the next turn when the agent
-//! says so or refuses, or taken back.
+//! A real host with the user's messages queued behind a running turn: steered into it, interrupting a turn whose agent
+//! can't steer, first in line behind other work, left for the next turn when the agent says so or refuses, or taken
+//! back. A turn that ends before the agent answers: `steer_turn_end_e2e`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
 
 use common::host::Host;
+use common::steer::{entries, entry, gone, idle, queue_behind_a_turn, status, turn_running};
 use common::{eventually, python_missing};
 use serde_json::{Value, json};
-use std::path::PathBuf;
 use std::time::Duration;
-
-async fn entries(host: &Host, bot: &str) -> Vec<Value> {
-    host.call("history", json!({"botId": bot})).await["entries"].as_array().unwrap().clone()
-}
-
-async fn entry(host: &Host, bot: &str, id: &str) -> Value {
-    entries(host, bot).await.into_iter().find(|e| e["id"] == id).unwrap()
-}
-
-/// Whether `history` no longer lists a message: one taken back.
-async fn gone(host: &Host, bot: &str, id: &str) -> bool {
-    entries(host, bot).await.iter().all(|e| e["id"] != id)
-}
-
-/// Sends "first" and waits until its turn runs at the agent: its id.
-async fn turn_running(host: &Host, bot: &str) -> String {
-    let first =
-        host.call("send", json!({"botId": bot, "text": "first"})).await["entry"]["id"].as_str().unwrap().to_owned();
-    eventually("the agent got the first prompt", Duration::from_mins(1), async || {
-        host.requests(bot, "session/prompt").len() == 1
-    })
-    .await;
-    first
-}
-
-/// Sends "first" (its turn running at the agent) and then "second", which waits: the ids of both.
-async fn queue_behind_a_turn(host: &Host, bot: &str) -> (String, String) {
-    let first = turn_running(host, bot).await;
-    let second = host.call("send", json!({"botId": bot, "text": "second"})).await["entry"].clone();
-    assert_eq!(second["data"]["status"], "queued");
-    (first, second["id"].as_str().unwrap().to_owned())
-}
-
-async fn idle(host: &Host, bot: &str) -> bool {
-    common::bot(&host.snapshot().await, bot)["status"] == "idle"
-}
-
-async fn status(host: &Host, bot: &str, id: &str) -> Value {
-    entry(host, bot, id).await["data"]["status"].clone()
-}
 
 #[tokio::test]
 async fn a_steered_message_joins_the_running_turn() {
@@ -111,45 +71,6 @@ async fn a_steered_message_gets_its_reply_even_after_the_bot_used_send_message()
     let reply = entries(&host, &bot).await.into_iter().rev().find(|e| e["data"]["final"] == true).unwrap();
     assert!(reply["data"]["text"].as_str().unwrap().contains("Got: "), "{reply}");
     assert!(reply["seq"].as_i64() > entry(&host, &bot, &second).await["seq"].as_i64());
-}
-
-#[tokio::test]
-async fn a_steered_message_keeps_a_turn_that_ends_before_the_agent_answers() {
-    if python_missing() {
-        return;
-    }
-    let host = Host::start().await;
-    let bot = host.fixture_bot("Late", "steer_agent.py", "late 30").await;
-    let (first, second) = queue_behind_a_turn(&host, &bot).await;
-    host.call("steer", json!({"botId": bot, "entryId": second})).await;
-    eventually("the agent took it", Duration::from_secs(20), async || status(&host, &bot, &second).await == "sent")
-        .await;
-    assert_eq!(host.requests(&bot, "session/prompt").len(), 1, "no turn of its own");
-    let (first, second) = (entry(&host, &bot, &first).await, entry(&host, &bot, &second).await);
-    assert_eq!(second["turn"], first["turn"], "it stays the turn's");
-}
-
-#[tokio::test]
-async fn a_steered_message_goes_with_its_turn_to_the_next_agent() {
-    if python_missing() {
-        return;
-    }
-    let host = Host::start().await;
-    let bot = host.fixture_bot("Carries", "steer_agent.py", "limit 30").await;
-    let standin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relay_agent.py");
-    let standin = format!("{} standin", common::python_agent(&standin));
-    let fallbacks = json!([{"backend": "codex", "command": standin}]);
-    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
-    let (_, second) = queue_behind_a_turn(&host, &bot).await;
-    host.call("steer", json!({"botId": bot, "entryId": second})).await;
-    let prompt = async || {
-        let log = host.log(&bot, "standin.jsonl");
-        log.iter().find(|r| r["method"] == "session/prompt").map(|r| r["params"]["prompt"][0]["text"].clone())
-    };
-    eventually("the next agent took the turn on", Duration::from_secs(30), async || prompt().await.is_some()).await;
-    let prompt = prompt().await.unwrap();
-    assert!(prompt.as_str().unwrap().contains("first") && prompt.as_str().unwrap().contains("second"), "{prompt}");
-    assert_eq!(status(&host, &bot, &second).await, "sent");
 }
 
 #[tokio::test]
@@ -419,26 +340,4 @@ async fn a_stop_while_the_agent_decides_keeps_the_message_dropped() {
     assert_eq!(dropped["data"]["status"], "cancelled", "the agent's late yes doesn't bring it back");
     assert_eq!(dropped["data"]["removed"], Value::Null, "the chat says it wasn't sent");
     assert_eq!(host.requests(&bot, "session/prompt").len(), 1);
-}
-
-#[tokio::test]
-async fn a_steered_message_is_in_the_exchange_the_bot_learns_from() {
-    if python_missing() {
-        return;
-    }
-    let host = Host::start().await;
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/steer_agent.py");
-    let command = format!("{} steer 30", common::python_agent(&script));
-    let created = json!({"name": "", "backend": "custom", "command": command, "connectors": [], "notify": false});
-    let bot = host.call("createBot", created).await["bot"]["id"].as_str().unwrap().to_owned();
-    let (_, second) = queue_behind_a_turn(&host, &bot).await;
-    host.call("steer", json!({"botId": bot, "entryId": second})).await;
-    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
-    let observed = || -> Option<String> {
-        db.query_row("SELECT v FROM kv WHERE k = ?", [format!("naming.turns.{bot}")], |r| r.get(0)).ok()
-    };
-    eventually("the turn's exchange was recorded", Duration::from_secs(20), async || observed().is_some()).await;
-    let turns: Value = serde_json::from_str(&observed().unwrap()).unwrap();
-    let user = turns[0]["user"].as_str().unwrap();
-    assert!(user.contains("first") && user.contains("second"), "{user}");
 }

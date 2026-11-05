@@ -11,7 +11,6 @@
 use crate::agent::{acp, node, registry};
 use crate::shell;
 use serde_json::{Value, json};
-use std::collections::HashSet;
 use std::path::Path;
 
 mod catalog;
@@ -44,6 +43,13 @@ pub struct Harness {
     pub login: Option<&'static str>,
     /// How to tell whether it's signed in without starting it.
     pub signed_in: Option<SignInCheck>,
+}
+
+impl Harness {
+    /// A backend id is this harness's: its own id or its registry entry's.
+    fn answers_to(&self, id: &str) -> bool {
+        self.id == id || self.registry == Some(id)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -107,10 +113,9 @@ pub fn list() -> Vec<Value> {
         })
         .collect();
     // Registry agents we don't know by name: runnable, but you sign in yourself.
-    let known: HashSet<&str> = HARNESSES.iter().filter_map(|h| h.registry).collect();
     for a in &registry {
         let id = a["id"].as_str().unwrap_or_default();
-        if id.is_empty() || known.contains(id) || id == "github-copilot" {
+        if id.is_empty() || HARNESSES.iter().any(|h| h.answers_to(id)) || id == "github-copilot" {
             continue;
         }
         out.push(json!({
@@ -139,7 +144,7 @@ pub fn belongs_to_other(backend: &str, program: &str) -> bool {
         return backend != "workbuddy";
     }
     let name = Path::new(program).file_name().and_then(|n| n.to_str()).unwrap_or(program);
-    let own = |h: &Harness| h.id == backend || h.registry == Some(backend);
+    let own = |h: &Harness| h.answers_to(backend);
     HARNESSES.iter().any(|h| !own(h) && h.bins.contains(&name))
         && !HARNESSES.iter().any(|h| own(h) && h.bins.contains(&name))
 }

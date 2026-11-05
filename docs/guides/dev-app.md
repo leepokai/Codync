@@ -26,6 +26,7 @@ Xcode configurations separate environment from optimization: `Debug` and `Releas
 - Host data in `~/.codync-dev-<worktree folder>`, which also holds the app's session, account and single-instance lock (`desktop/`). The window and menu bar read `Codync Dev (<name>)`.
 - A port from 19300–19399, picked free on the first run and kept in that folder's `sandbox.json`, so a paired simulator stays paired.
 - A host built from the worktree's own code (`node tools/native-host.mjs dev`; on Linux `cargo build`, honoring `CARGO_TARGET_DIR`; or `CODYNC_HOST_BIN`), started and stopped with the app, logging to `host.log`. No launchd/systemd service, and the dev cloud is off.
+- Nothing in the system's credential store, so a sandbox never prompts and leaves nothing behind when its folder goes. The host runs with `CODYNC_VAULT=folder` (its key is `vault.key` beside the data; production builds ignore the switch, and end-to-end test hosts use it too) and the app with Chromium's `use-mock-keychain` (macOS) and `password-store=basic` (Linux; Windows keeps its key in the sandbox). Only file permissions protect these, so keep real tokens out of a sandbox and test them on the default Codync Dev. A sandbox made before this switch, or given a copy of a host's database, keeps using that Keychain key while it exists, so a copied database's secrets stay readable; deleting it or `--prune` leaves any item of its own in Keychain, and nothing cleans it up. On its first start after the switch, its app signs in again (on its own with a test account) and gets a new device key.
 - The run prints the commands that pair a phone or simulator (`codync-host pair`), create the sandbox's iPhone simulator and open the terminal UI against the sandbox.
 
 Flags go after `npm run dev --`: `--shared` takes the default Codync Dev from a worktree (quit the main checkout's first); `--sandbox` runs a sandbox from the main checkout, for a second session on `dev`; `--name <name>` runs the sandbox of that name, for another copy of the same checkout; `--cloud` lets the sandbox host use the dev cloud (each sandbox then shows as another computer); `--cdp` opens the DevTools protocol on the sandbox port + 10000; `--list` shows every sandbox; `--prune` deletes the ones whose worktree is gone (and their Clerk test accounts and iPhone simulators), so run it after removing worktrees.
@@ -70,6 +71,9 @@ Secrets for running the project locally live in git-ignored env files at the mai
 | Windows Run key value | `CodyncHost` | `CodyncDevHost` |
 | Windows supervisor | `codync-hostw.exe` | `codync-dev-hostw.exe` |
 | macOS Screen helper identifier | `com.pokai.Codync.screen` | `com.pokai.Codync.dev.screen` |
+| Host credential key (Keychain / Secret Service service) | `dev.codync.credentials` | `dev.codync.development.credentials` |
+
+On macOS, `native-host.mjs dev` signs the host with the Apple Development certificate when this Mac has it, so Keychain keeps trusting Codync Dev's host across rebuilds. After the first signed build it asks one last time for an existing key: choose **Always Allow**. Without the certificate the host stays ad hoc signed, and Keychain asks again after each rebuild.
 
 The iPhone extensions inherit the parent environment. Electron Dev stores its browser session, account credentials and SSH profiles under its own `Codync Dev` user-data directory. SSH host-key storage and orphan-tunnel cleanup are also separate. Dev never installs production updates and does not rewrite the shared Claude Code status line.
 

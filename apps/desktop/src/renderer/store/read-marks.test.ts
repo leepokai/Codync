@@ -102,7 +102,7 @@ test('a hold the host already let go is dropped by the next bot event after the 
 })
 
 test('a refused mark as read gives the hold and the unread count back', async () => {
-  const { reads, bot, answer } = computer({ unread: 3, keptUnread: true })
+  const { reads, bot, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
   reads.markRead('a')
   assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
   answer(0, false)
@@ -110,13 +110,13 @@ test('a refused mark as read gives the hold and the unread count back', async ()
   assert.deepEqual([bot().unread, bot().keptUnread], [3, true])
 })
 
-test('a refused mark as read keeps a count that grew meanwhile', async () => {
-  const { reads, bot, answer } = computer({ unread: 1 })
+test('a refused mark as read keeps what a newer bot event from the host shows', async () => {
+  const { reads, bot, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
   reads.markRead('a')
-  bot().unread = 4
+  Object.assign(bot(), { rev: 2, unread: 0, keptUnread: false })
   answer(0, false)
   await new Promise((resolve) => setTimeout(resolve))
-  assert.equal(bot().unread, 4)
+  assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
 })
 
 test('a chat opened before the host caught up is read once its state shows it held', async () => {

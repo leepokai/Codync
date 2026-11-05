@@ -250,10 +250,10 @@ extension BotStore {
         markingUnread[bot.id] = nil
     }
 
-    /// A refused read: the hold and what was unread come back, keeping any count that grew meanwhile.
+    /// A refused read: the hold and what was unread come back, unless a newer bot event from the host replaced them.
     func restoreUnread(_ botId: String, from bot: Bot) {
-        guard let now = bots[botId] else { return }
-        bots[botId]?.unread = max(bot.unread, now.unread)
+        guard bots[botId]?.rev == bot.rev else { return }
+        bots[botId]?.unread = bot.unread
         bots[botId]?.keptUnread = bot.keptUnread
     }
 

@@ -47,10 +47,9 @@ export class ReadMarks {
     const sent = this.perform(async (c) => {
       await marking
       return c.call('markRead', { botId })
-    }, () => this.patch(botId, {
-      unread: Math.max(bot.unread, this.bots().get(botId)?.unread ?? 0),
-      keptUnread: bot.keptUnread,
-    }))
+    }, () => {
+      if (this.bots().get(botId)?.rev === bot.rev) this.patch(botId, { unread: bot.unread, keptUnread: bot.keptUnread })
+    })
     this.reading.set(botId, sent)
     void sent.then(() => {
       if (this.reading.get(botId) === sent) this.reading.delete(botId)

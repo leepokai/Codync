@@ -180,6 +180,10 @@ pub struct Acp {
     /// The allocation's process leader, also its Unix session leader.
     pid: Option<u32>,
     stopped: tokio::sync::watch::Sender<Option<std::result::Result<(), String>>>,
+    #[cfg(windows)]
+    startup_processes: std::sync::OnceLock<Vec<super::process::JobProcess>>,
+    #[cfg(windows)]
+    agent_program: Option<String>,
 }
 
 impl Acp {
@@ -190,6 +194,8 @@ impl Acp {
         cwd: &str,
         env: &[(String, String)],
     ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
+        #[cfg(windows)]
+        let agent_program = crate::shell::agent_program(command, env);
         let mut process = crate::shell::exec(command).tokio();
         process
             .envs(env.iter().map(|(k, v)| (k, v)))
@@ -284,6 +290,10 @@ impl Acp {
             child,
             pid,
             stopped: tokio::sync::watch::channel(None).0,
+            #[cfg(windows)]
+            startup_processes: std::sync::OnceLock::new(),
+            #[cfg(windows)]
+            agent_program,
         });
         note_started(&acp);
         Ok((acp, rx))
@@ -296,8 +306,22 @@ impl Acp {
     /// Everything still running in the agent's job.
     #[cfg(windows)]
     pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
-        let members = self.child.lock().await.job_members()?;
-        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
+        let process = self.child.lock().await;
+        let members = process.job_members()?;
+        drop(process);
+        let listed = tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?;
+        listed
+    }
+
+    /// Frozen before session creation, so later background work cannot become part of the agent.
+    #[cfg(windows)]
+    pub(crate) fn startup_processes(&self) -> &[super::process::JobProcess] {
+        self.startup_processes.get().map_or(&[], Vec::as_slice)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn agent_program(&self) -> Option<&str> {
+        self.agent_program.as_deref()
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -312,7 +336,20 @@ impl Acp {
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
         let answer = self.send(method, params).await?;
-        answer.response().await
+        let response = answer.response().await?;
+        #[cfg(windows)]
+        if method == "initialize" && self.startup_processes.get().is_none() {
+            match self.job_processes().await {
+                Ok(processes) => {
+                    let _ = self.startup_processes.set(processes);
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "couldn't identify the agent's startup processes");
+                    let _ = self.startup_processes.set(Vec::new());
+                }
+            }
+        }
+        Ok(response)
     }
 
     /// Writes a request and returns its pending answer: anything written after this

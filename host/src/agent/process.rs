@@ -17,6 +17,8 @@ pub(crate) struct JobProcess {
     pub(crate) pid: u32,
     pub(crate) parent: u32,
     pub(crate) name: String,
+    /// Kernel creation time disambiguates reused process IDs.
+    pub(crate) created: u64,
 }
 
 pub(super) struct Process {

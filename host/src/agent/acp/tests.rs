@@ -145,6 +145,7 @@ async fn an_agents_job_lists_what_it_started() {
     loop {
         let listed = acp.job_processes().await.unwrap();
         if let Some(ping) = listed.iter().find(|p| p.name.eq_ignore_ascii_case("ping.exe")) {
+            assert!(ping.created > 0, "native creation time identifies this process allocation");
             let shell = listed.iter().find(|p| p.pid == ping.parent).expect("what started ping is in the job");
             assert!(shell.name.eq_ignore_ascii_case("cmd.exe"), "{}", shell.name);
             return;

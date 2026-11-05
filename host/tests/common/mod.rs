@@ -21,14 +21,17 @@ pub fn agent_dir(home: &Path) -> PathBuf {
     home.join("pi-agent")
 }
 
-/// `codync-host serve` on `home` with the cloud off.
+/// `codync-host serve` on `home` with the cloud off. It stops when its stdin closes: the pipe lives in the
+/// returned `Child` and the test process, so a run that is killed takes its hosts with it.
 pub fn host_command(home: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_codync-host"));
     command
         .arg("serve")
         .env("CODYNC_HOME", home)
         .env("CODYNC_CLOUD", "off")
-        .env("PI_CODING_AGENT_DIR", agent_dir(home));
+        .env("PI_CODING_AGENT_DIR", agent_dir(home))
+        .env("CODYNC_EXIT_WITH_STDIN", "1")
+        .stdin(Stdio::piped());
     command
 }
 

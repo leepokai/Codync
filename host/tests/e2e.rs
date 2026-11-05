@@ -175,6 +175,16 @@ async fn termination_exits_with_an_open_event_stream() {
     drop(stream);
 }
 
+/// What a test run that is killed does to its hosts: the system closes their stdin, and they shut down as on SIGTERM.
+#[tokio::test]
+async fn a_test_host_stops_when_its_run_goes_away() {
+    let mut host = start_host().await;
+    drop(host.child.stdin.take());
+    common::eventually("the host stopped", Duration::from_secs(10), async || host.child.try_wait().unwrap().is_some())
+        .await;
+    assert!(host.child.wait().unwrap().success(), "the host shut down cleanly");
+}
+
 #[tokio::test]
 async fn turn_with_approval_reaches_a_final_reply() {
     if Command::new(common::python()).arg("--version").output().is_err() {

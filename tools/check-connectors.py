@@ -192,8 +192,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix="codync-connectors-check-") as temp:
         home = Path(temp)
         # oh-my-pi keeps its probe sessions here, removed with the temporary home, not in the user's ~/.omp.
+        # The host stops when its stdin closes, so a killed check takes it along.
         env = {**os.environ, "CODYNC_HOME": str(home), "CODYNC_CLOUD": "off", "CODYNC_AGENT_CHECKS": "off",
-               "PI_CODING_AGENT_DIR": str(home / "pi-agent")}
+               "PI_CODING_AGENT_DIR": str(home / "pi-agent"), "CODYNC_EXIT_WITH_STDIN": "1"}
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
@@ -204,7 +205,7 @@ def main():
         remote.daemon_threads = True
         threading.Thread(target=remote.serve_forever, daemon=True).start()
         def start():
-            process = subprocess.Popen([str(BINARY), "serve", "--bind", "127.0.0.1", "--port", str(port)], env=env, stdout=log, stderr=log)
+            process = subprocess.Popen([str(BINARY), "serve", "--bind", "127.0.0.1", "--port", str(port)], env=env, stdin=subprocess.PIPE, stdout=log, stderr=log)
             try:
                 for _ in range(200):
                     try:

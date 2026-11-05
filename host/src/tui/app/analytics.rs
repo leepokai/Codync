@@ -68,7 +68,7 @@ impl App {
         overlay.or_else(|| (self.trace == TraceMode::Full).then_some(Screen::Trace))
     }
 
-    fn track(&self, event: Reported) {
+    pub(in crate::tui) fn track(&self, event: Reported) {
         self.call("track", Track::body(Reporter::Tui, event), After::Tracked);
     }
 

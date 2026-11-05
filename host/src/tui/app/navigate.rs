@@ -130,7 +130,7 @@ impl App {
     pub(super) fn step_pick(&mut self, d: isize) {
         let Some(id) = self.selected.clone() else { return };
         // A run of exchanges with one peer is one pick: its first entry.
-        let lane = self.lane(&id);
+        let lane = self.chat(&id);
         let picks: Vec<(String, bool)> = group(&id, &lane)
             .into_iter()
             .filter_map(|item| match item {

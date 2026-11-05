@@ -72,7 +72,7 @@ extension BotStore {
               pasted: [String] = [], call: String? = nil) -> Task<SendProgress, Never>? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !files.isEmpty, !retired else { return nil }
-        if call == nil { ReviewInvitation.shared.sent(nonce) }
+        lastSentNonce = nonce
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
         data.call = call
         // Shown at once; the computer's own quote replaces it.
@@ -118,6 +118,8 @@ extension BotStore {
                 }
                 outgoingFiles[nonce] = nil
                 upsert(e)
+                // Only once it arrived, so a resend counts once.
+                if call == nil { onPromptSent() }
                 if let bot = bots[botId] { onSent?(bot, .delivered) }
                 return .delivered
             } catch {
@@ -137,6 +139,7 @@ extension BotStore {
             do {
                 try Task.checkCancellation()
                 try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo)
+                onPromptSent()
                 if let bot = bots[botId] { onSent?(bot, .queued) }
                 return .queued
             } catch MailboxError.hostOnline {

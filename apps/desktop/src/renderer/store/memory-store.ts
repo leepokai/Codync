@@ -1,5 +1,6 @@
 import type { HostClient } from '../client/host-client'
 import { Observable } from '../lib/observable'
+import { trNow } from '../lib/l10n.ts'
 
 /** One memory entry (the host's `codync_mem::store::Entry`). */
 export interface MemoryEntry {
@@ -110,10 +111,10 @@ export class MemoryStore extends Observable {
 /** Who wrote an entry, for its detail line. */
 export function authorLabel(entry: MemoryEntry, botName: (id: string | null) => string) {
   switch (entry.author) {
-    case 'user': return 'You wrote it'
+    case 'user': return trNow('You wrote it')
     case 'bot': return `${botName(entry.authorBot)} remembered it`
     case 'dream': return 'Dreaming'
-    default: return 'Moved from the old memory'
+    default: return trNow('Moved from the old memory')
   }
 }
 

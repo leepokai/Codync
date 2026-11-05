@@ -18,6 +18,7 @@ impl Hub {
             v["harnessMemoryShared"] = crate::agent::own_memory::shared(cfg).into();
             v["sharedMemory"] = crate::chat::memory::shared(cfg).into();
             v["memoryRev"] = self.store.memory_rev().into();
+            v["devServers"] = self.dev_servers.wire(&cfg.id);
         }
         let rt = if cfg.is_group() {
             // A group has no agent: Fast mode belongs to its members.

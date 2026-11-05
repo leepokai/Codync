@@ -42,7 +42,7 @@ pub(super) async fn output(
 
 /// Drop CSI colour sequences (`ESC [ … m`). Other characters stay, including
 /// the cursor-position query a Windows console sends.
-pub(super) fn strip_ansi(text: &str) -> String {
+pub(crate) fn strip_ansi(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {

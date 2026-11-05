@@ -82,12 +82,12 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
  * trailing button morphs between call, send, stop and interrupt. `onInterrupt` cuts the bot off
  * while it speaks in a voice call. `replyTo` is the message the next send quotes, shown on top. `about`, in an artifact's
  * viewer: the artifact's title, which the box names in place of the quote (its card) it sends with; `draftKey` is then the
- * artifact's draft, apart from the chat's.
+ * artifact's draft, apart from the chat's. `queued`: the user's messages waiting behind the bot's work, shown on top ([QueuedMessages]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable fun MessageComposer(bot: Bot, state: AppState, store: AppStore, onCall: (() -> Unit)?,
     onInterrupt: (() -> Unit)? = null, replyTo: ReplyQuote? = null, cancelReply: () -> Unit = {}, about: String? = null,
-    draftKey: String = bot.id) {
+    draftKey: String = bot.id, queued: List<Entry> = emptyList()) {
     val draft = state.drafts[draftKey]
     val text = rememberTextFieldState(initialText = draft?.text.orEmpty())
     val files = draft?.files.orEmpty()
@@ -173,6 +173,8 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         if (command != null) run(command) else store.sendDraft(draftKey, bot.id, typed, replyTo) { clear(); cancelReply() }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // Over the box, past the + button.
+    QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + FIELD_HEIGHT + 8.dp, end = 16.dp))
     AnimatedVisibility(commands.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
         CommandList(commands, ::run, Modifier.padding(horizontal = 16.dp))

@@ -19,7 +19,7 @@ const API: &str = "https://backend.composio.dev/api/v3.1";
 const TIMEOUT: Duration = Duration::from_secs(30);
 /// Connector ids for Composio apps: `composio-<toolkit slug>`.
 pub const PREFIX: &str = "composio-";
-const SLOT: &str = "composio";
+pub(super) const SLOT: &str = "composio";
 pub const KEY_URL: &str = "https://platform.composio.dev";
 
 pub const INSTRUCTIONS: &str = "Act in the user's connected apps through Composio. Find a tool with \

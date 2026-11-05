@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use icu_normalizer::DecomposingNormalizerBorrowed;
 use serde_json::json;
 
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::super::manage::{Submit, section_fields};
 use super::{After, App, Bot, Click, Overlay};
 
@@ -265,14 +265,14 @@ impl App {
     }
 
     /// Whether the host is `since` or newer; says what to update when it isn't (`why`, with `{host}` and `{version}`).
-    fn host_supports(&mut self, since: &str, why: &str) -> bool {
+    pub(super) fn host_supports(&mut self, since: &str, why: &str) -> bool {
         if self.host_version.is_empty() {
             self.flash("Still connecting: try again in a moment.");
             return false;
         }
         let supported = crate::compat::at_least(&self.host_version, since);
         if !supported {
-            let why = tr(why).replace("{host}", &self.host).replace("{version}", since);
+            let why = fill(&tr(why), &[("host", &self.host), ("version", since)]);
             self.flash(&why);
         }
         supported

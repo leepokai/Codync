@@ -24,7 +24,7 @@ mod turns;
 pub use lifecycle::{KV_STARTED, Via, device_paired, host_started, phone_connected};
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
-pub use turns::{TurnOutcome, TurnSource, agent_fell_back, turn_finished};
+pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, message_steered, turn_finished};
 
 const KV_ENABLED: &str = "analytics_enabled";
 /// The account the install id was last merged into (one `$identify` per account).
@@ -64,6 +64,9 @@ pub enum Event {
     SectionRenamed,
     BotDeleted,
     MessageSent,
+    /// The user had a queued message handled now (`agent::bot::steer`).
+    MessageSteered,
+    QueuedMessageRemoved,
     TurnStopped,
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
@@ -77,16 +80,27 @@ pub enum Event {
     RoutineDeleted,
     RoutineRun,
     RoutineRetried,
+    /// A bot's `start_dev_server` ended (`outcome`).
+    DevServerStarted,
+    /// A dev server ended (`by`).
+    DevServerStopped,
+    /// A person acted on a dev server (`action`).
+    DevServerAction,
+    /// A bot left a server running through its own shell, not `start_dev_server`.
+    DevServerDetected,
     VoiceCallStarted,
     VoiceCallFinished,
     /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
     VoiceCallQuality,
+    /// A desktop window's crashed page loaded again, or crashed too often and stays down.
+    WindowRecovery,
     RemoteScreenOpened,
     ScreenTakenOver,
     ConnectorInstalled,
     ConnectorsImported,
     BotsImported,
     ConnectorRemoved,
+    ConnectorUpdated,
     ConnectorSigninStarted,
     SkillInstalled,
     SkillRemoved,
@@ -97,6 +111,8 @@ pub enum Event {
     AgentSetupStarted,
     AgentSignedIn,
     SettingChanged,
+    /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
+    ReachAccountAnswered,
     HostUpdateInstalled,
     /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
     NetworkJoined,
@@ -133,6 +149,8 @@ impl Event {
             Self::SectionRenamed => "section_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
+            Self::MessageSteered => "message_steered",
+            Self::QueuedMessageRemoved => "queued_message_removed",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
@@ -145,15 +163,21 @@ impl Event {
             Self::RoutineDeleted => "routine_deleted",
             Self::RoutineRun => "routine_run",
             Self::RoutineRetried => "routine_retried",
+            Self::DevServerStarted => "dev_server_started",
+            Self::DevServerStopped => "dev_server_stopped",
+            Self::DevServerAction => "dev_server_action",
+            Self::DevServerDetected => "dev_server_detected",
             Self::VoiceCallStarted => "voice_call_started",
             Self::VoiceCallFinished => "voice_call_finished",
             Self::VoiceCallQuality => "voice_call_quality",
+            Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
             Self::ConnectorsImported => "connectors_imported",
             Self::BotsImported => "bots_imported",
             Self::ConnectorRemoved => "connector_removed",
+            Self::ConnectorUpdated => "connector_updated",
             Self::ConnectorSigninStarted => "connector_signin_started",
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
@@ -163,6 +187,7 @@ impl Event {
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::SettingChanged => "setting_changed",
+            Self::ReachAccountAnswered => "reach_account_answered",
             Self::HostUpdateInstalled => "host_update_installed",
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",

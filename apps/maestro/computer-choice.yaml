@@ -1,0 +1,39 @@
+# First-run setup, signed in to an account that already has a computer: nothing is asked by itself, the first page
+# offers that computer or a new one, and the new one's install page has the download link to send.
+# Needs a phone that hasn't finished setup, signed in with `npm run phone-account`, and a computer in that account
+# (`npm run dev -- --cloud`, docs/guides/dev-app.md), so it keeps the app's state: run it apart from `smoke`,
+# whose welcome flow clears that state. It ends with a request on the computer: each computer-choice flow starts from
+# its own fresh setup, in its own run.
+# One flow for iPhone and Android (docs/guides/test-stack.md):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags computer-choice apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - computer-choice
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "Connect a computer"
+    timeout: 20000
+- assertVisible: "Ask for access"
+- assertVisible: "Skip"
+- tapOn: "Pair a new computer"
+- assertVisible: "Install Codync.*"
+- assertVisible: "Open the website on your computer.*"
+- assertVisible: "Copy website link"
+- tapOn: "Back"
+- assertVisible: "Connect a computer"
+- tapOn: "Ask for access"
+- extendedWaitUntil:
+    visible: "Check the code on .*"
+    timeout: 20000

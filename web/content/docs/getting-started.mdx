@@ -43,7 +43,7 @@ You can also install the host with Homebrew (`brew install leepokai/codync/codyn
 
 The app first asks you to sign in with Apple, Google or GitHub. The computer joins your account, so your phone can find it there. It then offers **Computer access**, which bots need only to use the screen; choose **Set up later** to skip it. See [Computer use](/docs/computer-use).
 
-Setup also offers an optional GitHub star. If you skip it, the desktop app can remind you once after seven days. That reminder has two actions: **Star on GitHub** opens the repository, and **Not now** dismisses it. You can also dismiss it by clicking outside the card or pressing Escape. Opening the repository or dismissing this reminder ends further reminders on that computer.
+Setup also offers an optional GitHub star. If you skip it, the desktop app invites you once more when you've sent your fifth message from that computer. That invitation has two actions: **Star on GitHub** opens the repository, and **Not now** dismisses it. You can also dismiss it by clicking outside the card or pressing Escape. Opening the repository or dismissing this invitation ends the invitations on that computer.
 
 The computer menu shows a device icon beside each name, helping you distinguish a laptop, Mac mini, or Linux computer. Connection status appears alongside the name (on a separate secondary line on desktop and Android). Tick or untick computers to choose whose bots the list shows; the menu stays open while you pick, so you can change several at once, and **All computers** shows every one again.
 
@@ -79,7 +79,7 @@ On the computer, show the pairing code:
 - **Any desktop app:** Settings → Computers, then the **Pair iPhone** button on the computer.
 - **Terminal:** run `codync-host pair`, or press `P` in the terminal UI.
 
-On the iPhone, open Codync, sign in with Apple, Google or GitHub, tap **Continue**, then scan the code. The iPhone Camera app can scan it too. If you can't scan, copy the pairing link on the computer and paste it into the field under the viewfinder. To pair later, tap the account button at the top left of the Bots tab, then **Scan a computer's code**.
+On the iPhone, open Codync and sign in with Apple, Google or GitHub. If your account already has a computer, the first page offers it: tap **Pair a new computer** to set up another one here, or see below to use that one. Tap **Continue**, then scan the code. The iPhone Camera app can scan it too. If you can't scan, copy the pairing link on the computer and paste it into the field under the viewfinder. To pair later, tap the account button at the top left of the Bots tab, then **Scan a computer's code**.
 
 The iPhone app has three tabs: **Bots** (your bots and chats), **State** (widgets, Live Activities and usage limits) and **Settings** (this iPhone's own settings). Each computer's settings, such as Extensions, voice chat and push notifications, are in **Manage computers**: tap the connection status at the top of the Bots tab (such as **1 connected**).
 
@@ -87,7 +87,9 @@ A pairing code expires. If pairing fails, show a new code on the computer and sc
 
 After pairing, the phone connects directly when it's on the same Wi-Fi or Tailscale network as the computer. Anywhere else it goes through the Codync relay, end-to-end encrypted, while **Reach from anywhere** is on in the computer's Codync settings. See [Remote access](/docs/remote-access).
 
-If you signed in to the same account on the computer and the phone, the phone can also ask the computer for access instead of scanning. The computer then shows the request and a code for you to check. See [Remote access](/docs/remote-access).
+If you signed in to the same account on the computer and the phone, the phone can ask the computer for access instead of scanning: the first page lists your account's computers with **Ask for access**. The computer then shows the request and a code for you to check. See [Remote access](/docs/remote-access).
+
+Started on the phone, with Codync not on the computer yet? The install page has **Copy website link**: open that link on the computer and download Codync there. Sign in there with the same account, and the computer shows up on the phone the next time you open the app.
 
 ## 4. Meet your lead bot
 
@@ -125,14 +127,17 @@ When the bot finishes or needs you, your iPhone gets a notification, unless the 
 
 Choose **Language** in **Settings → General** on the desktop or **Settings** on
 the iPhone or Android. You can follow your system language or choose English, Simplified
-Chinese, Traditional Chinese, Japanese, Korean, French, German, Spanish or
-**Português (Brasil)** or **Русский**. In the terminal UI, open the command palette with `Ctrl+K`
+Chinese, Traditional Chinese, Japanese, Korean, French, German, Spanish,
+**Português (Brasil)**, **Русский** or **Italiano**. In the terminal UI, open the command palette with `Ctrl+K`
 and choose **App language…** to cycle through the choices.
 
 Each device keeps its own choice. **Follow system** uses Brazilian Portuguese
 for Portuguese system languages, including `pt` and `pt-BR`; unsupported
 languages use English. This changes the interface, not your conversations,
 bot names or commands.
+
+Queue status, routine notices and trace labels follow this choice too. Bot and
+routine names, custom tool titles and message contents stay as written.
 
 ## Next steps
 

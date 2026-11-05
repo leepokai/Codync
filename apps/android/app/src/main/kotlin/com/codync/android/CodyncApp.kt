@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
@@ -33,7 +34,7 @@ import com.codync.android.core.GroupDraft
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
 
-private enum class Root { Loading, Welcome, Pairing, Tabs }
+private enum class Root { Loading, AwaitingAccount, Welcome, Choose, Pairing, Tabs }
 
 /** A new bot or group chat, on the computer it's made on. */
 private data class NewTarget(val group: Boolean, val computerId: String)
@@ -47,6 +48,8 @@ private data class Editing<T>(val computerId: String, val draft: T)
  */
 @Composable fun CodyncApp(app: AccountContext, computers: Map<String, AppState>, accounts: AccountStore) {
     var welcomed by rememberSaveable { mutableStateOf(false) }
+    // In the pairing flow by choice: a computer turning up in the account doesn't pull it back to the choice.
+    var pairingNew by rememberSaveable { mutableStateOf(false) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var showComputers by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
@@ -65,7 +68,7 @@ private data class Editing<T>(val computerId: String, val draft: T)
         creating = null; access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
-    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; handledGeneration = app.generation } }
+    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; pairingNew = false; handledGeneration = app.generation } }
     // A notification, widget or link: close everything, then pick the tab as the iPhone does (usage on State, the rest over Bots)
     // and maybe show usage, the computers or extensions.
     LaunchedEffect(app.navigationRequest) {
@@ -82,15 +85,21 @@ private data class Editing<T>(val computerId: String, val draft: T)
     val signedIn = app.account.userId != null
     // Every build with accounts requires sign-in (iOS `mustSignIn`); only builds without them pair signed out.
     val required = app.account.configured
-    val onboarding = !app.setupComplete && app.computers.isEmpty() && app.cloudComputers.isEmpty()
+    val onboarding = !app.setupComplete && app.computers.isEmpty()
+    // What the choice page offers: an older copy of a computer doesn't count as one more.
+    val askable = app.cloudComputers.filterNot(app::isOlderCopy)
     val root = when {
         app.loading || app.account.restoring -> Root.Loading
         required && !signedIn -> Root.Welcome
         onboarding && !welcomed && !signedIn -> Root.Welcome
+        // Whether the account has computers decides the first page: none flashes by before that's known.
+        onboarding && signedIn && !app.cloudLoaded -> Root.AwaitingAccount
+        onboarding && !pairingNew && askable.isNotEmpty() -> Root.Choose
         onboarding -> Root.Pairing
         else -> Root.Tabs
     }
     BackHandler(root == Root.Pairing && !signedIn) { welcomed = false }
+    BackHandler(root == Root.Pairing && askable.isNotEmpty()) { pairingNew = false }
     val states = app.computers.mapNotNull { computers[it.id] }
     val edit = { computerId: String, bot: Bot ->
         if (bot.kind == "group") groupEditor = Editing(computerId, GroupDraft.from(bot)) else editor = Editing(computerId, BotDraft.from(bot))
@@ -100,19 +109,29 @@ private data class Editing<T>(val computerId: String, val draft: T)
     CompositionLocalProvider(LocalAccounts provides accounts) {
         Box(Modifier.fillMaxSize().background(Palette.background)) {
             AnimatedContent(root, transitionSpec = {
-                if (initialState == Root.Welcome && targetState == Root.Pairing)
+                if ((initialState == Root.Welcome || initialState == Root.Choose) && targetState == Root.Pairing)
                     (slideInHorizontally(Motion.layoutOffset) { it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { -it } + fadeOut(Motion.fade()))
-                else if (initialState == Root.Pairing && targetState == Root.Welcome)
+                else if (initialState == Root.Pairing && (targetState == Root.Welcome || targetState == Root.Choose))
                     (slideInHorizontally(Motion.layoutOffset) { -it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { it } + fadeOut(Motion.fade()))
                 else fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade())
             }, label = "Root") { shown ->
                 when (shown) {
                     Root.Loading -> Box(Modifier.fillMaxSize())
+                    Root.AwaitingAccount -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner(28.dp) }
                     // Computers paired before sign-in was required wait in the signed-out context; signing in moves them.
                     Root.Welcome -> WelcomeView(app, accounts, signedOutComputers = if (required) app.computers.size else 0) { welcomed = true }
+                    Root.Choose -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        ChooseComputerView(app, askable, { access = it }, { pairingNew = true }, accounts::skipSetup) {
+                            AccountSwitcherButton(app) { showAccount = true }
+                        }
+                    }
                     Root.Pairing -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        PairingView(app, accounts, onSkip = accounts::skipSetup) {
-                            if (signedIn) AccountSwitcherButton(app) { showAccount = true } else BackButton { welcomed = false }
+                        PairingView(app, accounts, onSkip = accounts::skipSetup, onContinue = { pairingNew = true }) {
+                            when {
+                                askable.isNotEmpty() -> BackButton { pairingNew = false }
+                                signedIn -> AccountSwitcherButton(app) { showAccount = true }
+                                else -> BackButton { welcomed = false }
+                            }
                         }
                     }
                     Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },

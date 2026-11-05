@@ -164,6 +164,29 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(store.supportsSections)
 }
 
+@MainActor @Test func queueActionsNeedAHostThatTakesThem() throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    #expect(!store.supportsQueueActions) // The host hasn't answered yet.
+    store.hostVersion = HostVersion(version: "2.38.0")
+    #expect(!store.supportsQueueActions)
+    store.hostVersion = HostVersion(version: "2.39.0")
+    #expect(store.supportsQueueActions)
+}
+
+@MainActor @Test func aQueuedMessageTakenBackGoesAtOnceAndComesBackWhenRefused() async throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    let data = try JSONDecoder().decode(EntryData.self, from: Data(#"{"text":"later","status":"queued"}"#.utf8))
+    let entry = Entry(id: "q", seq: 1, botId: "b", rev: 1, kind: "user", turn: 1, data: data, createdAt: 1, updatedAt: 1)
+    store.entries["b"] = [entry]
+    store.connection = .unauthorized("No access") // Every call fails at once.
+    store.unqueue(entry)
+    #expect(store.chat("b").isEmpty)
+    #expect(await until { store.chat("b").first?.isQueued == true })
+    #expect(store.lastError != nil)
+}
+
 @MainActor @Test func sectionChangesShowAtOnceAndUndoWhenRefused() async throws {
     let (store, done) = try rosterStore([rosterBot("a"), rosterBot("b", section: "Work"), rosterBot("c", section: "Home")])
     defer { done() }

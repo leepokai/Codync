@@ -9,6 +9,7 @@ import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
 import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
 import { AgentBrings } from './AgentBrings'
@@ -281,7 +282,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
           </CardSection>
           <VStack gap={6} className="agent-keys-notes">
             {method.description ? <span>{method.description}</span> : null}
-            <span>Saved on {store.hostName} only and given to {backend.name} when it starts.</span>
+            <span>{fill(tr('Saved on {name} only and given to {other} when it starts.'), { name: store.hostName, other: backend.name })}</span>
             {method.link && URL.canParse(method.link) ? <WebLink title="Get a key" url={method.link} /> : null}
           </VStack>
         </VStack>

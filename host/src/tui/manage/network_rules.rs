@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::super::app::{App, cycle};
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::network::{NetReply, NetworkSheet, Step};
 
 const ANY: &str = "*";
@@ -86,7 +86,7 @@ impl NetworkSheet {
                     .iter()
                     .find(|c| c["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(computer)));
                 let name = on.and_then(|c| agent_name(c, agent)).unwrap_or(agent);
-                tr("{bot} on {computer}").replace("{bot}", name).replace("{computer}", computer)
+                fill(&tr("{bot} on {computer}"), &[("bot", name), ("computer", computer)])
             }
         };
         let to = match s(rule, "toAgent").as_str() {
@@ -94,7 +94,7 @@ impl NetworkSheet {
             id => self.me().and_then(|me| agent_name(me, id)).unwrap_or(id).to_owned(),
         };
         let template = if rule["access"] == "deny" { "Deny: {from} → {to}" } else { "Allow: {from} → {to}" };
-        tr(template).replace("{from}", &from).replace("{to}", &to)
+        fill(&tr(template), &[("from", &from), ("to", &to)])
     }
 }
 

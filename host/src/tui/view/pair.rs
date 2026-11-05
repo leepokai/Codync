@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 use serde_json::Value;
 
 use super::super::app::{App, PairCode};
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::super::md::{width as w, wrap};
 use super::buffer::{centered, frame_box, put, put_line, u};
 use super::style::theme;
@@ -46,11 +46,10 @@ fn ask(buf: &mut Buffer, area: Rect, request: &Value) {
         Some((a, b)) if code.len() == 6 => format!("{a}\u{a0}{b}"),
         _ => code.to_owned(),
     };
-    // The name last: whatever it says stays as written.
-    let text = tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
-        .replace("{email}", &email)
-        .replace("{code}", &code)
-        .replace("{name}", name);
+    let text = fill(
+        &tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}."),
+        &[("email", &email), ("code", &code), ("name", name)],
+    );
     let lines = note(text, 52, t.text.patch(t.panel));
     let r = centered(area, 56, u(lines.len() + 5));
     let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));

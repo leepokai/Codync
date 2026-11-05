@@ -97,7 +97,10 @@ internal object Analytics {
         } else enqueue(name, installId(stored), extra)
     }
 
-    /** `onboarding_completed`, once per phone until Start over (iOS: its `onboardingCompleted` default), whichever account. */
+    /** Setup finished on this phone, in whichever account, until Start over (iOS: its `onboardingCompleted` default). */
+    val onboarded: Boolean get() = prefs?.getBoolean("onboarded", false) == true
+
+    /** `onboarding_completed`, once per phone until Start over, whichever account. */
     fun completeOnboarding(via: OnboardingVia) {
         val stored = prefs ?: return
         if (stored.getBoolean("onboarded", false)) return

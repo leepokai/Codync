@@ -13,6 +13,7 @@ import { BotSettingsPanel } from '../bots/BotEditorView'
 import { MemoryCard } from '../bots/MemoryView'
 import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
+import { DevServersSection } from './DevServersSection'
 import { MacChatButton } from './MacChatButton'
 import '../bots/bots.css'
 import './details-panel.css'
@@ -60,6 +61,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
             <div key={tab} className="details-tab fade-in">
               {tab === 'details' ? (
                 <>
+                  {bot ? <DevServersSection bot={bot} /> : null}
                   <BotSettingsPanel botId={botId} part="often" />
                   {bot ? <ComputerUse bot={bot} /> : null}
                   <RoutinesView botId={botId} initialId={routineId} />
@@ -130,14 +132,14 @@ function GroupMembersList({ group, editGroup }: { group: Bot; editGroup: () => v
     <div className="details-members">
       {store.members(group).map((bot) => (
         <div key={bot.id} className="member-row removable">
-          <button className="member-open press" title={`Open ${bot.name}'s own chat`} onClick={() => store.setSelection(bot.id)}>
+          <button className="member-open press" title={tr("Open {name}'s own chat").replaceAll('{name}', () => bot.name)} onClick={() => store.setSelection(bot.id)}>
             <BotAvatar bot={bot} size={32} />
             <VStack as="span" gap={1} grow>
               <span className="member-name">{bot.name}</span>
               {isWorking(bot) ? <Text size="compactSecondary" tone="secondary" className="member-name">{tr(bot.activity || 'Working…')}</Text> : null}
             </VStack>
           </button>
-          {group.members.length > 1 ? <IconButton title={`Remove ${bot.name} from the group`} icon="xmark" onClick={() => store.removeMember(group, bot.id)} /> : null}
+          {group.members.length > 1 ? <IconButton title={tr('Remove {name} from the group').replaceAll('{name}', () => bot.name)} icon="xmark" onClick={() => store.removeMember(group, bot.id)} /> : null}
         </div>
       ))}
       <button className="member-row press" onClick={editGroup}>

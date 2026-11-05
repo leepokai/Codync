@@ -1,0 +1,47 @@
+# First-run setup, signed in to an account that already has a computer: Skip opens the tabs, and the choice page
+# doesn't come back after a relaunch.
+# Starts where computer-choice.yaml does (a phone that hasn't finished setup, `npm run phone-account`, `npm run dev -- --cloud`).
+# Skipping finishes setup, so it runs on its own fresh setup, apart from `smoke` and computer-choice.
+# One flow for iPhone and Android (docs/guides/test-stack.md):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags computer-choice-skip apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - computer-choice-skip
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "Connect a computer"
+    timeout: 20000
+- tapOn: "Skip"
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 20000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - stopApp: com.pokai.Codync.ios.dev
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - stopApp: com.pokai.Codync.android.dev
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 20000
+- assertNotVisible: "Connect a computer"

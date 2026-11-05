@@ -26,7 +26,7 @@ Show the code on the computer:
 - **Terminal:** run `codync-host pair`. It prints the QR code in the terminal, and waits to answer when the computer asks about a phone (see below). `codync-host pair --json` prints the link instead and doesn't wait.
 - **Terminal UI:** press `^k` and choose **Pair a phone…**.
 
-Then, on the iPhone, scan it from the welcome screen, or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning, or type the short code `codync-host pair` prints, like `QRTX-4821`.
+Then, on the iPhone, scan it during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer), or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning, or type the short code `codync-host pair` prints, like `QRTX-4821`.
 
 A code works once and expires after 10 minutes. If it has expired, show a new one on the computer. Pairing works over any route, including the relay.
 
@@ -44,7 +44,7 @@ Changing the account a computer belongs to (moving it, or **Remove from account*
 The iPhone, Android and desktop apps ask you to sign in with Apple, Google or GitHub before you use them. Signing in doesn't give any device access by itself. It lets your phone find the computers in your account without scanning a code:
 
 1. On the computer, sign in to the desktop app. The computer joins your account. For an SSH computer, choose **Add to account** on its card in **Settings → Computers**.
-2. On the iPhone, sign in with the same account and open **Manage computers**. Your account's computers are listed there. Tap **Ask for access**. The phone shows a 6-digit code.
+2. On the iPhone, sign in with the same account. The first time, the first page lists your account's computers; after that, they're in **Manage computers**. Tap **Ask for access**. The phone shows a 6-digit code. (Setting up another computer, like a VPS? Tap **Pair a new computer** on that first page.)
 3. On the computer, an **Access request** opens with a code. Choose **Approve** only if it matches the code on your phone exactly. If it doesn't, choose **Deny**: someone may be trying to get in.
 
 On a computer without the desktop app, use `codync-host access` to list requests and `codync-host access approve <code>` to approve one.
@@ -86,11 +86,15 @@ With the relay off:
 - Devices approved through your account can't connect. Devices paired with a QR code still can.
 - Deliveries to public routine webhooks no longer reach the computer. Local ones keep working. The relay still accepts deliveries at the old public URLs and keeps them, readable, for up to 72 hours; they run if you turn the relay back on within that time. To stop them, remove the URL from the sender, or delete the routine or replace its key while the relay is on.
 
+## Turning the relay on
+
+In the desktop app, open **Settings → Computers** and turn on **Reach from anywhere** on the computer's card. A computer in no account has to join yours first: Codync asks you to add it, and adding it turns the relay on too. **Use your own relay** in the same window turns it on without joining your account, since your own relay has no accounts. Until you set **Relay address**, it connects through the Codync relay; see [Your own relay](#your-own-relay). On a computer without the desktop app, run `codync-host cloud --enable`.
+
 ## Your own relay
 
 You can run a relay yourself and point a computer at it, instead of the Codync relay on Cloudflare. Chat stays end-to-end encrypted either way. The relay still cannot read it. How to set one up on a server is in the [private relay README](https://github.com/leepokai/Codync/blob/main/private-relay/README.md).
 
-On the computer, open **Settings → Computers**, turn on **Reach from anywhere**, and set **Relay address** to your relay, such as `https://relay.example.com`. A **Relay token** field then appears: paste the token the relay was started with. The field never shows the token again; it says it's saved, and typing a new one replaces it. On a computer without the desktop app:
+On the computer, open **Settings → Computers**, turn on **Reach from anywhere** (choose **Use your own relay** if Codync asks you to add the computer to your account), and set **Relay address** to your relay, such as `https://relay.example.com`. A **Relay token** field then appears: paste the token the relay was started with. The field never shows the token again; it says it's saved, and typing a new one replaces it. On a computer without the desktop app:
 
 ```sh
 codync-host cloud --url https://relay.example.com --token

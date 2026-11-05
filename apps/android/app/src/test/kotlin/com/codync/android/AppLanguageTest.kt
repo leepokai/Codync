@@ -9,7 +9,7 @@ import org.junit.Test
 
 class AppLanguageTest {
     @Test fun additionalLanguagesResolveRegionsAndKeepExplicitChoices() {
-        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es, AppLanguage.Ru)) {
+        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es, AppLanguage.Ru, AppLanguage.It)) {
             assertEquals(language, AppLanguage.System.resolved(language.stored + "-XX"))
             assertEquals(language, language.resolved("zh-TW"))
             assertEquals(language, AppLanguage.fromStored(language.stored))
@@ -44,6 +44,8 @@ class AppLanguageTest {
         val locales = mapOf(
             "en-US" to AppLanguage.En,
             "ru-RU" to AppLanguage.Ru,
+            "it-IT" to AppLanguage.It,
+            "it_CH.UTF-8" to AppLanguage.It,
             "zh-CN" to AppLanguage.Zh,
             "zh_Hans.UTF-8" to AppLanguage.Zh,
             "zh-TW" to AppLanguage.ZhHant,
@@ -57,7 +59,7 @@ class AppLanguageTest {
     }
 
     @Test fun unsupportedLanguagesKeepTheirFallbacks() {
-        for (tag in listOf("nl-NL", "it-IT", "unknown", "")) {
+        for (tag in listOf("nl-NL", "unknown", "")) {
             assertEquals(tag, AppLanguage.En, AppLanguage.System.resolved(tag))
         }
         assertEquals(AppLanguage.System, AppLanguage.fromStored("unknown"))
@@ -92,8 +94,23 @@ class AppLanguageTest {
             "this Mac" to "这台 Mac",
         )
         val sentence = "Runs the official installer on this Mac."
-        val expected = "在 这台 Mac 上运行官方安装程序。"
+        val expected = "在 this Mac 上运行官方安装程序。"
         assertEquals(expected, translate(sentence, AppLanguage.Zh, systemIsChinese = false, table))
         assertEquals(expected, translate(sentence, AppLanguage.Zh, systemIsChinese = false, table))
+    }
+    @Test fun filledTemplatesPreserveNamesMessagesAndNestedHints() {
+        val table = mapOf(
+            "Routine · {name}" to "例行任务 · {name}",
+            "Message from {name}: {message}" to "来自 {name}：{message}",
+            "{name} isn't set up. {hint}" to "{name} 尚未设置。{hint}",
+            "Install {name}." to "安装 {name}。",
+            "Plan" to "计划", "connected" to "已连接", "Standby" to "待命",
+        )
+        for (name in listOf("Plan", "connected", "Standby", "$&", "{hint}")) {
+            assertEquals("例行任务 · $name", translate("Routine · $name", AppLanguage.Zh, false, table))
+            assertEquals("来自 $name：Plan", translate("Message from $name: Plan", AppLanguage.Zh, false, table))
+        }
+        assertEquals("{hint} 尚未设置。安装 Plan。",
+            translate("{hint} isn't set up. Install Plan.", AppLanguage.Zh, false, table))
     }
 }

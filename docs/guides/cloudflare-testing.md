@@ -62,7 +62,7 @@ cd cloud && npx wrangler d1 migrations apply codync-local --env local --local
 curl -s https://sunny-mollusk-8651.clerk.accounts.dev/.well-known/jwks.json   # → CLERK_JWT_KEY as PEM
 npx wrangler dev --env local --port 8787 --var CLERK_ISSUER:https://sunny-mollusk-8651.clerk.accounts.dev \
   --var "CLERK_JWT_KEY:$PEM" --var "DEVICE_CERT_KEY:$JWK"          # a throwaway Ed25519 JWK
-CODYNC_HOME=$TMP CODYNC_CLOUD_URL=http://127.0.0.1:8787 CODYNC_DEVICE_CERT_KEY=$PUB codync-host serve --port 19391
+CODYNC_HOME=$TMP CODYNC_VAULT=folder CODYNC_CLOUD_URL=http://127.0.0.1:8787 CODYNC_DEVICE_CERT_KEY=$PUB codync-host serve --port 19391
 ```
 
 - iPhone: launch with `SIMCTL_CHILD_CODYNC_CLOUD_URL=http://127.0.0.1:8787` (also while running `npm run phone-account`).

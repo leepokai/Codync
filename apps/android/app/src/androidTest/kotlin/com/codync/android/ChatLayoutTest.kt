@@ -112,6 +112,41 @@ class ChatLayoutTest {
         compose.onNodeWithText("Copy").assertDoesNotExist()
     }
 
+    @Test fun queuedMessagesWaitOnTheComposerWithSendNowAndRemove() {
+        assumeTrue(Build.PRODUCT.startsWith("sdk"))
+        val store = previewStore()
+        // Working in a room: its own chat's messages still wait (and the working indicator's animation stays out of the test).
+        val bot = Bot("queue-preview", "Scout", status = "working", workingChat = "room-preview")
+        val now = System.currentTimeMillis()
+        fun user(id: String, seq: Long, text: String, status: String) =
+            Entry(id, seq, bot.id, rev = seq, kind = "user", turn = seq, createdAt = now + seq, data = buildJsonObject { put("text", text); put("status", status) })
+        val first = "Also update the changelog."
+        val second = "And run the linter before you finish."
+        val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot),
+            connection = LinkState.Ready(HostRoute.Direct), actualConnection = LinkState.Ready(HostRoute.Direct),
+            historyComplete = setOf(bot.id), hello = buildJsonObject { put("version", "2.39.0") }, entries = listOf(
+                user("asked", 1, "Add a weekly totals helper.", "sent"), user("queued-1", 2, first, "queued"), user("queued-2", 3, second, "queued")))
+        compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
+        // Each waits once, on the composer, oldest first; the chat shows only what went out.
+        compose.onAllNodesWithText(first).assertCountEquals(1)
+        compose.onAllNodesWithText(second).assertCountEquals(1)
+        val above = compose.onNodeWithText(first).fetchSemanticsNode().boundsInRoot
+        val below = compose.onNodeWithText(second).fetchSemanticsNode().boundsInRoot
+        val box = compose.onNodeWithContentDescription("Add files").fetchSemanticsNode().boundsInRoot
+        assertTrue(above.bottom <= below.top && below.bottom <= box.top)
+        compose.onAllNodesWithContentDescription("Send now").assertCountEquals(2)
+        compose.onAllNodesWithContentDescription("Remove").assertCountEquals(2)
+        if (InstrumentationRegistry.getArguments().getString("layoutSnapshots") == "true") {
+            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+            File(compose.activity.cacheDir, "queued-messages-preview.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        // An older computer can't take them now or back: they only wait.
+        compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state.copy(hello = buildJsonObject { put("version", "2.38.0") }), store, {}) } } }
+        compose.onAllNodesWithText(first).assertCountEquals(1)
+        compose.onAllNodesWithContentDescription("Send now").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Remove").assertCountEquals(0)
+    }
+
     @Test fun theTitleOpensTheBotsDetailsOnDetails() {
         assumeTrue(Build.PRODUCT.startsWith("sdk"))
         val store = previewStore()

@@ -307,7 +307,8 @@ export function Field({ value, onChange, placeholder, secret = false, lines, mon
 
 /** A danger-colored error line in its own card. */
 export function ErrorText({ text }: { text: string }) {
-  return <Text tone="danger" className="selectable">{text}</Text>
+  const tr = useTr()
+  return <Text tone="danger" className="selectable">{tr(text)}</Text>
 }
 
 /** Values with something typed in. */

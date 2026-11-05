@@ -6,25 +6,11 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.38.1
+## 2.40.0
 ### zh-Hant
-- bot 用了不只一種智慧體時，列表會在頭像左下角標出各自的智慧體標誌，可在「設定 › 外觀」關閉。
-- 修正語音通話中，bot 唸完回覆、要再聽你說話時 app 可能閃退的問題。
-- 語音通話的對話紀錄更好讀：最上方顯示是跟哪個 bot、什麼時候、通話多久，語音說的話也更清楚。
-- 通話列在 bot 沒說話時會顯示一排靜止的點，深色頭像的 bot 也看得到。
-- 語音辨識出問題時，語音通話和聽寫會告訴你，不再一直停在聆聽或默默結束。
-- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
-- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
-- 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
+- bot 現在可以讓 dev server 持續在電腦上執行，不會因為 bot 閒置或重新啟動而中斷。port 會顯示在聊天標題下方；點 bot 的名稱，就能看記錄、重新啟動或停止；手機連得到電腦時，也能直接開啟。
 - 主畫面的 Codync 圖示會顯示未讀數量，和 App 內各聊天的未讀數相加一致，讀完就會消失。
 
 ### en-US
-- When your bots use more than one agent, the bot list marks each avatar with its agent's logo. Turn it off in Settings › Appearance.
-- Fixed a crash in voice calls when the bot finished reading a reply and started listening again.
-- A call's conversation is easier to read: the bot, when the call ended and how long it lasted sit at the top, and the voice's words are clearer.
-- The call bar shows a still row of dots while the bot isn't talking, for dark bots too.
-- When speech recognition stops working, voice calls and dictation tell you, instead of listening forever or ending without a word.
-- Choose Português (Brasil) in Settings, or follow your Portuguese system language.
-- Choose Русский in Settings, or follow your Russian system language.
-- A computer you pair with a QR code that couldn't join your account at the time (the phone couldn't reach the Codync cloud, or the computer's cloud was off, say) joins it the next time it connects.
+- Bots can now keep a dev server running on your computer, even when the bot goes idle or restarts. Its port shows under the chat title; tap the bot's name to read its logs, restart or stop it, and to open it when your phone can reach it.
 - The Codync icon on the Home Screen shows your unread count, the same number your chats' badges add up to, and clears as you read them.

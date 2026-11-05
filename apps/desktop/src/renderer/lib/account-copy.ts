@@ -1,12 +1,10 @@
 /** What the interface says when a computer joins or leaves an account (docs/plans/require-sign-in.md, phase 2). */
+import { fill } from './fill.ts'
 
 type Tr = (text: string) => string
 
 /** "123 456" for a 6-digit code. */
 export const spacedCode = (code: string) => (code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code)
-
-/** Fills `{key}` in one pass: a device named "{code}" stays as written. */
-const fill = (text: string, values: Record<string, string>) => text.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match)
 
 /** A signed-in phone scanned a computer in no account: letting it in brings the computer into the phone's account. */
 export function pairingAskText(tr: Tr, request: { deviceName: string; email?: string | null; code: string }) {

@@ -5,6 +5,7 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { connectorChoices, connectorFor, expiryTime, type ConnectorChoice } from '../../lib/network-copy'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 import type { Network, RecoveryCode } from '@shared/network'
 import type { BotStore } from '../../store/bot-store'
 import { network } from '../../store/network'
@@ -98,9 +99,7 @@ export function RecoveryCodeSheet({ recovery: { code, network: networkName, comp
           <IconButton title="Copy recovery code" icon="doc.on.doc" onClick={() => window.codync.app.copy(code)} />
         </HStack>
         <Text size="callout" tone="secondary">
-          {tr("It makes another computer the owner of {network} if {name} is lost. It's shown only once and kept on no computer.")
-            .replaceAll('{network}', networkName)
-            .replaceAll('{name}', computer)}
+          {fill(tr("It makes another computer the owner of {network} if {name} is lost. It's shown only once and kept on no computer."), { network: networkName, name: computer })}
         </Text>
         <HStack justify="end">
           <Button onClick={done}>I saved it</Button>
@@ -139,7 +138,7 @@ export function InviteSheet({ store, net }: { store: BotStore; net: Network }) {
               <IconButton title="Copy invite" icon="doc.on.doc" onClick={() => window.codync.app.copy(invite.invite)} />
             </HStack>
             <Text size="callout" tone="secondary">
-              {tr('One use. Works until {time} while {name} stays on.').replaceAll('{time}', expiryTime(invite.expiresAt)).replaceAll('{name}', net.computer)}
+              {fill(tr('One use. Works until {time} while {name} stays on.'), { time: expiryTime(invite.expiresAt), name: net.computer })}
             </Text>
             <Text size="callout" tone="secondary">{tr('On the other computer, choose Join with invite under Network.')}</Text>
           </>

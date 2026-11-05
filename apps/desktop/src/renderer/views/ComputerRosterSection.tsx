@@ -3,6 +3,7 @@ import { IconButton } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import type { pointerDrag } from '../lib/pointer-drag'
 import { useTr } from '../lib/use-language'
+import { fill } from '../lib/fill.ts'
 import { useSlide } from '../lib/slide'
 import type { BotStore } from '../store/bot-store'
 import { ComputerBadge } from './ComputerBadge'
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, children }: Props) {
+  const tr = useTr()
   const section = useRef<HTMLElement>(null)
   const id = store.computer.id
   useSlide(section)
@@ -32,7 +34,7 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
     <section ref={section} className={`computer-roster-section ${lifted ? 'lifted' : ''}`} aria-label={store.hostName} data-computer-section={id}>
       <div className="computer-roster-heading">
         <button className="computer-roster-toggle" aria-expanded={!collapsed} data-computer-heading={id}
-          aria-label={`${store.hostName}, ${store.connectionLabel}`} title={`${store.hostName} · ${store.connectionLabel}. Drag to reorder.`}
+          aria-label={`${store.hostName}, ${store.connectionLabel}`} title={fill(tr('{name} · {other}. Drag to reorder.'), { name: store.hostName, other: store.connectionLabel })}
           onClick={toggle}
           {...drag}
           onKeyDown={(event) => {

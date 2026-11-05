@@ -42,6 +42,9 @@ The iPhone and desktop apps also treat **undecodable data from a newer host** as
 that stays undecodable after the one rewind, or a `hello` whose other fields can't be decoded
 (its `version` and `minApp` are still read). From an older or equal host it's only logged.
 
+Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
+chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
+
 ## Changing what crosses the wire
 
 The policy is to move people forward rather than carry old formats: a breaking change ships

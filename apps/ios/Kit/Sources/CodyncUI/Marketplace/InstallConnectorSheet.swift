@@ -68,7 +68,7 @@ struct InstallConnectorSheet: View {
                     ChoiceList(selection: $optionId, options: item.options.map { o in
                         (id: o.id, label: o.kind == "remote"
                             ? L10n.tr("Hosted by {name}").replacingOccurrences(of: "{name}", with: item.title)
-                            : L10n.tr("On {name} ({kind})").replacingOccurrences(of: "{name}", with: model.hostName).replacingOccurrences(of: "{kind}", with: o.kind),
+                            : L10n.fill(L10n.tr("On {name} ({kind})"), ["name": model.hostName, "kind": o.kind]),
                          detail: nil)
                     })
                 }

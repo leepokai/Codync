@@ -35,6 +35,10 @@ data class Entry(
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */
     val artifact: ArtifactCard? get() = (data["artifact"] as? JsonObject)?.let { runCatching { WireJson.decodeFromJsonElement<ArtifactCard>(it) }.getOrNull() }
+    /** A message of the user's waiting behind the bot's work: the computer hasn't given it to the agent yet. */
+    val isQueued: Boolean get() = kind == "user" && status == "queued"
+    /** A queued message the user took back (`unqueue`): the app's state leaves it out (`withRemovals`). */
+    val isRemoved: Boolean get() = data["removed"]?.jsonPrimitive?.booleanOrNull == true
     /** Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
      *  summary keeps the same conversation going, and a kept handoff changed nothing. */
     val isChat: Boolean get() = kind in listOf("user", "permission") ||

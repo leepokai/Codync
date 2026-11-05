@@ -7,11 +7,12 @@ import { IconButtonBase } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { AttachmentImage, AttachmentViewer, attachmentSymbol, byteCount, type ImageSource } from './Attachments'
+import { trNow } from '../../lib/l10n.ts'
 import './attachments.css'
 
 /** What the download button does now (also the Library's file rows). */
 export function downloadAction(state: DownloadState | undefined) {
-  return state?.kind === 'downloading' ? 'Cancel download' : state?.kind === 'failed' ? 'Retry download' : state?.kind === 'saved' ? 'Save again' : 'Download'
+  return state?.kind === 'downloading' ? trNow('Cancel download') : state?.kind === 'failed' ? trNow('Retry download') : state?.kind === 'saved' ? trNow('Save again') : trNow('Download')
 }
 
 /** The line under a shared file's name: its size, the download's progress, or what went wrong. */

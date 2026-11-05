@@ -48,15 +48,14 @@ data class NetworkInfo(
             // `lead@*` (only from the command line) reads "lead on any computer": never wider than it is.
             rule.fromComputer == ANY -> tr("{bot} on any computer").replace("{bot}", rule.fromAgent)
             rule.fromAgent == ANY -> tr("any bot on {computer}").replace("{computer}", rule.fromComputer)
-            else -> tr("{bot} on {computer}").replace("{bot}", agentName(rule.fromComputer, rule.fromAgent))
-                .replace("{computer}", rule.fromComputer)
+            else -> fill(tr("{bot} on {computer}"), "bot" to agentName(rule.fromComputer, rule.fromAgent), "computer" to rule.fromComputer)
         }
         val to = if (rule.toAgent == ANY) tr("any bot here") else computers.firstOrNull { it.me }?.let { me ->
             me.agents.firstOrNull { it.id == rule.toAgent }?.name
         } ?: rule.toAgent
         // An access this app doesn't know reads as deny, never wider than it is.
         val access = if (rule.access == "allow") "Allow: {from} → {to}" else "Deny: {from} → {to}"
-        return tr(access).replace("{from}", from).replace("{to}", to)
+        return fill(tr(access), "from" to from, "to" to to)
     }
 
     private fun agentName(computer: String, agent: String): String =

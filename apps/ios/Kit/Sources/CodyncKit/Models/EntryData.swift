@@ -21,6 +21,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var final: Bool?
     /// user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired
     public var status: String?
+    /// user: taken back while it waited (`unqueue`): it never went out, and no view reads it (`BotStore.chat`).
+    public var removed: Bool?
     public var clientNonce: String?
     public var title: String?
     public var toolKind: String?

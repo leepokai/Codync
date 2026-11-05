@@ -168,12 +168,14 @@ export interface DialogAction {
 }
 
 /** A centered card over a dimmed screen with the actions and Cancel (`.codyncDialog`). */
-export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose, children }: {
+export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCancel, onClose, children }: {
   open: boolean
   title: string
   message?: string | null
   actions: DialogAction[]
   cancel?: string | null
+  /** Closed without an action; `onClose` follows, as it does after an action. */
+  onCancel?: () => void
   onClose: () => void
   /** A field between the text and the buttons (a name to type); `data-autofocus` on it takes the focus. */
   children?: ReactNode
@@ -184,13 +186,17 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
   const layer = useRef<HTMLDivElement>(null)
   const id = useId()
   if (open) last.current = { title, message, actions, children }
-  useEscape(open && cancel !== null, onClose, layer)
+  const dismiss = () => {
+    onCancel?.()
+    onClose()
+  }
+  useEscape(open && cancel !== null, dismiss, layer)
   useModalFocus(open, mounted, layer)
   if (!mounted) return null
   const shownContent = last.current
   return createPortal(
     <div ref={layer} className={`dialog ${shown ? 'shown' : ''}`} role="alertdialog" aria-modal aria-labelledby={`${id}-title`} aria-describedby={shownContent.message ? `${id}-message` : undefined}>
-      <div className="dialog-dim" onClick={() => cancel !== null && onClose()} />
+      <div className="dialog-dim" onClick={() => cancel !== null && dismiss()} />
       <div className="dialog-card" data-modal-card tabIndex={-1}>
         <div className="dialog-text">
           {/* Callers translate the sentence, then insert names. A second pass would also translate a device named "Done". */}
@@ -200,7 +206,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
         {shownContent.children}
         <div className="dialog-buttons">
           {cancel !== null ? (
-            <button className="dialog-button" data-autofocus onClick={onClose}>
+            <button className="dialog-button" data-autofocus onClick={dismiss}>
               {tr(cancel)}
             </button>
           ) : null}
@@ -249,6 +255,7 @@ export interface ReactionPick {
 }
 
 export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick; dismiss?: () => void; size?: number }) {
+  const tr = useTr()
   return (
     <HStack align="stretch">
       {pick.emoji.map((emoji) => {
@@ -258,8 +265,8 @@ export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick
             key={emoji}
             className={`reaction-button ${chosen ? 'chosen' : ''}`}
             style={{ width: size, height: size, borderRadius: size * 0.28 }}
-            title={chosen ? `Remove ${emoji}` : `React ${emoji}`}
-            aria-label={chosen ? `Remove reaction ${emoji}` : `React ${emoji}`}
+            title={chosen ? tr('Remove {emoji}').replaceAll('{emoji}', () => emoji) : tr('React {emoji}').replaceAll('{emoji}', () => emoji)}
+            aria-label={chosen ? tr('Remove reaction {emoji}').replaceAll('{emoji}', () => emoji) : tr('React {emoji}').replaceAll('{emoji}', () => emoji)}
             onClick={() => {
               dismiss?.()
               pick.toggle(emoji)

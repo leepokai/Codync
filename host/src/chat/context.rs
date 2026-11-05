@@ -239,6 +239,8 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     );
     lines.push(String::new());
     lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, if crate::agent::workspace::is_managed(cfg) { "Codync allocated it for you alone." } else { "The user chose this project folder." }));
+    lines.push(String::new());
+    lines.push(crate::dev_servers::BRIEF.to_owned());
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
         lines.push(skills);

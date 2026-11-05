@@ -104,7 +104,8 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
   rendering (mechanism `react`: the chat and pairing windows show *Something went wrong* with
   *Try again* instead of going blank), and windows or helpers that crashed (`RendererGone`,
   `GPUGone`, … with Electron's reason), through `reportError`. A window whose page crashed loads
-  it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute. Not
+  it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute, and
+  says what came of it (`window_recovery`). Not
   reported: error events that carry no error (the ResizeObserver loop notice), and helpers that
   exited normally or were ended from outside (`clean-exit`, `killed`: logout, shutdown, an update),
   and a GPU process that couldn't launch (the app goes on with software rendering).

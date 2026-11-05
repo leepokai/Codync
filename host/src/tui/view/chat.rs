@@ -9,6 +9,7 @@ use super::super::app::{App, Click, Editor, Entry, Mark, SlashAction, Status};
 use super::super::l10n::tr;
 use super::super::md::{truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, rput, u};
+use super::queue::queue_band;
 use super::set_cursor;
 use super::style::{avatar, rgb, spin, theme};
 use super::time::elapsed;
@@ -41,7 +42,8 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         Mark::Error => ("× error".to_owned(), t.red),
         _ => (String::new(), t.dim),
     };
-    let sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
+    let mut sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
+    sx = super::dev_servers::in_header(buf, r, sx, app, &b);
     let room = sx.saturating_sub(x + 2);
     if b.group {
         let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
@@ -176,8 +178,10 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         set_cursor(Position::new(r.x + 3 + u(cursor.0), cy.min(comp_top + ch)));
     }
 
+    let strip_top = queue_band(buf, r, app, &b, box_top, typing);
+
     // Transcript.
-    let body = Rect::new(r.x, top + 1, r.width, box_top.saturating_sub(top + 1));
+    let body = Rect::new(r.x, top + 1, r.width, strip_top.saturating_sub(top + 1));
     app.chat_height = usize::from(body.height);
     let built = build_chat(app, &b, usize::from(body.width.saturating_sub(1)));
     let total = built.lines.len();
@@ -212,7 +216,7 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     }
     if app.chat_scroll > 0 {
         let s = format!(" ↓ {} more ", app.chat_scroll);
-        rput(buf, r.right() - 1, box_top.saturating_sub(1), &s, t.btn);
+        rput(buf, r.right() - 1, strip_top.saturating_sub(1), &s, t.btn);
     }
     if typing {
         command_menu(buf, body, app);

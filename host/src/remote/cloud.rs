@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::watch;
 
-pub use super::cloud_url::{Address, RelayKind, TokenChange, current, set_cloud, set_cloud_url, show, url};
+pub use super::cloud_url::{Address, RelayKind, TokenChange, current, set_cloud, set_cloud_url, show, url, when_on};
 
 /// How long one successful state pull keeps an account device allowed.
 pub const LEASE_MS: i64 = 15 * 60 * 1000;
@@ -66,6 +66,9 @@ pub struct CloudStatus {
     /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs asks to bring it
     /// into its account. Kept by [`update_status`], so every app words it the same.
     pub can_join_account: bool,
+    /// Turned on, the cloud would leave this computer in no account on a Codync cloud, so the desktop app asks to add
+    /// it first. Known with the cloud off too, unlike the fields above; kept by [`update_status`].
+    pub joins_account_on_enable: bool,
 }
 
 /// How account devices get in (`setApproval`, local only).
@@ -145,11 +148,13 @@ impl Cloud {
 
 /// Changes the status and tells this computer's apps when it actually changed.
 pub fn update_status(hub: &Hub, f: impl FnOnce(&mut CloudStatus)) {
+    let joins_account_on_enable = super::owner::joins_account_on_enable(&hub.store);
     let changed = {
         let mut s = hub.cloud.status.locked();
         let before = s.clone();
         f(&mut s);
         s.can_join_account = s.enabled && s.relay == RelayKind::Codync && s.owner.is_none();
+        s.joins_account_on_enable = joins_account_on_enable;
         (*s != before).then(|| s.clone())
     };
     if let Some(s) = changed {

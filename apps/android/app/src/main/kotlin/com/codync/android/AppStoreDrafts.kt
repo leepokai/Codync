@@ -86,6 +86,7 @@ fun AppStore.sendDraft(key: String, botId: String, text: String, replyTo: ReplyQ
         draftWriter?.join()
         check(savedDrafts[key] == draft) { "Couldn't save this draft. Retry to send it." }
         val send = PendingSend(draft.nonce, botId, draft.text.trim(), System.currentTimeMillis(), files = draft.files, replyTo = replyTo)
+        lastSentNonce = send.nonce
         savePending(send)
         mutableState.update { it.copy(drafts = it.drafts - key) }
         persistDrafts()

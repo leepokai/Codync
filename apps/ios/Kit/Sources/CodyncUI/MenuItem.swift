@@ -13,13 +13,15 @@ public struct MenuItem: Identifiable {
     public var divider: Bool
     /// Shows `title` as it is, never translated: a name the user gave (a section's).
     public var verbatim: Bool
+    /// False for a line that only says something: it shows dimmed and can't be picked.
+    public var enabled: Bool
     /// The rows of the submenu this row opens ("Move to section ▸") instead of running `action`;
     /// one level deep: a row inside it can't open another.
     public var submenu: [MenuItem] = []
     public var action: () -> Void
 
     public init(_ title: String, icon: String? = nil, image: Image? = nil, selected: Bool? = nil, destructive: Bool = false,
-                divider: Bool = false, verbatim: Bool = false, action: @escaping () -> Void) {
+                divider: Bool = false, verbatim: Bool = false, enabled: Bool = true, action: @escaping () -> Void) {
         self.title = title
         self.icon = icon
         self.image = image
@@ -27,6 +29,7 @@ public struct MenuItem: Identifiable {
         self.destructive = destructive
         self.divider = divider
         self.verbatim = verbatim
+        self.enabled = enabled
         self.action = action
     }
 
@@ -109,6 +112,7 @@ private struct ContextActions: ViewModifier {
         Toggle(isOn: Binding(get: { selected }, set: { _ in action() })) { menuLabel(item) }
     } else {
         Button(role: role, action: item.action) { menuLabel(item) }
+            .disabled(!item.enabled)
     }
 }
 

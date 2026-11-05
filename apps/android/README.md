@@ -123,11 +123,12 @@ work.
 
 ```sh
 ./gradlew :app:assembleDebugAndroidTest
-ANDROID_SERIAL=emulator-5580 ./gradlew :app:connectedDebugAndroidTest
+./gradlew :app:connectedDebugAndroidTest
 ```
 
-Use a disposable emulator/application for ordinary instrumentation: it includes
-local reset and credential fixtures. Do not run it against a personal phone's
+Use the [shared test emulator](../../docs/guides/dev-app.md#worktree-sandboxes),
+under its lock, for ordinary instrumentation: it includes local reset and
+credential fixtures. Do not run it against a personal phone's
 saved accounts. Mutating live suites require `fixtureComputerId` matching an
 isolated fake-agent host. Shared vectors come from
 [remote-relay-vectors.json](../../docs/reference/fixtures/remote-relay-vectors.json).

@@ -342,6 +342,27 @@ public extension HostClient {
         let _: Empty = try await call("stop", ["botId": botId])
     }
 
+    /// A queued message, now: into the running turn when the agent can take it, else as the next one (host 2.39.0).
+    func steer(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("steer", ["botId": botId, "entryId": entryId])
+    }
+
+    /// A queued message taken back: it never goes out (host 2.39.0).
+    func unqueue(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
+    }
+
+    func devServer(_ action: DevServer.Action, botId: String, id: String) async throws {
+        let _: Empty = try await call(action.rawValue, ["botId": botId, "id": id])
+    }
+
+    /// The server's recent output.
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        struct Res: Decodable { var text: String }
+        let res: Res = try await call("devServerLogs", ["botId": botId, "id": id])
+        return res.text
+    }
+
     func respondPermission(entryId: String, optionId: String?) async throws {
         struct Body: Encodable { var entryId: String; var optionId: String? }
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))

@@ -22,7 +22,7 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 
 ## Where to change a bot's settings
 
-- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
+- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its [dev servers](/docs/dev-servers), instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
 - **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
 - **Android:** the same sheet and tabs as the iPhone.
 - **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
@@ -77,7 +77,7 @@ The **Permissions** setting decides how much the agent does on its own before it
 
 Bots made before Codync 2.34 keep the setting they had. With any setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals**, and ←/→ goes through the same choices.
 
-The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting.
+The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting. It also covers [starting a dev server](/docs/dev-servers#start-one): unless it's Approve automatically, the start waits for your Allow.
 
 How approval cards work: [Conversations](/docs/conversations#approval-cards).
 
@@ -132,7 +132,7 @@ You never start a session yourself. Codync starts a fresh one on its own when a 
 - **Desktop:** right-click the bot in the sidebar, then **Delete**.
 - **Terminal UI:** press `x`.
 
-Confirm with **Delete bot and its conversation**. Deleting your lead bot leaves you without one until you pick another; Open Live Mode then asks which bot. The bot's chat and settings go away and it leaves any group chats it was in. Files it changed on your computer stay as they are, and so does its personal workspace folder.
+Confirm with **Delete bot and its conversation**. Deleting your lead bot leaves you without one until you pick another; Open Live Mode then asks which bot. The bot's chat and settings go away and it leaves any group chats it was in. Its [dev servers](/docs/dev-servers) stop and are removed. Files it changed on your computer stay as they are, and so does its personal workspace folder.
 
 ## Copy a bot's setup
 

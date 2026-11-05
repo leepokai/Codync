@@ -14,6 +14,7 @@ import {
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
+import { trNow } from '../lib/l10n.ts'
 
 /** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
 export type HostRoute = 'loopback' | 'direct' | 'relay'
@@ -27,7 +28,7 @@ export class HostError extends Error {
   }
 
   static unreachable() {
-    return new HostError(0, "Can't reach your computer. Is it on and connected to the internet?")
+    return new HostError(0, trNow("Can't reach your computer. Is it on and connected to the internet?"))
   }
 
   /** The link failed, not the request: the same call can work once the computer is reachable again. */
@@ -53,7 +54,7 @@ export class LoopbackTransport implements HostTransport {
       return await window.codync.host.call(this.baseURL, this.token, method, body, timeoutMs)
     } catch (e) {
       const error = e as CallError
-      throw new HostError(error.status ?? 0, error.status === 401 ? "This device isn't allowed on that computer anymore." : error.message)
+      throw new HostError(error.status ?? 0, error.status === 401 ? trNow("This device isn't allowed on that computer anymore.") : error.message)
     }
   }
 

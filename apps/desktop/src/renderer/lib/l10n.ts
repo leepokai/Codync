@@ -3,13 +3,14 @@ import koPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages
 import frPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/fr.json' with { type: 'json' }
 import dePhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/de.json' with { type: 'json' }
 import esPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/es.json' with { type: 'json' }
+import itPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/it.json' with { type: 'json' }
 import ruPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/ru.json' with { type: 'json' }
 import ptBRPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/pt-BR.json' with { type: 'json' }
 import hansPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hans.json' with { type: 'json' }
 import hantPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json' with { type: 'json' }
 
 /** This app's interface language. `zh` is Simplified, kept so a saved choice still means that. */
-export const appLanguages = ['system', 'en', 'zh', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru'] as const
+export const appLanguages = ['system', 'en', 'zh', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it'] as const
 export type AppLanguage = typeof appLanguages[number]
 
 /** Traditional is its own table. A boolean `true` from older callers means Simplified. */
@@ -54,11 +55,11 @@ export function resolvedLanguage(preference: AppLanguage, system: string | boole
   const base = tag.split('-')[0]
   if (base === 'zh') return systemScript(tag) === 'hant' ? 'zh-Hant' : 'zh'
   if (base === 'pt') return 'pt-BR'
-  return ['ja', 'ko', 'fr', 'de', 'es', 'ru'].includes(base) ? base as 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' : 'en'
+  return ['ja', 'ko', 'fr', 'de', 'es', 'ru', 'it'].includes(base) ? base as 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'ru' | 'it' : 'en'
 }
 
 const catalogs: Record<Exclude<AppLanguage, 'system'>, Record<string, string>> = {
-  en: {}, zh: hans, 'zh-Hant': hant, ja: jaPhrases, ko: koPhrases, fr: frPhrases, de: dePhrases, es: esPhrases, 'pt-BR': ptBRPhrases, ru: ruPhrases,
+  en: {}, zh: hans, 'zh-Hant': hant, ja: jaPhrases, ko: koPhrases, fr: frPhrases, de: dePhrases, es: esPhrases, 'pt-BR': ptBRPhrases, ru: ruPhrases, it: itPhrases,
 }
 
 /** One piece of a phrase key such as "Runs the official installer on {name}." */
@@ -67,9 +68,9 @@ interface Piece { literal?: string; token?: string }
 /**
  * Phrase keys that already contain `{token}` slots, longest fixed text first.
  * A filled sentence ("Runs the official installer on this Mac.") matches the key,
- * and a slot that is itself a known phrase (a setup hint) is translated too.
+ * while only app-owned hints recurse; names and free text stay as written.
  */
-const templates: Array<{ key: string; pieces: Piece[]; literal: number }> = Object.keys(hans).flatMap((key) => {
+const templates: Array<{ key: string; pieces: Piece[]; literal: number }> = [...new Set(Object.values(catalogs).flatMap((catalog) => Object.keys(catalog)))].flatMap((key) => {
   const pieces = parseTemplate(key)
   if (!pieces) return []
   const literal = pieces.reduce((n, piece) => n + (piece.literal?.length ?? 0), 0)
@@ -95,8 +96,11 @@ function parseTemplate(template: string): Piece[] | undefined {
 }
 
 function hit(key: string, primary: Record<string, string>, fallback: Record<string, string>): string | undefined {
-  return primary[key] ?? fallback[key]
+  // Own keys only: a catalog is a plain object, so `constructor` must not find Object's.
+  return Object.hasOwn(primary, key) ? primary[key] : Object.hasOwn(fallback, key) ? fallback[key] : undefined
 }
+
+const localizableSlots = new Set(['{hint}', '{error}', '{setup}', '{kind}', '{when}', '{status}', '{reason}', '{shortcut}', '{changes}'])
 
 function fill(text: string, pieces: Piece[], phrase: string, primary: Record<string, string>, fallback: Record<string, string>, depth: number): string | undefined {
   let pos = 0
@@ -116,12 +120,13 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
     pos = end
   }
   if (pos !== text.length) return undefined
-  let result = phrase
   for (const [token, value] of caps) {
-    const inner = hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value
-    result = result.replaceAll(token, inner)
+    // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+    const localizable = localizableSlots.has(token)
+    const inner = localizable ? hit(value, primary, fallback) ?? (depth === 0 ? templated(value, primary, fallback, 1) : undefined) ?? value : value
+    caps.set(token, inner)
   }
-  return result
+  return phrase.replace(/\{[A-Za-z0-9]+\}/g, (token) => caps.get(token) ?? token)
 }
 
 /** A sentence the host or a view already filled in, matched back to its `{token}` phrase. */
@@ -148,6 +153,21 @@ export function translate(text: string, preference: AppLanguage, system: string 
   if (direct) return direct
   const trimmed = text.trim()
   return trimmed === text ? text : (phrase(trimmed, primary, fallback) ?? text)
+}
+
+/** The Settings choice without the window: the `appLanguage` pref is stored under this key. */
+function savedLanguage(): AppLanguage {
+  try {
+    const raw = localStorage.getItem('appLanguage')
+    return raw === null ? 'system' : JSON.parse(raw) as AppLanguage
+  } catch {
+    return 'system'
+  }
+}
+
+/** Translates for the language saved in Settings, outside a component (stores, engines, helpers). */
+export function trNow(text: string): string {
+  return translate(text, savedLanguage(), typeof navigator === 'undefined' ? 'en' : navigator.language)
 }
 
 /** "resets 3h 20m" / "resets in 2d 6h". Compact times become "3小时20分后重置". */
@@ -183,7 +203,7 @@ function compactTime(time: string, tr: (key: string) => string): string | null {
 }
 
 const nativeNames: Record<Exclude<AppLanguage, 'system'>, string> = {
-  en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', 'pt-BR': 'Português (Brasil)', ru: 'Русский',
+  en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', 'pt-BR': 'Português (Brasil)', ru: 'Русский', it: 'Italiano',
 }
 
 export function languageTitle(language: AppLanguage, preference: AppLanguage, system: string | boolean): string {

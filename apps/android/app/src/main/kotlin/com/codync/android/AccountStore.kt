@@ -89,7 +89,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             val lead = withContext(Dispatchers.IO) { local.shortcutLead() }
             mutableState.update { AccountContext(contextId = local.referenceId, generation = it.generation + 1, account = it.account,
                 computers = computers, lastComputerId = last, shortcutLeadComputer = lead, tasks = PushPreferences.tasks(getApplication()),
-                setupComplete = complete || computers.isNotEmpty()) }
+                setupComplete = complete || computers.isNotEmpty() || Analytics.onboarded) }
             // A computer that can't open (damaged drafts) is reported; the others, the cloud and the widgets go on.
             for (computer in computers) try { open(computer) }
                 catch (error: CancellationException) { throw error }
@@ -102,7 +102,11 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             observeShortcut()
             refreshCloud()
         } catch (error: CancellationException) { throw error }
-        catch (error: Exception) { showError(error) }
+        catch (error: Exception) {
+            showError(error)
+            // No refresh follows: setup would wait on it forever.
+            mutableState.update { it.copy(cloudLoaded = true) }
+        }
     }
 
     /**

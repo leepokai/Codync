@@ -217,13 +217,16 @@ private const val NETWORK_ICON = "codync.network"
     }
 }
 
-/** A computer in the account that this phone can't use yet; [asking] while this phone's request is on its way to it. */
-@Composable private fun AccountComputerRow(computer: CloudComputer, code: String?, asking: Boolean, ask: () -> Unit,
-    revoke: () -> Unit) {
+/**
+ * A computer in the account that this phone can't use yet; [asking] while this phone's request is on its way to it.
+ * [revoke] takes back an earlier install's approval first; without it, asking offers to replace that approval.
+ */
+@Composable internal fun AccountComputerRow(computer: CloudComputer, code: String?, asking: Boolean, ask: () -> Unit,
+    revoke: (() -> Unit)? = null) {
     val online = if (computer.online == true) "Online" else "Offline"
     val detail = when {
         code != null -> "Waiting for your OK on the computer · $code"
-        computer.isGranted -> "Approved for an earlier install of Codync. Revoke it, then ask again."
+        computer.isGranted && revoke != null -> "Approved for an earlier install of Codync. Revoke it, then ask again."
         computer.access == "pending" -> "$online · A request is waiting"
         else -> "$online · In your account"
     }
@@ -231,11 +234,11 @@ private const val NETWORK_ICON = "codync.network"
         Box(Modifier.graphicsLayer { alpha = 0.5f }) { ComputerBadge(computer.device, 40.dp) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = Type.subheadline, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(tr(detail), style = Type.subheadline, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         when {
             code != null -> SecondaryButton("Code", action = ask)
-            computer.isGranted -> SecondaryButton("Revoke", action = revoke)
+            computer.isGranted && revoke != null -> SecondaryButton("Revoke", action = revoke)
             else -> SecondaryButton("Ask for access", enabled = !asking, action = ask)
         }
     }

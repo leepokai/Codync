@@ -31,7 +31,7 @@ fun AccountStore.retryAccounts() { NativeAccounts.retry() }
  * one connected (`AppStore.retire`), and the account tells the others (iOS `signOut`; connections.md, accounts on a phone).
  */
 fun AccountStore.signOut() = sessionAction {
-    val old = state.value.account.accounts.firstOrNull { it.userId == state.value.account.userId } ?: return@sessionAction
+    val old = state.value.account.current ?: return@sessionAction
     // Sent first so it still counts toward the account.
     Analytics.capture(AnalyticsEvent.SignedOut)
     // The cloud call goes out after Clerk signed out, on a token taken now (it outlives the session).
@@ -99,23 +99,17 @@ private suspend fun AccountStore.forget(userId: String) {
 }
 
 fun AccountStore.refreshCloud() = action("cloud") {
-    val client = cloud ?: return@action
     try {
+        val client = cloud ?: return@action
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
         mutableState.update { it.copy(cloudComputers = computers) }
-        // Signed in to an account with computers, before pairing any (iOS: the same moment): setup is done.
-        if (computers.isNotEmpty() && !state.value.setupComplete) {
-            withContext(Dispatchers.IO) { local.completeSetup() }
-            mutableState.update { it.copy(setupComplete = true) }
-        }
-        if (computers.isNotEmpty() && state.value.computers.isEmpty()) Analytics.completeOnboarding(OnboardingVia.Account)
     } catch (error: IOException) {
         if (error is CloudError && !error.isTransient) throw error
         // Runs on every launch and foreground: a dropped connection, a busy cloud or a token not ready
         // yet fixes itself on the next refresh, so only answers that stay reach the dialog (as on iOS).
         android.util.Log.i("Codync", "Cloud refresh failed: ${error.message}")
-    }
+    } finally { mutableState.update { it.copy(cloudLoaded = true) } }
 }
 
 /** A pull to refresh: the account's computers, joining a refresh already under way. */
@@ -199,6 +193,7 @@ private suspend fun AccountStore.useApprovedComputer(computer: Computer, request
     transitions.withLock { addComputer(computer) }
     withContext(Dispatchers.IO) { local.completeSetup() }
     mutableState.update { it.copy(setupComplete = true) }
+    Analytics.completeOnboarding(OnboardingVia.Account)
     refreshCloud()
 }
 

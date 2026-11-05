@@ -1,5 +1,6 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
+import { normalizeDevServer, type DevServer } from './dev-servers.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -43,6 +44,8 @@ export interface Bot {
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
   resting: Resting[]
+  /** What it keeps running (`dev-servers.ts`). */
+  devServers: DevServer[]
   pinned: boolean
   /** The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it. Placed in the roster like any bot, never hidden. */
   lead: boolean
@@ -110,6 +113,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     resting: raw.resting ?? [],
+    devServers: (raw.devServers ?? []).map(normalizeDevServer),
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,
@@ -308,6 +312,8 @@ export interface EntryData {
   final?: boolean
   /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */
   status?: string
+  /** user: taken back from the queue before it went out (`unqueue`); no view reads it (`withoutRemoved`). */
+  removed?: boolean
   clientNonce?: string
   title?: string
   toolKind?: string
@@ -356,6 +362,21 @@ export interface Entry {
   data: EntryData
   createdAt: number
   updatedAt: number
+}
+
+const shownOf = new WeakMap<Entry[], Entry[]>()
+
+/**
+ * `list` as the views read it, without the messages taken back (`unqueue`): the store keeps those for its rev guard
+ * against a late response. One array per list, because the chat's memos depend on its identity.
+ */
+export function withoutRemoved(list: Entry[]): Entry[] {
+  let shown = shownOf.get(list)
+  if (!shown) {
+    shown = list.filter((e) => !e.data.removed)
+    shownOf.set(list, shown)
+  }
+  return shown
 }
 
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */
@@ -579,6 +600,8 @@ export interface CloudStatus {
   assistants?: boolean | null
   /** In no account while it could join one: a signed-in phone that pairs asks to bring it into its account. Absent from older hosts. */
   canJoinAccount?: boolean | null
+  /** Turned on, the cloud would leave it in no account on a Codync cloud; known with the cloud off too. Absent from older hosts, which just turn on. */
+  joinsAccountOnEnable?: boolean | null
 }
 
 export interface ClaimSignature {

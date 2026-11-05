@@ -8,6 +8,7 @@ mod background;
 mod chat;
 mod cloud_cli;
 mod compat;
+mod dev_servers;
 mod environment;
 mod hub;
 mod icons;
@@ -489,9 +490,7 @@ async fn main() -> Result<()> {
         Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
         Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
-        Sub::Tui { url, token, port } => {
-            tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
-        }
+        Sub::Tui { url, token, port } => tui::run(url, port, token).await,
     }
 }
 
@@ -528,7 +527,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     hub.start()?;
     network::start(&hub).await;
     analytics::host_started(&hub, service::started_by_service());
-    background::start(&hub);
+    let agent_checks = background::start(&hub);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");
     // Peer addresses: some settings may only be changed from this computer.
     let app = api::router(hub.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
@@ -541,7 +540,8 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
         () = shutdown_signal() => {},
     }
     hub.shutdown().await;
-    agent::acp::stopped().await;
+    background::stop_agent_checks(agent_checks).await;
+    agent::acp::stop_all().await;
     analytics::flush_before_exit(&hub).await;
     tracing::info!("codync-host stopped");
     // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.

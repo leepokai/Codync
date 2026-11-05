@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -215,7 +216,8 @@ import kotlinx.coroutines.launch
 
 @Composable private fun Header(state: AppState, modifier: Modifier, showInstalled: () -> Unit, showCredentials: () -> Unit) {
     val connectors = state.plugins?.connectors.orEmpty()
-    val count = connectors.size + state.plugins?.skills.orEmpty().size
+    val skills = state.plugins?.skills.orEmpty()
+    val count = connectors.size + skills.size
     Column(modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ComputerBadge(state.hello?.text("device"), 32.dp, state.computer.color)
@@ -235,6 +237,9 @@ import kotlinx.coroutines.launch
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
                 for (c in connectors.take(3)) ServiceLogo(null, c.name, c.registryName, 26.dp)
+                repeat(minOf(skills.size, maxOf(0, 3 - connectors.size))) {
+                    Box(Modifier.size(26.dp)) { SkillGlyph() }
+                }
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(tr("{count} installed").replace("{count}", "$count"), style = Type.body, color = Palette.secondary)

@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 mod addresses;
-pub use addresses::addresses;
+pub use addresses::{addresses, interface_addresses, public_addresses};
 
 #[cfg(unix)]
 mod unix;

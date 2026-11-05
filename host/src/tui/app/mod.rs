@@ -15,6 +15,7 @@ mod navigate;
 mod new_bot;
 mod overlay_keys;
 mod pair;
+mod queue;
 mod roster;
 mod section_order;
 mod slash;
@@ -58,6 +59,8 @@ pub struct App {
     pub client: Client,
     pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
+    /// Whether the host is this computer's. Attached with `--url` nothing tells: a tunnel's address looks local.
+    pub on_this_computer: bool,
     pub host: String,
     pub home: String,
     /// The host's version (`hello`): features newer than `MIN_HOST` check it.
@@ -163,6 +166,7 @@ impl App {
             client,
             tx,
             url,
+            on_this_computer: true,
             host: String::new(),
             home: String::new(),
             host_version: String::new(),
@@ -257,6 +261,8 @@ impl App {
         // line when the call ends, or when its app went away. A file or an artifact the bot sent stays, to be opened.
         let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
         v.retain(|e| e.kind == Kind::Notice || e.call().is_none() || opens(e));
+        // A queued message the user took back (`unqueue`).
+        v.retain(|e| e.data["removed"] != true);
         // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v

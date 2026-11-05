@@ -13,7 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
@@ -54,9 +56,9 @@ import kotlin.math.roundToInt
             }
             .pointerInput(option.id, option.values) {
                 fun pick(x: Float) {
-                    val radius = 15.dp.toPx()
-                    val travel = (size.width - radius * 2).coerceAtLeast(1f)
-                    val stop = (((x - radius) / travel).coerceIn(0f, 1f) * last).roundToInt()
+                    val edge = 18.dp.toPx()
+                    val travel = (size.width - edge * 2).coerceAtLeast(1f)
+                    val stop = (((x - edge) / travel).coerceIn(0f, 1f) * last).roundToInt()
                     option.values.getOrNull(stop)?.let { chooseCurrent(it.id) }
                 }
                 awaitEachGesture {
@@ -65,14 +67,23 @@ import kotlin.math.roundToInt
                     drag(down.id) { change -> pick(change.position.x); change.consume() }
                 }
             }) {
-            val radius = 15.dp.toPx()
-            val travel = (size.width - radius * 2).coerceAtLeast(0f)
+            val edge = 18.dp.toPx()
+            val travel = (size.width - edge * 2).coerceAtLeast(0f)
             val center = size.height / 2
-            val left = position * travel
-            drawRoundRect(track, Offset(0f, center - radius), Size(size.width, radius * 2), CornerRadius(radius))
-            if (index >= 0) drawRoundRect(ink.copy(alpha = .14f), Offset(0f, center - radius), Size(left + radius * 2, radius * 2), CornerRadius(radius))
-            option.values.indices.forEach { stop -> drawCircle(dots, 2.dp.toPx(), Offset(radius + stop.toFloat() / last * travel, center)) }
-            if (index >= 0) drawCircle(ink, radius, Offset(radius + left, center))
+            val thumbX = edge + position * travel
+            drawRoundRect(track, cornerRadius = CornerRadius(edge))
+            if (index >= 0) clipPath(Path().apply { addRoundRect(RoundRect(0f, 0f, thumbX + edge, size.height, edge, edge)) }) {
+                val spacing = 6.dp.toPx()
+                val columns = (size.width / spacing).toInt().coerceAtLeast(1)
+                for (column in 0..columns) {
+                    for (row in 0..5) {
+                        drawCircle(ink.copy(alpha = .5f * column / columns), 1.dp.toPx(),
+                            Offset(column * spacing, row * spacing + 3.dp.toPx()))
+                    }
+                }
+            }
+            option.values.indices.forEach { stop -> drawCircle(dots, 2.dp.toPx(), Offset(edge + stop.toFloat() / last * travel, center)) }
+            if (index >= 0) drawCircle(ink, 15.dp.toPx(), Offset(thumbX, center))
         }
     }
 }

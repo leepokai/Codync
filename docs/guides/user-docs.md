@@ -25,6 +25,7 @@ the change.
 | `teamwork` | Bots messaging bots, bots on your other computers, Manage the team | [bot collaboration](../features/bot-collaboration.md), [codync-network](../features/codync-network.md) |
 | `cloud-assistants` | The MCP connector for ChatGPT, Claude and other assistants: turning it on, adding it, what it can do, privacy | [cloud assistants](../features/cloud-assistants.md) |
 | `routines` | Schedules, webhooks, runs | [routines](../features/routines.md) |
+| `dev-servers` | Programs a bot keeps running: starting, ports, stopping | [dev servers](../features/dev-servers.md) |
 | `artifacts` | Artifacts, the Library | [artifacts](../features/artifacts.md) |
 | `memory` | Layers, dreaming, the agent's own memory | [context and memory](../features/context-and-memory.md), [bot memory](../design/bot-memory.md) |
 | `connectors-and-skills` | MCP connectors, apps, skills | [connector credentials](../features/connector-credentials.md), [extensions](../features/marketplace.md) |

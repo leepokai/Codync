@@ -113,8 +113,15 @@ against a cloud that issues device certificates (or a self-hosted cloud, with
 `CODYNC_DEVICE_CERT_KEY` on the host); builds without Clerk only keep the
 pairings moved over from older versions in the signed-out context, and can't pair.
 QR pairing requires the phone and the computer to be in the same account
-(phase 2, below). The iPhone's scan step always offers **Skip**,
-including when the account has no computers. Skipping finishes onboarding and opens the main
+(phase 2, below). First-run setup on the phones waits for the account's answer, then starts
+from it. With computers in the account, the first page lists them (**Ask for access**: nothing
+is requested until the tap, since the user may be here to set up another computer) next to
+**Pair a new computer**, which leads to the install page. With none, or only older copies, setup
+goes straight to the install page. That page has a button that copies the website's link,
+to open on the computer. A computer that joins the account meanwhile brings up the first page the next
+time the app is opened, unless the user already chose to pair or moved on to scanning. Only
+reaching a computer or **Skip** finishes setup. The first page and the scan step always offer
+**Skip**. Skipping finishes onboarding and opens the main
 tabs; this choice survives relaunches and account changes. The empty Bots screen
 offers **Computers** to pair later. Skipping while adding a computer from settings
 only closes that pairing sheet. It does not grant access to a computer or change
@@ -238,7 +245,10 @@ such action: removing a computer from the account takes the desktop app (or `cod
 on that computer), and phones manage only their own access (pair or forget, revoke, ask). See [desktop app](../architecture/desktop-app.md).
 
 **Computers & devices** (Settings) shows, for this computer and each SSH computer:
-*Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud),
+*Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud; when the host's
+`cloudStatus` says `joinsAccountOnEnable`, read from what it saved since the status names no owner or
+relay with the cloud off, turning it on first asks: *Add to account* turns it on too, *Use your own
+relay* turns it on and keeps this identity out of auto-claim (`keptOutOfAccount`) until the address is saved; older hosts just turn on),
 *Relay address* and, for a private relay, a write-only *Relay token* (`setCloudUrl`; the
 host's `cloudStatus` says `relay: "private"` and `tokenSet`, and there the account rows are hidden
 and auto-claim never runs), *Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and

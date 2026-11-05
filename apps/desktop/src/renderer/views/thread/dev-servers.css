@@ -1,0 +1,55 @@
+/* A bot's dev servers: its port in the title, and one line each in the inspector, with its actions out of sight until the row is hovered. */
+.title-pill-port {
+  flex: none;
+  white-space: nowrap;
+}
+
+.dev-server-row {
+  padding-right: 8px;
+}
+.dev-server-row + .dev-server-row {
+  box-shadow: inset 0 0.5px 0 var(--border);
+}
+.dev-server-open {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 14px;
+  font-size: var(--text-body);
+  text-align: left;
+}
+.dev-server-open:hover .dev-server-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.dev-server-more {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.dev-server-row:hover .dev-server-more,
+.dev-server-more:focus-visible,
+.dev-server-more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.dev-server-logs {
+  margin: 8px 16px 16px;
+  padding: 12px;
+  height: min(420px, 60vh);
+  overflow: auto;
+  border-radius: var(--radius-m);
+  background: var(--code-background);
+  font-family: var(--mono);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dev-server-logs-state {
+  min-height: 160px;
+  padding: 16px;
+}

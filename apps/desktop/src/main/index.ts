@@ -43,7 +43,7 @@ if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) app.commandLine.appendSw
 
 const host = new HostController()
 registerErrorReports(host)
-registerRendererRecovery()
+registerRendererRecovery(host)
 host.on('setupFailed', reportHostSetupFailure)
 const account = new AccountService()
 const updates = new Updates(host)

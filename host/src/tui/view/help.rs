@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 73] = [
+const HELP: [(&str, &str, &str); 75] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -27,6 +27,8 @@ const HELP: [(&str, &str, &str); 73] = [
     ("CHAT", "N", "reject and say why"),
     ("CHAT", "1…9", "pick an approval option"),
     ("CHAT", "s", "stop the bot"),
+    ("CHAT", "S", "send the next queued message now"),
+    ("CHAT", "D", "take back the last queued message"),
     ("CHAT", ">", "show / hide the working turn's steps (thinking details on)"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
@@ -51,7 +53,7 @@ const HELP: [(&str, &str, &str); 73] = [
     ("TYPE", "alt b / f", "word left / right"),
     ("TYPE", "^w ^u", "delete word / line"),
     ("TYPE", "@name", "group: ask just that bot"),
-    ("TYPE", "/", "commands: /fast, skills"),
+    ("TYPE", "/", "commands: /fast, /servers, skills"),
     ("BOTS", "n", "new bot"),
     ("BOTS", "m", "new group chat"),
     ("BOTS", "e", "settings, or edit a group"),

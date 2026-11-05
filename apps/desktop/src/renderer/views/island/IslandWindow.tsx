@@ -7,6 +7,7 @@ import { PINNED_LEAVE_MS, type IslandModel } from './island-model'
 import { useCrossFade } from './island-motion'
 import { Approval, Empty, Message, Notice, Overview, Wings } from './IslandViews'
 import { UsageMeter, UsageView } from './IslandUsage'
+import { useTr } from '../../lib/use-language'
 import './island.css'
 import './island-views.css'
 
@@ -15,6 +16,7 @@ const FOLD_MS = 340
 
 /** The notch island: a black shape that grows out of the notch and folds back into it. */
 export function IslandWindow({ model }: { model: IslandModel }) {
+  const tr = useTr()
   useModel(model)
   const { mode, frame } = model
   const open = isOpenMode(mode)
@@ -33,7 +35,7 @@ export function IslandWindow({ model }: { model: IslandModel }) {
       data-mode={mode}
       style={{ width: frame.width, height: frame.height }}
       role={closed ? 'button' : undefined}
-      aria-label={closed ? 'Show bots' : undefined}
+      aria-label={closed ? tr('Show bots') : undefined}
       onClick={closed ? () => model.openNow() : undefined}
     >
       <span className="island-ear left" />
@@ -104,6 +106,7 @@ const TABS: { tab: IslandTab; icon: string; label: string }[] = [
 
 /** Tabs on the left of the notch; the working count, the usage meter and Codync on the right. */
 function Header({ model, mode }: { model: IslandModel; mode: IslandMode }) {
+  const tr = useTr()
   const selected = mode === 'message' || mode === 'usage' ? mode : mode === 'overview' || mode === 'empty' ? 'bots' : null
   const count = model.activeCount
   return (
@@ -119,7 +122,7 @@ function Header({ model, mode }: { model: IslandModel; mode: IslandMode }) {
         </button>
       </div>
       <div className="island-tabs">
-        {count ? <span className="island-count">{`${count} working`}</span> : null}
+        {count ? <span className="island-count">{tr('{count} working').replaceAll('{count}', () => String(count))}</span> : null}
         <UsageMeter model={model} />
         <button className="island-tab" title="Open Codync" aria-label="Open Codync" onClick={() => model.openApp()}>
           <Icon name="arrow.up.right.square" size={13} scaled={false} />

@@ -1,0 +1,34 @@
+/* The user's messages waiting while the bot works: a tray tucked under the composer's top edge. */
+.queued-tray {
+  /* How far the composer overlaps it: the composer's top padding plus its corner. */
+  --queued-tuck: calc(8px + var(--radius-xl));
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+  /* The composer's side padding plus the tray's inset. */
+  padding: 0 28px;
+  transition: grid-template-rows var(--layout), opacity var(--morph), margin-bottom var(--layout);
+}
+.queued-tray.shown {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: calc(-1 * var(--queued-tuck));
+}
+.queued-tray > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.queued-list {
+  background: var(--surface);
+  border-radius: var(--radius-l) var(--radius-l) 0 0;
+  padding: 4px 6px calc(var(--queued-tuck) + 2px) 14px;
+  /* A long queue scrolls, so every row stays in reach: about four and a half rows, plus the padding. */
+  max-height: calc(4.5 * 32px + var(--queued-tuck) + 6px);
+  overflow-y: auto;
+}
+.queued-row-body {
+  min-height: 32px;
+}

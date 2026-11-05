@@ -24,6 +24,7 @@ mod opencode;
 mod vibe;
 
 pub use claude::{ingest_claude_rate_limit, ingest_statusline};
+pub(crate) use command::strip_ansi;
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -133,6 +134,9 @@ pub async fn poll(hub: Arc<Hub>) {
 }
 
 pub async fn refresh(hub: &Hub) {
+    if crate::agent::backends::agent_checks_off() {
+        return;
+    }
     let (
         codex,
         claude,

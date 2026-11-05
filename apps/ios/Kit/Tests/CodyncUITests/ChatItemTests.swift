@@ -107,3 +107,25 @@ import Testing
     #expect(height(100) == 100)
     #expect(height(1000) == 280)
 }
+
+/// The queue's card hugs its rows, and past its cap they scroll instead of pushing the chat away.
+@MainActor @Test func theQueueCardHugsItsRowsAndScrollsPastTheCap() {
+    let suite = "ChatItemTests.\(UUID().uuidString)"
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let storage = SharedStore.Context(accountID: UUID().uuidString, suite: suite)
+    let store = BotStore(computer: Computer(id: "queue", name: "Mac", signKey: ""), storage: storage) { _ in
+        throw HostError.unreachable
+    }
+    defer { store.retire() }
+    func height(_ rows: Int) -> CGFloat {
+        let entries = (0..<rows).map {
+            Entry(id: "e\($0)", seq: Int64($0), botId: "b", rev: 0, kind: "user", turn: 1,
+                  data: EntryData(text: "Waiting \($0)", status: "queued"), createdAt: 0, updatedAt: 0)
+        }
+        return UIHostingController(rootView: QueuedMessages(entries: entries).environment(store))
+            .sizeThatFits(in: CGSize(width: 390, height: 2000)).height
+    }
+    #expect(height(1) < 60)
+    #expect(height(3) > height(1) && height(3) < 190)
+    #expect(height(25) == 190)
+}

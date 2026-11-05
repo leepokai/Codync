@@ -24,7 +24,7 @@ pub(super) struct Process {
     tree: Tree,
     child: Child,
     stopping: bool,
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     fail_stop: bool,
 }
 
@@ -35,7 +35,7 @@ impl Process {
             tree,
             child,
             stopping: false,
-            #[cfg(test)]
+            #[cfg(all(test, unix))]
             fail_stop: false,
         };
         #[cfg(windows)]
@@ -122,7 +122,7 @@ impl Process {
         !std::mem::replace(&mut self.stopping, true)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(super) fn fail_next_stop(&mut self) {
         self.fail_stop = true;
     }
@@ -134,7 +134,7 @@ impl Process {
     /// Gives the leader and everything it started until `grace` runs out to finish by themselves,
     /// then kills what is left. Returns as soon as nothing is left.
     pub(super) async fn stop_within(&mut self, grace: Duration) -> Result<()> {
-        #[cfg(test)]
+        #[cfg(all(test, unix))]
         if std::mem::take(&mut self.fail_stop) {
             anyhow::bail!("injected cleanup failure");
         }
@@ -213,9 +213,8 @@ impl Tree {
         Ok(Self { handle })
     }
 
-    #[allow(clippy::unused_async)] // Unix enumerates the session asynchronously.
-    async fn terminate_within(&mut self, _deadline: Instant) -> Result<()> {
-        self.terminate().context("terminating agent job")
+    fn terminate_within(&mut self, _deadline: Instant) -> std::future::Ready<Result<()>> {
+        std::future::ready(self.terminate().context("terminating agent job"))
     }
 
     async fn drained(&mut self, deadline: Instant) -> Result<()> {

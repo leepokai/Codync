@@ -17,7 +17,12 @@ servers or filesystem/terminal capabilities. It rejects every client tool
 request, caps response text at 64 KiB and times out each request after 20
 seconds. `/usage` is sent only when the adapter's initialization advertises a
 stable version of at least 1.4.1. Unsupported or unknown versions receive no
-prompt. The inspection process is stopped on exit.
+prompt. The inspection process is stopped on exit. OpenCode asks the console's
+own `GET /zen/go/v1/usage` for the credential the CLI is signed in with
+(OpenCode 2's active credential, `auth.json`'s `opencode-go` key, or
+`OPENCODE_API_KEY`); a signed-out CLI has no key and no row. Only backends that
+are installed and not explicitly signed out contribute windows, so a local
+history file cannot become a bar.
 
 The Antigravity report is shown as **Gemini** (the Google plan it reads); an
 isolated account uses provider ID `antigravity:<account ID>` and its saved

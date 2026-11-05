@@ -26,23 +26,27 @@ pub fn for_id(id: &str) -> Credential {
         "codex" => codex(&home, installed),
         "gemini" => gemini(&home, installed),
         "grok" => grok(&home, installed),
-        "opencode" => opencode(&opencode_candidates(&home), installed),
+        "opencode" => opencode(&home, &opencode_candidates(&home), installed),
         "kimi" => kimi(&home, installed),
         "antigravity" => antigravity(&home, installed),
         _ => Credential::default(),
     }
 }
 
-/// Where OpenCode keeps `auth.json`: its XDG data folder, or Windows' `APPDATA`.
-fn opencode_candidates(home: &Path) -> Vec<PathBuf> {
+/// Where OpenCode keeps its files: its XDG data folder, or Windows' `APPDATA`.
+fn opencode_data_dirs(home: &Path) -> Vec<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .filter(|p| !p.as_os_str().is_empty())
         .map_or_else(|| home.join(".local").join("share"), PathBuf::from);
-    let mut candidates = vec![base.join("opencode").join("auth.json")];
+    let mut dirs = vec![base.join("opencode")];
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        candidates.push(PathBuf::from(appdata).join("opencode").join("auth.json"));
+        dirs.push(PathBuf::from(appdata).join("opencode"));
     }
-    candidates
+    dirs
+}
+
+fn opencode_candidates(home: &Path) -> Vec<PathBuf> {
+    opencode_data_dirs(home).into_iter().map(|dir| dir.join("auth.json")).collect()
 }
 
 /// Signed out when the CLI is installed; unknown when it isn't.
@@ -159,18 +163,57 @@ fn grok(home: &Path, installed: bool) -> Credential {
     Credential { signed_in: Some(true), email }
 }
 
-/// OpenCode keeps its sign-ins in `auth.json` under its data folder, one entry per provider.
-fn opencode(candidates: &[PathBuf], installed: bool) -> Credential {
+/// OpenCode 1.x keeps its sign-ins in `auth.json` under its data folder, one
+/// entry per provider. OpenCode 2 keeps the active console connection in its
+/// database instead.
+fn opencode(home: &Path, candidates: &[PathBuf], installed: bool) -> Credential {
     for path in candidates {
-        if let Some(v) = read(path) {
-            return if v.as_object().is_some_and(|m| !m.is_empty()) {
-                Credential { signed_in: Some(true), email: None }
-            } else {
-                absent(installed)
-            };
+        if let Some(v) = read(path)
+            && v.as_object().is_some_and(|m| !m.is_empty())
+        {
+            return Credential { signed_in: Some(true), email: None };
         }
     }
-    absent(installed)
+    opencode_database(home).unwrap_or_else(|| absent(installed))
+}
+
+/// The active OpenCode console credential, with the account it names.
+fn opencode_database(home: &Path) -> Option<Credential> {
+    for dir in opencode_data_dirs(home) {
+        let path = match std::env::var_os("OPENCODE_DB").filter(|p| !p.as_os_str().is_empty()) {
+            Some(raw) => {
+                let path = PathBuf::from(raw);
+                if path.is_absolute() { path } else { dir.join(path) }
+            }
+            None => dir.join("opencode.db"),
+        };
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(conn) = rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else {
+            continue;
+        };
+        let _ = conn.busy_timeout(std::time::Duration::from_millis(200));
+        let Ok(value) = conn.query_row(
+            "SELECT value FROM credential
+             WHERE integration_id = 'opencode' AND active IS NOT 0
+             ORDER BY active DESC, time_created DESC, id DESC LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        ) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&value) else { continue };
+        let server = value["metadata"]["server"].as_str();
+        if server.is_some_and(|server| server.trim_end_matches('/') != "https://opencode.ai/console") {
+            continue;
+        }
+        return Some(Credential {
+            signed_in: Some(true),
+            email: value["metadata"]["email"].as_str().filter(|s| non_empty(s)).map(str::to_owned),
+        });
+    }
+    None
 }
 
 /// Kimi Code keeps one file per signed-in account in `~/.kimi/credentials/`.
@@ -315,11 +358,38 @@ mod tests {
     fn opencode_reads_its_auth_file() {
         let home = home_with(&[(".local/share/opencode/auth.json", r#"{"anthropic": {"type": "oauth"}}"#)]);
         let path = home.join(".local/share/opencode/auth.json");
-        assert_eq!(opencode(std::slice::from_ref(&path), true), Credential { signed_in: Some(true), email: None });
+        assert_eq!(
+            opencode(&home, std::slice::from_ref(&path), true),
+            Credential { signed_in: Some(true), email: None }
+        );
         let empty = home_with(&[(".local/share/opencode/auth.json", "{}")]);
         let empty_path = empty.join(".local/share/opencode/auth.json");
-        assert_eq!(opencode(&[empty_path], true), Credential { signed_in: Some(false), email: None });
-        assert_eq!(opencode(&[home.join("nowhere")], false), Credential::default());
+        assert_eq!(opencode(&empty, &[empty_path], true), Credential { signed_in: Some(false), email: None });
+        assert_eq!(opencode(&home, &[home.join("nowhere")], false), Credential::default());
+    }
+
+    #[test]
+    fn opencode_reads_an_active_database_session() {
+        let home = home_empty();
+        let dir = home.join(".local/share/opencode");
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = rusqlite::Connection::open(dir.join("opencode.db")).unwrap();
+        conn.execute(
+            "CREATE TABLE credential (id TEXT, integration_id TEXT, value TEXT, active INTEGER, time_created INTEGER)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO credential (id, integration_id, value, active, time_created) VALUES ('c', 'opencode', ?1, 1, 1)",
+            [r#"{"type":"oauth","access":"tok","metadata":{"server":"https://opencode.ai/console","email":"me@example.com"}}"#],
+        )
+        .unwrap();
+        drop(conn);
+        assert_eq!(
+            opencode(&home, &[], true),
+            Credential { signed_in: Some(true), email: Some("me@example.com".into()) }
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

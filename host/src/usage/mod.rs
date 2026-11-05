@@ -4,8 +4,8 @@
 //! Codex: the newest rollout's `rate_limits`. The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
 //! `kiro-cli /usage`, `gemini /usage`, a `kimi` screen, Antigravity's language
-//! server, OpenCode's database, Vibe's session logs, and the `JetBrains` IDE
-//! quota file.
+//! server, OpenCode's console usage endpoint, Vibe's session logs, and the
+//! `JetBrains` IDE quota file.
 //!
 //! Cursor has no local report. The host reads the token the Cursor app saved
 //! and asks `cursor.com/api/usage-summary`. That is the only provider call, and
@@ -206,34 +206,46 @@ pub async fn refresh(hub: &Hub) {
         kiro::collect(),
         tokio::task::spawn_blocking(kimi::collect),
         antigravity::collect(),
-        tokio::task::spawn_blocking(opencode::collect),
+        opencode::collect(),
         tokio::task::spawn_blocking(vibe::collect),
         tokio::task::spawn_blocking(junie::collect),
         cursor::collect(),
         gemini::collect(),
         grok::collect(),
     );
-    apply(hub, codex, "codex", "Codex", "codex");
-    apply(hub, claude, "claude", "Claude", "claude");
-    apply(hub, omp_windows, "omp", "oh-my-pi", "omp usage");
-    apply(hub, amp_windows, "amp", "Amp", "amp usage");
-    apply(hub, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
-    apply(hub, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
-    apply(hub, antigravity, "antigravity", "Google Antigravity", "antigravity");
-    apply(hub, joined(opencode), "opencode", "OpenCode", "opencode database");
-    apply(hub, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
-    apply(hub, joined(junie), "junie", "Junie", "JetBrains IDE");
-    apply(hub, cursor_windows, "cursor", "Cursor", "Cursor");
-    apply(hub, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
-    apply(hub, grok_windows, "grok", "Grok", "grok billing");
-    ensure_connected(hub).await;
+    let backends = tokio::task::spawn_blocking(crate::agent::backends::list).await.unwrap_or_default();
+    let signed_out: std::collections::HashSet<&str> =
+        backends.iter().filter(|b| b["signedIn"].as_bool() == Some(false)).filter_map(|b| b["id"].as_str()).collect();
+    // A signed-out CLI can leave local history behind (OpenCode's database). That
+    // is not a plan this account can spend, so it must not become a bar.
+    {
+        let mut usage = hub.usage.locked().clone();
+        let before = usage.providers.len();
+        usage.providers.retain(|p| !signed_out_base(&signed_out, &p.id));
+        if usage.providers.len() != before {
+            hub.set_usage(usage);
+        }
+    }
+    apply(hub, &signed_out, codex, "codex", "Codex", "codex");
+    apply(hub, &signed_out, claude, "claude", "Claude", "claude");
+    apply(hub, &signed_out, omp_windows, "omp", "oh-my-pi", "omp usage");
+    apply(hub, &signed_out, amp_windows, "amp", "Amp", "amp usage");
+    apply(hub, &signed_out, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
+    apply(hub, &signed_out, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
+    apply(hub, &signed_out, antigravity, "antigravity", "Google Antigravity", "antigravity");
+    apply(hub, &signed_out, opencode, "opencode", "OpenCode", "opencode usage");
+    apply(hub, &signed_out, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
+    apply(hub, &signed_out, joined(junie), "junie", "Junie", "JetBrains IDE");
+    apply(hub, &signed_out, cursor_windows, "cursor", "Cursor", "Cursor");
+    apply(hub, &signed_out, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
+    apply(hub, &signed_out, grok_windows, "grok", "Grok", "grok billing");
+    ensure_connected(hub, &backends);
     *LAST_REFRESH.locked() = Some(std::time::Instant::now());
 }
 
 /// A connected agent that couldn't report is still shown, with its status, so
 /// its counters don't silently disappear from the sidebar and Settings.
-async fn ensure_connected(hub: &Hub) {
-    let connected = tokio::task::spawn_blocking(crate::agent::backends::list).await.unwrap_or_default();
+fn ensure_connected(hub: &Hub, connected: &[serde_json::Value]) {
     let mut wanted: Vec<(String, String)> = Vec::new();
     for backend in connected {
         if backend["installed"] != true || backend["signedIn"] != true {
@@ -311,8 +323,22 @@ pub(super) fn finite_i64(n: f64) -> Option<i64> {
     Some(rounded as i64)
 }
 
-fn apply(hub: &Hub, windows: Option<Vec<Window>>, id: &'static str, name: &'static str, source: &'static str) {
+fn signed_out_base(signed_out: &std::collections::HashSet<&str>, id: &str) -> bool {
+    signed_out.contains(id.split(':').next().unwrap_or(id))
+}
+
+fn apply(
+    hub: &Hub,
+    signed_out: &std::collections::HashSet<&str>,
+    windows: Option<Vec<Window>>,
+    id: &'static str,
+    name: &'static str,
+    source: &'static str,
+) {
     let Some(windows) = windows else { return };
+    if signed_out_base(signed_out, id) {
+        return;
+    }
     let mut usage = hub.usage.locked().clone();
     usage.replace(id, name, source, windows);
     hub.set_usage(usage);
@@ -322,6 +348,14 @@ fn apply(hub: &Hub, windows: Option<Vec<Window>>, id: &'static str, name: &'stat
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn a_signed_out_backend_keeps_its_local_history_off_the_bars() {
+        let signed_out = std::collections::HashSet::from(["opencode"]);
+        assert!(signed_out_base(&signed_out, "opencode"));
+        assert!(signed_out_base(&signed_out, "opencode:work"));
+        assert!(!signed_out_base(&signed_out, "claude"));
+    }
 
     #[test]
     fn merge_replaces_only_matching_windows() {

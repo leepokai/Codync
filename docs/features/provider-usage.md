@@ -4,7 +4,10 @@ The host owns quota inspection; desktop, Android, iOS and TUI render its `usage`
 report. Percentages describe a provider's plan window, not task completion,
 context occupancy, token totals or a billed amount.
 
-Claude keeps its existing sources. Codex asks its app-server
+Claude asks its ACP adapter's own `/usage` report first (the account that
+session is signed in to), then the CLI's `/usage` when the adapter cannot
+answer; the status-line ingest and the adapter's rate-limit event still update
+the same windows. Codex asks its app-server
 (`account/rateLimits/read`) and falls back to the newest local rollout's
 `rate_limits` when the app-server cannot answer. Grok starts its CLI's ACP
 server and calls `_x.ai/billing`; the current period's share used becomes the

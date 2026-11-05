@@ -200,7 +200,7 @@ pub async fn refresh(hub: &Hub) {
         grok_windows,
     ) = tokio::join!(
         codex::collect(),
-        claude::collect(),
+        claude::collect(&hub.store),
         omp::collect(),
         amp::collect(),
         kiro::collect(),

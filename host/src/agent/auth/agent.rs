@@ -17,14 +17,34 @@ use tokio::sync::mpsc;
 pub(super) type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, Cmd);
 
 pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
-    start_with_env(store, backend, &[]).await
+    start_candidates(store, backend, &[], false).await
+}
+
+/// Starts the registry build of `backend`, even when an installed CLI is ready.
+/// The Claude adapter's own `/usage` is the authoritative report for its account.
+pub(crate) async fn start_registry(store: &Store, backend: &str, extra_env: &[(String, String)]) -> Result<Started> {
+    start_candidates(store, backend, extra_env, true).await
 }
 
 /// `start` with the environment an account or a probe adds on top of the launch's own.
 pub(crate) async fn start_with_env(store: &Store, backend: &str, extra_env: &[(String, String)]) -> Result<Started> {
+    start_candidates(store, backend, extra_env, false).await
+}
+
+async fn start_candidates(
+    store: &Store,
+    backend: &str,
+    extra_env: &[(String, String)],
+    registry_only: bool,
+) -> Result<Started> {
     let mut candidates = backends::launch_candidates(backend)?;
-    // The installed CLI alone when there is one: resolving the registry build can mean a long download.
-    if matches!(candidates.first(), Some(Candidate::Ready(_))) {
+    if registry_only {
+        candidates.retain(|c| matches!(c, Candidate::Build(_)));
+        if candidates.is_empty() {
+            bail!("{backend} has no registry adapter to inspect");
+        }
+    } else if matches!(candidates.first(), Some(Candidate::Ready(_))) {
+        // The installed CLI alone when there is one: resolving the registry build can mean a long download.
         candidates.truncate(1);
     }
     let mut env = launch_env(store, backend)?;

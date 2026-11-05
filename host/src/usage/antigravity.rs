@@ -168,13 +168,15 @@ fn parse(text: &str) -> Vec<Window> {
             continue;
         }
         let bucket = label.trim_end_matches(" Remaining");
+        let short = bucket.strip_prefix(group.as_str()).map_or(bucket, str::trim_start);
+        let label = if short.is_empty() { group.clone() } else { format!("{group} · {short}") };
         let resets = reset.trim().strip_prefix("(resets ").and_then(|s| s.strip_suffix(')'));
         let at = resets
             .and_then(|s| NaiveDateTime::parse_from_str(s, "%b %d, %Y, %H:%M UTC").ok())
             .map(|t| t.and_utc().timestamp_millis());
         windows.push(Window {
             id: format!("{group}:{bucket}"),
-            label: format!("{group} · {bucket}"),
+            label,
             percent: 100.0 - remaining,
             resets_at: at,
             resets_text: resets.filter(|_| at.is_none()).map(str::to_owned),
@@ -209,6 +211,20 @@ mod tests {
         assert_ne!(windows[0].id, windows[1].id);
         assert!(windows[0].resets_at.is_some());
         assert!(windows[1].resets_at.is_none());
+    }
+
+    #[test]
+    fn a_group_name_already_in_the_bucket_is_not_repeated() {
+        let windows = parse(
+            "### Quota Limits\n- **Gemini 4 Argon**\n  - **Gemini 4 Argon Weekly Limit Remaining:** 100% remaining",
+        );
+        assert_eq!(windows[0].label, "Gemini 4 Argon · Weekly Limit");
+    }
+
+    #[test]
+    fn a_bucket_named_like_its_group_is_not_repeated() {
+        let windows = parse("### Quota Limits\n- **Gemini 4 Argon**\n  - **Gemini 4 Argon Remaining:** 100% remaining");
+        assert_eq!(windows[0].label, "Gemini 4 Argon");
     }
 
     #[test]

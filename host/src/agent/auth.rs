@@ -33,7 +33,7 @@ mod agent;
 mod models;
 pub use agent::authenticate;
 use agent::start;
-pub(crate) use agent::start_with_env;
+pub(crate) use agent::{start_registry, start_with_env};
 pub use models::models;
 pub(crate) use models::{model_config, model_ids};
 

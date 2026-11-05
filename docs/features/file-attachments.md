@@ -41,7 +41,9 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   JPEG or GIF; Android clips the original file as a FileProvider `content://` link) and, for a
   bot-shared file, its Download button by the close button. Holding a picture, in the chat or the
   viewer, opens that same message menu; in the Library it offers only Copy image and Copy name.
-- Terminal UI: dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
+- Terminal UI: has no full-size viewer, zoom or Copy image: a terminal can't draw a picture, and the
+  clipboard it reaches is text only. A picture shows as a file line like any other file, and `f` saves a
+  bot-shared one, which is how the terminal downloads it. Dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
   an empty draft removes the last one); sent files show as `▤ name size` lines. It uploads with the
   same `upload` chunks.
 - A files-only message previews in the roster as its file names.

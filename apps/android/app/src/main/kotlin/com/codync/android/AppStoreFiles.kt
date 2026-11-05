@@ -25,7 +25,10 @@ private fun downloadKey(fileId: String) = "file:$fileId"
 fun AppStore.saveFile(entryId: String, botId: String, file: SharedFile, inViewer: Boolean = false) {
     val running = state.value.busy.filter { it.startsWith("file:") }
     if (running.isNotEmpty()) {
-        if (downloadKey(file.id) !in running) setDownload(file.id, FileDownloadState.Failed("Finish the current download first."))
+        if (downloadKey(file.id) !in running) {
+            setDownload(file.id, FileDownloadState.Failed("Finish the current download first."))
+            if (inViewer) Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, ImageError.Transfer))
+        }
         return
     }
     action(downloadKey(file.id)) {

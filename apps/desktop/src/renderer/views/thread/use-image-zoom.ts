@@ -63,6 +63,9 @@ export function useImageZoom(onZoom?: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
+      // Typing elsewhere (the composer takes focus back while the viewer is still closing) is not for the picture.
+      const target = e.target
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
       const factor = e.key === '+' || e.key === '=' ? KEY_STEP : e.key === '-' ? 1 / KEY_STEP : null
       if (factor === null && e.key !== '0') return
       e.preventDefault()

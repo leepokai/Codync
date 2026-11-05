@@ -70,9 +70,18 @@ enum ImageData {
         return encode(image, as: .jpeg, [kCGImageDestinationLossyCompressionQuality: 0.85])
     }
 
-    /// The picture's first frame, full size, as PNG.
+    /// The picture's first frame, full size and upright (its orientation applied), as PNG.
     static func png(_ source: CGImageSource) -> Data? {
-        CGImageSourceCreateImageAtIndex(source, 0, nil).flatMap { encode($0, as: .png) }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height, 1),
+        ]
+        let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) ?? CGImageSourceCreateImageAtIndex(source, 0, nil)
+        return image.flatMap { encode($0, as: .png) }
     }
 
     private static func encode(_ image: CGImage, as type: UTType, _ options: [CFString: Any] = [:]) -> Data? {

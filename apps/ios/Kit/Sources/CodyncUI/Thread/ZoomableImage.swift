@@ -10,6 +10,8 @@ struct ZoomableImage<Content: View>: View {
     @State private var picture = CGSize.zero
     /// The zoom when the pinch began: each step zooms from it by the pinch's whole magnification.
     @State private var pinchStart: ImageZoom?
+    /// How far the fingers have dragged during the pinch: each step applies it on top of the pinch's zoom.
+    @State private var pinchDrag = CGSize.zero
     /// How far the drag had gone at its last step: each step moves the picture by the difference.
     @State private var dragged: CGSize?
     // True while each gesture lasts; their end also clears the state above when the system cancels them.
@@ -33,7 +35,7 @@ struct ZoomableImage<Content: View>: View {
             .simultaneousGesture(pinch)
             // At fit size a drag belongs to the sheet (swipe down closes it).
             .simultaneousGesture(pan, isEnabled: zoom.isZoomed)
-            .onChange(of: pinching) { if !pinching { pinchStart = nil } }
+            .onChange(of: pinching) { if !pinching { pinchStart = nil; pinchDrag = .zero } }
             .onChange(of: dragging) { if !dragging { dragged = nil } }
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.isImage)
@@ -58,6 +60,7 @@ struct ZoomableImage<Content: View>: View {
                 let start = pinchStart ?? zoom
                 pinchStart = start
                 zoom = start.zoomed(by: value.magnification, at: fromCenter(value.startLocation), box: box, picture: picture)
+                    .panned(by: pinchDrag, box: box, picture: picture)
             }
     }
 
@@ -67,9 +70,9 @@ struct ZoomableImage<Content: View>: View {
             .onChanged { value in
                 let last = dragged ?? .zero
                 dragged = value.translation
-                // Two fingers pinching also drag: the pinch moves the picture then.
-                guard pinchStart == nil else { return }
                 let delta = CGSize(width: value.translation.width - last.width, height: value.translation.height - last.height)
+                // Two fingers pinching also drag: the pinch's next steps keep that movement.
+                if pinchStart != nil { pinchDrag = CGSize(width: pinchDrag.width + delta.width, height: pinchDrag.height + delta.height) }
                 zoom = zoom.panned(by: delta, box: box, picture: picture)
             }
     }

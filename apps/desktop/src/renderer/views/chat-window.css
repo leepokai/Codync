@@ -127,12 +127,25 @@
   height: 100%;
   background: var(--surface);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   transition: width var(--layout);
 }
 .sidebar.resizing {
   transition: none;
+}
+/* The list panel beside the icon rail: header, roster and usage share one column. */
+.sidebar-panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar.compact .sidebar-panel {
+  display: none;
 }
 .sidebar-header {
   display: flex;
@@ -144,9 +157,9 @@
   flex: none;
   transition: opacity var(--layout), padding var(--layout);
 }
-/* Clears the traffic lights. */
+/* The rail clears the traffic lights; the panel starts beside it. */
 html[data-platform="darwin"] .sidebar-header {
-  padding-left: 80px;
+  padding-left: 18px;
 }
 .sidebar.compact .sidebar-header {
   padding-left: 0;
@@ -162,12 +175,6 @@ html[data-platform="win32"] .sidebar-header {
 html[data-platform="win32"] .sidebar.compact .sidebar-header {
   transform: translateX(-18px);
 }
-/* The rail's computer filter. */
-.rail-header {
-  width: 70px;
-  align-self: center;
-}
-
 .roster {
   flex: 1;
   overflow-y: auto;
@@ -324,27 +331,6 @@ html[data-platform="win32"] .sidebar.compact .sidebar-header {
   inset: 0;
 }
 
-.rail-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 0 10px;
-  flex: none;
-}
-.rail-profile {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-m);
-  display: grid;
-  place-items: center;
-  margin-top: 4px;
-}
-.rail-profile.open {
-  background: var(--bubble-agent);
-}
-
-
 .detail {
   flex: 1;
   min-width: 420px;
@@ -394,14 +380,15 @@ html[data-platform="win32"] .sidebar.compact .sidebar-header {
   animation: panel-in var(--fade) both;
 }
 .account-panel {
-  left: 16px;
-  bottom: 64px;
+  left: 58px;
+  bottom: 58px;
   border-radius: var(--radius-l);
   transform-origin: bottom left;
 }
 /* Above the rail's profile button. */
 .account-panel.compact {
-  bottom: 68px;
+  left: 8px;
+  bottom: 58px;
 }
 .action-menu {
   width: 260px;

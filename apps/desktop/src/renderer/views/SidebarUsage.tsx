@@ -19,7 +19,7 @@ export function SidebarUsage({ usage, onRefresh }: { usage: Usage; onRefresh?: (
   const tr = useTr()
   const resetLine = useResetLine()
   const [style] = usePref(prefs.usageIconStyle)
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const providers = usage.providers
   const refresh = async () => {

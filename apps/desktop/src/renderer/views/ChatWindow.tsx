@@ -5,7 +5,7 @@ import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
-import { HStack, Spacer } from '../components/Stack'
+import { HStack, Spacer, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
@@ -17,13 +17,14 @@ import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
-import { SidebarFooter } from './SidebarFooter'
+import { AppRail } from './AppRail'
 import { SidebarUsage } from './SidebarUsage'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
 import { queueVoiceKey } from './thread/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
+import { RoutineFlowView } from './routines/flow/RoutineFlowView'
 import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
@@ -46,6 +47,9 @@ import './sidebar-header.css'
 import { useOnboardingTelemetry } from './use-onboarding-telemetry'
 import { useTr } from '../lib/use-language'
 
+
+/** The icon rail is always visible; the list panel beside it can be collapsed. */
+const RAIL_WIDTH = 52
 
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
 export function ChatWindow() {
@@ -212,25 +216,24 @@ function ChatSplitView() {
   const [searching, setSearching] = useState(false)
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [newMenu, setNewMenu] = useState(false)
-  const [railNewMenu, setRailNewMenu] = useState(false)
   const [contextBot, setContextBot] = useState<{ target: BotTarget; x: number; y: number } | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [newSessionBot, setNewSessionBot] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
+  const [canvasOpen, setCanvasOpen] = useState(false)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
-  const railNewButton = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   useModels([...app.stores.values()])
 
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420 - RAIL_WIDTH)))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -331,10 +334,11 @@ function ChatSplitView() {
     app.select(refs[next]!)
   }
 
-  // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
+  // The panel's edge drags its width; narrower than 180 collapses it to the rail.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - 420)
-  const resizeSidebar = (proposed: number) => {
+  const sidebarMax = Math.max(260, Math.min(420, window.innerWidth - 420 - RAIL_WIDTH))
+  const resizeSidebar = (proposedTotal: number) => {
+    const proposed = proposedTotal - RAIL_WIDTH
     const nextCompact = proposed < 180
     if (nextCompact !== compact) setCompact(nextCompact)
     if (!nextCompact) setSidebarWidth(Math.min(Math.max(260, proposed), sidebarMax))
@@ -372,64 +376,77 @@ function ChatSplitView() {
     )
   }
 
-  const width = compact ? 76 : sidebarWidth
+  const width = compact ? RAIL_WIDTH : sidebarWidth + RAIL_WIDTH
+  const railActive = canvasOpen ? 'canvas' : settings === 'usage' ? 'usage' : marketplace !== null ? 'marketplace' : settings !== null ? 'settings' : 'bots'
   return (
     <div className={`split ${showAccount || contextBot ? 'covered' : ''}`}>
       <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
-        <div className="sidebar-header drag" inert={compact}>
-          <Spacer />
-          <HStack gap={6} className="no-drag">
-            <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
-            <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
-            <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
-          </HStack>
-          <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
-        </div>
-        {compact ? (
-          <div className="rail-header drag">
-            <HStack align="stretch" justify="center" className="no-drag">
-              <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
-            </HStack>
-          </div>
-        ) : null}
-        <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
-          {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
-          <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} openExtensions={(id) => {
-            // Found it: the tip about where Extensions went has done its job.
-            prefs.extensionsMovedTipSeen.set(true)
-            setMarketplace(id)
-          }} />
-          {roster.allItems.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
-            <div className="roster-empty">
-              <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
-              {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
+        <AppRail
+          active={railActive}
+          n8n={app.local?.n8n}
+          accountOpen={showAccount}
+          update={<UpdateBadge size={30} />}
+          account={<ProfileAvatar />}
+          onBots={() => {
+            setSettings(null)
+            setMarketplace(null)
+            setCanvasOpen(false)
+            setCompact(false)
+          }}
+          onCanvas={() => {
+            setSettings(null)
+            setMarketplace(null)
+            if (!selected && !app.selection) {
+              const first = roster.navigable[0] ?? roster.items[0]
+              if (first) app.select(first.ref)
+            }
+            setCanvasOpen(true)
+          }}
+          onUsage={() => {
+            setMarketplace(null)
+            setSettings('usage')
+          }}
+          onN8n={() => void window.codync.n8n.open()}
+          onExtensions={() => {
+            setSettings(null)
+            openMarketplace()
+          }}
+          onSettings={() => {
+            setMarketplace(null)
+            setSettings('general')
+          }}
+          onAccount={() => setShowAccount((s) => !s)}
+        />
+        {compact ? null : (
+          <div className="sidebar-panel">
+            <div className="sidebar-header drag">
+              <Spacer />
+              <HStack gap={6} className="no-drag">
+                <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} />
+                <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
+                <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
+              </HStack>
+              <AnchoredMenu open={newMenu} onClose={() => setNewMenu(false)} anchor={newButton} items={newItems} />
             </div>
-          ) : null}
-        </div>
-        {compact ? null : <SidebarUsage usage={app.local?.usage ?? { providers: [] }} onRefresh={() => app.local?.refreshUsage() ?? Promise.resolve()} />}
-        {compact ? (
-          <div className="rail-actions">
-            <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
-            <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
-            <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
-            <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
-            <IconButton title="n8n" icon="point.3.connected.trianglepath.dotted" size={36} onClick={() => void window.codync.n8n.open()} />
-            <UpdateBadge size={32} />
-            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
-              <ProfileAvatar />
-            </button>
+            <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
+              {roster.grouped ? <ExtensionsMovedTip /> : null}
+              <BotRoster roster={roster} compact={false} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} openExtensions={(id) => {
+                // Found it: the tip about where Extensions went has done its job.
+                prefs.extensionsMovedTipSeen.set(true)
+                setMarketplace(id)
+              }} />
+              {roster.allItems.length === 0 && !roster.grouped && mismatchStores.length === 0 ? (
+                <div className="roster-empty">
+                  <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
+                  {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
+                </div>
+              ) : null}
+            </div>
+            <SidebarUsage usage={app.local?.usage ?? { providers: [] }} onRefresh={() => app.local?.refreshUsage() ?? Promise.resolve()} />
           </div>
-        ) : (
-          // With several computers each heading opens its own Extensions instead.
-          <SidebarFooter
-            accountOpen={showAccount}
-            onAccount={() => setShowAccount((s) => !s)}
-            onExtensions={roster.grouped ? undefined : openMarketplace}
-            onN8n={() => void window.codync.n8n.open()}
-          />
         )}
       </aside>
-      <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
+      <ResizeHandle label="Resize sidebar" width={width} min={RAIL_WIDTH} max={sidebarMax + RAIL_WIDTH} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
@@ -488,6 +505,21 @@ function ChatSplitView() {
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>
             <MarketplaceView key={marketplace} />
+          </StoreContext.Provider>
+        ) : null}
+      </Sheet>
+      <Sheet open={canvasOpen && !!selectedBot && !!selectedStore} onClose={() => setCanvasOpen(false)} width={1120} height={760}>
+        {selectedBot && selectedStore ? (
+          <StoreContext.Provider value={selectedStore}>
+            <VStack gap={14} className="routine-flow-sheet">
+              <ModalHeader
+                icon="arrow.triangle.branch"
+                title={tr('Bot canvas')}
+                subtitle={tr('Every routine that starts or passes through this bot, and where its replies go.')}
+                onClose={() => setCanvasOpen(false)}
+              />
+              <RoutineFlowView botId={selectedBot.id} />
+            </VStack>
           </StoreContext.Provider>
         ) : null}
       </Sheet>

@@ -232,3 +232,17 @@
 .settings-appear {
   animation: fade-in var(--layout) both;
 }
+
+/* The n8n instance's state: quiet until it needs a look. */
+.n8n-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tertiary);
+}
+.n8n-dot.running { background: var(--accent); }
+.n8n-dot.starting { background: var(--warning); animation: n8n-dot 1.2s ease-in-out infinite; }
+.n8n-dot.error { background: var(--danger); }
+@keyframes n8n-dot { 50% { opacity: .35; } }
+

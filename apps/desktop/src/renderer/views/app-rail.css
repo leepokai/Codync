@@ -1,0 +1,130 @@
+/* The icon rail at the left of the window, in OpenBot's shape: the app at the top, the pages in
+   the middle, the account and settings at the bottom. The list panel sits beside it. */
+.app-rail {
+  flex: none;
+  width: 52px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 12px;
+  background: var(--background);
+  border-right: 1px solid var(--chrome-stroke);
+  -webkit-app-region: drag;
+}
+/* The traffic lights of macOS sit over this corner. */
+html[data-platform='darwin'] .app-rail {
+  padding-top: 40px;
+}
+.app-rail-logo-wrap {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 2px;
+}
+.app-rail-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: block;
+  user-select: none;
+}
+.app-rail-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.app-rail-bottom {
+  margin-top: auto;
+}
+.app-rail-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--secondary);
+  cursor: pointer;
+  transition: background-color var(--hover), color var(--hover);
+}
+.app-rail-button:hover {
+  background: var(--bubble-agent);
+  color: var(--text);
+}
+.app-rail-button[data-current='true'] {
+  background: var(--roster-selected);
+  color: var(--text);
+}
+.app-rail-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.app-rail-dot {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--background);
+  background: var(--tertiary);
+}
+.app-rail-dot.running { background: var(--accent); }
+.app-rail-dot.starting { background: var(--warning); animation: app-rail-pulse 1.2s ease-in-out infinite; }
+.app-rail-dot.error { background: var(--danger); }
+@keyframes app-rail-pulse {
+  50% { opacity: 0.35; }
+}
+.app-rail-account {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.app-rail-account:hover,
+.app-rail-account.open {
+  background: var(--bubble-agent);
+}
+.app-rail-account:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-rail-button { transition: none; }
+  .app-rail-dot.starting { animation: none; }
+}
+
+/* An available release: one filled circle that stands out from the quiet chrome around it. */
+.update-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--on-accent);
+  background: var(--accent-fill);
+  animation: update-badge-in var(--layout) both;
+  transition: opacity var(--hover), transform var(--hover);
+}
+.update-badge:hover:not(:disabled) { opacity: .85; }
+.update-badge:active:not(:disabled) { transform: scale(.94); }
+.update-badge .spinner circle { stroke: currentColor; }
+@keyframes update-badge-in { from { opacity: 0; transform: scale(.6); } }
+@media (prefers-reduced-motion: reduce) {
+  .update-badge { animation: none; }
+  .update-badge:active:not(:disabled) { transform: none; }
+}
+

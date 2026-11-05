@@ -184,6 +184,8 @@ pub struct Acp {
     startup_processes: std::sync::OnceLock<Vec<super::process::JobProcess>>,
     #[cfg(windows)]
     agent_program: Option<String>,
+    #[cfg(windows)]
+    startup_program: std::sync::OnceLock<Option<String>>,
 }
 
 impl Acp {
@@ -294,6 +296,8 @@ impl Acp {
             startup_processes: std::sync::OnceLock::new(),
             #[cfg(windows)]
             agent_program,
+            #[cfg(windows)]
+            startup_program: std::sync::OnceLock::new(),
         });
         note_started(&acp);
         Ok((acp, rx))
@@ -321,7 +325,31 @@ impl Acp {
 
     #[cfg(windows)]
     pub(crate) fn agent_program(&self) -> Option<&str> {
-        self.agent_program.as_deref()
+        self.startup_program.get().and_then(Option::as_deref)
+    }
+
+    #[cfg(windows)]
+    async fn record_startup(&self) {
+        let selected = self.agent_program.clone();
+        let lookup = tokio::task::spawn_blocking(move || crate::shell::resolve_agent_program(selected));
+        let processes = self.job_processes().await;
+        let resolved = match lookup.await {
+            Ok(program) => program,
+            Err(error) => {
+                tracing::warn!(%error, "couldn't resolve the agent's startup executable");
+                None
+            }
+        };
+        let _ = self.startup_program.set(resolved);
+        match processes {
+            Ok(processes) => {
+                let _ = self.startup_processes.set(processes);
+            }
+            Err(error) => {
+                tracing::warn!(%error, "couldn't identify the agent's startup processes");
+                let _ = self.startup_processes.set(Vec::new());
+            }
+        }
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -339,15 +367,7 @@ impl Acp {
         let response = answer.response().await?;
         #[cfg(windows)]
         if method == "initialize" && self.startup_processes.get().is_none() {
-            match self.job_processes().await {
-                Ok(processes) => {
-                    let _ = self.startup_processes.set(processes);
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "couldn't identify the agent's startup processes");
-                    let _ = self.startup_processes.set(Vec::new());
-                }
-            }
+            self.record_startup().await;
         }
         Ok(response)
     }

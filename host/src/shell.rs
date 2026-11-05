@@ -151,15 +151,22 @@ pub(crate) fn simple_program(command: &str) -> Option<&str> {
     (!program.is_empty()).then_some(program)
 }
 
-/// Only a resolved executable identifies the selected adapter. Batch shims and search-path
-/// overrides remain conservative rather than authorizing an arbitrary startup child.
+/// Parse the selected program without touching the filesystem on an agent-spawn caller.
 #[cfg(windows)]
 pub(crate) fn agent_program(command: &str, env: &[(String, String)]) -> Option<String> {
     simple_program(command)
         .filter(|_| {
             !env.iter().any(|(key, _)| ["PATH", "PATHEXT", "COMSPEC"].iter().any(|name| key.eq_ignore_ascii_case(name)))
         })
-        .map(program)
+        .map(str::to_owned)
+}
+
+/// Resolve only executable files, off the runtime worker. Batch shims remain conservative
+/// rather than authorizing an arbitrary startup child.
+#[cfg(windows)]
+pub(crate) fn resolve_agent_program(selected: Option<String>) -> Option<String> {
+    selected
+        .map(|selected| program(&selected))
         .filter(|path| {
             path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe") || ext.eq_ignore_ascii_case("com"))
         })

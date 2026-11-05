@@ -1,13 +1,13 @@
 //! An ACP allocation owns a Unix session, including MCP children with their own process groups.
 //! Deliberately detached work starts another session and is protected by the actor's retirement guard.
 
+use crate::LockExt;
 use anyhow::{Context, Result, ensure};
-use std::collections::HashMap;
 use std::time::Duration;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::time::Instant;
 
-type Groups = HashMap<libc::pid_t, libc::pid_t>;
+use super::process_table::{Groups, session_groups};
 
 pub(super) struct Tree {
     session: Option<libc::pid_t>,
@@ -20,35 +20,10 @@ impl Tree {
     }
 
     async fn groups(&self, deadline: Instant) -> Result<Groups> {
-        if self.session.is_none() {
-            return Ok(Groups::new());
-        }
-        let listing = Command::new("ps").args(["-A", "-o", "pid=,stat="]).kill_on_drop(true).output();
+        let Some(session) = self.session else { return Ok(Groups::new()) };
+        let listing = tokio::task::spawn_blocking(move || session_groups(session));
         let listed = tokio::time::timeout_at(deadline, listing).await??;
-        ensure!(listed.status.success(), "couldn't list agent session");
-        Ok(self.parse_groups(&String::from_utf8_lossy(&listed.stdout)))
-    }
-
-    /// Ignore zombies that hold no resources and cannot be signalled.
-    fn parse_groups(&self, listed: &str) -> Groups {
-        let Some(session) = self.session else { return Groups::new() };
-        let mut groups = Groups::new();
-        for line in listed.lines() {
-            let mut fields = line.split_whitespace();
-            let Some(pid) = fields.next().and_then(|s| s.parse::<libc::pid_t>().ok()) else { continue };
-            if fields.next().is_none_or(|state| state.starts_with('Z')) {
-                continue;
-            }
-            // SAFETY: these calls only read the process table; an exited PID returns -1.
-            if unsafe { libc::getsid(pid) } == session {
-                // SAFETY: getpgid only reads the process table.
-                let group = unsafe { libc::getpgid(pid) };
-                if group > 0 {
-                    groups.insert(group, pid);
-                }
-            }
-        }
-        groups
+        listed.context("listing agent session")
     }
 
     fn signal(&self, groups: Groups) -> std::io::Result<()> {
@@ -106,21 +81,60 @@ impl Tree {
     }
 }
 
-impl Drop for Tree {
+/// Drop cleanup is independent of Tokio's blocking queue, which may discard queued work at shutdown.
+static FALLBACKS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> = std::sync::Mutex::new(Vec::new());
+
+struct Fallback {
+    tree: Tree,
+    // Keep the leader unreaped until Drop has signalled every group in its session.
+    _child: Child,
+}
+
+impl Drop for Fallback {
     fn drop(&mut self) {
-        if self.session.is_none() {
-            return;
-        }
-        // Drop cannot await. Normal retirement uses the bounded async path above.
-        let result = std::process::Command::new("ps").args(["-A", "-o", "pid=,stat="]).output();
-        let cleanup = result.and_then(|listed| {
-            if !listed.status.success() {
-                return Err(std::io::Error::other("couldn't list agent session"));
-            }
-            self.signal(self.parse_groups(&String::from_utf8_lossy(&listed.stdout)))
-        });
+        let Some(session) = self.tree.session else { return };
+        let cleanup = session_groups(session).and_then(|groups| self.tree.signal(groups));
         if let Err(error) = cleanup {
             tracing::warn!(%error, "couldn't release agent session");
+        }
+    }
+}
+
+impl Tree {
+    pub(super) fn release_on_drop(&mut self, child: Child) {
+        let Some(session) = self.session.take() else { return };
+        let fallback = Fallback { tree: Self { session: Some(session) }, _child: child };
+        if tokio::runtime::Handle::try_current().is_err() {
+            drop(fallback);
+            return;
+        }
+        let mut workers = FALLBACKS.locked();
+        workers.retain(|worker| !worker.is_finished());
+        // If the OS cannot start a worker, dropping the closure still runs Fallback's cleanup.
+        match std::thread::Builder::new().name("agent-cleanup".into()).spawn(move || drop(fallback)) {
+            Ok(worker) => workers.push(worker),
+            Err(error) => tracing::warn!(%error, "couldn't start agent cleanup worker; cleaned up synchronously"),
+        }
+    }
+}
+
+/// Deliberate host shutdown must join independent fallback workers before `process::exit`.
+pub(super) async fn stopped() {
+    loop {
+        let workers = std::mem::take(&mut *FALLBACKS.locked());
+        if workers.is_empty() {
+            return;
+        }
+        let joined = tokio::task::spawn_blocking(move || {
+            for worker in workers {
+                if let Err(error) = worker.join() {
+                    tracing::warn!(?error, "agent cleanup worker panicked");
+                }
+            }
+        })
+        .await;
+        if let Err(error) = joined {
+            tracing::warn!(%error, "couldn't join agent cleanup workers");
         }
     }
 }

@@ -379,6 +379,8 @@ impl Acp {
 pub async fn stopped() {
     let tasks = std::mem::take(&mut *STOPPING.locked());
     futures::future::join_all(tasks).await;
+    #[cfg(unix)]
+    super::process_unix::stopped().await;
 }
 
 /// Stops every agent left and waits for them, before the host exits: `process::exit` drops no process, and Cursor's agent
@@ -386,6 +388,8 @@ pub async fn stopped() {
 pub async fn stop_all() {
     let started: Vec<_> = std::mem::take(&mut *STARTED.locked()).iter().filter_map(Weak::upgrade).collect();
     futures::future::join_all(started.iter().map(|acp| acp.kill())).await;
+    // A failed cleanup may need the last owner's Drop fallback before we join its worker.
+    drop(started);
     stopped().await;
 }
 

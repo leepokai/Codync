@@ -20,9 +20,9 @@ pub(crate) struct JobProcess {
 }
 
 pub(super) struct Process {
-    // Drop the tree before Child can reap the leader and make its PID reusable.
     tree: Tree,
-    child: Child,
+    // Unix Drop transfers the child with its tree, pinning the session ID through fallback cleanup.
+    child: Option<Child>,
     stopping: bool,
     #[cfg(all(test, unix))]
     fail_stop: bool,
@@ -31,16 +31,15 @@ pub(super) struct Process {
 impl Process {
     pub(super) fn new(child: Child) -> Result<Self> {
         let tree = Tree::new(&child)?;
-        let owned = Self {
+        #[cfg(windows)]
+        super::process_windows::resume(&child)?;
+        Ok(Self {
             tree,
-            child,
+            child: Some(child),
             stopping: false,
             #[cfg(all(test, unix))]
             fail_stop: false,
-        };
-        #[cfg(windows)]
-        super::process_windows::resume(&owned.child)?;
-        Ok(owned)
+        })
     }
 
     pub(super) fn monitor(child: &Arc<Mutex<Self>>) {
@@ -77,7 +76,7 @@ impl Process {
 
     #[cfg(unix)]
     fn exited(&self) -> std::io::Result<bool> {
-        let Some(pid) = self.child.id() else { return Ok(true) };
+        let Some(pid) = self.child.as_ref().and_then(Child::id) else { return Ok(true) };
         // SAFETY: zero is a valid siginfo value; waitid writes only into this object.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
         // Keep the leader unreaped until its group is killed, preventing PID reuse.
@@ -102,7 +101,7 @@ impl Process {
     #[cfg(windows)]
     fn exited(&self) -> std::io::Result<bool> {
         use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0};
-        let Some(handle) = self.child.raw_handle() else { return Ok(true) };
+        let Some(handle) = self.child.as_ref().and_then(Child::raw_handle) else { return Ok(true) };
         // SAFETY: the child owns this valid process handle; a zero timeout cannot block.
         let status = unsafe { windows_sys::Win32::System::Threading::WaitForSingleObject(handle, 0) };
         if status == WAIT_FAILED {
@@ -155,7 +154,8 @@ impl Process {
         // On Unix keep the unreaped leader pinning the session ID until all owned groups drain.
         #[cfg(unix)]
         self.tree.drained(Instant::now() + REAP_TIMEOUT).await?;
-        let result = tokio::time::timeout(REAP_TIMEOUT, self.child.kill()).await?;
+        let child = self.child.as_mut().context("agent process already released")?;
+        let result = tokio::time::timeout(REAP_TIMEOUT, child.kill()).await?;
         match result {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {}
@@ -164,6 +164,15 @@ impl Process {
         #[cfg(windows)]
         self.tree.drained(Instant::now() + REAP_TIMEOUT).await?;
         Ok(())
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Process {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.take() {
+            self.tree.release_on_drop(child);
+        }
     }
 }
 

@@ -18,20 +18,15 @@ pub(super) async fn background_work(acp: &Acp) -> bool {
 #[cfg(unix)]
 async fn detached_work(leader: Option<u32>) -> bool {
     let Some(leader) = leader else { return true };
-    let listed = tokio::process::Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output().await;
-    let Ok(listed) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes")) else {
-        return true;
+    let listing = tokio::task::spawn_blocking(crate::agent::process_table::parent_links);
+    let listed = listing.await;
+    let processes = match listed {
+        Ok(Ok(processes)) => processes,
+        error => {
+            tracing::warn!(?error, "couldn't list processes");
+            return true;
+        }
     };
-    if !listed.status.success() {
-        return true;
-    }
-    let processes: Vec<(u32, u32)> = String::from_utf8_lossy(&listed.stdout)
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace().map(str::parse);
-            Some((fields.next()?.ok()?, fields.next()?.ok()?))
-        })
-        .collect();
     detached_descendant(&processes, leader, session)
 }
 

@@ -89,3 +89,24 @@ async fn a_resume_without_model_metadata_keeps_the_configured_model_without_lega
     assert_eq!(host.requests(&bot, "session/set_config_option").len(), 1);
     assert_eq!(host.requests(&bot, "session/set_model").len(), 0);
 }
+
+#[tokio::test]
+async fn a_resume_with_only_modes_reapplies_the_saved_mode_without_selecting_a_model() {
+    if common::python_missing() {
+        return;
+    }
+    let mut host = Host::start().await;
+    let bot = host.fixture_bot("Modes resume", "resume_agent.py", "--modes-only-resume").await;
+    host.call("updateBot", json!({"id": bot, "model": "fixture", "mode": "plan"})).await;
+    host.reply(&bot, "one").await;
+    host.restart(|_| {}).await;
+    host.reply(&bot, "two").await;
+    let modes = host.requests(&bot, "session/set_mode");
+    assert_eq!(modes.len(), 2, "both allocations must apply the saved mode");
+    assert!(modes.iter().all(|r| r["params"]["modeId"] == "plan"));
+    assert_eq!(modes[0]["params"]["sessionId"], modes[1]["params"]["sessionId"]);
+    assert_eq!(host.requests(&bot, "session/new").len(), 1);
+    assert_eq!(host.requests(&bot, "session/resume").len(), 1);
+    assert_eq!(host.requests(&bot, "session/set_config_option").len(), 1);
+    assert_eq!(host.requests(&bot, "session/set_model").len(), 0);
+}

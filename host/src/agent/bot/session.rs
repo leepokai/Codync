@@ -273,6 +273,8 @@ impl Actor {
                     // not implement legacy selection. Only retry setup the response actually describes.
                     if res.get("configOptions").is_some() || res.get("models").is_some() {
                         conn.pending_models.insert(sid.clone(), res);
+                    } else {
+                        self.note_options(&sid, &res, Listing::Session);
                     }
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.

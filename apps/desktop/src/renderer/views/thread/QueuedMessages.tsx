@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { hidingCalls } from '@shared/calls'
 import { isWorking, quoteOf, type Entry } from '@shared/models'
 import { IconButton } from '../../components/Controls'
@@ -23,13 +23,14 @@ export function QueuedMessages({ botId }: { botId: string }) {
   const bot = store.bots.get(botId)
   const waiting = waitingMessages(hidingCalls(store.allEntries(botId)), !!bot && isWorking(bot))
   const rows = useLeaving(waiting)
+  const list = useRevealSent(waiting.at(-1), store.lastSentNonce)
   const tray = usePresence(waiting.length > 0, EXIT_MS)
   const actions = canSteer(store.hostVersion?.version)
   if (!tray.mounted) return null
   return (
     <div className={`queued-tray ${tray.shown ? 'shown' : ''}`} inert={waiting.length === 0}>
       <div>
-        <div className="queued-list" role="list" aria-label="Queued messages">
+        <div ref={list} className="queued-list" role="list" aria-label="Queued messages">
           {rows.map(({ entry, leaving }) => (
             <QueuedRow key={entry.id} entry={entry} leaving={leaving} actions={actions} />
           ))}
@@ -57,6 +58,17 @@ function QueuedRow({ entry, leaving, actions }: { entry: Entry; leaving: boolean
       </ComposerReveal>
     </div>
   )
+}
+
+/** The list stays where it is, the oldest (next to go) in view; a message sent from here shows that it arrived. */
+function useRevealSent(newest: Entry | undefined, lastSentNonce: string | null) {
+  const list = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!newest?.data.clientNonce || newest.data.clientNonce !== lastSentNonce) return
+    // Once its row has opened, so the scroll takes it in.
+    return afterExit(EXIT_MS, () => list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }))
+  }, [newest?.id])
+  return list
 }
 
 /** `items` plus the ones that just left, kept in their places until their row has folded away. */

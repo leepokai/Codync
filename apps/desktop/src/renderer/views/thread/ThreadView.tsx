@@ -21,6 +21,7 @@ import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
 import { QueuedMessages } from './QueuedMessages'
+import { fill } from '../../lib/fill.ts'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
@@ -453,7 +454,7 @@ function IntroCard({ bot }: { bot: Bot }) {
   const tr = useTr()
   const where = bot.managedWorkspace
     ? `${store.backendName(bot.backend)} · ${tr('Personal workspace')}`
-    : tr('{agent} in {path}').replace('{agent}', store.backendName(bot.backend)).replace('{path}', bot.cwd)
+    : fill(tr('{agent} in {path}'), { agent: store.backendName(bot.backend), path: bot.cwd })
   return (
     <div className="intro-card">
       <BotAvatar bot={bot} size={72} />

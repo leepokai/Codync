@@ -49,6 +49,7 @@
   "Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.": "Conecta automaticamente por Wi-Fi, pelo Tailscale ou de qualquer lugar pelo Cloudflare. Com criptografia de ponta a ponta.",
   "Connecting": "Conectando",
   "Connecting…": "Conectando…",
+  "If Codync saves you trips to your desk, a star on GitHub helps other people find it.": "Se o Codync economiza idas até a mesa de trabalho, uma estrela no GitHub ajuda outras pessoas a encontrá-lo.",
   "Updating…": "Atualizando…",
   "Connection": "Conexão",
   "Continue": "Continuar",
@@ -1744,7 +1745,6 @@
   "Works once, until {time}": "Funciona uma vez, até {time}",
   "Yellow": "Amarelo",
   "You wrote it": "Você escreveu",
-  "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.": "Você usa o Codync há algum tempo. Se ele economiza idas até a mesa de trabalho, uma estrela no GitHub ajuda outras pessoas a encontrá-lo.",
   "Your bots are idle. Message one from here, or open Codync.": "Seus bots estão ociosos. Envie uma mensagem para um deles daqui ou abra o Codync.",
   "Your computer is offline.": "Seu computador está offline.",
   "a computer": "um computador",
@@ -1809,5 +1809,8 @@
   "Update Codync on {host}: sending now and taking back need {version} or newer.": "Atualize o Codync em {host}: enviar agora e retirar precisam da versão {version} ou mais recente.",
   "Find in conversation": "Buscar na conversa",
   "Previous match": "Resultado anterior",
-  "Next match": "Próximo resultado"
+  "Next match": "Próximo resultado",
+  "Add {name} to your account first": "Primeiro adicione {name} à sua conta",
+  "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "Seu telefone acessa {name} de qualquer lugar pela sua conta. Ao adicionar, isto também é ativado.",
+  "Use your own relay": "Usar seu próprio relay"
 }

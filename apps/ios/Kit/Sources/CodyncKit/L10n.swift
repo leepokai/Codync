@@ -131,6 +131,11 @@ public enum L10n {
         }
     }
 
+    /// Fills a template's `{key}`s in one pass: a device named "{code}" stays as written.
+    public static func fill(_ template: String, _ values: [String: String]) -> String {
+        template.replacing(/\{(\w+)\}/) { match in values[String(match.1)] ?? String(match.0) }
+    }
+
     public static func tr(
         _ key: String,
         preference: AppLanguage = AppLanguage.preference(),

@@ -49,6 +49,7 @@
   "Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.": "Wi-Fi、Tailscale経由、またはCloudflare経由でどこからでも単独で接続します。エンドツーエンドで暗号化されます。",
   "Connecting": "接続中",
   "Connecting…": "接続中…",
+  "If Codync saves you trips to your desk, a star on GitHub helps other people find it.": "Codync で机に戻る手間を省けているなら、GitHub でスターを付けていただくと、他の人にも見つけてもらいやすくなります。",
   "Updating…": "アップデート中…",
   "Connection": "接続",
   "Continue": "続ける",
@@ -1744,7 +1745,6 @@
   "Works once, until {time}": "1 回限り有効、{time} まで",
   "Yellow": "黄色",
   "You wrote it": "ご自身が書いた内容",
-  "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.": "Codync をしばらくお使いいただきありがとうございます。机に戻る手間を省けているなら、GitHub でスターを付けていただくと、他の人にも見つけてもらいやすくなります。",
   "Your bots are idle. Message one from here, or open Codync.": "ボットは待機中です。ここから 1 つのボットにメッセージを送るか、Codync を開いてください。",
   "Your computer is offline.": "コンピューターがオフラインです。",
   "a computer": "コンピューター",
@@ -1809,5 +1809,8 @@
   "Update Codync on {host}: sending now and taking back need {version} or newer.": "{host} の Codync をアップデートしてください。今すぐ送信と取り消しには {version} 以降が必要です。",
   "Find in conversation": "会話内を検索",
   "Previous match": "前の一致",
-  "Next match": "次の一致"
+  "Next match": "次の一致",
+  "Add {name} to your account first": "先に {name} をアカウントに追加してください",
+  "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "スマートフォンはアカウントを通じてどこからでも {name} にアクセスします。追加すると、この機能もオンになります。",
+  "Use your own relay": "自分のリレーを使う"
 }

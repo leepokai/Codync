@@ -436,7 +436,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
             members.joinToString(" · ") { it.name }.takeIf { bot.name != members.joinToString(", ") { it.name } },
             bot.description.ifEmpty { null }) else listOfNotNull(
             if (bot.managedWorkspace) "${backendName(state, bot.backend)} · ${tr("Personal workspace")}"
-            else tr("{agent} in {path}").replace("{agent}", backendName(state, bot.backend)).replace("{path}", bot.cwd),
+            else fill(tr("{agent} in {path}"), "agent" to backendName(state, bot.backend), "path" to bot.cwd),
             bot.description.ifEmpty { null })
         for (line in lines) Text(line, style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
         Text(if (bot.kind == "group") "Everyone answers in turn. @mention a bot to ask just that one."

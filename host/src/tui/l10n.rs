@@ -248,6 +248,12 @@ fn compact_time_in(time: &str, table: &HashMap<String, String>) -> Option<String
     Some(spoken)
 }
 
+/// Fills a template's `{key}`s in one pass: a device named "{code}" stays as written.
+pub(in crate::tui) fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    let values = values.iter().map(|(key, value)| (format!("{{{key}}}"), (*value).to_owned())).collect();
+    substitute(template, &values)
+}
+
 /// An exact chrome phrase. Chat text that is not one of those phrases stays as written.
 pub(in crate::tui) fn tr(text: &str) -> Cow<'_, str> {
     match active_phrases() {

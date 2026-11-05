@@ -11,6 +11,7 @@ import {
 } from './market-models'
 import { AppLogo, ErrorText, Field, filled } from './pieces'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 
 
 /**
@@ -67,7 +68,7 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
             return
           }
           if (state.status === 'failed' || state.status === 'expired') {
-            setError(tr("Signing in to {name} didn't work ({status}). Close and try again.").replaceAll('{name}', () => app.name).replaceAll('{status}', () => String(state.status)))
+            setError(fill(tr("Signing in to {name} didn't work ({status}). Close and try again."), { name: app.name, status: String(state.status) }))
             return
           }
         }
@@ -93,7 +94,7 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
         if (requestId) await market.finishConnectionRequest(client, requestId, { connectorId: `composio-${app.slug}` })
         markConnected()
       } else {
-        setError(tr('{name} says the connection is {status}.').replaceAll('{name}', () => app.name).replaceAll('{status}', () => String(state.status)))
+        setError(fill(tr('{name} says the connection is {status}.'), { name: app.name, status: String(state.status) }))
       }
     } catch (e) {
       setError(errorText(e))

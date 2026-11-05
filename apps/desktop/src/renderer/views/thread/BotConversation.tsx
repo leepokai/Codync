@@ -11,6 +11,7 @@ import { MarkdownText } from './Markdown'
 import './bot-conversation.css'
 import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 
 
 /** The compact chat row for bot-to-bot messages with one peer: who, never what. Opens the conversation. */
@@ -54,7 +55,7 @@ function BotPair({ botId, peer }: { botId: string; peer: Peer }) {
     </HStack>
   )
   return (
-    <HStack as="span" gap={8} aria-label={tr('{name} and {other}').replaceAll('{name}', () => name(botId)).replaceAll('{other}', () => name(peer.id))}>
+    <HStack as="span" gap={8} aria-label={fill(tr('{name} and {other}'), { name: name(botId), other: name(peer.id) })}>
       {label(botId)}
       <Icon name="arrow.left.arrow.right" size={11} color="var(--tertiary)" />
       {label(peer.id)}

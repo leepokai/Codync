@@ -1,13 +1,5 @@
 /** Puts a picture on the clipboard as a picture, so it pastes into other apps as an image and not as a name. */
 
-const TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' }
-
-/** The MIME type a picture's file name says it is; unknown ones are left for the page to sniff. */
-export function imageType(name: string) {
-  return TYPES[name.split('.').pop()?.toLowerCase() ?? ''] ?? ''
-}
-
-/** The clipboard takes PNG for pictures: other formats are drawn and re-encoded. */
 /** Which step of a copy failed: turning the picture into PNG, or writing the clipboard. */
 export class ImageCopyError extends Error {
   readonly kind: 'convert' | 'clipboard'
@@ -17,10 +9,16 @@ export class ImageCopyError extends Error {
   }
 }
 
-async function asPng(bytes: Uint8Array, name: string): Promise<Blob> {
-  const type = imageType(name)
-  const blob = new Blob([bytes as BlobPart], { type })
-  if (type === 'image/png') return blob
+/** Whether the bytes are a PNG by their own signature: a name saying `.png` doesn't make them one. */
+export function isPng(bytes: Uint8Array) {
+  return [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, i) => bytes[i] === byte)
+}
+
+/** The clipboard takes PNG for pictures: other formats are drawn and re-encoded. */
+async function asPng(bytes: Uint8Array): Promise<Blob> {
+  // Only a real PNG goes through as it is; anything else is decoded by what it holds, not by what it's called.
+  if (isPng(bytes)) return new Blob([bytes as BlobPart], { type: 'image/png' })
+  const blob = new Blob([bytes as BlobPart])
   const bitmap = await createImageBitmap(blob)
   try {
     const canvas = document.createElement('canvas')
@@ -33,7 +31,7 @@ async function asPng(bytes: Uint8Array, name: string): Promise<Blob> {
   }
 }
 
-export async function copyImage(bytes: Uint8Array, name: string) {
-  const png = await asPng(bytes, name).catch((error) => { throw new ImageCopyError('convert', error) })
+export async function copyImage(bytes: Uint8Array) {
+  const png = await asPng(bytes).catch((error) => { throw new ImageCopyError('convert', error) })
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).catch((error) => { throw new ImageCopyError('clipboard', error) })
 }

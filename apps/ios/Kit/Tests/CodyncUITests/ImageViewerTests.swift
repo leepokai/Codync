@@ -50,12 +50,12 @@ private let big = CGSize(width: 2000, height: 1600)
 @Test func copyingAPictureKeepsItsOwnBytesAndAddsAPNGOnlyForTypesFewAppsPaste() throws {
     let png = try encoded(.png)
     #expect(ImageClipboard.item(png)?.keys.sorted() == [UTType.png.identifier])
-    #expect(ImageClipboard.item(png)?[UTType.png.identifier] as? Data == png)
+    #expect(ImageClipboard.item(png)?[UTType.png.identifier] == png)
 
     let tiff = try encoded(.tiff)
     let item = try #require(ImageClipboard.item(tiff))
-    #expect(item[UTType.tiff.identifier] as? Data == tiff)
-    let converted = try #require(item[UTType.png.identifier] as? Data)
+    #expect(item[UTType.tiff.identifier] == tiff)
+    let converted = try #require(item[UTType.png.identifier])
     #expect(ImageData.isPNG(converted))
 
     #expect(ImageClipboard.item(Data("not a picture".utf8)) == nil)

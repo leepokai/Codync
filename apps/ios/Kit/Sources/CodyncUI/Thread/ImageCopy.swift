@@ -11,11 +11,12 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "Attachments")
 enum ImageClipboard {
     private static let pastedEverywhere: [UTType] = [.png, .jpeg, .gif]
 
-    /// The clipboard item for `data`; nil when it isn't a picture.
-    static func item(_ data: Data) -> [String: Any]? {
+    /// The clipboard item for `data` (type to bytes); nil when it isn't a picture. Re-encoding a big picture takes a
+    /// while: callers keep this off the main actor.
+    nonisolated static func item(_ data: Data) -> [String: Data]? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0,
               let identifier = CGImageSourceGetType(source) as String?, let type = UTType(identifier) else { return nil }
-        var item: [String: Any] = [type.identifier: data]
+        var item: [String: Data] = [type.identifier: data]
         if !pastedEverywhere.contains(type) {
             guard let png = ImageData.png(source) else { return nil }
             item[UTType.png.identifier] = png
@@ -23,9 +24,9 @@ enum ImageClipboard {
         return item
     }
 
-    /// nil when it worked, else why not.
-    @MainActor static func copy(_ data: Data) -> AnalyticsEvent.ImageError? {
-        guard let item = item(data) else { return .convert }
+    /// Puts `item` on the pasteboard; nil when it worked, else why not.
+    @MainActor static func put(_ item: [String: Data]?) -> AnalyticsEvent.ImageError? {
+        guard let item else { return .convert }
         UIPasteboard.general.setItems([item])
         // `setItems` reports nothing: the types being there says the write took.
         return UIPasteboard.general.contains(pasteboardTypes: Array(item.keys)) ? nil : .clipboard
@@ -42,7 +43,9 @@ enum ImageClipboard {
     static func image(_ source: ImageSource, model: BotStore, from: AnalyticsEvent.ImageFrom) async -> Bool {
         let failure: AnalyticsEvent.ImageError?
         if let data = await source.data(model) {
-            failure = ImageClipboard.copy(data)
+            // The re-encode of a big picture (a TIFF or HEIC to PNG) runs off the main actor; only the pasteboard write is on it.
+            let item = await Task.detached(priority: .userInitiated) { ImageClipboard.item(data) }.value
+            failure = ImageClipboard.put(item)
         } else {
             failure = .unavailable
         }

@@ -42,7 +42,7 @@ export async function copyImageOf(store: BotStore, source: ImageSource, from: Im
   if (!bytes) error = 'unavailable'
   else {
     try {
-      await copyImage(bytes, source.file.name)
+      await copyImage(bytes)
     } catch (cause) {
       console.error(cause)
       error = copyFailure(cause)

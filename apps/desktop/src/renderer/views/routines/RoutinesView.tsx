@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, IconButton, SegmentedChoice, Switch } from '../../components/Controls'
-import { Sheet } from '../../components/Overlay'
+import { ModalHeader, Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useScreenViewed } from '../../store/analytics'
@@ -28,6 +28,7 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
   const [runs, setRuns] = useState<RoutineRun[]>([])
   const [editing, setEditing] = useState<EditorTarget | null>(null)
   const [view, setView] = useState<'list' | 'flow' | 'calendar'>('list')
+  const [canvasOpen, setCanvasOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -123,8 +124,12 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
         <IconButton title="Set up a routine" icon="plus" disabled={store.isOffline} onClick={() => open(null)} />
         {onClose ? <IconButton title="Close routines" icon="xmark" onClick={onClose} /> : null}
       </HStack>
-      <SegmentedChoice selection={view} options={[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }, { id: 'flow', label: 'Flow' }]} onChange={setView} />
-      {view === 'flow' ? <RoutineFlowView botId={botId} /> : view === 'calendar' ? (
+      <SegmentedChoice selection={view} options={[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }, { id: 'flow', label: 'Flow' }]} onChange={(next) => {
+        setView(next)
+        // The canvas needs room: the details column is too narrow for a graph.
+        if (next === 'flow') setCanvasOpen(true)
+      }} />
+      {view === 'flow' ? <RoutineFlowView botId={botId} onExpand={() => setCanvasOpen(true)} /> : view === 'calendar' ? (
         <RoutineCalendarView botId={botId} />
       ) : (
         <>
@@ -165,6 +170,17 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
         </Sheet>
         </>
       )}
+      <Sheet open={canvasOpen} onClose={() => setCanvasOpen(false)} width={1120} height={760}>
+        <VStack gap={14} className="routine-flow-sheet">
+          <ModalHeader
+            icon="clock.arrow.circlepath"
+            title={tr('Routine flow')}
+            subtitle={tr('Drag from a bot\'s dot to another bot to hand its reply on.')}
+            onClose={() => setCanvasOpen(false)}
+          />
+          <RoutineFlowView botId={botId} />
+        </VStack>
+      </Sheet>
     </VStack>
   )
 }

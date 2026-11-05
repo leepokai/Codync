@@ -50,7 +50,7 @@ object RoutineFlow {
     const val DEFAULT_MAX_DEPTH = 5
     const val MAX_COORDINATE = 1_000_000.0
     const val NODE_WIDTH = 220.0
-    const val NODE_HEIGHT = 96.0
+    const val NODE_HEIGHT = 120.0
     const val MIN_SCALE = 0.3f
     const val MAX_SCALE = 2f
     private const val COLUMN_GAP = 90.0

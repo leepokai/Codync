@@ -58,9 +58,16 @@ export const DEFAULT_MAX_DEPTH = 5
 export const MAX_COORDINATE = 1_000_000
 /** The size a node card takes on the canvas; the columns and the edge anchors follow it. */
 export const NODE_WIDTH = 220
-export const NODE_HEIGHT = 96
+export const NODE_HEIGHT = 120
 const COLUMN_GAP = 90
 const ROW_GAP = 40
+
+/** A stable hue per routine, so its nodes and edges read as one path. */
+export function routineTint(id: string): string {
+  let hash = 0
+  for (const char of id) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 360
+  return `hsl(${hash} 58% 58%)`
+}
 
 export const routineKey = (id: string) => `routine:${id}`
 export const botKey = (id: string) => `bot:${id}`

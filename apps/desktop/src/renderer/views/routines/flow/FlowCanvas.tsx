@@ -19,13 +19,15 @@ interface Props {
   onMove: (nodeKey: string, x: number, y: number) => void
   /** A bot's connection was dropped on another bot. */
   onConnect: (fromBotId: string, toBotId: string, at: { x: number; y: number }) => void
+  /** Runs this routine's flow now, from its card. */
+  onRun: (routineId: string) => void
 }
 
 const NUDGE = 20
 const DRAG_SLOP = 3
 
 /** The canvas: routine and bot nodes, the edges between them, pan (drag the background), zoom (wheel and buttons). */
-export function FlowCanvasView({ canvas, bots, selection, disabled, onSelect, onMove, onConnect }: Props) {
+export function FlowCanvasView({ canvas, bots, selection, disabled, onSelect, onMove, onConnect, onRun }: Props) {
   const tr = useTr()
   const nodes = useMemo(() => layoutNodes(canvas), [canvas])
   const edges = useMemo(() => flowEdges(canvas), [canvas])
@@ -191,6 +193,7 @@ export function FlowCanvasView({ canvas, bots, selection, disabled, onSelect, on
               onDragStart={(e) => startDrag(raw, e)}
               onPortStart={(e) => startWire(raw, e)}
               onKey={(e) => keyOnNode(raw, e)}
+              onRun={raw.kind === 'routine' ? () => onRun(raw.id) : undefined}
             />
           )
         })}

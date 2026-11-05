@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isGroup, type Bot } from '@shared/models'
-import { Button, DropdownMenu, SegmentedChoice, Spinner } from '../../../components/Controls'
+import { Button, DropdownMenu, IconButton, SegmentedChoice, Spinner } from '../../../components/Controls'
 import { AnchoredMenu } from '../../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../../components/Stack'
 import { Text } from '../../../components/Text'
@@ -26,7 +26,7 @@ function freeSpot(canvas: FlowCanvas) {
 }
 
 /** A bot's routine flow: its canvas (or the same flow as a list), and an inspector for the selection. */
-export function RoutineFlowView({ botId }: { botId: string }) {
+export function RoutineFlowView({ botId, onExpand }: { botId: string; onExpand?: () => void }) {
   const tr = useTr()
   const store = useStore()
   const [flow] = useState(() => new RoutineFlowStore(botId, () => store.ready()))
@@ -115,6 +115,7 @@ export function RoutineFlowView({ botId }: { botId: string }) {
           <Text>{addable.length === 0 ? tr('Every bot is on the canvas') : tr('Add a bot')}</Text>
         </DropdownMenu>
         <Spacer />
+        {onExpand ? <IconButton title={tr('Open the canvas in a larger window')} icon="arrow.up.left.and.arrow.down.right" onClick={onExpand} /> : null}
         {model.busy || model.loading ? <Spinner /> : null}
       </HStack>
       {offline ? <Text size="caption" tone="attention">{tr('Offline: the flow is read-only until the computer is reachable.')}</Text> : null}
@@ -134,6 +135,10 @@ export function RoutineFlowView({ botId }: { botId: string }) {
                 onSelect={setSelection}
                 onMove={(key, x, y) => void flow.move(key, x, y)}
                 onConnect={dropped}
+                onRun={(id) => {
+                  setSelection({ kind: 'node', key: `routine:${id}` })
+                  void flow.test(id)
+                }}
               />
             ) : (
               <FlowList canvas={canvas} bots={bots} selection={selection} onSelect={setSelection} />

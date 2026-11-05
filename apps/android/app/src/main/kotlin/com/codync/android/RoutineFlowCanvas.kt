@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
@@ -43,17 +50,18 @@ import com.codync.android.core.Bot
 import com.codync.android.core.FlowCanvas
 import com.codync.android.core.RoutineFlow
 import com.codync.android.core.RoutineFlow.Node
+import com.codync.android.core.RoutineRun
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Nodes and links on a pannable, pinchable plane. The plane is laid out in dp (a node is 220 × 96) and its layer is scaled by
+ * Nodes and links on a pannable, pinchable plane. The plane is laid out in dp (a node is 220 × 120) and its layer is scaled by
  * the view, whose translation is in pixels. A drag on a node moves it (saved on release); a drag elsewhere pans; a pinch zooms.
  */
 @Composable internal fun FlowCanvasView(canvas: FlowCanvas, bots: Map<String, Bot>, editable: Boolean, select: (FlowSelection) -> Unit,
-    move: (String, Double, Double) -> Unit) {
+    move: (String, Double, Double) -> Unit, run: (String) -> Unit) {
     val nodes = remember(canvas) { RoutineFlow.layout(canvas) }
     val edges = remember(canvas) { RoutineFlow.edges(canvas) }
     val density = LocalDensity.current.density
@@ -105,7 +113,8 @@ import kotlin.math.roundToInt
                         val base = live?.takeIf { it.first == node.key } ?: Triple(node.key, node.x, node.y)
                         live = Triple(node.key, base.second + dx, base.third + dy)
                     },
-                    drop = { live?.takeIf { it.first == node.key }?.let { move(node.key, it.second, it.third) }; live = null })
+                    drop = { live?.takeIf { it.first == node.key }?.let { move(node.key, it.second, it.third) }; live = null },
+                    run = run)
             }
             // Each link has a small handle at the middle of its edge, so it can be selected on the canvas too.
             for (edge in edges.filter { it.linkId != null }) {
@@ -129,9 +138,55 @@ import kotlin.math.roundToInt
     }
 }
 
-/** One node: a routine, or a bot with its avatar, model and the status of its latest step. */
+/** The week ahead: seven columns, a tick where the routine fires. */
+@Composable private fun FlowWeek(upcoming: List<Long>) {
+    if (upcoming.isEmpty()) return
+    val day = 24 * 60 * 60 * 1000L
+    val start = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val days = (0 until 7).map { index ->
+        val from = start + index * day
+        from to upcoming.filter { it >= from && it < from + day }.map { (it - from).toFloat() / day }
+    }
+    val track = Palette.bubbleAgent
+    val tick = Palette.secondary
+    Canvas(Modifier.fillMaxWidth().height(14.dp)) {
+        val column = size.width / 7f
+        for (index in days.indices) {
+            val ticks = days[index].second
+            drawRoundRect(track, topLeft = Offset(index * column, 0f),
+                size = Size(column - 3.dp.toPx(), size.height), cornerRadius = CornerRadius(2.dp.toPx()))
+            for (at in ticks) {
+                drawRect(tick, topLeft = Offset(index * column + at * column, 2.dp.toPx()),
+                    size = Size(1.dp.toPx(), size.height - 4.dp.toPx()))
+            }
+        }
+    }
+}
+
+/** The newest runs as dots, oldest first, so the row reads forward in time. */
+@Composable private fun FlowRunDots(runs: List<RoutineRun>) {
+    val recent = runs.take(6).reversed()
+    if (recent.isEmpty()) return
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        for (run in recent) {
+            val color = when (run.status) {
+                "succeeded" -> Palette.added
+                "failed" -> Palette.danger
+                "running" -> Palette.accent
+                "cancelled", "skipped" -> Palette.secondary
+                else -> Palette.tertiary
+            }
+            Box(Modifier.size(6.dp).clip(CircleShape).background(color))
+        }
+    }
+}
+
+/** One node: a routine with its week and last runs, or a bot with its avatar and latest step. */
 @Composable private fun FlowNodeCard(node: Node, x: Double, y: Double, canvas: FlowCanvas, bots: Map<String, Bot>, editable: Boolean,
-    select: (FlowSelection) -> Unit, drag: (Double, Double) -> Unit, drop: () -> Unit) {
+    select: (FlowSelection) -> Unit, drag: (Double, Double) -> Unit, drop: () -> Unit, run: (String) -> Unit) {
     val density = LocalDensity.current.density
     val card = if (node.isRoutine) canvas.routines.firstOrNull { it.routine.id == node.id } else null
     val bot = if (node.isRoutine) null else bots[node.id]
@@ -155,10 +210,21 @@ import kotlin.math.roundToInt
                 Text(card?.routine?.triggerDescriptions?.joinToString(" · ") ?: bot?.model ?: bot?.backend.orEmpty(),
                     style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            if (card != null) {
+                val connected = !RoutineFlow.isUnconnected(canvas, card.routine.id)
+                IconButton(tr(if (connected) "Run this routine now" else "Connect a bot first"), "play.fill",
+                    enabled = editable && connected) {
+                    run(card.routine.id)
+                }
+            }
         }
         if (card != null) {
-            val text = if (RoutineFlow.isUnconnected(canvas, card.routine.id)) "Not connected" else if (card.steps.isEmpty()) "No runs yet" else "Latest run"
-            Text(tr(text), style = Type.caption, color = Palette.secondary)
+            FlowWeek(card.upcomingRuns)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FlowRunDots(card.recentRuns)
+                val text = if (RoutineFlow.isUnconnected(canvas, card.routine.id)) "Not connected" else if (card.steps.isEmpty()) "No runs yet" else "Latest run"
+                Text(tr(text), style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         } else StatusChip(step?.status)
     }
 }

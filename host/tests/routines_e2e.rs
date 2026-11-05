@@ -336,10 +336,9 @@ async fn an_agent_started_for_a_run_stops_when_the_run_ends() {
     host.wait_event("only-runs", "finished", "LATER").await;
     let events = host.agent_events("only-runs");
     let count = |event: &str| events.iter().filter(|e| e["event"] == event).count();
-    // The message started the agent again: the run's agent stopped with the run. On Windows this fixture has no MCP
-    // server of Codync's, so its job can't be told from a dev server (see `background_work`): the agent counts as
-    // busy, and the run's session closes instead.
-    assert_eq!((count("initialize"), count("closed")), if cfg!(windows) { (1, 1) } else { (2, 0) });
+    // The message starts a new agent on every platform: the completed run's agent was released,
+    // including a Windows adapter that never needed to start an MCP helper.
+    assert_eq!((count("initialize"), count("closed")), (2, 0));
 }
 
 #[tokio::test]

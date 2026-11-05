@@ -3,8 +3,9 @@
 //! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
 //! Codex: the newest rollout's `rate_limits`. The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
-//! `kiro-cli /usage`, a `kimi` screen, Antigravity's language server, OpenCode's
-//! database, Vibe's session logs, and the `JetBrains` IDE quota file.
+//! `kiro-cli /usage`, `gemini /usage`, a `kimi` screen, Antigravity's language
+//! server, OpenCode's database, Vibe's session logs, and the `JetBrains` IDE
+//! quota file.
 //!
 //! Cursor has no local report. The host reads the token the Cursor app saved
 //! and asks `cursor.com/api/usage-summary`. That is the only provider call, and
@@ -16,6 +17,7 @@ mod claude;
 mod codex;
 mod command;
 mod cursor;
+mod gemini;
 mod junie;
 mod kimi;
 mod kiro;
@@ -169,6 +171,7 @@ pub async fn refresh(hub: &Hub) {
         vibe_notes,
         junie,
         cursor_windows,
+        gemini_windows,
     ) = tokio::join!(
         tokio::task::spawn_blocking(codex::collect),
         claude::collect(),
@@ -181,6 +184,7 @@ pub async fn refresh(hub: &Hub) {
         tokio::task::spawn_blocking(vibe::collect),
         tokio::task::spawn_blocking(junie::collect),
         cursor::collect(),
+        gemini::collect(),
     );
     apply(hub, joined(codex), "codex", "Codex", "sessions");
     apply(hub, claude, "claude", "Claude", "claude");
@@ -193,6 +197,7 @@ pub async fn refresh(hub: &Hub) {
     apply(hub, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
     apply(hub, joined(junie), "junie", "Junie", "JetBrains IDE");
     apply(hub, cursor_windows, "cursor", "Cursor", "Cursor");
+    apply(hub, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
 }
 
 fn joined(result: Result<Option<Vec<Window>>, tokio::task::JoinError>) -> Option<Vec<Window>> {

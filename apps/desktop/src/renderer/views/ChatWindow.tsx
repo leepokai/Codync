@@ -18,6 +18,7 @@ import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { SidebarFooter } from './SidebarFooter'
+import { SidebarUsage } from './SidebarUsage'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
@@ -405,6 +406,7 @@ function ChatSplitView() {
             </div>
           ) : null}
         </div>
+        {compact ? null : <SidebarUsage usage={app.local?.usage ?? { providers: [] }} />}
         {compact ? (
           <div className="rail-actions">
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />

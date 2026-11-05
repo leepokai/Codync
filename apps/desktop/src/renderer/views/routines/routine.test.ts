@@ -45,6 +45,7 @@ test('a timeout reads in the largest whole unit', () => {
 test('styles the editor has no choice for open as Custom', () => {
   assert.equal(repeatChoice('weekdays'), 'weekdays')
   assert.equal(repeatChoice('hourly'), 'hourly')
+  assert.equal(repeatChoice('yearly'), 'yearly')
   for (const style of ['minutes', 'days', 'monthly', 'custom']) assert.equal(repeatChoice(style), 'custom')
 })
 
@@ -61,4 +62,25 @@ test('a queued run says when a waiting retry goes', () => {
   assert.match(runLabel(run(120_000), 60_000), /^Retrying at \S/)
   assert.equal(runLabel(run(60_000), 120_000), 'Retrying')
   assert.equal(runLabel({ ...run(null), status: 'failed' }), 'Failed')
+})
+
+test('a run says what it stood for: skipped, missed, or waiting on the user', () => {
+  const run = (patch: Partial<RoutineRun>): RoutineRun => ({
+    id: 'r',
+    routineId: 'x',
+    botId: 'b',
+    status: 'running',
+    createdAt: 0,
+    ...patch,
+  })
+  assert.equal(runLabel(run({})), 'Running')
+  assert.equal(runLabel(run({ needsAttention: true })), 'Waiting on you')
+  // A cancelled run that stands for a due occurrence is a skipped one, and says how many it dropped.
+  assert.equal(runLabel(run({ status: 'cancelled', scheduledFor: 1 })), 'Skipped')
+  assert.equal(runLabel(run({ status: 'cancelled', scheduledFor: 1, missed: { count: 2, until: 2 } })), 'Skipped · 2 missed')
+  assert.equal(runLabel(run({ status: 'cancelled', missed: { count: 3 } })), 'Skipped · 3 missed')
+  // A cancelled run with no occurrence just stopped.
+  assert.equal(runLabel(run({ status: 'cancelled' })), 'Cancelled')
+  // A failure that also dropped occurrences keeps both facts.
+  assert.equal(runLabel(run({ status: 'failed', missed: { count: 1 } })), 'Failed · 1 missed')
 })

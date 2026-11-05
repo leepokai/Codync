@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, CardSection, IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
+import { Button, CardSection, ChipChoice, IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -30,6 +30,8 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')
   const [schedule, setSchedule] = useState<RoutineScheduleDraft>(emptyDraft)
   const [timeout, setTimeoutText] = useState(String(routine?.timeoutSeconds ?? 3600))
+  const [missedPolicy, setMissedPolicy] = useState(routine?.missedPolicy ?? 'skip')
+  const [limitPolicy, setLimitPolicy] = useState(routine?.limitPolicy ?? 'wait')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [advanced, setAdvanced] = useState(false)
@@ -114,6 +116,8 @@ export function RoutineEditorView({ botId, routine, saved }: {
         instruction,
         schedule,
         timeoutSeconds: timeout,
+        missedPolicy,
+        limitPolicy,
       })
       saved(result.routine)
     } catch (e) {
@@ -201,6 +205,34 @@ export function RoutineEditorView({ botId, routine, saved }: {
                     <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
                     <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
                   </LabeledRow>
+                  <LabeledRow label={tr(`Missed runs`)}>
+                    <ChipChoice
+                      label={tr(`Missed runs`)}
+                      selection={missedPolicy}
+                      options={[
+                        { id: 'skip', label: tr(`Skip it`) },
+                        { id: 'runOnce', label: tr(`Run the newest one`) },
+                      ]}
+                      onChange={setMissedPolicy}
+                    />
+                  </LabeledRow>
+                  <Text size="caption" tone="tertiary" className="routine-policy-hint">
+                    {tr(`When this computer is off at a run's time, its missed runs follow this rule.`)}
+                  </Text>
+                  <LabeledRow label={tr(`When out of usage`)}>
+                    <ChipChoice
+                      label={tr(`When out of usage`)}
+                      selection={limitPolicy}
+                      options={[
+                        { id: 'wait', label: tr(`Wait for the limit to reset`) },
+                        { id: 'skip', label: tr(`Skip the run`) },
+                      ]}
+                      onChange={setLimitPolicy}
+                    />
+                  </LabeledRow>
+                  <Text size="caption" tone="tertiary" className="routine-policy-hint">
+                    {tr(`The bot's daily token limit is used up: its runs follow this rule.`)}
+                  </Text>
                 </CardSection>
               </div>
             ) : null}

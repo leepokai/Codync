@@ -1,5 +1,4 @@
 //! Shared host state: store, event fan-out, bot actors, push, usage.
-mod bots;
 
 use crate::LockExt;
 use crate::agent::bot::{self, BotHandle, Cmd};
@@ -19,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
+mod bots;
 mod groups;
 mod lead;
 mod order;
@@ -99,6 +99,8 @@ pub struct Hub {
     runtime: Mutex<HashMap<String, Runtime>>,
     pub phone_clients: AtomicUsize,
     pub usage: Mutex<Usage>,
+    /// An agent became wanted: its usage is read now, not at the next poll.
+    pub usage_wake: tokio::sync::Notify,
     keep_awake: Mutex<service::KeepAwake>,
     /// Generation of the authorized-device table and pairing offers: bumped on every
     /// change so open channels re-check their device (and the ACL is republished).
@@ -149,6 +151,7 @@ impl Hub {
             runtime: Mutex::default(),
             phone_clients: AtomicUsize::new(0),
             usage: Mutex::default(),
+            usage_wake: tokio::sync::Notify::new(),
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
             pairing: Mutex::default(),
@@ -378,9 +381,15 @@ impl Hub {
         Ok(e)
     }
 
-    pub fn set_usage(&self, usage: Usage) {
-        let _ = self.events.send(json!({"type": "usage", "usage": usage}));
-        *self.usage.locked() = usage;
+    /// Changes the usage under its lock, so a reading that lands meanwhile isn't written over, and
+    /// tells the apps what they may see of it (`hub.usage` also holds the agents the user hides).
+    pub fn update_usage(&self, change: impl FnOnce(&mut Usage)) {
+        let mut usage = self.usage.locked();
+        let before = usage.clone();
+        change(&mut usage);
+        if *usage != before {
+            let _ = self.events.send(json!({"type": "usage", "usage": usage.visible()}));
+        }
     }
 
     // MARK: devices

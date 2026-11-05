@@ -353,7 +353,7 @@
   "You can ask for access again; the computer will show a new code to confirm.": "Можно запросить доступ снова: компьютер покажет новый код для подтверждения.",
   "Your bots run there. This iPhone is how you talk to them.": "Ваши боты работают там. Через этот iPhone вы с ними общаетесь.",
   "Your computer": "Ваш компьютер",
-  "Your computer reads plan limits from the agents installed on it.": "Ваш компьютер читает лимиты тарифов из установленных на нём агентов.",
+  "Your computer reads plan limits from the agents your bots run and the ones you turn on.": "Ваш компьютер читает лимиты тарифов агентов, которые используют ваши боты, и тех, что вы включили.",
   "or download the Mac app": "или скачайте приложение для Mac",
   "or install with Homebrew": "или установите через Homebrew",
   "search bots": "поиск ботов",
@@ -1832,5 +1832,14 @@
   "r start": "r Запустить",
   "s stop": "s стоп",
   "x remove": "x убрать",
-  "esc close": "esc закрыть"
+  "esc close": "esc закрыть",
+  "Show usage for": "Показывать расход для",
+  "On by default for the agents your bots run.": "По умолчанию включено для агентов, которые используют ваши боты.",
+  "No reading yet": "Пока нет данных",
+  "Premium requests": "Премиум-запросы",
+  "Balance": "Баланс",
+  "Credits": "Кредиты",
+  "Prepaid": "Предоплата",
+  "Monthly": "Ежемесячно",
+  "Completions": "Автодополнения"
 }

@@ -39,6 +39,7 @@ impl Hub {
             crate::market::agent_sign_in::ask_before_first_message(self, &cfg);
         }
         self.emit_bot(&cfg.id);
+        crate::usage::bots_changed(self);
         Ok(self.bot_value(&cfg.id).unwrap_or(Value::Null))
     }
 
@@ -72,6 +73,7 @@ impl Hub {
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }
         self.emit_bot(&id);
+        crate::usage::bots_changed(self);
         Ok(self.bot_value(&id).unwrap_or(Value::Null))
     }
 
@@ -103,6 +105,7 @@ impl Hub {
                 }
             }
         });
+        crate::usage::bots_changed(self);
         self.leave_groups(id)
     }
 }

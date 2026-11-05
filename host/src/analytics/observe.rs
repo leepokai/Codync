@@ -81,6 +81,13 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             }
             Event::BotCreated
         }
+        "setUsageShown" => {
+            // A successful call names one of the host's own agents.
+            p.insert("setting".into(), "usage_shown".into());
+            p.insert("agent".into(), b["id"].clone());
+            p.insert("on".into(), (b["shown"] == true).into());
+            Event::SettingChanged
+        }
         "updateBot" => Event::BotUpdated,
         "reorderBots" => Event::BotsReordered,
         "renameSection" => {

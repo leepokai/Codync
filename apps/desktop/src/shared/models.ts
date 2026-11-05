@@ -425,10 +425,23 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
+  registry?: string
+}
+
+/** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
+export interface UsageService {
+  id: string
+  name: string
+  shown: boolean
+  /** The agent's ACP registry id, which its logo goes by. */
+  registry?: string
 }
 
 export interface Usage {
   providers: UsageProvider[]
+  /** Absent from a host older than the chooser. */
+  services?: UsageService[]
 }
 
 export interface Backend {

@@ -327,6 +327,8 @@ pub enum Overlay {
     Group(GroupForm),
     /// How far its list is scrolled.
     Usage(usize),
+    /// Which agents' limits show: the row under the cursor.
+    UsageChooser(usize),
     Pair(PairCode),
     Memory(MemorySheet),
     /// A read-only conversation between two bots.

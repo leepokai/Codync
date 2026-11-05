@@ -353,7 +353,7 @@
   "You can ask for access again; the computer will show a new code to confirm.": "다시 액세스를 요청할 수 있습니다. 컴퓨터에 확인을 위한 새 코드가 표시됩니다.",
   "Your bots run there. This iPhone is how you talk to them.": "당신의 봇이 거기에서 실행됩니다. 이 iPhone는 당신이 그들과 대화하는 방법입니다.",
   "Your computer": "귀하의 컴퓨터",
-  "Your computer reads plan limits from the agents installed on it.": "이 컴퓨터에 설치된 에이전트의 요금제 한도를 읽습니다.",
+  "Your computer reads plan limits from the agents your bots run and the ones you turn on.": "봇이 사용하는 에이전트와 직접 켠 에이전트의 요금제 한도를 읽습니다.",
   "or download the Mac app": "또는 Mac 앱을 다운로드하세요.",
   "or install with Homebrew": "또는 Homebrew로 설치",
   "search bots": "검색 봇",
@@ -1832,5 +1832,14 @@
   "r start": "r 시작",
   "s stop": "s 중지",
   "x remove": "x 제거",
-  "esc close": "esc 닫기"
+  "esc close": "esc 닫기",
+  "Show usage for": "사용량을 표시할 서비스",
+  "On by default for the agents your bots run.": "봇이 사용하는 에이전트는 기본으로 켜져 있습니다.",
+  "No reading yet": "아직 읽어 오지 못했습니다",
+  "Premium requests": "프리미엄 요청",
+  "Balance": "잔액",
+  "Credits": "크레딧",
+  "Prepaid": "선불",
+  "Monthly": "월간",
+  "Completions": "자동 완성"
 }

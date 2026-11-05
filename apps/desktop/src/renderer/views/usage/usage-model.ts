@@ -9,8 +9,12 @@ export function providerTint(id: string) {
 /** CSS color for views (follows the scheme by itself). */
 export const providerTintCSS = (id: string) => (id === 'claude' ? '#D97757' : 'var(--accent)')
 
-/** ACP registry id of the provider's agent, for its logo. */
-export const providerRegistry = (id: string) => (['claude', 'codex'].includes(id) ? `${id}-acp` : id)
+/**
+ * ACP registry id of the provider's agent, for its logo. A host that doesn't name it: Claude and
+ * Codex run through ACP adapters, others go by their own id.
+ */
+export const providerRegistry = ({ id, registry }: UsageProvider) =>
+  registry ?? (['claude', 'codex'].includes(id) ? `${id}-acp` : id)
 
 /** The character that stands for this provider. */
 export const mascotShape = (id: string) => (id === 'codex' ? 'hex' : 'blob')

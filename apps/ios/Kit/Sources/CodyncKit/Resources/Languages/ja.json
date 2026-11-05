@@ -353,7 +353,7 @@
   "You can ask for access again; the computer will show a new code to confirm.": "再度アクセスを要求できます。コンピューターは確認のための新しいコードを表示します。",
   "Your bots run there. This iPhone is how you talk to them.": "ボットはそこで実行されます。この iPhone は、彼らと話す方法です。",
   "Your computer": "あなたのコンピュータ",
-  "Your computer reads plan limits from the agents installed on it.": "このコンピュータに入っているエージェントから、プランの上限を読み取ります。",
+  "Your computer reads plan limits from the agents your bots run and the ones you turn on.": "ボットが使うエージェントと、オンにしたエージェントから、プランの上限を読み取ります。",
   "or download the Mac app": "またはMacアプリをダウンロードしてください",
   "or install with Homebrew": "またはHomebrewでインストールする",
   "search bots": "ボットを検索",
@@ -1832,5 +1832,14 @@
   "r start": "r 起動",
   "s stop": "s 停止",
   "x remove": "x 削除",
-  "esc close": "esc 閉じる"
+  "esc close": "esc 閉じる",
+  "Show usage for": "用量を表示するサービス",
+  "On by default for the agents your bots run.": "ボットが使うエージェントはデフォルトでオンです。",
+  "No reading yet": "まだ読み取れていません",
+  "Premium requests": "プレミアムリクエスト",
+  "Balance": "残高",
+  "Credits": "クレジット",
+  "Prepaid": "プリペイド",
+  "Monthly": "月間",
+  "Completions": "補完"
 }

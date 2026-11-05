@@ -71,6 +71,7 @@ pub enum Event {
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    UsageReadFailed,
     SessionReset,
     PermissionAnswered,
     ReactionAdded,
@@ -154,6 +155,7 @@ impl Event {
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",
             Self::PermissionAnswered => "permission_answered",
             Self::ReactionAdded => "reaction_added",

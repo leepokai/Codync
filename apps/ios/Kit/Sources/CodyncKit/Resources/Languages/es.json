@@ -353,7 +353,7 @@
   "You can ask for access again; the computer will show a new code to confirm.": "Puedes volver a solicitar acceso; la computadora mostrará un código nuevo para confirmar.",
   "Your bots run there. This iPhone is how you talk to them.": "Tus bots trabajan allí. Este iPhone te permite hablar con ellos.",
   "Your computer": "Tu computadora",
-  "Your computer reads plan limits from the agents installed on it.": "Tu computadora lee los límites de los planes de los agentes instalados en ella.",
+  "Your computer reads plan limits from the agents your bots run and the ones you turn on.": "Tu computadora lee los límites de los planes de los agentes que usan tus bots y de los que actives.",
   "or download the Mac app": "o descarga la app para Mac",
   "or install with Homebrew": "o instala con Homebrew",
   "search bots": "buscar bots",
@@ -1832,5 +1832,14 @@
   "r start": "r Iniciar",
   "s stop": "s detener",
   "x remove": "x quitar",
-  "esc close": "esc cerrar"
+  "esc close": "esc cerrar",
+  "Show usage for": "Mostrar el uso de",
+  "On by default for the agents your bots run.": "Activado de forma predeterminada para los agentes que usan tus bots.",
+  "No reading yet": "Aún sin lectura",
+  "Premium requests": "Solicitudes premium",
+  "Balance": "Saldo",
+  "Credits": "Créditos",
+  "Prepaid": "Prepago",
+  "Monthly": "Mensual",
+  "Completions": "Autocompletados"
 }

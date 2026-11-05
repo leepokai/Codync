@@ -453,6 +453,12 @@ export class BotStore extends BotSync {
     return (await this.ready()).call<DirListing>('listDirs', { path })
   }
 
+  /** Whether this computer lists one agent's limits. */
+  async setUsageShown(id: string, shown: boolean) {
+    this.usage = await (await this.ready()).call<Usage>('setUsageShown', { id, shown })
+    this.changed()
+  }
+
   async refreshUsage() {
     if (this.retired || !this.client) return
     try {

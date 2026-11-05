@@ -83,6 +83,9 @@ qwen-code 0.26.5.
 | Hermes | Starts MCP servers with a filtered environment | `host/src/mcp.rs`: `CODYNC_HOME` in each server's `env` | Keep: within the spec |
 | Kilo | `_meta.terminal-auth` names `opencode` | `host/src/agent/auth.rs`: that method is left out | Kilo names its own CLI |
 | Qwen Code | Terminal sign-in in `_meta: {type: "terminal", args}` instead of the spec's fields | `host/src/agent/auth.rs` reads it | The spec's fields |
+| Antigravity | Signed out, it starts its browser sign-in as soon as a session opens, so a usage reading would open a browser at every poll | `host/src/usage/acp_read.rs`: started with `BROWSER=true`, which its Python honors. Windows has no such command, so `host/src/usage/antigravity.rs` needs a saved login file first. No issue opened yet: this only surfaced reading usage | `session/new` doesn't start a sign-in |
+| Antigravity | Each new session leaves a conversation database behind, about 400 KB | `host/src/usage/acp_read.rs`: readings share one session, resumed each time (`usage.session.<id>` in the kv). No issue opened yet: keeping sessions may be intended | A session with no turn leaves nothing behind |
+| Grok Build | Not every build answers ACP's extension name `_x.ai/billing`, and the 1.0.75 binary names `x.ai/billing` | `host/src/usage/grok.rs`: asks `x.ai/billing`, then `_x.ai/billing`. No issue opened: seen only in the binary's strings, with no login to run it | The oldest build we support answers one name |
 | oh-my-pi | Tool call titles are prose ("Creating probe bot"), not the tool's name, so Codync's own calls aren't recognized as its bookkeeping | **Not patched** (`host/src/agent/bot/tool_entry.rs` matches names only) | Titles or `_meta` carry the tool's name |
 
 ## Gaps in ACP itself

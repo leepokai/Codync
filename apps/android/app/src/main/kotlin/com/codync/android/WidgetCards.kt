@@ -49,10 +49,13 @@ import kotlin.math.roundToInt
 
 enum class ProviderLayout { Small, Medium, Large }
 
-/** Claude keeps its orange; everyone else is ink, like the rest of the app. */
-/** ACP registry id of the provider's agent, for its logo: Claude and Codex run through ACP adapters. */
-internal val UsageProvider.registry: String get() = if (id in listOf("claude", "codex")) "$id-acp" else id
+/**
+ * ACP registry id of the provider's agent, for its logo. A host or a saved widget that doesn't name it:
+ * Claude and Codex run through ACP adapters, others go by their own id.
+ */
+internal val UsageProvider.logoRegistry: String get() = registry ?: if (id in listOf("claude", "codex")) "$id-acp" else id
 
+/** Claude keeps its orange; everyone else is ink, like the rest of the app. */
 @Composable internal fun UsageProvider.tint(): Color = if (id == "claude") Color(0xFFD97757) else Palette.accent
 
 /** Gauges add Codex's blue so two providers' bars tell apart (CodyncKit `widgetTint`). */
@@ -126,7 +129,7 @@ internal fun until(at: Long, now: Long): String {
     val context = androidx.compose.ui.platform.LocalContext.current
     val revision by WidgetStore.changes.collectAsState()
     val original = remember(revision) { WidgetStore.originalIcons(context) }
-    val logo = agentIconRes(provider.registry)
+    val logo = agentIconRes(provider.logoRegistry)
     Box(Modifier.size(size)) {
         if (original && logo != null) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(logo), null,
             Modifier.fillMaxSize().padding(size * 0.08f), colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(provider.tint()))

@@ -353,7 +353,7 @@
   "You can ask for access again; the computer will show a new code to confirm.": "可以再次申请。电脑会显示一个新的配对码供你确认。",
   "Your bots run there. This iPhone is how you talk to them.": "Bot 在那台电脑上运行。这台 iPhone 用来和它们对话。",
   "Your computer": "你的电脑",
-  "Your computer reads plan limits from the agents installed on it.": "电脑会从这台电脑上安装的 agent 读取用量上限。",
+  "Your computer reads plan limits from the agents your bots run and the ones you turn on.": "电脑会读取 bot 正在使用的 agent 和你开启的 agent 的用量上限。",
   "or download the Mac app": "或下载 Mac 应用",
   "or install with Homebrew": "或用 Homebrew 安装",
   "search bots": "搜索 Bot",
@@ -1832,5 +1832,14 @@
   "r start": "r 启动",
   "s stop": "s 停止",
   "x remove": "x 移除",
-  "esc close": "esc 关闭"
+  "esc close": "esc 关闭",
+  "Show usage for": "显示这些服务的用量",
+  "On by default for the agents your bots run.": "默认只开启 bot 正在使用的 agent。",
+  "No reading yet": "还没有读数",
+  "Premium requests": "高级请求",
+  "Balance": "余额",
+  "Credits": "额度",
+  "Prepaid": "预付",
+  "Monthly": "每月",
+  "Completions": "补全"
 }

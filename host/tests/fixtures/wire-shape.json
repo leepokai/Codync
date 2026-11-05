@@ -3,6 +3,7 @@
   "shapes": {
     "event:bot": "object",
     "event:bot.bot": "object",
+    "event:bot.bot.actionRulesOn": "bool",
     "event:bot.bot.activity": "string",
     "event:bot.bot.agentStep": "null",
     "event:bot.bot.autoName": "bool",
@@ -56,6 +57,7 @@
     "event:bot.bot.reachableByAssistants": "bool",
     "event:bot.bot.resting": "array",
     "event:bot.bot.rev": "number",
+    "event:bot.bot.saver": "bool",
     "event:bot.bot.selfFallbacks": "bool",
     "event:bot.bot.sharedMemory": "bool",
     "event:bot.bot.skills": "array",

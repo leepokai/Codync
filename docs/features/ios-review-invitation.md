@@ -11,7 +11,8 @@ It never requests on launch, pairing, sign-in, or foregrounding.
   or expires counts again when resent, and taking one back doesn't subtract, so the ask can come a prompt early.
 - At least 120 days between attempts, two attempts per rolling 365 days, one per version,
   and five more prompts since the previous attempt.
-- A prompt sent while the app is in the background (a shortcut) doesn't ask; the next prompt does.
+- A prompt sent while the app is in the background (a shortcut) doesn't ask, and neither does one the app can't ask on
+  within five seconds; the next prompt does.
 - StoreKit may suppress the prompt, and never shows it in TestFlight. Persist an attempt before
   calling it regardless; there is no event claiming it appeared or that someone rated the app.
 

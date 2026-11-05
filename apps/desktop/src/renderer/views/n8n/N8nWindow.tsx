@@ -62,12 +62,12 @@ export function N8nWindow() {
 
   // Opening the window means "bring it up": start it if the host has it stopped.
   useEffect(() => {
-    if (state?.state === 'stopped' && !startedOnce.current) {
+    if (state?.state === 'stopped' && state.path && !startedOnce.current) {
       startedOnce.current = true
       start()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.state, host?.local])
+  }, [state?.state, state?.path, host?.local])
 
   // Running: hand the window over to the editor.
   useEffect(() => {
@@ -76,6 +76,8 @@ export function N8nWindow() {
 
   const noHost = host === null || host.local === null
   const error = state?.state === 'error' ? (state.error ?? tr('Unknown error')) : actionError
+  const needsFolder = state !== null && !state.path
+  const openSettings = () => window.codync.n8n.openSettings()
 
   return (
     <div className="n8n-window">
@@ -108,21 +110,31 @@ export function N8nWindow() {
           <>
             <p className="n8n-detail n8n-error">{error}</p>
             <div className="n8n-actions">
-              <Button onClick={start} disabled={starting}>
-                {starting ? tr('Starting…') : tr('Try again')}
-              </Button>
-              <Button kind="secondary" onClick={() => window.codync.n8n.openSettings()}>
-                {tr('Open settings')}
-              </Button>
+              {needsFolder ? (
+                <Button onClick={openSettings}>{tr('Choose the n8n folder')}</Button>
+              ) : (
+                <>
+                  <Button onClick={start} disabled={starting}>
+                    {starting ? tr('Starting…') : tr('Try again')}
+                  </Button>
+                  <Button kind="secondary" onClick={openSettings}>
+                    {tr('Open settings')}
+                  </Button>
+                </>
+              )}
             </div>
           </>
         ) : (
           <>
-            <p className="n8n-detail">{tr('n8n is not running.')}</p>
+            <p className="n8n-detail">{needsFolder ? tr('Choose where n8n is installed to start it.') : tr('n8n is not running.')}</p>
             <div className="n8n-actions">
-              <Button onClick={start} disabled={starting}>
-                {starting ? tr('Starting…') : tr('Start')}
-              </Button>
+              {needsFolder ? (
+                <Button onClick={openSettings}>{tr('Choose the n8n folder')}</Button>
+              ) : (
+                <Button onClick={start} disabled={starting}>
+                  {starting ? tr('Starting…') : tr('Start')}
+                </Button>
+              )}
             </div>
           </>
         )}

@@ -95,7 +95,7 @@ pub struct N8n {
 impl N8n {
     pub fn new(store: &Store, events: broadcast::Sender<Value>, host_url: String, host_token: String) -> Self {
         let settings = Settings {
-            path: kv(store, KV_PATH).map(PathBuf::from),
+            path: initial_path(store),
             port: kv(store, KV_PORT).and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_PORT),
             enabled: kv(store, KV_ENABLED).as_deref() == Some("1"),
         };
@@ -258,7 +258,9 @@ impl N8n {
     async fn launch(self: &Arc<Self>, generation: u64, hub: &Arc<Hub>) -> Result<()> {
         let (path, port) = {
             let s = self.settings.locked();
-            let path = s.path.clone().context("no n8n folder set yet")?;
+            let path = s.path.clone().context(
+                "n8n doesn't know its install folder yet. Choose the folder that holds packages/cli/bin/automan in Settings â†’ n8n.",
+            )?;
             (path, s.port)
         };
         let bin = path.join("packages/cli/bin/automan");
@@ -318,7 +320,7 @@ impl N8n {
     }
 
     /// The instance is ready: its owner, session, MCP access and the bots' connector.
-    /// Best effort — a failure shows in the state and the logs, never in the instance.
+    /// Best effort â€” a failure shows in the state and the logs, never in the instance.
     async fn mcp_setup(&self, generation: u64, hub: &Arc<Hub>) {
         if !self.rest_ready(generation).await {
             tracing::warn!("the n8n instance's REST API was not ready yet; its MCP server waits for the next start");
@@ -339,6 +341,11 @@ impl N8n {
         // The editor's auto-login only needs the session: it is published even when the
         // connector below cannot be written, as its vault may be locked.
         *self.session.locked() = Some(cookie);
+        // The connector's Authorization header is a secret: unlock the vault the first time
+        // the connector is written, not only when someone opens the credentials page.
+        if let Err(e) = crate::market::vault::unlock(hub.clone()).await {
+            tracing::warn!(error = format!("{e:#}"), "unlocking credential storage for the n8n connector");
+        }
         *self.mcp.locked() = match self.connect_bots(store, hub, &key) {
             Ok(()) => true,
             Err(e) => {
@@ -350,7 +357,7 @@ impl N8n {
     }
 
     /// The REST API mounts a while after `/healthz` answers (it runs migrations first);
-    /// wait until one of its routes answers anything but a 404 — the unauthenticated
+    /// wait until one of its routes answers anything but a 404 â€” the unauthenticated
     /// `GET /rest/login` answers 401 once the router is up.
     async fn rest_ready(&self, generation: u64) -> bool {
         let port = self.settings.locked().port;
@@ -388,34 +395,29 @@ impl N8n {
             } else {
                 let email = OWNER_EMAIL.to_owned();
                 let password = owner_password();
-                let resp = client
-                    .post(format!("{base}/rest/owner/setup"))
-                    .json(&json!({
-                        "email": email,
-                        "firstName": "Codync",
-                        "lastName": "Host",
-                        "password": password,
-                    }))
-                    .send()
-                    .await
-                    .context("creating the n8n instance's owner")?;
-                let status = resp.status();
-                if status.as_u16() == 400 {
-                    bail!("the n8n instance already has an owner, so its MCP server stays out of the bots");
-                }
-                resp.error_for_status().with_context(|| format!("creating the n8n instance's owner ({status})"))?;
+                Self::owner_setup(&client, &base, &email, &password).await?;
                 store.kv_set(KV_OWNER_EMAIL, &email)?;
                 store.kv_set(KV_OWNER_PASSWORD, &password)?;
                 (email, password)
             };
 
         // The session cookie the desktop's editor logs in with.
-        let resp = client
+        let mut resp = client
             .post(format!("{base}/rest/login"))
             .json(&json!({ "emailOrLdapLoginId": email, "password": password }))
             .send()
             .await
             .context("logging into the n8n instance")?;
+        // The saved credentials can belong to a run that raced the REST router: the
+        // instance still says "set up the owner". Create it now and log in again.
+        if resp.status().as_u16() == 401 && Self::owner_setup(&client, &base, &email, &password).await.is_ok() {
+            resp = client
+                .post(format!("{base}/rest/login"))
+                .json(&json!({ "emailOrLdapLoginId": email, "password": password }))
+                .send()
+                .await
+                .context("logging into the n8n instance")?;
+        }
         let status = resp.status();
         let cookie = cookie_value(resp.headers(), AUTH_COOKIE);
         resp.error_for_status().with_context(|| format!("logging into the n8n instance ({status})"))?;
@@ -438,7 +440,7 @@ impl N8n {
             let body = get_json(&client, &format!("{base}/rest/mcp/api-key"), "reading the n8n MCP API key").await?;
             let mut key =
                 api_key_field(&body).map(str::to_owned).ok_or_else(|| anyhow!("no MCP API key in the n8n reply"))?;
-            // A redacted reply (`******…`) means a key exists and we don't have it: rotate.
+            // A redacted reply (`******â€¦`) means a key exists and we don't have it: rotate.
             if key.starts_with('*') {
                 let body =
                     post_json(&client, &format!("{base}/rest/mcp/api-key/rotate"), "rotating the n8n MCP API key")
@@ -452,6 +454,29 @@ impl N8n {
             key
         };
         Ok((cookie, key))
+    }
+
+    /// Creates the instance's owner. A 400 means an owner already exists with other
+    /// credentials; the caller reports that as the login failure it is.
+    async fn owner_setup(client: &reqwest::Client, base: &str, email: &str, password: &str) -> Result<()> {
+        let resp = client
+            .post(format!("{base}/rest/owner/setup"))
+            .json(&json!({
+                "email": email,
+                "firstName": "Codync",
+                "lastName": "Host",
+                "password": password,
+            }))
+            .send()
+            .await
+            .context("creating the n8n instance's owner")?;
+        let status = resp.status();
+        ensure!(
+            status.as_u16() != 400,
+            "the n8n instance already has an owner with another sign-in, so its MCP server stays out of the bots"
+        );
+        resp.error_for_status().with_context(|| format!("creating the n8n instance's owner ({status})"))?;
+        Ok(())
     }
 
     /// The bots' connector: one for this instance, upserted so port and key changes follow.
@@ -585,9 +610,9 @@ async fn install_node_package(user_folder: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `message — what the instance last printed`, when there is a print to cite.
+/// `message â€” what the instance last printed`, when there is a print to cite.
 fn with_tail(message: String, tail: &str) -> String {
-    if tail.is_empty() { message } else { format!("{message} — {tail}") }
+    if tail.is_empty() { message } else { format!("{message} â€” {tail}") }
 }
 
 /// `: what the instance last printed`, for messages that end on the tail.
@@ -612,6 +637,33 @@ fn check_install(path: &Path) -> Result<()> {
         "that folder isn't an n8n install (missing packages/cli/bin/automan)"
     );
     Ok(())
+}
+
+/// The install folder saved for this computer, or one found in the usual place on a
+/// first run. A folder the person chose later always wins.
+fn initial_path(store: &Store) -> Option<PathBuf> {
+    let saved = kv(store, KV_PATH).map(PathBuf::from);
+    #[cfg(not(test))]
+    {
+        if saved.is_none()
+            && let Some(found) = discover_install()
+        {
+            let _ = store.kv_set(KV_PATH, &found.to_string_lossy());
+            tracing::info!(path = %found.display(), "found the n8n install");
+            return Some(found);
+        }
+    }
+    saved
+}
+
+/// The places an n8n monorepo is commonly cloned or unpacked, newest layouts first.
+#[cfg(not(test))]
+fn discover_install() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    ["Documents/automan", "automan", "Documents/n8n", "n8n", "Documents/n8n-monorepo", "n8n-monorepo"]
+        .into_iter()
+        .map(|name| home.join(name))
+        .find(|path| check_install(path).is_ok())
 }
 
 /// One readiness probe; connection errors mean "not up yet".

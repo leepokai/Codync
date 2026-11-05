@@ -12,6 +12,20 @@ class RoutineTest {
         assertEquals("Retrying", run.copy(notBefore = 1).label)
     }
 
+    @Test fun `a run says what it stood for, skipped missed or waiting on the user`() {
+        val run = RoutineRun("run", "routine", "bot", "running")
+        assertEquals("Running", run.label)
+        assertEquals("Waiting on you", run.copy(needsAttention = true).label)
+        // A cancelled run that stands for a due occurrence is a skipped one, and says how many it dropped.
+        assertEquals("Skipped", run.copy(status = "cancelled", scheduledFor = 1).label)
+        assertEquals("Skipped · 2 missed", run.copy(status = "cancelled", scheduledFor = 1, missed = RoutineRunMissed(2, 2)).label)
+        assertEquals("Skipped · 3 missed", run.copy(status = "cancelled", missed = RoutineRunMissed(3)).label)
+        // A cancelled run with no occurrence just stopped.
+        assertEquals("Cancelled", run.copy(status = "cancelled").label)
+        // A failure that also dropped occurrences keeps both facts.
+        assertEquals("Failed · 1 missed", run.copy(status = "failed", missed = RoutineRunMissed(1)).label)
+    }
+
     @Test fun `editing unsupported schedules preserves every trigger field`() {
         val original = WireJson.parseToJsonElement("""[{"type":"event","source":"github","event":"*","filters":{"repo":"org/project"},"future":true},{"type":"interval","seconds":5400}]""").jsonArray.map { it.jsonObject }
         val schedule = RoutineScheduleDraft(kind = "once", original = original).forMobileEditor()
@@ -37,6 +51,34 @@ class RoutineTest {
         val draft = RoutineScheduleDraft(calendarStyle = "days", selectedDays = listOf(1, 5))
         assertEquals(listOf(1, 3, 5), draft.toggleDay(3).selectedDays)
         assertEquals(listOf(5), draft.toggleDay(1).selectedDays)
+    }
+
+    @Test fun `the save body carries the policies only when set`() {
+        val body = RoutineDraft(name = "n", instruction = "i", missedPolicy = "runOnce", limitPolicy = "skip").body("bot")
+        assertEquals(JsonPrimitive("runOnce"), body.getValue("missedPolicy"))
+        assertEquals(JsonPrimitive("skip"), body.getValue("limitPolicy"))
+        // Absent policies keep the saved ones; the host defaults a new routine.
+        val plain = RoutineDraft(name = "n", instruction = "i").body("bot")
+        assertFalse("missedPolicy" in plain)
+        assertFalse("limitPolicy" in plain)
+    }
+
+    @Test fun `a skipped run reads as the last run of its routine`() {
+        val routine = Routine("r", "b", "Morning", "Report", emptyList(), true, triggerDescriptions = listOf("Every day"))
+        assertEquals("Last run skipped", RoutineListing(listOf(routine), listOf(RoutineRun("s", "r", "b", "cancelled", scheduledFor = 1))).summary(routine))
+        assertEquals("Last run skipped · 2 missed",
+            RoutineListing(listOf(routine), listOf(RoutineRun("s", "r", "b", "cancelled", scheduledFor = 1, missed = RoutineRunMissed(2)))).summary(routine))
+        // A cancelled run that only stopped says when it runs, not that it skipped.
+        assertEquals("Every day", RoutineListing(listOf(routine), listOf(RoutineRun("c", "r", "b", "cancelled"))).summary(routine))
+    }
+
+    @Test fun `the yearly style asks for a time, on the month the host counts`() {
+        assertTrue(RoutineSchedule.usesTime("yearly"))
+        assertTrue("yearly" in RoutineSchedule.styles.map { it.first })
+        assertEquals(29, RoutineSchedule.daysInMonth(2))
+        assertEquals(31, RoutineSchedule.daysInMonth(7))
+        assertEquals(30, RoutineSchedule.daysInMonth(9))
+        assertEquals(listOf(1, 2, 3, 4, 6, 8, 12), RoutineSchedule.everyHours.map { it.first })
     }
 
     @Test fun `only calendar styles ask for a time`() {

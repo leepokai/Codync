@@ -119,7 +119,9 @@ import kotlinx.coroutines.launch
 /** Set up or edit one routine (iOS `RoutineEditorView`); `saved` gets the routine, or null once it's deleted. */
 @Composable private fun RoutineEditor(botId: String, routine: Routine?, state: AppState, store: AppStore, saved: (Routine?) -> Unit) {
     var draft by remember(routine?.id) {
-        mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(), timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString()))
+        mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(),
+            timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString(),
+            missedPolicy = routine?.missedPolicy, limitPolicy = routine?.limitPolicy))
     }
     var loaded by remember(routine?.id) { mutableStateOf(false) }
     var loadAttempt by remember { mutableIntStateOf(0) }
@@ -194,6 +196,16 @@ import kotlinx.coroutines.launch
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Field("Timeout (seconds)") { FieldBox(draft.timeoutSeconds, { draft = draft.copy(timeoutSeconds = it) }, "3600", fill = Palette.bubbleUser) }
                         Note("A run is stopped after this long. 1 second to 24 hours.")
+                        Field("Missed runs") {
+                            ChoicePicker(draft.missedPolicy ?: "skip", listOf("skip" to "Skip it", "runOnce" to "Run the newest one"),
+                                { draft = draft.copy(missedPolicy = it) }, label = "Missed runs")
+                        }
+                        Note("When this computer is off at a run's time, its missed runs follow this rule.")
+                        Field("When out of usage") {
+                            ChoicePicker(draft.limitPolicy ?: "wait", listOf("wait" to "Wait for the limit to reset", "skip" to "Skip the run"),
+                                { draft = draft.copy(limitPolicy = it) }, label = "When out of usage")
+                        }
+                        Note("The bot's daily token limit is used up: its runs follow this rule.")
                     }
                 }
             }

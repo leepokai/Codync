@@ -16,6 +16,7 @@
 //! written to the group's transcript; see `group`). A routine run talks in its chat
 //! from a session of its own (see `session`).
 
+mod background_work;
 mod cmd;
 mod codex_names;
 mod compaction;
@@ -145,8 +146,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy)]
 struct SessionCaps {
-    /// `session/load`: resume a session after a restart.
-    load: bool,
+    /// The request that opens a session the agent isn't holding, when it can: `session/load`, whose replay is thrown
+    /// away as the host keeps the chat itself, or `session/resume` on an agent without it.
+    reopen: Option<&'static str>,
     /// `session/close`: an idle session can be released while the agent keeps running.
     close: bool,
     /// ACP `systemPrompt`: instructions on `session/new` and `load` that the agent keeps at system level.
@@ -366,7 +368,7 @@ impl Actor {
         self.finish_turn(&done);
         match session {
             Some(sid) if routine => self.release_spent(&sid).await,
-            Some(sid) if failed => self.close_reloadable(&sid).await,
+            Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
         }
         self.next_in_queue(done_tx).await;

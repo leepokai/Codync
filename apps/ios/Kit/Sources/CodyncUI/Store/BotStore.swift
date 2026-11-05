@@ -97,6 +97,8 @@ public final class BotStore {
     public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     /// A message to the bot from this phone moved along (the Live Activity follows it).
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
+    /// A prompt reached the computer or its mailbox.
+    var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
     /// A bot appeared, changed or went away.
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.

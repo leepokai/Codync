@@ -37,7 +37,7 @@ test('a character that lowercases to more than one does not disable the search',
 test('Greek matches whichever way its sigma is written', () => {
   assert.deepEqual(matchStarts('ΛΟΓΟΣ', 'ΟΣ'), [3])
   assert.deepEqual(matchStarts('ΛΟΓΟΣ', 'ος'), [3])
-  assert.deepEqual(matchStarts('λόγος', 'ΟΣ'), [])
+  assert.deepEqual(matchStarts('λόγος', 'ΟΣ'), [3])
   assert.deepEqual(matchStarts('λογος', 'ΟΣ'), [3])
 })
 

@@ -19,6 +19,7 @@ import { readSharedFile } from '../../shared/files.ts'
 import { prefs } from '../lib/prefs'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
+import { DevServerCommands } from './dev-servers'
 import { BotSync, sleep } from './bot-sync'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
@@ -52,6 +53,7 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 export class BotStore extends BotSync {
   readonly fileDownloads = new FileDownloads(() => this.changed())
   readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
+  readonly devServers = new DevServerCommands((op) => this.perform(op), (op) => this.withLink(op))
 
   override retire() { this.fileDownloads.retire(); super.retire() }
 

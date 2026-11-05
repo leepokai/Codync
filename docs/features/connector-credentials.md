@@ -23,6 +23,9 @@ its selected host.
   with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
   A production build ignores the switch.
 
+A host makes its key the first time something needs the vault, such as a connector, voice, credential or agent
+sign-in request, or a new bot once connectors are saved. A new computer's first start makes none.
+
 Unlocking runs on a blocking worker, one read at a time; callers that arrive
 meanwhile share its outcome. A locked Linux keyring gets one unlock prompt that
 is dismissed after a minute (nobody sees it on a headless host), and the calls

@@ -115,6 +115,12 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
     onDeleted()
 }
 
+/** A refusal shows; the bot's next update shows the rest. */
+fun AppStore.devServerAction(action: DevServerAction, botId: String, id: String) = command(action.method, body("botId" to botId, "id" to id), action.method + ":" + id)
+
+suspend fun AppStore.devServerLogs(botId: String, id: String): String =
+    hostQuery("devServerLogs", body("botId" to botId, "id" to id)).jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
+
 /** A host call for the screens that keep their own state (memory): waits for the connection first. */
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())

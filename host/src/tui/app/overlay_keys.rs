@@ -120,6 +120,7 @@ impl App {
             Overlay::Group(g) => self.group_key(g, k),
             Overlay::Memory(m) => self.memory_key(m, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
+            Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
             Overlay::Library(l) => self.library_key(l, k),

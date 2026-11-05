@@ -140,15 +140,36 @@ public struct ThreadView: View {
             }
             .frame(width: 12)
             .accessibilityHidden(true)
-            Text(L10n.tr(model.connectionLabel))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            HStack(spacing: 3) {
+                Text(L10n.tr(model.connectionLabel))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let devServerLabel {
+                    Text("·")
+                    if devServerSummary == .starting { Spinner(size: 8) }
+                    Text(devServerLabel)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .foregroundStyle(devServerSummary == .failed ? Palette.danger : Palette.secondary)
+                }
+            }
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundStyle(Palette.secondary)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(model.hostName), \(L10n.tr(connectionDescription))")
+        .accessibilityLabel([model.hostName, L10n.tr(connectionDescription), devServerLabel].compactMap(\.self).joined(separator: ", "))
         .help("\(model.hostName) · \(L10n.tr(connectionDescription))")
+    }
+
+    private var devServerSummary: DevServerSummary { DevServerSummary(bot?.devServers ?? []) }
+
+    private var devServerLabel: String? {
+        switch devServerSummary {
+        case .none: nil
+        case .starting: L10n.tr("Starting")
+        case .failed: L10n.tr("Failed to start")
+        case let .running(text): text
+        }
     }
 
     private var connectionSymbol: String {
@@ -383,7 +404,9 @@ extension ThreadView {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
                         header
-                        connectionSubtitle
+                        // The port shows here, so a tap on it opens the details too.
+                        Button(action: openDetails) { connectionSubtitle }
+                            .buttonStyle(.plain)
                     }
                 }
                 if model.screen != nil {

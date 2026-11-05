@@ -1,9 +1,7 @@
 //! Whether an agent still runs something that stopping it would end, which keeps it running when it's idle.
 
 use crate::agent::acp::Acp;
-#[cfg(any(windows, test))]
-use crate::agent::process::JobProcess;
-use std::collections::HashMap;
+use crate::agent::process::{self, JobProcess};
 
 /// Whether something the agent started runs detached, in a session of its own, like a dev server
 /// from its shell tool. Stopping the agent would orphan it and lose track of it, so the agent
@@ -18,20 +16,11 @@ pub(super) async fn background_work(acp: &Acp) -> bool {
 #[cfg(unix)]
 async fn detached_work(leader: Option<u32>) -> bool {
     let Some(leader) = leader else { return true };
-    let listed = tokio::process::Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output().await;
-    let Ok(listed) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes")) else {
+    let listed = process::list_processes().await;
+    let Ok(processes) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes"))
+    else {
         return true;
     };
-    if !listed.status.success() {
-        return true;
-    }
-    let processes: Vec<(u32, u32)> = String::from_utf8_lossy(&listed.stdout)
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace().map(str::parse);
-            Some((fields.next()?.ok()?, fields.next()?.ok()?))
-        })
-        .collect();
     detached_descendant(&processes, leader, session)
 }
 
@@ -71,43 +60,30 @@ const CONSOLE_HOST: &str = "conhost.exe";
 // remembering which process started the servers, if it matters.
 #[cfg(any(windows, test))]
 fn runs_something_else(processes: &[JobProcess], own: &str) -> bool {
-    let by_pid: HashMap<u32, &JobProcess> = processes.iter().map(|p| (p.pid, p)).collect();
     let is_console = |p: &JobProcess| p.name.eq_ignore_ascii_case(CONSOLE_HOST);
-    // Every step stays inside `processes`, so `take` reaches every ancestor and ends pid links that loop (reused pids).
-    let ours = |p: &JobProcess| {
-        std::iter::successors(Some(p), |c| by_pid.get(&c.parent).copied())
-            .take(processes.len())
-            .any(|c| c.name.eq_ignore_ascii_case(own))
-    };
+    let ours = process::under_program(processes, own);
     let starts_nothing =
         |p: &JobProcess| !processes.iter().any(|c| c.parent == p.pid && c.pid != p.pid && !is_console(c));
     processes.iter().filter(|p| !is_console(p) && !ours(p)).any(starts_nothing)
 }
 
-/// `processes`: (pid, parent pid) rows; `session` finds a live process's session.
+/// `processes`: what's on the computer; `session` finds a live process's session. One that exited since the listing
+/// holds nothing.
 #[cfg(any(unix, test))]
-fn detached_descendant(processes: &[(u32, u32)], leader: u32, session: impl Fn(u32) -> Option<i32>) -> bool {
+fn detached_descendant(processes: &[JobProcess], leader: u32, session: impl Fn(u32) -> Option<i32>) -> bool {
     let Some(own) = session(leader) else { return true };
-    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-    for &(pid, parent) in processes {
-        children.entry(parent).or_default().push(pid);
-    }
-    let mut stack = vec![leader];
-    while let Some(parent) = stack.pop() {
-        for &pid in children.get(&parent).into_iter().flatten() {
-            // One that exited since the listing holds nothing.
-            if session(pid).is_some_and(|sid| sid != own) {
-                return true;
-            }
-            stack.push(pid);
-        }
-    }
-    false
+    process::descendants(processes, leader).iter().any(|p| session(p.pid).is_some_and(|sid| sid != own))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    /// (pid, parent) rows.
+    fn rows(pairs: &[(u32, u32)]) -> Vec<JobProcess> {
+        pairs.iter().map(|&(pid, parent)| JobProcess { pid, parent, name: "x".into() }).collect()
+    }
 
     #[test]
     fn only_work_in_another_session_holds_the_agent() {
@@ -115,16 +91,16 @@ mod tests {
         let sessions: HashMap<u32, i32> = [(10, 5), (11, 5), (12, 5), (20, 20), (21, 20), (30, 30)].into();
         let session = |pid| sessions.get(&pid).copied();
         let agent = [(10, 1), (11, 10), (12, 11), (40, 1)];
-        assert!(!detached_descendant(&agent, 10, session));
+        assert!(!detached_descendant(&rows(&agent), 10, session));
         // The shell tool runs `npm run dev` in a session of its own.
         let mut busy = agent.to_vec();
         busy.extend([(20, 11), (21, 20)]);
-        assert!(detached_descendant(&busy, 10, session));
+        assert!(detached_descendant(&rows(&busy), 10, session));
         // Someone else's process in another session isn't the agent's.
-        assert!(!detached_descendant(&[(10, 1), (30, 1)], 10, session));
+        assert!(!detached_descendant(&rows(&[(10, 1), (30, 1)]), 10, session));
         // A child that exited since the listing holds nothing; an agent that can't be looked up is unsure.
-        assert!(!detached_descendant(&[(10, 1), (50, 10)], 10, session));
-        assert!(detached_descendant(&agent, 99, session));
+        assert!(!detached_descendant(&rows(&[(10, 1), (50, 10)]), 10, session));
+        assert!(detached_descendant(&rows(&agent), 99, session));
     }
 
     #[test]

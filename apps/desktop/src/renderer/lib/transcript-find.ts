@@ -48,21 +48,26 @@ export function clearPaint() {
   CSS.highlights.delete('find-active')
 }
 
-/** The nearest ancestor that scrolls vertically. */
-function scroller(from: Element | null): Element | null {
+/** The ancestors that scroll vertically, innermost first (a card with its own scroll sits inside the transcript's). */
+function scrollers(from: Element | null): Element[] {
+  const found: Element[] = []
   for (let el = from; el; el = el.parentElement) {
     const overflow = getComputedStyle(el).overflowY
-    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) found.push(el)
   }
-  return null
+  return found
 }
 
-/** Scrolls the match itself (not the block it sits in: a long message or code block holds many) to the middle of the conversation. */
+/** Scrolls the match itself (not the block it sits in: a long message or code block holds many) to the middle, in every box that scrolls around it. */
 export function reveal(range: Range) {
   const parent = range.startContainer.parentElement
-  const view = scroller(parent)
-  const rect = range.getBoundingClientRect()
-  if (!view || (rect.width === 0 && rect.height === 0)) return void parent?.scrollIntoView({ block: 'center' })
-  const box = view.getBoundingClientRect()
-  view.scrollBy({ top: rect.top - box.top - (view.clientHeight - rect.height) / 2 })
+  const views = scrollers(parent)
+  if (views.length === 0 || (range.getBoundingClientRect().width === 0 && range.getBoundingClientRect().height === 0)) {
+    return void parent?.scrollIntoView({ block: 'center' })
+  }
+  for (const view of views) {
+    const rect = range.getBoundingClientRect()
+    const box = view.getBoundingClientRect()
+    view.scrollBy({ top: rect.top - box.top - (view.clientHeight - rect.height) / 2 })
+  }
 }

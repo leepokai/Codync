@@ -25,6 +25,17 @@ export function joinRuns(runs: TextRun[]): JoinedRuns {
   return { text, starts }
 }
 
+/**
+ * A string for comparing without case. It goes character by character, for the query too, so both sides fold the
+ * same way: a Greek capital sigma lowercases to a final `ς` at the end of a whole word but not on its own, and
+ * the two sigmas are one letter here.
+ */
+function fold(text: string): string {
+  let out = ''
+  for (const char of text) out += char.toLocaleLowerCase().replace(/ς/g, 'σ')
+  return out
+}
+
 export interface Match {
   start: number
   end: number
@@ -35,14 +46,14 @@ export interface Match {
  * own, so one that changes length (`İ` becomes two) shifts only itself, and the positions still point into `text`.
  */
 export function matchRanges(text: string, query: string): Match[] {
-  const needle = query.toLocaleLowerCase()
+  const needle = fold(query)
   if (!needle) return []
   let hay = ''
   /** For each unit of `hay`, where its character starts in `text` and ends. */
   const origin: Match[] = []
   for (let at = 0; at < text.length; ) {
     const char = String.fromCodePoint(text.codePointAt(at)!)
-    const lower = char.toLocaleLowerCase()
+    const lower = fold(char)
     for (let i = 0; i < lower.length; i++) origin.push({ start: at, end: at + char.length })
     hay += lower
     at += char.length

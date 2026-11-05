@@ -34,6 +34,13 @@ test('a character that lowercases to more than one does not disable the search',
   assert.deepEqual(findSpans([run('xİy')], 'i'), [{ from: { run: 0, offset: 1 }, to: { run: 0, offset: 2 } }])
 })
 
+test('Greek matches whichever way its sigma is written', () => {
+  assert.deepEqual(matchStarts('ΛΟΓΟΣ', 'ΟΣ'), [3])
+  assert.deepEqual(matchStarts('ΛΟΓΟΣ', 'ος'), [3])
+  assert.deepEqual(matchStarts('λόγος', 'ΟΣ'), [])
+  assert.deepEqual(matchStarts('λογος', 'ΟΣ'), [3])
+})
+
 test('nothing to find, nothing found', () => {
   assert.deepEqual(findSpans([run('hello')], 'zzz'), [])
   assert.deepEqual(findSpans([], 'a'), [])

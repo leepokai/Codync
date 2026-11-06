@@ -195,6 +195,13 @@ private fun CardRows.notifyRow(draft: BotDraft, change: (BotDraft) -> Unit) =
 private fun CardRows.computerUseRow(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit) {
     val screen = state.screen ?: return
     row { SwitchRow("Use the computer", computerUseDetail(screen), draft.computer, { change(draft.copy(computer = it)) }) }
+    if (draft.computer) {
+        row {
+            Field("Browser profile", "A name keeps this bot's sign-ins and cookies between visits. Leave empty for a fresh browser each time.") {
+                FieldBox(draft.browserProfile ?: "", { change(draft.copy(browserProfile = it.ifBlank { null })) }, "e.g. Client A")
+            }
+        }
+    }
 }
 
 /** What turning on "Use the computer" does on this computer, or what it needs first. */

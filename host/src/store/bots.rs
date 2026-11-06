@@ -235,6 +235,7 @@ mod tests {
             created_at: 0,
             verify_command: None,
             background_model: None,
+            browser_profile: None,
             saver: false,
             personality: crate::agent::personality::Personality::default(),
             action_rules_on: false,

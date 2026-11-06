@@ -44,6 +44,8 @@ data class Bot(
     val verifyCommand: String? = null,
     /** The model routine runs and check-ins use instead of [model]; null when none. */
     val backgroundModel: String? = null,
+    /** A named protected-browser profile: its sign-ins persist. */
+    val browserProfile: String? = null,
     /** Saver: at 80 percent of the daily token budget, new sessions start on [backgroundModel] until tomorrow; null from an older host. */
     val saver: Boolean? = null,
     /** The user's rules for the agent's permission requests, first match first. */

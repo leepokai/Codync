@@ -212,6 +212,9 @@ pub struct BotConfig {
     /// The model routine runs and check-ins use instead of `model`: a cheaper one for work nobody is waiting on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_model: Option<String>,
+    /// Protected browser profile name: its sign-ins and cookies persist for this bot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_profile: Option<String>,
     /// Saver: once its daily token budget reaches the warning level, a new session of the bot starts on its
     /// background model, until the next day.
     #[serde(default)]

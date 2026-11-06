@@ -84,6 +84,8 @@ export interface Bot {
   verifyCommand: string | null
   /** The model routine runs and check-ins use instead of `model` (a cheaper one); null when none (or an older host). */
   backgroundModel: string | null
+  /** A named protected-browser profile: its sign-ins and cookies persist. */
+  browserProfile: string | null
   /** Saver: once its daily token budget reaches 80 percent, new sessions start on the background model until tomorrow. */
   saver: boolean
   /** The user's rules for the agent's permission requests, first match first. */
@@ -165,6 +167,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     manageTeam: raw.manageTeam ?? null,
     verifyCommand: raw.verifyCommand ?? null,
     backgroundModel: raw.backgroundModel ?? null,
+    browserProfile: raw.browserProfile ?? null,
     saver: raw.saver ?? false,
     approvalRules: raw.approvalRules ?? [],
     actionRulesOn: raw.actionRulesOn ?? null,
@@ -768,6 +771,8 @@ export interface BotDraft {
   manageTeam?: boolean
   verifyCommand?: string | null
   backgroundModel?: string | null
+  /** A named protected-browser profile: its sign-ins and cookies persist. */
+  browserProfile?: string | null
   saver?: boolean
   approvalRules?: ApprovalRule[]
   actionRulesOn?: boolean
@@ -812,6 +817,7 @@ export function draftOf(bot: Bot): BotDraft {
     manageTeam: bot.manageTeam ?? undefined,
     verifyCommand: bot.verifyCommand,
     backgroundModel: bot.backgroundModel,
+    browserProfile: bot.browserProfile,
     saver: bot.saver,
     approvalRules: bot.approvalRules,
     actionRulesOn: bot.actionRulesOn ?? undefined,

@@ -15,6 +15,8 @@ pub(super) struct Browser {
     pipe: pipe::Pipe,
     target: String,
     context: String,
+    /// A named profile keeps its sign-ins between entries; a fresh one is deleted on close.
+    persistent: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -33,6 +35,11 @@ pub async fn call(hub: &Hub, method: &str, body: Value) -> Result<Value> {
     ensure!(state["id"] == request.id, "Protected entry changed; refresh before continuing");
     let bot = state["botId"].as_str().context("Protected entry has no bot")?;
     let site = state["site"].as_str().context("Protected entry has no origin")?;
+    let profile = hub
+        .store
+        .bot(bot)?
+        .filter(|row| !row.deleted && row.config.computer && row.config.computer_permissions.browser)
+        .and_then(|row| row.config.browser_profile);
     ensure!(
         hub.store
             .bot(bot)?
@@ -57,7 +64,7 @@ pub async fn call(hub: &Hub, method: &str, body: Value) -> Result<Value> {
         }
         hub.screen.driver.cancel().await?;
         *current = Some(
-            tokio::time::timeout(Duration::from_secs(20), open(&request.id, site))
+            tokio::time::timeout(Duration::from_secs(20), open(&request.id, site, bot, profile.as_deref()))
                 .await
                 .context("Protected browser opening timed out")??,
         );
@@ -216,7 +223,9 @@ pub(super) async fn handed_back(screen: &Screen, id: &str) {
 }
 async fn destroy(browser: &mut Browser) -> Result<()> {
     browser.process.terminate_owned().await?;
-    if let Err(error) = remove_profile(&browser.folder) {
+    if !browser.persistent
+        && let Err(error) = remove_profile(&browser.folder)
+    {
         tracing::warn!(%error,"Could not remove closed protected browser profile");
     }
     Ok(())
@@ -227,17 +236,25 @@ fn remove_profile(folder: &std::path::Path) -> Result<()> {
     }
     let parent = crate::service::data_dir().join("protected-browsers").canonicalize()?;
     let folder = folder.canonicalize()?;
-    ensure!(folder.parent() == Some(parent.as_path()), "Invalid protected browser directory");
+    ensure!(folder.starts_with(&parent) && folder != parent, "Invalid protected browser directory");
     std::fs::remove_dir_all(folder)?;
     Ok(())
 }
 
-async fn open(id: &str, site: &str) -> Result<Browser> {
+async fn open(id: &str, site: &str, bot: &str, profile: Option<&str>) -> Result<Browser> {
     let exe = browser_executable().context("Install Chrome or Edge to use protected browser entry")?;
     let parent = crate::service::data_dir().join("protected-browsers");
     std::fs::create_dir_all(&parent)?;
-    let folder = parent.join(uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir(&folder)?;
+    let named = profile.map(profile_slug).filter(|name| !name.is_empty());
+    let (folder, persistent) = if let Some(name) = named {
+        let folder = parent.join("profiles").join(profile_slug(bot)).join(name);
+        std::fs::create_dir_all(&folder)?;
+        (folder, true)
+    } else {
+        let folder = parent.join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir(&folder)?;
+        (folder, false)
+    };
     let (process, mut socket) = pipe::spawn(&exe, &folder)?;
     let targets = rpc(&mut socket, "Target.getTargets", json!({}), None).await?;
     let context = rpc(&mut socket, "Target.createBrowserContext", json!({"disposeOnDetach":false}), None).await?;
@@ -253,7 +270,22 @@ async fn open(id: &str, site: &str) -> Result<Browser> {
     for page in targets["targetInfos"].as_array().into_iter().flatten().filter(|page| page["type"] == "page") {
         rpc(&mut socket, "Target.closeTarget", json!({"targetId":page["targetId"]}), None).await?;
     }
-    Ok(Browser { id: id.into(), process, folder, pipe: socket, target, context })
+    Ok(Browser { id: id.into(), process, folder, pipe: socket, target, context, persistent })
+}
+
+/// A safe folder name for a bot or profile label.
+fn profile_slug(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_owned()
+        .chars()
+        .take(40)
+        .collect()
 }
 fn browser_executable() -> Option<PathBuf> {
     for root in ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"] {
@@ -266,4 +298,16 @@ fn browser_executable() -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::profile_slug;
+
+    #[test]
+    fn profile_and_bot_names_make_safe_short_folders() {
+        assert_eq!(profile_slug(" Client A "), "client-a");
+        assert_eq!(profile_slug("acme/../etc"), "acme----etc");
+        assert_eq!(profile_slug(&"x".repeat(80)).len(), 40);
+    }
 }

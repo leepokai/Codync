@@ -103,3 +103,10 @@ When a bot needs to sign in to a website or app, it can ask you with a card in t
 The bot then types the sign-in into the page itself and never sees the password. Codync types only when the focused page belongs to that site (or one of its subdomains), or the front app has that name, and it types a password only into a password field. Sign-ins are encrypted on the computer like [connector credentials](/docs/connectors-and-skills).
 
 Password prompts in a terminal (such as `sudo` or `ssh`) aren't covered.
+
+## Browser profiles
+
+A bot that uses the computer can keep a named browser profile in its settings, under **Activity → Browser profile**. Each name has its own browser storage: sign-ins and cookies stay there between visits, so one bot can be signed in to a client's account while another works in a different account on the same site. A bot with no profile name gets a fresh browser each time and leaves nothing behind.
+
+Profile names are local to the bot and to the computer. Clearing the name starts the next visit with an empty browser; the named profile's saved pages stay on disk until you remove Codync's data.
+

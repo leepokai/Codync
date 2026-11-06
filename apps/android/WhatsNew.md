@@ -14,6 +14,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 代理程式會以自己的指令、外觀、技能與例行工作建立 Bot；先讀它的頁面再新增。
 - 技能隨 App 內建、可離線安裝；目錄中的應用程式一步就能加入對應的連接器。
 - 新的 Workflow Builder 會把觸發條件、步驟與結果建成流程，步驟會依次出現在畫布上。
+- 每個 Bot 可以在設定中命名瀏覽器設定檔，讓登入與 Cookie 保留在該設定檔裡。
 - Slack、Telegram 與 Discord 的提及可以啟動流程；GitHub 的 issue、PR 與失敗檢查也一樣。
 - 新增 TickTick 等應用程式，以及每個代理程式的建立者、審核狀態、分類與更新日期。
 
@@ -22,6 +23,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Adding an agent creates a bot with its instructions, look, skills and routines; read its page first.
 - Bundled skills install offline, and catalogued apps add their connector in one step.
 - The new Workflow Builder turns a trigger, steps and a result into a workflow that draws itself on the canvas.
+- Each bot can name a browser profile, keeping sign-ins and cookies inside that profile.
 - Slack, Telegram and Discord mentions can start a workflow, as can GitHub issues, pull requests and failed checks.
 - New apps such as TickTick, and each agent page now names its creator, review, category and update date.
 

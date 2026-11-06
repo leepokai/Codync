@@ -373,7 +373,20 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               onChange={(on) => set('computer', on)}
             />
           ) : null}
-          {/* Only from a host that has it (its bots say). */}
+          {draft.computer ? (
+            <ValueRow
+              label="Browser profile"
+              detail="A name keeps this bot's sign-ins and cookies between visits. Leave empty for a fresh browser each time."
+            >
+              <input
+                className="field-box bot-command"
+                value={draft.browserProfile ?? ''}
+                placeholder="e.g. Client A"
+                spellCheck={false}
+                onChange={(e) => set('browserProfile', e.target.value || null)}
+              />
+            </ValueRow>
+          ) : null}
           {[...store.bots.values()].some((b) => b.manageTeam !== null) ? (
             <SwitchRow
               title="Manage the team"

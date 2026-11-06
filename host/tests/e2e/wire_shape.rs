@@ -158,6 +158,12 @@ async fn wire_shape_matches_the_snapshot() {
         .await;
     let made = host.wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
     assert!(made["data"]["text"].as_str().unwrap().starts_with("Done: "), "{made}");
+    // A running dev server: its `devServers`.
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let arguments = json!({"command": common::port_server(port), "name": "web"});
+    let server =
+        host.call("chatCall", json!({"botId": lead, "name": "start_dev_server", "arguments": arguments})).await;
+    assert_eq!(server["ports"][0]["port"], port, "{server}");
     // A bot in a roster section: its `section`.
     host.call("updateBot", json!({"id": bot, "section": "Work"})).await;
 

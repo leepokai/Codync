@@ -210,7 +210,7 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
 }
 
 /// Under Ask the change waits for the user's Allow on an approval card in the bot's chat.
-async fn approve(hub: &Hub, source: &BotConfig, title: String, detail: String) -> Result<()> {
+pub(crate) async fn approve(hub: &Hub, source: &BotConfig, title: String, detail: String) -> Result<()> {
     if source.permission == Permission::Auto {
         return Ok(());
     }

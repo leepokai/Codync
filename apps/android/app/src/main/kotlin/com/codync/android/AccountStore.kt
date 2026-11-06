@@ -1,6 +1,7 @@
 package com.codync.android
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.codync.android.core.*
@@ -80,7 +81,10 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         try {
             WidgetRefreshWorker.stop(getApplication())
             local = LocalStore(getApplication(), userId ?: "local")
-            if (userId != null) adoptSignedOut()
+            val rescan = if (userId != null) {
+                withoutAccountChosen = false
+                adoptSignedOut()
+            } else false
             widgetOwner = withContext(Dispatchers.IO) { WidgetStore.activate(getApplication(), local.contextId) }
             PushDelivery.activate(getApplication(), userId)
             val computers = withContext(Dispatchers.IO) { local.computers() }
@@ -89,7 +93,9 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             val lead = withContext(Dispatchers.IO) { local.shortcutLead() }
             mutableState.update { AccountContext(contextId = local.referenceId, generation = it.generation + 1, account = it.account,
                 computers = computers, lastComputerId = last, shortcutLeadComputer = lead, tasks = PushPreferences.tasks(getApplication()),
-                setupComplete = complete || computers.isNotEmpty() || Analytics.onboarded) }
+                setupComplete = complete || computers.isNotEmpty() || Analytics.onboarded,
+                withoutAccount = userId == null && withoutAccountChosen,
+                error = if (rescan) SCAN_AGAIN else null) }
             // A computer that can't open (damaged drafts) is reported; the others, the cloud and the widgets go on.
             for (computer in computers) try { open(computer) }
                 catch (error: CancellationException) { throw error }
@@ -109,19 +115,42 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Go on without signing in (iOS `withoutAccount`): only over Wi-Fi or Tailscale. */
+    fun continueWithoutAccount() {
+        Analytics.capture(AnalyticsEvent.ContinuedWithoutAccount)
+        withoutAccountChosen = true
+        mutableState.update { it.copy(withoutAccount = true) }
+    }
+
+    /** Back on the welcome screen, signing in is on offer again. */
+    fun backToWelcome() {
+        withoutAccountChosen = false
+        mutableState.update { it.copy(withoutAccount = false) }
+    }
+
+    internal var withoutAccountChosen: Boolean
+        get() = getApplication<Application>().getSharedPreferences(ACCOUNT_PREFS, Context.MODE_PRIVATE).getBoolean(WITHOUT_ACCOUNT, false)
+        set(value) { getApplication<Application>().getSharedPreferences(ACCOUNT_PREFS, Context.MODE_PRIVATE).edit().putBoolean(WITHOUT_ACCOUNT, value).apply() }
+
     /**
-     * Sign-in is required: the signed-out context's pairings move into this account (`LocalStore.adopt`), with their
+     * Signing in: the signed-out context's pairings move into this account (`LocalStore.adopt`), with their
      * device keys when the account is new on this phone. A failure leaves them where they are; the account still opens.
+     * True when they have to be paired again: this account has its own key on this phone.
      */
-    private suspend fun adoptSignedOut() {
+    private suspend fun adoptSignedOut(): Boolean {
         try {
             val adopted = withContext(Dispatchers.IO) {
                 val signedOut = LocalStore(getApplication(), "local")
                 local.adopt(signedOut)?.also { AccountImages.cacheDir(getApplication(), signedOut.referenceId).deleteRecursively() }
-            } ?: return
-            if (adopted.computers > 0) Analytics.capture(AnalyticsEvent.SignedOutPairingsMoved(adopted.computers, adopted.keys))
+            } ?: return false
+            if (adopted.computers == 0) return false
+            Analytics.capture(AnalyticsEvent.SignedOutPairingsMoved(adopted.computers, adopted.keys))
+            return adopted.keys == MovedKeys.Rescan
         } catch (error: CancellationException) { throw error }
-        catch (error: Exception) { android.util.Log.w("Codync", "Couldn't move the signed-out pairings", error) }
+        catch (error: Exception) {
+            android.util.Log.w("Codync", "Couldn't move the signed-out pairings", error)
+            return false
+        }
     }
 
     private suspend fun configureCloud(userId: String) {
@@ -158,9 +187,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             for (other in stores.value) if (other !== opened) other.openBot(null)
             mutableState.update { it.copy(removedChat = false) }
             noteActive(opened.id)
-        }, usageRead = ::publishUsage, joinAccount = { sign ->
-            joinAccount(computer.id) { client -> client.createClaim().let { claim -> claim to sign(claim) } }
-        })
+        }, usageRead = ::publishUsage)
         store.open()
         mutableStores.update { list -> list.filter { it.id != computer.id } + store }
         sortStores()
@@ -323,3 +350,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         super.onCleared()
     }
 }
+
+private const val SCAN_AGAIN = "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept."
+private const val ACCOUNT_PREFS = "codync-account"
+private const val WITHOUT_ACCOUNT = "without_account"

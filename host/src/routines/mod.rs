@@ -388,11 +388,14 @@ impl Routines {
                 .clone()
         };
         let cloud = hub.cloud.status();
+        // Public deliveries go through the relay, for a computer in an account (docs/plans/optional-sign-in.md).
         let url = crate::remote::cloud::codync_url(hub)
             .ok()
+            .filter(|_| crate::remote::owner::owner(&hub.store).is_some())
             .map(|base| format!("{}/v1/hooks/{}/{id}", base.trim_end_matches('/'), hub.identity.computer_id()));
         Ok(json!({
             "url": url,
+            "needsAccount": crate::remote::owner::can_join(hub),
             "localUrl": format!("http://127.0.0.1:{}/hooks/routines/{id}", hub.port),
             "key": key,
             "connected": url.is_some() && cloud.connected,

@@ -171,8 +171,9 @@ helper at the top of `electron-builder.yml` doesn't depend on the environment; p
 (the release workflow, `.github/workflows/release-desktop.yml`, shows how).
 `dist:mac:dev` signs with the team 7FUM8A8H72 development certificate (`CSC_NAME` in
 `package.json`): the Screen launch agent only runs code from that team, and the keychain holds
-another team's certificate electron-builder would otherwise pick. Update the name when it is
-renewed.
+another team's certificate electron-builder would otherwise pick. When it is renewed, update the
+name there and in `signDevHost` (`tools/native-host.mjs`), which otherwise falls back to an ad hoc
+signature and Keychain asks after every rebuild again.
 Codync and Codync Dev can run side by side: separate app identities, host services, ports, data and login callbacks. See [Dev app isolation](../guides/dev-app.md) for the resource map and external signing/account setup.
 
 For a local signed Mac build, explicitly select a development identity from the project's

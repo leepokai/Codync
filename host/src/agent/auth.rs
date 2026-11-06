@@ -33,6 +33,7 @@ mod agent;
 mod models;
 pub use agent::authenticate;
 use agent::start;
+pub(crate) use agent::{Started, start_with};
 pub use models::{InFlight, models, shared_models};
 pub(crate) use models::{model_config, model_ids};
 
@@ -83,7 +84,7 @@ pub struct Status {
 static CHECKED: Mutex<BTreeMap<String, Status>> = Mutex::new(BTreeMap::new());
 
 /// Where probe sessions live, away from the user's projects.
-fn probe_dir() -> PathBuf {
+pub(crate) fn probe_dir() -> PathBuf {
     crate::service::data_dir().join("probe")
 }
 
@@ -133,7 +134,7 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
     if backends::agent_checks_off() {
         return Ok(Status::default());
     }
-    let (acp, mut inbox, init, cmd) = start(store, backend).await?;
+    let Started { acp, mut inbox, init, cmd } = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
     if let ControlFlow::Break(signed_in) =
         login_without_session(&init, &mut inbox, backend, &env(store, backend)?).await

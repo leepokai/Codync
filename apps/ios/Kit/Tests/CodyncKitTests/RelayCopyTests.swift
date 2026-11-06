@@ -37,7 +37,9 @@ struct RelayCopyTests {
             URLQueryItem(name: "code", value: v.str("pairing", "code")),
             URLQueryItem(name: "cloud", value: "https://relay.example.com"),
         ]
-        #expect(RelayCopy.pairing(pasted: comps.string!).contains("Private relay (relay.example.com)"))
-        #expect(RelayCopy.pairing(pasted: "not a link").contains("through Cloudflare"))
+        #expect(RelayCopy.pairing(pasted: comps.string!, signedIn: true).contains("Private relay (relay.example.com)"))
+        #expect(RelayCopy.pairing(pasted: "not a link", signedIn: true).contains("through Cloudflare"))
+        #expect(RelayCopy.pairing(pasted: comps.string!, signedIn: false).contains("Private relay (relay.example.com)"), "a private relay is the user's own")
+        #expect(!RelayCopy.pairing(pasted: "not a link", signedIn: false).contains("from anywhere"), "signed out, there's no Codync relay")
     }
 }

@@ -67,7 +67,7 @@ A routine has an OR list of triggers:
 - `interval`: `seconds` (1 second through 365 days).
 - `once`: `at` (Unix milliseconds, in the future when created).
 - `cron`: a five-field `expression` and IANA `timeZone`, including DST.
-- `webhook`: every authenticated JSON delivery runs the routine.
+- `webhook`: every authenticated JSON delivery runs the routine. The public address needs the computer in an account (`needsAccount` in `routine_webhook`); otherwise only the local address works.
 - `event`: `source`, `event` (`*` matches all), and optional exact-match `filters`.
   `messageContains` matches a substring of `text`. Source names are `slack`,
   `github`, `origin`, `microsoftTeams`, `linear`, `sentry`, `pagerduty`, and `email`.

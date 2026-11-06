@@ -14,6 +14,9 @@ public final class ReviewInvitation {
     private let capture: @MainActor (AnalyticsEvent) -> Void
     private var history: ReviewHistory
     public private(set) var opportunity: UUID?
+    private var opportunityDate = Date.distantPast
+    /// With no view there to ask (a background shortcut), the token waits in memory: coming back to the app later must not ask.
+    private static let opportunityLifetime: TimeInterval = 5
 
     init(defaults: UserDefaults = .standard,
          capture: @escaping @MainActor (AnalyticsEvent) -> Void = { Analytics.shared.capture($0) }) {
@@ -28,21 +31,30 @@ public final class ReviewInvitation {
         } else { history = ReviewHistory() }
     }
 
-    /// A prompt reached the computer or its mailbox. One the app couldn't ask on (backgrounded) leaves the next prompt to ask.
+    /// A prompt reached the computer or its mailbox.
     public func sent(version: String = AppVersion.current, now: Date = .now) {
         history.prompts += 1
         save()
-        if !defaults.bool(forKey: Self.offKey), history.eligible(at: now, version: version) { opportunity = UUID() }
+        if !defaults.bool(forKey: Self.offKey), history.eligible(at: now, version: version) {
+            opportunity = UUID()
+            opportunityDate = now
+        }
     }
 
     /// Persist before StoreKit: an undisplayed request still consumes our own cooldown.
     public func request(_ token: UUID, version: String = AppVersion.current, now: Date = .now) -> Bool {
         guard opportunity == token else { return false }
         opportunity = nil
+        guard now.timeIntervalSince(opportunityDate) <= Self.opportunityLifetime else { return false }
         history.recordRequest(at: now, version: version)
         save()
         capture(.reviewRequested(prompts: history.prompts))
         return true
+    }
+
+    /// The app couldn't ask on this one (backgrounded, or its view went away): only a later prompt asks.
+    public func skip(_ token: UUID) {
+        if opportunity == token { opportunity = nil }
     }
 
     private func save() {

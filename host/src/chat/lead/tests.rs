@@ -126,6 +126,7 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
         providers: vec![Provider {
             id: "fixture",
             name: "Fixture",
+            registry: None,
             windows: vec![Window {
                 id: "week".into(),
                 label: "Week".into(),
@@ -137,10 +138,11 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
             source: "agent",
             updated_at: 0,
         }],
+        services: Vec::new(),
     };
-    f.hub.set_usage(used(40.0));
+    f.hub.update_usage(|usage| *usage = used(40.0));
     assert!(!check_in_waits(&f.hub, &routine, &lead, &scheduled));
-    f.hub.set_usage(used(90.0));
+    f.hub.update_usage(|usage| *usage = used(90.0));
     assert!(check_in_waits(&f.hub, &routine, &lead, &scheduled));
     assert!(!check_in_waits(&f.hub, &routine, &lead, &test), "a test run the user asked for still runs");
     assert!(!check_in_waits(&f.hub, "another", &lead, &scheduled), "the user's own routines still run");

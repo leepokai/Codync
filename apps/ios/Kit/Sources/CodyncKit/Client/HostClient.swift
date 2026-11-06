@@ -156,10 +156,12 @@ public extension HostClient {
         let _: Empty = try await call("installHostUpdate")
     }
 
-    /// The computer signs `claim` for the account this phone paired from (`Hello.joinAccount`), as JSON to
-    /// pass on to `CloudClient.completeClaim` as it came.
-    func joinAccount(_ claim: CloudClaim) async throws -> Data {
-        try await transport.call("joinAccount", body: try Self.encoder.encode(claim), timeout: 20)
+    /// The computer asks its user (up to 90 seconds), then signs `claim` for this phone's account
+    /// (`Hello.canJoinAccount`), as JSON to pass on to `CloudClient.completeClaim` as it came.
+    func joinAccount(_ claim: CloudClaim, certificate: DeviceCertificate) async throws -> Data {
+        struct Body: Encodable { var claimId: String; var nonce: String; var certificate: DeviceCertificate }
+        let body = Body(claimId: claim.claimId, nonce: claim.nonce, certificate: certificate)
+        return try await transport.call("joinAccount", body: try Self.encoder.encode(body), timeout: 120)
     }
 
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
@@ -352,6 +354,17 @@ public extension HostClient {
         let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
     }
 
+    func devServer(_ action: DevServer.Action, botId: String, id: String) async throws {
+        let _: Empty = try await call(action.rawValue, ["botId": botId, "id": id])
+    }
+
+    /// The server's recent output.
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        struct Res: Decodable { var text: String }
+        let res: Res = try await call("devServerLogs", ["botId": botId, "id": id])
+        return res.text
+    }
+
     func respondPermission(entryId: String, optionId: String?) async throws {
         struct Body: Encodable { var entryId: String; var optionId: String? }
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
@@ -382,10 +395,6 @@ public extension HostClient {
         let _: Empty = try await call("registerActivity", ["botId": botId, "ticket": ticket])
     }
 
-    func usage(refresh: Bool = false) async throws -> Usage {
-        try await call("usage", ["refresh": refresh])
-    }
-
     func selectWorkspace(_ path: String) async throws -> String {
         struct Reply: Decodable { var path: String }
         let reply: Reply = try await call("selectWorkspace", ["path": path])
@@ -396,32 +405,6 @@ public extension HostClient {
         struct Body: Encodable { var path: String? }
         return try await call("listDirs", Body(path: path))
     }
-
-    // MARK: remote screen
-
-    func screenStatus() async throws -> ScreenState { try await call("screenStatus") }
-
-    func screenPrepare() async throws -> ScreenConnection {
-        let relay = if let channel = transport as? ChannelTransport { try await channel.screenRelayRequired() } else { false }
-        return try await call("screenPrepare", ["relay": relay, "trickle": true])
-    }
-
-    /// Sends the offer using the prepared session’s negotiated ICE mode.
-    /// Trickle negotiations use a fresh session for every connection attempt.
-    func screenOffer(sdp: String, session: String?, display: UInt32?) async throws -> ScreenAnswer {
-        struct Body: Encodable { var sdp: String; var session: String?; var display: UInt32? }
-        return try await call("screenOffer", Body(sdp: sdp, session: session, display: display), timeout: 30)
-    }
-
-    func screenClose(session: String) async throws {
-        let _: Empty = try await call("screenClose", ["session": session])
-    }
-
-    /// Takes control from bots (they can still look) or hands it back.
-    func screenTakeover(_ on: Bool) async throws -> ScreenState {
-        try await call("screenTakeover", ["on": on])
-    }
-
 }
 
 // MARK: - Agent setup
@@ -475,9 +458,4 @@ public extension HostClient {
     func termClose(_ term: String) async throws {
         let _: Empty = try await call("termClose", ["term": term])
     }
-}
-
-public struct ScreenAnswer: Codable, Sendable {
-    public var session: String
-    public var sdp: String
 }

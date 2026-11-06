@@ -38,6 +38,7 @@ import { StartupRecovery } from './StartupRecovery'
 export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
 import { StarPrompt } from './StarPrompt'
+import { JoinAccountPrompt } from './JoinAccountPrompt'
 import { MoveComputerPrompt } from './MoveComputerPrompt'
 import { PairingRequestPrompt } from './PairingRequestPrompt'
 import { DeleteAccountPrompt } from './DeleteAccountPrompt'
@@ -139,7 +140,7 @@ export function ChatWindow() {
         <AccountWelcomeView onContinue={welcome.finish} />
       )}
       {!welcome.shown && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
-      {!welcome.shown && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /><DeleteAccountPrompt /></> : null}
+      {!welcome.shown && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /><JoinAccountPrompt /><DeleteAccountPrompt /></> : null}
       <Sheet open={showAccess} onClose={() => setShowAccess(false)} width={660} height={Math.min(820, window.innerHeight - 80)}>
         <ModalHeader icon="hand.raised" title={tr(`Computer access`)} />
         <ComputerAccessView onContinue={(ready) => { finishAccess(ready, false); setShowAccess(false) }} />
@@ -426,14 +427,14 @@ function ChatSplitView() {
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
             <UpdateBadge size={32} />
-            <RailAccountNotice onComputers={() => setSettings('computers')} />
+            <RailAccountNotice />
             <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
               <ProfileAvatar />
             </button>
           </div>
         ) : (
           // With several computers each heading opens its own Extensions instead.
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} onComputers={() => setSettings('computers')} />
+          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
         )}
       </aside>
       <ResizeHandle label={tr('Resize sidebar')} width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />

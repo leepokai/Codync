@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,7 +71,7 @@ import kotlinx.serialization.json.put
                 val store = accounts.store(id) ?: continue
                 val inAccount = app.cloudComputers.firstOrNull { it.computerId == id }
                 CardSection {
-                    computerRows(state, store, inAccount != null, app.isStale(state, states), app.access[id]?.code,
+                    computerRows(state, store, inAccount != null, app.isStale(state, states), app.access[id]?.code, app.account.userId != null,
                         ComputerActions({ extensions(id) }, store::openScreen, voice = { voice = id }, network = { network = id }, color = { coloring = id },
                             ask = inAccount?.let { c -> { ask(c) } }, revoke = inAccount?.takeIf { it.isGranted }?.let { c -> { confirmRevoke = c } }) {
                             confirmForget = state
@@ -131,7 +132,7 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
  * (saved with the computer, so another account's computer keeps its own), how it's reached, the Codync it runs
  * (and its update) and, for a stale pairing, Remove (iOS `ComputerRows`).
  */
-private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: Boolean, stale: Boolean, code: String?, actions: ComputerActions) {
+private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: Boolean, stale: Boolean, code: String?, signedIn: Boolean, actions: ComputerActions) {
     row { ComputerSummary(state, inAccount, stale, code, actions) }
     if (state.connection is LinkState.Ready) {
         row { RowLabel("Extensions", "square.grid.2x2", chevron = true, modifier = Modifier.plainButton(action = actions.extensions)) }
@@ -143,6 +144,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         ComputerNotificationsRow(state.computer.notifications, store::notifications)
     }
     row { ConnectionRow(state.computer, store) }
+    if (canAddToAccount(signedIn, state)) row { AddToAccount(store) }
     // Kept while an update asked from here restarts the computer: its spinner says it's updating.
     if ((state.connection is LinkState.Ready || state.isUpdating) && state.hello != null) row { CodyncVersionRow(state, store::requestHostUpdate) }
     if (stale && !inAccount) row { RowLabel("Remove", "trash", Palette.danger, modifier = Modifier.plainButton(action = actions.remove)) }
@@ -204,16 +206,44 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
 
 private const val NETWORK_ICON = "codync.network"
 
-/** How this phone reaches the computer: the short name on the row, the whole route in the menu. */
+/** A computer in no account: adding it lets this phone reach it from anywhere. The computer confirms. */
+@Composable private fun AddToAccount(store: AppStore) {
+    val accounts = LocalAccounts.current ?: return
+    val context by accounts.state.collectAsState()
+    val check = context.addingToAccount[store.id]
+    Row(Modifier.fillMaxWidth().plainButton(enabled = check == null) { accounts.addToAccount(store) },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) {
+            if (check != null) Spinner(18.dp) else Symbol("person.crop.circle.badge.plus", size = 20.dp, tint = Palette.text)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (check != null) Text(tr("Confirm on the computer. It shows {code}.").replace("{code}", check), style = Type.footnote, color = Palette.secondary)
+            else {
+                Text(tr("Add to account"), style = Type.body, color = Palette.text)
+                Text(tr("Reach this computer from anywhere, not only over Wi-Fi or Tailscale."), style = Type.footnote, color = Palette.secondary)
+            }
+        }
+    }
+}
+
+/**
+ * How this phone reaches the computer: the short name on the row, the whole route in the menu. With no relay (a
+ * computer in no account) there's nothing to choose.
+ */
 @Composable private fun ConnectionRow(computer: Computer, store: AppStore) {
+    if (computer.cloud == null) return ConnectionRowContent(ConnectionRoute.DirectOnly, null, chevron = false)
     DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(routeTitle(route, computer.cloud), icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
         Modifier.fillMaxWidth(), label = "Connection") {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) { Symbol(computer.route.icon, size = 20.dp, tint = Palette.text) }
-            Text(tr("Connection"), Modifier.weight(1f), style = Type.body, color = Palette.text)
-            Text(tr(routeShortTitle(computer.route, computer.cloud)), style = Type.body, color = Palette.secondary, maxLines = 1)
-            Symbol("chevron.down", size = 13.dp, tint = Palette.tertiary)
-        }
+        ConnectionRowContent(computer.route, computer.cloud, chevron = true)
+    }
+}
+
+@Composable private fun ConnectionRowContent(route: ConnectionRoute, cloud: String?, chevron: Boolean) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) { Symbol(route.icon, size = 20.dp, tint = Palette.text) }
+        Text(tr("Connection"), Modifier.weight(1f), style = Type.body, color = Palette.text)
+        Text(tr(routeShortTitle(route, cloud)), style = Type.body, color = Palette.secondary, maxLines = 1)
+        if (chevron) Symbol("chevron.down", size = 13.dp, tint = Palette.tertiary)
     }
 }
 

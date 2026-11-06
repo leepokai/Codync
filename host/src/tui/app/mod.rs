@@ -21,6 +21,7 @@ mod section_order;
 mod slash;
 mod steps;
 mod ui;
+mod usage_chooser;
 
 pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
@@ -59,6 +60,8 @@ pub struct App {
     pub client: Client,
     pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
+    /// Whether the host is this computer's. Attached with `--url` nothing tells: a tunnel's address looks local.
+    pub on_this_computer: bool,
     pub host: String,
     pub home: String,
     /// The host's version (`hello`): features newer than `MIN_HOST` check it.
@@ -164,6 +167,7 @@ impl App {
             client,
             tx,
             url,
+            on_this_computer: true,
             host: String::new(),
             home: String::new(),
             host_version: String::new(),

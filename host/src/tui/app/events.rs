@@ -69,11 +69,12 @@ impl App {
                 self.memory_moved(&v["bot"]);
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),
+            Some("routineFlow") => self.flow_changed(&v["botIds"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
-                    if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
+                    if !e.is_internal() && !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
                     }
                     self.entries.entry(bot).or_default().insert(e.seq, e);
@@ -134,7 +135,7 @@ impl App {
         }
         if new.status == Status::NeedsInput && old.status != Status::NeedsInput {
             self.toast(format!("{} needs you", new.name), true);
-        } else if old.status == Status::Working && new.status == Status::Idle {
+        } else if old.status == Status::Working && new.status == Status::Idle && new.last_at > old.last_at {
             self.toast(format!("{} is done", new.name), false);
         } else if old.status != Status::Error && new.status == Status::Error {
             self.toast(format!("{} hit an error", new.name), true);
@@ -142,6 +143,17 @@ impl App {
     }
 
     fn on_reply(&mut self, after: After, r: Result<Value, String>) {
+        if let After::RosterStopped(id) = after {
+            if let Err(error) = r {
+                self.roster_tools.stopping.remove(&id);
+                self.flash(&error);
+            }
+            return;
+        }
+        if let After::Roster(sequence, kind) = after {
+            self.roster_reply(sequence, kind, r);
+            return;
+        }
         if let After::Connection(id, step) = after {
             self.connection_reply(&id, step, r);
             return;
@@ -217,16 +229,20 @@ impl App {
             | After::Sheet(_)
             | After::Network(_)
             | After::Sent(_)
-            | After::Connection(_, _) => {}
+            | After::Connection(_, _)
+            | After::Roster(_, _)
+            | After::RosterStopped(_) => {}
             After::Installed => {
                 self.error = None;
                 self.flash("Host installed; connecting…");
                 self.call("hello", json!({}), After::Hello);
             }
             After::Hello => {
+                if let Some(computer) = v["computerId"].as_str() {
+                    self.load_roster_preferences(computer);
+                }
                 self.mismatch = crate::compat::check(env!("CARGO_PKG_VERSION"), crate::compat::MIN_HOST, &v);
                 v["name"].as_str().unwrap_or("computer").clone_into(&mut self.host);
-                v["version"].as_str().unwrap_or_default().clone_into(&mut self.host_version);
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);

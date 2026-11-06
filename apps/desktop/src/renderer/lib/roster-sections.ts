@@ -13,7 +13,7 @@ export function hostHasSections(version: string): boolean {
 /** What placing a bot in the roster reads: its pin, the section the user put it in, its unread count. */
 interface Placed {
   pinned: boolean
-  section?: string
+  section?: string | null
   unread: number
 }
 
@@ -57,13 +57,13 @@ export function shownSection(bot: Omit<Placed, 'unread'>): string | undefined {
   return bot.pinned ? undefined : bot.section || undefined
 }
 
-/** Whether a drag (or Alt+↑/↓) may move one bot past another: the same band (pinned, the rest) and the same section shown. */
+/** Whether a drag (or Alt+ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Ëœ/ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“) may move one bot past another: the same band (pinned, the rest) and the same section shown. */
 export function sameRosterGroup(a: Omit<Placed, 'unread'>, b: Omit<Placed, 'unread'>): boolean {
   return rosterBand(a) === rosterBand(b) && shownSection(a) === shownSection(b)
 }
 
-/** Every section among `bots` once, by name as the user's language sorts it ("İş" too; "work" before "Work", as on the phones). */
-export function sectionNames(bots: Iterable<{ section?: string }>): string[] {
+/** Every section among `bots` once, by name as the user's language sorts it ("Ãƒâ€žÃ‚Â°Ãƒâ€¦Ã…Â¸" too; "work" before "Work", as on the phones). */
+export function sectionNames(bots: Iterable<{ section?: string | null }>): string[] {
   const names = new Set<string>()
   for (const bot of bots) if (bot.section) names.add(bot.section)
   return [...names].sort((a, b) => a.localeCompare(b))
@@ -90,12 +90,12 @@ export function foldsAfterRename(folded: readonly string[], from: string, to: st
 }
 
 /** The ids of the bots in section `name`: what renaming or removing it moves, and a refusal moves back (never bots already in the target). */
-export function sectionMembers(bots: Iterable<{ id: string; section?: string }>, name: string): string[] {
+export function sectionMembers(bots: Iterable<{ id: string; section?: string | null }>, name: string): string[] {
   return [...bots].filter((bot) => bot.section === name).map((bot) => bot.id)
 }
 
 /** The bots with these ids still there, each put in `section` (none: undefined) and otherwise as they are now: a section change shown before the host confirms it. */
-export function placedBots<T extends { section?: string }>(bots: ReadonlyMap<string, T>, ids: readonly string[], section: string | undefined): [string, T][] {
+export function placedBots<T extends { section?: string | null }>(bots: ReadonlyMap<string, T>, ids: readonly string[], section: string | undefined): [string, T][] {
   return ids.flatMap((id): [string, T][] => {
     const bot = bots.get(id)
     return bot ? [[id, { ...bot, section }]] : []
@@ -105,8 +105,8 @@ export function placedBots<T extends { section?: string }>(bots: ReadonlyMap<str
 /** A section change shown before the host accepted it: bot `id` from section `from` to `to` (none: undefined). */
 export interface SectionMove {
   id: string
-  from: string | undefined
-  to: string | undefined
+  from: string | null | undefined
+  to: string | null | undefined
 }
 
 /**
@@ -114,7 +114,7 @@ export interface SectionMove {
  * the one it left, otherwise as it is now. A bot moved again since (here or on another device) keeps
  * its newer section, and a deleted one stays deleted.
  */
-export function restoredBots<T extends { section?: string }>(bots: ReadonlyMap<string, T>, moves: readonly SectionMove[]): [string, T][] {
+export function restoredBots<T extends { section?: string | null }>(bots: ReadonlyMap<string, T>, moves: readonly SectionMove[]): [string, T][] {
   return moves.flatMap(({ id, from, to }): [string, T][] => {
     const bot = bots.get(id)
     return bot && bot.section === to ? [[id, { ...bot, section: from }]] : []

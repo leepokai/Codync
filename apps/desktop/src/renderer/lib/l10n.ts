@@ -50,7 +50,7 @@ export function usesChinese(preference: AppLanguage, system: string | boolean): 
 
 export function resolvedLanguage(preference: AppLanguage, system: string | boolean): Exclude<AppLanguage, 'system'> {
   if (preference !== 'system' && appLanguages.includes(preference)) return preference
-  const tag = languageTag(system).toLowerCase().replaceAll('_', '-').split('.')[0]
+  const tag = (system === '' ? '' : languageTag(system)).toLowerCase().replaceAll('_', '-').split('.')[0]
   const base = tag.split('-')[0]
   if (base === 'zh') return systemScript(tag) === 'hant' ? 'zh-Hant' : 'zh'
   if (base === 'pt') return 'pt-BR'

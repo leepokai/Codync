@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle, rename_fold};
+use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle};
 use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
@@ -15,6 +15,9 @@ impl App {
             }
         };
         match r {
+            Reply::Computer(reply) => self.computer_reply(&reply, Ok(v)),
+            Reply::McpTools(reply) => self.mcp_tools_reply(&reply, Ok(v)),
+            Reply::Documents(reply) => self.on_document_reply(&reply, &v),
             Reply::Memory(bot) => {
                 for o in &mut self.overlays {
                     if let Overlay::Memory(m) = o
@@ -87,23 +90,8 @@ impl App {
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
             }
+            Reply::Flow(bot) => self.flow_loaded(&bot, &v),
             Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
-            Reply::Gear(backend) => {
-                let lists = super::gear::GearLists {
-                    skills: super::gear::items(&v["skills"]),
-                    connectors: super::gear::items(&v["connectors"]),
-                    rules: super::gear::items(&v["rules"]),
-                    plugins: super::gear::items(&v["plugins"]),
-                };
-                for overlay in &mut self.overlays {
-                    if let Overlay::Gear(gear) = overlay
-                        && gear.backend == backend
-                    {
-                        gear.lists = Some(lists.clone());
-                        gear.failed = false;
-                    }
-                }
-            }
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
                     self.overlays.truncate(i);
@@ -146,6 +134,21 @@ impl App {
                     m.skills = Some(v["items"].as_array().cloned().unwrap_or_default());
                 }
             }
+            Reply::Catalog => {
+                if let Some(Overlay::Market(m)) =
+                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
+                {
+                    m.catalog = v;
+                }
+            }
+            Reply::CatalogAdded(id) => {
+                if let Some(Overlay::Market(m)) =
+                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
+                {
+                    m.added.push(id);
+                }
+                self.flash(&super::super::l10n::tr("Added"));
+            }
             Reply::Auth(backend) => {
                 for o in &mut self.overlays {
                     if let Overlay::Agent(a) = o
@@ -181,10 +184,6 @@ impl App {
                 self.flash("Saved");
                 self.refresh_sheets();
             }
-            Reply::SectionRenamed { from, to } => {
-                rename_fold(&mut self.folded, &from, to.as_deref());
-                self.on_sheet_reply(Reply::FieldsSaved, Ok(v));
-            }
             Reply::SignIn => {
                 let url = s(&v, "url");
                 super::super::app::copy(&url);
@@ -194,6 +193,7 @@ impl App {
                     self.flash("Sign-in link copied: open it on this computer, then ^r refreshes");
                 }
             }
+            Reply::Accounts { scope, authenticate } => self.accounts_reply(&scope, authenticate, &v),
             Reply::Models(backend) => {
                 let mut list: Vec<_> =
                     v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
@@ -235,7 +235,29 @@ impl App {
     }
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
+        if let Reply::Computer(reply) = r {
+            self.computer_reply(reply, Err(e));
+            return;
+        }
+        if let Reply::McpTools(reply) = r {
+            self.mcp_tools_reply(reply, Err(e));
+            return;
+        }
+        if let Reply::Documents(reply) = r {
+            self.document_error(reply, &e);
+            return;
+        }
         match r {
+            // An older host has no catalog: the Bots and Teams tabs stay empty.
+            Reply::Catalog => {}
+            Reply::Accounts { scope, .. } => {
+                if let Some(Overlay::Form(f)) = self.overlays.last_mut()
+                    && f.account_scope == *scope
+                {
+                    f.account_busy = false;
+                    f.error = Some(e);
+                }
+            }
             Reply::Models(backend) => {
                 self.models.insert(backend.clone(), Some(vec![]));
             }
@@ -245,7 +267,7 @@ impl App {
                     f.error = Some(e);
                 }
             }
-            Reply::FieldsSaved | Reply::SectionRenamed { .. } => match self.overlays.last_mut() {
+            Reply::FieldsSaved => match self.overlays.last_mut() {
                 Some(Overlay::Fields(f)) => {
                     f.saving = false;
                     f.error = Some(e);
@@ -314,22 +336,6 @@ impl App {
                 }
                 self.flash(&e);
             }
-            Reply::Gear(backend) => {
-                for o in &mut self.overlays {
-                    if let Overlay::Gear(gear) = o
-                        && gear.backend == *backend
-                    {
-                        gear.lists.get_or_insert_with(|| super::gear::GearLists {
-                            skills: Vec::new(),
-                            connectors: Vec::new(),
-                            rules: Vec::new(),
-                            plugins: Vec::new(),
-                        });
-                        gear.failed = true;
-                    }
-                }
-                self.flash(&e);
-            }
             Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {
@@ -365,7 +371,6 @@ impl App {
     /// Loads what every open sheet shows again, after a change.
     pub(in crate::tui) fn refresh_sheets(&mut self) {
         let mut calls: Vec<(&'static str, Value, After)> = vec![];
-        let mut gear_ids = Vec::new();
         for o in &self.overlays {
             match o {
                 Overlay::Memory(m) => {
@@ -377,19 +382,22 @@ impl App {
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
                 }
+                Overlay::Flow(f) => {
+                    calls.push((
+                        "routineFlowCanvas",
+                        json!({"botId": f.bot}),
+                        After::Sheet(Reply::Flow(f.bot.clone())),
+                    ));
+                }
                 Overlay::Library(l) => {
                     calls.push(("library", json!({"botId": l.bot}), After::Sheet(Reply::Library(l.bot.clone()))));
                 }
-                Overlay::Gear(gear) => gear_ids.push(gear.backend.clone()),
                 Overlay::Market(_) | Overlay::Form(_) => {
                     calls.push(("connectors", json!({}), After::Connectors));
                     calls.push(("skills", json!({}), After::Skills));
                 }
                 _ => {}
             }
-        }
-        for backend in gear_ids {
-            calls.push(("agentGear", json!({"backend": backend}), After::Sheet(Reply::Gear(backend))));
         }
         calls.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
         for (m, body, after) in calls {

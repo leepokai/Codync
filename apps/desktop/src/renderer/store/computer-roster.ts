@@ -5,20 +5,29 @@ import { useModel } from '../lib/observable'
 import { foldsAfterRename, rosterGroups, rosterLines, sameRosterGroup, sectionRename, shownRows, shownSection } from '../lib/roster-sections'
 import type { BotStore } from './bot-store'
 import type { AppModel, BotRef } from './app-model'
+import { useState } from 'react'
+import { matchesRoster, type RosterFilter, type RosterGrouping } from '../lib/roster-query'
 
 /** Device-local section ordering and folding, matching the iPhone roster. */
 export function useComputerRoster(app: AppModel, shown: Set<string>) {
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<RosterFilter>('all')
+  const [grouping, setGrouping] = useState<RosterGrouping>('manual')
   const order = useModel(app.computerOrder).ids
   const [collapsed, setCollapsed] = usePref(prefs.collapsedComputers)
   const [sectionOrders, setSectionOrders] = usePref(prefs.rosterSectionOrder)
   const [folded, setFolded] = usePref(prefs.collapsedRosterSections)
   const computers = orderedComputers(app.computers, order)
-  const sections = computerSections(computers.filter((c) => shown.has(c.id)), app.roster)
+  const allItems = app.roster.filter((item) => shown.has(item.ref.computerId))
+  const filtered = query.trim() !== '' || filter !== 'all'
+  const sections = computerSections(computers.filter((c) => shown.has(c.id)), allItems.filter((i) => matchesRoster(i.bot, query, filter)))
     .map((section) => ({ ...section, store: app.store(section.computer.id) }))
     .filter((section): section is typeof section & { store: BotStore } => section.store !== null)
   const grouped = sections.length > 1
   return {
     sections,
+    allItems, query, setQuery, filter, setFilter, grouping, setGrouping, filtered,
+    canReorder: !filtered && grouping === 'manual',
     grouped,
     collapsed,
     folded,
@@ -27,7 +36,7 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
       setSectionOrders({ ...prefs.rosterSectionOrder.get(), [computerId]: names })
     },
     items: sections.flatMap((section) => section.items),
-    /** The rows on screen, top to bottom, for ↑/↓. */
+    /** The rows on screen, top to bottom, for â†‘/â†“. */
     navigable: sections.flatMap((section) => grouped && collapsed.includes(section.computer.id) ? [] : shownRows(rosterLines(section.items, folded, sectionOrders[section.computer.id]))),
     toggle(id: string) {
       setCollapsed(toggled(collapsed, id))
@@ -59,6 +68,7 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     },
     /** One place up (-1) or down (+1) among its computer's bots in the same band (lead, pinned, the rest) and, for the rest, the same section. */
     moveBot(ref: BotRef, offset: number) {
+      if (filtered || grouping !== 'manual') return
       const section = sections.find((s) => s.computer.id === ref.computerId)
       const items = section?.items ?? []
       const moved = items.find((item) => item.bot.id === ref.botId)

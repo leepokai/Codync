@@ -6,7 +6,7 @@ export function openComputerScreen(store: BotStore, attachment: SSHAttachment) {
   void window.codync.screen.open({
     computerId: store.computer.id,
     name: store.hostName || attachment.computer.name,
-    vncPort: attachment.vncPort,
+    vncPort: attachment.vncPort ?? 0,
   }).catch((error: unknown) => {
     store.setError(error instanceof Error ? error.message : "Can't open the screen from here. Connect Over SSH and try again.")
   })

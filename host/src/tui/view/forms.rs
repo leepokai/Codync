@@ -57,6 +57,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Background => "Background model",
             Field::Saver => "Saver",
             Field::Agent => "Agent",
+            Field::Account => "Account",
             Field::Model => "Model",
             Field::ModelOptions => "Options",
             Field::Fast => "Fast mode",
@@ -111,9 +112,36 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 let hint = tr("e.g. Reviews PRs. Never pushes without asking.");
                 text_field(buf, &f.instructions, &hint, y);
             }
+            Field::Check | Field::Soul | Field::Persona | Field::Heartbeat | Field::Background => {
+                let hint = match field {
+                    Field::Check => "e.g. npm test",
+                    Field::Soul => "values and boundaries; you write it, the bot can't",
+                    Field::Persona => "e.g. Dry and brief. No emoji.",
+                    Field::Heartbeat => "what to do when it checks in on its own",
+                    _ => "‹ › a cheaper model for routines and check-ins",
+                };
+                if let Some(slot) = field.slot() {
+                    text_field(buf, &f.character[slot], &tr(hint), y);
+                }
+            }
+            Field::Account => {
+                let label = if f.backend != "antigravity" {
+                    "Default account (this agent)"
+                } else if f.account_busy {
+                    "Loading / signing in..."
+                } else if let Some(id) = f.account.as_ref() {
+                    f.accounts
+                        .as_ref()
+                        .and_then(|list| list.iter().find(|(key, _)| key == id))
+                        .map_or(id.as_str(), |(_, name)| name.as_str())
+                } else {
+                    "Default account"
+                };
+                put(buf, vx, y, vw, label, t.text.patch(base));
+            }
             Field::Model => {
                 text_field(buf, &f.model, "default", y);
-                let hint = match app.models.get(&f.backend) {
+                let hint = match app.models.get(&super::super::manage::model_key(&f.backend, f.account.as_deref())) {
                     Some(None) => "loading models…".to_owned(),
                     Some(Some(list)) if !list.is_empty() => {
                         let id = f.model.text.trim();
@@ -133,13 +161,19 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
                 let offered = match app.models.get(&f.backend) {
                     _ if saved.is_some_and(super::super::app::Bot::fast_shown) => "",
-                    Some(Some(_)) if !app.fast_mode.contains(&f.backend) => "  · not offered by this agent",
+                    Some(Some(_))
+                        if !app
+                            .fast_mode
+                            .contains(&super::super::manage::model_key(&f.backend, f.account.as_deref())) =>
+                    {
+                        "  · not offered by this agent"
+                    }
                     _ => "",
                 };
                 put(buf, vx, y, vw, &format!("{s}{offered}"), t.text.patch(base));
             }
             Field::ModelOptions => {
-                let offered = app.model_settings(&f.backend, f.model.text.trim());
+                let offered = app.model_settings_for(&f.backend, f.account.as_deref(), f.model.text.trim());
                 if offered.is_empty() {
                     let error = app
                         .models
@@ -342,6 +376,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
+        Field::Account => "left/right pick account; i sign in; r refresh",
         Field::Model => "←→ pick a model · or type its id",
         Field::Fallbacks => "←→ pick · space add / model · a agent · [ ] move · x remove",
         Field::Fast

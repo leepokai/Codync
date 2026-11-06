@@ -1,6 +1,6 @@
 //! The models an agent offers, read from a session it opens for that alone.
 
-use super::{probe_dir, start, text};
+use super::{probe_dir, start_with_env, text};
 use crate::agent::acp::Incoming;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
@@ -9,8 +9,9 @@ use std::time::Duration;
 
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
-pub async fn models(store: &Store, backend: &str) -> Result<Value> {
-    let (acp, mut inbox, _, _) = start(store, backend).await?;
+pub async fn models(store: &Store, backend: &str, account: Option<&str>) -> Result<Value> {
+    let extra_env = account.map(|id| crate::agent::account::env(id, backend)).transpose()?.unwrap_or_default();
+    let (acp, mut inbox, _, _) = start_with_env(store, backend, &extra_env).await?;
     let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
         tokio::pin!(request);

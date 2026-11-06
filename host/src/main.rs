@@ -1,27 +1,50 @@
 //! `codync-host`: runs coding-agent bots over ACP and serves the Codync apps.
 
+#![allow(dead_code, reason = "some host code is reached from clients and each other")]
+
 mod agent;
 mod analytics;
+mod analytics_cli;
 mod api;
 mod background;
+#[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
+mod browser;
+mod budget;
+mod bundle;
+mod channels;
 mod chat;
+mod cli;
 mod cloud_cli;
 mod compat;
-mod environment;
+mod computer;
+mod doctor;
+mod documents;
 mod egress;
+mod environment;
+mod external;
+mod health;
 mod hub;
+mod icons;
+mod import;
+mod import_cli;
+mod local_api;
 mod market;
 mod mcp;
 mod n8n;
 mod network;
 mod network_cli;
+mod proactive;
+mod prompt;
 mod remote;
+mod research;
 mod routines;
 mod screen;
 mod secret_prompt;
 mod send_cli;
+mod sentinel;
 mod service;
 mod shell;
+mod slack;
 mod store;
 mod telegram;
 mod tui;
@@ -150,6 +173,13 @@ enum Sub {
     /// downloaded update.
     #[command(hide = true)]
     Compat,
+    /// Check every bot's setup (folder, agent, fallbacks, group members); exits 1 if any can't run.
+    Doctor {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        #[arg(long)]
+        json: bool,
+    },
     /// Show whether the host is installed and running.
     Status {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -163,10 +193,36 @@ enum Sub {
         #[arg(last = true)]
         wrapped: Vec<String>,
     },
+    /// Relay one hook event of an agent running in a terminal (what Claude Code's hooks run).
+    Hook {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        /// The agent this hook belongs to: `gemini`, `antigravity`, `codex`, `copilot`. Empty for Claude Code.
+        #[arg(long, default_value = "")]
+        agent: String,
+        /// The event name, for agents that don't name it in the payload.
+        event: Option<String>,
+        /// Wait for a person to answer a question or approve a plan from any Codync client.
+        #[arg(long)]
+        ask: bool,
+    },
+    /// Add, remove or check the hook that shows Claude Code's terminal sessions in Codync.
+    Hooks {
+        #[command(subcommand)]
+        action: Option<HooksAction>,
+    },
     /// Rotate the local API token used by this computer's own apps and helpers.
     ResetToken,
+    /// Scan the database in read-only WAL mode for recurring tool errors, retry loops and queue lag.
+    Sentinel {
+        #[arg(long)]
+        json: bool,
+        /// Lookback window in hours (default: 168 = 7 days).
+        #[arg(long, default_value_t = 168)]
+        hours: i64,
+    },
     /// Send a message to a bot, optionally waiting for its reply.
-    Send(send_cli::SendArgs),
+    Send(cli::send::Args),
     /// Message your bots from this terminal.
     Tui {
         /// Host to connect to (default: this computer). The API only answers local
@@ -203,6 +259,16 @@ enum DevicesAction {
     List,
     /// Remove a device's access; it disconnects at once.
     Revoke { key: String },
+}
+
+#[derive(Subcommand)]
+enum HooksAction {
+    /// Point Claude Code's hooks at Codync.
+    Install,
+    /// Take Codync's hooks out of Claude Code's settings.
+    Uninstall,
+    /// Whether Claude Code reports to Codync (the default).
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -350,7 +416,13 @@ async fn main() -> Result<()> {
         Sub::Serve { port, bind } => serve(&bind, port).await,
         Sub::Pair { port, json } => pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
-        Sub::Send(args) => send_cli::run(args).await,
+        Sub::Send(args) => {
+            let code = cli::send::run(args).await;
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
         Sub::Devices { port, action } => match action.unwrap_or(DevicesAction::List) {
             DevicesAction::List => {
                 let v = local_call(port, "devices", json!({})).await?;
@@ -372,6 +444,7 @@ async fn main() -> Result<()> {
                 Ok(())
             }
         },
+        Sub::Doctor { port, json } => doctor(port, json).await,
         Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
         Sub::Cloud(args) => cloud_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
@@ -408,7 +481,7 @@ async fn main() -> Result<()> {
             } else if status {
                 update::status()?
             } else if check {
-                update::check().await?
+                update::check()?
             } else if !worker && service::installed() {
                 tokio::task::spawn_blocking(move || update::spawn_worker(port, force)).await??;
                 update::status()?
@@ -467,6 +540,46 @@ async fn main() -> Result<()> {
         Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
         Sub::Statusline { port, wrapped } => {
             statusline(port, wrapped.join(" ")).await;
+            Ok(())
+        }
+        Sub::Hook { port, agent, event, ask } => {
+            let code = cli::hook::run(port, agent, event, ask).await;
+            std::process::exit(i32::from(code != std::process::ExitCode::SUCCESS));
+        }
+        Sub::Hooks { action } => {
+            match action.unwrap_or(HooksAction::Status) {
+                HooksAction::Install => cli::hook::install()?,
+                HooksAction::Uninstall => cli::hook::uninstall()?,
+                HooksAction::Status => cli::hook::status()?,
+            }
+            Ok(())
+        }
+        Sub::Sentinel { json, hours } => {
+            let db = service::data_dir().join("codync.db");
+            let lookback_ms = hours.clamp(1, 720) * 3_600_000;
+            let report = sentinel::scan_db_path(&db, lookback_ms)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else if report.issues.is_empty() {
+                println!("Sentinel: no issues found ({} entries examined).", report.entries_examined);
+            } else {
+                println!(
+                    "Sentinel: {} issues found ({} entries examined):",
+                    report.issues.len(),
+                    report.entries_examined
+                );
+                for issue in &report.issues {
+                    println!(
+                        "  [{}] {} (bot={}, count={}, wasted_turns={}) — {}",
+                        issue.signature,
+                        issue.kind.as_str(),
+                        issue.bot_id,
+                        issue.count,
+                        issue.wasted_turns,
+                        issue.title
+                    );
+                }
+            }
             Ok(())
         }
         Sub::ResetToken => {
@@ -574,12 +687,27 @@ async fn shutdown_signal() {
     }
 }
 
-/// What a local command says when it can't reach the running host.
-const NOT_RUNNING: &str = "codync-host isn't running here. Start it with `codync-host install` (or `serve`).";
-
 /// Calls the running host's local API (`~/.codync/token` over loopback).
+async fn doctor(port: u16, json: bool) -> Result<()> {
+    let report = local_call(port, "doctor", json!({})).await?;
+    if json {
+        println!("{report}");
+    } else {
+        for f in report["findings"].as_array().into_iter().flatten() {
+            let label = if f["severity"] == "error" { "error  " } else { "warning" };
+            println!("{label}  {}", f["message"].as_str().unwrap_or_default());
+        }
+        println!("Checked {} bots: {} with errors.", report["checked"], report["errors"]);
+    }
+    if report["errors"].as_u64().unwrap_or(0) > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
 async fn local_call(port: u16, method: &str, body: serde_json::Value) -> Result<serde_json::Value> {
-    let not_running = || anyhow::anyhow!(NOT_RUNNING);
+    let not_running =
+        || anyhow::anyhow!("codync-host isn't running here. Start it with `codync-host install` (or `serve`).");
     let token = std::fs::read_to_string(service::data_dir().join("token")).map_err(|_| not_running())?;
     let res = http()
         .post(format!("http://127.0.0.1:{port}/api/{method}"))

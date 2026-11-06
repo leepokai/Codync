@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Gear, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
-    RoutineList, SkillSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, DocumentSheet, Fields, FlowSheet, Library, Market, MemorySheet,
+    NetworkSheet, RoutineForm, RoutineList, SkillSheet,
 };
 use super::{Editor, Mark};
 
@@ -52,6 +52,8 @@ pub enum Action {
     Market,
     Memory,
     Details,
+    Documents,
+    Computer,
     Library,
     RefreshAgents,
     Pair,
@@ -71,12 +73,14 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 19] = [
+pub const ACTIONS: [(&str, &str, Action); 26] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
     ("Memory of this bot…", "M", Action::Memory),
     ("Details of this bot…", "R", Action::Details),
+    ("Documents, reviews and computer activity…", "", Action::Documents),
+    ("Computer: permissions, files, terminal and activity…", "", Action::Computer),
     ("Library of this bot: artifacts and files…", "L", Action::Library),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
@@ -133,14 +137,23 @@ pub struct Confirm {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NewBotField {
     Name,
+    Purpose,
+    Agent,
+    Profile,
     Color,
     Shape,
 }
 
-/// A new bot: a name (optional: the host names it after its first conversations) and its looks.
-/// Everything else takes the defaults and is changed afterwards in Settings.
+/// A new bot: a name (optional: the host names it after its first conversations), what it should help with,
+/// its agent and its looks. Everything else takes the defaults and is changed afterwards in Settings.
 pub struct NewBot {
     pub name: Editor,
+    /// Its standing instructions.
+    pub purpose: Editor,
+    /// `None`: the host picks the agent.
+    pub backend: Option<String>,
+    /// The security profile (`None`: the host's default, which approves everything).
+    pub profile: Option<String>,
     pub color: usize,
     pub shape: usize,
     pub field: NewBotField,
@@ -177,6 +190,7 @@ pub enum Field {
     Background,
     Saver,
     Agent,
+    Account,
     Model,
     ModelOptions,
     Fast,
@@ -195,7 +209,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 19] = [
+pub const FIELDS: [Field; 26] = [
     Field::Name,
     Field::Instructions,
     Field::Check,
@@ -205,6 +219,7 @@ pub const FIELDS: [Field; 19] = [
     Field::Background,
     Field::Saver,
     Field::Agent,
+    Field::Account,
     Field::Model,
     Field::ModelOptions,
     Field::Fast,
@@ -240,6 +255,10 @@ pub struct Form {
     /// `None`: the host has no saver.
     pub saver: Option<bool>,
     pub backend: String,
+    pub account: Option<String>,
+    pub account_scope: String,
+    pub accounts: Option<Vec<(String, String)>>,
+    pub account_busy: bool,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
@@ -359,6 +378,12 @@ pub enum PairCode {
 }
 
 pub enum Overlay {
+    Channels(Box<super::ChannelsSheet>),
+    Beliefs(Box<super::BeliefsSheet>),
+    Proposals(Box<super::ProposalsSheet>),
+    Computer(Box<super::super::manage::computer::ComputerSheet>),
+    McpTools(Box<super::super::manage::mcp_tools::McpToolsSheet>),
+    RosterTools,
     Goto(Goto),
     Help(Editor),
     LeadAgent(usize),
@@ -371,12 +396,13 @@ pub enum Overlay {
     Usage(usize),
     Pair(PairCode),
     Memory(MemorySheet),
+    Documents(Box<DocumentSheet>),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
     Routines(RoutineList),
+    Flow(Box<FlowSheet>),
     Routine(Box<RoutineForm>),
     Library(Library),
-    Gear(Gear),
     Market(Box<Market>),
     Agent(AgentSetup),
     Fields(Box<Fields>),
@@ -409,8 +435,6 @@ pub enum Click {
     Steps,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
-    /// A section's label (its name): folds or unfolds it, like `z`.
-    Section(String),
 }
 
 #[derive(Default)]

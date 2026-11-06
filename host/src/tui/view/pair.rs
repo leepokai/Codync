@@ -54,9 +54,9 @@ fn qr(buf: &mut Buffer, area: Rect, url: &str) {
         y,
         inner.width,
         if url.starts_with("codync-dev:") {
-            "Scan with Codync Dev on your iPhone:"
+            "Scan with Codync Dev on Android or iPhone:"
         } else {
-            "Scan with the Codync iPhone app, or open on the phone:"
+            "Scan with Codync on Android or iPhone:"
         },
         t.secondary.patch(t.panel),
     );

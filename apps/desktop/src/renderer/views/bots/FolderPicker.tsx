@@ -13,8 +13,8 @@ export function FolderPicker({ start, onPick }: { start: string | null; onPick: 
   const { store, mode, showRecent, listing, selected, setSelected, filter, setFilter,
     error, busy, saving, pathOpen, setPathOpen, input, setInput, online, open, confirm } = useFolderPicker(onPick)
   const presence = usePresence(pathOpen, 180)
-  const recent = listing?.recent?.filter(item => `${item.path}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase())) ?? []
-  const dirs = listing?.dirs.filter(item => item.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())) ?? []
+  const recent = listing?.recent?.filter((item: { path: string }) => `${item.path}`.toLocaleLowerCase().includes(filter.toLocaleLowerCase())) ?? []
+  const dirs = listing?.dirs.filter((item: { name: string }) => item.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())) ?? []
   const noRecent = mode === 'recent' && !busy && !listing?.recent?.length
   const browse = <button className="workspace-row workspace-browse" disabled={saving} onClick={() => open(start)}><Icon name="folder" size={16} /><Text grow>{tr('Browse other folders')}</Text><Icon name="chevron.right" size={10} /></button>
   return <SheetPage>

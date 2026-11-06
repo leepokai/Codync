@@ -26,12 +26,12 @@ export interface Personality {
 }
 
 export interface Bot {
-  customIcon?: import('./custom-icons').CustomIcon
   id: string
   /** `agent`, or `group`: several bots and the user in one chat. */
   kind: string
   members: string[]
   chiefBotId?: string | null
+  customIcon?: import('./custom-icons').CustomIcon
   name: string
   description: string
   avatarColor: string
@@ -42,14 +42,15 @@ export interface Bot {
   cwd: string
   /** Host-allocated personal workspace rather than a user-selected project. */
   managedWorkspace: boolean
-  /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
+  /** `ask` or `auto`. */
   permission: string
-  /** The agent mode it works in (Claude's Manual / Plan / Auto…): the agent's id, or `auto`. Null keeps the default. */
+  /** The agent mode it works in (Claude's Manual / Plan / AutoÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦); null keeps the default. */
   mode: string | null
+  section?: string | null
   actionRules?: Partial<Record<ActionClass, RulePolicy>>
   proactive?: ProactiveSettings
   model?: string | null
-  /** The model's own settings (effort, fast…): agent option id → value. */
+  /** The model's own settings (effort, fastÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦): agent option id ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ value. */
   modelOptions: Record<string, string>
   /** The agent's Fast mode (Claude Code, Codex): faster replies for more usage. */
   fastMode: boolean
@@ -67,12 +68,10 @@ export interface Bot {
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
   resting: Resting[]
   pinned: boolean
-  /** The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it. Placed in the roster like any bot, never hidden. */
+  /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
   lead: boolean
   /** Where the user dragged it, lowest first within its band (`rosterBand`); ties sort by recent activity. */
   position: number
-  /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
-  section?: string
   hidden: boolean
   notify?: boolean | null
   connectors: string[]
@@ -104,7 +103,7 @@ export interface Bot {
   computerPermissions?: { browser: boolean; files: boolean; shell: boolean }
   /** Uses the memory all the user's bots share ("About you"). */
   sharedMemory: boolean
-  /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
+  /** Keeps the harness's own memory (Claude Code'sÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦) on beside Codync's; null where it has no switch. */
   harnessMemory: boolean | null
   /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
   harnessMemoryShared: boolean
@@ -142,6 +141,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     managedWorkspace: raw.managedWorkspace ?? false,
     permission: raw.permission ?? 'auto',
     mode: raw.mode ?? null,
+    section: raw.section || undefined,
     actionRules: raw.actionRules ?? {},
     proactive: { ...DEFAULT_PROACTIVE_SETTINGS, ...(raw.proactive ?? {}) },
     model: raw.model ?? null,
@@ -157,8 +157,6 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,
-    // A cleared section (null, or an empty name) reads as none.
-    section: raw.section || undefined,
     hidden: raw.hidden ?? false,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
@@ -204,7 +202,7 @@ export interface Fallback {
   modelOptions: Record<string, string>
 }
 
-/** Why an agent can't answer: usageLimit · outOfCredits · rateLimited · overloaded · signedOut · notStarting · modelMissing */
+/** Why an agent can't answer: usageLimit ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· outOfCredits ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· rateLimited ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· overloaded ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· signedOut ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· notStarting ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· modelMissing */
 export type FallbackReason = string
 
 /** The fallback a bot runs on: which step, its agent and model, since when, and why it left the one before. */
@@ -318,9 +316,9 @@ export interface Compaction {
 
 /** What a new conversation carries when the bot's own chat starts over; editable until the next message sends it. */
 export interface HandoffCard {
-  /** draft · sent · kept */
+  /** draft ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· sent ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· kept */
   status: string
-  /** cold · away · full */
+  /** cold ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· away ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· full */
   reason?: string
   text?: string
 }
@@ -417,7 +415,7 @@ export interface EntryData {
   level?: string
   text?: string
   final?: boolean
-  /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */
+  /** user: queued | sent | cancelled | failed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tool: pending | in_progress | completed | failed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· permission: pending | answered | cancelled | expired */
   status?: string
   clientNonce?: string
   title?: string
@@ -604,8 +602,6 @@ export interface N8nState {
 }
 
 export interface Hello {
-  iconsRevision?: number
-  icons?: import('./custom-icons').CustomIcons
   hostId: string
   name: string
   version: string
@@ -616,6 +612,8 @@ export interface Hello {
   rev: number
   screen?: ScreenState
   n8n?: N8nState
+  icons?: Record<string, { dataUrl: string; tinted: boolean }>
+  iconsRevision?: number
   urls?: string[]
   computerId?: string
   signKey?: string
@@ -642,15 +640,26 @@ export interface DirItem {
   isGit: boolean
 }
 
-export interface RecentWorkspace { path: string; usedAt: number }
+
+/** A signed-in phone that scanned a computer in no account, waiting to be let in (loopback `pairingRequests`). */
+export interface PairingRequest {
+  requestId: string
+  deviceName: string
+  platform?: string | null
+  /** The phone's account, which the computer joins. */
+  email?: string | null
+  /** The 6 digits the phone shows too. */
+  code: string
+  expiresAt?: number | null
+}
 
 export interface DirListing {
-  recent?: RecentWorkspace[]
-  ancestors?: DirItem[]
   path: string
   parent?: string | null
   isGit: boolean
   dirs: DirItem[]
+  recent?: DirItem[]
+  ancestors?: DirItem[]
 }
 
 /** A pending request as the computer shows it (loopback `accessRequests`). */
@@ -663,18 +672,6 @@ export interface AccessRequest {
   /** The SAS; nil until the phone revealed its nonce (Approve stays disabled). */
   code?: string | null
   createdAt?: number | null
-  expiresAt?: number | null
-}
-
-/** A signed-in phone that scanned a computer in no account, waiting to be let in (loopback `pairingRequests`). */
-export interface PairingRequest {
-  requestId: string
-  deviceName: string
-  platform?: string | null
-  /** The phone's account, which the computer joins. */
-  email?: string | null
-  /** The 6 digits the phone shows too. */
-  code: string
   expiresAt?: number | null
 }
 
@@ -701,6 +698,7 @@ export interface CloudOwner {
 export type AccountApproval = 'code' | 'auto'
 
 export interface CloudStatus {
+  canJoinAccount?: boolean
   enabled: boolean
   url?: string | null
   /** A private relay's registration token is saved (the token itself never leaves the host). */
@@ -714,8 +712,6 @@ export interface CloudStatus {
   relay?: 'codync' | 'private' | null
   /** The user's cloud assistant may message this computer's bots (`setAssistants`). */
   assistants?: boolean | null
-  /** In no account while it could join one: a signed-in phone that pairs asks to bring it into its account. Absent from older hosts. */
-  canJoinAccount?: boolean | null
 }
 
 export interface ClaimSignature {
@@ -754,6 +750,7 @@ export interface BotDraft {
   cwd: string
   permission: string
   mode?: string | null
+  section?: string | null
   actionRules?: Partial<Record<ActionClass, RulePolicy>>
   proactive?: ProactiveSettings
   model?: string | null
@@ -763,8 +760,6 @@ export interface BotDraft {
   fallbacks?: Fallback[]
   selfFallbacks?: boolean
   pinned?: boolean
-  /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
-  section?: string | null
   hidden?: boolean
   notify?: boolean | null
   connectors?: string[]
@@ -785,6 +780,7 @@ export interface BotDraft {
   harnessMemory?: boolean
   isChief?: boolean
   chiefBotId?: string | null
+  customIcon?: import('./custom-icons').CustomIcon
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -843,6 +839,7 @@ export interface GroupDraft {
   description: string
   members: string[]
   chiefBotId?: string | null
+  customIcon?: import('./custom-icons').CustomIcon
   pinned?: boolean
 }
 

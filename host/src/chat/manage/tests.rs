@@ -52,11 +52,14 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     assert_eq!((cfg.connectors, cfg.skills), (vec!["github".to_owned()], vec![]));
     assert_eq!(made["routines"][0]["triggerDescriptions"][0], "Every 30 minutes");
 
-    call(&hub, "lead", "update_bot", &json!({"botId": "dev", "instructions": "Writes code.", "hidden": true}))
+    // The user's own bots stay theirs to change.
+    let refused = call(&hub, "lead", "update_bot", &json!({"botId": "dev", "instructions": "Writes code."})).await;
+    assert!(refused.is_err(), "a manager can't change a bot it didn't create");
+    call(&hub, "lead", "update_bot", &json!({"botId": id, "instructions": "Writes code.", "hidden": true}))
         .await
         .unwrap();
-    let dev = hub.store.bot("dev").unwrap().unwrap().config;
-    assert_eq!((dev.description.as_str(), dev.hidden), ("Writes code.", true));
+    let made_cfg = hub.store.bot(id).unwrap().unwrap().config;
+    assert_eq!((made_cfg.description.as_str(), made_cfg.hidden), ("Writes code.", true));
     // A manager changes its own setup too.
     call(&hub, "lead", "update_bot", &json!({"botId": "lead", "name": "Boss", "model": "opus"})).await.unwrap();
     let lead = hub.store.bot("lead").unwrap().unwrap().config;
@@ -65,7 +68,7 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
         notices(&hub, "lead"),
         [
             json!("Created bot Security Analyst"),
-            json!("Updated dev: hidden, instructions"),
+            json!("Updated Security Analyst: hidden, instructions"),
             json!("Updated lead: name, model")
         ]
     );
@@ -85,10 +88,10 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     assert!(refused("lead", "create_bot", no_trigger).await.contains("triggers"));
     // Routines are checked as `save_routine` checks them, for the bot they're for.
     let lead_routine = hub.routines.save(&hub, "lead", &routine).unwrap()["routine"]["id"].clone();
-    let other = json!({"botId": "dev", "routines": [{"id": lead_routine, "name": "r", "instruction": "i",
+    let other = json!({"botId": id, "routines": [{"id": lead_routine, "name": "r", "instruction": "i",
         "triggers": [{"type": "interval", "seconds": 1800}]}]});
     assert!(refused("lead", "update_bot", other).await.contains("routine not found"));
-    let no_time = json!({"botId": "dev", "routines": [{"name": "r", "instruction": "i", "timeoutSeconds": 0,
+    let no_time = json!({"botId": id, "routines": [{"name": "r", "instruction": "i", "timeoutSeconds": 0,
         "triggers": [{"type": "interval", "seconds": 1800}]}]});
     assert!(refused("lead", "update_bot", no_time).await.contains("timeoutSeconds"));
     // A manager's own fallbacks are the user's once they turned that off, also through update_bot.

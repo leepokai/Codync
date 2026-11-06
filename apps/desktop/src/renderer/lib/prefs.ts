@@ -64,8 +64,11 @@ export const prefs = {
   /** Folded roster sections, by name: on this device only. */
   rosterSectionOrder: pref<Record<string, string[]>>('rosterSectionOrder', {}),
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
+  collapsedProjects: pref<string[]>('collapsedProjects', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
+  /** "Continue without an account" on the welcome: it stops covering the window until sign-out. */
+  welcomeSkipped: pref('accountWelcomeSkipped', false),
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
   appLanguage: pref<AppLanguage>('appLanguage', 'system'),

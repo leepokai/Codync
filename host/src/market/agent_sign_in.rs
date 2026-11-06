@@ -85,6 +85,7 @@ fn invite_saying(
     text: &str,
 ) -> Result<()> {
     let _guard = SIGN_IN.locked();
+    mark_waiting(hub, bot, entries)?;
     // In a room the card's chat is the room's: `botId` says whose it is.
     let mine = |card: &crate::store::Entry| card.bot_id == lane.chat && card.data["connectionRequest"]["botId"] == bot;
     if let Some(card) = hub.store.pending_sign_ins(backend)?.into_iter().find(mine) {
@@ -113,6 +114,22 @@ fn invite_saying(
         &json!({"text": text, "connectionRequest": request}),
     )
     .ok_or_else(|| anyhow!("Could not save the sign-in request"))?;
+    Ok(())
+}
+
+/// Publishes `entries`' nonterminal outcome (`messageResult`) before the user can see or complete the card.
+fn mark_waiting(hub: &Hub, bot: &str, entries: &[String]) -> Result<()> {
+    for id in entries {
+        if let Some(mut entry) = hub.store.entry(id).filter(|entry| {
+            entry.bot_id == bot
+                && entry.kind == EntryKind::User.as_str()
+                && entry.data.get("turnResult").is_none_or(|result| result["state"] == "waitingForSignIn")
+        }) {
+            entry.data["turnResult"] =
+                json!({"version":1,"state":"waitingForSignIn","text":null,"stopReason":"sign_in"});
+            hub.set_entry(id, &entry.data).ok_or_else(|| anyhow!("Could not save the pending sign-in outcome"))?;
+        }
+    }
     Ok(())
 }
 
@@ -146,6 +163,14 @@ pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
         let ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
         let held = ids.iter().filter_map(Value::as_str).filter_map(|id| hub.store.entry(id));
         for mut entry in held.filter(|entry| now_ms() - entry.created_at <= MAX_AGE) {
+            if entry.data.get("turnResult").is_some_and(|result| result["state"] != "waitingForSignIn") {
+                continue;
+            }
+            if entry.data["source"] == "slack" && !hub.store.resume_slack_sign_in(&entry.id)? {
+                entry.data["status"] = "cancelled".into();
+                hub.set_entry(&entry.id, &entry.data);
+                continue;
+            }
             let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry.data);
             entry.data["status"] = "queued".into();
             hub.set_entry(&entry.id, &entry.data);

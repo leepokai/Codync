@@ -2,16 +2,16 @@
 
 use crate::LockExt;
 use anyhow::{Result, bail};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
+use tokio::sync::watch;
 
 use super::MAX_PENDING_MESSAGES;
 
 const MAX_REQUEST_HOPS: u8 = 8;
 pub(super) const MAX_PENDING_MESSAGES_PER_SENDER: usize = 16;
 
-/// Nothing waits on a message, so there is no wait graph: capacity and the chain's hop count
-/// bound what bots can start.
+/// Deferred messages use capacity and hop limits; synchronous asks also reserve a wait-graph edge.
 #[derive(Default)]
 pub struct Requests(pub(super) Mutex<RequestState>);
 
@@ -22,12 +22,21 @@ pub enum Turn {
     Chat(u8),
     /// Answering another bot's request: the answer goes back in its reply, so it messages no one.
     Request,
+    /// A bounded ask may consult further bots; a wait graph prevents reciprocal blocking.
+    SynchronousRequest(u8),
+}
+
+pub(super) struct Request {
+    from: String,
+    to: String,
+    cancel: watch::Sender<bool>,
 }
 
 #[derive(Default)]
 pub(super) struct RequestState {
     /// Bots in a turn.
     pub(super) active: HashMap<String, Turn>,
+    pub(super) pending: HashMap<String, Request>,
     pub(super) messages: usize,
     pub(super) messages_by_sender: HashMap<String, usize>,
 }
@@ -59,13 +68,57 @@ impl Requests {
         }
     }
 
+    /// Admission and cycle detection share the lock, so simultaneous reciprocal asks cannot pass.
+    pub(super) fn begin(&self, id: &str, from: &str, to: &str) -> Result<(watch::Receiver<bool>, u8)> {
+        let mut state = self.0.locked();
+        let hops = state.next_hop(from)?;
+        if from == to {
+            bail!("a bot cannot ask itself");
+        }
+        if state.pending.len() >= MAX_PENDING_MESSAGES {
+            bail!("too many pending bot requests");
+        }
+        if state.pending.values().any(|r| r.from == from && r.to == to) {
+            bail!("already waiting for this bot");
+        }
+        let mut remaining = vec![to];
+        let mut seen = HashSet::new();
+        while let Some(bot) = remaining.pop() {
+            if bot == from {
+                bail!("this request would make bots wait for each other; finish the current request first");
+            }
+            if seen.insert(bot) {
+                remaining.extend(state.pending.values().filter(|r| r.from == bot).map(|r| r.to.as_str()));
+            }
+        }
+        let (cancel, receiver) = watch::channel(false);
+        state.pending.insert(id.to_owned(), Request { from: from.to_owned(), to: to.to_owned(), cancel });
+        Ok((receiver, hops))
+    }
+
+    pub fn cancel_from(&self, bot: &str) {
+        self.end_turn(bot);
+    }
+
+    pub fn cancel_bot(&self, bot: &str) {
+        let mut state = self.0.locked();
+        state.active.remove(bot);
+        for request in state.pending.values().filter(|r| r.from == bot || r.to == bot) {
+            request.cancel.send_replace(true);
+        }
+    }
+
     pub fn start_turn(&self, bot: &str, turn: Turn) {
         self.0.locked().active.insert(bot.to_owned(), turn);
     }
 
     /// `bot`'s turn ended (or it was deleted): it can't send more until its next turn.
     pub fn end_turn(&self, bot: &str) {
-        self.0.locked().active.remove(bot);
+        let mut state = self.0.locked();
+        state.active.remove(bot);
+        for request in state.pending.values().filter(|r| r.from == bot) {
+            request.cancel.send_replace(true);
+        }
     }
 }
 
@@ -78,10 +131,10 @@ impl RequestState {
                     "message_bot isn't available while answering another bot's request: say what you need in your reply"
                 )
             }
-            Some(&Turn::Chat(hops)) if hops >= MAX_REQUEST_HOPS => {
+            Some(&Turn::Chat(hops) | &Turn::SynchronousRequest(hops)) if hops >= MAX_REQUEST_HOPS => {
                 bail!("bot request hop limit ({MAX_REQUEST_HOPS}) reached; ask the user before starting another chain")
             }
-            Some(&Turn::Chat(hops)) => Ok(hops + 1),
+            Some(&Turn::Chat(hops) | &Turn::SynchronousRequest(hops)) => Ok(hops + 1),
         }
     }
 }
@@ -89,6 +142,41 @@ impl RequestState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reciprocal_synchronous_asks_are_rejected_before_they_can_deadlock() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Chat(0));
+        requests.start_turn("b", Turn::Chat(0));
+        requests.begin("a-to-b", "a", "b").unwrap();
+        let error = requests.begin("b-to-a", "b", "a").unwrap_err();
+        assert!(error.to_string().contains("wait for each other"));
+        assert_eq!(requests.0.locked().pending.len(), 1);
+    }
+
+    #[test]
+    fn nested_synchronous_asks_keep_the_chain_limit_and_cycle_check() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Chat(0));
+        requests.begin("a-to-b", "a", "b").unwrap();
+        requests.start_turn("b", Turn::SynchronousRequest(1));
+        assert_eq!(requests.begin("b-to-c", "b", "c").unwrap().1, 2);
+        assert!(requests.begin("b-to-a", "b", "a").is_err());
+        requests.start_turn("c", Turn::SynchronousRequest(MAX_REQUEST_HOPS));
+        assert!(requests.begin("c-to-d", "c", "d").unwrap_err().to_string().contains("hop limit"));
+    }
+
+    #[test]
+    fn stopping_a_sender_cancels_its_asks_but_keeps_deferred_capacity_reserved() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Chat(0));
+        requests.reserve_message("a").unwrap();
+        let (cancelled, _) = requests.begin("a-to-b", "a", "b").unwrap();
+        requests.end_turn("a");
+        assert!(*cancelled.borrow());
+        assert_eq!(requests.0.locked().messages, 1);
+        requests.release_message("a");
+    }
 
     #[test]
     fn exhausted_chain_rejects_messages_without_reserving_capacity() {

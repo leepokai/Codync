@@ -1,7 +1,7 @@
 //! Subscription usage, read on the host.
 //!
 //! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
-//! Codex: the CLI's live account rate limits. The other agents Codync runs are
+//! Codex: the newest rollout's `rate_limits`. The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
 //! `kiro-cli /usage`, `gemini /usage`, a `kimi` screen, Antigravity's language
 //! server, OpenCode's console usage endpoint, Vibe's session logs, and the
@@ -35,6 +35,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const POLL_EVERY: Duration = Duration::from_mins(5);
+/// The last reading, so the counters are on screen while a fresh probe runs.
+const KV_USAGE: &str = "usage.cache";
+/// The timer and several clients can ask for a reading at once: one probe owns it.
+static REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// When the last probe finished. A client that waited for the one in flight
+/// gets its result instead of starting another probe right away.
+static LAST_REFRESH: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 /// Usage of a plan above which background work (dreaming, the lead's check-ins) waits.
 const HEADROOM_PERCENT: f64 = 75.0;
 
@@ -57,13 +64,16 @@ pub struct Usage {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Provider {
-    pub id: &'static str,
-    pub name: &'static str,
+    pub id: String,
+    pub name: String,
     pub windows: Vec<Window>,
     /// Where the numbers came from: `claude` (CLI), `statusline`, `agent`, `sessions`,
     /// or a short phrase for the other agents.
     pub source: String,
     pub updated_at: i64,
+    /// Why a provider has no windows (`unsupported`, `unavailable`), when it can't report.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -98,31 +108,45 @@ impl Window {
 impl Usage {
     /// One window at a time, for Claude's status line and rate-limit events.
     /// The provider's other windows stay.
-    fn merge(&mut self, id: &'static str, name: &'static str, source: &'static str, new: Vec<Window>) {
+    fn merge(&mut self, id: &str, name: &str, source: &'static str, new: Vec<Window>) {
         let mut windows = self.providers.iter().find(|p| p.id == id).map(|p| p.windows.clone()).unwrap_or_default();
         windows.retain(|w| !new.iter().any(|n| n.id == w.id));
         windows.extend(new);
         windows.sort_by(|a, b| a.id.cmp(&b.id));
         self.providers.retain(|p| p.id != id);
-        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
-        self.providers.sort_by_key(|p| p.id);
+        self.providers.push(Provider {
+            id: id.into(),
+            name: name.into(),
+            windows,
+            source: source.into(),
+            updated_at: crate::store::now_ms(),
+            status: None,
+        });
+        self.providers.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
     /// A probe's full reading. Windows it no longer reports are dropped, and an
     /// empty reading removes the provider.
-    fn replace(&mut self, id: &'static str, name: &'static str, source: &'static str, new: Vec<Window>) {
+    fn replace(&mut self, id: &str, name: &str, source: &'static str, new: Vec<Window>) {
         self.providers.retain(|p| p.id != id);
         if new.is_empty() {
             return;
         }
         let mut windows = new;
         windows.sort_by(|a, b| a.id.cmp(&b.id));
-        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
-        self.providers.sort_by_key(|p| p.id);
+        self.providers.push(Provider {
+            id: id.into(),
+            name: name.into(),
+            windows,
+            source: source.into(),
+            updated_at: crate::store::now_ms(),
+            status: None,
+        });
+        self.providers.sort_by(|a, b| a.id.cmp(&b.id));
     }
 }
 
-pub(super) fn merge(hub: &Hub, id: &'static str, name: &'static str, source: &'static str, windows: Vec<Window>) {
+pub(super) fn merge(hub: &Hub, id: &str, name: &str, source: &'static str, windows: Vec<Window>) {
     let mut usage = hub.usage.locked().clone();
     usage.merge(id, name, source, windows);
     hub.set_usage(usage);
@@ -148,6 +172,18 @@ pub fn save(store: &crate::store::Store, usage: &Usage) {
 }
 
 pub async fn refresh(hub: &Hub) {
+    // The timer and several clients can request a refresh together. One probe
+    // owns the work; the others wait for it and then receive its result, so a
+    // manual refresh never answers with a half-filled list.
+    let Ok(_refresh) = REFRESH.try_lock() else {
+        let _done = REFRESH.lock().await;
+        return;
+    };
+    if LAST_REFRESH.locked().is_some_and(|last| last.elapsed() < Duration::from_secs(2)) {
+        return;
+    }
+    // Antigravity's adapters report per account; the language server below fills a base reading when they can't.
+    antigravity::refresh(hub).await;
     let (
         codex,
         claude,
@@ -164,7 +200,7 @@ pub async fn refresh(hub: &Hub) {
         grok_windows,
     ) = tokio::join!(
         codex::collect(),
-        claude::collect(),
+        claude::collect(&hub.store),
         omp::collect(),
         amp::collect(),
         kiro::collect(),
@@ -177,17 +213,96 @@ pub async fn refresh(hub: &Hub) {
         gemini::collect(),
         grok::collect(),
     );
-    apply(hub, codex, "codex", "Codex", "Codex CLI");
-    apply(hub, claude, "claude", "Claude", "claude");
-    apply(hub, omp_windows, "omp", "oh-my-pi", "omp usage");
-    apply(hub, amp_windows, "amp", "Amp", "amp usage");
-    apply(hub, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
-    apply(hub, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
-    apply(hub, antigravity, "antigravity", "Google Antigravity", "antigravity");
-    apply(hub, joined(opencode), "opencode", "OpenCode", "opencode database");
-    apply(hub, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
-    apply(hub, joined(junie), "junie", "Junie", "JetBrains IDE");
-    apply(hub, cursor_windows, "cursor", "Cursor", "Cursor");
+    let backends = tokio::task::spawn_blocking(crate::agent::backends::list).await.unwrap_or_default();
+    let signed_out: std::collections::HashSet<&str> =
+        backends.iter().filter(|b| b["signedIn"].as_bool() == Some(false)).filter_map(|b| b["id"].as_str()).collect();
+    // A signed-out CLI can leave local history behind (OpenCode's database). That
+    // is not a plan this account can spend, so it must not become a bar.
+    {
+        let mut usage = hub.usage.locked().clone();
+        let before = usage.providers.len();
+        usage.providers.retain(|p| !signed_out_base(&signed_out, &p.id));
+        if usage.providers.len() != before {
+            hub.set_usage(usage);
+        }
+    }
+    apply(hub, &signed_out, codex, "codex", "Codex", "codex");
+    apply(hub, &signed_out, claude, "claude", "Claude", "claude");
+    apply(hub, &signed_out, omp_windows, "omp", "oh-my-pi", "omp usage");
+    apply(hub, &signed_out, amp_windows, "amp", "Amp", "amp usage");
+    apply(hub, &signed_out, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
+    apply(hub, &signed_out, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
+    apply(hub, &signed_out, antigravity, "antigravity", "Google Antigravity", "antigravity");
+    apply(hub, &signed_out, opencode, "opencode", "OpenCode", "opencode usage");
+    apply(hub, &signed_out, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
+    apply(hub, &signed_out, joined(junie), "junie", "Junie", "JetBrains IDE");
+    apply(hub, &signed_out, cursor_windows, "cursor", "Cursor", "Cursor");
+    apply(hub, &signed_out, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
+    apply(hub, &signed_out, grok_windows, "grok", "Grok", "grok billing");
+    ensure_connected(hub, &backends);
+    *LAST_REFRESH.locked() = Some(std::time::Instant::now());
+}
+
+/// A connected agent that couldn't report is still shown, with its status, so
+/// its counters don't silently disappear from the sidebar and Settings.
+fn ensure_connected(hub: &Hub, connected: &[serde_json::Value]) {
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    for backend in connected {
+        if backend["installed"] != true || backend["signedIn"] != true {
+            continue;
+        }
+        let Some(id) = backend["id"].as_str() else { continue };
+        let Some(name) = reported_name(id) else { continue };
+        wanted.push((id.to_owned(), name.to_owned()));
+    }
+    let mut usage = hub.usage.locked().clone();
+    // Gemini (Antigravity) and Gemini CLI are the same Google account: when the
+    // plan is already reported, a second "unavailable" row only adds noise.
+    let gemini_covered = usage.providers.iter().any(|p| p.id == "antigravity" && !p.windows.is_empty());
+    let wanted: Vec<(String, String)> =
+        wanted.into_iter().filter(|(id, _)| !(gemini_covered && id == "gemini")).collect();
+    let ids: Vec<&str> = wanted.iter().map(|(id, _)| id.as_str()).collect();
+    let before = usage.providers.len();
+    usage.providers.retain(|p| p.source != "agent" || ids.contains(&p.id.as_str()));
+    let mut changed = usage.providers.len() != before;
+    for (id, name) in wanted {
+        if usage.providers.iter().any(|p| p.id == id) {
+            continue;
+        }
+        usage.providers.push(Provider {
+            id,
+            name,
+            windows: Vec::new(),
+            source: "agent".into(),
+            updated_at: crate::store::now_ms(),
+            status: Some("unavailable".into()),
+        });
+        changed = true;
+    }
+    if changed {
+        usage.providers.sort_by(|a, b| a.id.cmp(&b.id));
+        hub.set_usage(usage);
+    }
+}
+
+/// The agents whose plan limits Codync can read, by backend id.
+fn reported_name(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "claude" => "Claude",
+        "codex" => "Codex",
+        "grok" => "Grok",
+        "gemini" => "Gemini CLI",
+        "antigravity" => "Gemini",
+        "cursor" => "Cursor",
+        "opencode" => "OpenCode",
+        "kimi" => "Kimi Code",
+        "amp" => "Amp",
+        "kiro" => "Kiro CLI",
+        "omp" => "oh-my-pi",
+        "vibe" => "Mistral Vibe",
+        "junie" => "Junie",
+        _ => return None,
+    })
 }
 
 fn joined(result: Result<Option<Vec<Window>>, tokio::task::JoinError>) -> Option<Vec<Window>> {

@@ -7,13 +7,15 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Current schema version (kv `schema`).
-const SCHEMA: i64 = 6;
+/// 7: the account a device joined with (devices.account).
+const SCHEMA: i64 = 7;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
 /// 4: threads (`entries.thread_id`); instruction snapshots are kept per session, so the
 /// per-bot ones go.
-/// 5: threads merge into their chats (quote replies took their place, see [`migrate_5`]).
+/// 5: threads merge into their chats (quote replies took their place, see [`migrate_5`]); side conversations
+/// (a document's `doc:<id>`, a Slack thread's `slack-…`) keep `thread_id`.
 /// 6: the dividers that announced a fresh agent session go; the chat no longer shows session resets.
 fn migrate(c: &Connection) -> Result<()> {
     let version: i64 =
@@ -30,7 +32,8 @@ fn migrate(c: &Connection) -> Result<()> {
     if version < 5 {
         migrate_5(c)?;
     }
-    migrate_6(c)
+    migrate_6(c)?;
+    migrate_7(c)
 }
 
 fn migrate_3(c: &Connection) -> Result<()> {
@@ -64,7 +67,7 @@ fn migrate_4(c: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Thread replies join their chat in time order. Each thread's first user reply quotes the message the thread was
+/// Thread replies join their chat in time order; side conversations (`doc:`, `slack-`) stay apart. Each thread's first user reply quotes the message the thread was
 /// on; a routine run's own reply stays in its trace, since its result is already in the chat, and the result shows
 /// the run's trace. Thread sessions and read marks go (a routine run's session stays for its recovery). Rows whose
 /// chat changes get new revs so synced clients pick them up, and keep their old one as `contentRev`. Thread trace
@@ -75,7 +78,8 @@ fn migrate_5(c: &Connection) -> Result<()> {
     let changed: Vec<String> = tx
         .prepare(
             "SELECT id FROM entries
-             WHERE (thread_id IS NOT NULL AND (kind IN ('user', 'permission', 'notice')
+             WHERE (thread_id IS NOT NULL AND thread_id NOT GLOB 'doc:*' AND thread_id NOT GLOB 'slack-*'
+                    AND (kind IN ('user', 'permission', 'notice')
                                                OR (kind = 'agent' AND json_extract(data, '$.final') = 1)))
                OR json_extract(data, '$.thread') IS NOT NULL OR id GLOB 'routine-result-*' ORDER BY seq",
         )?
@@ -103,9 +107,11 @@ fn migrate_5(c: &Connection) -> Result<()> {
              AND seq = (SELECT MIN(f.seq) FROM entries f WHERE f.thread_id = entries.thread_id AND f.kind = 'user');
          UPDATE entries SET data = json_remove(data, '$.thread') WHERE json_extract(data, '$.thread') IS NOT NULL;
          DROP INDEX migrate5_thread;
-         DROP INDEX IF EXISTS entries_thread;
-         ALTER TABLE entries DROP COLUMN thread_id;
-         DELETE FROM kv WHERE k GLOB 'read.*' OR (k GLOB 'lane.*' AND NOT k GLOB 'lane.session.*/routine-*');
+         UPDATE entries SET thread_id = NULL
+           WHERE thread_id IS NOT NULL AND thread_id NOT GLOB 'doc:*' AND thread_id NOT GLOB 'slack-*';
+         DELETE FROM kv WHERE k GLOB 'read.*' OR (k GLOB 'lane.*' AND NOT k GLOB 'lane.session.*/routine-*'
+           AND NOT k GLOB 'lane.session.*/doc:*' AND NOT k GLOB 'lane.session.*/doc-group:*'
+           AND NOT k GLOB 'lane.session.*/slack-*' AND NOT k GLOB 'lane.scratchpad.*');
          INSERT INTO kv(k, v) VALUES('schema', '5') ON CONFLICT(k) DO UPDATE SET v = '5';",
     )?;
     for id in changed {
@@ -118,6 +124,17 @@ fn migrate_5(c: &Connection) -> Result<()> {
         )?;
     }
     tx.commit()?;
+    Ok(())
+}
+
+fn migrate_7(c: &Connection) -> Result<()> {
+    // A table built by this version already has the column.
+    let _ = c.execute("ALTER TABLE devices ADD COLUMN account TEXT", []);
+    c.execute_batch(
+        "BEGIN;
+         INSERT INTO kv(k, v) VALUES('schema', '7') ON CONFLICT(k) DO UPDATE SET v = '7';
+         COMMIT;",
+    )?;
     Ok(())
 }
 
@@ -134,6 +151,12 @@ fn migrate_6(c: &Connection) -> Result<()> {
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let c = Connection::open(path)?;
+        c.create_scalar_function(
+            "codync_lower",
+            1,
+            rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+            |context| Ok(context.get::<String>(0)?.to_lowercase()),
+        )?;
         c.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
@@ -147,9 +170,28 @@ impl Store {
                 rev INTEGER NOT NULL, kind TEXT NOT NULL, turn INTEGER NOT NULL, data TEXT NOT NULL,
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS entries_rev ON entries(rev);
-             CREATE INDEX IF NOT EXISTS entries_bot ON entries(bot_id, seq);",
+             CREATE INDEX IF NOT EXISTS entries_bot ON entries(bot_id, seq);
+             CREATE TABLE IF NOT EXISTS computer_activity(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT NOT NULL,
+                action TEXT NOT NULL, result TEXT NOT NULL CHECK(result IN ('success', 'failed')),
+                created_at INTEGER NOT NULL);
+             CREATE INDEX IF NOT EXISTS computer_activity_bot ON computer_activity(bot_id, id);
+             CREATE TABLE IF NOT EXISTS computer_activity_actors(
+                 activity_id INTEGER PRIMARY KEY REFERENCES computer_activity(id) ON DELETE CASCADE,
+                 actor_kind TEXT NOT NULL, actor_id TEXT NOT NULL);
+             CREATE TRIGGER IF NOT EXISTS computer_activity_cleanup_actor AFTER DELETE ON computer_activity
+             BEGIN DELETE FROM computer_activity_actors WHERE activity_id=old.id; END;",
         )?;
         migrate(&c)?;
+        super::runtime::create_tables(&c)?;
+        super::documents::open(&c)?;
+        super::mcp_policies::open(&c)?;
+        super::slack::open(&c)?;
+        super::research::open(&c)?;
+        super::analytics::open(&c)?;
+        super::apps::open(&c)?;
+        super::open_items::open(&c)?;
+        super::flows::open(&c)?;
         codync_mem::schema::migrate(&c)?;
         let secret_key = if path == Path::new(":memory:") {
             let mut key = vec![0; 32];
@@ -158,7 +200,13 @@ impl Store {
         } else {
             None
         };
-        Ok(Self { db: Mutex::new(c), connector_lock: Mutex::new(()), secret_key: Mutex::new(secret_key) })
+        Ok(Self {
+            icon_lock: tokio::sync::Mutex::new(()),
+            vault_unlock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            db: Mutex::new(c),
+            connector_lock: Mutex::new(()),
+            secret_key: Mutex::new(secret_key),
+        })
     }
 }
 
@@ -186,7 +234,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("6"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("7"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -209,7 +257,7 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("6"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("7"));
     }
 
     #[test]
@@ -220,9 +268,8 @@ mod tests {
             Store::open(&db).unwrap();
             c.execute_batch(
                 "UPDATE kv SET v = '4' WHERE k = 'schema';
-                 ALTER TABLE entries ADD COLUMN thread_id TEXT;
                  INSERT INTO kv(k, v) VALUES('rev', '10'), ('read.root', '9'), ('lane.session.b@b/root', 's1'),
-                   ('lane.session.b@b/routine-r1', 's2');
+                   ('lane.session.b@b/routine-r1', 's2'), ('lane.session.b@b/doc:d1', 's3');
                  INSERT INTO entries(id, bot_id, thread_id, rev, kind, turn, data, created_at, updated_at) VALUES
                    ('root', 'b', NULL, 1, 'agent', 1, '{\"text\":\"Plan ready\",\"final\":true,\"author\":\"b\",\"thread\":{\"count\":2}}', 0, 0),
                    ('q', 'b', 'root', 2, 'user', 2, '{\"text\":\"why?\"}', 0, 0),
@@ -232,7 +279,8 @@ mod tests {
                    ('routine-result-r1', 'b', NULL, 6, 'agent', 0, '{\"text\":\"Today…\",\"final\":true}', 0, 0),
                    ('tool', 'b', 'routine-r1', 7, 'tool', 3, '{\"title\":\"Read\"}', 0, 0),
                    ('shot', 'b', NULL, 8, 'user', 4, '{\"text\":\"\",\"attachments\":[{\"name\":\"a.png\"}],\"thread\":{\"count\":1}}', 0, 0),
-                   ('see', 'b', 'shot', 9, 'user', 5, '{\"text\":\"see?\"}', 0, 0);",
+                   ('see', 'b', 'shot', 9, 'user', 5, '{\"text\":\"see?\"}', 0, 0),
+                   ('ask', 'b', 'doc:d1', 10, 'user', 6, '{\"text\":\"about this page\"}', 0, 0);",
             )
             .unwrap();
         }
@@ -255,5 +303,9 @@ mod tests {
         assert_eq!(s.kv_get("read.root"), None);
         assert_eq!(s.kv_get("lane.session.b@b/root"), None);
         assert_eq!(s.kv_get("lane.session.b@b/routine-r1").as_deref(), Some("s2"), "a run's session stays");
+        // A document's conversation stays its own: out of the chat, with its session.
+        assert_eq!(s.entry("ask").unwrap().thread_id.as_deref(), Some("doc:d1"));
+        assert_eq!(s.thread("b", "doc:d1", 10).unwrap().len(), 1);
+        assert_eq!(s.kv_get("lane.session.b@b/doc:d1").as_deref(), Some("s3"));
     }
 }

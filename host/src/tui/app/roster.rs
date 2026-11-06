@@ -1,17 +1,20 @@
-//! The roster as shown: its order and its lines (the lead, pinned bots, then each section under its
-//! label, sorted by name, then bots in none), and moving through it.
+//! The roster as shown: its order and its lines (pinned bots, then each section under its label,
+//! sorted by name, then bots in none), and moving through it.
 
 use std::cmp::Reverse;
 use std::collections::HashSet;
 
 use icu_normalizer::DecomposingNormalizerBorrowed;
+use serde_json::json;
 
 use super::super::l10n::tr;
 use super::super::manage::{Submit, section_fields};
-use super::{App, Bot, Click, Overlay};
+use super::{After, App, Bot, Click, Overlay};
 
 /// The first host with roster sections (`section`, `renameSection`).
 const SECTIONS_SINCE: &str = "2.32.0";
+/// The first host where the user picks the lead (`setLead`) and may delete it.
+const LEAD_CHOICE_SINCE: &str = "2.33.0";
 
 /// One line of the roster.
 pub enum RosterLine<'a> {
@@ -30,10 +33,9 @@ pub enum RosterLine<'a> {
 }
 
 impl Bot {
-    /// The section the roster shows it in: none for the lead or while pinned (they stay on top,
-    /// outside sections).
+    /// The section the roster shows it in: none while pinned (it stays on top, outside sections).
     pub fn shown_section(&self) -> Option<&str> {
-        if self.lead || self.pinned { None } else { self.section.as_deref() }
+        if self.pinned { None } else { self.section.as_deref() }
     }
 
     /// The bots it shows among and reorders with: its band (`Bot::band`), and for the rest its section
@@ -59,14 +61,14 @@ fn section_key(name: &str) -> (String, String, Reverse<&str>) {
 }
 
 /// `roster` (in `App::roster` order) as lines; a folded section is its label alone. Without pinned
-/// bots or sections there is nothing to tell apart, so no labels; the lead, on top, has none.
+/// bots or sections there is nothing to tell apart, so no labels.
 pub fn roster_lines<'a>(roster: &[&'a Bot], folded: &HashSet<String>) -> Vec<RosterLine<'a>> {
     let labeled = roster.iter().any(|b| b.pinned || b.shown_section().is_some());
     let mut lines = vec![];
     let mut group = None;
     for &b in roster {
         let here = b.roster_group();
-        if labeled && !b.lead && group != Some(here) {
+        if labeled && group != Some(here) {
             lines.push(match here {
                 (_, None) if b.pinned => RosterLine::Label("PINNED"),
                 (_, None) => RosterLine::Label("BOTS"),
@@ -155,7 +157,9 @@ impl App {
         let mut v: Vec<&Bot> = self.bots.values().filter(|b| !b.hidden).collect();
         v.sort_by_cached_key(|&b| {
             let section = b.shown_section().map(section_key);
-            (b.band(), section.is_none(), section, b.position, Reverse(b.last_at), b.name.clone())
+            let name = b.shown_section().unwrap_or("");
+            let order = self.section_order.iter().position(|s| s == name).unwrap_or(self.section_order.len());
+            (b.band(), order, section.is_none(), section, b.position, Reverse(b.last_at), b.name.clone())
         });
         v
     }
@@ -209,13 +213,18 @@ impl App {
         }
     }
 
-    /// `w`: "Move to section" for the selected bot: one of the sections, a new name, or empty for none.
-    /// The lead stays on top, outside sections.
-    pub(super) fn ask_section(&mut self) {
-        if self.bot().is_some_and(|b| b.lead) {
-            self.flash("The lead bot always stays on top");
+    /// `*`: makes the selected bot the lead, in place of the one before. A group can't lead.
+    pub(super) fn make_lead(&mut self) {
+        if !self.bot().is_some_and(|b| !b.lead && !b.group) || !self.lead_choice_supported() {
             return;
         }
+        if let Some(b) = self.bot() {
+            self.call("setLead", json!({"botId": b.id}), After::Nothing);
+        }
+    }
+
+    /// `w`: "Move to section" for the selected bot: one of the sections, a new name, or empty for none.
+    pub(super) fn ask_section(&mut self) {
         if self.bot().is_none() || !self.sections_supported() {
             return;
         }
@@ -247,15 +256,23 @@ impl App {
 
     /// Whether the host has sections; says what to update when it doesn't.
     fn sections_supported(&mut self) -> bool {
+        self.host_supports(SECTIONS_SINCE, "Update Codync on {host}: sections need {version} or newer.")
+    }
+
+    /// Whether the user may pick the lead and delete it; says what to update when the host is older.
+    pub(super) fn lead_choice_supported(&mut self) -> bool {
+        self.host_supports(LEAD_CHOICE_SINCE, "Update Codync on {host}: changing the lead needs {version} or newer.")
+    }
+
+    /// Whether the host is `since` or newer; says what to update when it isn't (`why`, with `{host}` and `{version}`).
+    fn host_supports(&mut self, since: &str, why: &str) -> bool {
         if self.host_version.is_empty() {
             self.flash("Still connecting: try again in a moment.");
             return false;
         }
-        let supported = crate::compat::at_least(&self.host_version, SECTIONS_SINCE);
+        let supported = crate::compat::at_least(&self.host_version, since);
         if !supported {
-            let why = tr("Update Codync on {host}: sections need {version} or newer.")
-                .replace("{host}", &self.host)
-                .replace("{version}", SECTIONS_SINCE);
+            let why = tr(why).replace("{host}", &self.host).replace("{version}", since);
             self.flash(&why);
         }
         supported
@@ -308,20 +325,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_lead_stays_on_top_without_a_label_or_a_section() {
+    async fn the_lead_sits_in_its_section_like_any_bot() {
         let mut app = test_app();
         let lead = json!({"id": "l", "lead": true, "section": "Work", "lastAt": 0});
         app.bots.insert("l".into(), Bot::parse(&lead).expect("a bot with an id parses"));
         add(&mut app, "w", false, Some("Work"), 2, 0);
         add(&mut app, "x", false, None, 1, 0);
-        assert_eq!(shown(&app), ["l", "▾ Work (1)", "w", "BOTS", "x"]);
         add(&mut app, "p", true, None, 3, 0);
-        assert_eq!(shown(&app), ["l", "PINNED", "p", "▾ Work (1)", "w", "BOTS", "x"]);
+        assert_eq!(shown(&app), ["PINNED", "p", "▾ Work (2)", "w", "l", "BOTS", "x"]);
         app.host_version = "2.32.0".into();
         app.selected = Some("l".into());
         app.ask_section();
-        assert!(app.overlays.is_empty(), "the lead goes in no section");
-        assert_eq!(app.hint.as_ref().map(|(s, _)| s.as_str()), Some("The lead bot always stays on top"));
+        assert!(!app.overlays.is_empty(), "the lead moves to another section like any bot");
     }
 
     #[tokio::test]

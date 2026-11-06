@@ -10,11 +10,17 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::tr;
 use serde_json::Value;
 
-mod gear_view;
+mod computer;
+mod documents;
+pub use computer::draw as computer;
+mod mcp_tools;
+pub use mcp_tools::draw as mcp_tools;
+mod flow_view;
 mod library_view;
 mod market_view;
 mod memory_view;
-pub use gear_view::draw as gear;
+pub use documents::draw as documents;
+pub use flow_view::draw as flow;
 pub use library_view::draw as library;
 pub use market_view::draw as market;
 pub use memory_view::draw as memory;
@@ -69,8 +75,8 @@ fn name_of(app: &App, bot: &str) -> String {
     app.bots.get(bot).map_or_else(String::new, |b| b.name.clone())
 }
 
-/// A bot's pages on the top line (Details, Library, Memory, Settings) with this one marked.
-/// Returns the area under it.
+/// A bot's pages on the top line (Details, Memory, Settings) with this one marked; returns the
+/// area under it.
 pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
     let t = theme();
     let mut x = inner.x;
@@ -196,7 +202,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
         buf,
         inner,
         None,
-        "n new · c ask the bot · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc",
+        "n new · c ask the bot · ↵ edit · space on/off · r run now · f flow · w copy webhook · W new key · x delete · esc",
     );
 }
 
@@ -388,7 +394,6 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
                 format!("Downloads {name} on {} if it needs to, then checks its sign-in.", app.host),
             ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
-            SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
         };
         let title = tr(&title);
         let detail = tr(&detail);

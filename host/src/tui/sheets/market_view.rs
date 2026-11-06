@@ -23,6 +23,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     };
     field_line(buf, search, inner.y, &m.query, &placeholder, true);
     let source = match m.tab {
+        Tab::Bots | Tab::Teams => tr("Ready-made bots and coordinator teams install on {name}."),
         Tab::Agents => tr("Agents come from the ACP registry and install on {name}."),
         Tab::Connectors => tr("Connectors come from the official MCP Registry and install on {name}."),
         Tab::Skills => tr("Skills come from Anthropic and install on {name}."),
@@ -77,6 +78,14 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
             Row::Registry(c) => ("↓", s(c, "title").into(), s(c, "description").into(), String::new()),
             Row::OwnSkill(v) => ("✓", s(v, "name").into(), s(v, "description").into(), tr("installed").into_owned()),
             Row::Skill(v) => ("↓", s(v, "name").into(), s(v, "description").into(), String::new()),
+            Row::Profile(v) | Row::Team(v) => {
+                let added = m.added.iter().any(|id| id == s(v, "id"));
+                let right = match v["members"].as_array() {
+                    Some(members) => tr("coordinator + {count}").replace("{count}", &members.len().to_string()),
+                    None => String::new(),
+                };
+                (if added { "V" } else { "+" }, s(v, "name").into(), s(v, "summary").into(), right)
+            }
         };
         let ok = mark == "✓";
         put(buf, inner.x, y, 2, mark, if ok { t.green } else { t.dim }.patch(base));
@@ -91,6 +100,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         put(buf, inner.x, y, inner.width, &msg, t.dim.patch(t.panel));
     }
     let keys = match m.tab {
+        Tab::Bots | Tab::Teams => tr("tab switch · ↵ add · esc close"),
         Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
         Tab::Connectors => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
         Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),

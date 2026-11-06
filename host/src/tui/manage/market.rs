@@ -1,4 +1,4 @@
-//! The marketplace: agents, connectors and skills.
+//! The marketplace: ready-made bots and teams, agents, connectors and skills.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
@@ -24,6 +24,7 @@ impl App {
         self.call("skills", json!({}), After::Skills);
         self.sheet("marketSkills", json!({}), Reply::Skills);
         self.sheet("marketConnectors", json!({"search": ""}), Reply::Registry { search: String::new(), cursor: None });
+        self.sheet("botCatalog", json!({}), Reply::Catalog);
         self.overlays.push(Overlay::Market(Box::new(Market {
             tab: Tab::Agents,
             query: Editor::default(),
@@ -31,6 +32,8 @@ impl App {
             registry: vec![],
             next: None,
             skills: None,
+            catalog: Value::Null,
+            added: vec![],
             loading: true,
             cursor: 0,
             error: None,
@@ -64,6 +67,7 @@ impl App {
             fuzzy(q, &fields)
         };
         match m.tab {
+            Tab::Bots | Tab::Teams => Self::catalog_rows(&m.catalog, m.tab, q),
             Tab::Agents => {
                 let agents = self
                     .backends
@@ -110,6 +114,17 @@ impl App {
     pub(in crate::tui) fn market_key(&mut self, mut m: Box<Market>, k: KeyEvent) -> Option<Overlay> {
         let n = self.market_rows(&m).len();
         match k.code {
+            KeyCode::Char('t') if ctrl(k) => {
+                let tools = self.market_rows(&m).get(m.cursor).and_then(|row| match row {
+                    Row::Installed(connector) => Some((s(connector, "id"), s(connector, "name"))),
+                    _ => None,
+                });
+                if let Some((id, name)) = tools {
+                    self.overlays.push(Overlay::Market(m));
+                    self.open_mcp_tools(id, name);
+                    return None;
+                }
+            }
             KeyCode::Esc => return None,
             KeyCode::Tab | KeyCode::BackTab => {
                 let i = TABS.iter().position(|(t, _)| *t == m.tab).unwrap_or(0);
@@ -180,6 +195,7 @@ impl App {
             Custom,
             Install(Value),
             Skill(Value, bool),
+            Catalog(Value, bool),
             None,
         }
         let act = match self.market_rows(&m).get(m.cursor) {
@@ -190,6 +206,8 @@ impl App {
             Some(Row::Registry(c)) => Act::Install((*c).clone()),
             Some(Row::Skill(v)) => Act::Skill((*v).clone(), true),
             Some(Row::OwnSkill(v)) => Act::Skill((*v).clone(), false),
+            Some(Row::Profile(v)) if !m.added.contains(&s(v, "id")) => Act::Catalog((*v).clone(), false),
+            Some(Row::Team(v)) if !m.added.contains(&s(v, "id")) => Act::Catalog((*v).clone(), true),
             _ => Act::None,
         };
         match act {
@@ -275,6 +293,7 @@ impl App {
                 self.open_skill(&v, catalog);
                 return None;
             }
+            Act::Catalog(item, team) => self.add_from_catalog(&item, team),
             Act::None => {}
         }
         Some(Overlay::Market(m))

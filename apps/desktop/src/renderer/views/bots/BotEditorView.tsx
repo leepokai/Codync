@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
-import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { draftOf, type Bot, type BotDraft, type Personality } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
-import { CardSection, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
+import { ProactivePolicySection } from '../../components/ProactivePolicySection'
+import { RobotAvatar, isRobotLook } from '../../components/RobotAvatar'
+import { Button, CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
+import { FolderPicker } from '../../components/FolderPicker'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
-import { HStack } from '../../components/Stack'
+import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
+import { AgentAccountPicker } from './AgentAccountPicker'
 import { AgentModelPicker } from './AgentModelPicker'
-import { ApprovalRow } from './ApprovalRow'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { useAgentSetup } from './agent-status'
 import { lastPathComponent } from '../../lib/path'
@@ -24,10 +27,9 @@ import { ApprovalRulesEditor } from './ApprovalRulesEditor'
 import { SecurityProfilePicker } from './SecurityProfilePicker'
 import { profileRules } from '@shared/security-profiles'
 import { NetworkSwitches } from './NetworkSwitches'
-import { FolderPicker } from './FolderPicker'
+import { ProactiveCheckIns } from './ProactiveCheckIns'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
-import { CustomIconEditor } from './CustomIconEditor'
 
 
 /** Edit a bot in a modal: the settings form plus Close / Save. New bots start in `NewBotView`. */
@@ -136,7 +138,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   // Options belong to one model.
   const setModel = useCallback((model: string | null) => onChange((d) => (d.model === model ? d : { ...d, model, modelOptions: {} })), [onChange])
   const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
-  const models = useAgentModels(draft.backend)
+  const models = useAgentModels(draft.backend, draft.account ?? null)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
 
   const backends = store.hello?.backends ?? []
@@ -187,17 +189,36 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       ) : null,
     ]
   const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
+  // An account (its own agent sign-in) belongs to one agent, so another agent starts on the default one.
+  const account = (
+    <AgentAccountPicker key="account" backend={draft.backend} selection={draft.account} online={store.connection.kind === 'online'}
+      contextKey={JSON.stringify([store.contextId, store.computer.id, draft.id ?? 'new'])} load={() => store.agentAccounts(draft.backend)}
+      supported={backend?.accounts !== false}
+      authenticate={() => store.authenticateAgentAccount(draft.backend)}
+      remove={(id) => store.deleteAgentAccount(id)}
+      signOut={backend?.signOut ? () => store.signOutAgent(draft.backend) : undefined}
+      onChange={(id) => onChange((d) => (d.account === id ? d : { ...d, account: id, model: null, modelOptions: {} }))} />
+  )
   const agent = (
-    <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
-      onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
-      agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
-      onAgentChange={(id) => onChange((d) => withBackend(d, id))} fast={draft.fastMode ?? false}
-      fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
-        <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
-      {ownRest && <Text size="caption" tone="secondary">{restLine(ownRest, Date.now())}</Text>}
-      {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
-      {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
-    </AgentModelPicker>
+    <VStack key="agent" gap={8}>
+      <AgentModelPicker backend={draft.backend} models={models} selection={draft.model}
+        onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
+        agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
+        onAgentChange={(id) => onChange((d) => (d.backend === id ? d : { ...withBackend(d, id), account: null }))} fast={draft.fastMode ?? false}
+        fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
+          <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
+        {ownRest && <Text size="caption" tone="secondary">{restLine(ownRest, Date.now())}</Text>}
+        {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
+        {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
+      </AgentModelPicker>
+      {backend && backend.id !== 'custom' && backend.installed && backend.signedIn !== true ? (
+        <HStack gap={8} className="agent-signin-row fade-in">
+          <Text size="caption" tone="secondary" grow>{backend.signedIn === false ? tr('Not signed in.') : tr("We can't tell the sign-in yet.")}</Text>
+          <Button kind="secondary" onClick={() => setup.open(backend.id)}>{backend.signedIn === false ? 'Sign in' : 'Check'}</Button>
+        </HStack>
+      ) : null}
+      {account}
+    </VStack>
   )
   // While the bot runs on a fallback, the Agent card starts with it.
   const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
@@ -236,12 +257,15 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         <CardSection title="Profile">
           <ValueRow label="Avatar">
             <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
-              <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} customIcon={draft.id ? store.icons[`bot:${draft.id}`] : undefined} />
+              {isRobotLook(draft.avatarLook) ? (
+                <RobotAvatar look={draft.avatarLook!} color={draft.avatarColor} size={24} />
+              ) : (
+                <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} />
+              )}
             </button>
             <AnchoredPanel open={pickingAvatar} onClose={() => setPickingAvatar(false)} anchor={avatarRef}>
               <div className="avatar-picker-panel">
                 <AvatarPicker shape={draft.avatarShape} color={draft.avatarColor} onShape={(s) => set('avatarShape', s)} onColor={(c) => set('avatarColor', c)} />
-                {draft.id && <CustomIconEditor target={`bot:${draft.id}`} />}
               </div>
             </AnchoredPanel>
           </ValueRow>
@@ -282,11 +306,57 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               </Pill>
             </DropdownMenu>
           </ValueRow>
-          <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
+          <SecurityProfilePicker
+            selection={draft.securityProfile ?? null}
+            saved={saved?.securityProfile ?? null}
+            load={loadProfiles}
+            onChange={(profile) =>
+              onChange((d) => ({
+                ...d,
+                securityProfile: profile?.id ?? null,
+                // The form shows what the profile will write; the host writes it on save.
+                ...(profile ? { permission: profile.permission, approvalRules: profileRules(profile) } : {}),
+              }))
+            }
+          />
+          <ValueRow
+            label="Permissions"
+            detail={
+              draft.permission === 'auto'
+                ? "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."
+                : "You'll get an approval card and a notification whenever the agent asks."
+            }
+          >
+            <ChoicePicker
+              selection={draft.permission}
+              options={[
+                { id: 'ask', label: 'Ask me' },
+                { id: 'auto', label: 'Approve automatically' },
+              ]}
+              onChange={(id) => set('permission', id)}
+            />
+          </ValueRow>
+          <ApprovalRulesEditor
+            rules={draft.approvalRules ?? []}
+            onChange={(rules) => set('approvalRules', rules)}
+            test={(command, rules) =>
+              draft.id
+                ? store.testApprovalRule(draft.id, command, rules, draft.actionRulesOn === undefined ? undefined : { on: draft.actionRulesOn, policies: draft.actionRules ?? {} })
+                : Promise.resolve(null)
+            }
+            quick={draft.actionRulesOn === undefined ? undefined : { on: draft.actionRulesOn, policies: draft.actionRules ?? {} }}
+            onQuick={(next) => onChange((d) => ({ ...d, actionRulesOn: next.on, actionRules: next.policies }))}
+          />
         </CardSection>
 
         <CardSection title="Activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
+          <SwitchRow
+            title="Chief of Staff (Coordinator)"
+            detail="Supervises stalled or failing bots in teams and groups, with automatic triage and up to 2 retries per incident."
+            on={draft.isChief ?? false}
+            onChange={(on) => set('isChief', on)}
+          />
           {store.screen && part === 'all' ? (
             <SwitchRow
               title="Use the computer"
@@ -314,6 +384,15 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           ) : null}
           <NetworkSwitches draft={draft} set={set} />
         </CardSection>
+
+        <ProactivePolicySection
+          avatarColorId={draft.avatarColor}
+          avatarLook={draft.avatarLook ?? undefined}
+          onChangeLook={(look) => set('avatarLook', look ?? null)}
+          onApplyRoleTemplate={(tpl) => onChange((d) => ({ ...d, description: draft.description?.trim() ? draft.description : tpl.standingInstructions, avatarLook: tpl.avatarLook, avatarColor: tpl.avatarColor }))}
+        />
+
+        <ProactiveCheckIns settings={draft.proactive} onChange={(next) => set('proactive', next)} />
 
         <PluginToggles
           title="Connectors"

@@ -35,6 +35,10 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             openbot::agent_details(id, installed_agents(hub)?.iter().any(|a| a == id))?
         }
         "installAgent" => install_agent(hub, str_arg(&b, "id")?, b["backend"].as_str(), b["model"].as_str()).await?,
+        "marketSkills" => {
+            let installed = installed_skills(hub);
+            json!({"items": openbot::browse_skills(&installed)})
+        }
         "marketApps" => {
             let installed = installed_apps(hub)?;
             json!({"items": openbot::browse_apps(&installed, b["search"].as_str().unwrap_or_default())})
@@ -49,6 +53,11 @@ fn installed_agents(hub: &Arc<Hub>) -> Result<Vec<String>> {
 }
 
 /// The marketplace apps a connector on this computer came from.
+fn installed_skills(hub: &Arc<Hub>) -> Vec<String> {
+    let items = crate::market::list_skills(&hub.store);
+    items["items"].as_array().into_iter().flatten().filter_map(|s| s["source"].as_str().map(str::to_owned)).collect()
+}
+
 fn installed_apps(hub: &Arc<Hub>) -> Result<Vec<String>> {
     Ok(crate::market::connectors(&hub.store)?.into_iter().filter_map(|c| c.catalog).collect())
 }

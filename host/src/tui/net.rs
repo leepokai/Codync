@@ -15,9 +15,10 @@ use super::app::{After, Msg};
 use super::manage::Reply;
 
 /// Methods that start an agent or download something: they can take minutes.
-const SLOW: [&str; 7] = [
+const SLOW: [&str; 8] = [
     "agentAuth",
     "agentAuthenticate",
+    "accountAuthenticate",
     "agentModels",
     "setAgentEnv",
     "installConnector",
@@ -183,12 +184,19 @@ impl Client {
                 let _ = tx.send(Msg::Term(id, json!({"type": "exit", "code": -1})));
                 return;
             };
-            let mut events = std::pin::pin!(sse_values(res));
-            while let Some(v) = events.next().await {
-                if let Ok(v) = v
-                    && tx.send(Msg::Term(id.clone(), v)).is_err()
-                {
-                    return;
+            let mut body = res.bytes_stream();
+            let mut buf = Vec::new();
+            while let Some(Ok(chunk)) = body.next().await {
+                buf.extend_from_slice(&chunk);
+                while let Some(i) = buf.iter().position(|&b| b == b'\n') {
+                    let line: Vec<u8> = buf.drain(..=i).collect();
+                    let line = String::from_utf8_lossy(&line);
+                    let Some(data) = line.trim_end().strip_prefix("data:") else { continue };
+                    if let Ok(v) = serde_json::from_str::<Value>(data.trim_start())
+                        && tx.send(Msg::Term(id.clone(), v)).is_err()
+                    {
+                        return;
+                    }
                 }
             }
         });
@@ -248,27 +256,29 @@ impl Client {
                     if tx.send(Msg::Online(true)).is_err() || tx.send(Msg::Connected { since }).is_err() {
                         return;
                     }
-                    let mut events = std::pin::pin!(sse_values(res));
-                    while let Some(v) = events.next().await {
-                        let v = match v {
-                            Ok(v) => v,
-                            // A dropped connection reconnects from the last rev, like the stream ending.
-                            Err(SseError::Read(_)) => break,
-                            Err(SseError::Json(_)) => {
+                    let mut body = res.bytes_stream();
+                    let mut buf = Vec::new();
+                    'read: while let Some(Ok(chunk)) = body.next().await {
+                        buf.extend_from_slice(&chunk);
+                        while let Some(i) = buf.iter().position(|&b| b == b'\n') {
+                            let line: Vec<u8> = buf.drain(..=i).collect();
+                            let line = String::from_utf8_lossy(&line);
+                            let Some(data) = line.trim_end().strip_prefix("data:") else { continue };
+                            let Ok(v) = serde_json::from_str::<Value>(data.trim_start()) else {
                                 // Never skip what we can't read: start over from scratch.
                                 c.rev.store(0, Ordering::Relaxed);
                                 let _ = tx.send(Msg::Rewind);
-                                break;
+                                break 'read;
+                            };
+                            if v["type"] == "resync" {
+                                break 'read;
                             }
-                        };
-                        if v["type"] == "resync" {
-                            break;
-                        }
-                        if let Some(rev) = v["rev"].as_i64() {
-                            c.rev.fetch_max(rev, Ordering::Relaxed);
-                        }
-                        if tx.send(Msg::Event(v)).is_err() {
-                            return;
+                            if let Some(rev) = v["rev"].as_i64() {
+                                c.rev.fetch_max(rev, Ordering::Relaxed);
+                            }
+                            if tx.send(Msg::Event(v)).is_err() {
+                                return;
+                            }
                         }
                     }
                 }

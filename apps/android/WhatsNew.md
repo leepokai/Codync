@@ -7,6 +7,18 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.39.0
+
+### zh-Hant
+- 擴充功能現在是市集：應用程式、代理程式與技能三個分頁，附精選項目與分類。
+- 代理程式會以自己的指令、外觀、技能與例行工作建立 Bot；先讀它的頁面再新增。
+- 技能隨 App 內建、可離線安裝；目錄中的應用程式一步就能加入對應的連接器。
+
+### en-US
+- Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
+- Adding an agent creates a bot with its instructions, look, skills and routines; read its page first.
+- Bundled skills install offline, and catalogued apps add their connector in one step.
+
 ## 2.32.0
 
 ### zh-Hant

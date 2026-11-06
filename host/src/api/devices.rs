@@ -37,10 +37,16 @@ const LOCAL_ONLY: &[&str] = &[
     "requestScreenPermission",
     // Analytics is the computer owner's choice; phones decide only for themselves.
     "setAnalytics",
+    "openProtectedBrowser",
+    "fillProtectedLogin",
+    "fillProtectedCode",
     "track",
     "reportError",
     // Voice keys are entered on the computer itself; phones only use them.
     "setVoiceKey",
+    // An export file is a path on this computer.
+    "previewImport",
+    "importBots",
     "pairing",
     "computerCall",
     "computerTools",
@@ -60,6 +66,10 @@ const LOCAL_ONLY: &[&str] = &[
     "revokeDevice",
     "accessRequests",
     "decideAccessRequest",
+    // Letting a phone in that brings this computer into its account is decided at the computer.
+    "pairingRequests",
+    "decidePairing",
+    "pairingCodeOpen",
     "cloudStatus",
     "setCloud",
     "setCloudUrl",
@@ -78,12 +88,6 @@ const LOCAL_ONLY: &[&str] = &[
     "networkRecover",
     // Who may write to this computer's bots is decided at the computer, like who is in.
     "setNetworkRules",
-    // The n8n instance runs on the computer; phones only see its state.
-    "n8nStart",
-    "n8nStop",
-    "setN8nEnabled",
-    "setN8nPath",
-    "setN8nPort",
 ];
 const SCREEN: &[&str] =
     &["screenPrepare", "screenOffer", "screenClose", "screenTakeover", "screenCandidate", "screenCandidates"];
@@ -235,17 +239,27 @@ impl Pairing {
         true
     }
 
-    /// Uses up `code` if it is valid (constant-time over every live code).
+    /// Whether `code` is live, without using it up.
+    pub fn valid(&mut self, code: &str) -> bool {
+        self.find(code).is_some()
+    }
+
+    /// Uses up `code` if it is valid.
     pub fn redeem(&mut self, code: &str) -> bool {
+        self.find(code).map(|i| self.codes.remove(i)).is_some()
+    }
+
+    /// Where `code` is among the live codes (constant-time over every one).
+    fn find(&mut self, code: &str) -> Option<usize> {
         self.prune(now_ms());
-        let Ok(given) = crypto::unb64_n::<16>(code) else { return false };
+        let given = crypto::unb64_n::<16>(code).ok()?;
         let mut found = None;
         for (i, c) in self.codes.iter().enumerate() {
             if crypto::ct_eq(&c.code, &given) {
                 found = Some(i);
             }
         }
-        found.map(|i| self.codes.remove(i)).is_some()
+        found
     }
 }
 
@@ -290,6 +304,8 @@ mod tests {
         let offer = crypto::offer_id(&crypto::unb64_n(&first.code).unwrap());
         assert_eq!(p.offers(), [(offer, first.expires_at)]);
         assert!(!p.redeem("CAgICAgICAgICAgICAgICA"));
+        assert!(p.valid(&first.code) && p.valid(&first.code), "checking doesn't use it up");
+        assert!(!p.valid("CAgICAgICAgICAgICAgICA"));
         assert!(p.redeem(&first.code));
         assert!(!p.redeem(&first.code), "single use");
         assert!(!p.open());

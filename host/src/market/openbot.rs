@@ -241,7 +241,7 @@ pub fn skill_public(s: &CatalogSkill, installed: bool) -> Value {
 pub fn browse_skills(installed: &[String]) -> Vec<Value> {
     let mut list: Vec<&CatalogSkill> = skills().iter().collect();
     list.sort_by_key(|s| !s.featured);
-    list.into_iter().map(|s| skill_public(s, installed.contains(&s.id))).collect()
+    list.into_iter().map(|s| skill_public(s, installed.contains(&format!("{SOURCE}{}", s.id)))).collect()
 }
 
 /// A bundled skill's instructions by `openbot/<id>`, or a pack's description and its skills.

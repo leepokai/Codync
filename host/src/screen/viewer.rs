@@ -164,13 +164,26 @@ impl Screen {
         let removed = sessions.remove(session).is_some();
         if sessions.is_empty() {
             // Nobody is watching: hand control back to the bots.
-            self.control.locked().user = false;
+            let mut control = self.control.locked();
+            if control.user {
+                self.snapshots.locked().invalidate();
+                control.user = false;
+            }
         }
         removed
     }
 
     pub fn takeover(&self, on: bool) {
-        self.control.locked().user = on;
+        if !on && self.entry_protected() {
+            return;
+        }
+        {
+            let mut control = self.control.locked();
+            if control.user != on {
+                self.snapshots.locked().invalidate();
+                control.user = on;
+            }
+        }
         self.emit();
     }
 
@@ -182,6 +195,7 @@ impl Screen {
         store.kv_set(KV_ENABLED, if on { "1" } else { "0" })?;
         *self.enabled.locked() = Some(on);
         if !on {
+            self.snapshots.locked().invalidate();
             let link = self.link.locked().clone();
             if let Some(link) = link
                 && let Err(error) = link.request("closeAll", json!({})).await
@@ -206,7 +220,10 @@ pub async fn watch_viewer(hub: Arc<Hub>, session: String, owner: String) {
             let now = crate::store::now_ms();
             viewer.expired(now)
         };
-        if expired || !crate::api::devices::may_view_screen(&hub, &owner) || !hub.screen.enabled() {
+        let authorized = owner == "local"
+            || crate::api::devices::authorize(&hub, &owner)
+                .is_ok_and(|d| d.scopes.contains(&crate::store::Scope::Screen));
+        if expired || !authorized || !hub.screen.enabled() {
             if let Err(error) = hub.screen.close(&session).await {
                 tracing::warn!(error = format!("{error:#}"), "couldn't close expired screen session");
                 continue;

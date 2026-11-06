@@ -18,12 +18,18 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
+mod sections;
+
+mod documents;
+pub mod flows;
 mod groups;
+mod lead;
 mod order;
 mod patch;
 mod reactions;
-mod sections;
+mod stop;
 mod sync;
+mod terminal;
 mod validate;
 pub(crate) use validate::validate;
 
@@ -76,6 +82,10 @@ impl AgentStep {
 pub struct Hub {
     pub analytics: crate::analytics::Analytics,
     pub routines: crate::routines::Routines,
+    /// Daily token limits and what each bot used today (`budget`).
+    pub budget: crate::budget::Budgets,
+    /// Memory, CPU and disk of this computer, and the memory of the agents started here (health).
+    pub health: crate::health::Monitor,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
@@ -102,6 +112,8 @@ pub struct Hub {
     /// change so open channels re-check their device (and the ACL is republished).
     pub auth: watch::Sender<u64>,
     pub pairing: Mutex<Pairing>,
+    /// Phones waiting for this computer to let them in and join their account.
+    pub pairing_requests: crate::remote::pairing_requests::PairingRequests,
     /// Device key -> open channels that have exchanged at least one frame.
     pub connected: Mutex<HashMap<String, usize>>,
     /// The cloud's `/v1/host/state` was applied on the current relay connection;
@@ -109,8 +121,11 @@ pub struct Hub {
     pub cloud_synced: AtomicBool,
     pub cloud: crate::remote::cloud::Cloud,
     pub screen: Arc<Screen>,
+    pub computer: crate::computer::Access,
     /// Setup terminals (installs, sign-ins).
     pub terms: Arc<crate::agent::term::Terms>,
+    /// Agent sessions running in the person's own terminals (see `external`).
+    pub external: crate::external::External,
 }
 
 impl Hub {
@@ -122,12 +137,15 @@ impl Hub {
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
-        let n8n =
-            Arc::new(crate::n8n::N8n::new(&store, events.clone(), format!("http://127.0.0.1:{port}"), token.clone()));
-        let usage = crate::usage::load(&store);
         Arc::new(Self {
+            computer: crate::computer::Access::default(),
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
+            budget: crate::budget::Budgets::load(&store),
+            health: crate::health::Monitor::new(
+                Box::new(crate::health::System::new(service::data_dir())),
+                crate::health::Monitor::saved_thresholds(&store),
+            ),
             team: crate::chat::team::Requests::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
@@ -143,35 +161,35 @@ impl Hub {
             bots: Mutex::default(),
             runtime: Mutex::default(),
             phone_clients: AtomicUsize::new(0),
-            usage: Mutex::new(usage),
+            usage: Mutex::default(),
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
             pairing: Mutex::default(),
+            pairing_requests: crate::remote::pairing_requests::PairingRequests::default(),
             connected: Mutex::default(),
             cloud_synced: AtomicBool::new(false),
             cloud: crate::remote::cloud::Cloud::default(),
             screen,
-            n8n,
             terms: Arc::default(),
+            external: crate::external::External::default(),
         })
     }
 
     pub fn start(self: &Arc<Self>) -> Result<()> {
+        self.screen.restore_protected_entry(&self.store)?;
+        bot::recover_results(self)?;
         // Approval cards and queued sends from a previous run can't be honored anymore.
         self.store.expire_pending()?;
-        // A reading that hovered at a threshold used to leave one memory banner per
-        // sample; keep the newest per chat so the thread reads as one line.
-        match self.store.coalesce_health_notices() {
-            Ok(0) => {}
-            Ok(n) => tracing::info!(banners = n, "coalesced repeated memory notices"),
-            Err(error) => tracing::warn!(error = format!("{error:#}"), "couldn't coalesce memory notices"),
-        }
         crate::chat::memory::import_old_memory(self);
         self.routines.restore(&self.store)?;
+        crate::routines::flow::recover(self)?;
         crate::market::turn_on_installed_once(&self.store)?;
         for row in self.store.bots()? {
             if row.deleted {
                 self.routines.disable_bot(&self.store, &row.config.id)?;
+            } else if crate::external::is_external(&row.config) {
+                // A terminal session doesn't outlive the host that was watching it.
+                self.delete_bot(&row.config.id)?;
             } else if !row.config.is_group() {
                 self.spawn_bot(row.config);
             }
@@ -179,8 +197,6 @@ impl Hub {
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
-        // The n8n instance starts with the host when its service is on.
-        self.n8n.start(self);
         Ok(())
     }
 
@@ -205,7 +221,6 @@ impl Hub {
         if tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks)).await.is_err() {
             tracing::warn!("some bots didn't stop within 5 s");
         }
-        self.n8n.stop(&self.store).await;
         self.keep_awake.locked().set(false);
     }
 
@@ -222,6 +237,9 @@ impl Hub {
     }
 
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
+        if crate::external::is_external(&cfg) {
+            bail!("a terminal session is created by its terminal, not by an app");
+        }
         cfg.id = uuid::Uuid::new_v4().to_string();
         cfg.created_at = crate::store::now_ms();
         cfg.position = self.new_bot_position()?;
@@ -237,7 +255,6 @@ impl Hub {
                 return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
             }
         }
-        Self::settle_profile(None, &mut cfg);
         crate::agent::fallback::tidy(&mut cfg);
         cfg.section = sections::normalize_section(cfg.section.as_deref())?;
         validate(&cfg)?;
@@ -246,7 +263,6 @@ impl Hub {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
-        self.set_profile_budget(&cfg);
         crate::network::publish(self);
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
@@ -258,41 +274,102 @@ impl Hub {
 
     pub fn update_bot(&self, patch: &Value) -> Result<Value> {
         let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
-        // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg) = {
-            let _g = self.emit_lock.locked();
-            let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-            let mut cfg = patch::patched(&row.config, patch)?;
-            if cfg.is_group() {
-                cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
+        // From reading the bot to saving it, so no other update saves a stale copy in between.
+        let _one = crate::chat::instruction_history::lock();
+        let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+        let before = row.config.clone();
+        let mut merged = serde_json::to_value(&row.config)?;
+        for (k, v) in patch.as_object().into_iter().flatten() {
+            if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead") {
+                merged[k] = v.clone();
             }
-            crate::agent::fallback::tidy(&mut cfg);
-            cfg.section = sections::normalize_section(cfg.section.as_deref())?;
-            // ponytail: validated under the lock, so a workspace folder on a hung network share (its
-            // `is_dir`) stalls every bot's events until it answers. Upgrade: build and validate outside the
-            // lock from a snapshot, then save under it only if the stored config is unchanged (compare the
-            // serialized configs, not rev), else retry.
-            validate(&cfg)?;
-            crate::agent::workspace::prepare(&mut cfg)?;
-            crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
-            self.store.save_bot(&cfg)?;
-            (row.config, cfg)
+        }
+        let mut cfg: BotConfig = serde_json::from_value(merged)?;
+        if cfg.name.trim().is_empty() {
+            cfg.name.clone_from(&row.config.name);
+        }
+        // A name the user picked ends automatic naming; the namer passes `autoName` itself.
+        if cfg.name != row.config.name && patch.get("autoName").is_none() {
+            cfg.auto_name = false;
+        }
+        // Options belong to one model; an app that doesn't know them can't clear them itself.
+        if (cfg.model != row.config.model || cfg.backend != row.config.backend) && patch.get("modelOptions").is_none() {
+            cfg.model_options.clear();
+        }
+        if cfg.kind != row.config.kind {
+            bail!("a bot can't become a group, or a group a bot");
+        }
+        if crate::external::is_external(&row.config) && cfg.backend != row.config.backend {
+            bail!("this bot runs in your terminal: its agent can't change");
+        }
+        if cfg.is_group() {
+            cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
+        }
+        crate::agent::fallback::tidy(&mut cfg);
+        validate(&cfg)?;
+        let mut edit = crate::chat::instruction_history::begin(&row.config, &cfg, patch, &self.store)?;
+        crate::agent::workspace::prepare(&mut cfg)?;
+        crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
+        if let Some(edit) = &mut edit {
+            edit.record(&self.store, &row.config, &cfg)?;
+        }
+        let saved = {
+            let _connectors = self.store.connector_lock.locked();
+            let _g = self.emit_lock.locked();
+            self.save_bot_access(&id, &row.config, &cfg)
         };
+        if let Err(error) = saved {
+            if let Some(edit) = edit {
+                edit.undo(&self.store)?;
+            }
+            return Err(error);
+        }
         crate::network::publish(self);
         if !cfg.is_group() {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
-            self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
+            // A terminal session has no actor to reconfigure: its settings are read on the next event.
+            if !crate::external::is_external(&cfg) {
+                self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
+            }
         }
         self.emit_bot(&id);
         Ok(self.bot_value(&id).unwrap_or(Value::Null))
     }
 
+    /// Saves `cfg`, first revoking the connectors and computer access it dropped. Called under the
+    /// connector and emit locks.
+    fn save_bot_access(&self, id: &str, before: &BotConfig, cfg: &BotConfig) -> Result<()> {
+        if before.computer && !cfg.computer {
+            self.screen.forget_bot_snapshots(id);
+        }
+        for connector in &before.connectors {
+            if !cfg.connectors.contains(connector) {
+                self.store.revoke_mcp_connector(Some(id), connector)?;
+            }
+        }
+        self.store.save_bot(cfg)?;
+        self.computer.changed(id, before, cfg);
+        if before.computer_permissions.browser && !cfg.computer_permissions.browser {
+            self.screen.forget_bot_snapshots(id);
+        }
+        Ok(())
+    }
+
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         crate::chat::lead::may_delete(&self.store, id)?;
+        // A terminal session leaves with its bot, and a hook waiting on one of its cards is freed at once.
+        self.external.forget(self, id);
+        self.computer.revoke_all(id);
+        self.screen.forget_bot_snapshots(id);
+        crate::routines::flow::forget_bot(self, id);
         self.routines.disable_bot(&self.store, id)?;
-        self.team.end_turn(id);
+        // A locked vault keeps them; Credentials lists them under "A removed bot" to remove.
+        if let Err(error) = crate::market::bot_secrets::remove_bot(&self.store, id) {
+            tracing::warn!(bot = id, error = format!("{error:#}"), "couldn't forget a deleted bot's secrets");
+        }
+        self.team.cancel_bot(id);
         self.groups.stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
@@ -300,6 +377,7 @@ impl Hub {
         {
             let _g = self.emit_lock.locked();
             let rev = self.store.delete_bot(id)?;
+            self.computer.revoke_all(id);
             let _ =
                 self.events.send(json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}}));
         }
@@ -475,7 +553,6 @@ impl Hub {
     }
 
     pub fn set_usage(&self, usage: Usage) {
-        crate::usage::save(&self.store, &usage);
         let _ = self.events.send(json!({"type": "usage", "usage": usage}));
         *self.usage.locked() = usage;
     }

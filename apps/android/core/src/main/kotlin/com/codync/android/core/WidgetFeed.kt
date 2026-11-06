@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class WidgetBot(val id: String, val name: String, val status: String,
     val unread: Int = 0, val avatarColor: String = "blue", val avatarShape: String = "blob",
     /** When the bot last did something, to break ties for the Bots tile. */
-    val lastAt: Long = 0, val avatarLook: String? = null)
+    val lastAt: Long = 0, val avatarLook: String? = null, val customIcon: CustomIcon? = null)
 
 /**
  * A permission request waiting on a bot, as the widget may act on it. It never carries the command or the file: only which
@@ -113,4 +113,4 @@ fun teamSlots(bots: List<WidgetBot>, picks: List<String?>): List<WidgetBot?> {
 fun widgetBots(bots: List<Bot>): List<WidgetBot> = bots.filter { !it.hidden && !it.deleted }
     .sortedWith(compareBy<Bot> { when (it.status) { "needsInput" -> 0; "working" -> 1; "error" -> 2; else -> 3 } }
         .thenByDescending { it.pinned }.thenByDescending { it.lastAt }.thenBy { it.name })
-    .take(256).map { WidgetBot(it.id, it.name.take(256), it.status, it.unread, it.avatarColor, it.avatarShape, it.lastAt, it.avatarLook) }
+    .take(256).map { WidgetBot(it.id, it.name.take(256), it.status, it.unread, it.avatarColor, it.avatarShape, it.lastAt, it.avatarLook, it.customIcon) }

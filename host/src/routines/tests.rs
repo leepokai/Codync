@@ -14,6 +14,10 @@ pub(super) fn routine() -> Routine {
         deleted: false,
         timeout_seconds: default_timeout(),
         last_error: None,
+        watch: vec![],
+        idle_runs: 0,
+        missed_policy: "skip".into(),
+        limit_policy: "wait".into(),
     }
 }
 #[test]
@@ -90,37 +94,4 @@ fn a_delivery_while_a_retry_waits_is_queued() {
     let third = routines.enqueue(&store, "bot", "routine", json!({"text": "third"}), None, false);
     assert_eq!(third.unwrap_err().downcast::<Refused>().unwrap(), Refused::Busy, "the queued delivery is");
     assert_eq!(routines.state.locked().runs.len(), 2);
-}
-
-#[test]
-fn the_calendar_holds_past_runs_and_upcoming_occurrences() {
-    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-    let routines = Routines::default();
-    let now = now_ms();
-    let mut r = routine();
-    r.triggers = vec![Trigger::Interval { seconds: 3600 }];
-    r.next_runs = vec![Some(now + 3_600_000)];
-    routines
-        .change(&store, |s| {
-            let mut run = new_run(&r, Value::Null, None);
-            run.scheduled_for = Some(now - 1_000);
-            run.status = Status::Succeeded;
-            s.routines.push(r);
-            s.runs.push(run);
-            Ok(())
-        })
-        .unwrap();
-    let cal = routines.calendar("bot", now - 2_000, now + 3 * 86_400_000).unwrap();
-    assert_eq!(cal["runs"].as_array().unwrap().len(), 1);
-    assert_eq!(cal["runs"][0]["at"], now - 1_000);
-    assert_eq!(cal["runs"][0]["status"], json!("succeeded"));
-    let scheduled = cal["scheduled"].as_array().unwrap();
-    assert_eq!(scheduled.len(), 72, "three days of hourly occurrences");
-    assert_eq!(scheduled[0]["at"], now + 3_600_000);
-    assert_eq!(scheduled.last().unwrap()["at"], now + 72 * 3_600_000);
-    assert!(routines.calendar("bot", 0, now + 61 * 86_400_000).is_err(), "the window is capped at 60 days");
-    assert!(
-        routines.calendar("other", now, now + 86_400_000).unwrap()["scheduled"].is_null()
-            || routines.calendar("other", now, now + 86_400_000).unwrap()["scheduled"].as_array().unwrap().is_empty()
-    );
 }

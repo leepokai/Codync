@@ -21,8 +21,8 @@ data class BotDraft(
     val backend: String = "claude",
     val command: String? = null,
     val cwd: String = "",
-    val permission: String = "auto",
-    val mode: String? = null,
+    val permission: String = "ask",
+    val mode: String? = AgentMode.AUTO,
     val customIcon: CustomIcon? = null,
     val model: String? = null,
     val modelOptions: Map<String, String> = emptyMap(),
@@ -64,7 +64,7 @@ data class BotDraft(
     val isValid: Boolean get() = name.isNotBlank()
     fun toggleNotifications(): BotDraft = copy(notify = !(notify ?: true))
     /** On agent [id]: its model starts over, and it leaves the fallbacks (each agent appears once in the chain). */
-    fun withAgent(id: String): BotDraft = copy(backend = id, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id })
+    fun withAgent(id: String): BotDraft = copy(backend = id, mode = mode?.let { AgentMode.AUTO }, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id })
     fun body(): JsonObject {
         val normalized = copy(command = command.takeIf { backend == "custom" }, account = account.takeIf { backend == "antigravity" },
             approvalRules = approvalRules?.let(ApprovalRules::clean))

@@ -13,26 +13,136 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-/// Flags for `claude -p /usage`. The empty strict MCP config keeps the check
-/// from starting every MCP server the user has set up.
-const USAGE_ARGS: [&str; 8] = [
-    "-p",
-    "/usage",
-    "--output-format",
-    "json",
-    "--no-session-persistence",
-    "--strict-mcp-config",
-    "--mcp-config",
-    r#"{"mcpServers":{}}"#,
-];
+const MAX_TEXT: usize = 64 * 1024;
 
-/// `claude -p /usage`: Claude Code's own local usage report, no model call.
-pub(super) async fn collect() -> Option<Vec<Window>> {
+/// `claude -p /usage`: Claude Code's own local usage report, no model call. The
+/// ACP adapter answers the same command for the session's signed-in account; it
+/// is tried first because the CLI can be on another account.
+pub(super) async fn collect(store: &Store) -> Option<Vec<Window>> {
+    if let Some(windows) = acp_usage(store).await {
+        return Some(windows);
+    }
+    cli_usage().await
+}
+
+async fn acp_usage(store: &Store) -> Option<Vec<Window>> {
+    let Ok((acp, mut inbox, _init, _)) = auth::start_registry(store, "claude", &[]).await else {
+        return None;
+    };
+    let result = async {
+        let session =
+            request(&acp, &mut inbox, "session/new", json!({"cwd": auth::probe_dir(), "mcpServers": []}), None)
+                .await
+                .ok()?;
+        let session_id = session["sessionId"].as_str()?.to_owned();
+        let mut text = String::new();
+        request(
+            &acp,
+            &mut inbox,
+            "session/prompt",
+            json!({"sessionId": session_id, "prompt": [{"type": "text", "text": "/usage"}]}),
+            Some((&session_id, &mut text)),
+        )
+        .await
+        .ok()?;
+        let windows = parse_acp_usage(&text);
+        (!windows.is_empty()).then_some(windows)
+    }
+    .await;
+    acp.kill().await;
+    result
+}
+
+async fn request(
+    acp: &Arc<Acp>,
+    inbox: &mut mpsc::UnboundedReceiver<Incoming>,
+    method: &str,
+    params: Value,
+    mut capture: Option<(&str, &mut String)>,
+) -> Result<Value> {
+    let pending = acp.request(method, params);
+    tokio::pin!(pending);
+    let result = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            tokio::select! {
+                result = &mut pending => break result,
+                incoming = inbox.recv() => consume(acp, incoming, &mut capture).await?,
+            }
+        }
+    })
+    .await??;
+    while let Ok(incoming) = inbox.try_recv() {
+        consume(acp, Some(incoming), &mut capture).await?;
+    }
+    Ok(result)
+}
+
+async fn consume(acp: &Acp, incoming: Option<Incoming>, capture: &mut Option<(&str, &mut String)>) -> Result<()> {
+    match incoming {
+        Some(Incoming::Request { id, .. }) => {
+            acp.respond_error(id, -32601, "tools are unavailable during usage inspection").await?;
+        }
+        Some(Incoming::Notification { method, params }) => {
+            if let Some((session, text)) = capture.as_mut()
+                && method == "session/update"
+                && params["sessionId"].as_str() == Some(*session)
+                && params["update"]["sessionUpdate"] == "agent_message_chunk"
+                && let Some(chunk) = params["update"]["content"]["text"].as_str()
+            {
+                if text.len().saturating_add(chunk.len()) > MAX_TEXT {
+                    bail!("usage response too large")
+                }
+                text.push_str(chunk);
+            }
+        }
+        Some(Incoming::Closed { .. }) | None => bail!("usage inspection ended"),
+    }
+    Ok(())
+}
+
+/// The ACP adapter's Markdown report: one `**label** - **N%** - Resets ...`
+/// line per window. The separators are read as Markdown markers, not as
+/// particular punctuation, so the report parses whatever dash and dot it uses.
+pub fn parse_acp_usage(text: &str) -> Vec<Window> {
+    let mut windows = Vec::new();
+    for line in text.lines().map(str::trim) {
+        let Some(rest) = line.strip_prefix("**") else { continue };
+        let Some((label, rest)) = rest.split_once("**") else { continue };
+        let Some((_, rest)) = rest.split_once("**") else { continue };
+        let Some((percent, rest)) = rest.split_once("**") else { continue };
+        let Ok(percent) = percent.trim().trim_end_matches('%').parse::<f64>() else { continue };
+        if !percent.is_finite() || !(0.0..=100.0).contains(&percent) {
+            continue;
+        }
+        let Some((id, name)) = acp_window(label) else { continue };
+        let resets = rest.split_once("Resets ").map(|(_, r)| r.trim()).filter(|r| !r.is_empty());
+        windows.push(Window { resets_text: resets.map(str::to_owned), ..Window::new(id, name, percent, None) });
+    }
+    windows
+}
+
+fn acp_window(label: &str) -> Option<(String, String)> {
+    if label == "5-hour limit" {
+        return Some(("five_hour".to_owned(), "5-hour".to_owned()));
+    }
+    let rest = label.strip_prefix("Weekly")?;
+    let model = rest.trim_start_matches(|c: char| !c.is_alphanumeric()).trim();
+    if model.is_empty() || model.eq_ignore_ascii_case("all models") {
+        return Some(("seven_day".to_owned(), "Weekly".to_owned()));
+    }
+    Some((format!("seven_day_{}", label_key(model)), format!("Weekly · {model}")))
+}
+
+fn label_key(label: &str) -> String {
+    label.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
+}
+
+async fn cli_usage() -> Option<Vec<Window>> {
     let bin = super::command::program("claude")?;
     let out = tokio::time::timeout(
         Duration::from_mins(1),
         tokio::process::Command::new(bin)
-            .args(USAGE_ARGS)
+            .args(["-p", "/usage", "--output-format", "json", "--no-session-persistence"])
             .current_dir(dirs::home_dir()?)
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)
@@ -108,15 +218,6 @@ fn claude_window(info: &Value) -> Option<Window> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn usage_check_starts_no_mcp_servers() {
-        let strict = USAGE_ARGS.iter().position(|a| *a == "--strict-mcp-config");
-        assert!(strict.is_some(), "--strict-mcp-config missing");
-        let config = USAGE_ARGS.iter().position(|a| *a == "--mcp-config").expect("--mcp-config missing");
-        let empty: Value = serde_json::from_str(USAGE_ARGS[config + 1]).unwrap();
-        assert_eq!(empty, json!({ "mcpServers": {} }));
-    }
 
     #[test]
     fn parses_claude_usage_report() {

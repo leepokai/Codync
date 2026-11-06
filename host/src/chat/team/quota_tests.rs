@@ -74,3 +74,15 @@ async fn failed_admission_and_recipient_failure_return_sender_slots() {
     drop(db);
     f.shutdown().await;
 }
+
+#[tokio::test]
+async fn stop_all_interrupts_working_bots_and_skips_idle_ones() {
+    let f = Fixture::new();
+    f.hub.set_runtime("a", |r| r.status = BotStatus::Idle);
+    f.send_user("BLOCK user work").await;
+    f.until(|| f.hub.runtime("b").status == BotStatus::Working).await;
+    assert_eq!(f.hub.stop_all().unwrap(), 1);
+    f.until(|| f.hub.runtime("b").status == BotStatus::Idle).await;
+    assert_eq!(f.hub.stop_all().unwrap(), 0);
+    f.shutdown().await;
+}

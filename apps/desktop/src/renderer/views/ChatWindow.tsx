@@ -5,7 +5,7 @@ import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
-import { HStack, Spacer, VStack } from '../components/Stack'
+import { HStack, Spacer } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
@@ -51,11 +51,9 @@ import { useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
 import './chat-window.css'
 import './sidebar-header.css'
+import { useOnboardingTelemetry } from './use-onboarding-telemetry'
 import { useTr } from '../lib/use-language'
 
-
-/** The icon rail is always visible; the list panel beside it can be collapsed. */
-const RAIL_WIDTH = 52
 
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
 export function ChatWindow() {
@@ -63,12 +61,14 @@ export function ChatWindow() {
   const app = useApp()
   const welcome = useWelcomeGate()
   const [accessSetup, setAccessSetup] = usePref(prefs.computerAccessSetup)
+  const [onboarded] = usePref(prefs.onboardingDone)
   const [showAccess, setShowAccess] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [upToDate, setUpToDate] = useState(false)
   useSSHAttachments(app)
   const ssh = useSSH()
   const showsChat = shouldShowChat(app.host.state.kind, app.computers.length, ssh.state)
+  useOnboardingTelemetry(!onboarded ? 'welcome' : accessSetup === null ? 'computer_access' : showsChat ? 'ready' : 'pairing')
   const finishAccess = (ready: boolean, onboarding: boolean) => {
     setAccessSetup(ready ? 'ready' : 'later')
     analytics.track({ event: 'computer_access_finished', ready, onboarding })
@@ -119,6 +119,17 @@ export function ChatWindow() {
             if (ref) app.store(ref.computerId)?.send(c.text, ref.botId)
             return
           }
+          case 'sendFiles': {
+            // Files dropped on the island: read here, then sent to that bot with no message of their own.
+            const ref = parseRef(c.ref)
+            const store = ref ? app.store(ref.computerId) : null
+            if (ref && store) {
+              void window.codync.app.readPaths(c.paths).then((files) => {
+                if (files.length) store.send('', ref.botId, { files: files.map((f) => ({ id: crypto.randomUUID(), ...f })) })
+              })
+            }
+            return
+          }
         }
       }),
     [app],
@@ -138,7 +149,7 @@ export function ChatWindow() {
           <HostStateView />
         )
       ) : (
-        <AccountWelcomeView onContinue={welcome.finish} />
+        <AccountWelcomeView onContinue={welcome.finish} onSkip={welcome.skip} />
       )}
       {!welcome.shown && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
       {!welcome.shown && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /><DeleteAccountPrompt /></> : null}
@@ -161,7 +172,7 @@ export function ChatWindow() {
         cancel="OK"
         onClose={() => setUpToDate(false)}
       />
-      {/* Approving a device: the code the device shows must match (spec §4.2 B). Closing puts it off. */}
+      {/* Approving a device: the code the device shows must match (spec ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§4.2 B). Closing puts it off. */}
       <Sheet open={approval !== null} onClose={() => approval && app.deferApproval(approval)}>
         {approval ? <ApprovalSheet key={approval.id} approval={approval} /> : null}
       </Sheet>
@@ -209,23 +220,25 @@ function ChatSplitView() {
   const [newMenu, setNewMenu] = useState(false)
   const [railNewMenu, setRailNewMenu] = useState(false)
   const [context, setContext] = useState<{ items: ActionItem[]; x: number; y: number } | null>(null)
+  const setContextBot = (c: { target: { bot: Bot; store: BotStore }; x: number; y: number }) =>
+    setContext({ items: botActions(c.target.bot, c.target.store), x: c.x, y: c.y })
   const [naming, setNaming] = useState<SectionNaming | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
-  const [canvasOpen, setCanvasOpen] = useState(false)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
+  const railNewButton = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   useModels([...app.stores.values()])
 
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420 - RAIL_WIDTH)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420)))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -257,9 +270,8 @@ function ChatSplitView() {
         if (c.kind === 'search') setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
-        if (c.kind === 'openN8nSettings') setSettings('n8n')
         if (c.kind === 'voiceKey') {
-          if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)
+          if (c.key === 'double' && !app.selection) app.select((voiceTarget(roster as any) as any)?.ref ?? null)
           queueVoiceKey(c.key)
         }
       }),
@@ -296,7 +308,7 @@ function ChatSplitView() {
   const newItems = (): MenuItem[] => [
     { title: 'New bot', icon: 'plus', action: () => create('bot') },
     { title: 'New group chat', icon: 'person.2', action: () => create('group') },
-    ...(localOnline ? [{ title: 'Import bots…', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
+    ...(localOnline ? [{ title: 'Import botsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
   ]
 
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
@@ -306,14 +318,14 @@ function ChatSplitView() {
     { title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) },
     ...moveToSectionItems(bot, store, setNaming),
     { title: 'Mark as Read', icon: 'bell.badge', action: () => store.markAllRead(bot.id) },
-    { title: 'Edit Profile…', icon: 'square.and.pencil', action: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }) },
+    { title: 'Edit ProfileÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦', icon: 'square.and.pencil', action: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }) },
     { title: 'Copy conversation ID', icon: 'square.on.square', action: () => window.codync.app.copy(bot.id) },
     ...makeLeadItems(bot, store),
     ...(bot.lead ? [] : [{ title: 'Hide from sidebar', icon: 'eye.slash', action: () => store.setHidden(bot, true) }]),
     ...(offersDelete(bot, store) ? [{ title: 'Delete', icon: 'trash', destructive: true, action: () => setConfirmDelete({ bot, store }) }] : []),
   ]
 
-  // ↑/↓ in the roster move the selection; Alt+↑/↓ moves the selected bot itself.
+  // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ in the roster move the selection; Alt+ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“/ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ moves the selected bot itself.
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
     if (e.target instanceof HTMLElement && e.target.closest('.computer-roster-heading')) return
@@ -322,7 +334,7 @@ function ChatSplitView() {
       if (app.selection) roster.moveBot(app.selection, e.key === 'ArrowUp' ? -1 : 1)
       return
     }
-    const refs = roster.navigable.map((i) => i.ref)
+    const refs = (roster.navigable as any[]).map((i) => i.ref)
     if (!refs.length) return
     e.preventDefault()
     const current = refs.findIndex((r) => sameRef(r, app.selection))
@@ -330,11 +342,10 @@ function ChatSplitView() {
     app.select(refs[next]!)
   }
 
-  // The panel's edge drags its width; narrower than 180 collapses it to the rail.
+  // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.max(260, Math.min(420, window.innerWidth - 420 - RAIL_WIDTH))
-  const resizeSidebar = (proposedTotal: number) => {
-    const proposed = proposedTotal - RAIL_WIDTH
+  const sidebarMax = Math.min(420, window.innerWidth - 420)
+  const resizeSidebar = (proposed: number) => {
     const nextCompact = proposed < 180
     if (nextCompact !== compact) setCompact(nextCompact)
     if (!nextCompact) setSidebarWidth(Math.min(Math.max(260, proposed), sidebarMax))
@@ -363,7 +374,7 @@ function ChatSplitView() {
           <CharacterAvatar shape="squircle" color="orange" size={60} />
           <CharacterAvatar shape="teardrop" color="violet" size={60} mood="working" />
         </HStack>
-        <Text as="div" size="title2" weight="semibold">{connecting ? tr(`Connecting to your computers…`) : tr(`Your coding agents, as teammates.`)}</Text>
+        <Text as="div" size="title2" weight="semibold">{connecting ? tr(`Connecting to your computersÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦`) : tr(`Your coding agents, as teammates.`)}</Text>
         <Text as="div" tone="secondary" className="empty-detail-message">{connecting ? tr(`Your bots will appear once connected. Manage computers to see connection progress.`) : tr(`Pick a bot, or create one for each kind of work and point it at a project.`)}</Text>
         <Button onClick={() => create('bot')} disabled={!onlineStores.length}>
           New bot
@@ -372,8 +383,7 @@ function ChatSplitView() {
     )
   }
 
-  const width = compact ? RAIL_WIDTH : sidebarWidth + RAIL_WIDTH
-  const railActive = canvasOpen ? 'canvas' : settings === 'usage' ? 'usage' : marketplace !== null ? 'marketplace' : settings !== null ? 'settings' : 'bots'
+  const width = compact ? 76 : sidebarWidth
   return (
     <div className={`split ${showAccount || context ? 'covered' : ''}`}>
       <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
@@ -395,18 +405,17 @@ function ChatSplitView() {
         ) : null}
         <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
           {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
-          <BotRoster roster={roster} compact={compact}
-            onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
+          <BotRoster roster={roster as any} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })}
             onSectionContext={(section, store, x, y) => {
               const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
               if (items.length) setContext({ items, x, y })
             }}
             openExtensions={(id) => {
-              // Found it: the tip about where Extensions went has done its job.
-              prefs.extensionsMovedTipSeen.set(true)
-              setMarketplace(id)
-            }} />
-          {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
+            // Found it: the tip about where Extensions went has done its job.
+            prefs.extensionsMovedTipSeen.set(true)
+            setMarketplace(id)
+          }} />
+          {roster.allItems.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
               {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
@@ -430,7 +439,7 @@ function ChatSplitView() {
           <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} onComputers={() => setSettings('computers')} />
         )}
       </aside>
-      <ResizeHandle label="Resize sidebar" width={width} min={RAIL_WIDTH} max={sidebarMax + RAIL_WIDTH} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
+      <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
@@ -462,7 +471,15 @@ function ChatSplitView() {
         </div>
       ) : null}
 
-      <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />
+      <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} actions={[
+        ...(onlineStores.length ? [
+          { id: 'new-bot', title: 'New bot', icon: 'plus', run: () => { setSearching(false); create('bot') } },
+          { id: 'new-group', title: 'New group', icon: 'person.2', run: () => { setSearching(false); create('group') } },
+        ] : []),
+        { id: 'settings', title: 'Settings', icon: 'gearshape', run: () => { setSearching(false); setSettings('general') } },
+        { id: 'computers', title: 'Computers', icon: 'desktopcomputer', run: () => { setSearching(false); setSettings('computers') } },
+        { id: 'account', title: 'Account', icon: 'person.crop.circle', run: () => { setSearching(false); setShowAccount(true) } },
+      ]} />
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>
@@ -483,21 +500,6 @@ function ChatSplitView() {
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>
             <MarketplaceView key={marketplace} />
-          </StoreContext.Provider>
-        ) : null}
-      </Sheet>
-      <Sheet open={canvasOpen && !!selectedBot && !!selectedStore} onClose={() => setCanvasOpen(false)} width={Math.min(1120, windowSize.width - 40)} height={Math.min(760, windowSize.height - 40)}>
-        {selectedBot && selectedStore ? (
-          <StoreContext.Provider value={selectedStore}>
-            <VStack gap={14} className="routine-flow-sheet">
-              <ModalHeader
-                icon="arrow.triangle.branch"
-                title={tr('Bot canvas')}
-                subtitle={tr('Every routine that starts or passes through this bot, and where its replies go.')}
-                onClose={() => setCanvasOpen(false)}
-              />
-              <RoutineFlowView botId={selectedBot.id} />
-            </VStack>
           </StoreContext.Provider>
         ) : null}
       </Sheet>

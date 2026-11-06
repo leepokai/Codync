@@ -3,7 +3,7 @@ import { registerAppearance } from './appearance'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
-import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
+import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell, webUtils, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerAgentImport } from './agent-import'
@@ -20,6 +20,7 @@ import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
 import { registerCloud } from './cloud'
+import { registerN8n } from './n8n'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
@@ -137,7 +138,7 @@ function menu() {
         { label: 'Conversation Details', accelerator: 'Alt+CmdOrCtrl+I', click: () => send({ kind: 'toggleDetails' }, false) },
         { label: 'Refresh', accelerator: 'CmdOrCtrl+R', click: () => send({ kind: 'refresh' }, false) },
         { type: 'separator' },
-        // The dev page reload sits on ⇧⌘R, leaving ⌘R to Refresh.
+        // The dev page reload sits on ÃƒÂ¢Ã¢â‚¬Â¡Ã‚Â§ÃƒÂ¢Ã…â€™Ã‹Å“R, leaving ÃƒÂ¢Ã…â€™Ã‹Å“R to Refresh.
         ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }, { role: 'forceReload' as const }]),
         { role: 'togglefullscreen' },
       ],
@@ -180,6 +181,8 @@ function registerIPC(tray: Tray) {
     const result = await openDialog(e, { properties: ['openFile', 'multiSelections'] })
     return result.canceled ? [] : readFiles(result.filePaths)
   })
+  ipcMain.handle('app:readPaths', (_e, paths: string[]) => readFiles(paths))
+  ipcMain.on('app:pathForFile', (e, file: File) => { e.returnValue = webUtils.getPathForFile(file) })
   ipcMain.handle('app:pickExport', async (e) => {
     const result = await openDialog(e, { defaultPath: app.getPath('downloads'), properties: ['openFile'], filters: [{ name: 'Bot export', extensions: ['zip'] }] })
     return result.canceled ? null : (result.filePaths[0] ?? null)

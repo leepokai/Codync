@@ -27,6 +27,8 @@ mod pair;
 mod permission;
 mod proposals;
 mod roster;
+mod roster_tools;
+mod rules;
 mod skill;
 mod style;
 mod time;

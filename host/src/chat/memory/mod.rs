@@ -5,6 +5,9 @@
 
 mod agent_import;
 mod api;
+mod beliefs;
+#[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
+pub mod budget;
 mod dates;
 mod dream;
 mod file_api;
@@ -14,11 +17,10 @@ mod import;
 mod tools;
 pub mod turns;
 
-pub use agent_import::import as import_agent_memory;
 pub use api::call;
-pub use beliefs::call as belief_call;
 pub use dates::ymd;
 pub use dream::{DreamEvent, spawn_dreamer};
+pub use import::add_facts;
 pub use import::import_old_memory;
 pub use tools::{INSTRUCTIONS, call as tool_call, tools};
 

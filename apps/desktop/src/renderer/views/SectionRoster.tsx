@@ -4,7 +4,7 @@ import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
 import { rosterGroups } from '../lib/roster-sections'
 import { useSlide } from '../lib/slide'
-import type { RosterItem } from '../store/app-model'
+
 import { RosterLabel, RosterSection } from './RosterSection'
 
 interface Drag { name: string; order: string[]; at: Point; grab: Point; width: number }
@@ -12,20 +12,20 @@ interface Drag { name: string; order: string[]; at: Point; grab: Point; width: n
 /** Sections move as blocks within one computer, including the unsectioned Bots group. */
 export function SectionRoster({ computerId, items, compact, folded, order, save, toggle, onContext, row }: {
   computerId: string
-  items: RosterItem[]
+  items: any[]
   compact: boolean
   folded: string[]
   order: string[]
   save: (names: string[]) => void
   toggle: (name: string) => void
   onContext: (name: string, x: number, y: number) => void
-  row: (item: RosterItem) => ReactNode
+  row: (item: any) => ReactNode
 }) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const current = useRef<Drag | null>(null)
   const container = useRef<HTMLDivElement>(null)
   const ghost = useRef<HTMLDivElement>(null)
-  const groups = rosterGroups(items, folded, order)
+  const groups = rosterGroups(items as any, folded, order)
   const byName = new Map(groups.map((group) => [group.name, group]))
   const custom = groups.some((group) => group.name !== '')
   const names = groups.map((group) => group.name)

@@ -1,3 +1,4 @@
+import type { ScreenView, ScreenWindowTarget } from './screen-viewer'
 import type { SignInFailure, SignInProvider } from './analytics'
 import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
@@ -21,7 +22,7 @@ export type HostState =
 /** The files of another agent's folder that the importer reads (`main/agent-import.ts`). */
 export interface AgentFolder {
   root: string
-  /** Path relative to the agent's home (or its workspace) → text. */
+  /** Path relative to the agent's home (or its workspace) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ text. */
   files: Record<string, string>
   /** Settings and secret files: named, never read. */
   secretPaths: string[]
@@ -55,7 +56,6 @@ export interface TrayImage {
 }
 
 /** What the tray menu shows; the renderer owns the stores and sends this on every change. */
-/** The SF Symbols beside the tray menu's actions. */
 export const TRAY_SYMBOLS = [
   'macwindow',
   'qrcode',
@@ -70,11 +70,16 @@ export const TRAY_SYMBOLS = [
 ] as const
 export type TraySymbol = (typeof TRAY_SYMBOLS)[number]
 
+export type PickedFile = { name: string; data: Uint8Array }
+
 export interface TraySummary {
   status: string
   canPair: boolean
   bots: { ref: string; name: string; detail: string; working: boolean; pinned: boolean; avatar: TrayImage | null }[]
   approval: string | null
+  /** Windows and Linux: the rail's symbols drawn by the renderer. */
+  symbols: Record<string, TrayImage | null> | null
+  networkIcon: TrayImage | null
   usage: { name: string; icon: TrayImage | null; lines: { title: string; bar: TrayImage | null }[] }[]
   screen: {
     enabled: boolean
@@ -83,10 +88,6 @@ export interface TraySummary {
   } | null
   /** This computer's networks (codync-network), lines already translated; null on hosts without them. */
   networks: { title: string; computers: { label: string; dot: TrayImage | null }[] }[] | null
-  /** The Network row's codync-network mark (SF Symbols has none), drawn on every platform; a template image on macOS. */
-  networkIcon: TrayImage | null
-  /** Windows and Linux: the actions' symbols drawn by the renderer (macOS menus draw SF Symbols); null on macOS. */
-  symbols: Partial<Record<TraySymbol, TrayImage>> | null
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
@@ -114,6 +115,8 @@ export type WindowCommand =
   | { kind: 'refresh' }
   | { kind: 'respondPermission'; ref: string; entryId: string; optionId: string }
   | { kind: 'sendMessage'; ref: string; text: string }
+  /** Files dropped on the island: read from disk here and sent to that bot. */
+  | { kind: 'sendFiles'; ref: string; paths: string[] }
   /** The voice input shortcut, while the island is off: a double tap starts dictating into the composer, a tap sends. */
   | { kind: 'voiceKey'; key: VoiceKey }
   /** The chat window was shown again after being hidden (`window_opened`). */
@@ -126,7 +129,7 @@ export interface UpdateState {
   supported: boolean
   checking: boolean
   availableVersion: string | null
-  /** Downloading: percent done (0–100); null when nothing is downloading. */
+  /** Downloading: percent done (0ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“100); null when nothing is downloading. */
   downloadPercent: number | null
   /** Downloaded and ready: installs on restart. */
   staged: boolean
@@ -156,9 +159,6 @@ export type SpeechEvent =
   | { type: 'stopped' }
   | { type: 'error'; message: string }
 
-/** A dropped, pasted or picked file: its name and bytes. */
-export type PickedFile = { name: string; data: Uint8Array }
-
 export interface CodyncBridge {
   platform: 'darwin' | 'linux' | 'win32'
   appName: string
@@ -187,7 +187,7 @@ export interface CodyncBridge {
     /** Why it ended without an account; null once signed in (or while another sign-in runs). */
     signIn(provider: SignInProvider): Promise<SignInFailure | null>
     signOut(): Promise<void>
-    /** Deletes the signed-in Codync account in Clerk; false when it couldn't (nothing changed). */
+    /** Deletes the account; false when it couldn't. */
     deleteAccount(): Promise<boolean>
     /** The signed-in session's JWT for the Codync cloud. */
     token(): Promise<string>
@@ -201,7 +201,7 @@ export interface CodyncBridge {
     start(locale: string | null): void
     stop(): void
     onEvent(cb: (e: SpeechEvent) => void): () => void
-    /** The voice input shortcut (Settings → General); always `off` without on-device speech. */
+    /** The voice input shortcut (Settings ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ General); always `off` without on-device speech. */
     shortcut(): Promise<VoiceShortcut>
     setShortcut(shortcut: VoiceShortcut): Promise<VoiceShortcut>
     /** A call is on (or over): it has the microphone, so the voice input shortcut does nothing meanwhile. */
@@ -223,13 +223,15 @@ export interface CodyncBridge {
     setShape(rect: IslandRect): void
     /** The message field takes the keyboard (the island never does otherwise). */
     setFocusable(on: boolean): void
-    /** ⌥Y / ⌥N answer the approval on screen, from any app, while it shows. */
+    /** ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥Y / ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥N answer the approval on screen, from any app, while it shows. */
     setKeys(on: boolean): void
     onKey(cb: (answer: 'allow' | 'deny') => void): () => void
     /** The voice input shortcut's taps, from any app, while the island is on. */
     onVoiceKey(cb: (key: VoiceKey) => void): () => void
     respond(ref: string, entryId: string, optionId: string): void
     send(ref: string, text: string): void
+    /** Files dropped on the island, by their path on this computer. */
+    dropFiles(ref: string, paths: string[]): void
     openBot(ref: string): void
     newBot(): void
     openApp(): void
@@ -269,25 +271,28 @@ export interface CodyncBridge {
     openExternal(url: string): void
     copy(text: string): void
     /** Files picked in the system dialog: name and bytes. */
-    pickFiles(): Promise<PickedFile[]>
-    /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
+    pickFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    /** A .zip export picked in the system dialog: its path, or null when cancelled. */
     pickExport(): Promise<string | null>
-    readClipboardFiles(): Promise<PickedFile[]>
+    /** Files a window dropped from the OS, by path: name and bytes. */
+    readPaths(paths: string[]): Promise<{ name: string; data: Uint8Array }[]>
+    /** The OS path of a dropped file (a renderer can't see it directly). */
+    pathForFile(file: File): string
+    readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
     setTraySummary(summary: TraySummary): void
-    /** Brings the chat window forward (a phone waits for this computer to let it in). */
-    showWindow(): void
     onCommand(cb: (command: WindowCommand) => void): () => void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>
     appearance(): Promise<Appearance>
     setAppearance(value: Appearance): Promise<Appearance>
+    showWindow(): void
     showInDock(): Promise<boolean>
     setShowInDock(on: boolean): Promise<boolean>
     launchAtLogin(): Promise<boolean>
     openSettings(url: string): void
     /**
      * Opens `url` in the system browser and resolves with the URL it returns to on `scheme`
-     * (`codync://…`), like ASWebAuthenticationSession. Rejects when cancelled or timed out.
+     * (`codync://ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦`), like ASWebAuthenticationSession. Rejects when cancelled or timed out.
      */
     authenticate(url: string, scheme: string): Promise<string>
     /** macOS: registers or removes the Codync Screen agent (SMAppService). */
@@ -295,10 +300,11 @@ export interface CodyncBridge {
     setScreenAgent(on: boolean): Promise<{ needsApproval: boolean }>
     syncScreenAgent(enabled: boolean): Promise<{ needsApproval: boolean }>
   }
-  /** The VNC viewer for a computer reached Over SSH. */
+  /** A window that shows one SSH computer's screen. Input is RFB, through the tunnel. */
   screen: {
-    open(request: { computerId: string; name: string; vncPort?: number }): Promise<void>
-    target(computerId: string): Promise<{ computerId: string; name: string; url: string }>
+    open(target: ScreenWindowTarget): Promise<void>
+    /** The computer this screen window was opened for. Null when the window is stale. */
+    target(computerId: string): Promise<ScreenView | null>
   }
   /** The n8n window: the n8n editor, or this window's start page while the host brings it up. */
   n8n: {
@@ -306,7 +312,7 @@ export interface CodyncBridge {
     open(): Promise<void>
     /** The start page calls it once the instance runs: the window then loads the editor. */
     gotoEditor(): Promise<void>
-    /** The start page's "Open settings": the chat window shows Settings → n8n. */
+    /** The start page's "Open settings": the chat window shows Settings ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ n8n. */
     openSettings(): void
   }
 }

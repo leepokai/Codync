@@ -60,7 +60,7 @@ export interface SendOptions {
 /** Anything larger is refused by the computer. */
 export const MAX_FILE_SIZE = 100 * 1024 * 1024
 
-export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
+export const QUICK_REACTIONS = ['Ã°Å¸â€˜Â', 'Ã¢ÂÂ¤Ã¯Â¸Â', 'Ã°Å¸Ëœâ€š', 'Ã°Å¸Å½â€°', 'Ã°Å¸â€˜â‚¬', 'Ã¢Å“â€¦']
 
 /**
  * One computer's mirror (bots, transcripts), kept by one events stream (catch-up since
@@ -538,9 +538,9 @@ export class BotStore extends BotSync {
   async save(draft: BotDraft) {
     const client = await this.ready()
     // A rule left blank in the editor is no rule.
-    const draft = saved.approvalRules ? { ...saved, approvalRules: cleanRules(saved.approvalRules) } : saved
+    const saved = draft.approvalRules ? { ...draft, approvalRules: cleanRules(draft.approvalRules) } : draft
     const res = draft.id
-      ? await client.call<{ bot: Bot }>('updateBot', { ...draft, model: draft.model ?? null, account: draft.account ?? null })
+      ? await client.call<{ bot: Bot }>('updateBot', { ...saved, model: saved.model ?? null, account: saved.account ?? null })
       : await client.call<{ bot: Bot }>('createBot', draft)
     const bot = this.putHostBot(normalizeBot(res.bot))
     this.onRosterChanged?.()

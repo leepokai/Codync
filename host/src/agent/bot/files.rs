@@ -91,6 +91,7 @@ impl Actor {
     pub(super) fn post_artifact(&mut self, data: Value) -> Result<String> {
         let turn = self.can_send_file()?;
         let text = data["text"].as_str().unwrap_or_default().to_owned();
+        crate::chat::artifacts::prepare_card(&self.hub, &self.cfg.id, &data, self.proactive_turn)?;
         self.close_seg();
         let entry = self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow!("couldn't save the artifact card"))?;
         self.files.summary = Some(text);

@@ -303,6 +303,7 @@ export class BotMirror extends Observable {
   }
 
   private loadCache() {
+    if (this.volatile) return
     void loadIconCache(this.cacheKey).then((icons) => {
       if (!this.retired && !this.iconsReceived) this.restoreIcons(icons)
     }).catch((error: unknown) => console.warn('Could not read cached icons', error))

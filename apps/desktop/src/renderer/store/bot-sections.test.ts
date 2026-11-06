@@ -5,7 +5,7 @@ import type { HostClient } from '../client/host-client'
 import { BotSections } from './bot-sections.ts'
 
 /**
- * A computer's sections over bots in `placed` (id → section), with a host that answers each call only
+ * A computer's sections over bots in `placed` (id â†’ section), with a host that answers each call only
  * when the test says: `answer(i, false)` refuses call `i` as `perform` does (undo, then settle).
  */
 function computer(placed: Record<string, string>) {
@@ -38,7 +38,7 @@ test('a move sends only the section and shows at once; a refusal puts it back', 
 })
 
 test('chained moves refused in order end where the host still has the bot', async () => {
-  // With the link down: a goes Work → Home, then Home → Side; both are refused after the wait.
+  // With the link down: a goes Work â†’ Home, then Home â†’ Side; both are refused after the wait.
   const { sections, bot, where, answer } = computer({ a: 'Work', b: 'Home' })
   const first = sections.move(bot('a'), 'Home')
   const second = sections.move(bot('a'), 'Side')
@@ -78,7 +78,7 @@ test('a refused rename followed by a refused move of one of its bots puts both b
 
 test('a refused rename runs its callback while its bots are still moved, then puts them back; an accepted one never does', async () => {
   const { sections, where, answer } = computer({ w: 'Work' })
-  const seen: Record<string, string | undefined>[] = []
+  const seen: Record<string, string | null | undefined>[] = []
   const refused = sections.rename('Work', 'Jobs', () => seen.push(where()))
   answer(0, false)
   await refused

@@ -4,8 +4,9 @@
 //! to tell the user how it went.
 use super::{
     Arc, Context, EntryKind, Hub, Lane, LockExt, Result, Routines, Run, Status, Store, Value, bail, cancel_run,
-    cancelled_record, default_timeout, json, may_run, new_run, now_ms, retry,
+    default_timeout, json, may_run, new_run, now_ms, retry,
 };
+use super::{Trigger, watch::Check};
 use crate::remote::push::AlertKind;
 use std::{sync::atomic::Ordering, time::Duration};
 
@@ -80,7 +81,8 @@ impl Routines {
             &prepared.lane,
             EntryKind::Notice,
             hub.store.max_turn(bot) + 1,
-            &json!({"text":format!("Routine · {name}"),"routineId":routine_id,"runId":id,"style":"info"}),
+            &json!({"text":format!("Routine · {name}"),"routineId":routine_id,"runId":id,"style":"info",
+                "source":"scheduled_task","scheduledMessage":{"version":1,"runId":id,"phase":"started"}}),
         )?;
         Ok(Some(prepared))
     }
@@ -104,7 +106,7 @@ impl Routines {
 
     pub fn complete(
         &self,
-        hub: &Hub,
+        hub: &Arc<Hub>,
         id: &str,
         status: Status,
         detail: Option<String>,
@@ -114,11 +116,19 @@ impl Routines {
         let failed = matches!(status, Status::Failed | Status::Interrupted);
         // A run that hit its time limit could hold the bot that long again.
         let safe = failed && !timed_out && !retry::acted(hub, id);
-        let (bot, withdrawn) = self.change(&hub.store, |s| {
+        let (bot, withdrawn, flow) = self.change(&hub.store, |s| {
             let i = s.runs.iter().position(|r| r.id == id).context("routine run not found")?;
             let mut withdrawn = Vec::new();
+            let mut flow = None;
             let r = &mut s.runs[i];
             if r.status.active() {
+                flow = super::flow::start_for(
+                    s.routines.iter().find(|x| x.id == r.routine_id),
+                    r,
+                    status,
+                    detail.as_deref(),
+                    text.as_deref(),
+                );
                 let now = now_ms();
                 r.status = status;
                 r.finished_at = Some(now);
@@ -132,9 +142,12 @@ impl Routines {
                     s.runs[i].event = Value::Null;
                 }
             }
-            Ok((s.runs[i].bot_id.clone(), withdrawn))
+            Ok((s.runs[i].bot_id.clone(), withdrawn, flow))
         })?;
         retry::withdraw(hub, &withdrawn);
+        if let Some(start) = flow {
+            super::flow::spawn(hub, start);
+        }
         self.release(&bot);
         Ok(())
     }
@@ -142,6 +155,8 @@ impl Routines {
     /// The bot's Stop: cancels its queued runs. A retry waiting for later isn't queued yet, so
     /// it stays (pausing or deleting the routine cancels it).
     pub fn cancel_queued(&self, store: &Store, bot: &str) -> Result<()> {
+        // What the bot's routines were handing on to other bots stops too.
+        self.flows.cancel_bot(bot);
         let now = now_ms();
         self.change(store, |s| {
             for r in s.runs.iter_mut().filter(|r| r.bot_id == bot && r.status == Status::Pending && !r.waiting(now)) {
@@ -152,6 +167,10 @@ impl Routines {
     }
 
     pub fn disable_bot(&self, store: &Store, bot: &str) -> Result<()> {
+        self.flows.cancel_bot(bot);
+        if let Err(error) = store.flow_forget_bot(bot) {
+            tracing::error!(bot, error = format!("{error:#}"), "couldn't clear a removed bot's flows");
+        }
         self.change(store, |s| {
             for r in &mut s.routines {
                 if r.bot_id == bot {
@@ -172,6 +191,16 @@ impl Routines {
         Ok(())
     }
 
+    /// Rewrites routine `id`'s instruction as `to` while it still reads `from`, the host's own words.
+    pub fn reword(&self, store: &Store, id: &str, from: &str, to: &str) -> Result<()> {
+        self.change(store, |s| {
+            if let Some(r) = s.routines.iter_mut().find(|r| r.id == id && r.instruction == from) {
+                to.clone_into(&mut r.instruction);
+            }
+            Ok(())
+        })
+    }
+
     /// Retry reporting independently of task execution: a successful run's reply is already in the chat and only
     /// alerts; a failed one leaves a notice, which alerts unless the run is tried again on its own. The entry ID
     /// deduplicates a crash after SQLite inserted the notice but before this ack.
@@ -190,7 +219,8 @@ impl Routines {
                     }
                     None => (failure, "error", Some(AlertKind::Failed)),
                 };
-                let data = json!({"text": text, "style": style, "routineId": run.routine_id, "runId": run.id, "retry": run.retryable});
+                let data = json!({"text": text, "style": style, "routineId": run.routine_id, "runId": run.id, "retry": run.retryable,
+                    "source": "scheduled_task", "scheduledMessage": {"version": 1, "runId": run.id, "phase": "result"}});
                 let id = super::result_notice_id(&run.id);
                 let (_, added) = hub.add_entry_once(&id, &Lane::main(&run.bot_id), EntryKind::Notice, 0, &data)?;
                 (text, kind, added)
@@ -217,7 +247,9 @@ impl Routines {
         self.state.locked().runs.iter().filter(|r| r.status == Status::Pending && !r.waiting(now)).cloned().collect()
     }
 
-    fn schedule_due(&self, store: &Store, now: i64) -> Result<()> {
+    /// Queues the runs whose time came; returns the `watch` checks that came due instead, which
+    /// queue a run themselves only if what they watch changed.
+    fn schedule_due(&self, store: &Store, now: i64) -> Result<Vec<Check>> {
         let due = self
             .state
             .locked()
@@ -225,22 +257,33 @@ impl Routines {
             .iter()
             .any(|r| !r.deleted && r.enabled && r.next_runs.iter().flatten().any(|at| *at <= now));
         if !due {
-            return Ok(());
+            return Ok(vec![]);
         }
         self.change(store, |s| {
+            let mut checks = vec![];
             for routine in &mut s.routines {
                 if routine.deleted || !routine.enabled {
                     continue;
                 }
                 let mut fired = false;
-                for (trigger, next) in routine.triggers.iter().zip(&mut routine.next_runs) {
+                for (index, (trigger, next)) in routine.triggers.iter().zip(&mut routine.next_runs).enumerate() {
                     if let Some(at) = *next
                         && at <= now
                     {
                         match trigger.advance(at, now) {
                             Ok(future) => {
-                                fired = true;
                                 *next = future;
+                                if let Trigger::Watch { kind, target, .. } = trigger {
+                                    checks.push(Check {
+                                        routine_id: routine.id.clone(),
+                                        bot_id: routine.bot_id.clone(),
+                                        index,
+                                        kind: *kind,
+                                        target: target.clone(),
+                                    });
+                                } else {
+                                    fired = true;
+                                }
                             }
                             Err(error) => {
                                 routine.enabled = false;
@@ -250,118 +293,21 @@ impl Routines {
                         }
                     }
                 }
-                if !routine.enabled {
-                    // A schedule error paused the routine above: its due occurrences run nowhere.
+                if !fired || !routine.enabled {
                     continue;
                 }
-                if let Some((at, missed, reason)) = fates.dropped {
-                    // The occurrence ran nowhere: it stays in the history with what it stood for.
-                    s.runs.push(cancelled_record(routine, at, missed, reason));
-                    continue;
-                }
-                let Some(fire) = fates.fire else { continue };
                 // Keep one pending wake while a prior run is active. This also
                 // preserves a one-shot trigger that occurs during a long run.
                 // A retry still waiting is that wake, and it's due now.
-                if let Some(waiting) =
-                    s.runs.iter_mut().find(|r| r.routine_id == routine.id && r.status == Status::Pending)
-                {
-                    if fire.now {
-                        waiting.not_before = None;
-                    } else if let Some(hold) = fire.not_before {
-                        // The limit holds the wake too: a waiting retry won't spend it.
-                        waiting.not_before = Some(waiting.not_before.map_or(hold, |at| at.max(hold)));
-                    }
-                } else {
-                    let mut run = new_run(routine, json!({"source":"schedule"}), None);
-                    run.scheduled_for = Some(fire.scheduled_for);
-                    run.missed = fire.missed;
-                    run.not_before = fire.not_before;
-                    s.runs.push(run);
+                match s.runs.iter_mut().find(|r| r.routine_id == routine.id && r.status == Status::Pending) {
+                    Some(waiting) => waiting.not_before = None,
+                    None => s.runs.push(new_run(routine, json!({"source":"schedule"}), None)),
                 }
             }
-            Ok(())
+            Ok(checks)
         })
     }
-
-    /// What a due clock occurrence of `routine`'s `trigger` does now: it runs (`fire`), or it is
-    /// dropped and recorded (`dropped`). One run or record per tick; the earliest due occurrence
-    /// is the one kept.
-    fn due_fate(
-        trigger: &Trigger,
-        at: i64,
-        now: i64,
-        inputs: &Inputs,
-        at_limit: &impl Fn(&str) -> bool,
-        fates: &mut Fates,
-    ) {
-        let window = trigger.missed_window(at, now);
-        let one_shot = matches!(trigger, Trigger::Once { .. });
-        // A one-time trigger never gives up its only occurrence: it runs when the host comes back.
-        let run_it = window.is_none() || one_shot || inputs.missed_policy == "runOnce";
-        if !run_it {
-            let earlier = match &fates.dropped {
-                None => true,
-                Some((earliest, _, _)) => at < *earliest,
-            };
-            if earlier {
-                fates.dropped = Some((at, window.map(|w| Trigger::missed_record(&w, false)), None));
-            }
-            return;
-        }
-        if fates.fire.is_some() {
-            return;
-        }
-        if at_limit(inputs.bot) {
-            if inputs.limit_policy == "skip" {
-                fates.dropped = Some((at, window.map(|w| Trigger::missed_record(&w, false)), Some(BUDGET_SKIP.into())));
-                return;
-            }
-            // The run holds until the limit resets: a waiting wake already does.
-            fates.fire = Some(Fire {
-                scheduled_for: window.map_or(at, |w| w.last),
-                missed: window.map(|w| Trigger::missed_record(&w, true)).filter(|m| m.count > 0),
-                not_before: Some(crate::budget::next_day(now)),
-                now: false,
-            });
-            return;
-        }
-        fates.fire = Some(Fire {
-            scheduled_for: window.map_or(at, |w| w.last),
-            missed: window.map(|w| Trigger::missed_record(&w, true)).filter(|m| m.count > 0),
-            not_before: None,
-            now: true,
-        });
-    }
 }
-
-/// The decisions a due occurrence follows, read from the routine once so the scheduler can keep
-/// its mutable walk of `next_runs`.
-struct Inputs<'a> {
-    bot: &'a str,
-    missed_policy: &'a str,
-    limit_policy: &'a str,
-}
-
-/// What a tick decided with the due occurrences of one routine: one run, or one record.
-#[derive(Default)]
-struct Fates {
-    fire: Option<Fire>,
-    dropped: Option<(i64, Option<Missed>, Option<String>)>,
-}
-
-/// One due occurrence's run: what it stands for, what it records, and when it may start.
-struct Fire {
-    scheduled_for: i64,
-    missed: Option<Missed>,
-    /// A budget limit holds it until the tally resets.
-    not_before: Option<i64>,
-    /// It runs as soon as the bot is free, taking a waiting retry's place.
-    now: bool,
-}
-
-/// The note on a run dropped at the daily token limit.
-const BUDGET_SKIP: &str = "Skipped: the daily token limit is used up.";
 
 pub fn start(hub: &Arc<Hub>) {
     let weak = Arc::downgrade(hub);
@@ -388,7 +334,9 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
         tracing::error!(%error, "routine result publication will retry");
     }
     let now = now_ms();
-    hub.routines.schedule_due(&hub.store, now)?;
+    for check in hub.routines.schedule_due(&hub.store, now)? {
+        tokio::spawn(super::watch::run(hub.clone(), check));
+    }
     for run in hub.routines.due(now) {
         if hub.routines.stopping() {
             break;
@@ -432,16 +380,12 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        routines.schedule_due(&store, 61_700, |_| false).unwrap();
-        routines.schedule_due(&store, 181_000, |_| false).unwrap();
+        routines.schedule_due(&store, 61_700).unwrap();
+        routines.schedule_due(&store, 181_000).unwrap();
         let state = routines.state.locked();
         assert_eq!(state.routines[0].next_runs[0], Some(240_000));
+        assert_eq!(state.runs.len(), 2);
         assert_eq!(state.runs.iter().filter(|r| r.status == Status::Pending).count(), 1);
-        assert_eq!(state.runs.len(), 3);
-        // The 61-second gap is a missed occurrence: the default policy records it without running it.
-        let skipped = state.runs.iter().find(|r| r.status == Status::Cancelled).unwrap();
-        assert_eq!(skipped.scheduled_for, Some(120_000));
-        assert_eq!(skipped.missed, Some(Missed { count: 2, until: Some(180_000) }));
     }
 
     #[test]
@@ -449,7 +393,7 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let routines = Routines::default();
         let mut routine = super::super::tests::routine();
-        routine.triggers = vec![super::super::Trigger::Once { at: 60_000 }];
+        routine.triggers = vec![Trigger::Once { at: 60_000 }];
         routines
             .change(&store, |s| {
                 let mut running = new_run(&routine, Value::Null, None);
@@ -459,8 +403,8 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        routines.schedule_due(&store, 70_000, |_| false).unwrap();
-        routines.schedule_due(&store, 80_000, |_| false).unwrap();
+        routines.schedule_due(&store, 70_000).unwrap();
+        routines.schedule_due(&store, 80_000).unwrap();
         let state = routines.state.locked();
         assert_eq!(state.routines[0].next_runs[0], None);
         assert_eq!(state.runs.len(), 2);
@@ -484,7 +428,7 @@ mod tests {
             .unwrap();
         assert!(routines.due(119_999).is_empty());
         assert_eq!(routines.due(120_000).len(), 1);
-        routines.schedule_due(&store, 61_000, |_| false).unwrap();
+        routines.schedule_due(&store, 61_000).unwrap();
         let state = routines.state.locked();
         assert_eq!(state.runs.len(), 1, "the waiting retry is the scheduled fire");
         assert_eq!(state.runs[0].not_before, None);
@@ -508,111 +452,5 @@ mod tests {
         let state = routines.state.locked();
         assert_eq!(state.runs[0].status, Status::Cancelled);
         assert_eq!(state.runs[1].status, Status::Pending);
-    }
-
-    fn away_routine() -> (Store, Routines, i64) {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let routines = Routines::default();
-        let mut routine = super::super::tests::routine();
-        routine.triggers = vec![Trigger::Interval { seconds: 3600 }];
-        routine.next_runs = vec![Some(10_000_000)];
-        routines
-            .change(&store, |s| {
-                s.routines.push(routine);
-                Ok(())
-            })
-            .unwrap();
-        // The host comes back two hours and five minutes later: three hourly occurrences came due.
-        let now = 10_000_000 + 2 * 3_600_000 + 300_000;
-        (store, routines, now)
-    }
-
-    #[test]
-    fn missed_occurrences_follow_the_missed_policy() {
-        // `skip` (the default): the occurrences are recorded, nothing runs.
-        let (store, routines, now) = away_routine();
-        routines.schedule_due(&store, now, |_| false).unwrap();
-        let state = routines.state.locked();
-        assert_eq!(state.runs.len(), 1);
-        let run = &state.runs[0];
-        assert_eq!(run.status, Status::Cancelled);
-        assert_eq!(run.scheduled_for, Some(10_000_000));
-        assert_eq!(run.missed, Some(Missed { count: 3, until: Some(10_000_000 + 2 * 3_600_000) }));
-
-        // `runOnce`: the newest occurrence runs when the host comes back, the rest are recorded.
-        let (store, routines, now) = away_routine();
-        routines
-            .change(&store, |s| {
-                s.routines[0].missed_policy = "runOnce".into();
-                Ok(())
-            })
-            .unwrap();
-        routines.schedule_due(&store, now, |_| false).unwrap();
-        let state = routines.state.locked();
-        assert_eq!(state.runs.len(), 1);
-        let run = &state.runs[0];
-        assert_eq!(run.status, Status::Pending);
-        assert_eq!(run.scheduled_for, Some(10_000_000 + 2 * 3_600_000), "it stands for the newest occurrence");
-        assert_eq!(run.missed, Some(Missed { count: 2, until: Some(10_000_000 + 3_600_000) }), "the rest are missed");
-        assert_eq!(run.not_before, None);
-    }
-
-    #[test]
-    fn a_due_run_holds_for_the_day_reset_while_at_the_limit() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let routines = Routines::default();
-        let routine = super::super::tests::routine();
-        routines
-            .change(&store, |s| {
-                s.routines.push(routine);
-                Ok(())
-            })
-            .unwrap();
-        // On time (no window), but the daily token limit is used up: `wait` holds it for the reset.
-        routines.schedule_due(&store, 60_000, |_| true).unwrap();
-        let state = routines.state.locked();
-        assert_eq!(state.runs.len(), 1);
-        assert_eq!(state.runs[0].status, Status::Pending);
-        assert_eq!(state.runs[0].not_before, Some(crate::budget::next_day(60_000)));
-        assert_eq!(state.runs[0].missed, None, "nothing was missed: it is simply held");
-    }
-
-    #[test]
-    fn a_due_run_skips_when_the_limit_policy_is_skip() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let routines = Routines::default();
-        let mut routine = super::super::tests::routine();
-        routine.limit_policy = "skip".into();
-        routines
-            .change(&store, |s| {
-                s.routines.push(routine);
-                Ok(())
-            })
-            .unwrap();
-        routines.schedule_due(&store, 60_000, |_| true).unwrap();
-        let state = routines.state.locked();
-        assert_eq!(state.runs.len(), 1);
-        assert_eq!(state.runs[0].status, Status::Cancelled);
-        assert_eq!(state.runs[0].detail, Some(BUDGET_SKIP.to_owned()));
-        assert_eq!(state.runs[0].scheduled_for, Some(60_000));
-        assert_eq!(state.runs[0].missed, None);
-    }
-
-    #[test]
-    fn a_waiting_retry_is_held_with_the_budget_too() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let routines = Routines::default();
-        let routine = super::super::tests::routine();
-        routines
-            .change(&store, |s| {
-                s.runs.push(new_run(&routine, Value::Null, None));
-                s.routines.push(routine);
-                Ok(())
-            })
-            .unwrap();
-        routines.schedule_due(&store, 60_000, |_| true).unwrap();
-        let state = routines.state.locked();
-        assert_eq!(state.runs.len(), 1, "the wake takes the place of a second run");
-        assert_eq!(state.runs[0].not_before, Some(crate::budget::next_day(60_000)), "the limit holds the wake");
     }
 }

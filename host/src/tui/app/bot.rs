@@ -30,6 +30,7 @@ pub struct Bot {
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
+    pub account: Option<String>,
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): option id → value.
     pub model_options: BTreeMap<String, String>,
@@ -44,8 +45,6 @@ pub struct Bot {
     /// Where the user dragged it (see `App::roster`).
     pub position: i64,
     pub hidden: bool,
-    /// Its roster section; `None` for none (the host trims and checks the name).
-    pub section: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// It creates bots and changes any bot's setup (`chat::manage`); `None` from a host without it.
@@ -190,6 +189,7 @@ impl Bot {
             cwd: s("cwd"),
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",
+            account: v["account"].as_str().map(str::to_owned),
             model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
             model_options: v["modelOptions"]
                 .as_object()
@@ -204,7 +204,6 @@ impl Bot {
             lead: v["lead"] == true,
             position: v["position"].as_i64().unwrap_or(0),
             hidden: v["hidden"].as_bool().unwrap_or(false),
-            section: v["section"].as_str().map(str::to_owned),
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),
             manage_team: v["manageTeam"].as_bool(),

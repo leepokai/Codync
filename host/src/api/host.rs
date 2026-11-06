@@ -15,7 +15,9 @@ use std::sync::Arc;
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     Ok(ControlFlow::Break(match method {
         "hostUpdateStatus" => crate::update::status()?,
-        "checkHostUpdate" => crate::update::check().await?,
+        "hostHealth" => crate::health::value(hub),
+        "sentinelHealth" => crate::sentinel::health_json(&hub.store, b["lookbackMs"].as_i64())?,
+        "checkHostUpdate" => crate::update::check()?,
         "setHostAutomaticUpdates" => {
             crate::update::set_automatic(b["enabled"].as_bool().context("enabled must be a boolean")?)?
         }
@@ -57,6 +59,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "hello" => {
             let port = hub.port;
+            let icons = crate::icons::snapshot(&hub.store)?;
+            let join_account = crate::remote::owner::joinable_by(hub, caller.device_key()).unwrap_or_else(|e| {
+                tracing::warn!(error = format!("{e:#}"), "couldn't check whether this phone can finish joining");
+                None
+            });
             json!({
                 "hostId": hub.host_id,
                 "computerId": hub.identity.computer_id(),
@@ -74,10 +81,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "device": tokio::task::spawn_blocking(crate::service::device).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
                 "backends": backends::list(),
+                "icons": icons.icons,
+                "iconsRevision": icons.icons_revision,
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
-                "n8n": hub.n8n.state(),
                 "analytics": hub.analytics.state(),
+                // This phone paired without the computer joining its account: it calls `joinAccount` to finish.
+                "joinAccount": join_account.is_some(),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
             })
@@ -93,23 +103,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             serde_json::to_value(&*hub.usage.locked())?
         }
-        "hostHealth" => crate::health::value(hub),
-        "setHealthThresholds" => {
-            let thresholds = crate::health::Thresholds {
-                warn: u8::try_from(b["warn"].as_u64().unwrap_or(0)).unwrap_or(0),
-                critical: u8::try_from(b["critical"].as_u64().unwrap_or(0)).unwrap_or(0),
-            };
-            hub.health.set_thresholds(&hub.store, thresholds)?;
-            crate::health::value(hub)
-        }
-        "weekSummary" => {
-            let days = b["days"].as_i64().unwrap_or(7).clamp(1, 31);
-            let since = crate::store::now_ms() - days * 24 * 60 * 60 * 1000;
-            serde_json::to_value(hub.store.week(since)?)?
-        }
         "listDirs" => {
             let path = b["path"].as_str().map(std::path::PathBuf::from);
-            tokio::task::spawn_blocking(move || list_dirs(path)).await??
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || super::folders::listing(&hub.store, path)).await??
+        }
+        "selectWorkspace" => {
+            let path = str_arg(&b, "path")?.to_owned();
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || super::folders::select(&hub.store, &path)).await??
         }
         "agentSetup" => {
             let step: crate::agent::term::Step =
@@ -119,7 +121,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
             json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
         }
-        "agentModels" => crate::agent::auth::models(&hub.store, str_arg(&b, "backend")?).await?,
+        "agentModels" => crate::agent::auth::models(&hub.store, str_arg(&b, "backend")?, b["account"].as_str()).await?,
         "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
             let backend = str_arg(&b, "backend")?;
             let status = match method {
@@ -137,6 +139,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::market::agent_sign_in::agent_signed_in(hub, backend)?;
             }
             status
+        }
+        "listAccounts" => {
+            let backend = b["backend"].as_str();
+            json!({"accounts": crate::agent::account::list(backend)?})
+        }
+        "accountAuthenticate" => {
+            let backend = str_arg(&b, "backend")?;
+            let name = b["name"].as_str().map(str::to_owned);
+            json!({"account": crate::agent::account::authenticate(&hub.store, backend, name).await?})
+        }
+        "deleteAccount" => {
+            let account_id = str_arg(&b, "accountId")?;
+            crate::agent::account::delete(&hub.store, account_id).await?;
+            json!({})
         }
         "termInput" => {
             hub.terms.write(str_arg(&b, "term")?, str_arg(&b, "data")?)?;
@@ -203,66 +219,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
             hub.screen.state()
         }
-        "n8nStatus" => hub.n8n.state(),
-        "n8nStart" => {
-            hub.n8n.enable(hub)?;
-            hub.n8n.state()
-        }
-        "n8nStop" => {
-            hub.n8n.stop(&hub.store).await;
-            hub.n8n.state()
-        }
-        "setN8nEnabled" => {
-            if b["enabled"].as_bool().context("`enabled` must be a boolean")? {
-                hub.n8n.enable(hub)?;
-            } else {
-                hub.n8n.disable(&hub.store).await?;
-            }
-            hub.n8n.state()
-        }
-        "setN8nPath" => {
-            hub.n8n.set_path(&hub.store, str_arg(&b, "path")?).await?;
-            hub.n8n.state()
-        }
-        "setN8nPort" => {
-            let port = b["port"].as_u64().context("`port` is required")?;
-            hub.n8n.set_port(&hub.store, u16::try_from(port).context("`port` must be 1024 or higher")?).await?;
-            hub.n8n.state()
-        }
         "computerTools" => crate::screen::computer_tools(hub).await,
         "computerCall" => {
             let args = b.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
             crate::screen::computer(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, args).await?
         }
         _ => return Ok(ControlFlow::Continue(b)),
-    }))
-}
-
-/// Blocking (`std::fs`): call through `spawn_blocking`.
-fn list_dirs(path: Option<std::path::PathBuf>) -> Result<Value> {
-    let dir = match path {
-        Some(p) => p,
-        None => dirs::home_dir().ok_or_else(|| anyhow!("no home directory"))?,
-    };
-    let mut dirs: Vec<Value> = std::fs::read_dir(&dir)
-        .with_context(|| format!("listing {}", dir.display()))?
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                return None;
-            }
-            let p = e.path();
-            Some(json!({"name": name, "path": p.to_string_lossy(), "isGit": p.join(".git").exists()}))
-        })
-        .collect();
-    dirs.sort_by_key(|d| d["name"].as_str().unwrap_or_default().to_lowercase());
-    Ok(json!({
-        "path": dir.to_string_lossy(),
-        "parent": dir.parent().map(|p| p.to_string_lossy().into_owned()),
-        "isGit": dir.join(".git").exists(),
-        "dirs": dirs,
     }))
 }
 

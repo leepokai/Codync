@@ -108,6 +108,10 @@ impl App {
                     item["enabled"] = on.into();
                 }
             }
+            (KeyCode::Char('f'), Some(r)) => {
+                self.open_flow(l, &r);
+                return None;
+            }
             (KeyCode::Char('r'), Some(r)) => {
                 self.sheet("runRoutine", json!({"botId": bot, "id": r["id"]}), Reply::Routines(bot.clone()));
                 self.flash(&format!("Running {} now", s(&r, "name")));

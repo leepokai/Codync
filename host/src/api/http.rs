@@ -1,5 +1,5 @@
 //! HTTP routes: bearer-token checks for this computer's apps, SSE streams, the channel
-//! upgrade, OAuth callbacks and local routine webhooks.
+//! upgrade, OAuth callbacks, local routine webhooks and sandboxed bot mini-apps.
 
 use super::devices::Caller;
 use super::{dispatch, error_status, events_stream, term_events};
@@ -23,16 +23,39 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub fn router(hub: Arc<Hub>) -> Router {
-    Router::new()
+    let main = Router::new()
         .route("/health", get(health))
         .route("/hooks/routines/{id}", post(routine_hook))
+        .route("/hooks/slack", post(crate::slack::ingress::receive))
         .route("/events", get(events))
         .route("/api/{method}", post(command))
+        .route("/api/setIcon", post(icon_command).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
+        .route("/ingest/hook", post(hook))
         .route("/channel", get(channel))
         .route("/oauth/callback", get(oauth_callback))
+        .layer(axum::middleware::from_fn(super::rebinding::guard))
+        .layer(axum::middleware::from_fn_with_state(hub.port, super::origin::guard));
+    Router::new()
+        .merge(main)
+        .merge(super::apps_runtime::router().layer(axum::middleware::from_fn(super::rebinding::guard)))
         .with_state(hub)
+}
+
+async fn icon_command(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    if !authorized(&hub, &headers, peer) {
+        return Err(unauthorized());
+    }
+    dispatch(&hub, &Caller::Local, "setIcon", body).await.map(Json).map_err(|e| {
+        let (status, message) = error_status(&e);
+        ApiError(status, message)
+    })
 }
 
 /// Loopback, also as an IPv4-mapped IPv6 address (`::ffff:127.0.0.1` under `--bind ::`).
@@ -110,6 +133,22 @@ async fn statusline(
     };
     usage::ingest_statusline(&hub, &body);
     StatusCode::NO_CONTENT
+}
+
+/// `POST /ingest/hook`: one event of an agent running in a terminal, from `codync-host hook`. A permission request
+/// answers only once a person has decided (or the wait runs out), so the connection may stay open for minutes.
+async fn hook(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    if !authorized(&hub, &headers, peer) {
+        return Err(unauthorized());
+    }
+    let body = serde_json::from_slice::<Value>(&body)
+        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))?;
+    Ok(Json(crate::external::ingest(&hub, &body).await))
 }
 
 async fn command(

@@ -5,6 +5,8 @@
     <string name="widget_lock_summary_description">Activity counts and freshness without bot names or messages</string>
     <string name="widget_team_description">Four bots as characters, the ones that need you first</string>
     <string name="widget_provider_description">Latest limits from your selected provider</string>
+    <string name="widget_claude_description">Latest Claude limits</string>
+    <string name="widget_codex_description">Latest Codex limits</string>
     <string name="widget_usage_description">Subscription limits your computer reports, for every provider</string>
     <string name="widget_overview_description">Bots that need you, your team and usage limits in one widget that fits its size</string>
     <string name="widget_overview_title">Codync</string>

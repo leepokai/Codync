@@ -2,6 +2,7 @@
 
 use super::approval_age;
 use super::fast_mode::Listing;
+use super::stall::ToolOutcome;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
@@ -43,7 +44,17 @@ impl Actor {
                     && params["sessionId"].as_str() == self.turn_session.as_deref()
                     && self.turn.is_some()
                 {
+                    self.watchdog.seen(&params["update"]);
+                    self.note_skill_use(&params["update"]);
                     self.on_update(&params["update"]);
+                    if let Some(reason) = self.watchdog.tripped() {
+                        tracing::warn!(bot = %self.cfg.id, "stopping a turn stuck in a tool loop");
+                        let notice = json!({"text": reason, "style": "error"});
+                        self.hub.add_entry(&self.lane, EntryKind::Notice, self.turn.unwrap_or(0), &notice);
+                        self.cancel_turn().await;
+                    } else if self.loop_guard.tripped().is_some() && !self.stop_requested {
+                        self.cancel_turn().await;
+                    }
                 }
             }
             Some(Incoming::Request { id, method, params }) => {
@@ -55,6 +66,18 @@ impl Actor {
                     let _ = acp.respond_error(id, -32601, &format!("{method} is not supported by Codync")).await;
                 }
             }
+        }
+    }
+
+    /// Feeds a finished tool call to the stall gate; a tripped gate is stopped by `on_incoming`.
+    fn observe_tool_end(&mut self, status: &str, title: &str, output: &str) {
+        let outcome = match status {
+            "completed" => ToolOutcome::Succeeded,
+            "failed" => ToolOutcome::Failed { title, output },
+            _ => return,
+        };
+        if let Some(reason) = self.loop_guard.observe(&outcome) {
+            tracing::warn!(bot = %self.cfg.id, %reason, "stopping a looping turn");
         }
     }
 
@@ -84,9 +107,12 @@ impl Actor {
                     "locations": u["locations"].clone(),
                 });
                 merge_tool_content(&mut data, &u["content"]);
-                mark_bookkeeping(&self.cfg, self.renamed(), &mut data);
+                mark_bookkeeping(&self.cfg, &mut data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &data);
-                let working = activity(&data, self.renamed()).to_owned();
+                let title = data["title"].as_str().unwrap_or("Tool").to_owned();
+                let status = data["status"].as_str().unwrap_or_default().to_owned();
+                self.observe_tool_end(&status, &title, data["output"].as_str().unwrap_or_default());
+                let working = activity(&data).to_owned();
                 if let Some(e) = self.add(EntryKind::Tool, turn, data) {
                     self.tools.insert(tool_id, e.id);
                 }
@@ -96,6 +122,7 @@ impl Actor {
                 let tool_id = u["toolCallId"].as_str().unwrap_or_default();
                 let Some(entry_id) = self.tools.get(tool_id).cloned() else { return };
                 let Some(mut e) = self.hub.store.entry(&entry_id) else { return };
+                let before = e.data["status"].as_str().unwrap_or_default().to_owned();
                 for (k, key) in [("title", "title"), ("kind", "toolKind"), ("status", "status")] {
                     if let Some(v) = u[k].as_str() {
                         e.data[key] = v.into();
@@ -105,10 +132,15 @@ impl Actor {
                     e.data["locations"] = u["locations"].clone();
                 }
                 merge_tool_content(&mut e.data, &u["content"]);
-                mark_bookkeeping(&self.cfg, self.renamed(), &mut e.data);
+                mark_bookkeeping(&self.cfg, &mut e.data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &e.data);
-                let working = (e.data["status"] == "in_progress").then(|| activity(&e.data, self.renamed()).to_owned());
+                let working = (e.data["status"] == "in_progress").then(|| activity(&e.data).to_owned());
+                let status = e.data["status"].as_str().unwrap_or_default().to_owned();
+                let title = e.data["title"].as_str().unwrap_or("Tool").to_owned();
                 self.hub.set_entry(&entry_id, &e.data);
+                if status != before {
+                    self.observe_tool_end(&status, &title, e.data["output"].as_str().unwrap_or_default());
+                }
                 if let Some(working) = working {
                     self.set_activity(&working);
                 }
@@ -153,21 +185,9 @@ impl Actor {
     }
 
     pub(super) async fn on_permission(&mut self, rpc_id: Value, params: Value) {
+        use crate::agent::approval_rules::{self, Decision, Outcome};
         let options = params["options"].as_array().cloned().unwrap_or_default();
         let tool = &params["toolCall"];
-        if self.cfg.permission == Permission::Auto {
-            let pick = ["allow_once", "allow_always"]
-                .iter()
-                .find_map(|k| options.iter().find(|o| o["kind"] == *k))
-                .or_else(|| options.first());
-            if let (Some(o), Some(conn)) = (pick, &self.conn) {
-                let _ = conn
-                    .acp
-                    .respond(rpc_id, json!({"outcome": {"outcome": "selected", "optionId": o["optionId"]}}))
-                    .await;
-                return;
-            }
-        }
         let title = tool["title"]
             .as_str()
             .filter(|t| !t.is_empty())
@@ -177,15 +197,52 @@ impl Actor {
                 self.hub.store.entry(eid)?.data["title"].as_str().map(str::to_owned)
             })
             .unwrap_or_else(|| "Use a tool".into());
-        let mut detail = json!({"output": "", "diffs": []});
-        merge_tool_content(&mut detail, &tool["content"]);
         let raw = &tool["rawInput"];
         let command = raw["command"].as_str().map(str::to_owned).or_else(|| {
             raw["command"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
         });
+        let kind = tool["kind"].as_str().unwrap_or("other");
+        // The forbidden commands, then the user's rules, then the bot's general setting: one decision, the same one the
+        // rule editor's tester gives.
+        let quick =
+            if self.cfg.action_rules_on { approval_rules::quick_rules(&self.cfg.action_rules) } else { Vec::new() };
+        let evaluation = approval_rules::evaluate(
+            &self.cfg.approval_rules,
+            &quick,
+            self.cfg.permission,
+            kind,
+            command.as_deref(),
+            &title,
+        );
+        match &evaluation.outcome {
+            Outcome::Forbidden { pattern } => {
+                self.refuse(rpc_id, &options, &format!("Blocked command (\"{pattern}\"), never allowed: {title}"))
+                    .await;
+                return;
+            }
+            Outcome::Rule { decision: Decision::Deny, pattern, .. } => {
+                self.refuse(rpc_id, &options, &format!("Denied by your rule \"{pattern}\": {title}")).await;
+                return;
+            }
+            _ => {}
+        }
+        let rule_pattern = match &evaluation.outcome {
+            Outcome::Rule { pattern, .. } => Some(pattern.clone()),
+            _ => None,
+        };
+        let allowed = matches!(
+            evaluation.outcome,
+            Outcome::Rule { decision: Decision::Allow, .. } | Outcome::Setting { permission: Permission::Auto }
+        );
+        // Like the bot's automatic setting always did: with no allow option, its first option.
+        if allowed && self.pick_option(&rpc_id, &options, &["allow_once", "allow_always"], true).await {
+            return;
+        }
+        let mut detail = json!({"output": "", "diffs": []});
+        merge_tool_content(&mut detail, &tool["content"]);
         let data = json!({
             "title": title,
-            "toolKind": tool["kind"].as_str().unwrap_or("other"),
+            "toolKind": kind,
             "command": command,
             "detail": detail["output"],
             "diffs": detail["diffs"],
@@ -193,6 +250,8 @@ impl Actor {
             "options": options.iter().map(|o| json!({"optionId": o["optionId"], "name": o["name"], "kind": o["kind"]})).collect::<Vec<_>>(),
             "status": "pending",
             "selected": Value::Null,
+            // The rule that asked for this card, when one did (the bot itself approves everything).
+            "rule": rule_pattern,
         });
         self.show_card(&title, data, Answer::Agent(rpc_id));
     }
@@ -215,23 +274,40 @@ impl Actor {
     fn show_card(&mut self, title: &str, data: Value, answer: Answer) {
         let turn = self.turn.unwrap_or(0);
         self.close_seg();
-        if let Some(e) = self.add(EntryKind::Permission, turn, data) {
-            self.perms.insert(e.id, answer);
+        let created = self.add(EntryKind::Permission, turn, data);
+        if let Some(e) = &created {
+            self.perms.insert(e.id.clone(), answer);
+            self.waiting.asked(&e.id, Instant::now());
         }
         self.hub.set_runtime(&self.cfg.id, |r| {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Needs approval: {title}");
         });
+        let approval = created.map(|e| approval_age::approval_payload(&e.id, &e.data));
         // Tapping it opens where the card is: the group, for a room turn.
         let target = self.hub.store.bot(&self.lane.chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
-        push::notify(
+        push::notify_with(
             &self.hub,
             &target,
             Some(&self.cfg.id),
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,
+            approval,
         );
+    }
+
+    /// Answers permission request `rpc_id` with its first option of one of `kinds`, in that order
+    /// (with `any`, its first option when none fits); false when there's no such option or agent.
+    pub(super) async fn pick_option(&self, rpc_id: &Value, options: &[Value], kinds: &[&str], any: bool) -> bool {
+        let pick = kinds
+            .iter()
+            .find_map(|k| options.iter().find(|o| o["kind"] == *k))
+            .or_else(|| if any { options.first() } else { None });
+        let (Some(option), Some(conn)) = (pick, &self.conn) else { return false };
+        let picked = json!({"outcome": {"outcome": "selected", "optionId": option["optionId"]}});
+        let _ = conn.acp.respond(rpc_id.clone(), picked).await;
+        true
     }
 
     /// A Codync card whose tool stopped waiting (it timed out, or its call was dropped) expires, buttons and all.
@@ -248,7 +324,18 @@ impl Actor {
     }
 
     pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
-        let Some(answer) = self.perms.remove(entry_id) else { return };
+        self.waiting.answered(entry_id);
+        let Some(answer) = self.perms.remove(entry_id) else {
+            // No agent waits on it any more (its process went away): close the card, so it
+            // can't be answered as if it still mattered.
+            if let Some(mut e) = self.hub.store.entry(entry_id)
+                && e.data["status"] == "pending"
+            {
+                e.data["status"] = "cancelled".into();
+                self.hub.set_entry(entry_id, &e.data);
+            }
+            return;
+        };
         let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
         match answer {
             Answer::Agent(rpc_id) => {
@@ -291,6 +378,9 @@ impl Actor {
         }
         if self.active_group.is_some() || self.active_routine.is_some() {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply");
+        }
+        if self.proactive_turn && super::proactive::is_silent(&text) {
+            return Ok(());
         }
         self.close_seg();
         self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}))
@@ -357,14 +447,18 @@ impl Actor {
 
     /// Persists streamed text at most every 300 ms (or immediately with `force`).
     pub(super) fn flush(&mut self, force: bool) {
+        let internal = self.proactive_turn;
         if let Seg::Open { kind, entry_id, buf, flushed, dirty } = &mut self.seg
             && *dirty
             && (force || flushed.elapsed() >= Duration::from_millis(300))
         {
-            let data = match kind {
+            let mut data = match kind {
                 SegKind::Text => json!({"text": buf, "final": false, "author": self.cfg.id}),
                 SegKind::Thought => json!({"text": buf, "author": self.cfg.id}),
             };
+            if internal {
+                data["internal"] = true.into();
+            }
             self.hub.set_entry(entry_id, &data);
             *flushed = Instant::now();
             *dirty = false;

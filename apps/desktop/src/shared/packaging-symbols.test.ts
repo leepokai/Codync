@@ -7,7 +7,7 @@ import { test, type TestContext } from 'node:test'
 
 const verifyBuild = createRequire(import.meta.url)('../../tools/verify-build.cjs')
 
-function fixture(t: TestContext, platform = 'darwin') {
+function fixture(t: TestContext, platform = 'darwin'): { electronPlatformName: string; arch?: number; packager: { projectDir: string; appInfo: { id: string } } } {
   const projectDir = mkdtempSync(join(tmpdir(), 'codync-symbol-check-'))
   t.after(() => rmSync(projectDir, { recursive: true, force: true }))
   mkdirSync(join(projectDir, 'resources'))
@@ -32,6 +32,16 @@ test('macOS packaging requires the Apple logo manifest entry and every rendered 
 
 test('Linux and Windows packaging does not require Apple-only SF Symbols', async (t) => {
   for (const platform of ['linux', 'win32']) {
-    await assert.doesNotReject(verifyBuild(fixture(t, platform)))
+    const context = fixture(t, platform)
+    if (platform === 'win32') {
+      // A minimal PE header that reads as x64, as tools/native-host.mjs writes on this machine.
+      const host = Buffer.alloc(0x100)
+      host.writeUInt32LE(0x40, 0x3c)
+      host.writeUInt16LE(0x8664, 0x44)
+      mkdirSync(join(context.packager.projectDir, 'build/native'), { recursive: true })
+      writeFileSync(join(context.packager.projectDir, 'build/native/codync-host.exe'), host)
+      context.arch = 1
+    }
+    await assert.doesNotReject(verifyBuild(context))
   }
 })

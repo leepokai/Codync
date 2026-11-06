@@ -45,7 +45,7 @@ impl Drop for PhoneClientGuard {
 }
 
 /// Event types only this computer's own apps receive.
-const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud"];
+const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud", "pairingRequests"];
 
 #[cfg(test)]
 mod tests;
@@ -67,14 +67,17 @@ pub fn events_stream(
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
     }
     catch_up.extend(crate::chat::artifacts::since(&hub.store, since));
+    catch_up.extend(crate::routines::flow::catch_up(&hub.store, since));
     catch_up.sort_by_key(|v| v["rev"].as_i64().unwrap_or(0));
-    // What the voice of a call this device holds should have heard while it was away.
-    catch_up.extend(crate::chat::calls::replay(caller.device_key()));
+    // `rev` counts every mutation, but the catch-up replays only bots and entries: the
+    // last rev it sends is where a client's initial load ends.
+    let catch_up_rev = catch_up.last().and_then(|v| v["rev"].as_i64()).unwrap_or(since);
     let hello = json!({
         "type": "hello",
         "hostId": hub.host_id,
         "computerId": hub.identity.computer_id(),
         "rev": hub.store.current_rev(),
+        "catchUpRev": catch_up_rev,
         "usage": hub.usage.locked().clone(),
         "screen": hub.screen.state(),
         // Live state like the two above: a `network` event sent before this stream began is in it.
@@ -82,6 +85,11 @@ pub fn events_stream(
         // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
         "catchUp": catch_up.len(),
     });
+    let icons = crate::icons::snapshot(&hub.store).map_or_else(
+        |_| json!({"type": "icons", "icons": {}, "iconsRevision": 0}),
+        |s| json!({"type": "icons", "icons": s.icons, "iconsRevision": s.icons_revision }),
+    );
+    catch_up.insert(0, icons);
     catch_up.insert(0, hello);
 
     let local = matches!(caller, Caller::Local);

@@ -20,16 +20,24 @@ const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 export function useWelcomeGate() {
   const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
   const { isConfigured, isReady, isSignedIn } = useAccount()
+  const [skipped, setSkipped] = usePref(prefs.welcomeSkipped)
   const finish = useCallback(() => {
     if (prefs.onboardingDone.get()) return
     setOnboarded(true)
     analytics.track({ event: 'onboarding_completed', signed_in: account.isSignedIn })
   }, [setOnboarded])
-  return { shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn }), finish }
+  return {
+    shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn, skipped }),
+    finish,
+    skip: () => {
+      setSkipped(true)
+      setOnboarded(true)
+    },
+  }
 }
 
 /** The welcome: signing in, or, in a build without accounts, going on without one. A restored session skips it as soon as it is back. */
-export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
+export function AccountWelcomeView({ onContinue, onSkip }: { onContinue: () => void; onSkip?: () => void }) {
   const account = useAccount()
   const reduce = useReduceMotion()
   const tr = useTr()
@@ -82,7 +90,11 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
         </VStack>
         <Spacer min={32} />
         <VStack gap={10} style={rise(beat >= 4)}>
-          {account.isConfigured ? null : (
+          {account.isConfigured ? (
+            <button className="welcome-skip" onClick={onSkip}>
+              {onThis}
+            </button>
+          ) : (
             <Button onClick={onContinue} className="welcome-button">
               {onThis}
             </Button>

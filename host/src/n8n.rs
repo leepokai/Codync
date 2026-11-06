@@ -489,6 +489,7 @@ impl N8n {
             name: CONNECTOR_ID.to_owned(),
             description: "The n8n instance on this computer".to_owned(),
             registry_name: None,
+            catalog: None,
             command: None,
             args: vec![],
             env: BTreeMap::new(),

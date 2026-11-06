@@ -5,6 +5,7 @@ use super::str_arg;
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
 use crate::market;
+use crate::market::openbot;
 use crate::market::{Installed, connector_ids, enable_new};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -54,6 +55,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             market::logins::remove(&hub.store, str_arg(&b, "id")?)?;
             json!({})
         }
+        "credentialBotSecrets" => market::bot_secrets::list(&hub.store)?,
+        "credentialRemoveBotSecret" => {
+            market::bot_secrets::remove(&hub.store, str_arg(&b, "id")?)?;
+            json!({})
+        }
         "credentialSetOnePassword" => {
             market::passwords::set_token(&hub.store, b["token"].as_str().unwrap_or_default()).await?
         }
@@ -70,7 +76,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             for (k, v) in &c.env {
                 env.insert(k.clone(), market::passwords::resolve(&hub.store, v).await?.into());
             }
-            json!({"command":c.command,"args":c.args,"env":env})
+            json!({"command":c.command,"args":c.args,"env":env,"fingerprint":crate::mcp::policy_management::fingerprint_value(&c)?})
         }
         "connectorCall" => {
             market::requests::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
@@ -78,6 +84,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "connectorInfo" => market::connector_info(&hub.store, str_arg(&b, "registryName")?).await?,
         "connectorRequestFinish" => market::requests::finish(hub, &b).await?,
         "connectorVerify" => market::verify::verify(&hub.store, str_arg(&b, "id")?, hub.port).await?,
+        "composioPrepareCall" | "composioDispatchCall" => {
+            if !matches!(caller, Caller::Local) {
+                bail!("This method is restricted to the local MCP proxy.");
+            }
+            if method == "composioPrepareCall" {
+                market::composio::prepare(hub, str_arg(&b, "botId")?, &b["arguments"], &b["rpcId"]).await?
+            } else {
+                market::composio::dispatch(hub, str_arg(&b, "id")?, str_arg(&b, "fingerprint")?).await?
+            }
+        }
         "composioCall" => {
             json!({"result": market::composio::call(&hub.store, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?})
         }
@@ -119,7 +135,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             )
             .await?
         }
-        "marketSkills" => market::browse_skills(&hub.store).await?,
         "connectors" => market::list_connectors(&hub.store)?,
         "importConnectors" => {
             let before = connector_ids(&hub.store)?;
@@ -150,7 +165,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 market::oauth::Callback::App
             };
-            market::oauth::start(&hub.store, hub.port, str_arg(&b, "id")?, callback).await?
+            market::oauth::start(hub, str_arg(&b, "id")?, callback, b["showsCode"] == true).await?
         }
         "connectorSignInFinish" => {
             let c = market::oauth::finish(&hub.store, str_arg(&b, "state")?, b["code"].as_str(), b["error"].as_str())
@@ -171,10 +186,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "skills" => market::list_skills(&hub.store),
         // What this agent already has in the user's home. Codync's own skills and connectors stay on the bot.
         "agentGear" => crate::agent::gear::list(b["backend"].as_str().unwrap_or("")).await,
-        "skillDetails" => market::skill_details(&hub.store, &b).await?,
+        "skillDetails" => match b["source"].as_str().filter(|s| s.starts_with(openbot::SOURCE)) {
+            Some(source) => openbot::skill_details(source)?,
+            None => market::skill_details(&hub.store, &b).await?,
+        },
         "installSkill" => {
             let before = Installed::Skills.ids(&hub.store)?;
-            let s = if b["source"].is_string() {
+            let s = if b["source"].as_str().is_some_and(|s| s.starts_with(openbot::SOURCE)) {
+                serde_json::to_value(openbot::install(&hub.store, str_arg(&b, "source")?)?)?
+            } else if b["source"].is_string() {
                 market::install_skill(&hub.store, str_arg(&b, "source")?).await?
             } else {
                 let text = |k: &str| b[k].as_str().unwrap_or_default();

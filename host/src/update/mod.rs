@@ -121,7 +121,7 @@ pub async fn release_watch() {
     }
     let mut retry = Duration::from_mins(1);
     loop {
-        let wait = match release::latest().await {
+        let wait = match release::latest() {
             Ok(release) => {
                 note_latest(&release.version);
                 retry = Duration::from_mins(1);
@@ -223,13 +223,13 @@ pub fn set_automatic(enabled: bool) -> Result<Value> {
     status()
 }
 
-pub async fn check() -> Result<Value> {
+pub fn check() -> Result<Value> {
     crate::environment::Environment::current().require_release_updates()?;
     let _lock = lock()?;
     let mut state: State = read("update-state.json")?;
     ensure!(!awaiting_worker(&state), "a host update is starting");
     state.checked_at = Some(crate::store::now_ms());
-    match release::latest().await {
+    match release::latest() {
         Ok(release) => {
             note_latest(&release.version);
             let available = (semver::Version::parse(&release.version)?
@@ -267,7 +267,7 @@ pub async fn apply(port: u16, force: bool, worker: bool) -> Result<Value> {
     let mut state = State { phase: "checking".into(), checked_at: Some(crate::store::now_ms()), ..State::default() };
     write("update-state.json", &state)?;
     let result = async {
-        let release = release::latest().await?;
+        let release = release::latest()?;
         if semver::Version::parse(&release.version)? <= semver::Version::parse(env!("CARGO_PKG_VERSION"))? {
             state.phase = "upToDate".into();
             return Ok(());
@@ -372,7 +372,7 @@ pub async fn automatic_loop(hub: Arc<Hub>) {
         if !service::current_exe().is_ok_and(|exe| require_self_updating(&exe).is_ok()) {
             continue;
         }
-        match check().await {
+        match check() {
             Ok(status) if status["state"]["availableVersion"].is_string() => {
                 let port = hub.port;
                 match tokio::task::spawn_blocking(move || spawn_worker(port, false)).await {

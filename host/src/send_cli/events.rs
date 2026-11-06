@@ -105,7 +105,7 @@ impl BotFeed {
             .await
             .ok()
             .and_then(Result::ok)
-            .ok_or_else(|| Failure::host(crate::NOT_RUNNING))?;
+            .ok_or_else(|| Failure::host(crate::local_api::NOT_RUNNING))?;
         if !response.status().is_success() {
             let body: Value = response.json().await.unwrap_or_default();
             return Err(Failure::host(redact(body["error"].as_str().unwrap_or("the host refused"), token)));

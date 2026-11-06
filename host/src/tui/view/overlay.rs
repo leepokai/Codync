@@ -35,6 +35,7 @@ pub(super) fn overlays(f: &mut Frame<'_>, app: &mut App) {
 
 pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay) {
     match top {
+        Overlay::RosterTools => super::roster_tools::roster_tools(buf, area, app),
         Overlay::Goto(g) => {
             let items = app.goto_items(g);
             goto(buf, area, app, g, &items);
@@ -62,7 +63,13 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
             let x = put(buf, inner.x, inner.y + 4, 30, &format!(" ↵ {button} "), danger) + 1;
             put(buf, x, inner.y + 4, 14, &format!(" esc {cancel} "), t.text.patch(t.btn).add_modifier(Modifier::BOLD));
         }
-        Overlay::NewBot(n) => new_bot_view(buf, area, n),
+        Overlay::NewBot(n) => {
+            let agent = n.backend.as_deref().map(|id| {
+                app.backends.iter().find(|b| b["id"] == id).and_then(|b| b["name"].as_str()).unwrap_or(id).to_owned()
+            });
+            let profile = n.profile.as_deref().and_then(|id| app.profile_text(id));
+            new_bot_view(buf, area, n, agent.as_deref(), profile.as_ref());
+        }
         Overlay::Folder(p) => {
             let t = theme();
             let matches = App::folder_matches(p);
@@ -129,11 +136,14 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Usage(scroll) => usage(buf, area, app, *scroll),
         Overlay::Pair(code) => pair(buf, area, code),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
+        Overlay::Documents(sheet) => super::super::sheets::documents(buf, area, app, sheet),
+        Overlay::Computer(sheet) => super::super::sheets::computer(buf, area, sheet),
+        Overlay::McpTools(sheet) => super::super::sheets::mcp_tools(buf, area, sheet),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
+        Overlay::Flow(f) => super::super::sheets::flow(buf, area, app, f),
         Overlay::Library(l) => super::super::sheets::library(buf, area, app, l),
-        Overlay::Gear(g) => super::super::sheets::gear(buf, area, app, g),
         Overlay::Market(m) => super::super::sheets::market(buf, area, app, m),
         Overlay::Agent(a) => super::super::sheets::agent(buf, area, app, a),
         Overlay::Fields(f) => super::super::sheets::fields(buf, area, f),

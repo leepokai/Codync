@@ -145,6 +145,7 @@ mod tests {
             data,
             created_at: 1_790_000_000_000,
             updated_at: 0,
+            thread_id: None,
         }
     }
 

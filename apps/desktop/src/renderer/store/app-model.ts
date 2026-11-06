@@ -1,7 +1,7 @@
 import { trackBody } from '@shared/analytics'
 import type { HostSnapshot, LocalHost } from '@shared/ipc'
 import type { AccessRequest, Bot, Computer, PairingRequest } from '@shared/models'
-import { HostError, LoopbackTransport } from '../client/host-client'
+import { HostError, LoopbackTransport, type HostTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { account } from './account'
@@ -72,10 +72,6 @@ export class AppModel extends Observable {
   readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
 
-  /**
-   * `demo`: a model that talks to an in-memory host (`demo/demo-transport.ts`) and keeps nothing on the device. It stands in for
-   * this one while the person tries the demo, and is thrown away after (`dispose`).
-   */
   constructor(private mirrors = true, private readonly demo: { transport: () => HostTransport; snapshot: HostSnapshot } | null = null) {
     super()
     this.computerAccess = new ComputerAccess(this)
@@ -115,12 +111,16 @@ export class AppModel extends Observable {
       if (old && old.computerId !== local.computerId) this.detach(old.computerId)
       const cached = this.computers.find((c) => c.id === local.computerId)
       const computer: Computer = cached ?? { id: local.computerId, name: 'This computer', signKey: '', urls: [] }
-      const demo = this.demo
-      const store = demo
-        ? new BotStore(computer, true, demo.transport, undefined, 'demo', true)
-        : new BotStore(computer, true, () => new LoopbackTransport(local.baseURL, local.token))
+      const store = new BotStore(
+        computer,
+        true,
+        this.demo ? this.demo.transport : () => new LoopbackTransport(local.baseURL, local.token),
+        window.codync.appVersion,
+        'local',
+        this.demo !== null,
+      )
       this.attach(computer, store)
-      if (!demo) store.subscribe(() => this.syncScreen(store))
+      store.subscribe(() => this.syncScreen(store))
     } else if (!local && old) {
       this.detach(old.computerId)
     }

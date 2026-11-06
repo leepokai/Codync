@@ -214,7 +214,7 @@ impl Host {
         // discovery compete for the runner before the HTTP server can respond.
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
-            if common::ready(&self.base, &self.home).await {
+            if common::ready(&self.base, &self.home).await.is_ok() {
                 return;
             }
             let exited = self.child.try_wait().unwrap();

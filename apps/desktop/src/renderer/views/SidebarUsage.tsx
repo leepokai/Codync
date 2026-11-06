@@ -67,7 +67,7 @@ export function SidebarUsage({ usage, onRefresh }: { usage: Usage; onRefresh?: (
                   <div key={w.id} className="sidebar-usage-window">
                     <div className="sidebar-usage-window-head">
                       <Text tone="secondary" size="caption" truncate>{tr(windowTitle(w))}</Text>
-                      <Text tone="text" size="caption" tabular>{windowReading(w)}</Text>
+                      <Text tone="text" size="caption" tabular>{windowReading(w, tr)}</Text>
                     </div>
                     {w.text ? null : (
                       <>

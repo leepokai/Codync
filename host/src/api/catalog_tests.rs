@@ -126,7 +126,7 @@ async fn installing_an_agent_brings_its_look_skills_and_routines() {
     for id in &bot.skills {
         assert!(openbot::skill(id).is_some(), "{id} came from the catalog");
     }
-    let routines = fixture.hub.routines.list(&bot.id);
+    let routines = fixture.hub.routines.list(&bot.id, |_| false);
     assert_eq!(routines["routines"].as_array().unwrap().len(), agent.routines.len());
     assert_eq!(installed_agents(&fixture.hub).unwrap(), vec!["qa-tester"]);
 }

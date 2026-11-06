@@ -37,10 +37,10 @@ export class BotSections {
    * Shows bots `ids` in section `to` (none: undefined) before the host's bot events confirm it, then
    * sends `op`; a refusal takes back the moves nothing changed since. Resolves to whether the host accepted.
    */
-  private async moveBots(ids: string[], to: string | undefined, op: (c: HostClient) => Promise<unknown>, onRefused?: () => void): Promise<boolean> {
+  private async moveBots(ids: string[], to: string | null | undefined, op: (c: HostClient) => Promise<unknown>, onRefused?: () => void): Promise<boolean> {
     const moves = ids.map((id) => ({ id, from: this.bots().get(id)?.section, to }))
     this.pending.push(...moves)
-    this.place(placedBots(this.bots(), ids, to))
+    this.place(placedBots(this.bots(), ids, to ?? undefined))
     try {
       return await this.perform(op, () => {
         onRefused?.()

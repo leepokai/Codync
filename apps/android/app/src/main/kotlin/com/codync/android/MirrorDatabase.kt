@@ -78,8 +78,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     @Synchronized fun apply(event: MirrorEvent) = apply(listOf(event))
     @Synchronized fun apply(events: List<MirrorEvent>) = transaction { db ->
         for (event in events) when (event) {
-            is MirrorEvent.Hello -> {
-                if (meta(db, "hostId")?.let { it != event.hostId } == true) reset(db)
+            is MirrorEvent.Hello -> {                if (meta(db, "hostId")?.let { it != event.hostId } == true) reset(db)
                 setMeta(db, "hostId", event.hostId)
                 if (event.rev < (meta(db, "rev")?.toLong() ?: 0)) reset(db)
                 setMeta(db, "usage", event.usage.toString())
@@ -88,6 +87,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             }
             is MirrorEvent.BotChanged -> { writeBot(db, event.bot); bump(db, event.bot.rev) }
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
+            is MirrorEvent.Icons -> setMeta(db, "icons", kotlinx.serialization.json.Json.encodeToString(event.icons))
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
             // Artifacts and the network live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`).

@@ -18,7 +18,9 @@ interface Identity {
 
 const identities = new Map<string, Identity>()
 
-const keyPath = (userId: string) => join(app.getPath('userData'), `device-key-${createHash('sha256').update(userId).digest('hex').slice(0, 16)}.bin`)
+const keyPath = (userId: string) =>
+  join(app.getPath('userData'), `device-key-${createHash('sha256').update(userId).digest('hex').slice(0, 16)}.bin`)
+    .replaceAll('\\', '/')
 
 async function identity(userId: string): Promise<Identity> {
   const cached = identities.get(userId)

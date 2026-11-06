@@ -16,6 +16,14 @@ pub fn list(hub: &Hub, bot: &str) -> Result<Value> {
     ensure!(hub.store.bot(bot)?.is_some_and(|row| !row.deleted), "unknown bot");
     let mut items: Vec<Value> = artifacts::list(&hub.store, bot)
         .into_iter()
+        .filter(artifacts::Artifact::is_public)
+        .filter(|artifact| {
+            artifact
+                .entry_id
+                .as_deref()
+                .and_then(|id| hub.store.entry(id))
+                .is_none_or(|entry| !crate::store::is_internal(&entry.data))
+        })
         .map(|artifact| json!({"kind": "artifact", "at": artifact.updated_at, "artifact": artifact}))
         .collect();
     for e in hub.store.file_messages(bot, MAX_FILE_MESSAGES)? {

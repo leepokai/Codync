@@ -55,6 +55,15 @@ fn make(hub: &Arc<Hub>, mut cfg: BotConfig) -> Result<String> {
     Ok(bot)
 }
 
+pub fn set(hub: &Hub, bot: &str) -> Result<()> {
+    // The check-in stays with the bot it was made for; one made before 2.33.0 still says it runs as the lead.
+    if let Some(routine) = hub.store.kv_get(CHECK_IN_KEY) {
+        let before = CHECK_IN.replacen("user.", "user, as their lead bot.", 1);
+        hub.routines.reword(&hub.store, &routine, &before, CHECK_IN)?;
+    }
+    hub.make_lead(bot)
+}
+
 /// Refuses to delete the lead.
 pub fn may_delete(store: &Store, bot: &str) -> Result<()> {
     if store.bot(bot)?.is_some_and(|r| !r.deleted && r.config.lead) {

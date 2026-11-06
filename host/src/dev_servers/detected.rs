@@ -9,7 +9,7 @@ use crate::agent::backends;
 use crate::agent::process::{self, JobProcess, program_name};
 use crate::analytics::Event;
 use crate::hub::Hub;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -109,19 +109,31 @@ fn plain_name(program: &str) -> &str {
 }
 
 /// Ends a detected server of `bot` named by `id`. False when `id` isn't one, so it's a server of the host's own.
-pub fn stop(hub: &Hub, bot: &str, id: &str) -> Result<bool> {
+pub async fn stop(hub: &Hub, bot: &str, id: &str) -> Result<bool> {
     let Some(first) = id.strip_prefix(ID_PREFIX) else { return Ok(false) };
     let first: u32 = first.parse()?;
+    // The last scan can be seconds old and a pid gets reused, so only what's in the agent's tree right now. Read before
+    // its row goes: a failed read or a request that goes away leaves it listed. With no agent, its tree ended with it.
+    let agent = hub.dev_servers.agents_running().into_iter().find(|agent| agent.bot == bot);
+    let tree = match agent {
+        Some(agent) => agent_tree(&agent).await.context("couldn't check the agent's processes")?,
+        None => Vec::new(),
+    };
     let server = hub.dev_servers.detected.locked().get_mut(bot).and_then(|servers| {
         let at = servers.iter().position(|server| server.pids[0] == first)?;
         Some(servers.remove(at))
     });
     let Some(server) = server else { bail!("unknown dev server") };
-    for pid in server.pids {
+    for pid in still_in_tree(&server.pids, &tree) {
         platform::end_process(pid);
     }
     hub.emit_bot(bot);
     Ok(true)
+}
+
+/// Those of `pids` the agent's tree still holds.
+pub(super) fn still_in_tree(pids: &[u32], tree: &[JobProcess]) -> Vec<u32> {
+    pids.iter().copied().filter(|pid| tree.iter().any(|process| process.pid == *pid)).collect()
 }
 
 /// Finds what each bot's agent left listening, and tells clients when that changed. `moved`: this computer's addresses
@@ -220,10 +232,18 @@ async fn agent_trees(agents: &[RunningAgent]) -> Option<Vec<Vec<JobProcess>>> {
         .await
         .inspect_err(|error| tracing::debug!(error = format!("{error:#}"), "couldn't list processes"))
         .ok()?;
-    let tree = |agent: &RunningAgent| {
-        agent.acp.pid().map_or_else(Vec::new, |leader| process::descendants(&everything, leader))
-    };
-    Some(agents.iter().map(tree).collect())
+    Some(agents.iter().map(|agent| started_by(agent, &everything)).collect())
+}
+
+/// What one agent started, for a stop: unlike a scan's read, a failed one is an error.
+#[cfg(unix)]
+async fn agent_tree(agent: &RunningAgent) -> Result<Vec<JobProcess>> {
+    Ok(started_by(agent, &process::list_processes().await?))
+}
+
+#[cfg(unix)]
+fn started_by(agent: &RunningAgent, everything: &[JobProcess]) -> Vec<JobProcess> {
+    agent.acp.pid().map_or_else(Vec::new, |leader| process::descendants(everything, leader))
 }
 
 /// Everything in each of `agents`' jobs, its own processes too: [`servers_in`] leaves those out by name. A failed read
@@ -232,7 +252,13 @@ async fn agent_trees(agents: &[RunningAgent]) -> Option<Vec<Vec<JobProcess>>> {
 async fn agent_trees(agents: &[RunningAgent]) -> Option<Vec<Vec<JobProcess>>> {
     let mut trees = Vec::new();
     for agent in agents {
-        trees.push(agent.acp.job_processes().await.unwrap_or_default());
+        trees.push(agent_tree(agent).await.unwrap_or_default());
     }
     Some(trees)
+}
+
+/// Everything in one agent's job, for a stop: unlike a scan's read, a failed one is an error.
+#[cfg(windows)]
+async fn agent_tree(agent: &RunningAgent) -> Result<Vec<JobProcess>> {
+    agent.acp.job_processes().await
 }

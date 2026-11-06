@@ -84,6 +84,10 @@ fn settings_routines_screen_and_devices() {
     );
     assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
     assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
+    assert_eq!(
+        setting("setUsageOrder", json!({"ids": ["codex", "claude"]})),
+        Some((Event::SettingChanged, json!("usage_order"), json!(true)))
+    );
 
     assert_eq!(
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),

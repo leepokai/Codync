@@ -125,16 +125,18 @@ Instructions aren't a guarantee, and some agents have their own background-shell
 what an agent started outside Codync's helpers and listens below port 32768 (above is where systems hand out ports: an
 agent's own callback or inspector). The agent's own processes, by program name (its harness's `bins` and its command's
 first word, unless that's a runtime like `node`), don't count: `opencode acp` listens on 4096. Processes that share a
-socket are one server (a pre-fork server), whose Stop ends them all. These show with `managed: false`, marked as stopping
-with the bot, and offer only open, copy and stop: they can't leave the agent's tree. `background_work` still keeps their
-agent running. The `dev_server_detected` event measures how often this happens.
+socket are one server (a pre-fork server), whose Stop ends them all. A Stop reads the agent's tree again and ends only what
+is still in it, since a pid from the last scan can be reused; when the tree can't be read it fails and the row stays. These
+show with `managed: false`, marked as stopping with the bot, and offer only open, copy and stop: they can't leave the
+agent's tree. `background_work` still keeps their agent running. The `dev_server_detected` event measures how often this
+happens.
 
 ## Tests
 
 `host/tests/dev_server_e2e.rs` runs on every system host CI does, and walks the table above: its Unix-only parts are a
-crashed host's leftover process and an agent stopped after a routine's run (Windows can't tell that fixture from one with
-a server, see `background_work`). `apps/desktop/e2e/dev-servers.spec.ts` and `apps/maestro/dev-servers.yaml` walk the
-clients.
+crashed host's leftover process, an agent stopped after a routine's run (Windows can't tell that fixture from one with
+a server, see `background_work`) and a process list that can't be read. `apps/desktop/e2e/dev-servers.spec.ts` and
+`apps/maestro/dev-servers.yaml` walk the clients.
 
 ## Later
 

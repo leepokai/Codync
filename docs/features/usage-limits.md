@@ -4,10 +4,11 @@ What the apps show about plan limits, read on the host (`host/src/usage/`) from 
 
 ## Which agents show
 
-Every Usage screen lists the agents that can report on this computer, each with a switch: desktop **Settings > Usage**, the phones' **State > Usage limits**, and the terminal UI's `U` then `s`. The choice is per computer and lives on its host, so every app, widget, the menu bar and the notch island follow it.
+Every Usage screen can list the agents that can report on this computer, each with a switch, behind the button beside the computer's name: desktop **Settings > Usage**, the phones' **State > Usage limits**, and the terminal UI's `U` then `s`. The choice is per computer and lives on its host, so every app, widget, the menu bar and the notch island follow it.
 
 - **Default:** an agent shows when a bot on this computer runs it, as its own agent or a fallback. Being installed or signed in isn't enough: a Cursor app that's signed in stays off until a bot uses Cursor or the user turns it on.
 - **A choice wins over the default:** `setUsageShown {id, shown}` saves `usage.shown.<id>` in the host's kv and answers with the new `usage`.
+- **One order per computer:** `setUsageOrder {ids}` saves `usage.order`, and the host sorts `services` and `providers` by it, so every Usage screen, the menu bar and the terminal UI follow. The notch island's list and the widgets' headline stay tightest first, and the widgets' other rows follow the order. An agent the order doesn't name follows the others in `READERS` order. The switches and the order live behind one button on each Usage screen; in the terminal, `J` and `K` move a row in the chooser.
 - **Reading follows the list:** an agent nobody runs or asked for is never started, and its saved login is never read. One that becomes wanted (a new bot's, one just turned on) is read right away instead of at the next five-minute poll, through `Hub::usage_wake`.
 - **Hidden isn't unread:** an agent a bot still runs keeps being read while hidden, because background work (`near_limit`) and fallbacks (`rest::reset_time`) go by its limits. `hub.usage` holds every reading; the apps get `Usage::visible()`.
 - **Listed:** wanted, holding a reading, its CLI installed (`backends::installed`), or something to read without the CLI (`Reader::found_without_cli`: Cursor's saved login, a JetBrains IDE's quota file).

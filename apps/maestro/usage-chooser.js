@@ -1,6 +1,7 @@
-// Starts `usage-chooser.yaml` with one agent off on the host the phone is paired with (HOST_PORT and HOST_TOKEN, passed
-// with `-e`), and checks what the switch did there: `EXPECT` is the state the host must hold. Phones in one run share
-// that host, so each takes an agent of its own, from the end of the list: the ones a computer rarely has a login for.
+// Helps `usage-chooser.yaml`, on the host the phone is paired with (HOST_PORT and HOST_TOKEN, passed with `-e`). Phones in
+// one run share that host, so each takes agents of its own, by id, and asks only what its own actions did.
+// Without `STEP` it picks them: one to switch, from the middle of the list (the ends are for dragging), starting off; and
+// one to drag: the iPhone's goes from the top downward, Android's from the bottom upward, past the agent next to it.
 const api = (method, body) => {
   const res = http.post(`http://127.0.0.1:${HOST_PORT}/api/${method}`, {
     headers: { Authorization: `Bearer ${HOST_TOKEN}`, 'Content-Type': 'application/json' },
@@ -10,11 +11,22 @@ const api = (method, body) => {
   return json(res.body)
 }
 const services = api('usage', {}).services
-const service = services[services.length - (maestro.platform === 'ios' ? 1 : 2)]
+const ids = services.map((service) => service.id)
+const onIphone = maestro.platform === 'ios'
 
-if (typeof EXPECT !== 'undefined') {
-  if (String(service.shown) !== EXPECT) throw new Error(`${service.id} shown is ${service.shown}, expected ${EXPECT}`)
-} else {
-  api('setUsageShown', { id: service.id, shown: false })
-  output.agent = service.name
+if (typeof STEP === 'undefined') {
+  const switched = services[Math.floor(services.length / 2) - (onIphone ? 1 : 0)]
+  const dragged = onIphone ? 0 : services.length - 1
+  api('setUsageShown', { id: switched.id, shown: false })
+  output.agent = switched.name
+  output.switched = switched.id
+  output.dragged = services[dragged].name
+  output.draggedId = ids[dragged]
+  output.passed = ids[dragged + (onIphone ? 1 : -1)]
+} else if (STEP === 'shown') {
+  const shown = String(services.find((service) => service.id === output.switched).shown)
+  if (shown !== EXPECT) throw new Error(`${output.switched} shown is ${shown}, expected ${EXPECT}`)
+} else if (STEP === 'dragged') {
+  const below = ids.indexOf(output.draggedId) > ids.indexOf(output.passed)
+  if (below !== onIphone) throw new Error(`${output.draggedId} didn't pass ${output.passed}: ${ids}`)
 }

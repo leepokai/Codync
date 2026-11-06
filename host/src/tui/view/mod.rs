@@ -33,7 +33,7 @@ mod trace;
 mod transcript;
 mod usage;
 
-pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u};
+pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u, window};
 pub(super) use chat::composer_lines;
 pub(super) use fallbacks::{chain_line, using_line};
 pub(super) use lead_agent::lead_agent_scroll_max;

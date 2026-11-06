@@ -282,6 +282,7 @@ export class FakeHost {
       case 'credentialStatus':
         return { provider: '', onePasswordConnected: false }
       case 'setUsageShown':
+      case 'setUsageOrder':
         return story.usage(Date.now())
       case 'setAnalytics':
         this.analytics = b.enabled === true

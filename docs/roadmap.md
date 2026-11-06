@@ -9,7 +9,7 @@ Rules that apply to every track: [CLAUDE.md](../CLAUDE.md) (version bumps, e2e, 
 
 ## 1. Cloud plan
 
-Goal: a clear, sellable cloud option for users who do not want to run the relay and accounts themselves, without
+Goal: users who want their bots on a cloud computer bring their own sandbox, with no charge from Codync and without
 changing how the host owns the logic.
 
 Where it stands:
@@ -17,21 +17,19 @@ Where it stands:
 - The Codync cloud already carries the encrypted relay (`cloud/`, ComputerRelay DO), accounts, public routine
   webhooks and the cloud assistant connector (`mcp.codync.dev`, [cloud assistants](features/cloud-assistants.md)).
 - A private relay is supported and has no accounts ([relay reference](reference/remote-relay.md)).
-- The product direction (owner, 2026-10-24): one Codync-sold managed cloud subscription. The first backend is Boat
-  (boat.dev); bring-your-own cloud comes later. Memoh (self-hosted per-bot cloud computers) is a possible option; its
-  role is not decided yet.
+- The product direction (owner, 2026-11-06): Codync charges nothing, and users bring their own sandbox and API key.
+  Memoh (self-hosted per-bot cloud computers) is a possible option; its role is not decided yet.
+- `feat/cloud-boat` has the cloud computer flow on Boat, so far with one Codync-held key.
 - `cloud/` is deployed by hand, never by CI ([deployment](guides/environments-and-deployment.md#releasing-cloud-changes)).
 
 Next steps:
 
-1. Decide the managed-computer model: what a subscriber gets (a hosted computer per bot or per account, storage,
-   usage limits) and which backend runs it. Write the decision in `docs/design/` before building.
-2. Pick the backend (Boat first, Memoh only if its role is confirmed). Prove one end-to-end path: sign in, create a
-   cloud computer, pair a phone, run a bot, read the reply.
-3. Billing and entitlement on the account side, with the free app unchanged (no in-app purchase for the app itself).
-4. Bring-your-own cloud: the same host API against a user's own cloud. Only after step 2 is stable.
+1. Decide how users bring a sandbox: which providers come first and where their API key lives. Write the decision in
+   `docs/design/` before building.
+2. Prove one end-to-end path: sign in, start a cloud computer on the user's own sandbox, pair a phone, run a bot, read
+   the reply.
 
-Done when: a new user can subscribe, get a working cloud computer, and use it from the iPhone and desktop apps with
+Done when: a new user can bring a sandbox, get a working cloud computer, and use it from the iPhone and desktop apps with
 no local computer, and the relay docs describe it.
 
 ## 2. codync-network: long-term upkeep and stable bot-to-bot exchange
@@ -102,12 +100,12 @@ and no adapter is patched in code without a row.
 
 ## Order and dependencies
 
-- Track 1 (cloud) sets the hosted option; it does not block the others.
+- Track 1 (cloud) sets the cloud option; it does not block the others.
 - Track 2 needs the adapter list from track 4, so run track 4's routine check first.
-- Track 3 feeds track 1 if the managed cloud needs a memory default.
+- Track 3 feeds track 1 if cloud computers need a memory default.
 
 ## Open questions
 
-- Which backend does the managed cloud use first (Boat only, or Memoh too)?
+- Which sandbox providers can users bring first (Boat, Memoh or others)?
 - Does the memory benchmark run in CI, or as a manual run on a dev computer?
 - Who owns the adapter check each release (a routine, or the release checklist)?

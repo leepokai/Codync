@@ -2,6 +2,7 @@ package com.codync.android
 
 import com.codync.android.core.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
@@ -177,6 +178,21 @@ fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
 /** Whether this computer lists one agent's limits. */
 fun AppStore.setUsageShown(id: String, shown: Boolean) = action("usageShown.$id") {
     landUsage(ready().call("setUsageShown", buildJsonObject { put("id", id); put("shown", shown) }).jsonObject)
+}
+/**
+ * The order this computer lists its agents in, back once the host has answered. A host older than this refuses the call:
+ * the error shows and the order stays. Drops while one is on its way replace each other, so only the last goes out next.
+ */
+suspend fun AppStore.setUsageOrder(ids: List<String>) {
+    usageOrders.trySend(ids)
+    action("usageOrder") {
+        usageOrders.sendEach { order -> landUsage(ready().call("setUsageOrder", buildJsonObject { putJsonArray("ids") { order.forEach(::add) } }).jsonObject) }
+    }
+    actions["usageOrder"]?.join()
+}
+/** Hands over what waits in this conflated channel, one at a time, until nothing does. */
+internal suspend fun <T : Any> Channel<T>.sendEach(deliver: suspend (T) -> Unit) {
+    while (true) deliver(tryReceive().getOrNull() ?: return)
 }
 private suspend fun AppStore.landUsage(response: JsonObject) {
     UsageReport.decode(response)

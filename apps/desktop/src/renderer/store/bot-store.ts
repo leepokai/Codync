@@ -16,6 +16,7 @@ import {
 import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
+import { latestOnly } from '../lib/latest-only'
 import { prefs } from '../lib/prefs'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
@@ -449,6 +450,12 @@ export class BotStore extends BotSync {
     this.usage = await (await this.ready()).call<Usage>('setUsageShown', { id, shown })
     this.changed()
   }
+
+  /** The order this computer lists its agents in. */
+  setUsageOrder = latestOnly(async (ids: string[]) => {
+    this.usage = await (await this.ready()).call<Usage>('setUsageOrder', { ids })
+    this.changed()
+  })
 
   async refreshUsage() {
     if (this.retired || !this.client) return

@@ -95,6 +95,11 @@ pub(in crate::tui) fn centered(area: Rect, width: u16, height: u16) -> Rect {
     Rect::new(area.x + (area.width - wd) / 2, area.y + (area.height - h) / 3, wd, h)
 }
 
+/// Rows to skip of a list that fits `h` lines, to keep `cursor` on screen.
+pub(in crate::tui) fn window(cursor: usize, h: usize) -> usize {
+    cursor.saturating_sub(h.saturating_sub(1))
+}
+
 pub(in crate::tui) fn u(n: usize) -> u16 {
     u16::try_from(n).unwrap_or(u16::MAX)
 }

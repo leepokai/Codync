@@ -67,7 +67,7 @@ import kotlinx.serialization.json.put
 /** One computer's roster while the list shows it: its rows' and sections' drags and its section order (kept on this device). */
 private class ComputerRoster(private val context: Context, val key: String) {
     val reorder = RosterReorder()
-    val sections = SectionReorder()
+    val sections = ListReorder()
     var order by mutableStateOf(SectionOrders.load(context, key))
 
     /** Points the drags at [state]'s bots and sections as [list] shows them. */
@@ -104,7 +104,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
     // Computers that can take a new bot once they're connected, and the ones that can right now (iOS `availableStores`, `onlineStores`).
     val available = availableComputers(app, states)
     val online = available.filter { it.actualConnection is LinkState.Ready }
-    val computerReorder = remember { SectionReorder() }
+    val computerReorder = remember { ListReorder() }
     computerReorder.names = shown.map { it.computer.id }
     computerReorder.save = { ids -> accounts.orderComputers(ids) }
     computerReorder.position = { id -> listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "computer:$id" }?.offset?.toFloat() ?: 0f }
@@ -190,7 +190,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
 }
 
 /** A computer's heading (and, while it needs one, its update notice) that drags to reorder the computers. */
-@Composable private fun LazyItemScope.ComputerHeading(state: AppState, store: AppStore, reorder: SectionReorder, folded: Boolean, stale: Boolean,
+@Composable private fun LazyItemScope.ComputerHeading(state: AppState, store: AppStore, reorder: ListReorder, folded: Boolean, stale: Boolean,
     toggle: () -> Unit, extensions: () -> Unit) {
     val id = state.computer.id
     Column(reorderable(reorder, id)) {

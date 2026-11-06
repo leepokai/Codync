@@ -4,7 +4,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::json;
 
 use super::super::manage::{AnalyticsSheet, Reply};
-use super::super::view::usage_services;
 use super::{
     ACTIONS, Action, After, App, Bot, ConfirmAct, Dir, Editor, FILTERS, FolderMode, FolderPicker, Goto, GotoItem,
     Overlay, PairCode, contains, fuzzy,
@@ -152,39 +151,8 @@ impl App {
                     _ => Some(Overlay::LeadAgent(scroll.min(max))),
                 }
             }
-            Overlay::Usage(scroll) => {
-                let (_, height) = crossterm::terminal::size().unwrap_or((80, 24));
-                let max = super::super::view::usage_scroll_max(self, height);
-                match k.code {
-                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P') => None,
-                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::Usage((scroll + 1).min(max))),
-                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::Usage(scroll.saturating_sub(1))),
-                    KeyCode::PageDown | KeyCode::Char(' ') => Some(Overlay::Usage((scroll + 10).min(max))),
-                    KeyCode::PageUp => Some(Overlay::Usage(scroll.saturating_sub(10))),
-                    KeyCode::Char('s') if !usage_services(self).is_empty() => {
-                        self.overlays.push(Overlay::UsageChooser(0));
-                        Some(Overlay::Usage(scroll))
-                    }
-                    _ => Some(Overlay::Usage(scroll)),
-                }
-            }
-            Overlay::UsageChooser(row) => {
-                let services = usage_services(self);
-                let last = services.len().saturating_sub(1);
-                match k.code {
-                    KeyCode::Esc | KeyCode::Char('q' | 's') => None,
-                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::UsageChooser((row + 1).min(last))),
-                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::UsageChooser(row.saturating_sub(1))),
-                    KeyCode::Char(' ') | KeyCode::Enter => {
-                        if let Some(service) = services.get(row) {
-                            let shown = service["shown"].as_bool() != Some(true);
-                            self.call("setUsageShown", json!({"id": service["id"], "shown": shown}), After::Nothing);
-                        }
-                        Some(Overlay::UsageChooser(row))
-                    }
-                    _ => Some(Overlay::UsageChooser(row.min(last))),
-                }
-            }
+            Overlay::Usage(scroll) => self.usage_key(scroll, k),
+            Overlay::UsageChooser { row, moving } => self.usage_chooser_key(row, moving, k),
             o @ Overlay::Pair(_) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None
@@ -370,71 +338,8 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::net::Client;
-    use super::super::{App, Bot, Editor, Goto, GotoItem, Overlay, test_app};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use super::super::{Bot, Editor, Goto, GotoItem, test_app};
     use serde_json::json;
-
-    /// A host that hands each request it gets to `requests`, answering them all alike.
-    async fn host() -> (String, tokio::sync::mpsc::UnboundedReceiver<String>) {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
-        let base = format!("http://{}", listener.local_addr().expect("its address"));
-        let (seen, requests) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Ok((mut socket, _)) = listener.accept().await {
-                let mut request = Vec::new();
-                while !request.ends_with(b"}") {
-                    let mut chunk = [0; 4096];
-                    let read = socket.read(&mut chunk).await.expect("a request");
-                    if read == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&chunk[..read]);
-                }
-                let _ = seen.send(String::from_utf8_lossy(&request).into_owned());
-                let answer = b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
-                let _ = socket.write_all(answer).await;
-            }
-        });
-        (base, requests)
-    }
-
-    #[tokio::test]
-    async fn the_usage_sheet_opens_the_chooser_and_a_toggle_reaches_the_host() {
-        let (base, mut requests) = host().await;
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut app = App::new(Client::new(&base, Some("token")), tx, String::new());
-        app.usage = json!({"providers": [], "services": [
-            {"id": "claude", "name": "Claude", "shown": true},
-            {"id": "cursor", "name": "Cursor", "shown": false},
-        ]});
-        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
-        app.overlays.push(Overlay::Usage(0));
-        app.overlay_key(key(KeyCode::Char('s')));
-        assert!(matches!(app.overlays.last(), Some(Overlay::UsageChooser(0))));
-        app.overlay_key(key(KeyCode::Down));
-        assert!(matches!(app.overlays.last(), Some(Overlay::UsageChooser(1))));
-        app.overlay_key(key(KeyCode::Char(' ')));
-        let request = tokio::time::timeout(std::time::Duration::from_secs(10), requests.recv())
-            .await
-            .expect("the host hears of it in time")
-            .expect("the host is up");
-        assert!(request.starts_with("POST /api/setUsageShown"), "{request}");
-        assert!(request.contains(r#""id":"cursor""#) && request.contains(r#""shown":true"#), "{request}");
-        assert!(matches!(app.overlays.last(), Some(Overlay::UsageChooser(1))), "the chooser stays open");
-        app.overlay_key(key(KeyCode::Esc));
-        assert!(matches!(app.overlays.last(), Some(Overlay::Usage(0))), "back to the limits");
-    }
-
-    #[tokio::test]
-    async fn a_host_with_no_list_offers_no_chooser() {
-        let mut app = test_app();
-        app.usage = json!({"providers": []});
-        app.overlays.push(Overlay::Usage(0));
-        app.overlay_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
-        assert!(matches!(app.overlays.last(), Some(Overlay::Usage(0))));
-    }
 
     #[tokio::test]
     async fn the_palette_offers_to_unhide_hidden_bots() {

@@ -91,8 +91,11 @@ internal fun pairingLine(cloud: String?): String {
 }
 
 /** The pairing page's line. Parsing stays here so a view only renders the sentence. */
-internal fun pairingLine(pasted: String, scheme: String): String =
-    pairingLine(runCatching { Pairing.parse(pasted, scheme).computer.cloud }.getOrNull())
+internal fun pairingLine(pasted: String, scheme: String, signedIn: Boolean): String {
+    val cloud = runCatching { Pairing.parse(pasted, scheme).computer.cloud }.getOrNull()
+    // Signed out, only a private relay: the Codync relay is for signed-in phones.
+    return if (signedIn || relayHost(cloud) != null) pairingLine(cloud) else "Connects on Wi-Fi or over Tailscale. End-to-end encrypted."
+}
 
 /** What the pairing page shows while it pairs: the code a computer in no account shows when it asks, as `123 456`. */
 /** The code's halves keep together on one line (a no-break space). */

@@ -75,6 +75,7 @@ extension BotStore {
         lastSentNonce = nonce
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
         data.call = call
+        data.pasted = pasted.isEmpty ? nil : pasted
         // Shown at once; the computer's own quote replaces it.
         data.replyTo = replyTo
         if !files.isEmpty {
@@ -127,8 +128,10 @@ extension BotStore {
                 return .delivered
             } catch {
                 if outgoingFiles[nonce] != nil { lastError = "Couldn't send the files: \(error.localizedDescription)" }
-                markLocal(nonce: nonce, botId: botId, status: "failed")
-                return .failed
+                // With no relay holding it, a message waits here until the computer can be reached (`sendHeld`).
+                let holds = computer.cloud == nil && (error as? HostError)?.isTransient == true
+                markLocal(nonce: nonce, botId: botId, status: holds ? "waiting" : "failed")
+                return holds ? .queued : .failed
             }
         }
     }
@@ -188,6 +191,13 @@ extension BotStore {
 
     /// Takes a waiting message back out of the mailbox, unless the computer already has it.
     public func cancelQueued(_ entry: Entry) {
+        if computer.cloud == nil {
+            // No relay holds it: it only waits on this phone.
+            discard(entry)
+            if let bot = bots[entry.botId] { onSent?(bot, .cancelled) }
+            saveCache()
+            return
+        }
         guard let nonce = entry.data.clientNonce, let remote = transport as? any RemoteTransport else { return }
         Task {
             switch await remote.cancelQueued(clientNonce: nonce) {
@@ -219,6 +229,7 @@ extension BotStore {
     func reconcileQueued(_ remote: any RemoteTransport) async {
         let waiting = entries.values.flatMap { $0 }.filter { $0.data.status == "waiting" }
         guard !waiting.isEmpty else { return }
+        guard computer.cloud != nil else { return sendHeld(waiting) }
         let heldItems: [QueuedItem]
         do {
             heldItems = try await remote.listQueued()
@@ -239,6 +250,20 @@ extension BotStore {
         saveCache()
     }
 
+    /// The computer is back, and it has no relay: what waited on this phone goes now, with the same nonces. Files are
+    /// kept only in memory: a message whose files went with the app stays for the user to resend, not half sent.
+    private func sendHeld(_ waiting: [Entry]) {
+        for entry in waiting.sorted(by: { $0.createdAt < $1.createdAt }) {
+            let filesGone = entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
+            if filesGone, let nonce = entry.data.clientNonce {
+                markLocal(nonce: nonce, botId: entry.botId, status: "failed")
+            } else {
+                retry(entry)
+            }
+        }
+        saveCache()
+    }
+
     public func retry(_ entry: Entry) {
         let files = entry.data.clientNonce.flatMap { outgoingFiles[$0] } ?? []
         guard let text = entry.data.text, !text.isEmpty || !files.isEmpty else { return }
@@ -246,7 +271,7 @@ extension BotStore {
         // The same clientNonce: if the computer got it after all, it won't run twice (the host
         // skips a nonce it has). Every seal still takes a fresh ephemeral key (§6.4).
         send(text, to: entry.botId, replyTo: entry.data.replyTo, nonce: entry.data.clientNonce ?? UUID().uuidString,
-             files: files)
+             files: files, pasted: entry.data.pasted ?? [], call: entry.data.call)
     }
 
     /// A sent file's bytes: on disk after the first fetch (sent files never change).

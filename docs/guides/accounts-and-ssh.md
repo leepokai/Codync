@@ -107,12 +107,10 @@ returning-user login, cancellation, restoration, account switching and sign-out
 on a real device before release. Build success and enabled dashboard settings do
 not prove that an Apple authorization completed successfully.
 
-Every build with Clerk requires sign-in on the phone and the desktop app
-([require sign-in](../plans/require-sign-in.md)). Pairing needs a signed-in build
-against a cloud that issues device certificates (or a self-hosted cloud, with
-`CODYNC_DEVICE_CERT_KEY` on the host); builds without Clerk only keep the
-pairings moved over from older versions in the signed-out context, and can't pair.
-QR pairing requires the phone and the computer to be in the same account
+Signing in is optional on the phone and the desktop app ([optional sign-in](../plans/optional-sign-in.md)).
+A signed-in phone proves its account with a device certificate from the cloud (or a self-hosted cloud, with
+`CODYNC_DEVICE_CERT_KEY` on the host). A signed-out phone, and any phone in a build without Clerk, pairs without one,
+only with a computer in no account and only directly. A computer in an account lets in phones of that account only
 (phase 2, below). First-run setup on the phones waits for the account's answer, then starts
 from it. With computers in the account, the first page lists them (**Ask for access**: nothing
 is requested until the tap, since the user may be here to set up another computer) next to
@@ -248,14 +246,14 @@ on that computer), and phones manage only their own access (pair or forget, revo
 *Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud; when the host's
 `cloudStatus` says `joinsAccountOnEnable`, read from what it saved since the status names no owner or
 relay with the cloud off, turning it on first asks: *Add to account* turns it on too, *Use your own
-relay* turns it on and keeps this identity out of auto-claim (`keptOutOfAccount`) until the address is saved; older hosts just turn on),
+relay* turns it on and keeps this identity from being asked about (`keptOutOfAccount`) until the address is saved; older hosts just turn on),
 *Relay address* and, for a private relay, a write-only *Relay token* (`setCloudUrl`; the
 host's `cloudStatus` says `relay: "private"` and `tokenSet`, and there the account rows are hidden
-and auto-claim never runs), *Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and
+and nothing asks about an account), *Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and
 *Remove from account* (`unclaim`), a pairing QR, and, for this computer only, the computers it can use (its SSH computers, each with its own settings) and the devices that can use it, with revoke.
-Signed in, this computer joins the account on its own once per host identity; an identity
-that was already in the account and was removed (here or from a phone) is never re-added
-silently, only through *Add to account*. Signed in with a different account than the one this
+Signed in, the app asks once per host identity whether to add this computer to the account
+(`JoinAccountPrompt`, `lib/join-offer.ts`); an identity that was already in the account and was
+removed (here or from a phone) isn't asked about again, only added through *Add to account*. Signed in with a different account than the one this
 computer is in, the app asks once to move it (`mayOfferMove`): *Move here* leaves the old account
 (`unclaim`, which revokes that account's grants) and claims it for this one; *Keep it there* is
 remembered for this account (`keptOutOfAccount`). Out of an account, by any path, the host turns
@@ -287,7 +285,7 @@ released development host): two SSH commands from `main/ssh-command.ts`, the rel
 host into `~/.local/bin` (`packaging/install.sh --host-only`), then `codync-host install`
 on the profile's port. On Linux that step also turns on linger without sudo when it can;
 when it can't, the card shows the one `sudo loginctl enable-linger "$USER"` command. Once
-the installed computer connects, *Add to account* runs on its own when the app is signed in
+the installed computer connects, the app asks whether to add it to the account when it is signed in
 and the computer is in no account and not on a private relay (`CloudModel.joinAfterInstall`).
 
 *Over SSH* also offers the `Host` entries of `~/.ssh/config` and the files it `Include`s

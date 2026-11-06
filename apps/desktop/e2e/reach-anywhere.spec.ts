@@ -5,7 +5,7 @@ import { api, attach, openGeneralSettings } from './sandbox.ts'
 const status = (page: Page) => api<CloudStatus>(page, 'cloudStatus', {})
 const owner = async (page: Page) => (await status(page)).owner?.userId ?? null
 
-/** As on an identity this app never saw in an account: only `keptOut` can stop `mayAutoClaim` then. */
+/** As on an identity this app never saw in an account: only `keptOut` can stop `mayOfferJoin` then. */
 const forgetClaims = (page: Page) =>
   page.evaluate(() => {
     for (const key of Object.keys(localStorage)) {

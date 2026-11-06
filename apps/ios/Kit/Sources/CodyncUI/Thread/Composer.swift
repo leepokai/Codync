@@ -46,8 +46,8 @@ struct Composer: View {
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
 
     private var canSend: Bool {
-        // Offline computers still take messages when the relay can hold them for it (text only).
-        !isEmpty && (model.connection == .online || (model.canQueue && files.isEmpty))
+        // Offline computers still take text: the relay holds it for them, or with no relay this phone does.
+        !isEmpty && (model.connection == .online || ((model.canQueue || model.holdsOnPhone) && files.isEmpty))
     }
 
     private var canAttach: Bool { bot != nil }

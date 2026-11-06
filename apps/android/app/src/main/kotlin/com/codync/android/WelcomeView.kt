@@ -55,8 +55,8 @@ import kotlin.math.sin
 
 /**
  * Before any setup, and whenever signed out: who the bots are, a glimpse of talking to one, one way forward (iOS `WelcomeView`).
- * With accounts that way is signing in; builds without them go on to pairing. [signedOutComputers] were paired before
- * sign-in was required and move into the account at sign-in.
+ * With accounts that's signing in, or going on without one; builds without them go on to pairing. [signedOutComputers]
+ * were paired signed out; this phone keeps them when it signs in.
  */
 @Composable internal fun WelcomeView(state: AccountContext, store: AccountStore, signedOutComputers: Int = 0, start: () -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Welcome))
@@ -85,11 +85,18 @@ import kotlin.math.sin
                 }
                 Column(Modifier.padding(top = 32.dp).rise(beat >= 4), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (signedOutComputers > 0) Text(if (signedOutComputers == 1)
-                        tr("Sign in to keep using your computer. It moves into your account, so you won't need to scan again.")
-                    else tr("Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.")
+                        tr("Your computer stays paired. If you sign in with an account used on this phone before, scan its code again. Add to account brings it into your account.")
+                    else tr("Your {count} computers stay paired. If you sign in with an account used on this phone before, scan their codes again. Add to account brings each into your account.")
                         .replace("{count}", signedOutComputers.toString()),
                         Modifier.fillMaxWidth().padding(bottom = 4.dp), style = Type.footnote, color = Palette.secondary)
-                    if (state.account.configured) SignInButtons(state, store) else WideButton("Get started", action = start)
+                    if (state.account.configured) {
+                        SignInButtons(state, store)
+                        Column(Modifier.fillMaxWidth().plainButton(action = start).padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(tr("Continue without an account"), style = Type.subheadline, color = Palette.text)
+                            Text(tr("Only on the same Wi-Fi or Tailscale as your computer"), style = Type.caption, color = Palette.secondary)
+                        }
+                    } else WideButton("Get started", action = start)
                     // Restoring sign-in failed (the only account error): Clerk retries on its own with a backoff of up to a minute; Try again asks now.
                     state.account.error?.let {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -68,7 +68,9 @@ export function RoutineWebhookPanel({ botId, routineId }: { botId: string; routi
             webhook.url
               ? 'POST with Authorization: Bearer <key>. For GitHub, use content type application/json and the key as the secret. ' +
                 tr('Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them.')
-              : 'The Codync cloud is off, so only this computer can send to it.'
+              : webhook.needsAccount
+                ? "This computer isn't in an account, so only it can send to this address. Add it to your account for a public one."
+                : 'The Codync cloud is off, so only this computer can send to it.'
           }
         >
           {row(webhook.url ? tr('URL') : tr('Local URL'), webhook.url ?? webhook.localUrl, 'url')}

@@ -32,6 +32,19 @@ class PairingTest {
         assertEquals(fixture.getValue("pairing").let { it as kotlinx.serialization.json.JsonObject }.text("offerId"), pairing.offerId)
     }
 
+    @Test fun `without the relay a pairing keeps its direct addresses`() {
+        val pairing = Pairing.parse(link(), "codync").withoutRelay
+        assertEquals(null, pairing.computer.cloud)
+        assertEquals(2, pairing.computer.urls.size)
+    }
+
+    @Test fun `an address found on the network is used only when it reads as one`() {
+        val found = DiscoveredComputer.of("id", "http://192.168.1.5:19222,not a url,http://10.0.0.2:19222")
+        assertEquals(DiscoveredComputer("id", listOf("http://192.168.1.5:19222", "http://10.0.0.2:19222")), found)
+        assertEquals(null, DiscoveredComputer.of("id", "not a url"))
+        assertEquals(null, DiscoveredComputer.of(null, "http://192.168.1.5:19222"))
+    }
+
     @Test fun `pairing again keeps the color route and push switch picked on this phone`() {
         val paired = Pairing.parse(link(), "codync").computer
         val picked = paired.copy(name = "Old name", color = "mint", route = ConnectionRoute.DirectOnly, notifications = false)

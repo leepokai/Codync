@@ -93,6 +93,12 @@ fun AppStore.discard(send: PendingSend) = action("discard:" + send.nonce) {
     refresh()
 }
 fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
+    if (state.value.computer.cloud == null) {
+        // No relay holds it: it only waits on this phone.
+        withContext(Dispatchers.IO) { requireNotNull(database).discard(send.nonce) }
+        refresh()
+        return@action
+    }
     val active = requireNotNull(channel) { "Reconnect to the relay to cancel this message." }
     when (active.cancelQueued(send.nonce)) {
         "cancelled" -> { withContext(Dispatchers.IO) { requireNotNull(database).discard(send.nonce) }; refresh() }
@@ -145,11 +151,23 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         withContext(NonCancellable) { savePending(send.copy(status = SendStatus.Failed, error = "Sending was interrupted. Retry uses the same message ID.")) }
         throw error
     } catch (error: Exception) {
-        savePending(send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send."))
+        savePending(afterFailure(send, state.value.computer.cloud, error))
     } finally {
         sends.remove(send.nonce)
         mutableState.update { it.copy(uploadProgress = it.uploadProgress - send.nonce) }
     }
+}
+
+/** A send that failed. With no relay holding it, a message waits here until the computer can be reached (`reconcileMailbox`). */
+internal fun afterFailure(send: PendingSend, cloud: String?, error: Exception): PendingSend =
+    if (cloud == null && error is IOException && error !is HostError) send.copy(status = SendStatus.Waiting)
+    else send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send.")
+
+/** Can't reach a computer with no relay: text waits on this phone until it can (iOS `BotStore.holdsOnPhone`). */
+internal fun holdsOnPhone(cloud: String?, link: LinkState): Boolean = cloud == null && when (link) {
+    LinkState.Connecting -> true
+    is LinkState.Failed -> link.status !in listOf(403, 426)
+    else -> false
 }
 
 internal suspend fun AppStore.savePending(send: PendingSend) {

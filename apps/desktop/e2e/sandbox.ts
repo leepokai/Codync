@@ -35,6 +35,9 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     .find((p) => !p.url().startsWith('devtools://'))
   if (!page) throw new Error('The sandbox app has no window open.')
   await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
+  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox.
+  const notNow = page.getByRole('alertdialog').getByRole('button', { name: 'Not now' })
+  if (await notNow.isVisible()) await notNow.click()
   return { browser, page }
 }
 

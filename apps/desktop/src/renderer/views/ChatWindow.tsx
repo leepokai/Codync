@@ -17,6 +17,8 @@ import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
+import { AppRail } from './AppRail'
+import { RoutinesView } from './routines/RoutinesView'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
@@ -227,6 +229,7 @@ function ChatSplitView() {
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
   const [marketplaceLink, setMarketplaceLink] = useState<{ section: 'apps' | 'agents' | 'skills'; id: string } | null>(null)
+  const [canvasBot, setCanvasBot] = useState<string | null>(null)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
@@ -391,9 +394,25 @@ function ChatSplitView() {
     )
   }
 
+  const railActive = canvasBot !== null ? 'canvas' : settings === 'usage' ? 'usage' : marketplace !== null ? 'marketplace' : settings !== null ? 'settings' : 'bots'
   const width = compact ? 76 : sidebarWidth
   return (
     <div className={`split ${showAccount || context ? 'covered' : ''}`}>
+      {compact ? null : (
+        <AppRail
+          active={railActive}
+          onBots={() => { setSettings(null); setMarketplace(null); setCanvasBot(null) }}
+          onCanvas={() => selectedBot && setCanvasBot(selectedBot.id)}
+          onUsage={() => setSettings('usage')}
+          onN8n={() => window.codync.n8n.open()}
+          onExtensions={openMarketplace}
+          onSettings={() => setSettings('general')}
+          onAccount={() => setShowAccount((s) => !s)}
+          accountOpen={showAccount}
+          update={<UpdateBadge size={24} />}
+          account={<ProfileAvatar />}
+        />
+      )}
       <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
         <div className="sidebar-header drag" inert={compact}>
           <Spacer />
@@ -508,6 +527,13 @@ function ChatSplitView() {
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>
             <MarketplaceView key={marketplace} initialSection={marketplaceLink?.section} initialAgent={marketplaceLink?.id} />
+          </StoreContext.Provider>
+        ) : null}
+      </Sheet>
+      <Sheet open={canvasBot !== null} onClose={() => setCanvasBot(null)} width={Math.min(1120, windowSize.width - 40)} height={Math.min(780, windowSize.height - 40)}>
+        {canvasBot && app.store(canvasBot) ? (
+          <StoreContext.Provider value={app.store(canvasBot)!}>
+            <RoutinesView botId={canvasBot} initialId={null} onClose={() => setCanvasBot(null)} />
           </StoreContext.Provider>
         ) : null}
       </Sheet>

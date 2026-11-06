@@ -1,0 +1,140 @@
+import { AbstractTokenizer } from './AbstractTokenizer.js';
+import { EndOfStreamError } from './stream/index.js';
+const ignoreChunkSize = 256000;
+export class ReadStreamTokenizer extends AbstractTokenizer {
+    /**
+     * Constructor
+     * @param streamReader stream-reader to read from
+     * @param options Tokenizer options
+     */
+    constructor(streamReader, options) {
+        super(options);
+        this.streamReader = streamReader;
+        this.fileInfo = options?.fileInfo ?? {};
+    }
+    /**
+     * Read buffer from tokenizer
+     * @param uint8Array - Target Uint8Array to fill with data read from the tokenizer-stream
+     * @param options - Read behaviour options
+     * @returns Promise with number of bytes read
+     */
+    async readBuffer(uint8Array, options) {
+        const normOptions = this.normalizeOptions(uint8Array, options);
+        const skipBytes = normOptions.position - this.position;
+        if (skipBytes > 0) {
+            await this.ignore(skipBytes);
+            return this.readBuffer(uint8Array, options);
+        }
+        if (skipBytes < 0) {
+            throw new Error('`options.position` must be equal or greater than `tokenizer.position`');
+        }
+        if (normOptions.length === 0) {
+            return 0;
+        }
+        let bytesRead = 0;
+        // Account for partial input before reporting an exact-read failure.
+        while (bytesRead < normOptions.length) {
+            const chunkLength = Math.min(this.maxBufferSize, normOptions.length - bytesRead);
+            const count = await this.streamReader.read(uint8Array.subarray(bytesRead, bytesRead + chunkLength), true);
+            bytesRead += count;
+            this.position += count;
+            if (count < chunkLength) {
+                break;
+            }
+        }
+        if (!normOptions.mayBeLess && bytesRead < normOptions.length) {
+            throw new EndOfStreamError();
+        }
+        return bytesRead;
+    }
+    /**
+     * Peek (read ahead) buffer from tokenizer
+     * @param uint8Array - Uint8Array (or Buffer) to write data to
+     * @param options - Read behaviour options
+     * @returns Promise with number of bytes peeked
+     */
+    async peekBuffer(uint8Array, options) {
+        const normOptions = this.normalizeOptions(uint8Array, options);
+        if (normOptions.length === 0) {
+            return 0;
+        }
+        // A known-empty range needs neither lookahead allocation nor source I/O.
+        if (this.fileInfo.size !== undefined && normOptions.position >= this.fileInfo.size) {
+            if (normOptions.mayBeLess) {
+                return 0;
+            }
+            throw new EndOfStreamError();
+        }
+        const lookaheadSize = normOptions.length + normOptions.position - this.position;
+        this.validateBufferSize(lookaheadSize);
+        let bytesRead = 0;
+        if (normOptions.position) {
+            const skipBytes = normOptions.position - this.position;
+            if (skipBytes > 0) {
+                const skipBuffer = new Uint8Array(normOptions.length + skipBytes);
+                bytesRead = await this.peekBuffer(skipBuffer, { mayBeLess: normOptions.mayBeLess });
+                const bytesPeeked = Math.max(0, bytesRead - skipBytes);
+                uint8Array.set(skipBuffer.subarray(skipBytes, skipBytes + bytesPeeked));
+                return bytesPeeked;
+            }
+            if (skipBytes < 0) {
+                throw new Error('Cannot peek from a negative offset in a stream');
+            }
+        }
+        if (normOptions.length > 0) {
+            try {
+                // The reader retains this buffer. Keep it independent of caller-owned memory,
+                // including partial bytes retained when an exact peek encounters truncation.
+                const peekBuffer = new Uint8Array(normOptions.length);
+                bytesRead = await this.streamReader.peek(peekBuffer, true);
+                uint8Array.set(peekBuffer.subarray(0, bytesRead));
+            }
+            catch (err) {
+                if (options?.mayBeLess && err instanceof EndOfStreamError) {
+                    return 0;
+                }
+                throw err;
+            }
+            if (!normOptions.mayBeLess && bytesRead < normOptions.length) {
+                throw new EndOfStreamError();
+            }
+        }
+        return bytesRead;
+    }
+    /**
+     * @param length Number of bytes to ignore. Must be ≥ 0.
+     */
+    async ignore(length) {
+        if (length < 0) {
+            throw new RangeError('ignore length must be ≥ 0 bytes');
+        }
+        this.validateLength(length, 'ignore length');
+        this.validateLength(this.position + length, 'end position');
+        if (length > 0 && this.fileInfo.size !== undefined && length > this.fileInfo.size - this.position) {
+            throw new EndOfStreamError();
+        }
+        const bufSize = Math.min(ignoreChunkSize, this.maxBufferSize, length);
+        const buf = new Uint8Array(bufSize);
+        let totBytesRead = 0;
+        while (totBytesRead < length) {
+            const remaining = length - totBytesRead;
+            const bytesRead = await this.readBuffer(buf, { length: Math.min(bufSize, remaining) });
+            if (bytesRead < 0) {
+                return bytesRead;
+            }
+            totBytesRead += bytesRead;
+        }
+        return totBytesRead;
+    }
+    abort() {
+        this.removeAbortListener();
+        return this.streamReader.abort();
+    }
+    async close() {
+        this.removeAbortListener();
+        return this.streamReader.close();
+    }
+    supportsRandomAccess() {
+        return false;
+    }
+}

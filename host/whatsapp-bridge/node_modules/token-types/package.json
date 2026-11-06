@@ -1,0 +1,81 @@
+{
+  "name": "token-types",
+  "version": "6.2.0",
+  "description": "Common token types for decoding and encoding numeric and string values",
+  "author": {
+    "name": "Borewit",
+    "url": "https://github.com/Borewit"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Borewit"
+  },
+  "scripts": {
+    "clean": "del-cli dist coverage",
+    "build": "npm run clean && npm run compile:prod",
+    "prepublishOnly": "npm run build",
+    "compile": "tsc --project tsconfig.json",
+    "compile:prod": "tsc --project tsconfig.prod.json",
+    "format:check": "biome format",
+    "lint:ts": "biome check",
+    "lint:ts:fix": "biome check --write",
+    "fix": "npm run lint:ts:fix",
+    "lint:md": "remark -u preset-lint-recommended .",
+    "lint": "npm run lint:md && npm run lint:ts",
+    "test": "npm run typecheck && vitest run",
+    "test:watch": "vitest",
+    "test-coverage": "npm run typecheck && vitest run --coverage",
+    "typecheck": "tsc --project tsconfig.test.json",
+    "update-biome": "yarn add -D --exact @biomejs/biome && npx @biomejs/biome migrate --write"
+  },
+  "engines": {
+    "node": ">=14.16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Borewit/token-types.git"
+  },
+  "files": [
+    "dist/lib/**/*.js",
+    "dist/lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "exports": "./dist/lib/index.js",
+  "types": "dist/lib/index.d.ts",
+  "bugs": {
+    "url": "https://github.com/Borewit/token-types/issues"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.0.5",
+    "del-cli": "^8.0.1",
+    "remark-cli": "^12.0.1",
+    "remark-preset-lint-recommended": "^7.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@borewit/text-codec": "^0.2.3",
+    "@tokenizer/token": "^0.3.0",
+    "ieee754": "^1.2.1"
+  },
+  "remarkConfig": {
+    "plugins": [
+      "preset-lint-recommended"
+    ]
+  },
+  "keywords": [
+    "token",
+    "integer",
+    "unsigned",
+    "numeric",
+    "float",
+    "IEEE",
+    "754",
+    "strtok3"
+  ],
+  "packageManager": "yarn@4.18.1"
+}

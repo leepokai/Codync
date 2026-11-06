@@ -235,6 +235,11 @@ export class BotSync extends BotMirror {
         for (const id of event.botIds) this.flowRevs.set(id, event.rev)
         this.changed()
         break
+      case 'entryDeleted':
+        this.removeEntry(event.id)
+        this.bump(event.rev)
+        this.changed()
+        break
       case 'icons':
         this.applyIcons(event.icons, event.iconsRevision)
         break

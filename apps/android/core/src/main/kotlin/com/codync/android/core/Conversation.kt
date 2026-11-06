@@ -161,6 +161,8 @@ etwork` is null from hosts before the network view (or one this app can't read).
     data class Hello(val hostId: String, val rev: Long, val usage: JsonObject, val screen: JsonObject?, val network: NetworkView? = null) : MirrorEvent
     data class BotChanged(val bot: Bot) : MirrorEvent
     data class EntryChanged(val entry: Entry) : MirrorEvent
+    /** One message was deleted; its id and the deletion's rev. */
+    data class EntryDeleted(val id: String, val rev: Long) : MirrorEvent
     data class Usage(val value: JsonObject) : MirrorEvent
     data class Screen(val value: JsonObject) : MirrorEvent
     /** An artifact was published, updated or renamed (the catch-up replays it too), never a checkpoint. */
@@ -189,6 +191,7 @@ etwork` is null from hosts before the network view (or one this app can't read).
                 value["network"]?.takeUnless { it == JsonNull }?.let { runCatching { NetworkView.decode(it) }.getOrNull() })
             "bot" -> BotChanged(HostClient.decode(value.getValue("bot").jsonObject))
             "entry" -> EntryChanged(Entry.decode(value.getValue("entry").jsonObject))
+            "entryDeleted" -> EntryDeleted(value.getValue("id").jsonPrimitive.content, value["rev"]?.jsonPrimitive?.longOrNull ?: 0)
             "usage" -> Usage(value.getValue("usage").jsonObject)
             "screen" -> Screen(value.getValue("screen").jsonObject)
             // One this app can't read is passed over rather than fetching everything again: a card or the Library reads it again.

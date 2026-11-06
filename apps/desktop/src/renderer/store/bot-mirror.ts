@@ -211,6 +211,17 @@ export class BotMirror extends Observable {
   }
 
   /** A bot's or group's chat, trace entries included. */
+  /** Takes one message out of what this device holds. */
+  removeEntry(id: string) {
+    for (const [botId, list] of this.entries) {
+      const next = list.filter((e) => e.id !== id)
+      if (next.length !== list.length) {
+        this.entries.set(botId, next)
+        return
+      }
+    }
+  }
+
   allEntries(botId: string) {
     return (this.entries.get(botId) ?? []).filter((e) => !isInternalEntry(e))
   }

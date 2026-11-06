@@ -303,6 +303,7 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
             { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
               { title: 'Bookmark', icon: 'bookmark', action: () => void store.saveBookmark(entry.botId, entry.id, entry.data.text ?? '', '', entry.data.author ?? 'user', entry.threadId ?? null) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+              { title: 'Delete', icon: 'trash', destructive: true, action: () => void store.deleteEntry(entry.id) },
             ]}
           >
             {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
@@ -354,6 +355,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
             { title: 'Copy', icon: 'square.on.square', action: copy },
               { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+              { title: 'Delete', icon: 'trash', destructive: true, action: () => void store.deleteEntry(entry.id) },
             { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
           ]}
         >

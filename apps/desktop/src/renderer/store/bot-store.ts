@@ -535,6 +535,14 @@ export class BotStore extends BotSync {
     return { skills: value.skills ?? [], connectors: value.connectors ?? [], rules: value.rules ?? [], plugins: value.plugins ?? [] }
   }
 
+  /** Removes one message on the computer. */
+  async deleteEntry(id: string) {
+    const client = await this.ready()
+    await client.call('deleteEntry', { entryId: id })
+    this.removeEntry(id)
+    this.changed()
+  }
+
   async save(draft: BotDraft) {
     const client = await this.ready()
     // A rule left blank in the editor is no rule.

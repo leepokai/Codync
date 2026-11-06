@@ -87,6 +87,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             }
             is MirrorEvent.BotChanged -> { writeBot(db, event.bot); bump(db, event.bot.rev) }
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
+            is MirrorEvent.EntryDeleted -> { db.delete("entries", "id=?", arrayOf(event.id)); bump(db, event.rev) }
             is MirrorEvent.Icons -> setMeta(db, "icons", kotlinx.serialization.json.Json.encodeToString(event.icons))
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())

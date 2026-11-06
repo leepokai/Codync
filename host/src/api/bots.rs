@@ -24,6 +24,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             str_arg(&b, "id")?,
             b["enabled"].as_bool().context("enabled is required")?,
         )?,
+        "deleteEntry" => json!({"deleted": hub.delete_entry(str_arg(&b, "entryId")?)?}),
         "deleteRoutine" => hub.routines.remove(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?)?,
         "runRoutine" => hub.routines.enqueue(
             &hub.store,

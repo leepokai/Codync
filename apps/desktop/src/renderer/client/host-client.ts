@@ -72,6 +72,7 @@ export type HostEvent =
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
+  | { type: 'entryDeleted'; id: string; rev: number }
   | { type: 'usage'; usage: Usage }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
@@ -117,6 +118,8 @@ export function parseEvent(line: string): HostEvent | null {
       if (bot.deleted) return { type: 'botDeleted', id: bot.id, rev: bot.rev ?? 0 }
       return { type, bot: normalizeBot(bot) }
     }
+    case 'entryDeleted':
+      return typeof raw.id === 'string' && typeof raw.rev === 'number' ? { type, id: raw.id, rev: raw.rev } : { type: 'undecodable', kind: 'entryDeleted' }
     case 'entry': {
       const entry = raw.entry as Entry | undefined
       if (!entry || typeof entry.id !== 'string' || typeof entry.botId !== 'string') return { type: 'undecodable', kind: 'entry' }

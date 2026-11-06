@@ -191,6 +191,7 @@ private fun messageMenu(context: android.content.Context, entry: Entry, reply: (
         store.command("saveBookmark", body("botId" to entry.botId, "entryId" to entry.id, "preview" to entry.text, "author" to entry.replyQuote.author), "bookmark:" + entry.id)
     })
     if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
+    if (store != null) add(MenuItem("Delete", icon = "trash") { store.deleteEntry(entry) })
     if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
 }
 

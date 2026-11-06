@@ -68,6 +68,9 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
 }
 
 /** A host call for the screens that keep their own state (memory): waits for the connection first. */
+internal fun AppStore.deleteEntry(entry: com.codync.android.core.Entry) =
+    command("deleteEntry", body("entryId" to entry.id), "delete:" + entry.id)
+
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
 

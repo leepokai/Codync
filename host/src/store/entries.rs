@@ -433,6 +433,18 @@ impl Store {
         }
         Ok(deleted)
     }
+
+    /// Removes one message; its rev, or None when it was already gone.
+    pub fn delete_entry(&self, id: &str) -> Result<Option<i64>> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        if tx.execute("DELETE FROM entries WHERE id = ?1", [id])? == 0 {
+            return Ok(None);
+        }
+        let rev = next_rev(&tx)?;
+        tx.commit()?;
+        Ok(Some(rev))
+    }
 }
 
 #[cfg(test)]
@@ -441,6 +453,16 @@ mod tests {
     use crate::store::tests::temp_store;
     use serde_json::json;
 
+    #[test]
+    fn a_deleted_message_leaves_history_and_asks_for_a_rev_once() {
+        let s = temp_store();
+        let lane = Lane::main("b");
+        let e = s.insert_entry(&lane, EntryKind::User, 1, &json!({"text":"bye"})).unwrap();
+        let rev = s.delete_entry(&e.id).unwrap().expect("deleted");
+        assert!(rev > e.rev);
+        assert!(s.history("b", i64::MAX, 10).unwrap().is_empty());
+        assert_eq!(s.delete_entry(&e.id).unwrap(), None, "already gone");
+    }
     #[test]
     fn history_search_matches_every_term_in_chat_messages() {
         let s = temp_store();

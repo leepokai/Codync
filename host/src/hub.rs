@@ -486,6 +486,16 @@ impl Hub {
 
     /// Persists and broadcasts a new transcript entry. A failed write is logged here
     /// (once) and yields `None`: the conversation goes on without that line.
+    /// Deletes a message and tells every client.
+    pub fn delete_entry(&self, id: &str) -> Result<bool> {
+        let _g = self.emit_lock.locked();
+        if let Some(rev) = self.store.delete_entry(id)? {
+            let _ = self.events.send(json!({"type": "entryDeleted", "id": id, "rev": rev}));
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     pub fn add_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
         match self.store.insert_entry(lane, kind, turn, data) {

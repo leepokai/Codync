@@ -39,3 +39,11 @@ test('sending from a chat marked unread reads it, like the real host', async () 
   assert.equal(last?.unread, 0)
   assert.equal(last?.keptUnread, false)
 })
+
+test('marking an empty chat unread shows no badge, like the real host', async () => {
+  const host = new FakeHost('2.41.0')
+  const { bot: created } = (await host.call('createBot', { name: 'Empty', kind: 'agent' })) as { bot: Bot }
+  const { bot } = (await host.call('markUnread', { botId: created.id })) as { bot: Bot }
+  assert.equal(bot.unread, 0)
+  assert.equal(bot.keptUnread ?? false, false)
+})

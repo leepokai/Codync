@@ -198,7 +198,7 @@ export class FakeHost {
       case 'markUnread': {
         const bot = this.bots.get(str('botId'))
         if (!bot) throw fail('That bot was deleted.')
-        if (bot.unread === 0) {
+        if (bot.unread === 0 && this.entries.some((e) => e.botId === bot.id && e.kind !== 'user' && isChat(e))) {
           bot.unread = 1
           bot.keptUnread = true
           this.emitBot(bot)

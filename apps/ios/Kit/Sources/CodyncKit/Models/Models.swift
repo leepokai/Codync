@@ -169,9 +169,15 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     /// Missing when the host can't tell.
     public var signedIn: Bool?
     public var canInstall: Bool?
+    /// The signed-in account, when the agent's own files name it.
+    public var email: String?
     /// Only for an agent that runs on Node.js, on a computer without its own: Codync's copy
     /// is `missing` or `added`.
     public var node: String?
+    /// Whether this agent can keep isolated accounts beside the computer's own sign-in.
+    public var accounts: Bool?
+    /// Whether the computer's own sign-in can be removed (a logout command or its credential files).
+    public var signOut: Bool?
 
     /// It can't run until Node.js is added to the computer.
     public var needsNode: Bool { node == "missing" }

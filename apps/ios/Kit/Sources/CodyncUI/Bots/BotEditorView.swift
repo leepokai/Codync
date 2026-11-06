@@ -187,7 +187,10 @@ struct BotSettingsForm: View {
     }
 
     @ViewBuilder private var modelPicker: some View {
-        AgentAccountPicker(backend: draft.backend, selection: $draft.account)
+        AgentAccountPicker(backend: draft.backend,
+                           supported: model.hello?.backends.first { $0.id == draft.backend }?.accounts ?? true,
+                           canSignOut: model.hello?.backends.first { $0.id == draft.backend }?.signOut == true,
+                           selection: $draft.account)
         AgentModelPicker(backend: draft.backend, account: draft.account, selection: $draft.model, options: $draft.modelOptions,
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }

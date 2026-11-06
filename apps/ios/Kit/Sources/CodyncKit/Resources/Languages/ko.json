@@ -1402,5 +1402,6 @@
   "Offered to the network: bots on your other computers can see and message this bot.": "네트워크에 공개: 다른 컴퓨터의 봇이 이 봇을 보고 메시지를 보낼 수 있습니다.",
   "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "클라우드 어시스턴트가 연락 가능: Codync 계정의 ChatGPT나 Claude가 이 봇을 보고 메시지를 보낼 수 있습니다.",
   "Window": "시간 범위",
-  "Only run between two times": "두 시간 사이에만 실행"
+  "Only run between two times": "두 시간 사이에만 실행",
+  "Plan limits reported by each connected agent.": "??? ? ????? ???? ?? ??."
 }

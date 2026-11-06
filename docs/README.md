@@ -50,6 +50,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Notch island (desktop)](features/notch-island.md)
 - [Terminal agent sessions](features/terminal-sessions.md) (Claude Code, Gemini CLI and friends in your own terminal, with approvals from Codync)
 - [Extensions and agent setup](features/marketplace.md)
+- [Agent accounts](features/agent-accounts.md) (isolated profiles and signing out the default account)
 - [Connector setup and credentials](features/connector-credentials.md)
 - [Usage analytics and error tracking](features/analytics.md)
 - [Widgets, Live Activities and onboarding](design/mobile-widgets.md)

@@ -150,8 +150,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "deleteAccount" => {
             let account_id = str_arg(&b, "accountId")?;
-            crate::agent::account::delete(&hub.store, account_id)?;
+            crate::agent::account::delete(&hub.store, account_id).await?;
             json!({})
+        }
+        "agentSignOut" => {
+            let backend = str_arg(&b, "backend")?;
+            crate::agent::account::sign_out(&hub.store, backend).await?;
+            json!({"auth": crate::agent::auth::check(&hub.store, backend).await?})
         }
         "termInput" => {
             hub.terms.write(str_arg(&b, "term")?, str_arg(&b, "data")?)?;

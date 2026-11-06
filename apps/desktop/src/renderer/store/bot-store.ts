@@ -584,6 +584,17 @@ export class BotStore extends BotSync {
     return result.account
   }
 
+  async deleteAgentAccount(accountId: string): Promise<void> {
+    await (await this.ready()).call('deleteAccount', { accountId }, 30_000)
+    await this.refreshBackends()
+  }
+
+  /** Removes the computer's own sign-in for an agent, without touching its isolated accounts. */
+  async signOutAgent(backend: string): Promise<void> {
+    await (await this.ready()).call('agentSignOut', { backend }, 60_000)
+    await this.refreshBackends()
+  }
+
   /** The last seven days on this computer; null when the host can't say (an older one). */
   async weekSummary(): Promise<WeekSummary | null> {
     if (this.retired || !this.client) return null

@@ -1,8 +1,8 @@
-//! Which coding harnesses this machine has, and how to drive each over ACP.
+﻿//! Which coding harnesses this machine has, and how to drive each over ACP.
 //!
 //! Detection works like Orca's preflight: hydrate PATH from the user's login
 //! shell (GUI apps and launchd get a bare PATH), add the usual install dirs
-//! (Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), then look for
+//! (Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpmâ€¦), then look for
 //! each known CLI. Launching prefers the installed CLI's own ACP mode and falls
 //! back to the official ACP registry build (npx / uvx / downloaded binary), which
 //! is resolved only when it's tried: an installed CLI that starts never downloads
@@ -50,7 +50,7 @@ pub struct Harness {
 
 #[derive(Clone, Copy)]
 pub enum Install {
-    /// A vendor install script (`curl … | bash`), Unix only.
+    /// A vendor install script (`curl â€¦ | bash`), Unix only.
     Script(&'static str),
     /// Vendor install scripts for Unix and for Windows (PowerShell).
     Scripts { unix: &'static str, windows: &'static str },
@@ -112,6 +112,8 @@ pub fn list() -> Vec<Value> {
                 "command": h.local.unwrap_or_default(),
                 "registry": h.registry,
                 "curated": true,
+                "accounts": profile_home(h.id).is_some(),
+                "signOut": sign_out_available(h.id),
             })
         })
         .collect();
@@ -136,6 +138,8 @@ pub fn list() -> Vec<Value> {
             "command": "",
             "registry": id,
             "curated": false,
+            "accounts": false,
+            "signOut": false,
         }));
     }
     out.sort_by_key(|v| (!v["installed"].as_bool().unwrap_or(false), !v["curated"].as_bool().unwrap_or(false)));
@@ -180,7 +184,7 @@ pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
 }
 
 /// The registry build that *is* the harness's CLI (same npm package), so it can
-/// sign in without the CLI installed. Adapters (claude-acp…) don't count.
+/// sign in without the CLI installed. Adapters (claude-acpâ€¦) don't count.
 fn registry_cli(h: &Harness) -> Option<Value> {
     let Some(Install::Npm(pkg)) = h.install else { return None };
     let agent = registry::agent(h.registry?)?;
@@ -209,6 +213,70 @@ pub async fn login_command(id: &str) -> anyhow::Result<String> {
         },
     };
     Ok(login.replace("{bin}", &bin))
+}
+
+/// The variable that points a CLI at a profile folder, for harnesses that can hold more than one
+/// account. `None` means the harness has one sign-in on the computer.
+pub fn profile_home(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "claude" => "CLAUDE_CONFIG_DIR",
+        "codex" => "CODEX_HOME",
+        "grok" => "GROK_HOME",
+        "gemini" => "GEMINI_CLI_HOME",
+        "antigravity" => "GEMINI_HOME",
+        "opencode" => "XDG_DATA_HOME",
+        _ => return None,
+    })
+}
+
+/// Files under the home folder that hold a harness's own sign-in. Removing them signs it out when
+/// the CLI has no logout command.
+fn credential_files(id: &str) -> &'static [&'static str] {
+    match id {
+        "claude" => &[".claude/.credentials.json"],
+        "codex" => &[".codex/auth.json"],
+        "grok" => &[".grok/auth.json"],
+        "gemini" => &[".gemini/oauth_creds.json"],
+        "antigravity" => &[".gemini/antigravity-acp/acp_token.json"],
+        "opencode" => &[".local/share/opencode/auth.json", "AppData/Roaming/opencode/auth.json"],
+        _ => &[],
+    }
+}
+
+/// The command that removes `id`'s own sign-in, with `{bin}` resolved.
+pub fn sign_out_available(id: &str) -> bool {
+    harness(id).is_some_and(|h| installed_cli(h).is_some() || !credential_files(id).is_empty())
+}
+
+pub async fn sign_out_command(id: &str) -> anyhow::Result<String> {
+    let h = harness(id).ok_or_else(|| anyhow::anyhow!("unknown agent {id}"))?;
+    let template = match id {
+        "claude" | "opencode" => "{bin} auth logout",
+        "codex" => "{bin} logout",
+        "grok" => "{bin} --no-auto-update logout",
+        _ => anyhow::bail!("{} has no sign-out command", h.name),
+    };
+    let bin = match installed_cli(h) {
+        Some(path) => shell::quote(&path.to_string_lossy()),
+        None => match registry_cli(h) {
+            Some(agent) => registry::command(&agent, |_| {}).await?.program,
+            None => anyhow::bail!("Install {} first.", h.name),
+        },
+    };
+    Ok(template.replace("{bin}", &bin))
+}
+
+/// Removes the credential files of a harness that has no logout command.
+pub fn remove_credentials(id: &str) {
+    let Some(home) = dirs::home_dir() else { return };
+    for file in credential_files(id) {
+        let path = home.join(file);
+        if path.is_file()
+            && let Err(error) = std::fs::remove_file(&path)
+        {
+            tracing::warn!(%error, path = %path.display(), "could not remove a sign-in file");
+        }
+    }
 }
 
 /// Where this harness's CLI is installed: on `PATH`, or inside the `WorkBuddy` app.

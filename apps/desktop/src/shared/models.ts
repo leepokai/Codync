@@ -534,6 +534,10 @@ export interface Backend {
   email?: string | null
   /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
   node?: 'missing' | 'added' | null
+  /** Whether this agent can keep isolated accounts beside the computer's own sign-in. */
+  accounts?: boolean
+  /** Whether the computer's own sign-in can be removed (a logout command or its credential files). */
+  signOut?: boolean
 }
 
 export interface ScreenDisplay {

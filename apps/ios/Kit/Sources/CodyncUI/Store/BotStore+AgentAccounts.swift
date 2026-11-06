@@ -47,6 +47,30 @@ extension BotStore {
         return response.account
     }
 
+    /// Removes an isolated account's profile; the host refuses one a bot still uses.
+    func deleteAgentAccount(id: String) async throws {
+        let computerID = computer.id
+        let accountID = storage.id
+        let client = try await ready()
+        let host = hostId
+        try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
+        _ = try await client.call("deleteAccount", ["accountId": id], timeout: 30)
+        try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
+        await refreshBackends()
+    }
+
+    /// Signs out of the computer's own account, leaving its isolated profiles alone.
+    func signOutAgent(backend: String) async throws {
+        let computerID = computer.id
+        let accountID = storage.id
+        let client = try await ready()
+        let host = hostId
+        try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
+        _ = try await client.call("agentSignOut", ["backend": backend], timeout: 60)
+        try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
+        await refreshBackends()
+    }
+
     private func checkAgentAccountContext(computer computerID: String, account accountID: String, host: String?) throws {
         try Task.checkCancellation()
         guard !retired, computer.id == computerID, storage.id == accountID, hostId == host,

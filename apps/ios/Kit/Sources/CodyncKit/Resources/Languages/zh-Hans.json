@@ -1402,5 +1402,6 @@
   "Offered to the network: bots on your other computers can see and message this bot.": "提供给网络：你其他电脑上的 Bot 能看到这个 Bot 并给它发消息。",
   "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "云端助手可联系：你 Codync 账户里的 ChatGPT 或 Claude 能看到这个 Bot 并给它发消息。",
   "Window": "时间段",
-  "Only run between two times": "只在两个时间之间运行"
+  "Only run between two times": "只在两个时间之间运行",
+  "Plan limits reported by each connected agent.": "?????????????????"
 }

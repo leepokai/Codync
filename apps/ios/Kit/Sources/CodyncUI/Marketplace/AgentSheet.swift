@@ -142,6 +142,9 @@ struct AgentSheet: View {
                 }
             }
             signInSection
+            if backend.accounts == true {
+                AgentAccountsSection(backend: backend) { Task { await check() } }
+            }
             if let error {
                 CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }

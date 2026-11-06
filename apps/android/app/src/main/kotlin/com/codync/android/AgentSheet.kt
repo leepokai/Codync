@@ -88,7 +88,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
         when {
             shown == null -> Column(Modifier.fillMaxSize().background(Palette.background)) {
                 ModalHeader(backend.name)
-                Overview(backend, auth, checking, authenticating, error, state, { route = it }, ::check) { method ->
+                Overview(backend, auth, checking, authenticating, error, state, store, { route = it }, ::check) { method ->
                     authenticating = method.id
                     scope.launch {
                         try { auth = store.agentAuthenticate(backend.id, method.id); error = null }
@@ -104,7 +104,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
     }
 }
 
-@Composable private fun Overview(backend: AgentBackend, auth: AgentAuth?, checking: Boolean, authenticating: String?, error: String?, state: AppState,
+@Composable private fun Overview(backend: AgentBackend, auth: AgentAuth?, checking: Boolean, authenticating: String?, error: String?, state: AppState, store: AppStore,
     go: (SetupRoute) -> Unit, check: () -> Unit, authenticate: (AgentAuthMethod) -> Unit) {
     val host = state.hostName
     val signedIn = auth?.signedIn ?: backend.signedIn
@@ -176,6 +176,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 }
             }
         }
+        if (backend.accounts != false) AgentAccountsSection(backend, state, store, check)
         error?.let { CardSection { row { SelectionContainer { ErrorRow(it) } } } }
     }
 }

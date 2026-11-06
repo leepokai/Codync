@@ -193,7 +193,10 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const account = (
     <AgentAccountPicker key="account" backend={draft.backend} selection={draft.account} online={store.connection.kind === 'online'}
       contextKey={JSON.stringify([store.contextId, store.computer.id, draft.id ?? 'new'])} load={() => store.agentAccounts(draft.backend)}
+      supported={backend?.accounts === true}
       authenticate={() => store.authenticateAgentAccount(draft.backend)}
+      remove={(id) => store.deleteAgentAccount(id)}
+      signOut={backend?.signOut ? () => store.signOutAgent(draft.backend) : undefined}
       onChange={(id) => onChange((d) => (d.account === id ? d : { ...d, account: id, model: null, modelOptions: {} }))} />
   )
   const agent = (

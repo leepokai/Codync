@@ -124,6 +124,16 @@ suspend fun AppStore.authenticateAgentAccount(backend: String): AgentAccount {
     val response = hostQuery("accountAuthenticate", body("backend" to backend), timeoutMillis = 660_000)
     return WireJson.decodeFromJsonElement(response.jsonObject.getValue("account"))
 }
+/** Removes an isolated account's profile; the host refuses one a bot still uses. */
+suspend fun AppStore.deleteAgentAccount(id: String) {
+    hostQuery("deleteAccount", body("accountId" to id), timeoutMillis = 30_000)
+    refreshBackends()
+}
+/** Signs out of the computer's own account, leaving its isolated profiles alone. */
+suspend fun AppStore.signOutAgent(backend: String) {
+    hostQuery("agentSignOut", body("backend" to backend), timeoutMillis = 60_000)
+    refreshBackends()
+}
 /** The last seven days on the computer; null when the host can't say (an older one) or can't be reached. */
 suspend fun AppStore.weekSummary(): WeekSummary? = runCatching {
     WireJson.decodeFromJsonElement<WeekSummary>(hostQuery("weekSummary", buildJsonObject { put("days", 7) }))

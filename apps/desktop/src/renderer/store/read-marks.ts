@@ -90,6 +90,14 @@ export class ReadMarks {
     })
   }
 
+  /** A message sent from here, which reads the chat on the host: it goes out after the chat's marks on their way, retries included, and the next mark waits for it. */
+  send<T>(botId: string, deliver: () => Promise<T>): Promise<T> {
+    const before = this.sending.get(botId)
+    const delivered = before ? before.then(deliver) : deliver()
+    this.queue(botId, delivered.then(() => true, () => false))
+    return delivered
+  }
+
   private inOrder(botId: string, perform: Perform, op: Operation, undo: () => void) {
     this.unsentOpens.delete(botId)
     const before = this.sending.get(botId)
@@ -101,6 +109,10 @@ export class ReadMarks {
         return perform(op, undo)
       })
       : perform(op, undo)
+    return this.queue(botId, sent)
+  }
+
+  private queue(botId: string, sent: Promise<boolean>) {
     this.sending.set(botId, sent)
     void sent.then(() => {
       if (this.sending.get(botId) !== sent) return

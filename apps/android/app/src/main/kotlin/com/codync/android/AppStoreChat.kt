@@ -129,7 +129,7 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
             ids.add(id)
             withContext(Dispatchers.IO) { attachments.cache(id, file) }
         }
-        val result = connection.call("send", send.body(ids))
+        val result = reads.send(send.botId) { connection.call("send", send.body(ids)) }
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()

@@ -106,19 +106,30 @@ extension BotStore {
     /// Runs `send` after the chat's last read mark, retries included, so the host gets them in the order they were made.
     private func inOrder(_ botId: String, _ send: @escaping @MainActor () async -> Void) {
         unsentOpens.remove(botId)
-        let before = sendingReadMarks[botId]
-        let sending = Task {
-            await before?.value
+        inReadOrder(botId) {
             // An open before this mark may have failed while it waited: this one is newer.
-            unsentOpens.remove(botId)
+            self.unsentOpens.remove(botId)
             await send()
         }
-        sendingReadMarks[botId] = sending
+    }
+
+    /// Runs `op` after the chat's read marks on their way, retries included; the next mark waits for it. A message
+    /// sent from here goes through it too: sending reads the chat on the host, so it must not overtake a mark.
+    @discardableResult
+    func inReadOrder<T: Sendable>(_ botId: String, _ op: @escaping @MainActor () async throws -> T) -> Task<T, any Error> {
+        let before = sendingReadMarks[botId]
+        let task = Task {
+            await before?.value
+            return try await op()
+        }
+        let settled = Task { _ = await task.result }
+        sendingReadMarks[botId] = settled
         Task {
-            await sending.value
-            guard sendingReadMarks[botId] == sending else { return }
+            await settled.value
+            guard sendingReadMarks[botId] == settled else { return }
             sendingReadMarks[botId] = nil
             beforeReads[botId] = nil
         }
+        return task
     }
 }

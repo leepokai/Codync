@@ -187,3 +187,29 @@ test('opening a chat right after marking it unread waits for the mark, so the re
   await settle()
   assert.deepEqual(sent, [['markUnread', { botId: 'a' }], ['markRead', { botId: 'a' }]])
 })
+
+test('a message sent while mark as unread is still retrying waits for it, so the send reads the chat last', async () => {
+  const { reads, sent, answer } = computer({})
+  reads.markUnread('a')
+  const delivered = reads.send('a', async () => { sent.push(['send']) })
+  await settle()
+  assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
+  answer(0, true)
+  await delivered
+  assert.deepEqual(sent, [['markUnread', { botId: 'a' }], ['send']])
+})
+
+test('mark as unread after a message still on its way waits for it, failed or not', async () => {
+  const { reads, sent } = computer({})
+  let deliver!: (ok: boolean) => void
+  const delivered = reads.send('a', () => new Promise<void>((resolve, reject) => {
+    deliver = (ok) => (ok ? resolve() : reject(new Error('offline')))
+  }))
+  reads.markUnread('a')
+  await settle()
+  assert.deepEqual(sent, [])
+  deliver(false)
+  await assert.rejects(delivered)
+  await settle()
+  assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
+})

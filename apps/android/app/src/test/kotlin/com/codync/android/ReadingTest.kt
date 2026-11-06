@@ -119,6 +119,20 @@ class ReadingTest {
         assertEquals(listOf("other chat", "read", "unread"), sent)
     }
 
+    @Test fun `a message sent while mark as unread is on its way goes after it, and the next mark after the message`() {
+        val marks = Marks()
+        val unread = CompletableDeferred<Unit>()
+        val message = CompletableDeferred<Unit>()
+        val sent = mutableListOf<String>()
+        marks.reads.mark("a") { unread.await(); sent.add("unread") }
+        CoroutineScope(Dispatchers.Unconfined).launch { marks.reads.send("a") { message.await(); sent.add("send") } }
+        marks.reads.mark("a") { sent.add("read") }
+        unread.complete(Unit)
+        assertEquals(listOf("unread"), sent)
+        message.complete(Unit)
+        assertEquals(listOf("unread", "send", "read"), sent)
+    }
+
     @Test fun `a mark that fails shows its error and lets the next one go`() {
         val marks = Marks()
         val sent = mutableListOf<String>()

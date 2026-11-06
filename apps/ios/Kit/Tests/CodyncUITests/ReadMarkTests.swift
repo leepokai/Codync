@@ -172,6 +172,24 @@ import Testing
     #expect(calls == ["markUnread", "markUnread", "markUnread", "markRead"])
 }
 
+@MainActor @Test func aMessageSentWhileMarkAsUnreadIsRetryingWaitsSoTheSendReadsTheChatLast() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    await fake.fail("markUnread", times: 2)
+    store.markUnread("b1")
+    store.send("hi", to: "b1")
+    #expect(await until { await fake.calls.contains("send") })
+    let calls = await fake.calls.filter { $0 == "send" || $0 == "markUnread" }
+    #expect(calls == ["markUnread", "markUnread", "markUnread", "send"])
+}
+
 @MainActor @Test func twoReadsRefusedInARowBothGiveBackWhatWasThereBeforeTheFirst() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

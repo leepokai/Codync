@@ -83,7 +83,7 @@ export class BotStore extends BotSync {
     void (async () => {
       try {
         // Safe to repeat: the computer skips a nonce it already has.
-        const e = await this.withLink(async (client) => {
+        const e = await this.reads.send(botId, () => this.withLink(async (client) => {
           let ids: string[] | null = null
           const pending = this.outgoingFiles.get(nonce)
           if (pending) {
@@ -96,7 +96,7 @@ export class BotStore extends BotSync {
             }
           }
           return client.send(botId, trimmed, nonce, ids, pasted, replyTo?.id ?? null, call)
-        }, true)
+        }, true))
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
         this.changed()

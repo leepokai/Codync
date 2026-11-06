@@ -100,22 +100,25 @@ extension BotStore {
         Task {
             do {
                 // Safe to repeat: the computer skips a nonce it already has.
-                let e = try await withLink(replay: true) { client in
-                    var ids: [String]?
-                    if let files = self.outgoingFiles[nonce] {
-                        // A fresh upload per attempt: a retry never appends to a half-sent file.
-                        ids = []
-                        for file in files {
-                            let id = UUID().uuidString
-                            try await client.upload(botId: botId, id: id, name: file.name, data: file.data)
-                            Self.cacheAttachment(id, file.data)
-                            ids?.append(id)
+                let sending = inReadOrder(botId) {
+                    try await self.withLink(replay: true) { client in
+                        var ids: [String]?
+                        if let files = self.outgoingFiles[nonce] {
+                            // A fresh upload per attempt: a retry never appends to a half-sent file.
+                            ids = []
+                            for file in files {
+                                let id = UUID().uuidString
+                                try await client.upload(botId: botId, id: id, name: file.name, data: file.data)
+                                Self.cacheAttachment(id, file.data)
+                                ids?.append(id)
+                            }
                         }
+                        try Task.checkCancellation()
+                        return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
+                                                     pasted: pasted, call: call)
                     }
-                    try Task.checkCancellation()
-                    return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
-                                                 pasted: pasted, call: call)
                 }
+                let e = try await withTaskCancellationHandler { try await sending.value } onCancel: { sending.cancel() }
                 outgoingFiles[nonce] = nil
                 upsert(e)
                 // Only once it arrived, so a resend counts once.

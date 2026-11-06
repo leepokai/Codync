@@ -46,6 +46,9 @@ internal class ReadMarks(private val run: (key: String, operation: suspend () ->
         }
     }
 
+    /** A message sent from here, which reads the chat on the host: [send] after the chat's last mark, and the next mark after it. */
+    suspend fun <T> send(id: String, send: suspend () -> T): T = lines.getOrPut(id) { Mutex() }.withLock { send() }
+
     /** The user opened the chat, which reads it whatever this phone knows of it. A failure never shows: it goes again the next time the chat is on screen with a link ([retryOpen]). */
     fun open(id: String, send: suspend () -> Unit) {
         val started = mark(id) {

@@ -33,7 +33,7 @@ fn serves(port: u16) -> bool {
 }
 
 fn server_command(port: u16) -> String {
-    format!("{} -m http.server {port} --bind 127.0.0.1", common::python())
+    common::port_server(port)
 }
 
 /// A program that keeps running and never listens.

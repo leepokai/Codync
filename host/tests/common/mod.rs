@@ -132,6 +132,13 @@ pub fn python_agent(script: &Path) -> String {
     }
 }
 
+/// The command of a program that listens on `port` of this computer until it's stopped.
+#[allow(dead_code, reason = "only the tests of dev servers use it")]
+pub fn port_server(port: u16) -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/port_server.py");
+    format!("{} {port}", python_agent(&script))
+}
+
 /// What a client holds after the event stream's catch-up: `{"rev", "bots": [...], "entries": [...]}`,
 /// the newest row per id. Reads until the stream goes quiet.
 pub async fn snapshot(base: &str, token: &str) -> serde_json::Value {

@@ -16,7 +16,7 @@ import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
-import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
+import { RailAccountNotice } from './SidebarFooter'
 import { AppRail } from './AppRail'
 import { SidebarUsage } from './SidebarUsage'
 import { RoutineFlowView } from './routines/flow/RoutineFlowView'
@@ -400,33 +400,43 @@ function ChatSplitView() {
   const width = compact ? 76 : sidebarWidth
   return (
     <div className={`split ${showAccount || context ? 'covered' : ''}`}>
-      {compact ? null : (
-        <AppRail
-          active={railActive}
-          onBots={() => { setSettings(null); setMarketplace(null); setCanvasBot(null) }}
-          onCanvas={() => {
-            if (selectedBot && selectedStore) {
-              setCanvasBot(selectedBot.id)
-              setCanvasStore(selectedStore)
-              return
-            }
-            const first = roster.navigable[0] ?? roster.items[0]
-            if (!first) return
-            app.select(first.ref)
-            setCanvasBot(first.bot.id)
-            setCanvasStore(first.store)
-          }}
-          onUsage={() => setSettings('usage')}
-          onN8n={() => window.codync.n8n.open()}
-          onExtensions={openMarketplace}
-          onSettings={() => setSettings('general')}
-          onAccount={() => setShowAccount((s) => !s)}
-          accountOpen={showAccount}
-          update={<UpdateBadge size={24} />}
-          account={<ProfileAvatar />}
-        />
-      )}
       <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
+        <div className="sidebar-rail">
+          <AppRail
+            active={railActive}
+            onBots={() => { setSettings(null); setMarketplace(null); setCanvasBot(null) }}
+            onCanvas={() => {
+              if (selectedBot && selectedStore) {
+                setCanvasBot(selectedBot.id)
+                setCanvasStore(selectedStore)
+                return
+              }
+              const first = roster.navigable[0] ?? roster.items[0]
+              if (!first) return
+              app.select(first.ref)
+              setCanvasBot(first.bot.id)
+              setCanvasStore(first.store)
+            }}
+            onUsage={() => setSettings('usage')}
+            onN8n={() => window.codync.n8n.open()}
+            onExtensions={openMarketplace}
+            onSettings={() => setSettings('general')}
+            onAccount={() => setShowAccount((s) => !s)}
+            accountOpen={showAccount}
+            update={<UpdateBadge size={24} />}
+            account={<ProfileAvatar />}
+          />
+          {compact ? (
+            <div className="sidebar-rail-actions">
+              <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
+              <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
+              <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
+              <UpdateBadge size={32} />
+              <RailAccountNotice onComputers={() => setSettings('computers')} />
+            </div>
+          ) : null}
+        </div>
+        <div className="sidebar-panel">
         <div className="sidebar-header drag" inert={compact}>
           <Spacer />
           <HStack gap={6} className="no-drag">
@@ -463,22 +473,8 @@ function ChatSplitView() {
           ) : null}
         </div>
         <SidebarUsage usage={app.local?.usage ?? { providers: [] }} onRefresh={() => app.local?.refreshUsage() ?? Promise.resolve()} />
-        {compact ? (
-          <div className="rail-actions">
-            <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
-            <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
-            <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
-            <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
-            <UpdateBadge size={32} />
-            <RailAccountNotice onComputers={() => setSettings('computers')} />
-            <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
-              <ProfileAvatar />
-            </button>
-          </div>
-        ) : (
-          // With several computers each heading opens its own Extensions instead.
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} onComputers={() => setSettings('computers')} />
-        )}
+        </div>
+
       </aside>
       <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
       <main className="detail">

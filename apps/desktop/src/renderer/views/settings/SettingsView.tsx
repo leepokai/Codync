@@ -292,6 +292,11 @@ function UsageLimitsList() {
       setRefreshing(false)
     }
   }
+  // Opening the page reads the plans: a value from the last refresh is often minutes old.
+  useEffect(() => {
+    void refresh()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const header = (
     <HStack gap={8}>
       <Text size="callout" tone="secondary">{tr('Plan limits reported by each connected agent.')}</Text>

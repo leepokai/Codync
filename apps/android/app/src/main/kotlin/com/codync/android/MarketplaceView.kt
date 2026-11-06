@@ -232,15 +232,22 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            ExtensionSection.Agents -> when {
-                shownMarketAgents.isEmpty() -> item {
-                    Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+            ExtensionSection.Agents -> {
+                item(key = "cli:title") { MarketSection(tr("Agent CLIs")) {} }
+                items(agents, key = { "cli:${it.id}" }) { backend ->
+                    MarketRow(backend.name, backend.description ?: "", added = false, open = { agent = backend },
+                        icon = { AgentIcon(backend.registry, 22.dp) }) { agent = backend }
                 }
-                else -> MarketCategories.group(shownMarketAgents, { it.category }, { it.featured }).forEach { (title, group) ->
-                    item(key = "agent:$title") { MarketSection(title) {} }
-                    items(group, key = { it.id }) { a ->
-                        MarketRow(a.name, a.title, a.installed || a.id in agentsAdded,
-                            icon = { CharacterAvatar(a.avatarShape, a.avatarColor, 46.dp) }, open = { viewingAgent = a }) { viewingAgent = a }
+                when {
+                    shownMarketAgents.isEmpty() -> item {
+                        Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+                    }
+                    else -> MarketCategories.group(shownMarketAgents, { it.category }, { it.featured }).forEach { (title, group) ->
+                        item(key = "agent:$title") { MarketSection(title) {} }
+                        items(group, key = { it.id }) { a ->
+                            MarketRow(a.name, a.title, a.installed || a.id in agentsAdded,
+                                icon = { CharacterAvatar(a.avatarShape, a.avatarColor, 46.dp) }, open = { viewingAgent = a }) { viewingAgent = a }
+                        }
                     }
                 }
             }

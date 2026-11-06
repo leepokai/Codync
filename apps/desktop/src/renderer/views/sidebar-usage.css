@@ -129,3 +129,10 @@
 .sidebar:not(.compact) .sidebar-usage {
   padding-bottom: 10px;
 }
+
+/* The list can outgrow the sidebar: it scrolls on its own and keeps the roster room. */
+.sidebar-usage-list {
+  max-height: 38vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

@@ -9,6 +9,7 @@ import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { ComputerBadge } from '../ComputerBadge'
 import { AgentSheet } from './AgentSheet'
+import { AgentStoreSidebar } from './AgentStoreSidebar'
 import { AppSheet } from './AppSheet'
 import { CatalogPanel } from './CatalogPanel'
 import { CredentialsView } from './CredentialsView'
@@ -62,6 +63,7 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
   const [section, setSection] = useState<ExtensionSection>(initialSection)
+  const [agentGroup, setAgentGroup] = useState('all')
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
   // Kept above the sections so a catalog entry still shows as added when its section is left and reopened.
@@ -76,6 +78,9 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
   const shownSkills = query ? skills.filter((s) => matches(s.name) || matches(s.description)) : skills
   const shownApps = query ? apps.filter((a) => matches(a.name) || matches(a.tagline)) : apps
   const shownMarketAgents = query ? marketAgents.filter((a) => matches(a.name) || matches(a.title)) : marketAgents
+  const groupedAgents = agentGroup === 'all'
+    ? shownMarketAgents
+    : shownMarketAgents.filter((a) => (agentGroup === 'featured' ? a.featured : a.category === agentGroup))
   const installedCount = plugins.installedConnectors.length + plugins.installedSkills.length
   const onCatalogAdded = (id: string) => setCatalogAdded((list) => [...list, id])
 
@@ -217,30 +222,33 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
             />
             </>
           ) : section === 'agents' ? (
-            <>
-              <MarketAgentsPanel
-                agents={shownMarketAgents}
-                query={query}
-                added={agentsAdded}
-                onAdd={(a) => setViewingAgent(a)}
-                onView={setViewingAgent}
-              />
-              <MarketSection title={tr('Ready-made bots')}>
-                <CatalogPanel kind="bots" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
-              </MarketSection>
-              <MarketSection title={tr('Coordinator teams')}>
-                <CatalogPanel kind="teams" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
-              </MarketSection>
-              <MarketSection title={tr('Agent CLIs')}>
-                <AgentsPanel
-                  agents={agents}
+            <div className="market-split">
+              <AgentStoreSidebar agents={allAgents} group={agentGroup} onGroup={setAgentGroup} onAgent={setAgent} />
+              <div className="market-split-main">
+                <MarketAgentsPanel
+                  agents={groupedAgents}
                   query={query}
-                  needsNode={allAgents.some((b) => b.node === 'missing')}
-                  onAddNode={() => setAddingNode(true)}
-                  onAgent={setAgent}
+                  added={agentsAdded}
+                  onAdd={(a) => setViewingAgent(a)}
+                  onView={setViewingAgent}
                 />
-              </MarketSection>
-            </>
+                <MarketSection title={tr('Ready-made bots')}>
+                  <CatalogPanel kind="bots" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
+                </MarketSection>
+                <MarketSection title={tr('Coordinator teams')}>
+                  <CatalogPanel kind="teams" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
+                </MarketSection>
+                <MarketSection title={tr('Agent CLIs')}>
+                  <AgentsPanel
+                    agents={agents}
+                    query={query}
+                    needsNode={allAgents.some((b) => b.node === 'missing')}
+                    onAddNode={() => setAddingNode(true)}
+                    onAgent={setAgent}
+                  />
+                </MarketSection>
+              </div>
+            </div>
           ) : (
             <SkillsPanel
               skills={shownSkills}

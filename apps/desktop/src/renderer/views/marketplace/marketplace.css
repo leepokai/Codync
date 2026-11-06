@@ -534,3 +534,71 @@ textarea.market-field {
 
 
 .whatsapp-qr{border-radius:12px;background:#fff;padding:8px;align-self:center}
+
+/* Extensions' Agents tab: the CLI and group sidebar beside the catalog. */
+.market-split {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.market-side {
+  position: sticky;
+  top: 0;
+  flex: 0 0 190px;
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-right: 6px;
+}
+.market-side-title {
+  margin: 10px 8px 4px;
+}
+.market-side-title:first-child {
+  margin-top: 0;
+}
+.market-side-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+}
+.market-side-row:hover,
+.market-side-row[data-current='true'] {
+  background: var(--field);
+}
+.market-side-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.market-side-name {
+  font-size: var(--caption);
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-side-spec {
+  font-size: var(--caption2);
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-split-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

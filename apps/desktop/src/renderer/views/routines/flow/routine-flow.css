@@ -367,3 +367,17 @@
     transition: none;
   }
 }
+
+/* The canvas and its inspector share the sheet's width. */
+.routine-flow-sheet .routine-flow {
+  min-width: 0;
+}
+.routine-flow-sheet .routine-flow > * {
+  min-width: 0;
+}
+/* Frame the minimap so its node blocks read as a map, not as stray squares. */
+.flow-minimap {
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  border: 1px solid var(--chrome-stroke);
+  border-radius: 8px;
+}

@@ -93,6 +93,21 @@
   overflow: hidden;
   transition: width var(--layout);
 }
+/* The rail and the list panel beside it. */
+.sidebar-rail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.sidebar-rail-actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 10px;
+}
 .sidebar.resizing {
   transition: none;
 }
@@ -139,6 +154,7 @@ html[data-platform="win32"] .sidebar.compact .sidebar-header {
 }
 .roster {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 0 10px;
   display: flex;

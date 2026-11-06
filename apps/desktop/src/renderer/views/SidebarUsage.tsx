@@ -34,7 +34,11 @@ export function SidebarUsage({ usage, onRefresh }: { usage: Usage; onRefresh?: (
   return (
     <section className="sidebar-usage">
       <div className="sidebar-usage-toggle">
-        <button type="button" className="sidebar-usage-toggle-main" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <button type="button" className="sidebar-usage-toggle-main" aria-expanded={open} onClick={() => {
+          // Opening reads the plans again: they move while the sidebar sits there.
+          if (!open) void refresh()
+          setOpen((o) => !o)
+        }}>
           <Icon name="gauge.with.dots.needle.33percent" size={13} />
           <span className="sidebar-usage-name">{tr('Usage')}</span>
           {providers.length ? <span className="sidebar-usage-count">{providers.length}</span> : null}

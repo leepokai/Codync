@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isGroup, type Bot } from '@shared/models'
 import { Button, DropdownMenu, IconButton, SegmentedChoice, Spinner } from '../../../components/Controls'
-import { AnchoredMenu } from '../../../components/Overlay'
+import { AnchoredMenu, ModalHeader, Sheet } from '../../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../../components/Stack'
 import { Text } from '../../../components/Text'
 import { useModel } from '../../../lib/observable'
@@ -12,6 +12,7 @@ import { RoutineFlowStore } from '../../../store/routine-flow-store'
 import { FlowCanvasView, type FlowSelection } from './FlowCanvas'
 import { FlowInspector } from './FlowInspector'
 import { FlowList } from './FlowList'
+import { RoutineEditorView } from '../RoutineEditorView'
 import './routine-flow.css'
 
 type Mode = 'canvas' | 'list'
@@ -34,6 +35,7 @@ export function RoutineFlowView({ botId, onExpand }: { botId: string; onExpand?:
   const [mode, setMode] = useState<Mode>('canvas')
   const [selection, setSelection] = useState<FlowSelection>(null)
   const [note, setNote] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const [choose, setChoose] = useState<{ from: string; to: string; at: { x: number; y: number }; routines: { id: string; name: string }[] } | null>(null)
   const offline = store.isOffline
   const rev = store.flowRev(botId)
@@ -107,6 +109,7 @@ export function RoutineFlowView({ botId, onExpand }: { botId: string; onExpand?:
     <VStack gap={8} className="routine-flow">
       <HStack gap={8} wrap>
         <SegmentedChoice selection={mode} options={[{ id: 'canvas', label: 'Canvas' }, { id: 'list', label: 'List' }]} onChange={setMode} />
+        <Button kind="secondary" disabled={offline} onClick={() => setCreating(true)}>{tr('New routine')}</Button>
         <DropdownMenu
           title={tr('Add a bot to the canvas')}
           className="flow-menu-button"
@@ -167,6 +170,24 @@ export function RoutineFlowView({ botId, onExpand }: { botId: string; onExpand?:
         point={choose?.at ?? null}
         items={() => (choose?.routines ?? []).map((r) => ({ title: r.name, action: () => void connect(r.id, choose!.from, choose!.to) }))}
       />
+      <Sheet open={creating} onClose={() => setCreating(false)} width={560} height={620}>
+        {creating ? (
+          <VStack gap={14} className="routine-flow-sheet">
+            <ModalHeader icon="plus" title={tr('New routine')} onClose={() => setCreating(false)} />
+            <div className="flow-new-routine">
+              <RoutineEditorView
+                botId={botId}
+                routine={null}
+                saved={(routine) => {
+                  setCreating(false)
+                  if (routine) setSelection({ kind: 'node', key: `routine:${routine.id}` })
+                  void flow.load()
+                }}
+              />
+            </div>
+          </VStack>
+        ) : null}
+      </Sheet>
     </VStack>
   )
 }

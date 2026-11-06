@@ -381,3 +381,15 @@
   border: 1px solid var(--chrome-stroke);
   border-radius: 8px;
 }
+
+/* The routine editor inside the canvas sheet: its own header is hidden under the sheet's. */
+.flow-new-routine {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.flow-new-routine .routine-editor > .modal-header,
+.flow-new-routine .routine-editor > .sheet-page-header {
+  display: none;
+}

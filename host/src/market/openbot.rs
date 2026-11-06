@@ -32,6 +32,9 @@ pub struct Agent {
     pub category: String,
     pub creator: String,
     pub version: u32,
+    /// The date the catalog last changed it, YYYY-MM-DD (empty in older catalogs).
+    #[serde(default)]
+    pub updated: String,
     pub avatar_color: String,
     pub avatar_shape: String,
     pub featured: bool,
@@ -44,7 +47,7 @@ impl Agent {
     pub fn public(&self, installed: bool) -> Value {
         json!({
             "id": self.id, "name": self.name, "title": self.title, "category": self.category,
-            "creator": self.creator, "version": self.version,
+            "creator": self.creator, "version": self.version, "updated": self.updated,
             "avatarColor": self.avatar_color, "avatarShape": self.avatar_shape,
             "featured": self.featured, "installed": installed,
         })
@@ -87,6 +90,9 @@ pub struct App {
     pub category: String,
     pub creator: String,
     pub version: String,
+    /// The date the catalog last changed it, YYYY-MM-DD (empty in older catalogs).
+    #[serde(default)]
+    pub updated: String,
     #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]
@@ -314,7 +320,7 @@ fn extract(id: &str, dest: &std::path::Path) -> Result<()> {
 pub fn app_public(a: &App, installed: bool) -> Value {
     json!({
         "id": a.id, "name": a.name, "tagline": a.tagline, "description": a.description,
-        "category": a.category, "creator": a.creator, "version": a.version, "icon": a.icon,
+        "category": a.category, "creator": a.creator, "version": a.version, "updated": a.updated, "icon": a.icon,
         "website": a.website, "featured": a.featured, "setup": a.setup, "server": a.server,
         "fields": a.fields, "steps": a.steps, "docsUrl": a.docs_url, "docsLabel": a.docs_label,
         "prompts": a.prompts, "installed": installed,

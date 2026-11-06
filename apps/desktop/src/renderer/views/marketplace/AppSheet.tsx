@@ -56,6 +56,13 @@ export function AppSheet({ app, added, onAdded, onError }: { app: MarketApp; add
             <Text tone="text" weight="medium">{app.tagline}</Text>
             <Text tone="secondary">{app.description}</Text>
             {app.website ? <WebLink title={app.website} url={app.website} className="small truncate" /> : null}
+            <dl className="market-facts">
+              <dt>{tr('Creator')}</dt><dd>{app.creator}</dd>
+              <dt>{tr('Origin')}</dt><dd>{tr('Reviewed by OpenBot')}</dd>
+              <dt>{tr('Category')}</dt><dd>{tr(app.category)}</dd>
+              <dt>{tr('Version')}</dt><dd>{app.version}</dd>
+              <dt>{tr('Updated')}</dt><dd>{app.updated}</dd>
+            </dl>
           </VStack>
         </CardSection>
         {app.setup === 'local' && app.steps.length ? (

@@ -127,6 +127,7 @@ export interface MarketAgent {
   category: string
   creator: string
   version: number
+  updated: string
   avatarColor: string
   avatarShape: string
   featured: boolean
@@ -162,6 +163,7 @@ export interface MarketApp {
   category: string
   creator: string
   version: string
+  updated: string
   icon?: string | null
   website?: string | null
   featured: boolean

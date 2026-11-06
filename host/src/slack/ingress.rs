@@ -103,6 +103,17 @@ pub(super) fn accept(hub: &Hub, c: &Config, envelope: &Value) -> Result<()> {
     if message.text.is_empty() || message.text.len() > 32 * 1024 {
         return Ok(());
     }
+    if mention {
+        hub.routines.receive_event(
+            &hub.store,
+            &json!({
+                "source": "slack", "event": "app_mention", "channel": binding.channel_id,
+                "channelType": event["channel_type"], "user": event["user"], "text": message.text,
+                "thread": thread, "url": event["permalink"],
+            }),
+            Some(event_id.to_owned()),
+        );
+    }
     let incoming = crate::store::slack::SlackIncoming {
         event: event_id.into(),
         generation: c.generation.clone(),

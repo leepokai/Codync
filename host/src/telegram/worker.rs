@@ -149,6 +149,16 @@ async fn handle(hub: &Arc<Hub>, ep: &Endpoint, name: &str, shared: &Shared, upda
     if !bot.allowed.contains(&user) {
         return pair(hub, ep, &bot, chat, user, text).await;
     }
+    if text.to_lowercase().contains(&format!("@{}", bot.username.to_lowercase())) {
+        hub.routines.receive_event(
+            &hub.store,
+            &json!({
+                "source": "telegram", "event": "mention", "chat": chat, "user": user,
+                "username": message["from"]["username"], "text": text,
+            }),
+            Some(format!("tg-{name}-{}", update["update_id"])),
+        );
+    }
     if let Some(command) = commands::parse(text, Some(&bot.username)) {
         return say(ep, &bot, chat, &commands::run(hub, &bot.bot_id, &command)).await;
     }

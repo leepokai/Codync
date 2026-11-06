@@ -559,6 +559,27 @@ impl Routines {
         }))
     }
 
+    /// An event from a channel (a Slack or Telegram mention): queues every enabled routine whose event
+    /// trigger matches. Returns the routine ids it queued.
+    #[allow(clippy::needless_pass_by_value, reason = "cloned for each queued routine")]
+    pub fn receive_event(&self, store: &Store, event: &Value, delivery: Option<String>) -> Vec<String> {
+        let matches: Vec<(String, String)> = self
+            .state
+            .locked()
+            .routines
+            .iter()
+            .filter(|r| !r.deleted && r.enabled && r.triggers.iter().any(|t| t.matches(event)))
+            .map(|r| (r.id.clone(), r.bot_id.clone()))
+            .collect();
+        let mut queued = vec![];
+        for (id, bot) in matches {
+            if self.enqueue(store, &bot, &id, event.clone(), delivery.clone(), false).is_ok() {
+                queued.push(id);
+            }
+        }
+        queued
+    }
+
     /// One delivery from the local endpoint or the cloud: checks the key or signature, then
     /// queues a run when the event matches. Retries of a delivery id return its first run.
     pub fn receive(&self, hub: &Hub, id: &str, headers: &hooks::Headers, body: &[u8]) -> Result<Value, Refused> {

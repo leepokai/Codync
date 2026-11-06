@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { CharacterAvatar } from '../../components/Avatar'
-import { Button, CardForm, CardSection, Spinner } from '../../components/Controls'
+import { Button, CardForm, CardSection, Pill, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { errorText, market, type MarketAgent, type MarketAgentDetail, type MarketSkill } from './market-models'
+import { errorText, market, CATEGORY_LABELS, type MarketAgent, type MarketAgentDetail, type MarketSkill } from './market-models'
 import { ErrorText, ItemRow, MarketSection, SkillGlyph } from './pieces'
 import { useTr } from '../../lib/use-language'
 
@@ -60,7 +60,7 @@ export function MarketAgentSheet({ agent, added, onAdded, onSkill }: { agent: Ma
     setBusy(false)
   }
 
-  const copy = () => void navigator.clipboard.writeText(`codync://marketplace/agent/${agent.id}`)
+  const copy = () => void navigator.clipboard.writeText(`${window.codync.appScheme}://marketplace/agents/${agent.id}`)
   const open = (s: MarketAgentDetail['skills'][number]) =>
     onSkill({ source: `openbot/${s.id}`, name: s.name, description: s.description, installed: false })
 
@@ -88,8 +88,13 @@ export function MarketAgentSheet({ agent, added, onAdded, onSkill }: { agent: Ma
       <CardForm>
         <CardSection>
           <VStack gap={4}>
-            <Text tone="text" weight="medium">{agent.title}</Text>
-            <Text size="caption" tone="secondary">{tr('By {name} · Reviewed by Codync').replaceAll('{name}', agent.creator)}</Text>
+            <HStack gap={8} align="center">
+              <Text tone="text" weight="medium">{agent.title}</Text>
+              <Pill>{tr(installed ? 'Added' : 'Not added')}</Pill>
+            </HStack>
+            <Text size="caption" tone="secondary">
+              {tr('Created by another OpenBot user. OpenBot reviewed it before publishing. Once added, it can act on your behalf.')}
+            </Text>
           </VStack>
         </CardSection>
         {detail?.skills.length ? (
@@ -123,9 +128,10 @@ export function MarketAgentSheet({ agent, added, onAdded, onSkill }: { agent: Ma
             <Text tone="text" className="selectable">{detail?.instructions ?? agent.title}</Text>
             <dl className="market-facts">
               <dt>{tr('Creator')}</dt><dd>{agent.creator}</dd>
-              <dt>{tr('Origin')}</dt><dd>{tr('Reviewed by Codync')}</dd>
-              <dt>{tr('Category')}</dt><dd>{tr(agent.category)}</dd>
+              <dt>{tr('Origin')}</dt><dd>{tr('Reviewed by OpenBot')}</dd>
+              <dt>{tr('Category')}</dt><dd>{tr(CATEGORY_LABELS[agent.category] ?? agent.category)}</dd>
               <dt>{tr('Version')}</dt><dd>{agent.version}</dd>
+              <dt>{tr('Updated')}</dt><dd>{agent.updated}</dd>
             </dl>
           </VStack>
         </CardSection>

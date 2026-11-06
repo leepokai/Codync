@@ -280,5 +280,8 @@ if (yieldsToInstall()) {
     })
     host.start()
     openChat()
+    // A link that launched the app (before any window existed) opens once the renderer is up.
+    const launchedWith = urlFromArgv(process.argv)
+    if (launchedWith) setTimeout(() => handleURL(launchedWith), 2000)
   })
 }

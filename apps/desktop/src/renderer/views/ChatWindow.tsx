@@ -226,6 +226,7 @@ function ChatSplitView() {
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
+  const [marketplaceLink, setMarketplaceLink] = useState<{ section: 'apps' | 'agents' | 'skills'; id: string } | null>(null)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
@@ -270,6 +271,13 @@ function ChatSplitView() {
         if (c.kind === 'search') setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
+        if (c.kind === 'openMarketplace') {
+          const target = (selectedStore ?? onlineStores[0])?.computer.id
+          if (target) {
+            setMarketplaceLink({ section: c.section, id: c.id })
+            setMarketplace(target)
+          }
+        }
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select((voiceTarget(roster as any) as any)?.ref ?? null)
           queueVoiceKey(c.key)
@@ -496,10 +504,10 @@ function ChatSplitView() {
         ) : null}
       </Sheet>
       <ImportBotsSheet store={localOnline ? app.local : null} open={importing} onClose={() => setImporting(false)} maxHeight={sheetHeight} />
-      <Sheet open={marketplace !== null} onClose={() => setMarketplace(null)} width={Math.min(920, windowSize.width - 80)} height={sheetHeight} dismissOnDim>
+      <Sheet open={marketplace !== null} onClose={() => { setMarketplace(null); setMarketplaceLink(null) }} width={Math.min(920, windowSize.width - 80)} height={sheetHeight} dismissOnDim>
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>
-            <MarketplaceView key={marketplace} />
+            <MarketplaceView key={marketplace} initialSection={marketplaceLink?.section} initialAgent={marketplaceLink?.id} />
           </StoreContext.Provider>
         ) : null}
       </Sheet>

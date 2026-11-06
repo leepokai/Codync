@@ -21,6 +21,40 @@ pub(super) fn routine() -> Routine {
     }
 }
 #[test]
+fn a_channel_mention_queues_only_the_event_routines_that_match() {
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let routines = Routines::default();
+    let mut mentioned = routine();
+    mentioned.triggers = vec![Trigger::Event {
+        source: "slack".into(),
+        event: "app_mention".into(),
+        filters: [("channel".into(), "C1".into())].into(),
+    }];
+    let mut other = routine();
+    other.id = "other".into();
+    other.triggers = vec![Trigger::Event {
+        source: "telegram".into(),
+        event: "mention".into(),
+        filters: std::collections::BTreeMap::default(),
+    }];
+    routines
+        .change(&store, |s| {
+            s.routines.extend([mentioned, other]);
+            Ok(())
+        })
+        .unwrap();
+    let queued = routines.receive_event(
+        &store,
+        &json!({"source": "slack", "event": "app_mention", "channel": "C1", "text": "build this"}),
+        Some("slack-1".into()),
+    );
+    assert_eq!(queued, ["routine"]);
+    let state = routines.state.locked();
+    assert_eq!(state.runs.len(), 1, "only the matching routine ran");
+    assert_eq!(state.runs[0].bot_id, "bot");
+}
+
+#[test]
 fn pending_runs_survive_restart_but_running_runs_are_not_duplicated() {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
     let routines = Routines::default();

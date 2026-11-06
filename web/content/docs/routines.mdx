@@ -125,3 +125,12 @@ While a scheduled routine is on, Codync keeps the computer from going to sleep w
 ## Routines and other bots
 
 A bot works only with its own routines. A bot that [manages the team](/docs/teamwork) can create or replace other bots' routines, but each bot runs its own: to test a teammate's routine, the manager asks that bot to run it, and the result appears in that bot's chat.
+
+## Workflows
+
+A workflow is a routine with a trigger and a chain of steps. Each step is another bot that receives the previous result, does one named job and passes a named result on, and the canvas shows every link in order as it is added. Use one for work that should move between bots: triage, then research, then a draft, then a review.
+
+Add **Workflow Builder** from **Extensions → Agents** and describe the job, its trigger and the bots for each step. It creates the routine, links the bots, and runs one test when you agree. Open the workflow from the routine's canvas to watch the steps and their results. A workflow can start from a clock, a webhook, a watched file or URL, or a mention in Slack or Telegram; a GitHub webhook delivery can start one on an issue, pull request, review or failed check. Report what is still to connect before you rely on it: a webhook is not live until the sending service has its URL and key.
+
+A workflow is still a routine at heart: it belongs to the first bot, it runs on your computer, and its results stay in the chats. A one-off task needs no workflow.
+

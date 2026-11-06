@@ -32,7 +32,7 @@ import { useTr } from '../../lib/use-language'
  * happens on that computer; each bot turns connectors and skills on in its settings. Each
  * computer has its own, opened from its heading in the sidebar.
  */
-export function MarketplaceView() {
+export function MarketplaceView({ initialSection = 'apps', initialAgent }: { initialSection?: ExtensionSection; initialAgent?: string } = {}) {
   const store = useStore()
   const tr = useTr()
   const plugins = usePlugins(store)
@@ -59,7 +59,7 @@ export function MarketplaceView() {
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
-  const [section, setSection] = useState<ExtensionSection>('apps')
+  const [section, setSection] = useState<ExtensionSection>(initialSection)
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
   // Kept above the sections so a catalog entry still shows as added when its section is left and reopened.
@@ -102,6 +102,13 @@ export function MarketplaceView() {
     return () => connectors.cancel()
     // Mount only, like the view's `.task`s.
   }, [])
+
+  // A copied `codync://marketplace/...` link opens that entry once its catalog has loaded.
+  useEffect(() => {
+    if (!initialAgent) return
+    const agent = marketAgents.find((a) => a.id === initialAgent)
+    if (agent) setViewingAgent(agent)
+  }, [initialAgent, marketAgents])
 
   const submit = (q: string) => {
     void connectors.load(q)

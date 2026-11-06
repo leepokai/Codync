@@ -145,8 +145,19 @@ impl Trigger {
                 self.next(now)?.context("schedule has no future occurrence")?;
             }
             Self::Event { source, event, filters } => {
-                if !["slack", "github", "origin", "microsoftTeams", "linear", "sentry", "pagerduty", "email"]
-                    .contains(&source.as_str())
+                if ![
+                    "slack",
+                    "telegram",
+                    "discord",
+                    "github",
+                    "origin",
+                    "microsoftTeams",
+                    "linear",
+                    "sentry",
+                    "pagerduty",
+                    "email",
+                ]
+                .contains(&source.as_str())
                 {
                     bail!("unsupported event source");
                 }

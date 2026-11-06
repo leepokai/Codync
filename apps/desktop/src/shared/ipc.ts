@@ -111,6 +111,7 @@ export type WindowCommand =
   | { kind: 'newBot' }
   | { kind: 'search' }
   | { kind: 'toggleSidebar' }
+  | { kind: 'openMarketplace'; section: 'apps' | 'agents' | 'skills'; id: string }
   | { kind: 'toggleDetails' }
   | { kind: 'refresh' }
   | { kind: 'respondPermission'; ref: string; entryId: string; optionId: string }

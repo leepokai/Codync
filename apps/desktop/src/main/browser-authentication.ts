@@ -1,3 +1,20 @@
+import * as electron from 'electron'
+
+/** A codync://marketplace/<section>/<id> link: the Extensions section and entry to open. */
+function codyncLink(url: string): { section: 'apps' | 'agents' | 'skills'; id: string } | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  const scheme = parsed.protocol.replace(':', '')
+  if ((scheme !== 'codync' && scheme !== 'codync-dev') || parsed.hostname !== 'marketplace') return null
+  const [section, id] = parsed.pathname.split('/').filter(Boolean)
+  if (!id || (section !== 'apps' && section !== 'agents' && section !== 'skills')) return null
+  return { section, id }
+}
+
 /** A browser may disappear without a callback; its wait must never own the app's loading state. */
 export class AuthenticationEnded extends Error {
   readonly reason: 'cancelled' | 'timeout'
@@ -43,6 +60,16 @@ export class BrowserAuthentication {
   }
 
   handleURL(url: string) {
+    const link = codyncLink(url)
+    if (link) {
+      for (const window of electron.BrowserWindow?.getAllWindows?.() ?? []) {
+        if (window.isMinimized()) window.restore()
+        window.show()
+        window.focus()
+        window.webContents.send('app:command', { kind: 'openMarketplace', ...link })
+      }
+      return
+    }
     const pending = this.pending
     if (!pending || url.split(':')[0]?.toLowerCase() !== pending.scheme.toLowerCase()) return
     // A stale tab may return before the current one. Validate in order; a rejected callback

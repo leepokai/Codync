@@ -75,8 +75,13 @@ private val WEEKDAYS = listOf("Sundays", "Mondays", "Tuesdays", "Wednesdays", "T
             CardSection {
                 row {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(agent.title, style = Type.body, color = Palette.text)
-                        Text(tr("By {name} · Reviewed by Codync").replace("{name}", agent.creator), style = Type.caption, color = Palette.secondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(agent.title, style = Type.body, color = Palette.text)
+                            Text(tr(if (installed) "Added" else "Not added"), style = Type.caption,
+                                color = Palette.secondary, modifier = Modifier.pill())
+                        }
+                        Text(tr("Created by another OpenBot user. OpenBot reviewed it before publishing. Once added, it can act on your behalf."),
+                            style = Type.caption, color = Palette.secondary)
                     }
                 }
             }
@@ -112,9 +117,13 @@ private val WEEKDAYS = listOf("Sundays", "Mondays", "Tuesdays", "Wednesdays", "T
                 CardSection("Information") {
                     row { Text(page.instructions, style = Type.body, color = Palette.text) }
                     row {
-                        Text(tr("By {name} · reviewed by Codync · {category} · version {version}")
+                        Text(tr("Origin") + ": " + tr("Reviewed by OpenBot"), style = Type.caption, color = Palette.secondary)
+                    }
+                    row {
+                        Text(tr("By {name} · {category} · version {version} · updated {updated}")
                             .replace("{name}", agent.creator).replace("{category}", tr(MarketCategories.label(agent.category)))
-                            .replace("{version}", "${agent.version}"), style = Type.caption, color = Palette.secondary)
+                            .replace("{version}", "${agent.version}").replace("{updated}", agent.updated),
+                            style = Type.caption, color = Palette.secondary)
                     }
                 }
             }

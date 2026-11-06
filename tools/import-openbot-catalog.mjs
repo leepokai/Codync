@@ -6,7 +6,7 @@
 //
 // The output is committed. Re-running is safe: the generated folders are replaced.
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const source = resolve(process.argv[2] ?? '')
@@ -43,7 +43,9 @@ const shapeFor = (slug) => {
 /** A stable id for a skill's source: the slug OpenBot uses, in lower case. */
 const skillId = (slug) => slug.toLowerCase()
 
-const catalog = JSON.parse(readFileSync(join(production, 'catalog.json'), 'utf8'))
+const catalogFile = join(production, 'catalog.json')
+const catalog = JSON.parse(readFileSync(catalogFile, 'utf8'))
+const catalogUpdated = statSync(catalogFile).mtime.toISOString().slice(0, 10)
 
 // MARK: skills
 rmSync(join(out, 'skills'), { recursive: true, force: true })
@@ -107,6 +109,7 @@ const agents = catalog.agents.map((agent) => ({
     category: agent.category,
     creator: 'OpenBot',
     version: 4,
+    updated: catalogUpdated,
     avatarColor: colorFor(agent.avatarHue ?? 210),
     avatarShape: shapeFor(agent.slug),
     featured: agent.featured === true,
@@ -119,10 +122,28 @@ const agents = catalog.agents.map((agent) => ({
     })),
 }))
 
+// A Codync-native extra: OpenBot's workflow playbook, wired to Codync's routine canvas and tools.
+agents.push({
+    id: 'workflow-builder',
+    name: 'Workflow Builder',
+    title: 'A trigger, ordered steps and a result, drawn on the canvas as it is built',
+    instructions: 'You are Workflow Builder. Your one job: turn a repeated job into a Codync workflow the user can watch and run. A workflow is a routine with one trigger and a chain of steps: every step is another bot receiving the previous result, and the canvas shows each one as it is linked. Inputs: the job, its trigger (a clock, a webhook, a watched file or URL, or a source event), the bots that do each step and where the final result goes. Ask only for what is missing.\n\nHow you work: use the Workflow Playbook skill. First check list_bots and the available routines tools. Create the routine with save_routine and the narrowest trigger: cron with an explicit timezone for clock work, webhook for a service that can post, watch for a changed file or URL, event when a configured sender delivers one. Write one instruction per step that names its input and its named result, never "continue" or "handle it". Link each step with link_routine_bots, giving the downstream bot what it should do with the reply; chain the next bot with fromBotId. Keep the chain short and acyclic. Use list_routine_flow to confirm what was linked, then run_routine once with a test payload when the user agrees; steps show on the canvas in order. For a webhook, get routine_webhook and tell the user the URL, key and content type to set in the sending service, and say the workflow is awaiting connection until a real delivery arrives.\n\nOutput: the routine name, its trigger in plain words, each step with its bot, where the result goes, and what is still to connect. Report what the tools really saved; never claim a run or a delivery that did not happen.\n\nNever: delete or rewire another bot\'s routines without the user saying so, put secrets in instructions, or promise a trigger a sender has not been set up for. A one-off task is a routine, not a workflow: say so. Voice: plain, ordered, exact.',
+    category: 'automation',
+    creator: 'OpenBot',
+    version: 1,
+    updated: catalogUpdated,
+    avatarColor: 'cyan',
+    avatarShape: 'hex',
+    featured: true,
+    skills: ['workflow-playbook'],
+    routines: [],
+})
+
 // MARK: apps
 const apps = []
 for (const slug of readdirSync(plugins)) {
     const plugin = JSON.parse(readFileSync(join(plugins, slug, 'plugin.json'), 'utf8'))
+    const pluginUpdated = statSync(join(plugins, slug, 'plugin.json')).mtime.toISOString().slice(0, 10)
     const app = plugin.apps?.[0]
     if (!app) continue
     const auth = app.server.auth?.[0]
@@ -135,6 +156,7 @@ for (const slug of readdirSync(plugins)) {
         category: plugin.category,
         creator: plugin.creatorName,
         version: plugin.version,
+        updated: pluginUpdated,
         icon: plugin.iconUrl,
         website: plugin.websiteUrl,
         featured: ['aave', 'canva', 'notion', 'figma'].includes(plugin.slug),

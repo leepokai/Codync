@@ -1,8 +1,8 @@
-﻿//! Which coding harnesses this machine has, and how to drive each over ACP.
+//! Which coding harnesses this machine has, and how to drive each over ACP.
 //!
 //! Detection works like Orca's preflight: hydrate PATH from the user's login
 //! shell (GUI apps and launchd get a bare PATH), add the usual install dirs
-//! (Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpmâ€¦), then look for
+//! (Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm...), then look for
 //! each known CLI. Launching prefers the installed CLI's own ACP mode and falls
 //! back to the official ACP registry build (npx / uvx / downloaded binary), which
 //! is resolved only when it's tried: an installed CLI that starts never downloads
@@ -50,7 +50,7 @@ pub struct Harness {
 
 #[derive(Clone, Copy)]
 pub enum Install {
-    /// A vendor install script (`curl â€¦ | bash`), Unix only.
+    /// A vendor install script (`curl ... | bash`), Unix only.
     Script(&'static str),
     /// Vendor install scripts for Unix and for Windows (PowerShell).
     Scripts { unix: &'static str, windows: &'static str },
@@ -184,7 +184,7 @@ pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
 }
 
 /// The registry build that *is* the harness's CLI (same npm package), so it can
-/// sign in without the CLI installed. Adapters (claude-acpâ€¦) don't count.
+/// sign in without the CLI installed. Adapters (claude-acp...) don't count.
 fn registry_cli(h: &Harness) -> Option<Value> {
     let Some(Install::Npm(pkg)) = h.install else { return None };
     let agent = registry::agent(h.registry?)?;
@@ -243,19 +243,24 @@ fn credential_files(id: &str) -> &'static [&'static str] {
     }
 }
 
+/// The logout command line each harness supports, if it has one.
+fn sign_out_template(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "claude" | "opencode" => "{bin} auth logout",
+        "codex" => "{bin} logout",
+        "grok" => "{bin} --no-auto-update logout",
+        _ => return None,
+    })
+}
+
 /// The command that removes `id`'s own sign-in, with `{bin}` resolved.
 pub fn sign_out_available(id: &str) -> bool {
-    harness(id).is_some_and(|h| installed_cli(h).is_some() || !credential_files(id).is_empty())
+    harness(id).is_some() && (sign_out_template(id).is_some() || !credential_files(id).is_empty())
 }
 
 pub async fn sign_out_command(id: &str) -> anyhow::Result<String> {
     let h = harness(id).ok_or_else(|| anyhow::anyhow!("unknown agent {id}"))?;
-    let template = match id {
-        "claude" | "opencode" => "{bin} auth logout",
-        "codex" => "{bin} logout",
-        "grok" => "{bin} --no-auto-update logout",
-        _ => anyhow::bail!("{} has no sign-out command", h.name),
-    };
+    let template = sign_out_template(id).ok_or_else(|| anyhow::anyhow!("{} has no sign-out command", h.name))?;
     let bin = match installed_cli(h) {
         Some(path) => shell::quote(&path.to_string_lossy()),
         None => match registry_cli(h) {

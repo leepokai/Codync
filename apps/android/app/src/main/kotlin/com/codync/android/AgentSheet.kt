@@ -176,7 +176,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 }
             }
         }
-        if (backend.accounts != false) AgentAccountsSection(backend, state, store, check)
+        if (backend.accounts == true) AgentAccountsSection(backend, state, store, check)
         error?.let { CardSection { row { SelectionContainer { ErrorRow(it) } } } }
     }
 }

@@ -9,6 +9,9 @@ struct AgentAccount: Codable, Identifiable, Hashable, Sendable {
     let createdAt: Int64
 }
 
+/// A host reply whose fields this app doesn't need.
+private struct EmptyReply: Decodable, Sendable {}
+
 extension BotStore {
     func loadAgentModels(backend: String, account: String?) async throws -> AgentModels {
         let computerID = computer.id
@@ -54,7 +57,7 @@ extension BotStore {
         let client = try await ready()
         let host = hostId
         try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
-        _ = try await client.call("deleteAccount", ["accountId": id], timeout: 30)
+        let _: EmptyReply = try await client.call("deleteAccount", ["accountId": id], timeout: 30)
         try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
         await refreshBackends()
     }
@@ -66,7 +69,7 @@ extension BotStore {
         let client = try await ready()
         let host = hostId
         try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
-        _ = try await client.call("agentSignOut", ["backend": backend], timeout: 60)
+        let _: EmptyReply = try await client.call("agentSignOut", ["backend": backend], timeout: 60)
         try checkAgentAccountContext(computer: computerID, account: accountID, host: host)
         await refreshBackends()
     }

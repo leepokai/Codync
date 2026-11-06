@@ -45,9 +45,9 @@ Adding an account starts the agent with that profile environment:
   Antigravity). Isolated profiles are untouched.
 
 `accounts` and `signOut` on each backend in `hello` tell clients which agents
-support each action. The desktop agents panel, the bot account picker on
-desktop, iPhone and Android, and the TUI account selection all read the same
-host state; the TUI can select accounts but does not add or remove them.
+support each action. The desktop agents panel and the bot account picker on
+desktop, iPhone and Android read the same host state. The TUI keeps its
+existing Antigravity account selection and does not add or remove accounts.
 
 Host methods: `listAccounts`, `accountAuthenticate`, `deleteAccount` and
 `agentSignOut` (returns the refreshed `auth` check).

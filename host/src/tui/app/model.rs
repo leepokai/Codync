@@ -59,6 +59,8 @@ pub enum After {
     UsageOrder(usize),
     /// `markUnread`, which may have had nothing to mark.
     MarkedUnread,
+    /// The user's read of a chat they opened, and which of this screen's marks it was.
+    Opened(String, u64),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

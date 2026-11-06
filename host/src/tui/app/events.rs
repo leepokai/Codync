@@ -24,6 +24,7 @@ impl App {
                 }
                 if on {
                     self.error = None;
+                    self.relinked();
                     // Every reconnect: the host may have been updated (or replaced) meanwhile.
                     self.call("hello", json!({}), After::Hello);
                 }
@@ -181,6 +182,7 @@ impl App {
                 match after {
                     After::Hello => self.error = Some(e),
                     After::Tracked => {}
+                    After::Opened(id, mark) => self.open_failed(id, mark),
                     After::History(id) => {
                         self.history_busy.remove(&id);
                     }
@@ -215,6 +217,7 @@ impl App {
         match after {
             After::Nothing
             | After::Tracked
+            | After::Opened(..)
             | After::Answered(_)
             | After::Sheet(_)
             | After::Network(_)

@@ -32,7 +32,7 @@ function computer(bot: Partial<Bot>, answer: (bots: Map<string, Bot>) => unknown
       answers.push((accepted) => (accepted ? resolve(undefined) : reject(new Error('refused'))))
     }),
   })
-  return { reads, sent, errors, bot: () => bots.get('a')!, answer: (i: number, accepted: boolean) => answers[i]!(accepted) }
+  return { reads, sent, errors, bot: () => bots.get('a')!, answer: (i: number, accepted: boolean) => answers[i]!(accepted), performed: () => answers.length }
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve))
@@ -71,6 +71,17 @@ test('opening a chat reads it whatever is known here of it, so a mark set elsewh
   reads.open('a')
   await settle()
   assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
+})
+
+test('a queued mark starts its retry window only once the mark before it is done', async () => {
+  const { reads, answer, performed } = computer({ unread: 2 })
+  reads.markRead('a')
+  reads.markUnread('a')
+  await settle()
+  assert.equal(performed(), 1)
+  answer(0, true)
+  await settle()
+  assert.equal(performed(), 2)
 })
 
 test('opening a chat shows it read at once', () => {

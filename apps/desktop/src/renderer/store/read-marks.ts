@@ -93,12 +93,14 @@ export class ReadMarks {
   private inOrder(botId: string, perform: Perform, op: Operation, undo: () => void) {
     this.unsentOpens.delete(botId)
     const before = this.sending.get(botId)
-    const sent = perform(async (c) => {
-      await before
-      // An open before this mark may have failed while it waited: this one is newer.
-      this.unsentOpens.delete(botId)
-      return op(c)
-    }, undo)
+    // `perform`'s retry window starts when it's called, so it waits for the mark before it to start.
+    const sent = before
+      ? before.then(() => {
+        // An open before this mark may have failed while it waited: this one is newer.
+        this.unsentOpens.delete(botId)
+        return perform(op, undo)
+      })
+      : perform(op, undo)
     this.sending.set(botId, sent)
     void sent.then(() => {
       if (this.sending.get(botId) !== sent) return

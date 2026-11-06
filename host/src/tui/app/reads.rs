@@ -1,7 +1,7 @@
 //! Read marks: reading the chat on screen, and `.`, the roster's "Mark as read" and "Mark as unread". The host
 //! decides what a read does to a chat marked unread.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
@@ -21,16 +21,44 @@ pub(super) struct ReadMarks {
     pub chat_opened: bool,
     /// The last one on its way, retries included: the next waits for it, so the host gets them in the order they were made.
     last: Option<JoinHandle<()>>,
+    /// Each chat's last mark made here, numbered across all chats.
+    marks: HashMap<String, u64>,
+    made: u64,
+    /// Chats whose last mark was an open that never reached the host.
+    unsent_opens: HashSet<String>,
+    /// Those the link has come back for since: read as opened once on screen.
+    due_opens: HashSet<String>,
 }
 
 impl App {
     pub(super) fn read_what_is_on_screen(&mut self) {
         if let Some(read) = self.read_due() {
-            self.send_mark("markRead", read, After::Nothing);
+            let id = read["botId"].as_str().unwrap_or_default().to_owned();
+            let after =
+                if read["automatic"] == false { After::Opened(id, self.reads.made + 1) } else { After::Nothing };
+            self.send_mark("markRead", read, after);
         }
     }
 
+    /// Kept for `read_due` to send again, unless a newer mark for the chat was made since.
+    pub(super) fn open_failed(&mut self, id: String, mark: u64) {
+        if self.reads.marks.get(&id) == Some(&mark) {
+            self.reads.unsent_opens.insert(id);
+        }
+    }
+
+    pub(super) fn relinked(&mut self) {
+        let unsent = std::mem::take(&mut self.reads.unsent_opens);
+        self.reads.due_opens.extend(unsent);
+    }
+
     fn send_mark(&mut self, method: &'static str, body: Value, after: After) {
+        if let Some(id) = body["botId"].as_str() {
+            self.reads.made += 1;
+            self.reads.marks.insert(id.to_owned(), self.reads.made);
+            self.reads.unsent_opens.remove(id);
+            self.reads.due_opens.remove(id);
+        }
         let before = self.reads.last.take();
         self.reads.last = Some(self.client.spawn_call_after(before, method, body, after, self.tx.clone()));
     }
@@ -39,10 +67,12 @@ impl App {
     /// of it. One that's merely on screen (picked for them at start-up, back from the trace, after a resize) is read
     /// automatically, once per change of its count, and the host leaves one marked unread alone.
     fn read_due(&mut self) -> Option<Value> {
-        let opened = std::mem::take(&mut self.reads.chat_opened);
+        let picked = std::mem::take(&mut self.reads.chat_opened);
         if !self.chat_visible() || !self.term_focused {
             return None;
         }
+        let unsent = self.online && self.selected.as_ref().is_some_and(|id| self.reads.due_opens.contains(id));
+        let opened = picked || unsent;
         let bot = self.bot().filter(|b| opened || b.unread > 0)?;
         let id = bot.id.clone();
         (self.reads.reading.insert(id.clone()) || opened).then(|| json!({"botId": id, "automatic": !opened}))
@@ -79,7 +109,7 @@ impl Bot {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Click, TraceMode, Width, test_app};
+    use super::super::{Click, Msg, TraceMode, Width, test_app};
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::layout::Rect;
@@ -197,6 +227,39 @@ mod tests {
         assert_eq!(app.read_due(), None);
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert_eq!(app.read_due(), Some(by_the_user("a")));
+    }
+
+    #[tokio::test]
+    async fn an_open_that_never_reached_the_host_is_sent_again_when_the_link_comes_back() {
+        let mut app = app_with(&[("a", 0), ("b", 0)]);
+        app.online = true;
+        app.select("a");
+        app.read_what_is_on_screen();
+        let mark = app.reads.marks["a"];
+        app.on_msg(Msg::Reply(After::Opened("a".into(), mark), Err("Can't reach codync-host".into())));
+        assert_eq!(app.read_due(), None, "not before the link comes back");
+
+        app.on_msg(Msg::Online(false));
+        app.on_msg(Msg::Online(true));
+        assert_eq!(app.read_due(), Some(by_the_user("a")));
+        app.read_what_is_on_screen();
+        app.relinked();
+        assert_eq!(app.read_due(), None, "sent again once");
+    }
+
+    #[tokio::test]
+    async fn a_failed_open_is_not_sent_again_after_a_newer_mark() {
+        let mut app = app_with(&[("a", 0)]);
+        app.online = true;
+        app.select("a");
+        app.read_what_is_on_screen();
+        let mark = app.reads.marks["a"];
+        app.host_version = MARK_UNREAD_SINCE.into();
+        app.on_key(KeyEvent::from(KeyCode::Char('.')));
+        assert_ne!(app.reads.marks["a"], mark, "marked unread");
+        app.on_msg(Msg::Reply(After::Opened("a".into(), mark), Err("Can't reach codync-host".into())));
+        app.relinked();
+        assert_eq!(app.read_due(), None);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Bounded roster queries share the transcript's visible-message rules.
 
 use super::entries::row_entry;
+use super::visibility::PUBLIC;
 use super::{Entry, Store};
 use crate::LockExt;
 use anyhow::Result;
@@ -25,7 +26,7 @@ impl Store {
     ) -> Result<Vec<Entry>> {
         let mut sql = format!(
             "SELECT {COLS} FROM entries WHERE bot_id IN (SELECT value FROM json_each(?1))
-             AND seq < ?2 AND {VISIBLE}
+             AND seq < ?2 AND {PUBLIC} AND {VISIBLE}
              AND EXISTS (SELECT 1 FROM bots WHERE bots.id = entries.bot_id AND deleted = 0
                          AND COALESCE(json_extract(config, '$.hidden'), 0) = 0)"
         );
@@ -54,7 +55,7 @@ impl Store {
     pub fn roster_preview(&self, bot: &str) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut statement = c.prepare(&format!(
-            "SELECT {COLS} FROM entries WHERE bot_id = ?1 AND thread_id IS NULL AND {VISIBLE}
+            "SELECT {COLS} FROM entries WHERE bot_id = ?1 AND thread_id IS NULL AND {PUBLIC} AND {VISIBLE}
              ORDER BY seq DESC LIMIT 3"
         ))?;
         let mut rows = statement.query_map([bot], row_entry)?.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -64,12 +65,13 @@ impl Store {
 
     /// A window around a search hit in its own lane, plus its thread root.
     pub fn message_context(&self, entry: &Entry) -> Result<Vec<Entry>> {
+        anyhow::ensure!(!super::is_internal(&entry.data), "message is internal");
         let c = self.db.locked();
         let mut statement = c.prepare(&format!(
-            "SELECT {COLS} FROM entries WHERE id IN (
-               SELECT id FROM (SELECT id FROM entries WHERE bot_id = ?1 AND thread_id IS ?2 AND seq <= ?3
+            "SELECT {COLS} FROM entries WHERE {PUBLIC} AND id IN (
+               SELECT id FROM (SELECT id FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id IS ?2 AND seq <= ?3
                                ORDER BY seq DESC LIMIT 20)
-               UNION SELECT id FROM (SELECT id FROM entries WHERE bot_id = ?1 AND thread_id IS ?2 AND seq > ?3
+               UNION SELECT id FROM (SELECT id FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id IS ?2 AND seq > ?3
                                      ORDER BY seq LIMIT 20)
                UNION SELECT id FROM entries WHERE bot_id = ?1 AND id = ?2) ORDER BY seq"
         ))?;

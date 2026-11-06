@@ -345,7 +345,7 @@ It stays byte-identical until compaction or a new session.
 
 ### Instructions in every harness
 
-Codync runs 27 harnesses. The opening, with the bot's identity and memory, reaches each through the best channel
+Codync runs 28 harnesses. The opening, with the bot's identity and memory, reaches each through the best channel
 it offers (`Instructions` in `agent/bot`):
 
 1. **Claude: `_meta.systemPrompt`**, as above. claude-agent-acp 0.92 also advertises ACP's `systemPrompt`, but it
@@ -354,7 +354,7 @@ it offers (`Instructions` in `agent/bot`):
    unstable): when an agent advertises `sessionCapabilities.systemPrompt`, the opening goes as
    `{"mode": "append", "content": [text]}` on `session/new` and `session/load` (the session's current snapshot). The
    agent keeps it at system level, across compaction.
-3. **Every other agent: the first message.** A `<bot-profile>` block precedes the first prompt of a new session.
+3. **Every other agent: the first message.** A `<bot-profile>` block precedes the first prompt of a new session, and each retry until a prompt carrying it succeeds (the snapshot's `unprompted`, kept across a host restart).
    After a compaction the next prompt carries a fresh one that says it replaces any earlier profile, so the agent
    never holds two versions that disagree. The compaction is the agent's `compaction_update`, or, for an agent
    that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k.
@@ -394,10 +394,12 @@ can, the user may keep it on for one bot ([Claude Code's own memory](#claude-cod
 | Copilot CLI | Copilot Memory, on for individual plans | `--excluded-tools=store_memory,vote_memory` |
 | Qwen Code | Auto memory and its own dreaming, on | `.qwen/settings.json` in a bot's own workspace: `memory.enableManagedAutoMemory` and `enableManagedAutoDream` false. Nothing in a project folder, whose files are the user's |
 | CodeBuddy | Auto memory | `CODEBUDDY_DISABLE_AUTO_MEMORY=1` |
+| WorkBuddy | The same auto memory, in the CLI bundled with the app | `CODEBUDDY_DISABLE_AUTO_MEMORY=1` |
 | Codex, Goose, Grok, oh-my-pi, Qoder, Cortex | Off unless the user turns it on | Nothing |
 | Gemini CLI | Its system prompt has the model edit `~/.gemini/GEMINI.md` | Nothing: no switch short of replacing its system prompt or its home folder |
 | Kilo Code | Memory tools, on per project | Nothing: the only per-process switch replaces the whole config |
 | Kiro | Memory with a global setting | Nothing: no per-workspace key |
+| Hermes Agent | `MEMORY.md` and `USER.md` in `~/.hermes/memories`, on, shared by every Hermes session | Nothing: its only switches are `memory.memory_enabled` and `user_profile_enabled` in the global `~/.hermes/config.yaml` |
 | OpenCode, Cursor, Kimi, Amp, Cline, Droid, Devin, others | None found | Nothing |
 
 ### Compaction
@@ -498,7 +500,7 @@ The user can keep it on per bot, for example to share the auto-memory directory 
 sessions in the terminal. The switch sits on the memory screen with an info button on what it costs: the bot may
 remember things twice, the two memories can disagree, and forgetting something in Codync doesn't reach Claude
 Code's notes. Codync then shows the folder's `MEMORY.md` read-only, so it isn't unseen. The same switch covers
-Copilot, CodeBuddy and (in a bot's own workspace) Qwen Code. Using it instead of Codync's memory is planned:
+Copilot, CodeBuddy, WorkBuddy and (in a bot's own workspace) Qwen Code. Using it instead of Codync's memory is planned:
 [harness memory](../plans/harness-memory.md).
 
 The adapter passes `claudeCode.options.settings` and `.env` through untouched, so these settings reach the SDK.
@@ -532,6 +534,7 @@ build.
   read-only since 2.21.0 (the owner's call: the user changes memory by telling the bot).
 - **The dream log** (added green, archived red) with an info button saying what dreaming does.
 - **The harness's own memory switch** in the bot's section, off by default, with an info button; kept on, Claude Code's `MEMORY.md` shows read-only.
+- **"Shared" in place of the switch**, with an info button, where the harness keeps one memory every bot on it shares and Codync can't turn off (Gemini CLI, Hermes Agent: `harnessMemoryShared`).
 - **Notes** under each layer's facts: name, description, size and date, an over-cap mark, and a view to read one.
 - **In the chat**, only an editable handoff draft at rollover, folding to one line once sent; compactions and a
   kept handoff leave no line (2026-10-18, at the owner's request).

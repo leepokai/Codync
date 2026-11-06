@@ -89,11 +89,13 @@ struct BotSettingsForm: View {
         .font(.body)
         .background(Palette.background)
         .task { await model.refreshPlugins() }
+        // A different agent starts on its default account and model (the picker clears its own model too).
         .onChange(of: draft.backend) { _, _ in
             draft.account = nil
             draft.model = nil
             draft.modelOptions = [:]
         }
+        // An account's sign-in belongs to one computer.
         .onChange(of: model.computer.id) { _, _ in draft.account = nil }
         .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
         .codyncSheet(isPresented: $pickingFolder) {
@@ -110,7 +112,6 @@ struct BotSettingsForm: View {
             CardSection("Instructions") { instructions }
             CardSection("Agent") {
                 fallbackBanner
-                agentPicker
                 modelPicker
                 fallbackList
             }
@@ -129,34 +130,16 @@ struct BotSettingsForm: View {
         }
     }
 
-    private var agentPicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ValueRow("Agent", detail: bot?.rest(of: draft.backend)?.line) {
-                ChoicePicker(selection: Binding(get: { draft.backend }, set: { agent in
-                                 withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { draft.setAgent(agent) }
-                             }),
-                             options: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
-                             image: { AgentIcon.image(registry: model.agentRegistry($0)) })
-            }
-            if let b = model.hello?.backends.first(where: { $0.id == draft.backend }), !b.available {
-                Text(b.installHint).font(.caption).foregroundStyle(Palette.warning)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if draft.backend == "custom" {
-                TextField("ACP command, e.g. my-agent --acp", text: Binding(get: { draft.command ?? "" }, set: { draft.command = $0.isEmpty ? nil : $0 }))
-                    .font(.callout.monospaced())
-                    .plainTextInput()
-                    .fieldBox()
-            }
-        }
-    }
-
     @ViewBuilder private var modelPicker: some View {
         AgentAccountPicker(backend: draft.backend, selection: $draft.account)
         AgentModelPicker(backend: draft.backend, account: draft.account, selection: $draft.model, options: $draft.modelOptions,
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }
-                         }), bot: bot)
+                         }), bot: bot,
+                         agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
+                         onAgentChange: { draft.setAgent($0) }, command: $draft.command,
+                         installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
+                         restLine: bot?.rest(of: draft.backend)?.line)
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -210,8 +193,7 @@ struct BotSettingsForm: View {
                     Text(model.hostName).lineLimit(1)
                 }
                 if part == .all {
-                    agentPicker
-                    modelPicker
+                        modelPicker
                     fallbackList
                 }
                 ValueRow("Workspace", detail: draft.cwd.isEmpty
@@ -261,6 +243,15 @@ struct BotSettingsForm: View {
                 if model.bots.values.contains(where: { $0.manageTeam != nil }) {
                     SwitchRow("Manage the team", detail: "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.",
                               isOn: Binding(get: { draft.manageTeam ?? false }, set: { draft.manageTeam = $0 }))
+                }
+                // Each only where it applies: the computer is in a network, cloud assistants are on.
+                if draft.offeredToNetwork != nil, model.network?.joined == true {
+                    SwitchRow("Offered to the network", detail: "Bots on your other computers can see and message this bot.",
+                              isOn: Binding(get: { draft.offeredToNetwork ?? true }, set: { draft.offeredToNetwork = $0 }))
+                }
+                if draft.reachableByAssistants != nil, model.network?.assistants == true {
+                    SwitchRow("Reachable by cloud assistants", detail: "ChatGPT or Claude in your Codync account can see and message this bot.",
+                              isOn: Binding(get: { draft.reachableByAssistants ?? true }, set: { draft.reachableByAssistants = $0 }))
                 }
             }
 

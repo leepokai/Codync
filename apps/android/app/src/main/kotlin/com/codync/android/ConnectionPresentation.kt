@@ -2,10 +2,12 @@ package com.codync.android
 
 import com.codync.android.core.CloudComputer
 import com.codync.android.core.Computer
+import com.codync.android.core.ConnectionRoute
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
+import com.codync.android.core.Pairing
 
-// What the roster header, Computers & settings and the chat header say about the computer's link
+// What the roster header, Computer management and the chat header say about the computer's link
 // (iOS `ComputerStatus`, `ConnectionSummary`, `BotStore.connectionLabel`).
 
 /** Turned away by the computer: access revoked, or its identity changed. */
@@ -19,7 +21,7 @@ internal fun statusText(state: AppState): String = if (state.computers.isEmpty()
     is LinkState.Failed -> if (link.unauthorized) link.message else "Can't reach"
 }
 
-/** The status line in Computers & settings: one that's offline while its new identity is around says so. */
+/** The status line in Computer management: one that's offline while its new identity is around says so. */
 internal fun computerStatusText(state: AppState): String =
     if (state.isStale && !state.connection.unauthorized) "Older copy of this computer · ${statusText(state)}" else statusText(state)
 
@@ -39,12 +41,62 @@ internal fun connectionDescription(state: AppState): String {
         link == LinkState.Connecting -> "Connecting"
         link !is LinkState.Ready -> connectionLabel(state)
         state.mismatch != null -> "Needs update"
-        link.route == HostRoute.Relay -> "Connected through Cloudflare"
+        link.route == HostRoute.Relay -> connectedThrough(state.computers.firstOrNull()?.cloud)
         else -> "Connected over Wi-Fi or Tailscale"
     }
 }
 
 /** "1 connected", "Connecting…", "No access": the roster header's summary; with several computers, the one shown and its link. */
+/** Host of a private relay, or null when this is an official Codync cloud (those stay "Cloudflare"). */
+internal fun relayHost(cloud: String?): String? {
+    if (cloud.isNullOrBlank()) return null
+    val uri = runCatching { java.net.URI(cloud.trim()) }.getOrNull() ?: return null
+    // `URI.host` keeps an IPv6 address's brackets.
+    val name = uri.host?.lowercase() ?: return null
+    if ((name == "api.codync.dev" || name == "dev-api.codync.dev") && uri.port == -1) return null
+    return if (uri.port > 0) "$name:${uri.port}" else name
+}
+
+/** The route after a bot count in Computer management (iOS `RelayCopy.detailSuffix`). */
+internal fun routeLabel(route: HostRoute, cloud: String?): String =
+    if (route == HostRoute.Direct) "Wi-Fi/Tailscale" else relayHost(cloud)?.let { "Private relay ($it)" } ?: "Cloudflare"
+
+internal fun connectedThrough(cloud: String?): String {
+    val host = relayHost(cloud)
+    return if (host == null) "Connected through Cloudflare" else "Connected through Private relay ($host)"
+}
+
+internal fun routeTitle(route: ConnectionRoute, cloud: String?): String {
+    val host = relayHost(cloud) ?: return when (route) {
+        ConnectionRoute.Automatic -> "Auto: Wi-Fi or Tailscale, then Cloudflare"
+        ConnectionRoute.CloudflareFirst -> "Cloudflare, then Wi-Fi or Tailscale"
+        ConnectionRoute.DirectOnly -> "Wi-Fi or Tailscale only, never Cloudflare"
+    }
+    return when (route) {
+        ConnectionRoute.Automatic -> "Auto: Wi-Fi or Tailscale, then Private relay ($host)"
+        ConnectionRoute.CloudflareFirst -> "Private relay ($host), then Wi-Fi or Tailscale"
+        ConnectionRoute.DirectOnly -> "Wi-Fi or Tailscale only, never Private relay ($host)"
+    }
+}
+
+/** The route's short name on the Connection row; the menu keeps `routeTitle` (iOS `RelayCopy.routeShortTitle`). */
+internal fun routeShortTitle(route: ConnectionRoute, cloud: String?): String = when (route) {
+    ConnectionRoute.Automatic -> "Auto"
+    ConnectionRoute.CloudflareFirst -> if (relayHost(cloud) == null) "Cloudflare first" else "Private relay first"
+    ConnectionRoute.DirectOnly -> "Wi-Fi/Tailscale only"
+}
+
+internal fun pairingLine(cloud: String?): String {
+    val host = relayHost(cloud)
+    return if (host == null) "Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted."
+    else "Connects on Wi-Fi, over Tailscale, or from anywhere through Private relay ($host), on its own. End-to-end encrypted."
+}
+
+/** The pairing page's line. Parsing stays here so a view only renders the sentence. */
+internal fun pairingLine(pasted: String, scheme: String): String =
+    pairingLine(runCatching { Pairing.parse(pasted, scheme).computer.cloud }.getOrNull())
+
+/** "1 connected", "Connecting…", "No access": the roster header's summary of its computers. */
 internal fun connectionSummary(state: AppState): String = when {
     state.computers.isEmpty() -> "Computers"
     state.computers.size > 1 -> "${state.hostName} · ${connectionLabel(state)}"

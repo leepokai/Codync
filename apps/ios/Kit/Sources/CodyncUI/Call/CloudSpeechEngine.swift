@@ -13,7 +13,7 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "Call")
 @Observable
 final class CloudSpeechEngine: VoiceEngine {
     private(set) var phase: VoicePhase = .starting {
-        didSet { onActivityChanged?(!ended && phase.isActive) }
+        didSet { onActivityChanged?(!ended && phase.holdsCall) }
     }
     private(set) var level: Float = 0
     var muted = false {
@@ -33,9 +33,11 @@ final class CloudSpeechEngine: VoiceEngine {
 
     private let speech: Speech
     private let chunk: Int
-    private let engine = AVAudioEngine()
+    /// Created when the microphone first opens: touching the audio system starts it.
+    @ObservationIgnored private lazy var engine = AVAudioEngine()
     private var audioRunning = false
     private var ended = false
+    private var events: AudioSessionEvents?
 
     // Listening: PCM since speech began (plus a little before), and when it last went quiet.
     private var preroll = Data()
@@ -77,30 +79,67 @@ final class CloudSpeechEngine: VoiceEngine {
 
     func start() async {
         guard await AVAudioApplication.requestRecordPermission() else {
-            return fail("Allow the microphone for Codync in Settings to talk to your bots.")
+            return fail("Allow the microphone for Codync in Settings to talk to your bots.", .microphone)
         }
         guard !ended else { return }
         do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
-                try session.setActive(true)
-            let input = engine.inputNode
-            let format = try MicTap.format(of: input)
-            input.installTap(onBus: 0, bufferSize: 2048, format: format, block: MicTap.pcm16k(from: format) { [weak self] pcm, level in
-                Task { @MainActor in self?.heard(pcm, level: level) }
-            })
-            engine.prepare()
-            try engine.start()
+            try CallAudioSession.activate()
+            try runMic()
             audioRunning = true
         } catch {
-            return fail("Couldn't use the microphone: \(error.localizedDescription)")
+            return fail("Couldn't use the microphone: \(error.localizedDescription)", .microphone)
         }
-        phase = .listening
+        // A route change (AirPods) stops the engine: the microphone picks up again on the new route.
+        events = AudioSessionEvents(engine: engine, interrupted: { [weak self] in self?.interrupted($0) },
+                                    reconfigured: { [weak self] in
+            guard let self, !self.ended, self.audioRunning, self.phase != .interrupted, !self.engine.isRunning else { return }
+            do { try self.runMic() } catch { self.fail("Couldn't use the microphone: \(error.localizedDescription)", .microphone) }
+        })
+    }
+
+    /// Taps the microphone in its current format and starts the engine.
+    private func runMic() throws {
+        let input = engine.inputNode
+        input.removeTap(onBus: 0)
+        let format = try MicTap.format(of: input)
+        input.installTap(onBus: 0, bufferSize: 2048, format: format, block: MicTap.pcm16k(from: format) { [weak self] pcm, level in
+            Task { @MainActor in self?.heard(pcm, level: level) }
+        })
+        engine.prepare()
+        try engine.start()
+    }
+
+    /// Back from an interruption (it ended, or the user tapped the call's line): listening once the microphone
+    /// delivers, then the replies that waited.
+    func resume() {
+        guard !ended, phase == .interrupted else { return }
+        do {
+            try CallAudioSession.activate()
+            try runMic()
+        } catch {
+            return fail("Couldn't use the microphone: \(error.localizedDescription)", .microphone)
+        }
+        phase = .reconnecting
+    }
+
+    private func interrupted(_ change: AudioInterruption) {
+        guard !ended else { return }
+        switch change {
+        case .began:
+            guard phase.isActive else { return }
+            stopSpeaking()
+            dropUtterance()
+            phase = .interrupted
+        case .ended(let shouldResume):
+            if shouldResume { resume() }
+        }
     }
 
     func end() {
         ended = true
         onActivityChanged?(false)
+        events?.stop()
+        events = nil
         stopSpeaking()
         transcribing?.cancel()
         if audioRunning {
@@ -108,7 +147,7 @@ final class CloudSpeechEngine: VoiceEngine {
             engine.stop()
             audioRunning = false
         }
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        CallAudioSession.release()
     }
 
     func interrupt() {
@@ -124,6 +163,11 @@ final class CloudSpeechEngine: VoiceEngine {
     // MARK: listening
 
     private func heard(_ pcm: Data, level: Float) {
+        // Listening once the microphone actually delivers.
+        if !ended, phase.isConnecting {
+            phase = .listening
+            if !queue.isEmpty, player == nil, next == nil { playNext() }
+        }
         guard !ended, !muted, phase == .listening, Date.now >= deafUntil else { return }
         self.level = level
         if level > Self.threshold {
@@ -158,7 +202,7 @@ final class CloudSpeechEngine: VoiceEngine {
                 speech.send(text)
             } catch {
                 log.error("transcribe: \(error.localizedDescription, privacy: .public)")
-                self?.fail(error.localizedDescription)
+                self?.fail(error.localizedDescription, .provider)
             }
         }
     }
@@ -178,7 +222,8 @@ final class CloudSpeechEngine: VoiceEngine {
     private func say(_ text: String) {
         guard !ended, !phase.isFailed, phase != .starting, !text.isEmpty else { return }
         queue += Self.clips(text, limit: chunk)
-        if player == nil, next == nil { playNext() }
+        // Interrupted or reconnecting, it waits for the audio to be back.
+        if phase.isActive, player == nil, next == nil { playNext() }
     }
 
     private func playNext() {
@@ -254,9 +299,9 @@ final class CloudSpeechEngine: VoiceEngine {
         player = nil
     }
 
-    private func fail(_ message: String) {
+    private func fail(_ message: String, _ kind: VoiceFailureKind) {
         end()
-        phase = .failed(message)
+        phase = .failed(message, kind)
     }
 
     /// Sentences grouped into clips of at most `limit` characters (longer sentences are cut).

@@ -86,27 +86,28 @@ import kotlinx.coroutines.launch
     delete: () -> Unit,
     selected: Boolean = false,
 ) {
+    var confirmNewSession by remember(bot.id) { mutableStateOf(false) }
     Box(
         Modifier.fillMaxWidth()
             .then(if (selected) Modifier.clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(horizontal = 8.dp) else Modifier)
             .contextActions(
             onClick = { store.openBot(bot.id) },
-            reorder = drag,
+            reorder = drag.takeUnless { bot.lead },
             preview = { BotPeekCard(bot, state, store, nowMillis) },
         ) {
-            botRosterActions(bot, store, edit, delete)
+            botRosterActions(bot, store, edit, delete) { confirmNewSession = true }
         }.semantics {
             contentDescription = bot.name
             if (selected) this.selected = true
             customActions = buildList {
-                add(CustomAccessibilityAction(if (bot.pinned) "Unpin" else "Pin") { store.toggleBotPin(bot); true })
+                if (!bot.lead) add(CustomAccessibilityAction(if (bot.pinned) "Unpin" else "Pin") { store.toggleBotPin(bot); true })
                 if (bot.unread > 0) {
                     add(CustomAccessibilityAction("Mark as read") { store.markBotRead(bot); true })
                 }
                 if (bot.status == "working" && "stop:${bot.id}" !in state.busy) {
                     add(CustomAccessibilityAction("Stop") { store.stopBot(bot); true })
                 }
-                add(CustomAccessibilityAction("Hide from list") { store.hideBotFromRoster(bot); true })
+                if (!bot.lead) add(CustomAccessibilityAction("Hide from list") { store.hideBotFromRoster(bot); true })
                 if (drag != null) {
                     for ((offset, title) in listOf(-1 to "Move up", 1 to "Move down")) {
                         add(CustomAccessibilityAction(title) { moved(roster(state.bots), bot.id, offset)?.let(store::reorder) != null })
@@ -116,6 +117,10 @@ import kotlinx.coroutines.launch
         },
     ) {
         BotRow(bot, state, nowMillis = nowMillis, onStop = { store.stopBot(bot) })
+    }
+    CodyncDialog("Start a new session?", confirmNewSession, { confirmNewSession = false },
+        message = "The conversation stays here, but the agent starts with a fresh context.") {
+        listOf(DialogAction("New session") { store.command("newSession", body("botId" to bot.id)) })
     }
 }
 
@@ -139,7 +144,8 @@ import kotlinx.coroutines.launch
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (density == UiDensity.Compact) 2.dp else 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (bot.pinned) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
+                    if (bot.lead) Symbol("star.fill", size = 13.dp, tint = Palette.tertiary, contentDescription = "Lead bot")
+                    else if (bot.pinned) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
                     Text(
                         bot.name,
                         Modifier.weight(1f, fill = false),
@@ -256,6 +262,7 @@ internal fun messagePreview(text: String): String {
     reorderActive: Boolean,
     content: @Composable () -> Unit,
 ) {
+    if (bot.lead) { content(); return }
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val haptics = LocalCodyncHaptics.current

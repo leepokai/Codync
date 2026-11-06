@@ -1,12 +1,12 @@
 # Codync
 
-> Codync is the open-source (Apache 2.0) Grok Bot alternative, and a Muse and Dots alternative too. Free. It turns the AI agents on your own computer (Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more over the Agent Client Protocol) into persistent named bots, for code and everyday tasks, that you message from an iPhone, a Mac, a Windows PC, a Linux desktop or a terminal.
+> Codync is the open-source (Apache 2.0) Grok Bot alternative, and a Muse and Dots alternative too. Free. It is agent-agnostic and bring-your-own-subscription: it turns the AI agents on your own computer (Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more over the Agent Client Protocol), signed in with the plans you already pay for, into persistent named bots, for code and everyday tasks, that you message from an iPhone, a Mac, a Windows PC, a Linux desktop or a terminal.
 
 Key facts:
 
 - Price: $0, every feature included. No subscription, no paid tier, no in-app purchases. You pay only your agent's provider, through the plan or API key you already have (for example Claude Code with a Claude plan, Codex with a ChatGPT plan).
 - Where it runs: `codync-host`, one Rust binary, on macOS, Windows (x64, bundled in the desktop app) or Linux (desktop or headless server, static binary for x86_64 and arm64). Bots, chats and memory stay on that computer.
-- Clients: native SwiftUI iPhone app (iOS 18+), one Electron desktop app for macOS, Windows and Linux, and a terminal UI (`codync-host tui`) that works over SSH.
+- Clients: native SwiftUI iPhone app (iOS 26+), one Electron desktop app for macOS, Windows and Linux, and a terminal UI (`codync-host tui`) that works over SSH.
 - Features: persistent bots with their own agent, project folder and instructions; group chats where bots answer in turn; quote replies; bots asking each other for help; approval cards (allow once, always allow, deny) on the phone; per-bot memory; routines on a schedule or webhook; connectors from the MCP registry, apps through Composio, and skills; agent fallbacks (when a bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent in its list carries on in the same chat); SSH computers in the Mac and Linux desktop app, their bots in the same sidebar; remote screen over WebRTC; voice calls; "needs you" and "done" push notifications.
 - Remote access: a free Cloudflare relay, end-to-end encrypted between phone and computer, or a direct connection on the same network or Tailscale. No account required; pairing is a QR code.
 - Not affiliated with Grok Bot, Muse, Dots, Anthropic, OpenAI or any agent vendor.
@@ -28,12 +28,19 @@ Key facts:
 - [codync-mem](https://www.codync.dev/codync-mem): the open-source Rust crate behind the bots' memory (Markdown files the bot keeps, and the rules for who may change them)
 - [Source code on GitHub](https://github.com/leepokai/Codync): README, install guide and docs
 - [Discord](https://discord.gg/KBAX3Qznxh): community, help and feedback
-- [Group chats and replies](https://github.com/leepokai/Codync/blob/main/docs/features/groups-and-replies.md)
-- [Bot collaboration](https://github.com/leepokai/Codync/blob/main/docs/features/bot-collaboration.md)
-- [Agent fallbacks](https://github.com/leepokai/Codync/blob/main/docs/features/agent-fallback.md)
-- [SSH computers](https://github.com/leepokai/Codync/blob/main/docs/guides/accounts-and-ssh.md#desktop-computers-approvals-and-ssh)
-- [Remote access and relay](https://github.com/leepokai/Codync/blob/main/docs/reference/remote-relay.md)
-- [Linux servers](https://github.com/leepokai/Codync/blob/main/docs/guides/linux-servers.md)
+- [User manual](https://www.codync.dev/docs): how to set up and use Codync, page by page
+- [Getting started](https://www.codync.dev/docs/getting-started)
+- [Bots](https://www.codync.dev/docs/bots) and [agents](https://www.codync.dev/docs/agents)
+- [Group chats](https://www.codync.dev/docs/groups)
+- [Teamwork](https://www.codync.dev/docs/teamwork)
+- [Cloud assistants](https://www.codync.dev/docs/cloud-assistants): the Codync connector for ChatGPT, Claude and other MCP clients
+- [Routines](https://www.codync.dev/docs/routines)
+- [Memory](https://www.codync.dev/docs/memory)
+- [Connectors and skills](https://www.codync.dev/docs/connectors-and-skills)
+- [Agent fallbacks](https://www.codync.dev/docs/agent-fallbacks)
+- [Remote access](https://www.codync.dev/docs/remote-access): relay, direct connection, pairing, SSH computers
+- [Linux servers](https://www.codync.dev/docs/linux-servers)
+- [Privacy](https://www.codync.dev/docs/privacy): what stays on your computer and what Codync's services see
 
 ## Optional
 

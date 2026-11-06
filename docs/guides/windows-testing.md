@@ -6,9 +6,10 @@ e2e); use the VM for a full e2e, or when a change or a bug depends on Windows it
 `cmd.exe`, `.cmd` shims, the service, timing). The VM slows the whole Mac down: start it for the
 check and stop it as soon as the check is done.
 
-The Windows host CI runs `cargo test --workspace -- --test-threads=1`: fixture
-hosts contend on process-global memory scan locks and disk/process startup.
-Tests still exercise concurrent actors internally; assertions and timeouts stay unchanged.
+Host CI runs `cargo nextest run --workspace --profile ci` on every OS (`host/.config/nextest.toml`):
+each test runs in its own process, so fixture hosts no longer contend on process-global memory scan
+locks and Windows runs them in parallel too. A test that fails and then passes on a retry is
+reported as FLAKY instead of failing the run: fix it rather than lean on the retry.
 
 ## The VM
 

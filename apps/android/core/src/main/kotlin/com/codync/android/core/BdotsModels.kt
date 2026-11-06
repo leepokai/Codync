@@ -152,10 +152,11 @@ private fun Entry.permissionOption(vararg kinds: String): String? =
  * message has followed (the bot has not moved on from them), newest first. Shapes are those the host really writes.
  */
 fun collectPendingDecisions(entries: List<Entry>): List<PendingDecision> {
-    val lastReply = entries.filter { it.kind == "user" || it.kind == "agent" }.groupBy { it.botId }
+    val visible = entries.visibleEntries()
+    val lastReply = visible.filter { it.kind == "user" || it.kind == "agent" }.groupBy { it.botId }
         .mapValues { (_, list) -> list.maxOf { it.seq } }
     val out = mutableListOf<PendingDecision>()
-    for (e in entries) {
+    for (e in visible) {
         val handoff = e.data["takeoverRequest"] as? JsonObject
         when {
             e.kind == "permission" && e.status == "pending" -> out += PendingDecision(
@@ -193,7 +194,7 @@ data class DeliverableItem(
 fun collectDeliverables(entries: List<Entry>): List<DeliverableItem> {
     val seen = mutableSetOf<String>()
     val out = mutableListOf<DeliverableItem>()
-    for (e in entries) {
+    for (e in entries.visibleEntries()) {
         for (f in e.files) {
             if (f.id.isBlank() || !seen.add(f.id)) continue
             out += DeliverableItem(

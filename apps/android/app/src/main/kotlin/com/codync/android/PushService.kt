@@ -27,7 +27,6 @@ import kotlinx.serialization.json.*
 object PushPreferences {
     private fun prefs(context: Context) = context.getSharedPreferences("codync-push", Context.MODE_PRIVATE)
     fun activeUser(context: Context): String? = prefs(context).getString("user", null)
-    fun enabled(context: Context) = prefs(context).getBoolean("enabled", true)
     fun tasks(context: Context) = prefs(context).getBoolean("tasks", true)
     fun asked(context: Context) = prefs(context).getBoolean("asked", false)
     fun markAsked(context: Context) { prefs(context).edit().putBoolean("asked", true).apply() }
@@ -36,8 +35,16 @@ object PushPreferences {
     fun active(context: Context, user: String?) = synchronized(this) { prefs(context).edit().putString("user", user).putBoolean("retired", false).commit() }
     fun retired(context: Context) = prefs(context).getBoolean("retired", false)
     fun retire(context: Context) = synchronized(this) { prefs(context).edit().putBoolean("retired", true).commit() }
-    fun enabled(context: Context, enabled: Boolean) { prefs(context).edit().putBoolean("enabled", enabled).commit() }
     fun tasks(context: Context, enabled: Boolean) { prefs(context).edit().putBoolean("tasks", enabled).commit() }
+    /** 2.28.0 had one push switch for every computer; switched off, it becomes each saved computer's own, once (iOS `splitPushSwitch`). */
+    fun splitSwitch(context: Context) {
+        synchronized(this) {
+            val prefs = prefs(context)
+            if (!prefs.contains("enabled")) return
+            if (!prefs.getBoolean("enabled", true)) LocalStore.pushOffEverywhere(context)
+            prefs.edit().remove("enabled").commit()
+        }
+    }
     fun reset(context: Context) {
         val token = fid(context)
         prefs(context).edit().clear().putString("fid", token).commit()
@@ -84,7 +91,7 @@ object PushDelivery {
             feed.all().forEach { active.call("unregisterActivity", body("botId" to it.botId)) }
             feed.clear()
         }
-        if (!PushPreferences.enabled(context) || !permitted) {
+        if (!computer.notifications || !permitted) {
             active.call("unregisterDevice")
             if (!shown || !permitted || !PushPreferences.tasks(context) || feed.all().none { !it.finished }) return
         }
@@ -97,7 +104,7 @@ object PushDelivery {
             }.addOnFailureListener { error -> continuation.resumeWith(Result.failure(error)) }
         }
         val identity = withContext(Dispatchers.IO) { local.identity() }
-        if (PushPreferences.enabled(context)) {
+        if (computer.notifications) {
             val ticket = PushRelay.ticket(BuildConfig.PUSH_RELAY_URL, token, local.referenceId, computer.id)
             currentCoroutineContext().ensureActive()
             active.call("registerDevice", buildJsonObject {
@@ -115,6 +122,7 @@ object PushDelivery {
     suspend fun background(context: Context) = gate.withLock {
         if (!BuildConfig.PUSH_CONFIGURED) return@withLock
         if (PushPreferences.retired(context)) return@withLock
+        withContext(Dispatchers.IO) { PushPreferences.splitSwitch(context) }
         val local = LocalStore(context, PushPreferences.activeUser(context) ?: "local")
         val computers = withContext(Dispatchers.IO) { local.computers() }
         if (computers.isEmpty() || !local.hasIdentity()) return@withLock
@@ -176,12 +184,13 @@ class PushService : FirebaseMessagingService() {
             synchronized(PushPreferences) {
             try {
                 if (PushPreferences.retired(context)) return
+                PushPreferences.splitSwitch(context)
                 val user = PushPreferences.activeUser(context)
                 val scope = LocalStore.referenceId(user ?: "local")
                 if (data["ctx"] != scope || data["kind"] !in setOf("alert", "task")) return
                 val local = LocalStore(context, user ?: "local")
                 val computerId = data["computerId"] ?: return
-                if (local.computers().none { it.id == computerId }) return
+                val computer = local.computers().firstOrNull { it.id == computerId } ?: return
                 val botId = data["botId"]?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,128}")) } ?: return
                 if (!context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) return
                 NotificationDisplay.channels(context)
@@ -191,7 +200,7 @@ class PushService : FirebaseMessagingService() {
                     NotificationDisplay.task(context, scope, computerId, watch)
                     return
                 }
-                if (!PushPreferences.enabled(context) || PushDelivery.foreground) return
+                if (!computer.notifications || PushDelivery.foreground) return
                 var alert = PushAlert(title = context.getString(R.string.app_name), body = "A bot has an update.")
                 try {
                     if (local.hasIdentity()) {

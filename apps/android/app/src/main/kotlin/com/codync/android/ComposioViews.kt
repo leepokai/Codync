@@ -65,12 +65,10 @@ import kotlinx.coroutines.launch
                 loading -> SkeletonRows()
                 apps.items.isEmpty() -> Text(if (query.isEmpty()) "Couldn't load apps." else "No apps match “$query”.", style = Type.body, color = Palette.secondary)
                 else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (app in apps.visible) MarketRow(app.name, app.description ?: app.slug, app.connected, addLabel = "Connect",
+                    for (app in apps.items) MarketRow(app.name, app.description ?: app.slug, app.connected, addLabel = "Connect",
                         icon = { AppLogo(app.logo, app.name) }) { connecting = app }
                 }
             }
-            if (!loading && apps.hasHidden && status?.configured == true)
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SecondaryButton("Load more apps") { apps = apps.reveal() } }
             error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
             if (status?.configured == true) Row(Modifier.plainButton { settingUp = true }, verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {

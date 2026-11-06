@@ -241,7 +241,10 @@ pub(crate) fn dispatch_bot_turn(hub: &Hub, bot_id: &str, text: &str, from: &str)
     let row = hub.store.bot(bot_id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow::anyhow!("unknown bot"))?;
     let lane = Lane::main(bot_id);
     let turn = hub.store.max_turn(bot_id) + 1;
-    let data = json!({"text": text, "status": "queued", "from": from});
+    let mut data = json!({"text": text, "status": "queued", "from": from});
+    if from == "proactive" {
+        data["internal"] = true.into();
+    }
     let entry =
         hub.add_entry(&lane, EntryKind::User, turn, &data).ok_or_else(|| anyhow::anyhow!("couldn't save message"))?;
     if !row.config.is_group() && !crate::external::is_external(&row.config) {

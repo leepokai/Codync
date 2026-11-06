@@ -2,14 +2,35 @@ import AVFoundation
 import CodyncKit
 import Foundation
 
+/// A call's audio, the same on every engine (and on Android and the desktop): connecting until the provider confirmed
+/// the session and the microphone delivers, then listening or speaking; reconnecting after a drop, interrupted while
+/// another app (a phone call, Siri) has the audio, failed when it can't go on.
 enum VoicePhase: Equatable {
     case starting
     case listening
     case speaking
-    case failed(String)
+    case reconnecting
+    case interrupted
+    case failed(String, VoiceFailureKind)
 
     var isFailed: Bool { if case .failed = self { true } else { false } }
     var isActive: Bool { self == .listening || self == .speaking }
+    /// The connecting line shows: not ready yet, or ready again soon.
+    var isConnecting: Bool { self == .starting || self == .reconnecting }
+    /// The call still holds its transport and hears the computer (a reconnect or an interruption doesn't end it).
+    var holdsCall: Bool { isActive || self == .reconnecting || self == .interrupted }
+}
+
+/// Why a call's engine gave up, for analytics (`voice_call_quality`).
+enum VoiceFailureKind: String, Sendable {
+    case microphone, connection, provider
+}
+
+/// How often a dropped provider connection is tried again before the call falls back to on-device voice: after
+/// these waits, in seconds.
+@MainActor
+enum Reconnect {
+    static var delays: [Double] = [1, 2, 4]
 }
 
 /// What carries a call's audio: on-device speech (default) or a realtime model on the user's own key.
@@ -32,9 +53,27 @@ protocol VoiceEngine: AnyObject, Observable {
     func speak(reply: String)
     /// A notice from the computer (an approval is waiting) to say.
     func announce(_ notice: String)
+    /// What the bot is doing while it works, from the computer: for a realtime voice to mention.
+    func progress(_ text: String)
+    /// Picks the audio up again after an interruption that didn't end on its own (the user taps the call's line).
+    func resume()
 }
 
 extension VoiceEngine {
+    /// What the computer tells the call's voice, handed to the method that says it.
+    func hear(_ cue: CallCue) {
+        switch cue.kind {
+        case .reply: speak(reply: cue.text)
+        case .notice: announce(cue.text)
+        case .progress: progress(cue.text)
+        }
+    }
+
+    /// Engines that read replies aloud have nothing to say about progress.
+    func progress(_ text: String) {}
+
+    func resume() {}
+
     /// The engine's name in analytics.
     var analyticsName: AnalyticsEvent.VoiceEngine {
         if self is CloudSpeechEngine { return .cloud }
@@ -128,6 +167,14 @@ enum VoiceSettings {
             else { ["TW", "HK", "MO"].contains(Locale.current.region?.identifier ?? "") }
         guard traditional else { return text }
         return text.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? text
+    }
+
+    /// What a call's engine is built from (`CallView.begin`): a different one picked mid-call takes over the call.
+    static func engineChoice(_ provider: VoiceProvider?) -> String {
+        guard let provider else { return "device \(UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey) ?? "")" }
+        return isSpeechMode(provider)
+            ? "\(provider.rawValue) speech \(transcribeModel(provider)) \(speechModel(provider)) \(voice(provider))"
+            : "\(provider.rawValue) \(model(provider)) \(voice(provider))"
     }
 
     static func voiceKey(_ provider: VoiceProvider) -> String { "callVoice.\(provider.rawValue)" }

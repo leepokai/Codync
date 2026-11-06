@@ -1,21 +1,21 @@
 package com.codync.android
 
-import android.webkit.JavascriptInterface
+import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import com.codync.android.core.MINI_APP_ORIGIN
+import com.codync.android.core.MiniAppNavigation
+import com.codync.android.core.miniAppHasVirtualOrigin
+import com.codync.android.core.miniAppNavigation
 import com.codync.android.core.MiniAppAddress
-import com.codync.android.core.MiniAppAnswer
 import com.codync.android.core.miniAppPolicy
 import java.io.ByteArrayInputStream
 import java.util.Base64
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonPrimitive
 
 private const val BRIDGE_PATH = "/_codync_bridge.js"
 private val headTag = Regex("<head[^>]*>", RegexOption.IGNORE_CASE)
@@ -24,25 +24,55 @@ private val headTag = Regex("<head[^>]*>", RegexOption.IGNORE_CASE)
 internal class MiniAppWebClient(
     private val address: MiniAppAddress,
     private val store: AppStore,
+    private val pageStarted: (String?) -> Unit,
     private val onFailure: (String) -> Unit,
 ) : WebViewClient() {
+    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+        when (miniAppNavigation(address, request.url.toString())) {
+            MiniAppNavigation.InApp -> false
+            MiniAppNavigation.Browser -> { openBrowser(view, request.url); true }
+            MiniAppNavigation.Blocked -> { onFailure("This mini-app cannot open that address."); true }
+        }
+
+    override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+        pageStarted(url)
+        if (url != null && miniAppNavigation(address, url) != MiniAppNavigation.InApp) {
+            // POST navigations do not call shouldOverrideUrlLoading. They cannot retain the bridge either.
+            view.stopLoading()
+            if (miniAppNavigation(address, url) == MiniAppNavigation.Browser) openBrowser(view, Uri.parse(url))
+            else onFailure("This mini-app cannot open that address.")
+        }
+    }
+
+    private fun openBrowser(view: WebView, url: Uri) {
+        try {
+            view.context.startActivity(Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (error: Exception) {
+            onFailure("No browser is available to open this link.")
+        }
+    }
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
         val url = request.url
-        if (!url.toString().startsWith(MINI_APP_ORIGIN)) return null
+        if (!miniAppHasVirtualOrigin(url.toString())) {
+            return if (request.isForMainFrame) response(403, "text/plain", "Open external pages in your browser".toByteArray(), "") else null
+        }
         val path = url.path.orEmpty()
-        if (path == BRIDGE_PATH) return response(200, "text/javascript", miniAppBridgeScript().toByteArray(), "")
+        if (path == BRIDGE_PATH && !request.isForMainFrame) {
+            return response(200, "text/javascript", miniAppBridgeScript().toByteArray(), "")
+        }
         val relative = address.relativePath(path) ?: return response(403, "text/plain", "Outside this mini-app".toByteArray(), "")
         if (request.method != "GET") return response(405, "text/plain", ByteArray(0), "")
         val target = url.encodedQuery?.let { "$relative?$it" } ?: relative
         return try {
             val answer = runBlocking { store.appRequest(address, "GET", target) }
             val bytes = Base64.getDecoder().decode(answer.body)
-            val isPage = answer.contentType.startsWith("text/html")
+            val isPage = request.isForMainFrame && answer.contentType.startsWith("text/html")
             response(answer.status, answer.contentType, if (isPage) withBridge(bytes) else bytes, answer.csp)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            if (request.isForMainFrame) onFailure(error.message ?: "Could not reach the computer.")
+            if (request.isForMainFrame) view.post { onFailure(error.message ?: "Could not reach the computer.") }
             response(502, "text/plain", ByteArray(0), "")
         }
     }
@@ -59,30 +89,5 @@ internal class MiniAppWebClient(
         val headers = mutableMapOf("Cache-Control" to "no-store")
         miniAppPolicy(csp).takeIf { it.isNotEmpty() }?.let { headers["Content-Security-Policy"] = it }
         return WebResourceResponse(mime, "utf-8", status, if (status < 400) "OK" else "Error", headers, ByteArrayInputStream(body))
-    }
-}
-
-/** What the page's `fetch` calls reach: it relays a request to the host and returns the answer to the page. */
-internal class MiniAppBridge(
-    private val address: MiniAppAddress,
-    private val store: AppStore,
-    private val scope: CoroutineScope,
-    private val view: WebView,
-) {
-    @JavascriptInterface fun request(id: Int, method: String, path: String, body: String) {
-        scope.launch {
-            val answer = try {
-                val relative = address.relativePath(path.substringBefore('?')) ?: error("Outside this mini-app")
-                val query = path.substringAfter('?', "")
-                store.appRequest(address, method, if (query.isEmpty()) relative else "$relative?$query", body)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                MiniAppAnswer(502, "application/json", "", Base64.getEncoder().encodeToString(
-                    """{"error":${JsonPrimitive(error.message ?: "Could not reach the computer.")}}""".toByteArray()))
-            }
-            val reply = "window.__codyncAnswer($id,${answer.status},${JsonPrimitive(answer.contentType)},${JsonPrimitive(answer.body)})"
-            view.post { view.evaluateJavascript(reply, null) }
-        }
     }
 }

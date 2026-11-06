@@ -5,7 +5,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileSink } from '../main/file-sink.ts'
-import { decodeFileChunk, FILE_CHUNK_SIZE, saveName } from './files.ts'
+import { decodeFileChunk, FILE_CHUNK_SIZE, readSharedFile, saveName } from './files.ts'
 
 test('verified downloads preserve binary and empty files and replace only on success', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'codync-download-'))
@@ -90,4 +90,12 @@ test('cancelling an outstanding chunk cannot write or commit a late response', a
   assert.equal(writes, 0)
   assert.equal(commits, 0)
   assert.equal(downloads.states.has('id'), false)
+})
+
+test('a shared file read whole is checked against its digest', async () => {
+  const data = Buffer.alloc(FILE_CHUNK_SIZE + 5, 7)
+  const file = { id: 'id', name: 'picture.png', size: data.length, sha256: createHash('sha256').update(data).digest('hex') }
+  const read = async (offset: number) => ({ data: data.subarray(offset, offset + FILE_CHUNK_SIZE).toString('base64'), size: data.length })
+  assert.deepEqual(Buffer.from(await readSharedFile(file, read)), data)
+  await assert.rejects(readSharedFile({ ...file, sha256: '0'.repeat(64) }, read), /integrity/)
 })

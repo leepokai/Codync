@@ -1,18 +1,6 @@
 import CodyncKit
 import SwiftUI
 
-struct MarketSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.tr(title)).font(.headline).foregroundStyle(Palette.text).padding(.leading, 4)
-            content
-        }
-    }
-}
-
 /// Two columns on wide screens, one on a phone.
 struct ItemGrid<Content: View>: View {
     @ViewBuilder let content: Content
@@ -116,6 +104,15 @@ struct SkeletonGrid: View {
     @State private var dim = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.tr("Loading…")).font(.footnote).foregroundStyle(Palette.secondary)
+            rows
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.tr("Loading…"))
+    }
+
+    private var rows: some View {
         ItemGrid {
             ForEach(0..<4, id: \.self) { _ in
                 HStack(spacing: 14) {

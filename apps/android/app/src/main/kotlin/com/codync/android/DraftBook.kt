@@ -13,8 +13,8 @@ import kotlinx.serialization.json.*
 
 @Serializable
 data class ComposerDraft(val botId: String, val threadId: String? = null, val text: String = "",
-    val files: List<OutgoingFile> = emptyList(), val nonce: String = UUID.randomUUID().toString()) {
-    val lane: String get() = lane(botId, threadId)
+    val files: List<OutgoingFile> = emptyList(), val nonce: String = UUID.randomUUID().toString(), val draftKey: String? = null) {
+    val lane: String get() = draftKey ?: lane(botId, threadId)
     companion object {
         fun lane(botId: String, threadId: String?): String = JsonArray(listOf(JsonPrimitive(botId), threadId?.let(::JsonPrimitive) ?: JsonNull)).toString()
     }
@@ -63,6 +63,7 @@ class DraftBook(private val directory: File, computerId: String) {
         val outgoing = if (checkPaths) File(directory, "outgoing").canonicalFile else null
         for (draft in drafts) {
             require(draft.botId.isNotBlank() && draft.botId.length <= 128 && (draft.threadId == null || draft.threadId.isNotBlank() && draft.threadId.length <= 128))
+            require(draft.draftKey == null || draft.draftKey.length <= 256 && draft.draftKey.startsWith("${draft.botId}/artifact/"))
             require(UUID.fromString(draft.nonce).toString() == draft.nonce) { "A saved draft has an invalid message ID." }
             require(draft.text.toByteArray().size <= 64 * 1024) { "Draft messages must be 64 KiB or smaller." }
             require(draft.files.size <= 20) { "Choose at most 20 files for one message." }

@@ -138,5 +138,11 @@ val LocalSystemChinese = staticCompositionLocalOf { false }
 val LocalPhrases = staticCompositionLocalOf { emptyMap<String, String>() }
 val LocalSetAppLanguage = staticCompositionLocalOf<(AppLanguage) -> Unit> { {} }
 
-@Composable fun tr(text: String): String =
-    translate(text, LocalAppLanguage.current.resolved(LocalSystemTag.current), LocalSystemChinese.current, LocalPhrases.current)
+@Composable fun tr(text: String): String = translator()(text)
+
+/** [tr] as a function, for code that translates outside composition (a template filled in later). */
+@Composable fun translator(): (String) -> String {
+    val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)
+    val (chinese, phrases) = LocalSystemChinese.current to LocalPhrases.current
+    return { translate(it, language, chinese, phrases) }
+}

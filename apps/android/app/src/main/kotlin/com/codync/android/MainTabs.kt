@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.codync.android.core.Bot
-import com.codync.android.core.CloudComputer
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -60,8 +59,9 @@ import kotlin.math.abs
 private const val REMOVED = "computer/removed"
 
 /**
- * The system tab bar over Bots, State, Extensions and PC (`SettingsView`), expanding to a side
- * navigation rail and Master-Detail split view on tablets, foldables and desktop windows.
+ * The system tab bar over Bots, State, Extensions and Settings (`SettingsView`), expanding to a side
+ * navigation rail and Master-Detail split view on tablets, foldables and desktop windows. Computer
+ * management (`ComputersView`) opens over it, from the roster and from Settings.
  */
 @Composable internal fun MainTabs(
     state: AppState,
@@ -72,8 +72,6 @@ private const val REMOVED = "computer/removed"
     newBot: () -> Unit,
     newGroup: () -> Unit,
     edit: (Bot) -> Unit,
-    pair: () -> Unit = manage,
-    ask: (CloudComputer) -> Unit = {},
     requestedTab: AppTab? = null,
     requestedTabToken: Int = 0,
     chat: @Composable () -> Unit,
@@ -91,6 +89,13 @@ private const val REMOVED = "computer/removed"
         handledTabToken = requestedTabToken
         if (requestedTab != null) tab = requestedTab
     }
+    // What the destination shows, for the usage analytics; every destination gets its own screen.
+    AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(when (tab) {
+        AppTab.Bots -> AnalyticsScreen.Bots
+        AppTab.State -> AnalyticsScreen.State
+        AppTab.Extensions -> AnalyticsScreen.Marketplace
+        AppTab.Computers -> AnalyticsScreen.Settings
+    }))
 
     var reselectBots by rememberSaveable { mutableIntStateOf(0) }
     var reselectState by rememberSaveable { mutableIntStateOf(0) }
@@ -126,7 +131,9 @@ private const val REMOVED = "computer/removed"
 
     val tabItems = remember(badges) {
         AppTab.entries.map { entry ->
-            TabItem(entry, entry.title, entry.icon, entry.iconSize, badges.forTab(entry))
+            // The fourth destination is this phone's Settings; Computer management opens from the roster and links.
+            if (entry == AppTab.Computers) TabItem(entry, "Settings", "gearshape", entry.iconSize, badges.forTab(entry))
+            else TabItem(entry, entry.title, entry.icon, entry.iconSize, badges.forTab(entry))
         }
     }
 
@@ -215,15 +222,12 @@ private const val REMOVED = "computer/removed"
                     state = state,
                     store = store,
                     tab = tab,
-                    selectTab = ::selectTab,
                     account = account,
                     manage = manage,
                     usage = usage,
                     newBot = newBot,
                     newGroup = newGroup,
                     edit = edit,
-                    pair = pair,
-                    ask = ask,
                     barSpace = barSpace,
                     reselectBots = reselectBots,
                     reselectState = reselectState,
@@ -288,15 +292,12 @@ private const val REMOVED = "computer/removed"
     state: AppState,
     store: AppStore,
     tab: AppTab,
-    selectTab: (AppTab) -> Unit,
     account: () -> Unit,
     manage: () -> Unit,
     usage: () -> Unit,
     newBot: () -> Unit,
     newGroup: () -> Unit,
     edit: (Bot) -> Unit,
-    pair: () -> Unit,
-    ask: (CloudComputer) -> Unit,
     barSpace: Dp,
     reselectBots: Int,
     reselectState: Int,
@@ -379,22 +380,18 @@ private const val REMOVED = "computer/removed"
             bottomInset = barSpace,
             active = tab == AppTab.Extensions,
             reselectToken = reselectExtensions,
-            openComputers = { selectTab(AppTab.Computers) },
+            // Extensions need a computer: Computer management is where one is paired and its extensions opened.
+            openComputers = manage,
         )
     }
     Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Computers)) {
         SettingsView(
             state = state,
             store = store,
-            pop = null,
-            pair = pair,
-            ask = ask,
-            extensions = { selectTab(AppTab.Extensions) },
-            inModal = false,
             bottomInset = barSpace,
+            computers = manage,
             active = tab == AppTab.Computers,
             reselectToken = reselectComputers,
-            account = account,
         )
     }
 }

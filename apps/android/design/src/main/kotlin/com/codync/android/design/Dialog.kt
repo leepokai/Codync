@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
@@ -39,10 +40,10 @@ class DialogAction(val title: String, val destructive: Boolean = false, val acti
 
 /**
  * A centered card over a dimmed screen with the actions and Cancel: the replacement for
- * `confirmationDialog` and `alert`.
+ * `confirmationDialog` and `alert`. `field`: what the user types for the actions (an alert's text field).
  */
 @Composable fun CodyncDialog(title: String, isPresented: Boolean, onDismiss: () -> Unit, message: String? = null,
-    cancel: String? = "Cancel", actions: () -> List<DialogAction>) {
+    cancel: String? = "Cancel", field: (@Composable () -> Unit)? = null, actions: () -> List<DialogAction>) {
     val shown = remember { Animatable(0f) }
     var mounted by remember { mutableStateOf(isPresented) }
     val focus = LocalFocusManager.current
@@ -57,7 +58,7 @@ class DialogAction(val title: String, val destructive: Boolean = false, val acti
     Overlay {
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }.background(Color.Black.copy(alpha = 0.35f))
             .clickable(remember { MutableInteractionSource() }, null) { if (cancel != null) dismiss() }
-            .padding(24.dp), contentAlignment = Alignment.Center) {
+            .imePadding().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(Modifier.widthIn(max = 320.dp).fillMaxWidth()
                 .graphicsLayer { val s = 0.96f + 0.04f * shown.value; scaleX = s; scaleY = s; shadowElevation = 24f; shape = RoundedRectangle(22.dp); clip = true }
                 .background(Palette.bubbleAgent).clickable(remember { MutableInteractionSource() }, null) {}
@@ -67,6 +68,7 @@ class DialogAction(val title: String, val destructive: Boolean = false, val acti
                     Text(tr(title), style = Type.headline, color = Palette.text, textAlign = TextAlign.Center)
                     if (!message.isNullOrEmpty()) Text(tr(message), style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
                 }
+                field?.invoke()
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (action in actions()) DialogButton(tr(action.title), action.destructive, prominent = true) { dismiss(); action.action() }
                     if (cancel != null) DialogButton(tr(cancel), destructive = false, prominent = false) { dismiss() }

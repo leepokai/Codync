@@ -76,6 +76,8 @@ export const palette = (dark: boolean) => ({
   text: dark ? [250, 250, 250] : [20, 20, 20],
   warning: '#F0A030',
   danger: dark ? '#F0A7A7' : '#C23A2B',
+  added: dark ? '#8fd18b' : '#2e7d32',
+  tertiary: dark ? '#9a9a9a' : '#6e6e6e',
 })
 
 export interface Swatch {

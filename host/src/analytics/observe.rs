@@ -8,7 +8,7 @@ use crate::store::BotConfig;
 use serde_json::{Map, Value};
 
 /// Methods that stand for one event with one fixed property.
-const FIXED: [(&str, Event, &str, &str); 8] = [
+const FIXED: [(&str, Event, &str, &str); 14] = [
     ("editHandoff", Event::HandoffAnswered, "action", "edit"),
     ("keepConversation", Event::HandoffAnswered, "action", "keep"),
     ("credentialSaveLogin", Event::CredentialSaved, "kind", "login"),
@@ -17,14 +17,22 @@ const FIXED: [(&str, Event, &str, &str); 8] = [
     ("setComposioKey", Event::CredentialSaved, "kind", "composio"),
     ("setVoiceKey", Event::CredentialSaved, "kind", "voice"),
     ("setAgentEnv", Event::CredentialSaved, "kind", "agent_env"),
+    // Never the computer's name, the invite or the recovery code.
+    ("networkInvite", Event::NetworkChanged, "action", "invite"),
+    ("networkPromote", Event::NetworkChanged, "action", "promote"),
+    ("networkRemove", Event::NetworkChanged, "action", "remove"),
+    ("networkRecover", Event::NetworkChanged, "action", "recover"),
+    ("setNetworkRules", Event::NetworkChanged, "action", "rules"),
+    ("networkLeave", Event::NetworkChanged, "action", "leave"),
 ];
 
 /// Switches the host owns (`setting_changed`): the method and the setting it names.
-const SETTINGS: [(&str, &str); 4] = [
+const SETTINGS: [(&str, &str); 5] = [
     ("setCloud", "remote_access"),
     ("setApproval", "approval"),
     ("setHostAutomaticUpdates", "automatic_updates"),
     ("setScreenEnabled", "remote_screen"),
+    ("setAssistants", "cloud_assistants"),
 ];
 
 /// The event an API call stands for, with its properties, read before the call runs.
@@ -55,6 +63,13 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
 /// The rest of `observe`: one arm per method.
 fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Event> {
     Some(match method {
+        "setCloudUrl" => {
+            // The address itself stays off the event. `on` is only whether a custom URL was saved.
+            let on = b["url"].as_str().is_some_and(|url| !url.trim().is_empty());
+            p.insert("setting".into(), "remote_access_url".into());
+            p.insert("on".into(), on.into());
+            Event::SettingChanged
+        }
         "createBot" => {
             let group = b["kind"] == "group";
             p.insert("kind".into(), (if group { "group" } else { "bot" }).into());
@@ -87,7 +102,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
-        "logCall" => {
+        "logCall" | "endCall" => {
             p.insert("seconds".into(), b["seconds"].as_u64().unwrap_or(0).into());
             Event::VoiceCallFinished
         }
@@ -119,6 +134,12 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("change".into(), (if rewrite { "update" } else { "new" }).into());
             Event::SkillWritten
         }
+        // A bot's `publish_artifact`: a new artifact, or a new version of one (`artifact`); never its title.
+        "chatCall" if b["name"] == "publish_artifact" => {
+            let update = b["arguments"]["artifact"].as_str().is_some_and(|id| !id.is_empty());
+            p.insert("change".into(), (if update { "update" } else { "new" }).into());
+            Event::ArtifactPublished
+        }
         "agentSetup" | "agentAuthenticate" => {
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
@@ -127,6 +148,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
         "installHostUpdate" => Event::HostUpdateInstalled,
+        // Never the computer's name, the connector's address or the invite.
+        "networkCreate" | "networkJoin" => {
+            p.insert("via".into(), (if method == "networkCreate" { "create" } else { "invite" }).into());
+            Event::NetworkJoined
+        }
         "pairing" => Event::PairingCodeCreated,
         // Approving is `device_paired`, from `cloud::decide`.
         "decideAccessRequest" if b["approve"] == false => Event::AccessRequestDenied,
@@ -171,12 +197,17 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
     Some((event, p))
 }
 
-/// What only the answer tells: how many connectors an import added, and whether a Composio
-/// app is connected yet (its sign-in is polled until the connection is active). `None`: not an event.
+/// What only the answer tells: how many connectors an import added, whether a Composio app is
+/// connected yet (its sign-in is polled until the connection is active), and whether a published
+/// artifact's card went into its bot's chat. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
             p.insert("count".into(), answer["items"].as_array().map_or(0, Vec::len).into());
+        }
+        // A routine run, a room or a bot request gets no card (`card` says why).
+        Event::ArtifactPublished => {
+            p.insert("card".into(), answer["card"].is_null().into());
         }
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
@@ -302,6 +333,21 @@ mod tests {
             Some(json!("automatic_updates"))
         );
         assert_eq!(setting("setScreenEnabled", json!({"enabled": true})).map(|s| s.1), Some(json!("remote_screen")));
+        assert_eq!(
+            setting("setAssistants", json!({"enabled": true})),
+            Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
+        );
+        assert_eq!(
+            props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
+            Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
+        );
+        let saved = props("setCloudUrl", &json!({"url": "https://relay.example.com"}));
+        assert_eq!(
+            saved.as_ref().map(|(e, p)| (*e, p["setting"].clone(), p["on"].clone())),
+            Some((Event::SettingChanged, json!("remote_access_url"), json!(true)))
+        );
+        assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
+        assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
 
         assert_eq!(
             props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
@@ -343,6 +389,27 @@ mod tests {
         );
         assert_eq!(written(json!({"id": "deploy"})).map(|(_, p)| p["change"].clone()), Some(json!("update")));
         assert_eq!(props("chatCall", &json!({"name": "send_message"})), None, "other chat tools aren't events");
+        let published = |arguments: Value| {
+            observe(
+                &Caller::Local,
+                "chatCall",
+                &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}),
+            )
+            .expect("a publish is tracked")
+        };
+        let (event, p) = published(json!({"path": "/secret/report.html", "title": "Salaries"}));
+        let p = answered(event, p, &json!({"published": true})).expect("published");
+        assert_eq!(
+            (event, Value::Object(p)),
+            (Event::ArtifactPublished, json!({"change": "new", "card": true, "client": "local"}))
+        );
+        let (event, p) = published(json!({"path": "r.html", "artifact": "a1"}));
+        let p = answered(event, p, &json!({"published": true, "card": "not posted"})).expect("published");
+        assert_eq!(
+            (p["change"].clone(), p["card"].clone()),
+            (json!("update"), json!(false)),
+            "a routine's has no card"
+        );
         assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
         let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
         assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));

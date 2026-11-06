@@ -58,6 +58,8 @@ public final class BotStore {
     public internal(set) var hello: Hello?
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
+    /// An update this phone asked of the computer; cleared when its version changes.
+    public internal(set) var hostUpdate: HostUpdate?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var rosterStopping: Set<String> = []
     public internal(set) var rosterThreadRequest: RosterSearchHit?
@@ -65,6 +67,8 @@ public final class BotStore {
     public internal(set) var usage: Usage
     /// The computer's remote screen (`nil`: the host predates it).
     public internal(set) var screen: ScreenState?
+    /// The computer's network of the user's computers (`nil`: the host predates it).
+    public internal(set) var network: NetworkView?
     /// Installed on the computer, for the Plugins screen and bot settings.
     public internal(set) var installedConnectors: [InstalledConnector] = []
     public internal(set) var installedSkills: [InstalledSkill] = []
@@ -75,11 +79,16 @@ public final class BotStore {
     @ObservationIgnored var composerPasted: [String: [String]] = [:]
     public var routineDrafts: [String: String] = [:]
     public let fileDownloads = FileDownloads()
+    var artifacts = ArtifactCache()
     public var lastError: String?
     /// The open conversation (navigation path).
     public var selection: String?
     /// The remote screen viewer (iPhone); `codync://screen` opens it.
     public var screenRequest: ScreenRequest?
+
+    /// A Shortcuts request, consumed by the matching conversation.
+    public internal(set) var voiceCallRequest: String?
+    @ObservationIgnored var preparingVoiceCall: UUID?
 
     // Platform hooks (push registration, Live Activities, widgets).
     /// Each time the channel becomes ready.
@@ -106,15 +115,17 @@ public final class BotStore {
     var streamTask: Task<Void, Never>?
     var eventsTask: Task<Void, Never>?
     var isActive = true
+    /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {
-        let botId: String
-        let startRev: Int64
-        let speak: @MainActor (String) -> Void
-        /// A notice from the computer (approval needed), as opposed to the bot's reply.
-        let announce: @MainActor (String) -> Void
+        let hear: @MainActor (CallCue) -> Void
         let end: @MainActor () -> Void
     }
     @ObservationIgnored var voiceCalls: [UUID: VoiceCall] = [:]
+    /// The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again.
+    @ObservationIgnored var heardCues: [UUID: Int64] = [:]
+    @ObservationIgnored var shortcutSends = 0
+    /// Calls whose end is still on its way to the computer.
+    @ObservationIgnored var callEnds = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
     /// Events stayed undecodable after the rewind.
@@ -190,10 +201,10 @@ public final class BotStore {
         return nil
     }
 
-    /// Roster order: pinned first, then where the user dragged them, then most recent activity.
+    /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {
         bots.values.filter { !$0.hidden }.sorted {
-            if $0.pinned != $1.pinned { return $0.pinned }
+            if $0.band != $1.band { return $0.band < $1.band }
             if $0.position != $1.position { return $0.position < $1.position }
             return $0.lastAt > $1.lastAt
         }
@@ -217,17 +228,19 @@ public final class BotStore {
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
-    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).visibleEntries() }
 
     public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+        !historyComplete.contains(botId) && (entries[botId] ?? []).contains { $0.seq > 0 && $0.seq != Int64.max }
     }
 
     /// A group's bots that still exist.
     public func members(of group: Bot) -> [Bot] { group.members.compactMap { bots[$0] } }
 
-    /// Display name of an entry's author in a group chat.
-    public func authorName(_ id: String?) -> String { id.flatMap { bots[$0]?.name } ?? "A deleted bot" }
+    /// Display name of an entry's author; `fallback` for one that isn't this computer's (a bot on another computer).
+    public func authorName(_ id: String?, fallback: String? = nil) -> String {
+        id.flatMap { bots[$0]?.name } ?? fallback ?? "A deleted bot"
+    }
 
     func updateComputer(_ change: (inout Computer) -> Void) {
         var c = computer

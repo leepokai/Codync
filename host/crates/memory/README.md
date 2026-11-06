@@ -1,4 +1,19 @@
+<div align="center">
+
+<img src="assets/icon.png" width="128" height="128" alt="codync-mem: layered ribbons forming an m">
+
 # codync-mem
+
+**Memory that stays with your agents.**<br>
+Layered Markdown memory, clear write rules, and a record of every change.
+
+[Quick start](#use) · [API reference](https://docs.rs/codync-mem) · [Codync](https://github.com/leepokai/Codync) · [Contributing](#status)
+
+[![Crates.io](https://img.shields.io/crates/v/codync-mem?label=crates.io&style=flat&color=30343B&labelColor=202328)](https://crates.io/crates/codync-mem) [![CI](https://img.shields.io/github/actions/workflow/status/leepokai/codync-mem/ci.yml?branch=main&label=CI&style=flat&color=30343B&labelColor=202328)](https://github.com/leepokai/codync-mem/actions/workflows/ci.yml) [![Docs](https://img.shields.io/docsrs/codync-mem?label=docs.rs&style=flat&color=30343B&labelColor=202328)](https://docs.rs/codync-mem) [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-30343B?label=license&style=flat&color=30343B&labelColor=202328)](LICENSE)
+
+</div>
+
+---
 
 Specially designed for bot-based memory: the memory system the coding-agent bots in
 [Codync](https://github.com/leepokai/Codync) run on, as a standalone crate.

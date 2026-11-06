@@ -44,7 +44,7 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
 
   return (
     <>
-      <CardSection title={tr('Devices that can use {name}').replaceAll('{name}', name)}>
+      <CardSection title={tr('{name} can be used by').replaceAll('{name}', name)}>
         {devices === null
           ? [<Spinner key="loading" />]
           : 'error' in devices

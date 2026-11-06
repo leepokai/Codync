@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// The memory screen's info buttons: what the harness's own memory switch means, and what dreaming does. The same
+/// The memory screen's info buttons: what the harness's own memory means for the bot, and what dreaming does. The same
 /// text as the desktop app's; the terminal UI says it short in place.
 struct MemoryInfoSheet: View {
     struct Point {
@@ -13,18 +13,33 @@ struct MemoryInfoSheet: View {
     let title: String
     let points: [Point]
 
-    /// `readable`: Codync can show the harness's notes (Claude Code's are a file on the computer).
-    static func harness(_ harness: String, readable: Bool) -> MemoryInfoSheet {
+    /// How the bot reaches its harness's own memory.
+    enum Access {
+        /// A switch, and Codync shows the notes (Claude Code's are a file on the computer).
+        case readable
+        /// A switch only.
+        case hidden
+        /// No switch: one memory every bot on the harness shares (Hermes Agent, Gemini CLI).
+        case shared
+    }
+
+    static func harness(_ harness: String, access: Access) -> MemoryInfoSheet {
         // Translate the sentence, then put the harness name in, so the name stays as written.
         func fill(_ template: String) -> String {
             L10n.tr(template).replacingOccurrences(of: "{name}", with: harness)
         }
-        return MemoryInfoSheet(title: fill("{name}'s own memory"), points: [
-            Point(icon: "brain", title: "A memory of its own", detail: fill("{name} keeps notes apart from Codync's memory. It's off by default, so this bot has one memory and you see all of it here.")),
+        let shared = access == .shared
+        let points: [Point?] = [
+            Point(icon: "brain", title: "A memory of its own", detail: fill(shared
+                ? "{name} keeps notes apart from Codync's memory, and Codync can't turn them off for one bot."
+                : "{name} keeps notes apart from Codync's memory. It's off by default, so this bot has one memory and you see all of it here.")),
+            shared ? Point(icon: "person.2", title: "Shared by every bot", detail: fill("Every bot that runs {name} reads and writes the same notes, and so does {name} when you use it outside Codync.")) : nil,
             Point(icon: "square.on.square", title: "Remembered twice", detail: "With both on, the bot may save the same thing twice, and the two can disagree after something changes."),
             Point(icon: "trash", title: "Forgetting", detail: fill("What the bot forgets in Codync stays in {name}'s notes. Codync can't change them.")),
-            Point(icon: "eye", title: "Where to see it", detail: fill(readable ? "Its notes show read-only under the {name} tab." : "Codync can't show it; look in {name} itself.")),
-        ])
+            Point(icon: "eye", title: "Where to see it", detail: fill(access == .readable ? "Its notes show read-only under the {name} tab." : "Codync can't show it; look in {name} itself.")),
+            shared ? Point(icon: "gearshape", title: "Turning it off", detail: fill("Where {name} has a setting for it, that setting turns it off for every session at once.")) : nil,
+        ]
+        return MemoryInfoSheet(title: fill("{name}'s own memory"), points: points.compactMap { $0 })
     }
 
     static let dreams = MemoryInfoSheet(title: "Dreaming", points: [

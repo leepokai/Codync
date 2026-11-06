@@ -5,15 +5,25 @@ import java.io.IOException
 import com.codync.android.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 
 // Pairing, the encrypted link to the computer and the mirror's event stream.
 
 fun AppStore.setRoute(route: ConnectionRoute) = action("route") {
-    val computer = state.value.computer ?: return@action
-    val changed = computer.copy(route = route)
-    saveComputer(changed)
+    changeComputer { it.copy(route = route) } ?: return@action
     reconnect().join()
+}
+
+/**
+ * Changes the shown computer's latest copy, saved and then shown, one change at a time: a switch
+ * flipped while a link's `hello` runs isn't undone by the copy that link saves. The other computers
+ * paired with this phone keep their own copies.
+ */
+internal suspend fun AppStore.changeComputer(change: (Computer) -> Computer): Computer? = computerChanges.withLock {
+    val changed = change(state.value.computer ?: return@withLock null)
+    saveComputer(changed)
+    changed
 }
 
 /**
@@ -47,20 +57,21 @@ fun AppStore.setForeground(active: Boolean) {
     }
 }
 
-fun AppStore.pair(text: String) {
+/** Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside ([PairedVia.Link]). */
+internal fun AppStore.pair(text: String, via: PairedVia = PairedVia.Qr) {
     if (pairingJob?.isActive == true) return
     pairingJob = contextScope.launch {
         state.first { !it.loading }
         mutableState.update { it.copy(pairing = true, error = null) }
         try {
             val pairing = Pairing.parse(text, BuildConfig.URL_SCHEME)
-            // A computer paired before keeps its color; a new one joins the others and is shown.
+            // A computer paired before keeps what this phone picked for it; a new one joins the others and is shown.
             val old = state.value.computers.firstOrNull { it.id == pairing.computer.id }
-            require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Remove it in Computers & settings, then pair it again." }
+            require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Remove it in Computer management, then pair it again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
-            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).copy(color = old?.color)
+            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).keepingDevicePicks(old)
             // Tagged here: the page that asked only learns that pairing ended, maybe before the switch to this computer.
-            Analytics.capture(AnalyticsEvent.ComputerPaired(PairedVia.Qr, computer.id))
+            Analytics.capture(AnalyticsEvent.ComputerPaired(via, computer.id))
             withContext(Dispatchers.IO) { local.completeSetup() }
             if (state.value.computer?.id != computer.id) { addComputer(computer); return@launch }
             saveComputer(computer)
@@ -105,14 +116,16 @@ fun AppStore.connect() {
                                 reconcileMailbox(active)
                             }
                             if (link is LinkState.Ready) {
-                                // The latest saved copy: its color may have changed since this link opened.
-                                val updated = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
+                                val fromHost = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
                                 val hello = active.call("hello").jsonObject
-                                withContext(Dispatchers.IO) {
+                                // This phone's picks (color, route, push) may have changed during those calls.
+                                changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
+                                val dropped = withContext(Dispatchers.IO) {
                                     requireNotNull(database).setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
                                         BuildConfig.VERSION_NAME + "/" + hello["version"]?.jsonPrimitive?.content)
                                 }
-                                saveComputer(updated)
+                                // Dropped chats page their earlier messages again.
+                                mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
                                 noteHello(hello)
                                 // The event catch-up is ordered by revision; bot revisions can
                                 // follow hundreds of historical entries. Load the current roster
@@ -176,6 +189,9 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             }
             withContext(Dispatchers.IO) { requireNotNull(database).apply(batch) }
             refresh()
+            receiveArtifacts(batch)
+            receiveNetwork(batch)
+            hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingScopes))
             if (resync) throw Resync()
         }
@@ -211,15 +227,19 @@ private suspend fun AppStore.decode(event: JsonObject): MirrorEvent? {
     }
 }
 
-/** Reached, but nothing to sync until one side updates: ask again every 30 s (a host update restarts the link anyway). */
+/**
+ * Reached, but nothing to sync until one side updates: ask again every 30 s (a host update restarts
+ * the link anyway), every 5 s while an update this phone asked for runs, so the card goes soon.
+ */
 private suspend fun AppStore.awaitUpdate(active: EncryptedChannel) {
-    delay(30_000)
+    delay(if (state.value.hostUpdate.updating(System.currentTimeMillis())) 5_000 else 30_000)
     noteHello(active.call("hello").jsonObject)
 }
 
-/** A different host version may read fine: forget that its data was unreadable (iOS `noteHostVersion`). */
+/** A different host version may read fine: forget that its data was unreadable and any update asked of the old one (iOS `noteHostVersion`). */
 private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
-    it.copy(hello = hello, unreadable = it.unreadable && it.hello?.text("version") == hello.text("version"))
+    val same = it.hello?.text("version") == hello.text("version")
+    it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
 }
 
 private fun AppStore.showConnection(link: LinkState) {

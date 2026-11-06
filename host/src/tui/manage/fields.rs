@@ -90,6 +90,10 @@ impl App {
                 body[if *code { "code" } else { "loginId" }] = values["value"].clone();
                 self.sheet(if *code { "fillProtectedCode" } else { "fillProtectedLogin" }, body, Reply::FieldsSaved);
             }
+            Submit::RenameArtifact { bot, artifact } => {
+                let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
+                self.sheet("renameArtifact", body, Reply::FieldsSaved);
+            }
         }
     }
 }

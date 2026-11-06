@@ -69,7 +69,7 @@ host answers and sends it once the host is up.
 | `bot_deleted` | host | `deleteBot` | — |
 | `message_sent` | host | `send` (a resend counts once) | `kind`, `agent`, `reply` (whether it quotes a message), `attachments` (count) |
 | `turn_stopped` | host | `stop` | — |
-| `turn_finished` | host | An agent's turn ends: once per agent it ran on, so a turn that fell back once and then answered sends a `failed` and a `done` | `agent`, `outcome` (`done`/`stopped`/`failed`/`needs_setup`/`incomplete`; `needs_setup` is a failure whose `error` is `sign_in` or `not_installed`: the user has a step to take, nothing broke), `stop_reason`, `source` (`user`/`routine`/`group`/`bot`), `seconds`; when failed or needs_setup, `error` (`not_installed`/`timeout`/`exited`/`no_model`/`sign_in`/`agent_error`/`io`/`other`) and, for `agent_error`, `rpc_code` and `agent_reason` (the adapter's own category, else one the host reads from the message, which is never sent: `session_ended`/`rate_limit`/`quota`/`overloaded`/`context`/`model`/`network`/`provider`/`unknown`) |
+| `turn_finished` | host | An agent's turn ends: once per agent it ran on, so a turn that fell back once and then answered sends a `failed` and a `done` | `agent`, `outcome` (`done`/`stopped`/`failed`/`needs_setup`/`incomplete`; `needs_setup` is a failure whose `error` is `sign_in` or `not_installed`: the user has a step to take, nothing broke), `stop_reason`, `source` (`user`/`routine`/`group`/`bot`/`host`: the lead opening a call), `seconds`; when failed or needs_setup, `error` (`not_installed`/`timeout`/`exited`/`no_model`/`sign_in`/`agent_error`/`io`/`other`) and, for `agent_error`, `rpc_code` and `agent_reason` (the adapter's own category, else one the host reads from the message, which is never sent: `session_ended`/`rate_limit`/`quota`/`overloaded`/`context`/`model`/`network`/`provider`/`unknown`) |
 | `agent_fell_back` | host | A turn moves on to the bot's next agent ([agent fallbacks](../features/agent-fallback.md)) | `agent` (the one that couldn't answer), `reason` (`usageLimit`/`outOfCredits`/`rateLimited`/`overloaded`/`signedOut`/`notStarting`/`modelMissing`) |
 | `session_reset` | host | `newSession` | — |
 | `permission_answered` | host | `respondPermission` | `choice` (`allow_once`/`allow_always`/`reject_once`/`reject_always`/`other`) |
@@ -81,7 +81,8 @@ host answers and sends it once the host is up.
 | `routine_run` | host | `runRoutine` | — |
 | `routine_retried` | host | `retryRoutineRun` (the retry button on a failed run's notice) | — |
 | `voice_call_started` | host `track` (desktop), iOS, Android | A voice call starts, with the engine it really uses after any fallback | `engine` (`on_device`; `openai`/`gemini` realtime; `cloud`: cloud speech to text and back) |
-| `voice_call_finished` | host | `logCall` | `seconds` |
+| `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
+| `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
 | `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included) | — |
 | `screen_taken_over` | host | `screenTakeover` (taking control, not handing it back) | — |
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
@@ -91,11 +92,14 @@ host answers and sends it once the host is up.
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |
 | `skill_written` | host | A bot's `save_skill` (`chatCall`) | `change` (`new`/`update`) |
+| `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether its card went into the bot's chat), never its title |
 | `credential_saved` | host | A key, login or vault is saved (clearing one isn't) | `kind` (`login`/`onepassword`/`connector`/`composio`/`voice`/`agent_env`) |
 | `agent_setup_started` | host | `agentSetup` (an agent's install or sign-in terminal) | `agent` |
 | `agent_signed_in` | host | `agentAuthenticate` | `agent` |
-| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`; phones: `push`/`live_activities`), `on` |
+| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`; phones: `push`/`live_activities`), `on` |
 | `host_update_installed` | host | `installHostUpdate` | — |
+| `network_joined` | host | `networkCreate` / `networkJoin`: the computer is in a network of the user's computers | `via` (`create`/`invite`), never a name, invite or connector address |
+| `network_changed` | host | `networkInvite` / `networkPromote` / `networkRemove` / `networkRecover` / `setNetworkRules` / `networkLeave` | `action` (`invite`/`promote`/`remove`/`recover`/`rules`/`leave`), never a computer's name, the invite, the recovery code or a rule |
 
 ## Screens
 
@@ -111,8 +115,8 @@ host answers and sends it once the host is up.
 | `memory` | bot memory (Android: the card in bot details, once it scrolls into sight) | memory tab | memory overlay |
 | `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | routines overlay |
 | `marketplace` | extensions | extensions | marketplace overlay |
-| `settings` | computers & settings, opened from the account | settings | — |
-| `computers` | computers & settings, opened from the computers sheet | computers & devices | — |
+| `settings` | Settings tab | settings | — |
+| `computers` | Computer management, from Manage computers or a link | computers & devices | — |
 | `usage` | usage | usage | usage overlay |
 | `account` | account sheet | account panel | — |
 | `pairing` | pair a computer after setup (first run: `onboarding_step_viewed`) | pair a phone | pair overlay |
@@ -120,6 +124,9 @@ host answers and sends it once the host is up.
 | `remote_screen` | remote screen | — | — |
 | `computer_access` | — | computer access | — |
 | `help` | — | — | keys overlay |
+| `library` | a chat's Library (iPhone: the details tab; Android: its sheet) | library tab | library overlay |
+| `artifact` | an artifact's viewer | an artifact's viewer | — (opens in the browser) |
+| `network` | network sheet (Network on a computer's card in Manage computers) | — (part of `computers`) | network sheet |
 
 ## Funnels
 
@@ -143,3 +150,21 @@ without it PostHog drops these events): `$pageview`, `download_clicked` (`platfo
 `link_opened` (`link`). One document-level click listener in `web/app/analytics.tsx` reads each
 link's `href`, so a new link is counted without code; the film counts as `demo` when focus moves
 into its frame.
+
+## iPhone App Store review invitations
+
+These events use the existing iPhone sender, identity, environment, version and analytics
+opt-out. No conversation content, message nonce, bot ID or review text is included.
+
+| Event | When | Properties |
+| --- | --- | --- |
+| `review_opportunity` | An eligible, viewed result is followed by returning to Bots | `completed_interactions` (count), `policy: v1`, `trigger: return_to_bots` |
+| `review_cancelled` | An opportunity is abandoned before StoreKit | `reason: background / interaction / unavailable`, `policy: v1` |
+| `review_requested` | The persisted cooldown is consumed and StoreKit is about to be called | `completed_interactions` (count), `policy: v1`, `trigger: return_to_bots` |
+| `review_link_opened` | The person taps Rate on the App Store in Settings | `source: settings` |
+
+`review_requested` does not mean the system displayed a prompt or the person submitted a
+rating. StoreKit does not provide those outcomes. The [invitation policy](../features/ios-review-invitation.md)
+describes timing, exclusions, and cooldowns.
+
+The iPhone also reports `link_opened` with `link: issues` for its independent **Report an issue** action.

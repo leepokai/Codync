@@ -62,9 +62,9 @@ public struct VoiceChatSettingsView: View {
 
     private var engineFooter: String {
         guard let provider = VoiceProvider(rawValue: engine) else {
-            return "Apple speech, on this device. Applies from the next call."
+            return "Apple speech, on this device. During a call, applies when you close settings."
         }
-        return "Your own \(provider.name) key, billed by \(provider.name). Applies from the next call."
+        return "Your own \(provider.name) key, billed by \(provider.name). During a call, applies when you close settings."
     }
 }
 

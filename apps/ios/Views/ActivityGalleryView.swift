@@ -8,7 +8,7 @@ struct ActivityGalleryView: View {
     var forms = BotActivityPreview.Form.allCases
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
-    @AppStorage("liveActivitiesEnabled") private var enabled = true
+    @AppStorage(BotActivityAttributes.enabledKey) private var enabled = true
     @State private var allowed = ActivityAuthorizationInfo().areActivitiesEnabled
     @State private var form: BotActivityPreview.Form?
     @State private var phase = BotActivityPresentation.Phase.working
@@ -24,7 +24,7 @@ struct ActivityGalleryView: View {
         case .needsInput: "needsInput"
         case .completed: "idle"
         case .failed: "error"
-        case .waiting: "unknown"
+        case .waiting, .onCall: "unknown"
         }
         return .init(status: status, activity: phase == .needsInput ? "Review the proposed changes." : "Running the test suite.",
                      isStale: phase == .stale)
@@ -45,7 +45,7 @@ struct ActivityGalleryView: View {
                         .font(.subheadline.weight(.medium))
                     Text(L10n.tr(island
                          ? "The Dynamic Island shows the same Live Activity as the Lock Screen, so this switch turns off both."
-                         : "Starts when you send a task from this iPhone. Follow its progress, then open the conversation when your bot needs you."))
+                         : "Starts when you send a task or call a bot from this iPhone. Follow its progress, then open the conversation when your bot needs you."))
                         .font(.footnote).foregroundStyle(Palette.secondary)
                     if !allowed {
                         Text(L10n.tr("Live Activities are turned off in iOS Settings."))
@@ -98,7 +98,7 @@ struct ActivityGalleryView: View {
 
     private func explanation(_ form: BotActivityPreview.Form) -> some View {
         let detail = switch form {
-        case .lockScreen: "The bot in its mood, its current step in the state's color, the running time and a thinking orb. When the bot needs you, Review opens the request."
+        case .lockScreen: "The bot in its mood, its current step in the state's color, the running time, a thinking orb and its progress. When the bot needs you, Review opens the request."
         case .compact: "The bot and a thinking orb beside the camera, outlined in the state's color. The orb becomes a check or warning when the task ends."
         case .minimal: "Just the orb when iOS displays multiple Live Activities."
         case .expanded: "Touch and hold the Dynamic Island for the current step and the running time, or Review when the bot needs you. Tap to open the conversation."

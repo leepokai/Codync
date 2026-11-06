@@ -29,7 +29,7 @@ class LiveChatTest {
         compose.waitUntil(30_000) { compose.onAllNodesWithText(bot).fetchSemanticsNodes().isNotEmpty() }
         val back = compose.onAllNodes(hasText("Back") or hasContentDescription("Back")).fetchSemanticsNodes()
         if (back.isEmpty()) compose.onNodeWithText(bot).performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(chatMenu).fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(10_000) { compose.onAllNodes(chatTitle).fetchSemanticsNodes().size == 1 }
         val message = "Android acceptance " + UUID.randomUUID()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val local = LocalStore(context)

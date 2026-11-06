@@ -1,0 +1,84 @@
+A group chat puts several of your bots and you in one conversation. Each member answers in turn, reads what the others said, and does its work with its own agent, folder, tools and approval setting. Use a group when you want bots to discuss a problem, review each other's work, or split a task while you watch.
+
+A group has no agent, folder or session of its own. It's a room for bots you already have.
+
+## Create a group
+
+- **iPhone:** on the Bots screen, tap **+** and choose **New group chat**.
+- **Desktop:** click **+** above your bots and choose **New group chat**.
+- **Terminal UI:** press `m`.
+
+Pick the bots to add, type a name if you like, and choose **Create**. Without a name, the group is named after its members ("Alice, Bob").
+
+- A group needs at least one bot.
+- A group can't contain another group.
+- If a group with exactly the same bots already exists, you get that group instead of a second one.
+
+## Edit, remove members, delete
+
+Open the group's settings to change it:
+
+- **iPhone:** tap the group's name at the top of the chat to edit the group.
+- **Desktop:** click the group's name at the top of the chat. The details panel lists the members, with **Add Member** and an X to remove each one.
+- **Terminal UI:** select the group and press `e`.
+
+In the editor you can rename the group, add or remove members, and fill in **What this group works on**. Every member reads that line, so use it to say what the room is for.
+
+**Delete group chat** removes the group and its conversation. Its bots stay. If you delete a bot, it leaves every group it was in.
+
+## Who answers
+
+When you send a message, the group runs a round of answers:
+
+1. **Who's asked.** The members you @-mentioned, or whose message you replied to, since your last message. If you mention nobody, or write `@all` or `@everyone`, every member is asked.
+2. **One at a time.** Members answer in order, each after the previous one finished, so each can read the replies before its own. Each round starts with a different member, so the same bot doesn't always go first.
+3. **Passing.** A member with nothing new to add passes, and nothing appears in the chat. A member can also react to a message and pass, to agree without writing.
+4. **More rounds.** If anyone spoke, another round follows, so members can answer each other. A member that @-mentions another brings it into the next round.
+5. **The end.** The exchange stops after three rounds, ten replies in all, or a round where every member passes.
+
+Each member's reply is the one message the room sees. Its tool calls, thoughts and approval cards for that turn appear in the group. The member's own chat doesn't show them. Open **Full conversation** to see its steps.
+
+### @-mentions
+
+To ask just one bot, mention it: its full name, its name without spaces, or its first word all work, in any letter case. On the desktop and iPhone, typing `@` in a group suggests its members.
+
+Replying to a member's message counts as mentioning it. To reply, long-press the message on iPhone, use **Reply** below the message on the desktop, or press `r` in the terminal UI.
+
+### Reactions and files
+
+You can react to messages in a group. Members see your reactions on the messages they're shown, and they can react too.
+
+Files you attach in a group are available to every member.
+
+## A busy member answers later
+
+A member may be working somewhere else when the group asks it, for example in its own chat or in another group. The room doesn't wait. It shows:
+
+> Alice is busy in another chat and will answer here when it's done.
+
+and moves on to the next member. When Alice finishes her other work, she answers in the group, after reading what the room said in the meantime. She isn't asked again in later rounds of that exchange.
+
+Her late answer is dropped if you press Stop in the group, remove her from the group, or send a newer message that asks her again (the newer one replaces it). Other new messages in the group, and Stop in Alice's own chat, don't drop it.
+
+If a member fails while answering, the room counts it as a pass and shows the error.
+
+## Stop
+
+Press **Stop** in the group (the send button turns into Stop while members work; `s` in the terminal UI). It ends the current exchange and stops members working in the group.
+
+Sending a new message also ends the running exchange before the next member is asked, and starts a new one with your message.
+
+## What each member remembers
+
+- **One session per bot.** A member answers in the group in the same session as its own chat. It remembers the group conversation when you talk to it one-on-one later, and the other way round. Starting a [new session](/docs/bots#new-session) in a bot's chat also gives it a fresh start in its groups.
+- **What it's shown.** On each turn, a member reads the room's messages since it last spoke there, the most recent ones if there are many, plus who's in the room and what the group is for.
+- **Private chats.** Members are told not to reveal what you discussed with them one-on-one. That's only an instruction to the agent: the same session holds both conversations.
+- **Long-term memory.** In a group, a bot can add to its [memory](/docs/memory) but can't change or remove what's there. Group chats don't feed dreaming, and a bot's history search covers only its own chat.
+
+## Notifications
+
+You get one "done" notification per exchange, from the last member that replied ("Alice in Ship room"), plus one for each late answer. When a member needs your approval, its card appears in the group and you get a "needs you" notification that opens the group.
+
+Voice calls work in groups too: each reply is read with its speaker's name. See [Voice](/docs/voice).
+
+To have bots work together without a shared room, see [Teamwork](/docs/teamwork).

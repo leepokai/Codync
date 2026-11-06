@@ -4,6 +4,16 @@
 set -eu
 
 staged_files=$(git diff --cached --name-only)
+# A merge brings in commits whose files were checked when they landed. Only a file that differs from
+# both sides (a resolved conflict, or both sides' changes put together) is new here.
+if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    ours_list=$(mktemp)
+    theirs_list=$(mktemp)
+    printf '%s\n' "$staged_files" | sort > "$ours_list"
+    git diff --cached --name-only MERGE_HEAD | sort > "$theirs_list"
+    staged_files=$(comm -12 "$ours_list" "$theirs_list")
+    rm -f "$ours_list" "$theirs_list"
+fi
 touches() { printf '%s\n' "$staged_files" | grep -Eq "$1"; }
 
 repo=$(git rev-parse --show-toplevel)
@@ -51,8 +61,15 @@ if touches '^apps/desktop/'; then
     (cd "$snapshot/apps/desktop" && npm run typecheck && npm test)
 fi
 
-for dir in cloud relay discord; do
-    if touches "^(cloud/|relay/|discord/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
+if touches '^web/'; then
+    staged_copy
+    echo "Checking the user manual (pages compile, links and anchors)..."
+    ln -s "$repo/web/node_modules" "$snapshot/web/node_modules"
+    (cd "$snapshot/web" && npm run check:docs)
+fi
+
+for dir in cloud relay discord private-relay; do
+    if touches "^($dir/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
         staged_copy
         echo "Checking $dir (typecheck, test)..."
         ln -s "$repo/$dir/node_modules" "$snapshot/$dir/node_modules"

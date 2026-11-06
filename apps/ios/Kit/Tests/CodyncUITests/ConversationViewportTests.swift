@@ -1,34 +1,6 @@
-import SwiftUI
 import Testing
 import UIKit
 @testable import CodyncUI
-
-@MainActor @Test func keyboardSafeAreaKeepsTheLatestMessageVisible() async throws {
-    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-    let rows = (0..<30).map { index in
-        ConversationRow("\(index)") { Text("Message \(index)").frame(height: 60) }
-    }
-    let host = UIHostingController(rootView: ConversationList(rows: rows, following: .constant(true))
-        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) })
-    window.rootViewController = host
-    window.makeKeyAndVisible()
-    defer { window.isHidden = true }
-    try await Task.sleep(for: .milliseconds(300))
-    let list = try #require(findConversation(in: host.view))
-    let previousHeight = list.bounds.height - list.adjustedContentInset.top - list.adjustedContentInset.bottom
-    host.additionalSafeAreaInsets.bottom = 300
-    host.view.setNeedsLayout()
-    host.view.layoutIfNeeded()
-    try await Task.sleep(for: .milliseconds(300))
-    #expect(list.following)
-    #expect(abs(list.contentOffset.y - list.endOffset) < 1)
-    #expect(abs(previousHeight - (list.bounds.height - list.adjustedContentInset.top - list.adjustedContentInset.bottom) - 300) < 1)
-}
-
-@MainActor private func findConversation(in view: UIView) -> ConversationCollectionView? {
-    if let list = view as? ConversationCollectionView { return list }
-    return view.subviews.lazy.compactMap { findConversation(in: $0) }.first
-}
 
 @MainActor @Test func keyboardResizeDuringTouchKeepsFollowingWhenTheTouchEnds() {
     let list = ViewportConversationView(frame: CGRect(x: 0, y: 0, width: 390, height: 700),

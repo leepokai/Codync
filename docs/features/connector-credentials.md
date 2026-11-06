@@ -49,6 +49,12 @@ and stops the check process. It never invokes a business tool. Failures and a
 90-second timeout remain visible and retryable. Package acquisition is performed
 by the configured runtime (npx, uvx, Docker, etc.), so that runtime must be present.
 
+Installing a registry connector that is already installed (Add again after a failed
+check, or Connect on a request card) keeps it as it is when nothing new is typed and
+it would run the same way, so its sign-in survives. New values or another way to run
+it (package runtime or hosted) rebuild it in place, under the same id, so each bot
+keeps it on or off as before (`install_server` in `host/src/market/install.rs`).
+
 ## Conversation requests
 
 The built-in `connectors` MCP offers search_connectors, list_connectors,

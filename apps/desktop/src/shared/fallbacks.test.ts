@@ -57,3 +57,14 @@ test('an older host has no fallbacks to show or send', () => {
   assert.equal(draftOf(bot).selfFallbacks, undefined)
   assert.equal(normalizeBot({ id: 'b', selfFallbacks: false }).selfFallbacks, false)
 })
+
+
+test('switching harness clears its model and effort, selecting the same harness preserves them', () => {
+  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', model: 'opus', modelOptions: { effort: 'high' } }))
+  assert.equal(withBackend(draft, 'claude'), draft)
+  const changed = withBackend(draft, 'codex')
+  assert.equal(changed.model, null)
+  assert.deepEqual(changed.modelOptions, {})
+  const defaultModel = withBackend({ ...draft, model: null }, 'codex')
+  assert.deepEqual(defaultModel.modelOptions, {})
+})

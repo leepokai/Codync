@@ -1,0 +1,125 @@
+Codync has two parts. The **host** (`codync-host`) is a small background service on the computer where your coding agents are installed. It runs the agents and keeps every bot's chat. The **apps** (iPhone, desktop, terminal UI) are windows onto that host. You install Codync on your computer once, pair your phone, and create a bot.
+
+## What you need
+
+- A Mac (Apple silicon or Intel), a Windows PC (x64), or a Linux machine (x86_64 or arm64).
+- At least one coding agent on that computer, such as Claude Code or Codex. You can also install one from Codync later. See [Agents](/docs/agents).
+- Optional: an iPhone with iOS 26 or later. You can also use only the desktop app or the terminal UI.
+
+Codync is free and open source (Apache-2.0). You pay only your agent's provider, through the plan or key you already use.
+
+## 1. Install Codync on your computer
+
+### macOS
+
+Download [codync-macos.dmg](https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg) and drag Codync to Applications. Or install it with Homebrew:
+
+```bash
+brew install --cask leepokai/codync/codync
+```
+
+Open Codync. The app includes the host and sets it up as a background service the first time it runs. Codync then lives in the menu bar; **Open Codync** opens the chat window.
+
+### Windows
+
+Download [codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user only, and the host starts each time you sign in to Windows. The installer isn't code-signed yet, so SmartScreen asks you to confirm once: choose **More info**, then **Run anyway**.
+
+Codync shows a tray icon. Left-click it to open the chat window, right-click it for the menu. Remote screen isn't available on Windows yet.
+
+### Linux
+
+Run the installer in a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh
+codync-host install
+```
+
+The script installs `codync-host` and, when you run it in a graphical session, the desktop app (`codync`, an AppImage with a menu entry). `codync-host install` runs the host as a systemd user service. Opening the desktop app also does this for you.
+
+You can also install the host with Homebrew (`brew install leepokai/codync/codync-host`), or download the AppImage, `.deb` or `.tar.gz` from [GitHub Releases](https://github.com/leepokai/Codync/releases/latest). On Linux the desktop app doesn't include the host, so install the host too. AppImages need FUSE 2 to start (on Ubuntu: `sudo apt install libfuse2t64`).
+
+### The first launch of the desktop app
+
+The app first asks about an account. Signing in with Apple or Google is optional. Choose **Continue on this Mac** (or **Continue on this computer**) to go on without one. It then offers **Computer access**, which bots need only to use the screen; choose **Set up later** to skip it. See [Computer use](/docs/computer-use).
+
+Press **⌘R** on macOS or **Ctrl+R** on Windows and Linux to refresh your computers. A small spinning “Loading…” indicator appears while Codync reconnects and updates the computer list. Repeated presses wait for the current refresh to finish.
+
+## Running only the host
+
+For a computer without the desktop app, such as a headless Mac or a server, install the host on its own:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh -s -- --host-only
+# or: brew install leepokai/codync/codync-host
+codync-host install
+codync-host status
+```
+
+`codync-host install` runs the host as a background service (launchd on macOS, systemd on Linux). Re-run the installer to upgrade. To chat from that machine's terminal, run `codync-host tui`. For servers and cloud VMs, see [Linux servers](/docs/linux-servers).
+
+## 2. Install the iPhone app
+
+Get [Codync on the App Store](https://apps.apple.com/app/codync/id6760984418). It's free and needs iOS 26 or later.
+
+Every iPhone release goes through Apple's App Review first, so the App Store version can trail the computer apps. Your computer waits to install an update that needs a newer iPhone app until that version is in the App Store. See [Updates](/docs/updates).
+
+## 3. Pair your iPhone
+
+Pairing connects your phone to your computer with a QR code. No account is needed.
+
+On the computer, show the pairing code:
+
+- **macOS:** click Codync in the menu bar, then **Pair iPhone…**
+- **Windows and Linux:** open the tray menu, then **Pair iPhone…**
+- **Any desktop app:** Settings → Computers, then the **Pair iPhone** button on the computer.
+- **Terminal:** run `codync-host pair`, or press `P` in the terminal UI.
+
+On the iPhone, open Codync and tap **Get started**, then **Continue**, then scan the code. The iPhone Camera app can scan it too. If you can't scan, copy the pairing link on the computer and paste it into the field under the viewfinder. To pair later, tap the account button at the top left of the Bots tab, then **Scan a computer's code**.
+
+The iPhone app has three tabs: **Bots** (your bots and chats), **State** (widgets, Live Activities and usage limits) and **Settings** (this iPhone's own settings). Each computer's settings, such as Extensions, voice chat and push notifications, are in **Manage computers**: tap the connection status at the top of the Bots tab (such as **1 connected**).
+
+A pairing code expires. If pairing fails, show a new code on the computer and scan again.
+
+After pairing, the phone connects directly when it's on the same Wi-Fi or Tailscale network as the computer. Anywhere else it goes through the Codync relay, end-to-end encrypted, while **Reach from anywhere** is on in the computer's Codync settings. See [Remote access](/docs/remote-access).
+
+If you signed in to the same account on the computer and the phone, the phone can also ask the computer for access instead of scanning. The computer then shows the request and a code for you to check. See [Remote access](/docs/remote-access).
+
+## 4. Meet your lead bot
+
+Your computer already has a bot: your lead bot, **Codync**, at the top of the list with a star. Message it, or call it and it speaks first. See [Your lead bot](/docs/bots#your-lead-bot).
+
+You can make more bots, for other folders or agents, whenever you like:
+
+- **iPhone:** on the Bots tab, tap **+**, then **New bot**.
+- **Desktop:** click **+** at the top of the sidebar, then **New bot**, or press Cmd+N (Ctrl+N on Windows and Linux).
+- **Terminal UI:** press `n`.
+
+Pick an avatar and type a name, then create it. The name is optional: a bot without one is called "New Bot" until Codync names it after its first few conversations.
+
+Every bot, your lead bot too, starts with these defaults, which you can change in its settings:
+
+- **Agent:** Claude Code when it can run on the computer, otherwise the first agent Codync knows that can.
+- **Workspace:** a personal folder of its own.
+- **Permissions:** Approve automatically.
+- **Notifications:** on.
+- **Connectors and skills:** every one installed on the computer is turned on (connectors only when the computer's credential store is available; see [Linux servers](/docs/linux-servers#limits-on-a-headless-server)).
+
+> **Note:** New bots approve the agent's tool requests automatically. Your agent's own permission rules still apply. To review each request first, open the bot's settings and set **Permissions** to **Ask me**. See [Bots](/docs/bots#permissions-ask-me-or-approve-automatically).
+
+If the bot's agent isn't signed in, the chat shows a card saying it needs you to sign in before your first message. Tap **Sign in** and follow the steps. See [Agents](/docs/agents#signing-in).
+
+## 5. Send it a message
+
+Open the bot and type in the box at the bottom. It says "Ask" followed by the bot's name. Press Return on the desktop, tap the send button on the iPhone, or press Enter in the terminal UI.
+
+While the bot works, a line under the last message shows what it's doing and for how long. Its reply arrives as a complete message. If it asks for approval, an approval card appears in the chat. Every tool call and step is one tap away in **Full conversation**.
+
+When the bot finishes or needs you, your iPhone gets a notification, unless the Codync app is open on it. See [Conversations](/docs/conversations).
+
+## Next steps
+
+- [Bots](/docs/bots): set up a bot's agent, folder, approvals and more.
+- [Agents](/docs/agents): install and sign in to more coding agents.
+- [Conversations](/docs/conversations): files, approvals, replies and notifications.
+- [Group chats](/docs/groups): put several bots in one room.

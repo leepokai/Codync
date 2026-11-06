@@ -20,7 +20,7 @@ public struct AccessoryWidgetCard: View {
     private var count: Int { needs > 0 ? needs : working > 0 ? working : bots.count }
     private var botLabel: String { needs > 0 ? (needs == 1 ? "needs you" : "need you") : working > 0 ? "working" : (bots.count == 1 ? "bot" : "bots") }
     private var top: (name: String, window: UsageWindow)? {
-        usage.providers.flatMap { p in p.windows.map { (name: p.name, window: $0) } }
+        usage.providers.flatMap { p in p.limits.map { (name: p.name, window: $0) } }
             .max { $0.window.percent < $1.window.percent }
     }
     private var headline: String {

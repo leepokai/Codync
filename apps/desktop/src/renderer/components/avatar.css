@@ -40,3 +40,25 @@
 .avatar-badge.unread {
   background: var(--accent-fill);
 }
+
+.lead-agent-badge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--warning);
+  color: white;
+}
+.lead-agent-badge.interactive { cursor: pointer; }
+.lead-agent-badge.interactive::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+}
+.lead-agent-badge.interactive:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.lead-avatar > .avatar-badge { bottom: auto; top: 0; }

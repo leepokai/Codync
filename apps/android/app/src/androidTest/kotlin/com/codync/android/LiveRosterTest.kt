@@ -87,7 +87,7 @@ class LiveRosterTest {
         val bot = MirrorDatabase(context, local.directory, computer.id).use { it.snapshot().bots.first() }
         val permitted = context.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()
         assertTrue("Enable notifications in the phone's app settings before physical push acceptance", permitted)
-        assertTrue("Enable bot notifications in Codync before push acceptance", PushPreferences.enabled(context))
+        assertTrue("Enable bot notifications in Codync before push acceptance", computer.notifications)
         val destination = buildJsonObject {
             put("fid", requireNotNull(PushPreferences.fid(context)))
             put("pushKey", local.identity().pushKey)

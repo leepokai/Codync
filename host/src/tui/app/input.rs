@@ -203,6 +203,7 @@ impl App {
             KeyCode::Char('C') => self.open_connection(),
             KeyCode::Char('F') => self.retry_failed_run(),
             KeyCode::Char('I') if self.error.is_some() && self.bots.is_empty() => self.install_host(),
+            KeyCode::Char('I') if self.bot().is_some_and(|b| b.lead) => self.overlays.push(Overlay::LeadAgent(0)),
             KeyCode::Char('?') => self.overlays.push(Overlay::Help(Editor::default())),
             KeyCode::Char('!') => self.jump(Mark::Need),
             KeyCode::Char('u') => self.jump(Mark::Unread),
@@ -279,6 +280,7 @@ impl App {
             }
             KeyCode::Char('{') => self.step_turn(-1),
             KeyCode::Char('}') => self.step_turn(1),
+            KeyCode::Char('>') => self.toggle_steps(),
             KeyCode::Char('t') => {
                 self.trace = if self.trace == TraceMode::Pane { TraceMode::Off } else { TraceMode::Pane };
                 if self.trace == TraceMode::Off && self.focus == Focus::Trace {
@@ -312,9 +314,10 @@ impl App {
                 self.focus = Focus::Trace;
             }
             KeyCode::Char('b') => self.compact = !self.compact,
-            KeyCode::Char('U') => self.overlays.push(Overlay::Usage),
+            KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),
             KeyCode::Char('R') => self.open_routines(),
+            KeyCode::Char('L') => self.open_library(),
             KeyCode::Char('A') => self.open_market(),
             KeyCode::Char('r' | 'v') if !roster_page && self.selected.is_some() => {
                 self.chat_page = true;
@@ -322,6 +325,7 @@ impl App {
                 self.step_pick(0);
             }
             KeyCode::Char('P') => self.open_pair(),
+            KeyCode::Char('N') => self.open_network(),
             KeyCode::Char('s') => {
                 if let Some(b) = self.bot() {
                     if matches!(b.status, Status::Working | Status::NeedsInput) {
@@ -347,7 +351,9 @@ impl App {
                 }
             }
             KeyCode::Char('x') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot can't be deleted");
+                } else if let Some(b) = self.bot() {
                     let (detail, note) = if b.group {
                         ("Its conversation goes away.".into(), "Its bots stay.".into())
                     } else {
@@ -368,7 +374,9 @@ impl App {
             }
             KeyCode::Char('e') => self.edit_bot(),
             KeyCode::Char('p') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot always stays on top");
+                } else if let Some(b) = self.bot() {
                     let (id, pinned) = (b.id.clone(), !b.pinned);
                     self.call("updateBot", json!({"id": id, "pinned": pinned}), After::Nothing);
                 }
@@ -396,6 +404,7 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => {
                 let hit = self.hits.clicks.iter().rev().find(|(r, _)| r.contains(at)).map(|(_, c)| c.clone());
                 match hit {
+                    Some(Click::LeadAgent) => self.overlays.push(Overlay::LeadAgent(0)),
                     Some(Click::Bot(id)) => {
                         self.overlays.clear();
                         self.select(&id);
@@ -415,6 +424,7 @@ impl App {
                         }
                     }
                     Some(Click::Composer) => self.start_typing(),
+                    Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
                     None => {
                         if self.overlays.is_empty() {

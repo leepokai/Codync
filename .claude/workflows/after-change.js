@@ -69,9 +69,12 @@ const CHECKS = {
   required: ['checks'],
 }
 
+// Review and verification always run on Opus or above, whatever model started the session.
+const REVIEW_MODEL = 'opus'
+
 const REVIEWERS = [
   { name: 'correctness', text: 'Lens: correctness: bugs, regressions, broken edge cases, error handling, data loss, security, and compatibility with older clients and hosts (docs/reference/compatibility.md). Report only real defects with a concrete failure scenario; style nits are not findings.' },
-  { name: 'completeness', text: 'Lens: completeness: every client the change should reach (iPhone, Android, desktop, terminal UI, per CLAUDE.md cross-platform rules), docs made stale by it, missing or weak tests, and the version bump and What\'s New rules. Report only real gaps; style nits are not findings.' },
+  { name: 'completeness', text: 'Lens: completeness: every client the change should reach (iPhone, Android, desktop, terminal UI, per CLAUDE.md cross-platform rules), docs made stale by it (the user manual in web/content/docs/ too, for anything users see or do differently: docs/guides/user-docs.md), missing or weak tests, and the version bump and What\'s New rules. Report only real gaps; style nits are not findings.' },
   { name: 'refactor', text: 'Lens: refactor (docs/guides/clean-code.md "After every change"): responsibility splits, files past ~500 lines, long functions, layer leaks, missed reuse, language best practices (Swift 6, Rust rust-skills, strict TypeScript, Compose). Only suggestions worth their diff.' },
 ]
 
@@ -80,7 +83,7 @@ const reviews = await parallel(REVIEWERS.map((r) => () =>
   agent(`Review a code change, read-only (edit nothing). ${r.text}
 ${scope}
 Most important first. Return an empty list when there is nothing.`,
-    { label: `review:${r.name}`, phase: 'Review', schema: FINDINGS })))
+    { label: `review:${r.name}`, phase: 'Review', schema: FINDINGS, model: REVIEW_MODEL })))
 const [bugs, gaps, refactors] = reviews.map((r) => r?.findings ?? [])
 const found = [...bugs, ...gaps]
 let confirmed = []
@@ -89,7 +92,7 @@ if (found.length) {
   const verdict = await agent(`Verify review findings on a code change, read-only. For each finding, read the code and try to refute it: is the failure scenario real in this code? Default to refuted when you can't reproduce the reasoning. Merge duplicates.
 ${scope}
 Findings:
-${JSON.stringify(found, null, 2)}`, { label: 'verify', phase: 'Review', schema: VERDICTS })
+${JSON.stringify(found, null, 2)}`, { label: 'verify', phase: 'Review', schema: VERDICTS, model: REVIEW_MODEL })
   confirmed = verdict?.confirmed ?? found
   refuted = verdict?.refuted ?? []
 }

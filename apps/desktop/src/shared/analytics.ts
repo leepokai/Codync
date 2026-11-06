@@ -17,6 +17,8 @@ export type Screen =
   | 'pairing'
   | 'voice_settings'
   | 'computer_access'
+  | 'library'
+  | 'artifact'
 
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
@@ -28,6 +30,10 @@ export type SignInFailure = 'cancelled' | 'timeout' | 'verification' | 'error'
 
 /** What carried a voice call: on-device speech, a realtime model, or cloud transcription and speech. */
 export type VoiceCallEngine = 'on_device' | 'openai' | 'gemini' | 'cloud'
+/** The first phase of a call's engine that lasted too long. */
+export type VoiceStuck = 'none' | 'connecting' | 'reconnecting' | 'speaking'
+/** Why a call's engine gave up. */
+export type VoiceFailure = 'none' | 'microphone' | 'connection' | 'provider'
 
 export type AnalyticsEvent =
   | { event: 'app_opened'; at_login: boolean }
@@ -42,6 +48,7 @@ export type AnalyticsEvent =
   | { event: 'link_opened'; link: Link }
   | { event: 'screen_viewed'; screen: Screen }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
+  | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

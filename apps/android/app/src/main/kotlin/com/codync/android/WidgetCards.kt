@@ -80,9 +80,7 @@ internal fun UsageWindow.resetsShort(now: Long = System.currentTimeMillis()): St
 /** "resets 3h 20m" / "resets in 2d 6h". Compact times become "3小时20分后重置". */
 @Composable internal fun resetLine(raw: String): String {
     val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)
-    val systemChinese = LocalSystemChinese.current
-    val phrases = LocalPhrases.current
-    return spokenReset(raw, language.usesChinese(systemChinese)) { translate(it, language, systemChinese, phrases) }
+    return spokenReset(raw, language.usesChinese(LocalSystemChinese.current), translator())
 }
 
 internal fun spokenReset(raw: String, chinese: Boolean, tr: (String) -> String): String {
@@ -189,7 +187,7 @@ internal fun until(at: Long, now: Long): String {
                     color = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
                 Text("${tr(top.title)} · ${tr("highest usage")}", Modifier.padding(bottom = 6.dp), style = Type.system(11f), color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            for (window in provider.windows.take(if (layout == ProviderLayout.Large) 4 else 2)) {
+            for (window in provider.limits.take(if (layout == ProviderLayout.Large) 4 else 2)) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(tr(window.title), Modifier.weight(1f), style = Type.system(11f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)

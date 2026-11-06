@@ -1,5 +1,6 @@
 // Wire types for bdots-inspired features: mini-apps, capability links, open items,
 // proactive settings, action class policies, robot avatar looks and MCP failure diagnostics.
+import { isInternalEntry } from './entry-visibility.ts'
 
 export type ActionClass =
   | 'files'
@@ -206,6 +207,8 @@ interface DecisionEntry {
   seq: number
   createdAt: number
   data: {
+    internal?: boolean
+    from?: string
     status?: string
     title?: string
     text?: string
@@ -221,7 +224,7 @@ interface DecisionEntry {
  * message has followed (the bot has not moved on from them), newest first. Shapes are those the host really writes.
  */
 export function collectPendingDecisions(entries: Iterable<DecisionEntry>): PendingDecision[] {
-  const all = [...entries]
+  const all = [...entries].filter((e) => !isInternalEntry(e))
   const lastReply = new Map<string, number>()
   for (const e of all) {
     if (e.kind === 'user' || e.kind === 'agent') lastReply.set(e.botId, Math.max(lastReply.get(e.botId) ?? -1, e.seq))
@@ -267,6 +270,7 @@ export function collectDeliverables(
     botId: string
     createdAt: number
     data: {
+      internal?: boolean
       files?: { id: string; name: string; size: number; sha256: string }[]
     }
   }>,
@@ -274,6 +278,7 @@ export function collectDeliverables(
   const seen = new Set<string>()
   const out: DeliverableItem[] = []
   for (const e of entries) {
+    if (isInternalEntry(e)) continue
     const files = e.data.files
     if (!files?.length) continue
     for (const f of files) {

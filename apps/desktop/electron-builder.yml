@@ -23,11 +23,7 @@ extraResources:
 protocols:
   - name: Codync
     schemes: [codync, com.pokai.Codync]
-publish:
-  provider: github
-  owner: leepokai
-  repo: Codync
-  releaseType: release
+publish: null
 
 mac:
   category: public.app-category.developer-tools

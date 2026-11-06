@@ -1,13 +1,14 @@
 // ComputerRelay: one Durable Object per computer (spec §7, §8.5).
 //
 // Presence, ciphertext forwarding between the host socket and device sockets, ACL admission, and the
-// offline mailbox (device → host), and the queue of public routine webhook deliveries (§7.8). It never
-// parses channel frames and never stores chat. Reached only through requests the Worker builds itself
+// offline mailbox (device → host), the queue of public routine webhook deliveries (§7.8), and the cloud
+// assistant's tool calls to the host (§7.9). It never parses channel frames and never stores chat. Reached only through requests the Worker builds itself
 // (`X-Codync-Internal: 1`), never a client's own request.
 
 import { DurableObject } from "cloudflare:workers";
 import { b64url, fromB64url, NONCE_TTL_MS, randomId, utf8, verifyEd25519 } from "./auth";
 import { authorized, deliveryId, forwarded, HOOK_ID, HOOK_MAX_BODY, parseHooks } from "./hooks";
+import { HostCalls } from "./host-calls";
 import type { Env } from "./index";
 
 const MAX_DEVICE_SOCKETS = 16;
@@ -29,6 +30,8 @@ const HOOK_PER_COMPUTER = 1000;
 const HOOK_MAX_BYTES = 16 * 1024 * 1024;
 const HOOK_RETRY_MIN_MS = 30_000;
 const HOOK_RETRY_MAX_MS = 15 * 60_000;
+/** The host answers a cloud assistant's call at once; past this it's too old to know them, or stuck. */
+const ASSISTANT_TIMEOUT_MS = 10_000;
 /** No ping for this long (both sides ping every 30 s): the socket is dead and gets closed. */
 const SILENT_TIMEOUT_MS = 90_000;
 const ALARM_MS = 60_000;
@@ -118,6 +121,8 @@ export class ComputerRelay extends DurableObject<Env> {
   private readonly rates = new Map<string, { start: number; msgs: number; bytes: number }>();
   /** Sockets this instance retired. Hibernation drops it, so a socket still in it later means the DO never slept. */
   private readonly retiredHere = new WeakSet<WebSocket>();
+  /** Cloud assistant calls waiting on the host. */
+  private readonly calls = new HostCalls();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -145,6 +150,7 @@ export class ComputerRelay extends DurableObject<Env> {
     if (pathname === "/relay") return this.relay(req);
     if (pathname === "/internal/block" && req.method === "POST") return this.block(req);
     if (pathname === "/internal/hook" && req.method === "POST") return this.hook(req);
+    if (pathname === "/internal/assistant" && req.method === "POST") return this.assistant(req);
     if (pathname === "/internal/changed" && req.method === "POST") {
       this.toHosts({ t: "cloud.changed" });
       return Response.json({});
@@ -343,6 +349,18 @@ export class ComputerRelay extends DurableObject<Env> {
     );
   }
 
+  // ---- the cloud assistant (§7.9) ----
+
+  /** `POST /internal/assistant {user, tool, args}`: the host's answer, as an `Answer`. */
+  private async assistant(req: Request): Promise<Response> {
+    const body = (await req.json().catch(() => null)) as { user?: unknown; tool?: unknown; args?: unknown } | null;
+    if (typeof body?.user !== "string" || typeof body.tool !== "string") return errorResponse(400, "badRequest");
+    const host = this.readyHost();
+    if (!host) return Response.json({ ok: false, code: "offline" }, { status: 503 });
+    const call = { t: "assistant.call", user: body.user, tool: body.tool, args: body.args ?? {} };
+    return Response.json(await this.calls.ask(host, call, ASSISTANT_TIMEOUT_MS));
+  }
+
   // ---- messages ----
 
   override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -398,6 +416,8 @@ export class ComputerRelay extends DurableObject<Env> {
         return this.onHooks(ws, msg);
       case "hook.ack":
         return this.onHookAck(ws, msg, now);
+      case "assistant.result":
+        return this.calls.answered(msg);
       case "ping":
         return send(ws, PONG);
       default:
@@ -650,6 +670,7 @@ export class ComputerRelay extends DurableObject<Env> {
     this.setMeta("lastSeenAt", String(now));
     this.sql.exec("UPDATE mailbox SET state = 'queued' WHERE state = 'delivering'");
     this.sql.exec("UPDATE hookbox SET state = 'queued' WHERE state = 'delivering'");
+    this.calls.offline();
     if (!this.readyHost(exclude)) {
       const presence = JSON.stringify(this.presence(exclude));
       for (const [ws] of this.devices()) send(ws, presence);

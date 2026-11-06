@@ -92,9 +92,9 @@ import kotlinx.coroutines.launch
                         settings.domStorageEnabled = false
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
-                        addJavascriptInterface(MiniAppBridge(address, store, scope, this), "CodyncBridge")
-                        webViewClient = MiniAppWebClient(address, store) { openingError = it }
-                        loadUrl(address.pageUrl)
+                        val bridge = MiniAppMessageBridge(address, store, scope) { openingError = it }
+                        webViewClient = MiniAppWebClient(address, store, bridge::pageStarted) { openingError = it }
+                        if (bridge.install(this)) loadUrl(address.pageUrl)
                     }
                 }, onReset = null, onRelease = { it.destroy() })
             }

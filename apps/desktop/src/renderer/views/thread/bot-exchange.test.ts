@@ -174,6 +174,13 @@ test('trace entries and plain notices: trace is skipped, a plain notice splits',
 
 test('the summary counts and flags a failure anywhere in the group', () => {
   const slot = groupExchanges([notice('a', 'egan', 1, 'completed'), notice('b', 'egan', 2, 'failed'), notice('c', 'egan', 3, 'completed')])[0]!
-  assert.deepEqual(groupSummary(slot.exchanges!), { peerId: 'owen', count: 3, failed: true })
+  assert.deepEqual(groupSummary(slot.exchanges!), { peerId: 'owen', peerName: undefined, count: 3, failed: true })
   assert.equal(groupSummary(groupExchanges([notice('a', 'egan', 1, 'completed')])[0]!.exchanges!).failed, false)
+})
+
+test('a peer on another computer is named by its exchanges', () => {
+  const remote = notice('a', 'egan', 1, 'completed', { targetBotId: 'reviewer@desk' })
+  remote.data.botMessage!.peerName = 'Reviewer on desk'
+  const slot = groupExchanges([remote, notice('b', 'egan', 2, 'completed', { targetBotId: 'reviewer@desk' })])[0]!
+  assert.deepEqual(groupSummary(slot.exchanges!), { peerId: 'reviewer@desk', peerName: 'Reviewer on desk', count: 2, failed: false })
 })

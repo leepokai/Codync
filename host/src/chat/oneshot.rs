@@ -9,7 +9,7 @@ use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 
-const TIMEOUT: Duration = Duration::from_secs(180);
+const TIMEOUT: Duration = Duration::from_mins(3);
 
 /// Runs one prompt on a throwaway agent of the bot's harness and returns its reply.
 /// Claude gets a real system prompt, no tools, no settings and no saved session; an agent with ACP
@@ -21,13 +21,17 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     if hub.store.kv_read(&format!("agent-env:{}", cfg.backend))?.is_some() {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let mut env = crate::agent::auth::env(&hub.store, &cfg.backend)?;
-    let mut commands = crate::agent::bot::launch_commands(cfg, |_| {}).await?;
-    crate::agent::own_memory::turn_off(&cfg.backend, &cwd, &mut env, &mut commands).await;
+    let env = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
     let mut conn = None;
     let mut last_err = None;
-    for command in commands {
-        match crate::agent::bot::start_agent(&command, &cwd, &env, Duration::from_secs(60)).await {
+    for candidate in crate::agent::bot::launch_commands(cfg)? {
+        let started = async {
+            let mut command = [candidate.resolve(|_| {}).await?.acp()];
+            let mut env = env.clone();
+            crate::agent::own_memory::turn_off(&cfg.backend, &cwd, &mut env, &mut command).await;
+            crate::agent::bot::start_agent(&command[0], &cwd, &env, Duration::from_mins(1)).await
+        };
+        match started.await {
             Ok(c) => {
                 conn = Some(c);
                 break;
@@ -67,7 +71,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         let mut out = String::new();
         loop {
             tokio::select! {
-                r = &mut prompt => { r?; break }
+                r = &mut prompt => { r.and_then(acp::codebuddy::prompt_result)?; break }
                 inc = conn.rx.recv() => {
                     if !collect(&acp, inc, &mut out).await {
                         bail!("the background job's agent exited");

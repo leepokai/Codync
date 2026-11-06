@@ -37,7 +37,6 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     LaunchedEffect(context) { NavigationPreferences.ensureLoaded(context) }
     var welcomed by rememberSaveable { mutableStateOf(false) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
-    var accountSettings by rememberSaveable { mutableStateOf(false) }
     var showComputers by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var showUsage by rememberSaveable { mutableStateOf(false) }
@@ -50,7 +49,7 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     var handledNavigation by rememberSaveable { mutableIntStateOf(state.navigationRequest) }
     var handledGeneration by rememberSaveable { mutableIntStateOf(state.generation) }
     fun closeAll() {
-        showAccount = false; accountSettings = false; showComputers = false; showPairing = false; showMarketplace = false
+        showAccount = false; showComputers = false; showPairing = false; showMarketplace = false
         access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
@@ -64,6 +63,8 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
                 LinkPage.Computers -> {
                     requestedTab = AppTab.Computers
                     requestedTabToken++
+                    // The Settings destination, with Computer management over it.
+                    showComputers = true
                 }
                 LinkPage.Extensions -> {
                     requestedTab = AppTab.Extensions
@@ -96,7 +97,7 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
         })
     }
     BackHandler(root == Root.Pairing && !signedIn) { welcomed = false }
-    val openMarketplace = { showAccount = false; accountSettings = false; showComputers = false; showMarketplace = true }
+    val openMarketplace = { showAccount = false; showComputers = false; showMarketplace = true }
     Box(Modifier.fillMaxSize().background(Palette.background)) {
         AnimatedContent(root, transitionSpec = {
             if (initialState == Root.Welcome && targetState == Root.Pairing)
@@ -122,8 +123,6 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
                     newBot = { editor = BotDraft() },
                     newGroup = { groupEditor = GroupDraft() },
                     edit = { bot -> if (bot.kind == "group") groupEditor = GroupDraft.from(bot) else editor = BotDraft.from(bot) },
-                    pair = { showPairing = true },
-                    ask = { access = it },
                     requestedTab = requestedTab,
                     requestedTabToken = requestedTabToken,
                 ) {
@@ -132,20 +131,14 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
             }
         }
     }
-    // The account sheet holds its own push (Computers & settings), as the iOS sheet's NavigationStack.
-    CodyncSheet(
-        isPresented = showAccount && (state.setupComplete || signedIn) && !state.loading,
-        onDismiss = { showAccount = false; accountSettings = false },
-        detents = if (accountSettings) setOf(SheetDetent.Expanded) else setOf(SheetDetent.Medium, SheetDetent.Expanded),
-        initialDetent = SheetDetent.Expanded,
-    ) {
-        NavStack(listOfNotNull("account", "settings".takeIf { accountSettings }), key = { it }, pop = { accountSettings = false }) { page ->
-            if (page == "account") AccountSwitcherView(state, store, { accountSettings = true }) { showPairing = true }
-            else SettingsView(state, store, { accountSettings = false }, { showPairing = true }, { access = it }, openMarketplace)
-        }
+    // The account sheet holds its own sign-in and computers, as the iOS sheet's NavigationStack.
+    CodyncSheet(showAccount && (state.setupComplete || signedIn) && !state.loading, { showAccount = false }) {
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Account))
+        AccountSwitcherView(state, store) { showPairing = true }
     }
     CodyncSheet(showComputers && !state.loading, { showComputers = false }) {
-        SettingsView(state, store, null, { showPairing = true }, { access = it }, openMarketplace)
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))
+        ComputersView(state, store, { showPairing = true }, { access = it }, openMarketplace)
     }
     CodyncSheet(access, { access = null }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { AccessRequestView(state, store, it) }
     CodyncSheet(showPairing && !state.loading, { showPairing = false }) { PairingView(state, store, inModal = true) }

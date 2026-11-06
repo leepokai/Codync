@@ -5,6 +5,7 @@ import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '.
 import { Icon } from './Icon'
 import { isRobotLook, RobotAvatar } from './RobotAvatar'
 import './avatar.css'
+import { LeadAgentBadge } from './LeadAgentBadge'
 
 export type Mood = 'idle' | 'working' | 'needsInput' | 'failed'
 
@@ -341,8 +342,9 @@ export function GroupAvatar({ members, size = 40, animated = true }: { members: 
 /** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members. */
 export function AvatarWithStatus({ bot, members = [], size = 44 }: { bot: Bot; members?: Bot[]; size?: number }) {
   return (
-    <div className="avatar-frame" style={{ width: size, height: size }}>
+    <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
       {isGroup(bot) ? <GroupAvatar members={members} size={size} /> : <BotAvatar bot={bot} size={size} />}
+      {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
       {needsInput(bot) ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>
           <Icon name="exclamationmark" size={size * 0.2} weight="black" scaled={false} />

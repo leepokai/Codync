@@ -178,6 +178,7 @@ impl Store {
         super::analytics::open(&c)?;
         super::apps::open(&c)?;
         super::open_items::open(&c)?;
+        super::flows::open(&c)?;
         codync_mem::schema::migrate(&c)?;
         let secret_key = if path == Path::new(":memory:") {
             let mut key = vec![0; 32];

@@ -8,8 +8,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,25 +27,37 @@ import com.codync.android.core.SharedFile
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 
-/** A file a bot shared, as iOS `FileDownloadCard`: its name and size, and a button to download (or cancel). */
+/** A file a bot shared, as iOS `FileDownloadCard`: an image shows itself (tap for full size), then its name and size, and a
+ *  button to download (or cancel). */
 @Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, state: AppState, store: AppStore) {
+    var viewing by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (file.showsAsImage) SharedImage(file, entry.id, 720, state, store, Modifier.sizeIn(maxHeight = 280.dp)
+            .clip(RoundedRectangle(10.dp)).plainButton { viewing = true }.semantics { contentDescription = file.name })
+        FileRow(entry, file, state, store)
+    }
+    SharedImageSheet(file.takeIf { viewing }, entry.id, state, store) { viewing = false }
+}
+
+@Composable private fun FileRow(entry: Entry, file: SharedFile, state: AppState, store: AppStore) {
     val download = state.fileDownloads[file.id]
     val busy = download is FileDownloadState.Downloading
-    Row(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent).padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Symbol(AttachmentIcon.symbol(file.name), size = 24.dp, tint = Palette.secondary)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(detail(file, download), style = Type.caption2, color = Palette.secondary)
         }
-        Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry, file) }
+        Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file) }
             .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
             Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
         }
     }
 }
 
-private fun detail(file: SharedFile, download: FileDownloadState?): String {
+/** A shared file's size, or how its download goes. */
+internal fun detail(file: SharedFile, download: FileDownloadState?): String {
     val size = formatBytes(file.size)
     return when (download) {
         is FileDownloadState.Downloading -> "${formatBytes(download.received)} of $size"

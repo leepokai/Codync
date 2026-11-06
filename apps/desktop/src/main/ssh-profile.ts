@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { posix, win32 } from 'node:path'
-import type { SSHProfile } from '../shared/ssh.ts'
+import { isSSHHost, type SSHProfile } from '../shared/ssh.ts'
 
 /** Only native absolute paths: a drive-relative Windows key is ambiguous. */
 export const isAbsoluteKeyPath = (path: string, os = process.platform) =>
@@ -9,7 +9,7 @@ export const isAbsoluteKeyPath = (path: string, os = process.platform) =>
 
 /** A reason the profile can't be used, or null. */
 export function validate(p: SSHProfile): string | null {
-  if (p.host.startsWith('-') || !/^[A-Za-z0-9._-]+$/.test(p.host)) {
+  if (!isSSHHost(p.host)) {
     return 'Use an SSH alias or a hostname: letters, digits, dots, dashes and underscores.'
   }
   if (p.user !== null && !/^[A-Za-z_][A-Za-z0-9._-]*$/.test(p.user)) return "That user name isn't valid."

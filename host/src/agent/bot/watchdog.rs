@@ -24,9 +24,9 @@ use std::time::{Duration, Instant};
 /// Identical calls in a row that stop the turn.
 const LOOP_LIMIT: u32 = 10;
 /// Silence that's worth telling the user about.
-const STALL_AFTER: Duration = Duration::from_secs(10 * 60);
+const STALL_AFTER: Duration = Duration::from_mins(10);
 /// A tool call that has run this long may be hung.
-const TOOL_HUNG_AFTER: Duration = Duration::from_secs(30 * 60);
+const TOOL_HUNG_AFTER: Duration = Duration::from_mins(30);
 
 /// A tool call started and not finished: what it is so far.
 struct Call {

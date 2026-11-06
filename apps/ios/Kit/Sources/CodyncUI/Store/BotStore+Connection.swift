@@ -7,7 +7,9 @@ extension BotStore {
     public func retire() {
         let calls = Array(voiceCalls.values)
         voiceCalls.removeAll()
-        setActive(false)
+        isActive = false
+        stopTransport()
+        saveCache()
         retired = true
         fileDownloads.retire()
         for call in calls { call.end() }
@@ -22,6 +24,7 @@ extension BotStore {
         client = nil
         selection = nil
         screenRequest = nil
+        cancelVoiceCallRequest()
     }
 
     public func setActive(_ active: Bool) {
@@ -29,32 +32,60 @@ extension BotStore {
         isActive = active
         if active {
             // Returning to the foreground must not interrupt a live call's sends.
-            if voiceCalls.isEmpty || streamTask == nil { restartStream() }
-        } else if voiceCalls.isEmpty {
-            // Disconnect so the host knows we're gone and sends pushes instead.
-            stopTransport()
-            saveCache()
+            if !hasBackgroundWork || streamTask == nil { restartStream() }
+        } else {
+            stopIfIdle()
         }
     }
 
     public func restartStream() {
-        guard isActive || !voiceCalls.isEmpty, !retired else { return }
+        guard isActive || hasBackgroundWork, !retired else { return }
         stopTransport()
         if connection != .online { setConnection(.connecting) }
         streamTask = Task { [weak self] in await self?.runStream() }
     }
 
     /// Audio owns this subscription, so background calls don't depend on SwiftUI updates.
-    func beginVoiceCall(_ id: UUID, botId: String, speak: @escaping @MainActor (String) -> Void,
-                        announce: (@MainActor (String) -> Void)? = nil, end: @escaping @MainActor () -> Void) {
+    func beginVoiceCall(_ id: UUID, hear: @escaping @MainActor (CallCue) -> Void, end: @escaping @MainActor () -> Void) {
         guard !retired, voiceCalls[id] == nil else { return }
-        voiceCalls[id] = VoiceCall(botId: botId, startRev: rev, speak: speak, announce: announce ?? speak, end: end)
+        voiceCalls[id] = VoiceCall(hear: hear, end: end)
         if streamTask == nil { restartStream() }
     }
 
     func endVoiceCall(_ id: UUID) {
         guard voiceCalls.removeValue(forKey: id) != nil else { return }
-        if !isActive && voiceCalls.isEmpty {
+        stopIfIdle()
+    }
+
+    func beginShortcutSend() throws {
+        try Task.checkCancellation()
+        guard !retired else { throw CancellationError() }
+        shortcutSends += 1
+        if streamTask == nil { restartStream() }
+    }
+
+    func endShortcutSend() {
+        shortcutSends -= 1
+        if !retired { stopIfIdle() }
+    }
+
+    /// A call's end on its way to the computer keeps the connection the call kept: a call ended in the background
+    /// (from its Live Activity) would otherwise drop it before the computer writes the call's line.
+    func beginCallEnd() {
+        callEnds += 1
+        if streamTask == nil { restartStream() }
+    }
+
+    func finishCallEnd() {
+        callEnds -= 1
+        if !retired { stopIfIdle() }
+    }
+
+    private var hasBackgroundWork: Bool { !voiceCalls.isEmpty || shortcutSends > 0 || callEnds > 0 }
+
+    private func stopIfIdle() {
+        if !isActive && !hasBackgroundWork {
+            // Disconnect so the host knows we're gone and sends pushes instead.
             stopTransport()
             saveCache()
         }
@@ -185,12 +216,11 @@ extension BotStore {
         Task { [weak self] in
             for await computer in updates {
                 guard let self, !self.retired else { return }
-                // The color and route are picked on this device; the transport's copy may be older.
+                // The transport's copy of this device's picks may be older.
                 self.updateComputer { current in
-                    let (color, route) = (current.color, current.route)
-                    current = computer
-                    current.color = color
-                    current.route = route
+                    var next = computer
+                    next.keepDevicePicks(from: current)
+                    current = next
                 }
             }
         }

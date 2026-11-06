@@ -12,6 +12,14 @@ export function sandboxPorts(claimed: Iterable<number>): number[] {
   return Array.from({ length: 100 }, (_, i) => 19300 + i).filter((port) => !taken.has(port))
 }
 
+/** The Clerk development secret key a sandbox may use: the environment's, else the `.env` file's `CODYNC_CLERK_SECRET_KEY`; null when neither is set. Anything but an `sk_test_` key throws, so production is never reached. */
+export function devClerkSecretKey(fromEnv: string | undefined, envFile: string | undefined) {
+  const raw = fromEnv ?? /^CODYNC_CLERK_SECRET_KEY=(.+)$/m.exec(envFile ?? '')?.[1] ?? ''
+  const key = raw.trim().replace(/^["']|["']$/g, '')
+  if (key && !key.startsWith('sk_test_')) throw new Error('CODYNC_CLERK_SECRET_KEY must be the development instance key (sk_test_...).')
+  return key || null
+}
+
 /** `Codync Dev (feat-x)` for `~/.codync-dev-feat-x`; any other host data folder shows by its name. */
 export function sandboxLabel(name: string, home: string) {
   const folder = home.split(/[\\/]/).filter(Boolean).pop() ?? home

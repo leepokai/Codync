@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle};
-use super::{MemoryMode, Reply, Shell, open_browser, s};
+use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
     pub(in crate::tui) fn on_sheet_reply(&mut self, r: Reply, res: Result<Value, String>) {
@@ -59,9 +59,11 @@ impl App {
                     }
                 }
             }
+            Reply::CallEntries(call) => {
+                self.call_entries.insert(call, entries_of(&v));
+            }
             Reply::BotChat { bot, peer } => {
-                let entries: Vec<Entry> =
-                    v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect();
+                let entries = entries_of(&v);
                 for o in &mut self.overlays {
                     if let Overlay::BotChat(c) = o
                         && c.bot == bot
@@ -88,6 +90,8 @@ impl App {
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
             }
+            Reply::Flow(bot) => self.flow_loaded(&bot, &v),
+            Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
                     self.overlays.truncate(i);
@@ -107,22 +111,22 @@ impl App {
                     "Copied a curl command (the cloud is off: this computer only)"
                 });
             }
-            Reply::Registry { more } => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
-                    let items = v["items"].as_array().cloned().unwrap_or_default();
-                    if more {
-                        m.registry.extend(items);
-                    } else {
-                        m.registry = items;
-                    }
-                    m.next = v["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_owned);
-                    m.searched.get_or_insert_with(String::new);
-                    m.loading = false;
-                    m.error = None;
+            Reply::Registry { search, cursor } => self.with_market(|app, m| {
+                if !m.awaits(&search, cursor.as_deref()) {
+                    return;
                 }
-            }
+                let items = v["items"].as_array().cloned().unwrap_or_default();
+                if cursor.is_some() {
+                    m.registry.extend(items);
+                } else {
+                    m.registry = items;
+                }
+                m.next = v["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_owned);
+                m.searched.get_or_insert_with(String::new);
+                m.loading = false;
+                m.error = None;
+                app.load_near_end(m);
+            }),
             Reply::Skills => {
                 if let Some(Overlay::Market(m)) =
                     self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
@@ -191,7 +195,26 @@ impl App {
             }
             Reply::Accounts { scope, authenticate } => self.accounts_reply(&scope, authenticate, &v),
             Reply::Models(backend) => {
-                let list = v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+                let mut list: Vec<_> =
+                    v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+                if v["defaultModelOptions"] == true
+                    && let Some(default) = v["models"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find(|m| m["id"] == v["currentModelId"])
+                        .and_then(AgentModel::parse)
+                {
+                    list.insert(
+                        0,
+                        AgentModel {
+                            id: String::new(),
+                            name: "Default".into(),
+                            options: default.options,
+                            options_error: default.options_error,
+                        },
+                    );
+                }
                 if v["fastMode"] == true {
                     self.fast_mode.insert(backend.clone());
                 }
@@ -261,14 +284,27 @@ impl App {
                     }
                 }
             }
-            Reply::Registry { .. } | Reply::Skills => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
+            Reply::Registry { search, cursor } => self.with_market(|_, m| {
+                if m.awaits(search, cursor.as_deref()) {
                     m.loading = false;
-                    m.skills.get_or_insert_with(Vec::new);
                     m.error = Some(e);
                 }
+            }),
+            Reply::Skills => self.with_market(|_, m| {
+                m.skills.get_or_insert_with(Vec::new);
+                m.error = Some(e);
+            }),
+            Reply::CallEntries(call) => {
+                // The call's line folds again with nothing kept, so the next `o` asks again.
+                let lines: Vec<String> = self
+                    .entries
+                    .values()
+                    .flat_map(|m| m.values())
+                    .filter(|l| l.unfolds() && l.call() == Some(call.as_str()))
+                    .map(|l| l.id.clone())
+                    .collect();
+                self.unfolded.retain(|id| !lines.contains(id));
+                self.flash(&e);
             }
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {
@@ -290,6 +326,16 @@ impl App {
                     }
                 }
             }
+            Reply::Library(bot) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Library(l) = o
+                        && l.bot == *bot
+                    {
+                        l.items.get_or_insert_with(Vec::new);
+                    }
+                }
+                self.flash(&e);
+            }
             Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {
@@ -309,6 +355,19 @@ impl App {
         }
     }
 
+    /// Runs `f` on the open marketplace, with the rest of the app readable beside it.
+    fn with_market(&mut self, f: impl FnOnce(&Self, &mut Market)) {
+        let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Market(_))) else { return };
+        let overlay = match self.overlays.remove(i) {
+            Overlay::Market(mut m) => {
+                f(self, &mut m);
+                Overlay::Market(m)
+            }
+            other => other,
+        };
+        self.overlays.insert(i, overlay);
+    }
+
     /// Loads what every open sheet shows again, after a change.
     pub(in crate::tui) fn refresh_sheets(&mut self) {
         let mut calls: Vec<(&'static str, Value, After)> = vec![];
@@ -322,6 +381,16 @@ impl App {
                 }
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
+                }
+                Overlay::Flow(f) => {
+                    calls.push((
+                        "routineFlowCanvas",
+                        json!({"botId": f.bot}),
+                        After::Sheet(Reply::Flow(f.bot.clone())),
+                    ));
+                }
+                Overlay::Library(l) => {
+                    calls.push(("library", json!({"botId": l.bot}), After::Sheet(Reply::Library(l.bot.clone()))));
                 }
                 Overlay::Market(_) | Overlay::Form(_) => {
                     calls.push(("connectors", json!({}), After::Connectors));
@@ -353,4 +422,9 @@ impl App {
         }
         list
     }
+}
+
+/// The entries in a host reply (`callEntries`, `botConversation`).
+fn entries_of(v: &Value) -> Vec<Entry> {
+    v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect()
 }

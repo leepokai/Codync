@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
-import { Button, CardSection, IconButton, Switch } from '../../components/Controls'
+import { Button, CardSection, IconButton, Reveal, Spinner, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -14,9 +14,13 @@ import { StoreContext, useApp } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
+import { ComputersUsedSection } from './ComputersUsedSection'
+import { cloudStatusLine } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
-import { errorText, liveClient, relativeDay, Reveal, SectionHeader, statusText, thisMac } from './parts'
+import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
+import { RelayAddressRow, RelayTokenRow } from './RelayFields'
 import { useSSH } from './ssh-model'
+import { SSHConfigSuggestions } from './SSHConfigSuggestions'
 import { SSHRow } from './SSHRow'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { openComputerScreen } from '../screen/open'
@@ -34,19 +38,24 @@ export function ComputersView() {
   const [editing, setEditing] = useState<{ profile: SSHProfile; isNew: boolean } | null>(null)
   const [removingCopy, setRemovingCopy] = useState<CloudComputer | null>(null)
   const managed = app.managedStores
-  const managedIds = new Set(managed.map((s) => s.computer.id))
-  const others = cloud.computers.filter((c) => !managedIds.has(c.computerId))
+  // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
+  const others = cloud.computers.filter((c) => c.computerId !== app.local?.computer.id)
+  const addSSH = (host: string) => setEditing({ profile: { ...newSSHProfile(window.codync.hostPort), host }, isNew: true })
 
   return (
     <div className="settings-computers">
-      <VStack gap={26} className="settings-computers-content">
-        {managed.map((store) => (
+      <VStack gap={44} className="settings-computers-content">
+        {/* With this computer present, the SSH computers sit in its "can use" section. */}
+        {managed.filter((store) => !app.local || store === app.local).map((store) => (
           <ManagedComputerCard key={store.computer.id} store={store} ssh={sshState.isSSH(store.computer.id)} />
         ))}
 
-        <div>
+        <div className="settings-ssh">
           <SectionHeader title="Over SSH">
-            <IconButton title="Add SSH computer" icon="plus" onClick={() => setEditing({ profile: newSSHProfile(window.codync.hostPort), isNew: true })} />
+            {sshState.config?.access === 'denied' ? (
+              <IconButton title="Find computers in your SSH config" icon="magnifyingglass" onClick={() => void sshState.answerConfig('allowed')} />
+            ) : null}
+            <IconButton title="Add SSH computer" icon="plus" onClick={() => addSSH('')} />
           </SectionHeader>
           <Reveal show={sshState.state.profiles.length === 0}>
             <Text as="div" size="callout" tone="secondary">
@@ -56,6 +65,7 @@ export function ComputersView() {
           {sshState.state.profiles.map((profile) => (
             <SSHRow key={profile.id} profile={profile} status={sshState.status(profile.id)} edit={() => setEditing({ profile, isNew: false })} />
           ))}
+          <SSHConfigSuggestions add={addSSH} />
         </div>
 
         <div>
@@ -109,8 +119,8 @@ function RouteIcon({ store }: { store: BotStore }) {
 
 const isMacLabel = thisMac === 'this Mac' ? 'This Mac' : 'This computer'
 
-/** This computer or an SSH computer: relay, account membership, pairing and authorized devices. */
-function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: boolean }) {
+/** This computer or an SSH computer: relay, account membership, the Codync it runs, pairing and authorized devices. */
+function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: BotStore; ssh: boolean; /** Shown under another computer's "can use": its own users aren't listed there. */ nested?: boolean }) {
   const tr = useTr()
   const app = useApp()
   const account = useAccount()
@@ -128,9 +138,9 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
   const manageable = online && !store.mismatch
   const name = store.hostName
 
-  const run = (work: () => Promise<void>) => {
+  const run = <T,>(work: () => Promise<T>): Promise<T> => {
     setBusy(true)
-    void work().finally(() => setBusy(false))
+    return work().finally(() => setBusy(false))
   }
 
   const setApproval = (approval: AccountApproval) =>
@@ -142,9 +152,10 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
       }
     })
 
-  const cloudLine = !cloud?.enabled
-    ? tr('Off: only Wi-Fi and Tailscale reach it, nothing goes through Cloudflare.')
-    : (cloud.lastError ?? tr(cloud.connected ? 'Reachable from anywhere through Cloudflare (encrypted).' : 'Connecting to Cloudflare…'))
+  // A private relay has no accounts: no claim, no access requests.
+  const privateRelay = cloud?.relay === 'private'
+  // The host's error is shown as it wrote it.
+  const cloudLine = cloud?.enabled && cloud.lastError ? cloud.lastError : cloud ? tr(cloudStatusLine(cloud)) : ''
 
   const accountLine = (
     <HStack key="account" gap={8} className="settings-row settings-appear">
@@ -171,7 +182,7 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
   )
 
   return (
-    <VStack gap={28}>
+    <VStack gap={16}>
       <CardSection>
         {[
           <div key="header" className="settings-row">
@@ -199,7 +210,19 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
                     <Text size="caption" tone={cloud.lastError ? 'attention' : 'secondary'}>{cloudLine}</Text>
                   </span>
                 </Switch>,
-                accountLine,
+                // The relay's address shows only while it's on: off, the host reports no address, so the
+                // field couldn't tell a saved private relay from none.
+                ...(cloud.enabled
+                  ? [<RelayAddressRow key="relay" url={cloud.url} disabled={busy || !manageable} save={(typed) => run(() => app.cloud.setCloudUrl(store, typed))} />]
+                  : []),
+                // Only a private relay asks for a token; the Codync cloud never does.
+                privateRelay ? (
+                  cloud.enabled ? (
+                    <RelayTokenRow key="relay-token" tokenSet={cloud.tokenSet === true} disabled={busy || !manageable} save={(token) => void run(() => app.cloud.setRelayToken(store, token))} />
+                  ) : null
+                ) : (
+                  accountLine
+                ),
               ]
             : []),
           ...(owner
@@ -217,12 +240,35 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
                     </Text>
                   </span>
                 </Switch>,
+                // Hosts before 2.28.0 have no cloud assistants. The cloud reads these calls, so the computer decides.
+                ...(cloud?.assistants != null
+                  ? [
+                      <Switch key="assistants" on={cloud.assistants} disabled={busy || !manageable} onChange={(on) => run(() => app.cloud.setAssistants(store, on))}>
+                        <span className="settings-stack settings-appear">
+                          <Text>{tr(`Cloud assistants`)}</Text>
+                          <Text size="caption" tone={cloud.assistants ? 'attention' : 'secondary'}>
+                            {cloud.assistants
+                              ? tr(`ChatGPT or Claude in your Codync account can message this computer's bots. Codync's cloud can read these calls.`)
+                              : tr(`Let ChatGPT or Claude message this computer's bots through your Codync account.`)}
+                          </Text>
+                        </span>
+                      </Switch>,
+                    ]
+                  : []),
               ]
             : []),
+          // On macOS and Windows this computer's Codync is this app: its version and update are on the Updates page.
+          online && store.hello && !(store === app.local && window.codync.platform !== 'linux')
+            ? <CodyncVersionRow key="codync" store={store} />
+            : null,
         ]}
       </CardSection>
 
-      <AuthorizedDevicesSection store={store} />
+      {store === app.local ? (
+        <ComputersUsedSection store={store} details={(computer) => <ManagedComputerCard store={computer} ssh nested />} />
+      ) : null}
+
+      {nested ? null : <AuthorizedDevicesSection store={store} />}
 
       <Sheet open={showVoice} onClose={() => setShowVoice(false)}>
         <StoreContext.Provider value={store}>
@@ -248,6 +294,35 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
         onClose={() => setConfirmUnclaim(false)}
       />
     </VStack>
+  )
+}
+
+/** The Codync a computer runs, and its update when one is due (iOS `CodyncVersionRow`). */
+function CodyncVersionRow({ store }: { store: BotStore }) {
+  const tr = useTr()
+  // Moved on when an update asked from here runs out of time, so one that never finished is offered again.
+  const [now, setNow] = useState(Date.now)
+  const ends = store.hostUpdateWaitEnds
+  useEffect(() => {
+    if (ends === null) return
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, ends - Date.now()))
+    return () => clearTimeout(timer)
+  }, [ends])
+  const line = store.hostVersionLine(Math.max(now, Date.now()))
+  if (!line) return null
+  return (
+    <div className="settings-row settings-appear">
+      <Icon name="arrow.down.circle" size={13} color="var(--secondary)" />
+      <VStack grow className="settings-stack">
+        <Text>Codync <Text tone="secondary" tabular>{line.version}</Text></Text>
+        {line.detail.length > 0 ? (
+          <Text size="caption" tone={line.warns ? 'attention' : 'secondary'}>{line.detail.map((sentence) => tr(sentence)).join(' ')}</Text>
+        ) : null}
+      </VStack>
+      {line.accessory?.kind === 'updating' ? <Spinner />
+        : line.accessory ? <Button onClick={() => store.requestHostUpdate()}>{line.accessory.title}</Button>
+        : null}
+    </div>
   )
 }
 

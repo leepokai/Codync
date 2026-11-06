@@ -55,7 +55,11 @@ struct MemoryCard: View {
         }
         .codyncSheet(item: $info) { info in
             switch info {
-            case .harness: if let bot { MemoryInfoSheet.harness(host.backendName(bot.backend), readable: bot.backend == "claude") }
+            case .harness:
+                if let bot {
+                    MemoryInfoSheet.harness(host.backendName(bot.backend), access: bot.harnessMemoryShared == true
+                        ? .shared : bot.backend == "claude" ? .readable : .hidden)
+                }
             case .dreams: MemoryInfoSheet.dreams
             }
         }
@@ -88,7 +92,8 @@ struct MemoryCard: View {
             }
                 .toggleStyle(.codync)
         }
-        if !shared, let bot, let on = bot.harnessMemory {
+        // The harness's own memory: a switch where Codync can turn it off, "Shared" where every bot on it shares it.
+        if !shared, let bot, bot.harnessMemory != nil || bot.harnessMemoryShared == true {
             let name = host.backendName(bot.backend)
             let own = L10n.tr("{name}'s own memory").replacingOccurrences(of: "{name}", with: name)
             HStack(spacing: 4) {
@@ -96,9 +101,14 @@ struct MemoryCard: View {
                 IconButton(L10n.tr("About {name}'s own memory").replacingOccurrences(of: "{name}", with: name), systemImage: "info.circle") {
                     withAnimation(Motion.layout) { info = .harness }
                 }
-                Toggle(isOn: Binding(get: { on }, set: { host.setHarnessMemory(bot, $0) })) { EmptyView() }
-                    .toggleStyle(.codync)
-                    .accessibilityLabel(own)
+                if let on = bot.harnessMemory {
+                    Toggle(isOn: Binding(get: { on }, set: { host.setHarnessMemory(bot, $0) })) { EmptyView() }
+                        .toggleStyle(.codync)
+                        .accessibilityLabel(own)
+                } else {
+                    Spacer(minLength: 8)
+                    Text(L10n.tr("Shared")).foregroundStyle(Palette.secondary).lineLimit(1)
+                }
             }
         }
         Text(L10n.tr(shared

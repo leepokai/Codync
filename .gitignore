@@ -26,3 +26,8 @@ videos/
 
 # Python bytecode
 __pycache__/
+
+# Local secrets (Clerk dev key for apps/desktop/tools/dev-account.mjs)
+.env
+.env.*
+!.env.*.example

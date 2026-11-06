@@ -37,5 +37,6 @@ import androidx.annotation.DrawableRes
     "qoder" -> R.drawable.agent_qoder
     "qwen-code" -> R.drawable.agent_qwen_code
     "stakpak" -> R.drawable.agent_stakpak
+    "workbuddy" -> R.drawable.agent_workbuddy
     else -> null
 }

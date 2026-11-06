@@ -7,6 +7,7 @@ import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nati
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
+import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
 import { registerHostProxy } from './host-proxy'
 import { readClipboardFiles, readFiles } from './files'
 import { JumpList } from './jump-list'
@@ -21,6 +22,7 @@ import { registerScreenIPC } from './screen'
 import { registerScreenViewer } from './screen-viewer'
 import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
+import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
 import { Island } from './island'
 import { registerErrorReports } from './error-reports'
@@ -87,10 +89,7 @@ function openChat() {
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
-  chat.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  keepArtifactsInFrame(chat.webContents)
   void chat.loadURL(rendererURL('chat'))
   return chat
 }
@@ -157,9 +156,17 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:name', (e) => (e.returnValue = app.getName()))
   ipcMain.on('app:scheme', (e) => (e.returnValue = identity.scheme))
   registerFileSaves()
+  registerArtifacts()
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:openedAtLogin', (e) => (e.returnValue = openedAtLogin()))
+  // `reset` is answered once per start, so a reload or another window doesn't bring the welcome flow back mid-session.
+  let onboardingReset = false
+  ipcMain.on('app:devOnboarding', (e) => {
+    const mode = process.env.CODYNC_DEV_ONBOARDING
+    const dev = !app.isPackaged && identity.environment === 'dev'
+    e.returnValue = dev && mode === 'skip' ? 'skip' : dev && mode === 'reset' && !onboardingReset ? ((onboardingReset = true), 'reset') : null
+  })
   ipcMain.on('app:debugOpen', (e) => (e.returnValue = app.isPackaged ? null : (process.env.CODYNC_DEBUG_OPEN ?? null)))
   ipcMain.handle('host:snapshot', () => snapshot())
   ipcMain.on('host:install', () => void host.install())
@@ -218,6 +225,7 @@ if (yieldsToInstall()) {
   app.quit()
 } else {
   registerSchemes()
+  registerArtifactScheme()
   app.on('second-instance', (_e, argv) => {
     const url = urlFromArgv(argv)
     if (url) handleURL(url)
@@ -240,6 +248,7 @@ if (yieldsToInstall()) {
     const island = new Island({ url: rendererURL('island'), preload: join(__dirname, '../preload/index.js'), send, openApp: openChat, changed: () => tray.hostChanged() })
     const tray = new Tray({ openChat, openPairing, send, host, updates, island })
     updates.on('change', () => tray.hostChanged())
+    updates.on('upToDate', () => send({ kind: 'upToDate' }))
     registerIPC(tray)
     island.register()
     // Voice input goes to the island while it's on, else to the chat window's composer.
@@ -250,6 +259,7 @@ if (yieldsToInstall()) {
     registerCloud(account)
     const screenTarget = registerSSH(() => BrowserWindow.getAllWindows())
     registerScreenViewer(rendererURL, () => chat, screenTarget)
+    registerSSHConfig()
     // Calls use the microphone (realtime voice); nothing else asks for permissions.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())

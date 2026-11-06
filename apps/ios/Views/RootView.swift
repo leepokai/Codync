@@ -51,25 +51,17 @@ struct RootView: View {
                     .id(target.id)
             }
         }
-        .codyncSheet(isPresented: Bindable(app).showComputers) {
-            // Holds the pushes inside the sheet (Widgets, Live Activity); no bar shows.
-            NavigationStack { SettingsView() }
-        }
+        .codyncSheet(isPresented: Bindable(app).showComputers) { ComputersView() }
         .codyncSheet(item: Binding(get: { app.marketplace.map(MarketplaceTarget.init) }, set: { app.marketplace = $0?.computerId })) { target in
-            // Switching computers inside keeps the sheet up and loads that computer's own marketplace.
-            let computerId = app.marketplace ?? target.computerId
-            if let store = accounts.store(for: computerId) {
-                MarketplaceView(computers: accounts.computers.compactMap { accounts.store(for: $0.id) }
-                                    .filter { $0.connection == .online }
-                                    .map { ($0.computer.id, $0.hostName) },
-                                computer: Binding(get: { computerId }, set: { app.marketplace = $0 }))
+            // Each computer has its own; it's opened from that computer's heading or row.
+            if let store = accounts.store(for: target.computerId) {
+                MarketplaceView()
                     .environment(store)
-                    .id(computerId)
             }
         }
     }
 
-    /// The system tab bar; both tabs stay alive (scroll position, open thread) and the bar hides while a
+    /// The system tab bar; every tab stays alive (scroll position, open thread) and the bar hides while a
     /// thread is open.
     private var tabs: some View {
         TabView(selection: Bindable(app).tab) {
@@ -86,11 +78,30 @@ struct RootView: View {
                 StateTab()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
+            Tab(L10n.tr("Settings"), systemImage: "gearshape", value: AppTab.settings) {
+                SettingsView()
+                    .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
+            }
         }
         .tint(Palette.text)
-        .tracked(.screenViewed(app.tab == .bots ? .bots : .state))
+        .tracked(.screenViewed(screen))
         // Opening a bot (notification, widget, link) always lands on the Bots tab.
-        .onChange(of: accounts.selection) { _, ref in if ref != nil { app.tab = .bots } }
+        .onChange(of: accounts.selection) { old, ref in
+            if ref != nil {
+                app.tab = .bots
+                ReviewInvitation.shared.cancel(.interaction)
+            } else if let old {
+                ReviewInvitation.shared.returned(from: "\(accounts.storage.id)/\(old.computerId)/\(old.botId)")
+            }
+        }
+    }
+
+    private var screen: AnalyticsEvent.Screen {
+        switch app.tab {
+        case .bots: .bots
+        case .state: .state
+        case .settings: .settings
+        }
     }
 
     /// Once per setup (Start over begins a new one): the first computer reached, or Skip.

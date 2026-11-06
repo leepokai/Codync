@@ -46,6 +46,7 @@ export class AppModel extends Observable {
   computers: Computer[] = []
   stores = new Map<string, BotStore>()
   selection: BotRef | null = null
+  refreshing = false
   lastError: string | null = null
   /** Codync Screen waits for the user to allow it in System Settings → Login Items. */
   screenNeedsApproval = false
@@ -141,9 +142,23 @@ export class AppModel extends Observable {
   }
 
   /** ⌘R, as the iPhone's pull to refresh: reconnect every computer and reload the account's computers. */
-  refresh() {
-    for (const store of this.stores.values()) store.restartStream()
-    void this.cloud.refresh()
+  async refresh() {
+    if (this.refreshing) return
+    this.refreshing = true
+    this.changed()
+    try {
+      // Keep even a local refresh visible long enough to acknowledge the shortcut.
+      const results = await Promise.allSettled([
+        new Promise((resolve) => setTimeout(resolve, 600)),
+        ...[...this.stores.values()].map((store) => store.refreshStream()),
+        this.cloud.refresh(),
+      ])
+      const failure = results.find((result) => result.status === 'rejected')
+      if (failure?.status === 'rejected') this.setError(String(failure.reason instanceof Error ? failure.reason.message : failure.reason))
+    } finally {
+      this.refreshing = false
+      this.changed()
+    }
   }
 
   store(id: string) {
@@ -152,11 +167,20 @@ export class AppModel extends Observable {
 
   /** Every computer's visible bots, computer by computer, each in its roster order. */
   get roster(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => store.roster)
+  }
+
+  /** Every computer's bots hidden from the roster, computer by computer, by name. */
+  get hiddenBots(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => store.hiddenBots)
+  }
+
+  private botsOnEveryComputer(bots: (store: BotStore) => Bot[]): RosterItem[] {
     const items: RosterItem[] = []
     for (const computer of this.computers) {
       const store = this.stores.get(computer.id)
       if (!store) continue
-      for (const bot of store.roster) items.push({ ref: { computerId: computer.id, botId: bot.id }, bot, computer: store.computer, store })
+      for (const bot of bots(store)) items.push({ ref: { computerId: computer.id, botId: bot.id }, bot, computer: store.computer, store })
     }
     return items
   }
@@ -170,9 +194,9 @@ export class AppModel extends Observable {
     return this.selection ? this.store(this.selection.computerId) : null
   }
 
-  /** Computers this app manages over loopback (itself and SSH tunnels): they take approvals and pairing. */
+  /** Computers this app manages over loopback (itself and SSH tunnels), this one first: they take approvals and pairing. */
   get managedStores() {
-    return [...this.stores.values()].filter((s) => s.isLoopback)
+    return [...this.stores.values()].filter((s) => s.isLoopback).sort((a, b) => Number(b === this.local) - Number(a === this.local))
   }
 
   get approvals(): Approval[] {

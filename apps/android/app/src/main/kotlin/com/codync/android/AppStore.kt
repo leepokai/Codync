@@ -24,6 +24,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     private var contextJob = SupervisorJob(viewModelScope.coroutineContext[Job])
     internal var contextScope = CoroutineScope(contextJob + Dispatchers.Main.immediate)
     internal val transitions = Mutex()
+    /** One change to the paired computer's saved copy at a time (`changeComputer`). */
+    internal val computerChanges = Mutex()
     internal val screenTakeovers = Mutex()
     /** Every change to the saved computers goes through `changeComputers`, one at a time. */
     internal val computerWrites = Mutex()
@@ -66,6 +68,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
+            withContext(Dispatchers.IO) { PushPreferences.splitSwitch(getApplication()) }
             transitions.withLock { loadContext(null) }
             NativeAccounts.observe(viewModelScope) { account ->
                 mutableState.update { it.copy(account = account) }
@@ -96,7 +99,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
             val complete = withContext(Dispatchers.IO) { local.setupComplete() }
             mutableState.update { AppState(contextId = local.referenceId, generation = it.generation + 1,
                 account = it.account, computers = computers, setupComplete = complete || computers.isNotEmpty() || userId != null) }
-            mutableState.update { it.copy(notifications = PushPreferences.enabled(getApplication()), tasks = PushPreferences.tasks(getApplication())) }
+            mutableState.update { it.copy(tasks = PushPreferences.tasks(getApplication())) }
             openMirror()
             if (userId != null) configureCloud(userId)
             mutableState.update { it.copy(loading = false) }
@@ -201,10 +204,11 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.IO) { retired.forEach(attachments::discard) }
         // Like iOS, a screen state this app can't read is a host without remote screen.
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
-        mutableState.update { current -> current.copy(bots = snapshot.bots, entries = snapshot.entries,
+        val visible = snapshot.entries.visibleEntries()
+        mutableState.update { current -> current.copy(bots = snapshot.bots, entries = visible,
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
-        speakToCall(snapshot.entries, snapshot.bots)
+        if (voiceBinding != null && snapshot.bots.none { it.id == voiceBinding?.botId && !it.deleted }) endVoice("Voice chat ended because its bot was removed.")
         if (PushPreferences.tasks(getApplication())) {
             val feed = TaskFeed(local.directory)
             val watched = withContext(Dispatchers.IO) { feed.all().filter { !it.finished }.map { it.botId }.toSet() }

@@ -20,13 +20,10 @@ data class PluginListing(val connectors: List<InstalledConnector>, val skills: L
 @Serializable data class MarketConnectors(val items: List<MarketConnector>, val nextCursor: String? = null)
 @Serializable data class MarketSkill(val source: String, val name: String, val description: String = "", val installed: Boolean = false)
 
-/** Registry metadata stays in memory; rows are revealed by explicit user actions. */
-data class CatalogPage<T>(val items: List<T> = emptyList(), val visibleCount: Int = 12) {
-    val visible: List<T> get() = items.take(visibleCount)
-    val hasHidden: Boolean get() = items.size > visibleCount
+/** Registry metadata stays in memory. The Extensions tabs scroll through it. */
+data class CatalogPage<T>(val items: List<T> = emptyList()) {
     fun append(page: List<T>, id: (T) -> String): CatalogPage<T> {
         val known = items.mapTo(mutableSetOf(), id)
         return copy(items = items + page.filter { known.add(id(it)) })
     }
-    fun reveal(): CatalogPage<T> = copy(visibleCount = minOf(items.size, visibleCount + 12))
 }

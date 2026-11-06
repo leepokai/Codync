@@ -104,9 +104,16 @@ import kotlinx.serialization.json.jsonPrimitive
     }
 }
 
-@Composable private fun TraceRow(entry: Entry) {
+/** What the running turn has done so far, in order: the steps the working indicator unfolds. */
+internal fun workingSteps(entries: List<Entry>): List<Entry> {
+    val turn = runningTurn(entries, working = true)
+    return entries.filter { it.turn == turn && it.isWorkingStep }
+}
+
+/** The running turn's thoughts start `unfolded`, so its reasoning reads as it comes in. */
+@Composable internal fun TraceRow(entry: Entry, unfolded: Boolean = false) {
     val d = entry.data
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(entry.id) { mutableStateOf(unfolded) }
     when (entry.kind) {
         "user" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Symbol("person.fill", size = 16.dp, tint = Palette.secondary)

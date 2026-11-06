@@ -10,7 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
-// Accounts, account computers and starting over: what the account sheet and Computers & settings ask for.
+// Accounts, account computers and starting over: what the account sheet, Computer management and Settings ask for.
 
 internal fun AppStore.signIn(provider: SignInProvider) = sessionAction {
     Analytics.capture(AnalyticsEvent.SignInStarted(provider))
@@ -79,13 +79,22 @@ fun AppStore.requestAccess(target: CloudComputer, renew: Boolean = false) = acti
                     computer.validate()
                     withContext(Dispatchers.IO) { local.completeSetup() }
                     mutableState.update { it.copy(setupComplete = true) }
-                    addComputer(computer); return@action
+                    useApprovedComputer(computer, ticket.requestId); return@action
                 }
                 "denied" -> throw IOException("${target.name} declined the request.")
                 else -> throw CloudError(410, "requestExpired")
             }
         }
     } finally { mutableState.update { it.copy(access = null) } }
+}
+
+/** Switch only after approval, retiring the old channel and its writers before replacing its mirror. */
+internal fun AppStore.useApprovedComputer(approved: Computer, requestId: String) {
+    val computer = approved.keepingDevicePicks(state.value.computers.firstOrNull { it.id == approved.id && it.signKey == approved.signKey })
+    // Approval is already confirmed by the cloud, even when switching must wait.
+    mutableState.update { it.copy(approvedAccess = it.approvedAccess + (computer.id to requestId)) }
+    // A computer this phone doesn't have yet joins the others; switching to it waits for what's running.
+    contextScope.launch { addComputer(computer) }
 }
 
 fun AppStore.cancelAccess() {
@@ -113,11 +122,8 @@ fun AppStore.removeFromAccount(computerId: String) = action("removeFromAccount")
     refreshCloud()
 }
 
-/** A computer's badge color, picked on this phone (an `AvatarPalette` id). */
-fun AppStore.setColor(computerId: String, color: String) = action("color") {
-    val computer = state.value.computers.firstOrNull { it.id == computerId } ?: return@action
-    saveComputer(computer.copy(color = color))
-}
+/** The shown computer's badge color, picked on this phone (an `AvatarPalette` id). */
+fun AppStore.setColor(color: String) = action("color") { changeComputer { it.copy(color = color) } }
 
 fun AppStore.skipSetup() = action("setup") {
     withContext(Dispatchers.IO) { local.completeSetup() }

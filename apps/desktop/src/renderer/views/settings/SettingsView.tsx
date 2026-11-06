@@ -18,6 +18,7 @@ import { StoreContext, useApp } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
 import { UpdateButton, useUpdates } from '../UpdateButton'
 import { ComputersView } from './ComputersView'
+import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
 import { UsageLimits } from './UsageLimits'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
@@ -26,14 +27,16 @@ import { FormSheet } from '../marketplace/pieces'
 import { AnalyticsSheet } from './AnalyticsSheet'
 import { DiagnosticsView } from './DiagnosticsView'
 import { ResearchSettingsSection } from './ResearchSettingsSection'
+import { HiddenBotsSection } from './HiddenBotsSection'
 
 /** The chat window's Settings: pages in a sidebar, ChatGPT's settings layout. */
-export type SettingsPage = 'general' | 'computers' | 'access' | 'voice' | 'usage' | 'updates' | 'diagnostics'
+export type SettingsPage = 'general' | 'computers' | 'network' | 'access' | 'voice' | 'usage' | 'updates' | 'diagnostics'
 
 const thisComputer = isMac ? 'This Mac' : 'This computer'
 const pages: { id: SettingsPage; title: string; label?: string; group: string; icon: string }[] = [
   { id: 'general', title: 'General', group: 'Personal', icon: 'gearshape' },
   { id: 'computers', title: 'Computers & devices', label: 'Computers', group: thisComputer, icon: 'desktopcomputer' },
+  { id: 'network', title: 'Network', group: thisComputer, icon: 'point.3.connected.trianglepath.dotted' },
   { id: 'access', title: 'Computer access', group: thisComputer, icon: 'hand.raised' },
   { id: 'voice', title: 'Voice chat', group: 'Personal', icon: 'waveform' },
   { id: 'usage', title: 'Usage', group: 'Personal', icon: 'gauge.with.dots.needle.33percent' },
@@ -42,11 +45,10 @@ const pages: { id: SettingsPage; title: string; label?: string; group: string; i
 ]
 
 /** Each page as `screen_viewed` names it; Computer access and Voice chat report themselves. */
-const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', usage: 'usage', access: null, voice: null, diagnostics: null }
+const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', network: 'settings', usage: 'usage', access: null, voice: null, diagnostics: null }
 
-export function SettingsView({ page: initial }: { page: SettingsPage }) {
-  // Kept here: the sheet's content doesn't follow the window's state once shown.
-  const [page, setPage] = useState(initial)
+/** `page` is the window's: a command (the menu bar's network rows) can turn the open sheet to another page. */
+export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (page: SettingsPage) => void }) {
   const app = useApp()
   const dismiss = useDismiss()
   const tr = useTr()
@@ -99,6 +101,8 @@ function PageContent({ page }: { page: SettingsPage }) {
       return <GeneralSettings />
     case 'computers':
       return <ComputersView />
+    case 'network':
+      return <NetworkView />
     case 'voice':
       return app.local ? (
         <StoreContext.Provider value={app.local}>
@@ -132,6 +136,7 @@ function GeneralSettings() {
   const systemLanguage = typeof navigator === 'undefined' ? 'en' : navigator.language
   const [usageIconStyle, setUsageIconStyle] = usePref(prefs.usageIconStyle)
   const [compact, setCompact] = usePref(prefs.sidebarCompact)
+  const [thinkingDetails, setThinkingDetails] = usePref(prefs.thinkingDetails)
   const [showInDock, setShowInDock] = useState(true)
   useEffect(() => void window.codync.app.showInDock().then(setShowInDock), [])
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
@@ -204,6 +209,11 @@ function GeneralSettings() {
           />
         </ValueRow>
       </CardSection>
+      <CardSection title="Chat" footer="Lets you unfold a working bot's thinking and steps from its status in the chat. Only changes this device.">
+        <Switch on={thinkingDetails} onChange={setThinkingDetails}>
+          Show thinking details
+        </Switch>
+      </CardSection>
       <CardSection title="System">
         {window.codync.platform === 'darwin' ? <Switch on={showInDock} onChange={(on) => void window.codync.app.setShowInDock(on).then(setShowInDock)}>Show in Dock</Switch> : null}
         {window.codync.island.supported ? (
@@ -223,6 +233,7 @@ function GeneralSettings() {
       </CardSection>
       <PrivacySettings />
       {window.codync.platform === 'win32' ? <ResearchSettingsSection /> : null}
+      <HiddenBotsSection />
     </CardForm>
   )
 }

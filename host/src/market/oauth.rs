@@ -22,7 +22,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// How long a started sign-in waits for its callback.
-const PENDING_FOR: Duration = Duration::from_secs(15 * 60);
+const PENDING_FOR: Duration = Duration::from_mins(15);
 /// Tokens this close to expiring are refreshed before use.
 const EARLY: u64 = 60;
 

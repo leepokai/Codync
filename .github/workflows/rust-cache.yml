@@ -6,7 +6,7 @@ name: Rust cache
 on:
   push:
     branches: [main]
-    paths: ["host/Cargo.lock", "rust-toolchain.toml", ".github/workflows/rust-cache.yml"]
+    paths: ["host/Cargo.lock", "host/rust-toolchain.toml", ".github/workflows/rust-cache.yml"]
   workflow_dispatch:
 
 jobs:

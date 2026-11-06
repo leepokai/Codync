@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use crate::LockExt;
 
 /// How long a pinned client (and so its DNS answer) is reused.
-const KEEP: Duration = Duration::from_secs(5 * 60);
+const KEEP: Duration = Duration::from_mins(5);
 /// Redirects followed within one origin.
 const MAX_REDIRECTS: usize = 5;
 /// Alibaba Cloud's metadata service, inside the shared address space.

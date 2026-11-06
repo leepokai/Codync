@@ -7,6 +7,11 @@ Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remo
   15-minute cron that expires requests and prunes nonces, a 5-minute cron that runs the release gate
   while a release waits behind GitHub's latest mark or the Homebrew tap trails it (`src/release-gate.ts`), and the public routine
   webhook route `POST /v1/hooks/:computerId/:routineId` (spec §7.8). D1 schema: `migrations/` (later files rebuild some tables).
+- **Cloud assistant connector** (`src/routes/assistant.ts`, spec §7.9): the MCP server at `mcp.codync.dev/mcp`
+  (dev `dev-mcp.codync.dev`, same Worker) that ChatGPT, Claude and other MCP clients sign in to with the Codync
+  account (Clerk OAuth, tokens bound to the connector URL); its tool calls go to the account's computers through
+  their DOs (`src/host-calls.ts`), and only a computer that turned cloud assistants on answers them.
+  Setup and checks: [docs/features/cloud-assistants.md](../docs/features/cloud-assistants.md).
 - **`ComputerRelay`** (`src/relay.ts`): one Durable Object per computer (SQLite storage, WebSocket
   Hibernation). It admits device sockets against the host-signed ACL, forwards channel frames it can't
   read, reports presence, holds the offline mailbox, and queues routine webhook deliveries (`hookbox`,
@@ -64,6 +69,7 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 | `CLERK_ISSUER` | var | Clerk Frontend API URL; tokens must carry this `iss` |
 | `CLERK_AUTHORIZED_PARTIES` | var, optional | comma-separated; a token with `azp` must match |
 | `CLERK_JWT_KEY` | var, dev/e2e only | public key for networkless verification |
+| `ASSISTANT_LIMITER` | rate limit binding | cloud assistant (MCP connector) requests per account, 120 per minute |
 
 `RELEASE_GATE_TOKEN` is a fine-grained token without expiry. If it's revoked, set a new one with
 `npx wrangler secret put RELEASE_GATE_TOKEN`: without a working token the release gate runs only after

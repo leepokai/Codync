@@ -29,4 +29,14 @@ class BotExchangeTest {
         val pending = BotConversationRow.build(BotExchange.conversation(listOf(old), emptyList(), "dex"))
         assertTrue(pending.last() is BotConversationRow.Status)
     }
+
+    @Test fun `a peer on another computer is named by its exchanges`() {
+        val remote = Entry("r", 1, "miles", rev = 1, kind = "notice", createdAt = 1000, data = buildJsonObject {
+            put("botMessage", buildJsonObject {
+                put("sourceBotId", "miles"); put("targetBotId", "reviewer@desk"); put("text", "review"); put("peerName", "Reviewer on desk")
+            })
+        })
+        val group = BotExchangeGroup(listOf(BotExchange.of(remote)!!, BotExchange.of(notice("b", 2, "miles", "miles", "reviewer@desk"))!!))
+        assertEquals("reviewer@desk", group.peerId); assertEquals("Reviewer on desk", group.peerName)
+    }
 }

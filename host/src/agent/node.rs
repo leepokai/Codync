@@ -114,7 +114,7 @@ async fn install(progress: &impl Fn(&str)) -> Result<()> {
     progress("Downloading Node.js…");
     let mut response = crate::http()
         .get(format!("https://nodejs.org/dist/v{VERSION}/{file}"))
-        .timeout(Duration::from_secs(600))
+        .timeout(Duration::from_mins(10))
         .send()
         .await?
         .error_for_status()?;

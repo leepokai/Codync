@@ -1,13 +1,15 @@
 import { useEffect } from 'react'
 import type { TrayImage, TraySummary } from '@shared/ipc'
 import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageWindow } from '@shared/models'
+import type { NetworkView } from '@shared/network'
 import { drawCharacter, moodOf } from '../components/Avatar'
+import { botsTemplate, presenceTitle, roleTitle } from '../lib/network-copy'
 import { useModels } from '../lib/observable'
 import { resetLine, resolvedLanguage, translate } from '../lib/l10n'
 import { prefs, usePref } from '../lib/prefs'
 import { avatarColor, isDark, palette } from '../lib/theme'
 import type { AppModel } from '../store/app-model'
-import { providerTint, resetDate, untilText, windowTitle } from './usage/usage-model'
+import { providerTint, resetDate, untilText, windowReading, windowTitle } from './usage/usage-model'
 import { drawMascot, nearlyUsedUp } from './usage/ProviderMascot'
 
 const isMac = window.codync.platform === 'darwin'
@@ -83,13 +85,37 @@ function barIcon(providerId: string, window: UsageWindow) {
   })
 }
 
+/** A network computer's dot, as in Settings → Network: green while it answers. */
+function dotIcon(online: boolean) {
+  return canvasImage(`dot|${online}`, 16, 16, (ctx) => {
+    ctx.fillStyle = online ? palette(isDark()).added : palette(isDark()).tertiary
+    ctx.beginPath()
+    ctx.arc(8, 8, 3.5, 0, Math.PI * 2)
+    ctx.fill()
+  })
+}
+
+/** "home · Owner" and "desk · Online · 3 bots" per network; null on hosts without networks. */
+function networkLines(view: NetworkView | null | undefined): TraySummary['networks'] {
+  if (!view) return null
+  const tr = (text: string) => translate(text, prefs.appLanguage.get(), typeof navigator === 'undefined' ? 'en' : navigator.language)
+  return view.networks.map((net) => ({
+    title: `${net.name} · ${tr(roleTitle(net.role))}`,
+    computers: net.computers.map((c) => ({
+      label: [c.name, tr(presenceTitle(c)), tr(botsTemplate(c)).replaceAll('{count}', String(c.agents.length))].join(' · '),
+      dot: dotIcon(c.me || c.online),
+    })),
+  }))
+}
+
 function usageLine(w: UsageWindow) {
   const preference = prefs.appLanguage.get()
   const system = typeof navigator === 'undefined' ? 'en' : navigator.language
   const title = translate(windowTitle(w), preference, system)
   const reset = resetDate(w)
   const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, preference, system) : ''
-  return `${title} · ${Math.round(w.percent)}%${spoken ? ` · ${spoken}` : ''}`
+  const reading = windowReading(w)
+  return `${title} · ${reading}${spoken ? ` · ${spoken}` : ''}`
 }
 
 /** Sends what the menu bar shows whenever the stores change. */
@@ -126,7 +152,7 @@ export function useTraySummary(app: AppModel) {
         usage: (local?.usage.providers ?? []).map((p) => ({
           name: p.name,
           icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
-          lines: p.windows.map((w) => ({ title: usageLine(w), bar: barIcon(p.id, w) })),
+          lines: p.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) })),
         })),
         screen: screen
           ? {
@@ -135,7 +161,7 @@ export function useTraySummary(app: AppModel) {
               error: app.screenError,
             }
           : null,
-        version: local?.hello?.version ?? null,
+        networks: networkLines(local?.network),
         needsAttention: app.needsAttention,
         textSize,
         usageIconStyle: iconStyle,

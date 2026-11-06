@@ -6,6 +6,17 @@ use croner::Cron;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+/// This computer's IANA time zone (routines run on the host's clock in it): `TZ`, else the system's, else UTC.
+pub fn local_zone() -> String {
+    let valid = |z: &str| Tz::from_str(z).is_ok();
+    if let Ok(tz) = std::env::var("TZ")
+        && valid(tz.trim_start_matches(':'))
+    {
+        return tz.trim_start_matches(':').to_owned();
+    }
+    iana_time_zone::get_timezone().ok().filter(|z| valid(z)).unwrap_or_else(|| "UTC".into())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Trigger {

@@ -84,7 +84,10 @@ public extension Bot {
 public extension BotDraft {
     /// The bot's own agent: a fallback on it goes, as the host drops it.
     mutating func setAgent(_ backend: String) {
+        guard self.backend != backend else { return }
         self.backend = backend
+        model = nil
+        modelOptions = [:]
         fallbacks?.removeAll { $0.backend == backend }
     }
 }

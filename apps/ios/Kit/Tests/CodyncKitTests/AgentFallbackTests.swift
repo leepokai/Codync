@@ -66,3 +66,17 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     edited.notify = false
     #expect(edited.rebased(from: base, onto: fresh).fallbacks == fresh.fallbacks)
 }
+
+@Test func switchingHarnessResetsModelAndEffortTogether() {
+    var draft = BotDraft(name: "Reviewer")
+    draft.backend = "claude"
+    draft.model = "opus"
+    draft.modelOptions = ["effort": "high"]
+    draft.setAgent("claude")
+    #expect(draft.model == "opus" && draft.modelOptions == ["effort": "high"])
+    draft.setAgent("codex")
+    #expect(draft.model == nil && draft.modelOptions.isEmpty)
+    draft.modelOptions = ["reasoning_effort": "low"]
+    draft.setAgent("claude")
+    #expect(draft.model == nil && draft.modelOptions.isEmpty)
+}

@@ -65,6 +65,8 @@
   padding: 14px;
   background: var(--surface);
   border-radius: var(--radius-l);
+  /* Long host names (a.b.local) wrap instead of running past the card. */
+  overflow-wrap: anywhere;
 }
 .update-needed-action {
   margin-top: 4px;
@@ -271,6 +273,24 @@ html[data-platform="win32"] .sidebar.compact .sidebar-header {
 /* A selected row's fill doesn't touch its hovered neighbour's. */
 .roster-row + .roster-row {
   margin-top: 4px;
+}
+/* Once, with several computers: where Extensions went. A filled card, so no outline. */
+.extensions-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0 6px;
+  padding: 10px 6px 10px 10px;
+  border-radius: var(--radius-m);
+  background: var(--bubble-agent);
+}
+.extensions-tip-icon {
+  height: 20px;
+  align-items: center;
+}
+.extensions-tip-text {
+  gap: 2px;
+  min-width: 0;
 }
 .roster-empty {
   position: absolute;

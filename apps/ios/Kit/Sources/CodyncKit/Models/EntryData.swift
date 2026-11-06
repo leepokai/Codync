@@ -1,6 +1,8 @@
 import Foundation
 
 public struct EntryData: Codable, Hashable, Sendable {
+    /// Host-internal work: retained for revision ordering, never rendered as conversation content.
+    public var `internal`: Bool?
     public var connectionRequest: ConnectionRequest?
     /// A memory line an older host put in the chat. Memory lives in the bot's memory settings, so it isn't shown.
     public var memory: MemoryLine?
@@ -24,6 +26,9 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var clientNonce: String?
     public var title: String?
     public var toolKind: String?
+    /// tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
+    /// working steps; `nil` from a host older than 2.25.0.
+    public var bookkeeping: Bool?
     public var output: String?
     public var diffs: [FileDiff]?
     public var locations: [Location]?
@@ -55,6 +60,15 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var files: [SharedFile]?
     /// notice: a finished voice call's length.
     public var callSeconds: Int?
+    /// The voice call it was said in (user), answered during (agent), or that it ends (notice); the chat shows those
+    /// messages only in the call's conversation.
+    public var call: String?
+    /// user: `voice` when a call's voice model wrote it for the user (`send_to_bot`).
+    public var from: String?
+    /// notice: what was said on a realtime call, oldest first.
+    public var transcript: [CallLine]?
+    /// agent: an artifact card, the bot's artifact as published then (the newest version shows).
+    public var artifact: ArtifactRef?
 
     public init(text: String? = nil, status: String? = nil, clientNonce: String? = nil) {
         self.text = text
@@ -63,17 +77,36 @@ public struct EntryData: Codable, Hashable, Sendable {
     }
 }
 
+/// One line of a voice call: what the user said (`from: user`) or the voice answered (`voice`), with when (ms).
+public struct CallLine: Codable, Hashable, Sendable {
+    public var from: String
+    public var text: String
+    public var at: Int64?
+    /// The app's id for the line: one sent again (its first answer lost) is kept once.
+    public var id: String?
+
+    public init(from: String, text: String, at: Int64?, id: String? = nil) {
+        self.from = from
+        self.text = text
+        self.at = at
+        self.id = id
+    }
+}
+
 /// The message a reply quotes: its entry, who wrote it (`user` or a bot id) and its text (at most 500
-/// characters, or its file names). A partial quote still decodes, so the message itself always shows.
+/// characters, or its file names), and the artifact when it is an artifact card. A partial quote still decodes, so the
+/// message itself always shows.
 public struct ReplyQuote: Codable, Hashable, Sendable {
     public var id: String
     public var author: String
     public var text: String
+    public var artifact: String?
 
-    public init(id: String, author: String, text: String) {
+    public init(id: String, author: String, text: String, artifact: String? = nil) {
         self.id = id
         self.author = author
         self.text = text
+        self.artifact = artifact
     }
 
     public init(from decoder: any Decoder) throws {
@@ -81,6 +114,7 @@ public struct ReplyQuote: Codable, Hashable, Sendable {
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
         author = try c.decodeIfPresent(String.self, forKey: .author) ?? ""
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        artifact = try c.decodeIfPresent(String.self, forKey: .artifact)
     }
 }
 
@@ -118,7 +152,9 @@ public struct Attachment: Codable, Hashable, Sendable, Identifiable {
         self.size = size
     }
 
-    public var isImage: Bool {
+    public var isImage: Bool { Self.isImage(name) }
+
+    public static func isImage(_ name: String) -> Bool {
         ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"].contains((name as NSString).pathExtension.lowercased())
     }
 }

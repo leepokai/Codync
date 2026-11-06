@@ -207,10 +207,21 @@ impl App {
             KeyCode::Enter if picked.as_ref().is_some_and(|e| e.data["connectionRequest"]["status"] == "pending") => {
                 self.open_connection();
             }
+            KeyCode::Char('o') if picked.as_ref().is_some_and(|e| e.artifact().is_some()) => {
+                if let Some(artifact) = picked.as_ref().and_then(super::Entry::artifact) {
+                    self.fetch_artifact(&id, artifact, crate::tui::net::artifacts::ArtifactTo::Browser);
+                }
+            }
             KeyCode::Char('o') if picked.as_ref().is_some_and(super::Entry::unfolds) => {
                 if let Some(e) = picked
                     && !self.unfolded.remove(&e.id)
                 {
+                    // A call's own messages, which the loaded chat may not reach back to.
+                    if let Some(call) =
+                        e.call().filter(|c| e.kind == super::Kind::Notice && !self.call_entries.contains_key(*c))
+                    {
+                        self.fetch_call(&id, call);
+                    }
                     self.unfolded.insert(e.id);
                 }
             }
@@ -261,8 +272,8 @@ impl App {
         true
     }
 
-    /// Moves the selected bot one place up (-1) or down (+1), staying among bots with its pin
-    /// state, and saves the order. Shown at once; the host's bot events confirm it.
+    /// Moves the selected bot one place up (-1) or down (+1), staying in its band (`Bot::band`),
+    /// and saves the order. Shown at once; the host's bot events confirm it.
     pub(super) fn reorder_bot(&mut self, d: isize) {
         if self.roster_tools.by_project
             || self.roster_tools.filter != super::roster_tools::Filter::All
@@ -271,7 +282,7 @@ impl App {
             self.flash("Clear filters and use manual order before reordering");
             return;
         }
-        let roster: Vec<(String, bool)> = self.roster().iter().map(|b| (b.id.clone(), b.pinned)).collect();
+        let roster: Vec<(String, u8)> = self.roster().iter().map(|b| (b.id.clone(), b.band())).collect();
         let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|(id, _)| id == s)) else { return };
         let Some(j) = i.checked_add_signed(d).filter(|&j| j < roster.len() && roster[j].1 == roster[i].1) else {
             return;
@@ -303,20 +314,24 @@ mod tests {
     use serde_json::json;
 
     #[tokio::test]
-    async fn reordering_stays_among_bots_with_the_same_pin_state() {
+    async fn reordering_stays_inside_a_band() {
         let mut app = test_app();
-        for (id, pinned, last_at) in [("p", true, 0), ("a", false, 3), ("b", false, 2), ("c", false, 1)] {
-            let bot =
-                Bot::parse(&json!({"id": id, "pinned": pinned, "lastAt": last_at})).expect("a bot with an id parses");
+        let bots = [("l", false, true, 0), ("p", true, false, 0), ("a", false, false, 3), ("b", false, false, 2)];
+        for (id, pinned, lead, last_at) in bots.into_iter().chain([("c", false, false, 1)]) {
+            let bot = Bot::parse(&json!({"id": id, "pinned": pinned, "lead": lead, "lastAt": last_at}))
+                .expect("a bot with an id parses");
             app.bots.insert(id.into(), bot);
         }
         let order = |app: &super::App| app.roster().iter().map(|b| b.id.clone()).collect::<Vec<_>>();
-        assert_eq!(order(&app), ["p", "a", "b", "c"], "unarranged: recent activity");
+        assert_eq!(order(&app), ["l", "p", "a", "b", "c"], "unarranged: the lead, pinned, then recent activity");
         app.selected = Some("c".into());
         app.reorder_bot(-1);
-        assert_eq!(order(&app), ["p", "a", "c", "b"]);
+        assert_eq!(order(&app), ["l", "p", "a", "c", "b"]);
         app.selected = Some("a".into());
         app.reorder_bot(-1);
-        assert_eq!(order(&app), ["p", "a", "c", "b"], "an unpinned bot can't move above a pinned one");
+        assert_eq!(order(&app), ["l", "p", "a", "c", "b"], "an unpinned bot can't move above a pinned one");
+        app.selected = Some("p".into());
+        app.reorder_bot(-1);
+        assert_eq!(order(&app), ["l", "p", "a", "c", "b"], "nor a pinned one above the lead");
     }
 }

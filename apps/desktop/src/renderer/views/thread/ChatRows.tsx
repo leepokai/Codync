@@ -1,6 +1,7 @@
 import { FileDownloadCard } from './FileDownloadCard'
-import { memo, useEffect, useRef, useState } from 'react'
-import { groupBotReactions, isGroup, isReplyable, isWorking, needsInput, type Bot, type BotApp, type Entry, type ReplyQuote } from '@shared/models'
+import { ArtifactCard } from '../library/ArtifactCard'
+import { memo, useRef, useState } from 'react'
+import { groupBotReactions, isGroup, isReplyable, isWorking, type Bot, type BotApp, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { ComputerCard } from '../../components/ComputerCard'
 import { Button, IconButton } from '../../components/Controls'
@@ -8,7 +9,6 @@ import { Icon } from '../../components/Icon'
 import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
 import { avatarColor } from '../../lib/theme'
@@ -37,7 +37,7 @@ export function quoteEntry(store: BotStore, entry: Entry) {
 }
 
 /** One chat-visible entry, with what can be done to it. */
-export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, openAgent, openApp }: {
+export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, openAgent, openApp, openArtifact }: {
   entry: Entry
   groupStart: boolean
   chat: Bot | null
@@ -48,6 +48,8 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   openAgent?: (botId: string) => void
   /** Opens a sandboxed mini-app from its chat card. */
   openApp?: (app: BotApp) => void
+  /** Opens an artifact card's artifact over the chat. */
+  openArtifact?: (artifactId: string) => void
 }) {
   const reply = onReply && isReplyable(entry) ? () => onReply(entry) : undefined
   switch (entry.kind) {
@@ -62,7 +64,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       return (
         <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
-          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} />
+          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>
             <ReactionsRow entry={entry} />
           </VStack>
@@ -211,14 +213,14 @@ function LivePermission({ entry }: { entry: Entry }) {
   return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
 }
 
-/** Who wrote a message in a group: their avatar and name in their color. */
-export function AuthorLabel({ botId }: { botId?: string | null }) {
+/** Who wrote a message: their avatar and name in their color, or `name` for a bot on another computer. */
+export function AuthorLabel({ botId, name }: { botId?: string | null; name?: string }) {
   const store = useStore()
   const bot = botId ? store.bots.get(botId) : undefined
   return (
     <HStack gap={8}>
       {bot ? <BotAvatar bot={bot} size={26} animated={false} /> : null}
-      <Text size="subheadline" weight="medium" tone="secondary" style={bot ? { color: avatarColor(bot.avatarColor) } : undefined}>{store.authorName(botId)}</Text>
+      <Text size="subheadline" weight="medium" tone="secondary" style={bot ? { color: avatarColor(bot.avatarColor) } : undefined}>{store.authorName(botId, name)}</Text>
     </HStack>
   )
 }
@@ -270,7 +272,6 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
             items={() => [
               { title: 'Copy', icon: 'square.on.square', action: copy },
             { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
-            { title: 'Bookmark', icon: 'bookmark', action: () => void store.saveBookmark(entry.botId, entry.id, entry.data.text ?? '', '', entry.data.author ?? entry.botId, entry.threadId ?? null) },
               { title: 'Bookmark', icon: 'bookmark', action: () => void store.saveBookmark(entry.botId, entry.id, entry.data.text ?? '', '', entry.data.author ?? 'user', entry.threadId ?? null) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             ]}
@@ -310,7 +311,7 @@ function UserStatus({ entry, botWorking, hovering }: { entry: Entry; botWorking:
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply }: { entry: Entry; openTrace: () => void; reply?: () => void }) {
+export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
@@ -318,7 +319,7 @@ export function AgentBubble({ entry, openTrace, reply }: { entry: Entry; openTra
     <div className="message agent" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
       <div className="message-body">
         <Bubble
-          className={entry.data.files?.length ? "file-message" : "bubble agent"}
+          className={entry.data.files?.length || entry.data.artifact ? 'file-message' : 'bubble agent'}
           reactions={reactionPick(store, entry)}
           items={() => [
             { title: 'Copy', icon: 'square.on.square', action: copy },
@@ -327,7 +328,13 @@ export function AgentBubble({ entry, openTrace, reply }: { entry: Entry; openTra
             { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
           ]}
         >
-          {entry.data.files?.length ? <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} />)}</div> : <MarkdownText text={entry.data.text ?? ''} />}
+          {entry.data.artifact ? (
+            <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
+          ) : entry.data.files?.length ? (
+            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} />)}</div>
+          ) : (
+            <MarkdownText text={entry.data.text ?? ''} />
+          )}
         </Bubble>
         <MessageActions className="trailing" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} trace={openTrace} copy={copy} />
       </div>
@@ -361,62 +368,6 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
     default:
       return <Text as="div" size="footnote" tone="secondary" className="chat-notice">{text}</Text>
   }
-}
-
-/** The bot's current activity and elapsed time. */
-export function WorkingIndicator({ bot }: { bot: Bot }) {
-  const tr = useTr()
-  const store = useLiveStore()
-  const [open, setOpen] = useState(false)
-  const waiting = needsInput(bot)
-  const entries = store.allEntries(bot.id)
-  let latestThought: string | null = null
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i]!
-    if (e.kind === 'user' || (e.kind === 'agent' && e.data.final)) break
-    if (e.kind === 'thought' && e.data.text) {
-      latestThought = e.data.text
-      break
-    }
-  }
-  return (
-    <VStack align="flex-start" className="agent-inset">
-      <div className={`working t-reason ${open && latestThought ? 'is-open' : ''}`}>
-        <HStack
-          as="span"
-          gap={8}
-          onClick={() => latestThought && setOpen((v) => !v)}
-          style={latestThought ? { cursor: 'pointer' } : undefined}
-        >
-          <ThinkingOrb state={waiting ? 'listening' : 'working'} size={16} color={waiting ? 'var(--warning)' : 'var(--secondary)'} />
-          <Text size="subheadline" tone={waiting ? 'attention' : 'secondary'} className={waiting ? undefined : 't-shimmer is-active'} truncate>{tr(bot.activity || 'Working…')}</Text>
-          {bot.startedAt ? <Timer since={bot.startedAt} /> : null}
-          {latestThought ? <Icon name="chevron.right" size={10} color="var(--tertiary)" className="t-reason-chevron" /> : null}
-        </HStack>
-        {latestThought ? (
-          <div className="t-reason-body">
-            <div className="t-reason-inner" style={{ paddingTop: open ? 6 : 0 }}>
-              <Text size="footnote" tone="secondary">{latestThought}</Text>
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </VStack>
-  )
-}
-
-/** `Text(date, style: .timer)`: 0:42, 12:05, 1:02:33. */
-function Timer({ since }: { since: number }) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-  const s = Math.max(0, Math.floor((now - since) / 1000))
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = String(s % 60).padStart(2, '0')
-  return <Text size="footnote" tone="tertiary" tabular>{h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`}</Text>
 }
 
 /** A message's reactions: the user's (clicking one takes it back), then the bots', each emoji with the avatars of the

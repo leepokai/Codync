@@ -16,7 +16,7 @@ extension BotStore {
                     // Reached, but nothing to sync until one side updates. A host update restarts
                     // the link (and this loop) anyway; this catches one that doesn't.
                     setConnection(.online)
-                    try await Task.sleep(for: Self.mismatchRecheck)
+                    try await Task.sleep(for: hostUpdateOffer() == .updating ? Self.updatingRecheck : Self.mismatchRecheck)
                     continue
                 }
                 requestedSince = rev
@@ -70,6 +70,7 @@ extension BotStore {
             refetchAll()
             rewound = false
             unreadable = false
+            hostUpdate = nil
         }
         cacheStamp = nil
         // An update notice may appear or go away with it.
@@ -78,7 +79,7 @@ extension BotStore {
 
     private func apply(_ event: HostEvent) {
         switch event {
-        case let .hello(id, hostRev, newUsage, newScreen):
+        case let .hello(id, hostRev, newUsage, newScreen, newNetwork):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
@@ -86,23 +87,18 @@ extension BotStore {
             hostId = id
             setUsage(newUsage)
             screen = newScreen
+            network = newNetwork
             let hostRewound = hostRev < rev
             if hostRewound { rev = 0 }
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
             bump(rev)
         case let .bot(bot):
-            let neededInput = bots[bot.id]?.needsInput == true
             bots[bot.id] = bot
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()
             if bot.unread > 0 { acknowledgeVisibleConversations(bot.id) }
-            if bot.needsInput && !neededInput {
-                for call in Array(voiceCalls.values) where call.botId == bot.id {
-                    call.announce("\(bot.name) needs your approval in the chat.")
-                }
-            }
         case let .botDeleted(id, r):
             removeComposerDrafts(for: id)
             bots[id] = nil
@@ -116,23 +112,25 @@ extension BotStore {
                 bump(e.rev)
                 break
             }
-            let known = entries[e.botId]?.first(where: { $0.id == e.id })
             upsert(e)
             bump(e.rev)
+            guard let current = entries[e.botId]?.first(where: { $0.id == e.id }),
+                  current.rev == e.rev, !current.isInternal else { break }
+            if let card = e.data.artifact { artifacts.announce(card) }
             acknowledgeVisibleConversations(e.botId, entry: e)
-            let calls = Array(voiceCalls.values).filter { $0.botId == e.botId && e.rev > $0.startRev }
-            if e.kind == "agent", e.data.final == true, known?.data.final != true, let text = e.data.text {
-                calls.forEach { $0.speak(spokenReply(e, text)) }
-            }
-            // A group has no status of its own: its members' approvals arrive as cards.
-            if e.kind == "permission", known == nil, e.data.status == "pending", bots[e.botId]?.isGroup == true {
-                let name = e.data.author.flatMap { bots[$0]?.name } ?? "A bot"
-                calls.forEach { $0.announce("\(name) needs your approval in the chat.") }
-            }
+        case let .call(cue):
+            // The computer decides what the voice hears; this device hands each cue over once.
+            guard let id = UUID(uuidString: cue.call), let call = voiceCalls[id], cue.seq > heardCues[id, default: 0] else { break }
+            heardCues[id] = cue.seq
+            call.hear(cue)
         case let .usage(u):
             setUsage(u)
         case let .screen(s):
             screen = s
+        case let .network(view):
+            network = view
+        case let .artifact(artifact):
+            artifacts.upsert(artifact)
         case .resync:
             restartEvents()
         case let .undecodable(type):
@@ -149,12 +147,6 @@ extension BotStore {
             }
         }
         scheduleSave()
-    }
-
-    /// In a group, a reply is said with its speaker's name.
-    private func spokenReply(_ e: Entry, _ text: String) -> String {
-        guard bots[e.botId]?.isGroup == true, let name = e.data.author.flatMap({ bots[$0]?.name }) else { return text }
-        return "\(name): \(text)"
     }
 
     private func resetMirror() {

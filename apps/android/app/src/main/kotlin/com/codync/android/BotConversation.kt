@@ -42,16 +42,16 @@ import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
-private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id == id }?.name ?: "A deleted bot"
+/** A bot's name; [fallback] for one that isn't this computer's (a bot on another computer). */
+internal fun AppState.authorName(id: String?, fallback: String? = null): String =
+    bots.firstOrNull { it.id == id }?.name ?: fallback ?: "A deleted bot"
 
 /** The compact line a bot-to-bot exchange leaves in the chat; tapping it opens the conversation (iOS `BotMessageRow`). */
 @Composable internal fun BotMessageRow(group: BotExchangeGroup, state: AppState, open: () -> Unit) {
     val peer = state.bots.firstOrNull { it.id == group.peerId }
-    val name = state.authorName(group.peerId)
+    val name = state.authorName(group.peerId, group.peerName)
     val ink = if (group.failed) Palette.danger else Palette.secondary
     Row(Modifier.fillMaxWidth().padding(top = 2.dp).plainButton(action = open)
         .semantics(mergeDescendants = true) { contentDescription = "${group.title} $name${if (group.failed) ", failed" else ""}" }
@@ -71,16 +71,19 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
     var error by remember(peerId) { mutableStateOf<String?>(null) }
     LaunchedEffect(bot.id, peerId) {
         try {
-            val result = store.hostCall("botConversation", buildJsonObject { put("botId", bot.id); put("peerId", peerId) }, 20_000)
-            fetched = result.jsonObject["entries"]?.jsonArray?.map { Entry.decode(it.jsonObject) }.orEmpty()
+            fetched = entriesOf(store.hostCall("botConversation", buildJsonObject { put("botId", bot.id); put("peerId", peerId) }, 20_000))
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { fetched = emptyList(); error = failure.message ?: "Couldn't load the conversation." }
     }
-    val rows = BotConversationRow.build(BotExchange.conversation(fetched.orEmpty(), state.entries.filter { it.botId == bot.id }, peerId))
+    val exchanges = BotExchange.conversation(fetched.orEmpty(), state.entries.filter { it.botId == bot.id }, peerId)
+    val rows = BotConversationRow.build(exchanges)
+    // A peer on another computer goes by the name its exchanges carry.
+    val remoteName = exchanges.firstNotNullOfOrNull { it.peerName }
+    val name = { id: String -> state.authorName(id, remoteName.takeIf { id == peerId }) }
     val list = rememberLazyListState()
     LaunchedEffect(rows.size) { if (rows.isNotEmpty()) list.scrollToItem(rows.lastIndex) }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader({ PairTitle(bot.id, peerId, state) })
+        ModalHeader({ PairTitle(bot.id, peerId, state, name) })
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (error != null || rows.isEmpty() && fetched != null) item("empty") {
@@ -91,11 +94,11 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
                 when (row) {
                     is BotConversationRow.Separator -> TimeSeparator(row.at)
                     is BotConversationRow.Message -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (row.showsAuthor) Box(Modifier.padding(top = 8.dp)) { AuthorLabel(row.author, state) }
+                        if (row.showsAuthor) Box(Modifier.padding(top = 8.dp)) { AuthorLabel(row.author, state, name(row.author)) }
                         ConversationBubble(row.text)
                     }
                     is BotConversationRow.Status -> when (val outcome = row.outcome) {
-                        BotExchange.Outcome.Pending -> Text("Waiting for ${state.authorName(row.awaiting)}…", Modifier.padding(start = 12.dp),
+                        BotExchange.Outcome.Pending -> Text("Waiting for ${name(row.awaiting)}…", Modifier.padding(start = 12.dp),
                             style = Type.footnote, color = Palette.secondary)
                         is BotExchange.Outcome.Failed -> SelectionContainer {
                             Text(outcome.detail.ifEmpty { "Didn't complete." }, Modifier.padding(start = 12.dp), style = Type.footnote, color = Palette.danger)
@@ -109,14 +112,14 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
 }
 
 /** "[avatar] A ⇄ [avatar] B": the two bots of a conversation, the chat's own bot first. */
-@Composable private fun PairTitle(botId: String, peerId: String, state: AppState) {
-    Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${state.authorName(botId)} and ${state.authorName(peerId)}" },
+@Composable private fun PairTitle(botId: String, peerId: String, state: AppState, name: (String) -> String) {
+    Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${name(botId)} and ${name(peerId)}" },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         for ((index, id) in listOf(botId, peerId).withIndex()) {
             if (index > 0) Symbol("arrow.left.arrow.right", size = 13.dp, tint = Palette.tertiary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 state.bots.firstOrNull { it.id == id }?.let { BotAvatar(it, state.bots, 22.dp) }
-                Text(state.authorName(id), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(name(id), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

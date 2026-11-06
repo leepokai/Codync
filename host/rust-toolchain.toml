@@ -1,0 +1,6 @@
+# Pinned so a new stable release can't break clippy -D warnings overnight.
+# Keep the version equal to apps/screen-linux/rust-toolchain.toml (docs/guides/development.md#rust-toolchain).
+# Bump deliberately: change both, run clippy on both, commit.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]

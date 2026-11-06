@@ -38,10 +38,47 @@ fn mentions_pick_responders_and_no_mention_means_everyone() {
     assert_eq!(replied, ["b"], "a reply asks the bot it quotes");
 }
 
+#[test]
+fn later_rounds_ask_only_the_members_another_member_mentioned() {
+    let members = [bot("a", "Alice"), bot("b", "Bob"), bot("c", "Cara")];
+    let by = |author: &str, text: &str, seq: i64| Entry {
+        seq,
+        kind: "agent".into(),
+        data: json!({"text": text, "author": author}),
+        ..said(text)
+    };
+    let asked_ids = |messages: &[Entry], asked: &[(&str, i64)]| -> Vec<String> {
+        let asked = asked.iter().map(|(id, seq)| ((*id).to_owned(), *seq)).collect();
+        cited(&members, messages, &asked).into_iter().map(|b| b.id.clone()).collect()
+    };
+    let ids = |messages: &[Entry]| asked_ids(messages, &[]);
+    assert_eq!(ids(&[said("hi all"), by("a", "done", 2)]), Vec::<String>::new(), "nobody named: the room turn ends");
+    let named = [said("hi"), by("a", "@bob check", 2)];
+    assert_eq!(asked_ids(&named, &[("b", 2)]), Vec::<String>::new(), "Bob saw it and passed");
+    assert_eq!(asked_ids(&named, &[("b", 1)]), ["b"], "Bob was asked before he was named");
+    assert_eq!(ids(&[said("hi"), by("a", "@bob can you check?", 2)]), ["b"]);
+    assert_eq!(
+        ids(&[said("hi"), by("a", "@bob check", 2), by("b", "checked", 3)]),
+        Vec::<String>::new(),
+        "Bob already answered"
+    );
+    assert_eq!(ids(&[said("hi"), by("a", "@bob check", 2), by("b", "ok", 3), by("c", "@bob again", 4)]), ["b"]);
+    assert_eq!(ids(&[said("hi"), by("a", "@alice @all over to you", 2)]), ["b", "c"], "not yourself");
+    assert_eq!(
+        ids(&[said("@cara look"), by("a", "ok", 2)]),
+        Vec::<String>::new(),
+        "the user's mentions pick the first round"
+    );
+}
+
 use crate::api::devices::Caller;
 use crate::hub::BotStatus;
 use std::path::PathBuf;
 use std::time::Duration;
+
+/// How long a step may take before the test calls it stuck. Generous: fixture agents start as
+/// real processes, and a busy CI runner (Windows above all) can take seconds to start one.
+const WAIT: Duration = Duration::from_secs(30);
 
 /// A host with agent bots `a` and `b` (the scripted fixture agent) and a group of both.
 struct Room {
@@ -113,7 +150,7 @@ impl Room {
     }
 
     async fn settle(&self) {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(WAIT, async {
             loop {
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 let idle = ["a", "b"].iter().all(|b| self.hub.runtime(b).status == BotStatus::Idle);
@@ -148,8 +185,10 @@ async fn room_turns_follow_mentions_and_end_when_everyone_passes() {
     let main = Lane::main(&room.group);
     room.send("hello everyone", None).await;
     room.settle().await;
-    // `a` answers the user; `b` then sees a bot spoke last and passes; round two is all passes.
+    // `a` answers the user; `b` then sees a bot spoke last and passes. Nobody named anyone: no second round.
     assert_eq!(room.replies(&main), [("a".to_owned(), "reply: group".to_owned())]);
+    let prompts = |bot: &str| std::fs::read_to_string(room.dir.join(bot).join("prompts.jsonl")).unwrap_or_default();
+    assert_eq!((prompts("a").lines().count(), prompts("b").lines().count()), (1, 1));
 
     room.send("@b your turn", None).await;
     room.settle().await;
@@ -157,7 +196,14 @@ async fn room_turns_follow_mentions_and_end_when_everyone_passes() {
     assert_eq!(room.replies(&main).len(), 2);
     let listed = room.hub.bot_value_for_test(&room.group);
     assert_eq!(listed["lastMessage"], "b: reply: group");
-    let prompts = std::fs::read_to_string(room.dir.join("a/prompts.jsonl")).unwrap();
+
+    // A member brings a teammate into the next round by naming it.
+    room.send("@a PING", None).await;
+    room.settle().await;
+    assert_eq!(room.replies(&main).last().unwrap(), &("a".to_owned(), "@b over to you".to_owned()));
+    assert!(prompts("b").lines().last().unwrap().contains(r"a: @b over to you"), "b is asked in round two");
+    assert_eq!(prompts("b").lines().count(), 3);
+    let prompts = prompts("a");
     assert!(prompts.contains("Ship the release) with the user"), "members are told what the room is for: {prompts}");
     // The members' own chats stay private: the room's entries live in the group.
     assert!(room.hub.store.messages_after(&Lane::main("a"), 0, 100).unwrap().is_empty());
@@ -245,7 +291,7 @@ async fn stop_ends_the_room_turn_before_the_next_speaker() {
     let room = Room::new();
     room.send("BLOCK everyone look", None).await;
     let hub = room.hub.clone();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while hub.runtime("a").status != BotStatus::Working {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -266,7 +312,7 @@ async fn ask_busy_a(room: &Room) -> Entry {
         .await
         .unwrap();
     let hub = room.hub.clone();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while hub.runtime("a").status != BotStatus::Working {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -275,7 +321,7 @@ async fn ask_busy_a(room: &Room) -> Entry {
     .expect("a starts its own turn");
 
     room.send("@a are you there", None).await;
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         loop {
             let entries = hub.store.history(&room.group, i64::MAX, 100).unwrap();
             if let Some(e) = entries.into_iter().find(|e| e.kind == "notice") {
@@ -311,7 +357,7 @@ async fn stopping_a_busy_member_in_its_own_chat_keeps_its_room_answer() {
     ask_busy_a(&room).await;
     // The user frees `a` from its own chat: the answer the room was promised still comes.
     crate::api::dispatch(&room.hub, &Caller::Local, "stop", json!({"botId": "a"})).await.unwrap();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while room.replies(&main).is_empty() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -328,7 +374,7 @@ async fn a_late_answer_survives_newer_messages_and_sees_them() {
     let main = Lane::main(&room.group);
     ask_busy_a(&room).await;
     room.send("@b meanwhile check CI", None).await;
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while room.replies(&main).is_empty() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }

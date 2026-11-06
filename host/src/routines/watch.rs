@@ -104,10 +104,13 @@ fn files(path: &Path) -> Result<String> {
                 let entry = entry?;
                 let name = folder.join(entry.file_name());
                 let meta = entry.metadata()?;
-                if meta.is_dir() && !SKIPPED.iter().any(|s| entry.file_name() == *s) {
+                // A skipped folder is an entry by name only: what a tool writes inside it (`.git/HEAD` on every
+                // commit, a lock file) is not watched, and its own mtime would change on every write.
+                let skipped = meta.is_dir() && SKIPPED.iter().any(|s| entry.file_name() == *s);
+                if meta.is_dir() && !skipped {
                     folders.push(name.clone());
                 }
-                entries.push(line(&name, &meta));
+                entries.push(if skipped { name.display().to_string() } else { line(&name, &meta) });
                 if entries.len() > MAX_ENTRIES {
                     bail!("{} holds more than {MAX_ENTRIES} entries; watch a smaller folder", path.display());
                 }

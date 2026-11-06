@@ -40,11 +40,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 62px 20px 18px;
+  padding: 58px 20px 16px;
   text-align: center;
 }
 .details-name {
-  margin-top: 14px;
+  margin-top: 10px;
   font-size: calc(16px * var(--scale));
   font-weight: 600;
   color: var(--text);
@@ -98,27 +98,22 @@
 .details-tab .field-box {
   background: var(--surface);
 }
-/* Long notes (skill descriptions, explanations, a note's description) stop at two lines in the
-   narrow panel; hovering shows the rest, and a skill's info button or a note opens it whole. */
+/* Settings explanations remain readable at every inspector width. */
 .details-tab .detail-note,
 .details-tab .memory-content > .memory-muted {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 .details-tab .routine-row > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
-
-/* The Use the computer note is an instruction: it stays whole. */
-.details-tab .details-switch .detail-note {
-  display: block;
-  overflow: visible;
-  -webkit-line-clamp: unset;
-}
+.details-subtitle { flex-wrap: wrap; justify-content: center; overflow-wrap: anywhere; }
+.details-tab, .details-section, .details-tab .value-row > * { min-width: 0; }
+.details-tab .value-row { gap: 12px; }
+.details-tab .value-row > :first-child { min-width: 0; }
+.details-tab .value-row-value { overflow-wrap: anywhere; }
 
 /* The panel is narrow: a row with a note puts its control under the label and note. */
 .details-tab .value-row:has(.detail-note) {

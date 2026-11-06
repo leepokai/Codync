@@ -1,0 +1,82 @@
+A bot runs on one agent, such as Claude Code. When that agent can't answer, because its usage ran out, it's rate limited or overloaded, it's signed out, or it won't start, the bot can carry on with the next agent in its list. The new agent continues the same turn in the same chat, with the bot's memory, workspace and tools. The bot goes back to its own agent once that one recovers.
+
+Each fallback is another **agent** (for example Claude Code, then Codex, then Gemini CLI). To fall back between one agent's own models, set that in the agent itself (for example Claude Code's `fallbackModel`).
+
+A bot has no fallbacks until you add them.
+
+## Set up fallbacks
+
+Fallbacks live in the bot's **Agent** card, below its expandable settings:
+
+- **Desktop app:** click the bot's name at the top of the chat. The **Details** tab shows the Agent card.
+- **iPhone:** tap the bot's name at the top of the chat. The **Details** tab shows the Agent card.
+- **Terminal UI:** press `e` on the bot and go to the **Fallbacks** field.
+
+In the desktop and iPhone apps:
+
+1. Next to **Fallbacks**, press **+**.
+2. In **Add fallback**, expand the agent summary. Click the agent to search harnesses, then select its model. Selecting a model hides the search list; the agent, model and any reasoning settings remain accessible.
+3. Add up to three. Use each row's ⋯ menu to **Move up**, **Move down** or **Remove**.
+
+Each agent can appear once, and the bot's own agent isn't offered. The info button next to Fallbacks explains the feature.
+
+In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `[` and `]` move it, and `x` removes it.
+
+Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it.
+
+> **Note:** A fallback that runs on an API key instead of a subscription costs money with that provider.
+
+## When a bot moves on
+
+Codync moves on only when the agent returns an error that says it can't answer. The agents retry on their own first, so Codync doesn't ask the same agent again. Each agent is tried at most once per turn.
+
+The agent it leaves then rests: every bot on the computer skips it for a while, so one bot finding Claude Code out of usage spares the others from trying.
+
+| The chat says the agent… | Bots skip it until |
+| --- | --- |
+| reached its usage limit | the reset time the agent reported (an hour if it gave none) |
+| is out of credits | 6 hours have passed |
+| is rate limited, or is overloaded | 1, 5, 25, then 60 minutes, growing with failures in a row |
+| is signed out | it's signed in again (Codync also looks again after an hour, or after 10 minutes for an agent it doesn't know by name) |
+| couldn't start | 5 minutes have passed |
+| doesn't have this bot's model | you change the bot's settings (this one is about the bot's setup, so only this bot skips that step) |
+
+A rest also ends early when any turn on that agent finishes normally. **Switch back** ends the rest of the bot's own agent.
+
+These don't move a bot on: you stopping it, the agent refusing, output or step limits, a routine's time limit, or the agent compacting a full context.
+
+Codex currently reports its rate limits and overloads as ordinary reply text, so for Codex only a usage limit moves the bot on.
+
+## What the next agent knows
+
+When a fallback takes a turn over, it hears what it needs before the turn's messages:
+
+- If it hasn't worked in this chat before: a recap of the conversation (the latest summary, the most recent messages and any open plan).
+- If it has: a catch-up of what was said since it last answered. Each agent keeps its own session, so coming back resumes it.
+- If agents already failed during this turn: which one stopped and why, what each of them did (tool calls, messages, last note), and a reminder to check what's done before redoing any step.
+
+**New session** (in the bot's menu) clears every agent's session, and none of them is told what was said before.
+
+## What the chat shows
+
+- **A switch:** one line where another agent took over, such as "Claude Code reached its usage limit (resets in 2 h). Codex carried on." Click or tap it to see what the new agent was told. In the terminal UI it's a `↪` line; press `o` to unfold it.
+- **The way back:** "Back on Claude Code."
+- **A signed-out agent:** moving past one also posts that agent's sign-in card. Its **Sign in** button opens the agent's sign-in sheet; once you're signed in, the bot goes back to that agent on its next message.
+- **Every agent failed:** a failure notice says how each one is, for example "No agent in this bot's list could answer: Claude Code reached its usage limit (resets in 2 h); Codex …". If one of them was signed out, the turn's messages wait on its sign-in card and go out again once you sign in (messages older than 24 hours aren't resent).
+- **No fallbacks yet:** when a bot without fallbacks stops because its agent ran out of usage, was rate limited or was overloaded, the notice offers **Add a fallback**, which opens the Agent card. In the terminal UI, pick the notice and press `A`.
+
+The Agent card shows the state too. While the bot is on a fallback, its first row reads, for example, "Using Codex until Claude Code resets at 3:00 PM", with **Switch back**. The fallback in use is marked **In use**, and a resting agent shows "Usage resets 3:00 PM" or "Resting until 3:00 PM". In the terminal UI, the bot's Details page (`R`) shows the agent in use and the chain.
+
+## Going back
+
+Each turn starts on the first agent in the bot's list that isn't resting. So the bot returns to its own agent on its first turn after the reset, never in the middle of a turn. After you sign in to a signed-out agent, it returns on its next message.
+
+To go back right away, press **Switch back** in the Agent card (`B` on the Details page in the terminal UI). It ends the rest of the bot's own agent and, if the bot is idle, moves it back now.
+
+## Let the bot set its own fallbacks
+
+You can ask a bot to set up its own chain, for example "if you run out of usage, carry on with Codex". It can see which agents are on the computer, whether each is signed in or resting, and their models, and it replaces its list with the one you asked for. A notice in its chat records each change, such as "Fallbacks set: Codex · gpt-5.5, Gemini CLI" or "Fallbacks removed".
+
+The switch **Let the bot change its fallbacks**, under the list, controls this. It's on by default. In the terminal UI it's the **Bot edits** field.
+
+A bot that manages the team can change any bot's fallbacks, and its own only while this switch is on. Either way, bots set agents and models only.

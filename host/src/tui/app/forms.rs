@@ -143,6 +143,8 @@ impl App {
             notify: b.notify,
             computer: b.computer,
             manage_team: b.manage_team,
+            offered_to_network: b.offered_to_network,
+            reachable_by_assistants: b.reachable_by_assistants,
             color: COLORS.iter().position(|c| *c == b.color).unwrap_or(7),
             shape: SHAPES.iter().position(|s| *s == b.shape).unwrap_or(0),
             connectors: b.connectors.iter().map(|id| Toggle { id: id.clone(), name: id.clone(), on: true }).collect(),
@@ -242,6 +244,8 @@ impl App {
                         | Field::Notify
                         | Field::Computer
                         | Field::Team
+                        | Field::Network
+                        | Field::Assistants
                         | Field::Color
                         | Field::Shape
                         | Field::ModelOptions
@@ -259,6 +263,7 @@ impl App {
                             f.backend.clone_from(&ids[cycle(i, d, ids.len())]);
                             // Another agent's model ids mean nothing here, and it can't be its own fallback.
                             f.model.clear();
+                            f.model_options = Default::default();
                             let own = f.backend.clone();
                             f.fallbacks.retain(|x| x.backend != own);
                             self.want_models(&f.backend);
@@ -270,6 +275,8 @@ impl App {
                     Field::Notify => f.notify = !f.notify,
                     Field::Computer => f.computer = !f.computer,
                     Field::Team => f.manage_team = f.manage_team.map(|on| !on),
+                    Field::Network => f.offered_to_network = f.offered_to_network.map(|on| !on),
+                    Field::Assistants => f.reachable_by_assistants = f.reachable_by_assistants.map(|on| !on),
                     Field::Color if !space => f.color = cycle(f.color, d, COLORS.len()),
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
@@ -367,6 +374,8 @@ impl Form {
             "notify": self.notify,
             "computer": self.computer,
             "manageTeam": self.manage_team.unwrap_or_default(),
+            "offeredToNetwork": self.offered_to_network.unwrap_or(true),
+            "reachableByAssistants": self.reachable_by_assistants.unwrap_or(true),
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],
             "connectors": self.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
@@ -424,6 +433,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn changing_agent_clears_default_model_effort() {
+        let mut app = test_app();
+        app.backends = vec![json!({"id": "claude", "available": true}), json!({"id": "codex", "available": true})];
+        let bot = json!({"id": "b", "backend": "claude", "modelOptions": {"effort": "high"}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Agent).expect("agent field");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Right)) else { panic!("editor stays") };
+        assert_ne!(f.backend, "claude");
+        assert!(f.model_options.1.is_empty());
+    }
+
+    #[tokio::test]
     async fn model_options_cycle_and_belong_to_their_model() {
         let mut app = test_app();
         let grok = json!({"id": "grok", "name": "Grok", "options": [
@@ -455,6 +479,27 @@ mod tests {
         assert_eq!(f.changes(), json!({}));
         f.notify = false;
         assert_eq!(f.changes(), json!({"notify": false}), "a model changed elsewhere meanwhile stays");
+    }
+
+    #[tokio::test]
+    async fn the_network_switches_need_a_host_that_has_them() {
+        let mut app = test_app();
+        let old = json!({"id": "a", "name": "Old", "backend": "claude"});
+        let new = json!({"id": "b", "name": "New", "backend": "claude", "offeredToNetwork": true, "reachableByAssistants": true});
+        for bot in [&old, &new] {
+            app.bots.insert(bot["id"].as_str().unwrap().into(), Bot::parse(bot).expect("a bot"));
+        }
+        for (id, offered) in [("a", None), ("b", Some(false))] {
+            app.selected = Some(id.into());
+            app.edit_bot();
+            let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+            f.field = FIELDS.iter().position(|x| *x == Field::Network).unwrap();
+            let keep = app.form_key(f, KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+            let Some(Overlay::Form(f)) = keep else { panic!("the form stays") };
+            assert_eq!(f.offered_to_network, offered);
+            let changed = f.changes();
+            assert_eq!(changed.get("offeredToNetwork").cloned(), offered.map(Value::from), "{changed}");
+        }
     }
 
     #[test]

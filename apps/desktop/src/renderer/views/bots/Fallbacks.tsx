@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { MAX_FALLBACKS, moveFallback, restLine, restOf, stepBanner } from '@shared/fallbacks'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
-import { Button, CardForm, CardSection, ChoicePicker, DropdownMenu, IconButton, ValueRow } from '../../components/Controls'
+import { Button, CardForm, CardSection, DropdownMenu, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
@@ -144,10 +144,7 @@ function AddFallback({ choices, onAdd }: { choices: Backend[]; onAdd: (f: Fallba
       <ModalHeader title={tr(`Add fallback`)} trailing={<IconButton title="Add" icon="checkmark" disabled={!backend} onClick={() => onAdd({ backend, model, modelOptions })} />} />
       <CardForm>
         <CardSection>
-          <ValueRow label="Agent">
-            <ChoicePicker selection={backend} options={choices.map(agentChoice)} onChange={setBackend} />
-          </ValueRow>
-          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} />
+          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} agents={choices.map(agentChoice)} onAgentChange={(id) => { setBackend(id); setModel(null); setModelOptions({}) }} />
         </CardSection>
       </CardForm>
     </SheetPage>

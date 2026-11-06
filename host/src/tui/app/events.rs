@@ -56,20 +56,27 @@ impl App {
         match v["type"].as_str() {
             Some("hello") => {
                 self.snapshot_floors();
+                self.network = v["network"].clone();
                 if !v["usage"].is_null() {
                     self.usage = v["usage"].clone();
                 }
             }
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
+            Some("network") => self.network_changed(&v["network"]),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
                 self.memory_moved(&v["bot"]);
             }
+            Some("artifact") => self.artifact_changed(&v["artifact"]),
+            Some("routineFlow") => self.flow_changed(&v["botIds"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
+                    if !e.is_internal() && !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
+                        self.entry_added(&bot, &e);
+                    }
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -128,7 +135,7 @@ impl App {
         }
         if new.status == Status::NeedsInput && old.status != Status::NeedsInput {
             self.toast(format!("{} needs you", new.name), true);
-        } else if old.status == Status::Working && new.status == Status::Idle {
+        } else if old.status == Status::Working && new.status == Status::Idle && new.last_at > old.last_at {
             self.toast(format!("{} is done", new.name), false);
         } else if old.status != Status::Error && new.status == Status::Error {
             self.toast(format!("{} hit an error", new.name), true);
@@ -164,6 +171,10 @@ impl App {
         }
         if let After::Sheet(s) = after {
             self.on_sheet_reply(s, r);
+            return;
+        }
+        if let After::Network(n) = after {
+            self.network_reply(n, r);
             return;
         }
         let v = match r {
@@ -211,6 +222,7 @@ impl App {
             | After::Tracked
             | After::Answered(_)
             | After::Sheet(_)
+            | After::Network(_)
             | After::Sent(_)
             | After::Connection(_, _)
             | After::Roster(_, _)

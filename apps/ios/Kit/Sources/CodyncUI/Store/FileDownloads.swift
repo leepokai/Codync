@@ -32,6 +32,11 @@ public final class FileDownloads {
     init(writer: any FileDownloadWriting) { self.writer = writer }
 
     public func save(client: HostClient?, entry: Entry, file: SharedFile) {
+        save(client: client, entryId: entry.id, botId: entry.botId, file: file)
+    }
+
+    /// `entryId`: the message that shared the file (a Library row has only that).
+    public func save(client: HostClient?, entryId: String, botId: String, file: SharedFile) {
         guard !retired else { return }
         guard tasks.isEmpty else {
             if tasks[file.id] == nil { states[file.id] = .failed("Finish the current download first.") }
@@ -47,12 +52,12 @@ public final class FileDownloads {
         tasks[file.id] = Task {
             defer { tasks[file.id] = nil }
             do {
-                let url = try await writer.save(client: client, entryId: entry.id, file: file, directory: directory) { [weak self] received in
+                let url = try await writer.save(client: client, entryId: entryId, file: file, directory: directory) { [weak self] received in
                     await self?.update(file.id, received: received)
                 }
                 guard !Task.isCancelled, !retired else { try await writer.remove(url); return }
                 states[file.id] = .saved
-                let item = Export(id: file.id, url: url, botId: entry.botId)
+                let item = Export(id: file.id, url: url, botId: botId)
                 exported = item
                 export = item
             } catch is CancellationError {

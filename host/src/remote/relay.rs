@@ -1,12 +1,13 @@
 //! The outbound WebSocket to this computer's relay in the Codync cloud (spec §7, §9.6).
 //!
 //! Every connection runs the same order: register (once per URL) → connect with
-//! `Codync-Sig` → pull the cloud state (≤ 10 s; account devices wait for it) → publish the
-//! signed ACL → `acl.ok` → `ready`. Then device links are multiplexed onto `channel::run`
-//! (the relay only ever sees ciphertext), queued mailbox sends are delivered in order and
-//! acknowledged, and every change to the device table republishes the ACL. Once ready, the
-//! routine webhooks are registered (and again whenever they change) and public webhook
-//! deliveries arrive one at a time for an ack (§7.8). A reconnect drops all link state.
+//! `Codync-Sig` → pull the cloud state (≤ 10 s; account devices wait for it; a private relay
+//! has none) → publish the signed ACL → `acl.ok` → `ready`. Then device links are multiplexed
+//! onto `channel::run` (the relay only ever sees ciphertext), queued mailbox sends are
+//! delivered in order and acknowledged, and every change to the device table republishes the
+//! ACL. Once ready, the routine webhooks are registered (and again whenever they change) and
+//! public webhook deliveries arrive one at a time for an ack (§7.8). A reconnect drops all link
+//! state.
 
 use crate::LockExt;
 use crate::api;
@@ -30,6 +31,7 @@ use tokio::time::{Instant, sleep, timeout};
 use tokio_stream::StreamMap;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_tungstenite::tungstenite::{self, Message, client::IntoClientRequest as _};
+use tracing::Instrument as _;
 
 const PATH: &str = "/v1/relay/host?v=1";
 /// Must be exactly this string: the relay answers it without waking up.
@@ -38,10 +40,10 @@ const PING_EVERY: Duration = Duration::from_secs(30);
 /// Nothing heard for this long (not even a pong): the socket is dead.
 const SILENT: Duration = Duration::from_secs(90);
 const STATE_WAIT: Duration = Duration::from_secs(10);
-const STATE_EVERY: Duration = Duration::from_secs(5 * 60);
+const STATE_EVERY: Duration = Duration::from_mins(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-const STABLE: Duration = Duration::from_secs(60);
-const REPLACED_WAIT: Duration = Duration::from_secs(5 * 60);
+const STABLE: Duration = Duration::from_mins(1);
+const REPLACED_WAIT: Duration = Duration::from_mins(5);
 /// A device's messages waiting for its channel; the relay already rate-limits devices.
 const LINK_BUFFER: usize = 256;
 /// A mailbox send older than this is refused (TTL 24 h + clock slack).
@@ -49,27 +51,39 @@ const MAILBOX_MAX_AGE_MS: i64 = 25 * 60 * 60 * 1000;
 const REPLACED: u16 = 4009;
 const RATE_LIMITED: u16 = 4008;
 
+/// How long the old relay stays up after the cloud is reconfigured, so phones that reach this
+/// computer through it can reconnect once and learn the new address.
+const MOVE_GRACE: Duration = Duration::from_secs(10);
+
 /// Keeps this computer on the relay while the cloud is on; restarts when it's reconfigured.
 pub async fn run(hub: Arc<Hub>) {
     let mut config = hub.cloud.config.subscribe();
     loop {
         config.mark_unchanged();
-        let url = cloud::url(&hub.store);
+        let address = cloud::current(&hub.store);
         cloud::update_status(&hub, |s| {
-            s.enabled = url.is_some();
-            s.url.clone_from(&url);
+            cloud::show(s, address.as_ref());
             s.approval = cloud::approval(&hub.store);
+            s.assistants = crate::chat::team::assistant::enabled(&hub.store);
             s.registered = false;
             s.connected = false;
-            if url.is_none() {
+            if address.is_none() {
                 s.owner = None;
                 s.last_error = None;
             }
         });
-        let restart = if let Some(url) = url {
+        let restart = if let Some(address) = address {
+            let cloud_host = cloud::authority(&address.url).unwrap_or_else(|_| "unknown".into());
+            let session = supervise(&hub, &address).instrument(tracing::info_span!("relay", cloud_host));
+            tokio::pin!(session);
             tokio::select! {
-                () = supervise(&hub, &url) => Ok(()),
-                r = config.changed() => r,
+                () = &mut session => Ok(()),
+                r = config.changed() => {
+                    // Every channel reconnects on this change (`channel::serve`) and reads the new
+                    // address from `hello`. Phones on this relay need it to stay up while they do.
+                    let _ = timeout(MOVE_GRACE, &mut session).await;
+                    r
+                }
             }
         } else {
             // No cloud: account devices can't be renewed, so they aren't honored either.
@@ -107,13 +121,13 @@ impl Backoff {
     }
 }
 
-async fn supervise(hub: &Arc<Hub>, url: &str) {
-    let mut register_wait = Backoff::new(Duration::from_secs(30 * 60));
-    let mut wait = Backoff::new(Duration::from_secs(60));
+async fn supervise(hub: &Arc<Hub>, address: &cloud::Address) {
+    let mut register_wait = Backoff::new(Duration::from_mins(30));
+    let mut wait = Backoff::new(Duration::from_mins(1));
     let mut registered = false;
     loop {
         if !registered {
-            if let Err(e) = cloud::register(hub, url).await {
+            if let Err(e) = cloud::register(hub, address).await {
                 tracing::warn!(error = format!("{e:#}"), "couldn't register with the Codync cloud");
                 cloud::update_status(hub, |s| s.last_error = Some(format!("{e:#}")));
                 sleep(register_wait.wait()).await;
@@ -123,7 +137,7 @@ async fn supervise(hub: &Arc<Hub>, url: &str) {
             register_wait.reset();
         }
         let started = Instant::now();
-        let outcome = session(hub, url).await;
+        let outcome = session(hub, address).await;
         cloud::update_status(hub, |s| s.connected = false);
         match outcome {
             Ok(Some(REPLACED)) => {
@@ -168,9 +182,9 @@ type Sink = futures::stream::SplitSink<
 >;
 
 /// One relay connection; returns the close code the relay sent, if any.
-async fn session(hub: &Arc<Hub>, base: &str) -> Result<Option<u16>> {
-    let mut req = relay_url(base)?.into_client_request()?;
-    let sig = hub.identity.sign_request("GET", &cloud::authority(base)?, PATH, b"");
+async fn session(hub: &Arc<Hub>, address: &cloud::Address) -> Result<Option<u16>> {
+    let mut req = relay_url(&address.url)?.into_client_request()?;
+    let sig = hub.identity.sign_request("GET", &cloud::authority(&address.url)?, PATH, b"");
     req.headers_mut().insert("Codync-Sig", sig.parse()?);
     let (ws, _) = timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(req))
         .await
@@ -185,16 +199,17 @@ async fn session(hub: &Arc<Hub>, base: &str) -> Result<Option<u16>> {
     let (sink, mut stream) = ws.split();
     let mut s = Session {
         hub: hub.clone(),
-        base: base.to_owned(),
+        address: address.clone(),
         sink,
         links: HashMap::new(),
         outs: StreamMap::new(),
         pulls: JoinSet::new(),
+        assistant: JoinSet::new(),
         held: None,
         ready: false,
         retried: false,
     };
-    if timeout(STATE_WAIT, pull_state(hub.clone(), base.to_owned())).await.is_err() {
+    if timeout(STATE_WAIT, pull_state(hub.clone(), address.clone())).await.is_err() {
         tracing::warn!("the cloud state didn't arrive in time; account devices wait for it");
     }
     let mut auth = hub.auth.subscribe();
@@ -249,13 +264,19 @@ async fn session(hub: &Arc<Hub>, base: &str) -> Result<Option<u16>> {
             // Also without an owner: a claim whose `cloud.changed` never arrived is picked up here.
             _ = poll.tick() => s.pull(),
             Some(_) = s.pulls.join_next() => s.deliver_held().await?,
+            Some(Ok(result)) = s.assistant.join_next() => s.send(&result).await?,
         }
     }
 }
 
-/// A state pull on the current connection; success lets account devices in.
-async fn pull_state(hub: Arc<Hub>, base: String) {
-    match cloud::pull(&hub, &base).await {
+/// A state pull on the current connection; success lets account devices in. A private relay
+/// has no accounts: nothing is pulled, so its empty grant list never removes an account device,
+/// and those devices stay out, as with the cloud off, until the Codync cloud renews them.
+async fn pull_state(hub: Arc<Hub>, address: cloud::Address) {
+    if address.kind == cloud::RelayKind::Private {
+        return;
+    }
+    match cloud::pull(&hub, &address.url).await {
         Ok(()) => hub.cloud_synced.store(true, Ordering::Release),
         Err(e) => {
             tracing::warn!(error = format!("{e:#}"), "couldn't get the cloud state");
@@ -266,7 +287,7 @@ async fn pull_state(hub: Arc<Hub>, base: String) {
 
 struct Session {
     hub: Arc<Hub>,
-    base: String,
+    address: cloud::Address,
     sink: Sink,
     /// Device messages into each link's channel.
     links: HashMap<String, mpsc::Sender<Value>>,
@@ -274,6 +295,9 @@ struct Session {
     outs: StreamMap<String, ReceiverStream<Out>>,
     /// State pulls in flight; dropped (aborted) with the connection.
     pulls: JoinSet<()>,
+    /// Cloud assistant calls being answered (a listing may wait for the other computers), so
+    /// they don't hold up the devices' messages; their `assistant.result` goes out when done.
+    assistant: JoinSet<Value>,
     /// An account device's queued send that arrived before this connection's state pull
     /// succeeded. The relay sends the next item only after an ack, so there is at most one.
     held: Option<Value>,
@@ -288,7 +312,7 @@ impl Session {
     }
 
     fn pull(&mut self) {
-        self.pulls.spawn(pull_state(self.hub.clone(), self.base.clone()));
+        self.pulls.spawn(pull_state(self.hub.clone(), self.address.clone()));
     }
 
     /// Delivers the held mailbox item once a state pull has succeeded.
@@ -371,9 +395,11 @@ impl Session {
             "mbox.item" => {
                 let from = v["from"].as_str().unwrap_or_default();
                 let account = self.hub.store.device(from).is_some_and(|d| d.source == DeviceSource::Account);
-                if account && !self.hub.cloud_synced.load(Ordering::Acquire) {
+                let pulls = self.address.kind == cloud::RelayKind::Codync;
+                if account && pulls && !self.hub.cloud_synced.load(Ordering::Acquire) {
                     // Refusing it would drop it for good; unacknowledged, it waits for the pull
-                    // (or goes back to the queue if this connection ends).
+                    // (or goes back to the queue if this connection ends). A private relay never
+                    // pulls, so there it is refused instead of holding up the mailbox.
                     self.held = Some(v);
                     if self.pulls.is_empty() {
                         self.pull();
@@ -386,6 +412,11 @@ impl Session {
             "hook.item" => {
                 let ack = hook_item(&self.hub, &v);
                 self.send(&ack).await?;
+            }
+            // A private relay has no accounts, so no cloud assistant (§7.9).
+            "assistant.call" if self.address.kind == cloud::RelayKind::Codync => {
+                let hub = self.hub.clone();
+                self.assistant.spawn(async move { crate::chat::team::assistant::answer(&hub, &v).await });
             }
             "cloud.changed" => self.pull(),
             "acl.ok" => {
@@ -553,6 +584,13 @@ mod tests {
         /// State pulls to fail (500) before answering.
         state_failures: std::sync::Mutex<u32>,
         signatures_ok: std::sync::Mutex<Vec<bool>>,
+        /// Each request's path and its `Codync-Relay-Token`, in order.
+        relay_tokens: std::sync::Mutex<Vec<(String, Option<String>)>>,
+    }
+
+    fn note_token(f: &Fake, req: &Request) {
+        let token = req.headers().get("codync-relay-token").and_then(|v| v.to_str().ok()).map(str::to_owned);
+        f.relay_tokens.lock().unwrap().push((req.uri().path().to_owned(), token));
     }
 
     fn check_sig(req: &Request, sign_pub: &[u8; 32], authority: &str) -> bool {
@@ -576,6 +614,7 @@ mod tests {
             .route(
                 "/v1/host/register",
                 post(move |State(f): State<Arc<Fake>>, req: Request| async move {
+                    note_token(&f, &req);
                     let ok = req.headers().contains_key("codync-sig");
                     f.signatures_ok.lock().unwrap().push(ok);
                     axum::Json(json!({"computerId": cid, "owned": false}))
@@ -584,6 +623,7 @@ mod tests {
             .route(
                 "/v1/host/state",
                 get(move |State(f): State<Arc<Fake>>, req: Request| async move {
+                    note_token(&f, &req);
                     f.signatures_ok.lock().unwrap().push(check_sig(&req, &sign_pub, &a1));
                     let mut failures = f.state_failures.lock().unwrap();
                     if *failures > 0 {
@@ -596,7 +636,7 @@ mod tests {
             .route(
                 "/v1/relay/host",
                 any(move |State(f): State<Arc<Fake>>, ws: WebSocketUpgrade, req: Request| async move {
-                    let _ = req;
+                    note_token(&f, &req);
                     ws.on_upgrade(move |socket| fake_do(f, socket))
                 }),
             )
@@ -845,5 +885,74 @@ mod tests {
         let ack = sent.iter().find(|v| v["t"] == "mbox.ack").unwrap();
         assert_eq!(ack["ok"], true, "delivered once the retried pull confirmed the grant: {ack}");
         assert!(hub.cloud_synced.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn a_private_relay_gets_its_token_only_to_enroll_and_never_changes_account_devices() {
+        let hub = temp_hub();
+        let fake = Arc::new(Fake::default());
+        let phone = SigningKey::from_bytes(&crypto::random());
+        let dk = b64(phone.verifying_key().as_bytes());
+        // Approved through the Codync cloud before this computer moved to its own relay.
+        hub.store
+            .put_device(&Device {
+                key: dk.clone(),
+                name: "Phone".into(),
+                platform: "ios".into(),
+                source: DeviceSource::Account,
+                grant_id: Some("grt_a".into()),
+                scopes: vec![Scope::Control, Scope::Screen],
+                lease_until: Some(now_ms() + 60_000),
+                created_at: now_ms(),
+                last_seen_at: None,
+            })
+            .unwrap();
+        *fake.state.lock().unwrap() = json!({"owner": null, "grants": [], "requests": []});
+        let cwd = std::env::temp_dir().to_string_lossy().into_owned();
+        let cfg: BotConfig =
+            serde_json::from_value(json!({"id": "", "name": "B", "cwd": cwd, "backend": "custom", "command": "true"}))
+                .unwrap();
+        let bot_id = hub.create_bot(cfg).unwrap()["id"].as_str().unwrap().to_owned();
+        let nonce = "5D6E7F80-4F89-11D3-9A0C-0305E82C3301";
+        let inner = json!({"m": "send", "b": {"botId": bot_id, "text": "hi", "clientNonce": nonce}, "ts": now_ms()});
+        let blob = seal_mailbox(&hub, &phone, nonce, inner.to_string().as_bytes());
+        *fake.script.lock().unwrap() =
+            vec![json!({"t": "mbox.item", "seq": 1, "from": dk, "nonce": nonce, "d": blob, "exp": now_ms() + 1000})];
+        let routine = hub
+            .routines
+            .save(
+                &hub,
+                &bot_id,
+                &json!({"name": "Hook", "instruction": "Report it", "triggers": [{"type": "webhook"}]}),
+            )
+            .unwrap();
+        let routine_id = routine["routine"]["id"].as_str().unwrap().to_owned();
+
+        let base = fake_cloud(fake.clone(), hub.clone()).await;
+        hub.store.kv_set("test_cloud_url", &base).unwrap();
+        hub.store.kv_set("test_cloud_token", "s3cret-token-value").unwrap();
+        tokio::spawn(run(hub.clone()));
+
+        wait_for(&fake, |m| m.iter().any(|v| v["t"] == "mbox.ack")).await;
+        let sent = fake.from_host.lock().unwrap().clone();
+        let ack = sent.iter().find(|v| v["t"] == "mbox.ack").unwrap();
+        assert_eq!(
+            (ack["ok"].as_bool(), ack["code"].as_str()),
+            (Some(false), Some("unauthorized")),
+            "refused, not held: {ack}"
+        );
+        assert_eq!(
+            *fake.relay_tokens.lock().unwrap(),
+            [
+                ("/v1/host/register".to_owned(), Some("s3cret-token-value".to_owned())),
+                ("/v1/relay/host".to_owned(), None)
+            ],
+            "only enrolling carries the token, and a private relay's state is never pulled"
+        );
+        assert!(hub.store.device(&dk).is_some(), "its empty grant list doesn't remove the account device");
+        assert!(!hub.cloud_synced.load(Ordering::Acquire), "account devices stay out, as with the cloud off");
+        assert_eq!(hub.cloud.status().relay, cloud::RelayKind::Private);
+        let creds = hub.routines.credentials(&hub, &bot_id, &routine_id, false).unwrap();
+        assert_eq!(creds["url"], Value::Null, "a private relay delivers no public webhook");
     }
 }

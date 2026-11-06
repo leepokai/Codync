@@ -351,3 +351,33 @@ async fn instructions_reach_every_harness_and_survive_compaction() {
     assert!(!prompts[2].contains("<bot-profile>"), "a small fall isn't a compaction");
     assert!(prompts[4].contains(profile_again), "{}", prompts[4]);
 }
+
+/// A first prompt that failed may never have reached the agent: its retry (even after a host restart) still
+/// carries the instructions.
+async fn retry_after_failed_first_prompt(restart: bool) {
+    let mut host = Host::start().await;
+    let bot = host.fixture_bot("Flaky", "instructions_agent.py", "flaky").await;
+    host.call("send", json!({"botId": bot, "text": "first"})).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !host.call("history", json!({"botId": bot})).await.to_string().contains("The agent failed") {
+        assert!(Instant::now() < deadline, "the first prompt never failed");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    if restart {
+        host.restart(|_| {}).await;
+    }
+    host.reply(&bot, "second").await;
+    let prompts = host.prompts(&bot);
+    assert_eq!(prompts.len(), 2, "{prompts:?}");
+    assert!(prompts[0].contains("<bot-profile>") && prompts[1].contains("<bot-profile>"), "{prompts:?}");
+}
+
+#[tokio::test]
+async fn a_retry_after_a_failed_first_prompt_still_carries_the_instructions() {
+    retry_after_failed_first_prompt(false).await;
+}
+
+#[tokio::test]
+async fn a_retry_after_a_restart_still_carries_the_instructions() {
+    retry_after_failed_first_prompt(true).await;
+}

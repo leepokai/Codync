@@ -261,7 +261,7 @@ impl Drop for PendingProfile {
 }
 
 pub async fn authenticate(store: &Store, backend: &str, name: Option<String>) -> Result<AgentAccount> {
-    tokio::time::timeout(Duration::from_secs(10 * 60), authenticate_profile(store, backend, name))
+    tokio::time::timeout(Duration::from_mins(10), authenticate_profile(store, backend, name))
         .await
         .context("Sign-in didn't finish within 10 minutes")?
 }

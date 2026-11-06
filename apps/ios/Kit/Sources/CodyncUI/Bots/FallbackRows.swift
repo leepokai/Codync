@@ -152,11 +152,9 @@ struct AddFallbackSheet: View {
             }
             CardForm {
                 CardSection {
-                    ValueRow("Agent") {
-                        ChoicePicker(selection: $fallback.backend, options: choices.map { ($0.id, model.agentLabel($0)) },
-                                     image: { AgentIcon.image(registry: model.agentRegistry($0)) })
-                    }
-                    AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions)
+                    AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions,
+                                     agents: choices.map { ($0.id, model.agentLabel($0)) },
+                                     onAgentChange: { fallback.backend = $0; fallback.model = nil; fallback.modelOptions = [:] })
                 }
             }
         }

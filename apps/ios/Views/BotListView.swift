@@ -18,6 +18,8 @@ struct BotListView: View {
     @State private var showHistory = false
     @AppStorage("rosterByProject") private var byProject = false
     @AppStorage("collapsedRosterProjects") private var collapsedProjects = "[]"
+    /// A bot whose agent starts over with a fresh context, once confirmed.
+    @State private var confirmNewSession: RosterItem?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
     @State private var lifted: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -140,6 +142,8 @@ struct BotListView: View {
             .listRowBackground(Color.clear)
         }
         .id(accounts.accountId)
+        .reviewInvitation(blocked: creating != nil || editing != nil || editingGroup != nil
+                          || confirmDelete != nil || confirmNewSession != nil || lifted != nil)
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 0)
@@ -221,6 +225,14 @@ struct BotListView: View {
                 if let item { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
             }]
         }
+        .codyncDialog("Start a new session?",
+                      isPresented: Binding(get: { confirmNewSession != nil }, set: { if !$0 { confirmNewSession = nil } }),
+                      message: "The conversation stays here, but the agent starts with a fresh context.") {
+            let item = confirmNewSession
+            return [DialogAction("New session") {
+                if let item { accounts.store(for: item.ref.computerId)?.newSession(item.bot.id) }
+            }]
+        }
     }
 
     /// A row the system's reordering dropped. A heading moves its computer and its bots (an order
@@ -258,7 +270,8 @@ struct BotListView: View {
         return VStack(spacing: 0) {
             // Not synced while it needs an update: "No bots yet" wouldn't be true.
             ComputerSection(store: store, empty: store.mismatch == nil && !roster.contains { $0.ref.computerId == id },
-                            collapsed: folded || collapsedIDs.contains(id), toggle: { toggleCollapsed(id) }, move: move)
+                            collapsed: folded || collapsedIDs.contains(id), toggle: { toggleCollapsed(id) }, move: move,
+                            extensions: store.connection == .online && store.mismatch == nil ? { app.marketplace = id } : nil)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleCollapsed(id) }
             updateCard(store)
@@ -289,17 +302,33 @@ struct BotListView: View {
                 Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
             }
         }
+        // The lead stays on top.
+        .moveDisabled(bot.lead)
         .contextActions(preview: { RosterPreviewView(bot: bot, store: store) }) {
-            [MenuItem("Open chat", icon: "bubble.left") { accounts.selection = item.ref }] +
-            (bot.isWorking ? [MenuItem(store.rosterStopping.contains(bot.id) ? "Stopping\u{2026}" : "Stop", icon: "stop.fill", destructive: true) { store.stopFromRoster(bot) }] : []) + [
-                MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) },
+            // The lead is always on top and always there: no pin, hide or delete.
+            var items = [MenuItem("Open chat", icon: "bubble.left") { accounts.selection = item.ref }]
+            if bot.isWorking {
+                items.append(MenuItem(store.rosterStopping.contains(bot.id) ? "Stopping\u{2026}" : "Stop", icon: "stop.fill", destructive: true) { store.stopFromRoster(bot) })
+            }
+            if !bot.lead {
+                items.append(MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) })
+            }
+            if !bot.isGroup {
+                items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = item })
+            }
+            items += [
                 bot.isGroup
                     ? MenuItem("Edit group", icon: "person.2") { editingGroup = GroupTarget(computerId: item.ref.computerId, group: bot) }
                     : MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
                 MenuItem("Mark as read", icon: "checkmark.message") { store.markAllRead(bot.id) },
-                MenuItem("Hide from list", icon: "eye.slash") { store.setHidden(bot, true) },
-                MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = item },
             ]
+            if !bot.lead {
+                items += [
+                    MenuItem("Hide from list", icon: "eye.slash") { store.setHidden(bot, true) },
+                    MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = item },
+                ]
+            }
+            return items
         }
     }
 
@@ -390,6 +419,8 @@ private struct ComputerSection: View {
     let collapsed: Bool
     let toggle: () -> Void
     let move: (ComputerID, Int) -> Void
+    /// This computer's own Extensions; nil while it can't be reached.
+    let extensions: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -416,6 +447,7 @@ private struct ComputerSection: View {
         .accessibilityActions {
             Button(L10n.tr("Move up")) { move(store.computer.id, -1) }
             Button(L10n.tr("Move down")) { move(store.computer.id, 1) }
+            if let extensions { Button(L10n.tr("Extensions"), action: extensions) }
         }
     }
 
@@ -426,20 +458,34 @@ private struct ComputerSection: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)
+            // The connection sits at the trailing edge, before the heading's buttons.
+            Spacer(minLength: 8)
             Text(L10n.tr(store.statusText))
                 .font(.footnote)
                 .foregroundStyle(store.isOffline ? Palette.warning : Palette.tertiary)
                 .lineLimit(1)
                 .contentTransition(.opacity)
             if store.connection == .online {
-                RouteIcon(route: store.hostRoute).font(.caption2).foregroundStyle(Palette.tertiary)
+                RouteIcon(route: store.hostRoute, cloud: store.computer.cloud).font(.caption2).foregroundStyle(Palette.tertiary)
             }
-            Spacer(minLength: 8)
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Palette.tertiary)
                 .rotationEffect(.degrees(collapsed ? -90 : 0))
                 .accessibilityHidden(true)
+            if let extensions {
+                // After the chevron, as on the desktop; sized like it so the heading stays one light line.
+                Button(action: extensions) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.secondary)
+                        .frame(width: 28, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(L10n.tr("Extensions"))
+                .help(L10n.tr("Extensions"))
+            }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)

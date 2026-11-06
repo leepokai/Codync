@@ -27,11 +27,14 @@ interface Health {
   binaryPath?: string
   binaryHash?: string
   busy?: boolean
+  /** When another device asked this computer to update (`installHostUpdate`), if it's still waiting. */
+  updateRequested?: number | null
 }
 
+/** This app's own host; `app` tells it the app is open to carry out an update request. */
 export async function fetchHealth(url = baseURL, timeoutMs = 2000): Promise<Health | null> {
   try {
-    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(timeoutMs) })
+    const res = await fetch(`${url}/health?app=true`, { signal: AbortSignal.timeout(timeoutMs) })
     if (!res.ok) return null
     return (await res.json()) as Health
   } catch {
@@ -82,10 +85,10 @@ class SetupError extends Error {
 
 /**
  * Manages the local codync-host (binary, background service, health): bundled with the app,
- * else a Homebrew / cargo install. Emits `change`, and `setupFailed` (a `HostSetupStage`) when
- * it couldn't get a working host.
+ * else a Homebrew / cargo install. `setupFailed`: it couldn't get a working host;
+ * `updateRequested`: another device asked this computer to update.
  */
-export class HostController extends EventEmitter {
+export class HostController extends EventEmitter<{ change: []; setupFailed: [stage: HostSetupStage]; updateRequested: [] }> {
   state: HostState = { kind: 'starting' }
   local: LocalHost | null = null
   private loop: NodeJS.Timeout | null = null
@@ -95,6 +98,8 @@ export class HostController extends EventEmitter {
   private expectedHash: string | null = null
   private failures = 0
   private preparingForUpdate = false
+  /** The update request already passed on to the app's updater. */
+  private updateRequest: number | null = null
 
   get binary(): string | null {
     const candidates = [
@@ -322,9 +327,17 @@ export class HostController extends EventEmitter {
         return new SetupError('not_responding', "Another build of the host is running, not this app's. Try again to replace it.")
       }
     }
+    this.relayUpdateRequest(health)
     if (this.local?.computerId === health.computerId && this.local.token === token) return null
     this.setLocal({ computerId: health.computerId, baseURL, token })
     return null
+  }
+
+  /** Passes each new update request on to the app's updater, once. */
+  private relayUpdateRequest(health: Health) {
+    if (!health.updateRequested || health.updateRequested === this.updateRequest) return
+    this.updateRequest = health.updateRequested
+    this.emit('updateRequested')
   }
 }
 

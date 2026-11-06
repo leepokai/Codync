@@ -21,7 +21,7 @@ const PREVIOUS_BYTES: usize = 6_000;
 /// What the pipeline's first stage may be given as `{{previous}}`.
 const MAX_INPUT_BYTES: usize = 8_000;
 /// The whole pipeline's time: each stage still gets at most `ASK_TIMEOUT`.
-const TOTAL_TIME: Duration = Duration::from_secs(30 * 60);
+const TOTAL_TIME: Duration = Duration::from_mins(30);
 /// Replies kept per stage in the digest, and for the last one.
 const STAGE_REPLY_BYTES: usize = 600;
 const FINAL_REPLY_BYTES: usize = 4_000;

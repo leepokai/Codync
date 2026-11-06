@@ -6,9 +6,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fmt::Write as _, io::Read, path::Path, time::Duration};
 
+/// Kept for the signed-manifest installer a build that opts back into updates would use.
+#[allow(dead_code, reason = "no release server feeds this build; the installer is kept for one that opts in")]
 pub const RELEASES: &str = "https://github.com/leepokai/Codync/releases";
 pub const MAX_ARCHIVE: usize = 128 * 1024 * 1024;
 const MAX_UNPACKED: u64 = 256 * 1024 * 1024;
+#[allow(dead_code, reason = "no release server feeds this build; see RELEASES")]
 const PUBLIC_KEY: &str = include_str!("../../../packaging/updates/host-public-key.txt");
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -43,6 +46,7 @@ pub fn sha256(bytes: &[u8]) -> String {
     hash
 }
 
+#[allow(dead_code, reason = "no release server feeds this build; see RELEASES")]
 pub fn verify_manifest(bytes: &[u8], signature: &str, public_key: &str, platform: &str) -> Result<Release> {
     let key: [u8; 32] =
         B64.decode(public_key.trim())?.try_into().map_err(|_| anyhow::anyhow!("invalid update public key"))?;
@@ -66,7 +70,7 @@ pub async fn download(url: &str, limit: usize) -> Result<Vec<u8>> {
     let mut response = crate::http()
         .get(url)
         .header(reqwest::header::USER_AGENT, concat!("codync-host/", env!("CARGO_PKG_VERSION")))
-        .timeout(Duration::from_secs(180))
+        .timeout(Duration::from_mins(3))
         .send()
         .await?
         .error_for_status()?;
@@ -82,26 +86,10 @@ pub async fn download(url: &str, limit: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub async fn latest() -> Result<Release> {
-    let platform = platform()?;
-    // Resolve latest once. Fetching manifest and signature through separate
-    // latest redirects could straddle two releases.
-    let response = crate::http()
-        .get("https://api.github.com/repos/leepokai/Codync/releases/latest")
-        .header(reqwest::header::USER_AGENT, "codync-host")
-        .timeout(Duration::from_secs(20))
-        .send()
-        .await?
-        .error_for_status()?;
-    let metadata: serde_json::Value = response.json().await?;
-    let tag = metadata["tag_name"].as_str().context("latest release has no tag")?;
-    let version = semver::Version::parse(tag.strip_prefix('v').context("invalid release tag")?)?;
-    let url = format!("{RELEASES}/download/v{version}/codync-host-{platform}.update.json");
-    let bytes = download(&url, 16 * 1024).await.context("this release has no valid signed host update manifest")?;
-    let signature = download(&format!("{url}.sig"), 1024).await?;
-    let release = verify_manifest(&bytes, std::str::from_utf8(&signature)?, PUBLIC_KEY, &platform)?;
-    ensure!(release.version == version.to_string(), "manifest version differs from the selected release");
-    Ok(release)
+pub fn latest() -> Result<Release> {
+    // This fork builds its own host: the only release feed it ever knew was the original repository's, and
+    // installing from it would replace these builds with that one. A newer build is installed by hand.
+    bail!("this build takes no updates from a release server; install a newer build yourself")
 }
 
 pub async fn archive(release: &Release) -> Result<Vec<u8>> {

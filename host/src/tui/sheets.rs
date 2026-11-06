@@ -15,18 +15,22 @@ mod documents;
 pub use computer::draw as computer;
 mod mcp_tools;
 pub use mcp_tools::draw as mcp_tools;
+mod flow_view;
+mod library_view;
+mod market_view;
 mod memory_view;
 pub use documents::draw as documents;
+pub use flow_view::draw as flow;
+pub use library_view::draw as library;
+pub use market_view::draw as market;
 pub use memory_view::draw as memory;
 
 use super::app::{App, Editor};
-use super::manage::{
-    AgentSetup, Fields, Market, Page, RoutineField, RoutineForm, RoutineList, Row, SetupRow, Submit, TABS, Tab,
-};
+use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, RoutineList, SetupRow, Submit};
 use super::md::truncate;
 use super::view::{
-    centered, chain_line, composer_lines, field_line, frame_box, hline, input_line, put, restyle, rput, set_cursor,
-    theme, u, using_line, when_future,
+    centered, chain_line, composer_lines, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u,
+    using_line, when_future,
 };
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -182,7 +186,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
         buf,
         inner,
         None,
-        "n new · c ask the bot · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc",
+        "n new · c ask the bot · ↵ edit · space on/off · r run now · f flow · w copy webhook · W new key · x delete · esc",
     );
 }
 
@@ -216,7 +220,7 @@ pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
     put(buf, vx, inner.y + 9, vw, "every = from now on · webhook = when called", t.dim.patch(t.panel));
     let (zone_hint, zone_style) = match super::manage::complete_zone(&f.when.text, crate::store::now_ms()) {
         Some(done) => (format!("tab → {done}"), t.secondary),
-        None => (format!("times in {}; end with a zone to change it", super::manage::local_zone()), t.dim),
+        None => (format!("times in {}; end with a zone to change it", crate::routines::local_zone()), t.dim),
     };
     put(buf, vx, inner.y + 10, vw, &zone_hint, zone_style.patch(t.panel));
     let by = inner.bottom() - 1;
@@ -248,103 +252,6 @@ fn multiline(buf: &mut Buffer, r: Rect, e: &Editor, placeholder: &str, active: b
     }
 }
 
-pub fn market(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
-    let t = theme();
-    let r = centered(area, 96, 30);
-    let title = format!("{} · {}", tr("Extensions"), app.host);
-    let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
-    let mut x = inner.x;
-    for (tab, label) in TABS {
-        let style = if tab == m.tab { t.btn_primary } else { t.secondary.patch(t.btn) };
-        let tab_label = tr(label);
-        x = put(buf, x, inner.y, 20, &format!(" {tab_label} "), style) + 1;
-    }
-    let search = Rect::new(x + 2, inner.y, inner.right().saturating_sub(x + 2), 1);
-    let placeholder = match m.tab {
-        Tab::Connectors => tr("search the MCP registry"),
-        _ => tr("filter"),
-    };
-    field_line(buf, search, inner.y, &m.query, &placeholder, true);
-    let rows = app.market_rows(m);
-    let list_h = usize::from(inner.height.saturating_sub(5));
-    let mut y = inner.y + 2;
-    if App::market_stale(m) {
-        put(buf, inner.x, y, inner.width, &tr("↵ searches the registry"), t.secondary.patch(t.panel));
-        y += 1;
-    }
-    for (i, item) in rows.iter().enumerate().skip(window(m.cursor, list_h)).take(list_h) {
-        let base = row(buf, inner, y, i == m.cursor);
-        let (mark, name, detail, right): (&str, String, String, String) = match item {
-            Row::Node => (
-                "+",
-                tr("Add Node.js").into_owned(),
-                tr("Some agents need it to run. Codync adds a copy just for them.").into_owned(),
-                String::new(),
-            ),
-            Row::Agent(b) => {
-                let status = match (b["installed"] == true, b["signedIn"].as_bool()) {
-                    (false, _) if b["curated"] == true => "not installed",
-                    _ if b["node"] == "missing" => "needs Node.js",
-                    (_, Some(true)) => "signed in",
-                    (true, Some(false)) => "not signed in",
-                    (true, None) => "installed",
-                    (false, _) => "sets up on first use",
-                };
-                let status = tr(status);
-                let mark = if b["signedIn"] == true || b["installed"] == true { "✓" } else { "↓" };
-                (mark, s(b, "name").into(), s(b, "description").into(), status.into_owned())
-            }
-            Row::Installed(c) => {
-                let right = match s(c, "auth") {
-                    "signedOut" => tr("↵ sign in"),
-                    _ if c["kind"] == "composio" => std::borrow::Cow::Borrowed("Composio"),
-                    _ => tr("installed"),
-                };
-                let detail = c["command"].as_str().or(c["url"].as_str()).unwrap_or(s(c, "description"));
-                ("✓", s(c, "name").into(), detail.into(), right.into_owned())
-            }
-            Row::Custom => (
-                "+",
-                tr("Custom connector").into_owned(),
-                tr("Paste any MCP server's config").into_owned(),
-                String::new(),
-            ),
-            Row::Registry(c) => ("↓", s(c, "title").into(), s(c, "description").into(), String::new()),
-            Row::More => ("…", tr("Load more connectors").into_owned(), String::new(), String::new()),
-            Row::OwnSkill(v) => ("✓", s(v, "name").into(), s(v, "description").into(), tr("installed").into_owned()),
-            Row::Skill(v) => ("↓", s(v, "name").into(), s(v, "description").into(), String::new()),
-            Row::Profile(v) | Row::Team(v) => {
-                let added = m.added.iter().any(|id| id == s(v, "id"));
-                let right = match v["members"].as_array() {
-                    Some(members) => tr("coordinator + {count}").replace("{count}", &members.len().to_string()),
-                    None => String::new(),
-                };
-                (if added { "✓" } else { "+" }, s(v, "name").into(), s(v, "summary").into(), right)
-            }
-        };
-        let ok = mark == "✓";
-        put(buf, inner.x, y, 2, mark, if ok { t.green } else { t.dim }.patch(base));
-        let nx = put(buf, inner.x + 2, y, 26, &truncate(&name, 26), t.bold.patch(base)) + 2;
-        let rx = rput(buf, inner.right(), y, &right, t.dim.patch(base));
-        let room = usize::from(rx.saturating_sub(nx + 1));
-        put(buf, nx, y, u(room), &truncate(&detail.replace('\n', " "), room), t.secondary.patch(base));
-        y += 1;
-    }
-    if rows.is_empty() {
-        let msg = if m.loading { tr("Loading…") } else { tr("Nothing matches") };
-        put(buf, inner.x, y, inner.width, &msg, t.dim.patch(t.panel));
-    }
-    let keys = match m.tab {
-        Tab::Bots | Tab::Teams => tr("tab switch · ↵ add · esc close"),
-        Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
-        Tab::Connectors => tr("tab switch · ↵ add / sign in · ^t tools & requests · ^x remove · ^r refresh · esc"),
-        Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),
-    };
-    let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
-    let registry = tr("Loading the registry…");
-    footer(buf, inner, m.error.as_deref().or(loading.then_some(registry.as_ref())), &keys);
-}
-
 pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     let t = theme();
     let b = app.backends.iter().find(|b| b["id"] == a.backend.as_str());
@@ -367,6 +274,8 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     let signed_in =
         a.auth.as_ref().map_or_else(|| b.and_then(|b| b["signedIn"].as_bool()), |v| v["signedIn"].as_bool());
+    let set_up = app.agent_set_up(a);
+    let curated = b.is_some_and(|b| b["curated"] == true);
     let status = if a.busy {
         if a.auth.is_none() {
             format!("Checking with {name}… The first check can download it.")
@@ -375,6 +284,8 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         }
     } else if signed_in != Some(true) && b.is_some_and(|b| b["node"] == "missing") {
         "Add Node.js first.".into()
+    } else if !set_up {
+        if curated { "Install it first.".into() } else { format!("Not set up on {} yet.", app.host) }
     } else {
         match signed_in {
             Some(true) => "Signed in.".into(),
@@ -414,6 +325,12 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
                 let d = m["description"].as_str().map_or(fallback, str::to_owned);
                 (icon, s(m, "name").to_owned(), d)
             }
+            // A registry agent downloads on its first start; an app's own CLI comes from Install.
+            SetupRow::Check if !set_up && !curated => (
+                "↓",
+                "Set up".to_owned(),
+                format!("Downloads {name} on {} if it needs to, then checks its sign-in.", app.host),
+            ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
         };
         let title = tr(&title);
@@ -504,6 +421,8 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
             " … Saving "
         } else if matches!(f.submit, Submit::Connection(_)) {
             " ↵ Continue "
+        } else if matches!(f.submit, Submit::Connector(_)) {
+            " ↵ Add "
         } else {
             " ↵ Save "
         },

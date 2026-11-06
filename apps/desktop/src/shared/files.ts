@@ -14,6 +14,25 @@ export function saveName(name: string) {
   return portable && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(portable) ? portable : `file-${portable || 'download'}`
 }
 
+/** A shared file's whole bytes, read chunk by chunk with `read(offset)` and checked against its SHA-256. */
+export async function readSharedFile(file: SharedFile, read: (offset: number) => Promise<{ data: string; size: number }>): Promise<Uint8Array> {
+  validateSharedFile(file)
+  const bytes = new Uint8Array(file.size)
+  let offset = 0
+  do {
+    const chunk = decodeFileChunk(await read(offset), file.size, offset)
+    bytes.set(chunk, offset)
+    offset += chunk.length
+  } while (offset < file.size)
+  if ((await sha256Hex(bytes)) !== file.sha256) throw new Error('The file failed its integrity check')
+  return bytes
+}
+
+export async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export function decodeFileChunk(chunk: { data: string; size: number }, size: number, offset: number): Uint8Array {
   if (chunk.size !== size || typeof chunk.data !== 'string' || chunk.data.length > Math.ceil(FILE_CHUNK_SIZE / 3) * 4) throw new Error('Invalid download response')
   const bytes = Uint8Array.from(atob(chunk.data), (v) => v.charCodeAt(0))

@@ -53,10 +53,12 @@ impl App {
     /// one, else the full trace.
     fn screen_on_top(&self) -> Option<Screen> {
         let overlay = self.overlays.iter().rev().find_map(|o| match o {
-            Overlay::Usage => Some(Screen::Usage),
+            Overlay::Usage(_) => Some(Screen::Usage),
             Overlay::Pair(_) => Some(Screen::Pairing),
+            Overlay::Network(_) => Some(Screen::Network),
             Overlay::Memory(_) => Some(Screen::Memory),
-            Overlay::Routines(_) => Some(Screen::Routines),
+            Overlay::Library(_) => Some(Screen::Library),
+            Overlay::Routines(_) | Overlay::Flow(_) => Some(Screen::Routines),
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),
             Overlay::Form(_) => Some(Screen::BotDetails),
@@ -95,7 +97,7 @@ mod tests {
     #[tokio::test]
     async fn screens_count_as_they_open_and_chats_as_the_bot_changes() {
         let mut app = test_app();
-        app.overlays.push(Overlay::Usage);
+        app.overlays.push(Overlay::Usage(0));
         app.report_screen();
         assert_eq!(app.seen.screen, None, "nothing before the first hello");
         app.seen.opened = true;

@@ -40,6 +40,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.codync.android.design.Palette
+import com.codync.android.design.Type
 import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import com.codync.android.core.AgentBackend
@@ -47,8 +49,9 @@ import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
-// The Extensions page's building blocks (iOS `MarketRows`): sections, rows, agent cards and logos.
+// The Extensions page's building blocks (iOS `MarketRows`): rows, agent cards and logos.
 
+/** A titled block of rows (the fork's ready-made bots and teams, and the Apps catalog). */
 @Composable internal fun MarketSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(tr(title), Modifier.padding(start = 4.dp).semantics { heading() }, style = Type.headline, color = Palette.text)
@@ -79,8 +82,8 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** An agent in the Agents row: its logo on a tile, its name and where it stands. */
-@Composable internal fun AgentCard(backend: AgentBackend, action: () -> Unit) {
+/** An agent in the Agents grid: its logo on a tile, its name and where it stands. */
+@Composable internal fun AgentCard(backend: AgentBackend, modifier: Modifier, action: () -> Unit) {
     val status = when {
         !backend.installed && backend.curated -> "Not installed"
         backend.needsNode -> "Needs Node.js"
@@ -88,7 +91,7 @@ import com.kyant.shapes.RoundedRectangle
         backend.signedIn == false -> "Not signed in"
         else -> "Installed"
     }
-    Column(Modifier.width(128.dp).clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent.copy(alpha = 0.45f)).plainButton(action = action)
+    Column(modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent.copy(alpha = 0.45f)).plainButton(action = action)
         .semantics(mergeDescendants = true) {}.padding(horizontal = 10.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(64.dp).clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent), contentAlignment = Alignment.Center) {
@@ -117,14 +120,18 @@ private val AGENT_TINTS = mapOf("claude-acp" to 0xFFD97857, "gemini" to 0xFF9178
 /** Placeholder rows while a list loads, shaped like the real ones. */
 @Composable internal fun SkeletonRows() {
     val dim by rememberInfiniteTransition(label = "Skeleton").animateFloat(1f, 0.5f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "Dim")
-    Column(Modifier.graphicsLayer { alpha = dim }.clearAndSetSemantics { contentDescription = "Loading" }) {
-        repeat(4) {
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(46.dp).clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(120.dp, 12.dp).clip(Capsule()).background(Palette.bubbleAgent))
-                    Box(Modifier.size(190.dp, 10.dp).clip(Capsule()).background(Palette.bubbleAgent))
+    val loading = tr("Loading…")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(loading, style = Type.footnote, color = Palette.secondary)
+        Column(Modifier.graphicsLayer { alpha = dim }.clearAndSetSemantics { contentDescription = loading }) {
+            repeat(4) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(46.dp).clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(120.dp, 12.dp).clip(Capsule()).background(Palette.bubbleAgent))
+                        Box(Modifier.size(190.dp, 10.dp).clip(Capsule()).background(Palette.bubbleAgent))
+                    }
                 }
             }
         }

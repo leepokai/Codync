@@ -37,6 +37,36 @@ pub fn signed_in(id: &str) -> Option<bool> {
     SIGNED_IN.locked().iter().find(|(h, _)| h == id).map(|(_, ok)| *ok)
 }
 
+/// A prompt was refused because the agent asked for auth. Only an agent whose new session does
+/// not prove sign-in (`WorkBuddy`) can still report an account after that. Other agents' own
+/// checks stand, so a setup terminal or saved keys can sign them in.
+static PROMPT_REFUSED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// The latest prompt for `id` was refused for auth. Stands until a prompt succeeds or the user signs in again.
+/// An agent whose session proves sign-in is not recorded: its next check is the proof.
+pub fn note_prompt_refused(id: &str) {
+    if super::workbuddy::session_proves_sign_in(id) {
+        return;
+    }
+    let mut refused = PROMPT_REFUSED.locked();
+    if !refused.iter().any(|known| known == id) {
+        refused.push(id.to_owned());
+    }
+}
+
+pub fn clear_prompt_refused(id: &str) {
+    PROMPT_REFUSED.locked().retain(|known| known != id);
+}
+
+/// An account check that says signed in loses to a prompt that was just refused for auth.
+/// Other agents are unchanged: their check is what a finished terminal or saved keys report.
+pub fn apply_prompt_refusal(id: &str, probe: Option<bool>) -> Option<bool> {
+    if super::workbuddy::session_proves_sign_in(id) {
+        return probe;
+    }
+    if probe == Some(true) && PROMPT_REFUSED.locked().iter().any(|known| known == id) { Some(false) } else { probe }
+}
+
 /// Records what a check found (`None`: can't tell).
 pub fn set_signed_in(id: &str, state: Option<bool>) {
     let mut map = SIGNED_IN.locked();
@@ -75,5 +105,32 @@ pub async fn cli_signed_in(h: &Harness, env: &[(String, String)]) -> Option<bool
             None
         }
         Err(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_refused_prompt_outranks_an_account_that_still_looks_signed_in() {
+        let id = "workbuddy";
+        clear_prompt_refused(id);
+        assert_eq!(apply_prompt_refusal(id, Some(true)), Some(true));
+        note_prompt_refused(id);
+        assert_eq!(apply_prompt_refusal(id, Some(true)), Some(false), "an account object is not a working login");
+        assert_eq!(apply_prompt_refusal(id, Some(false)), Some(false));
+        assert_eq!(apply_prompt_refusal(id, None), None);
+        clear_prompt_refused(id);
+        assert_eq!(apply_prompt_refusal(id, Some(true)), Some(true));
+    }
+
+    #[test]
+    fn another_agents_sign_in_check_is_not_held_back() {
+        let id = "qwen";
+        clear_prompt_refused(id);
+        note_prompt_refused(id);
+        assert_eq!(apply_prompt_refusal(id, Some(true)), Some(true), "a setup terminal or saved keys can sign it in");
+        assert_eq!(apply_prompt_refusal(id, None), None);
     }
 }

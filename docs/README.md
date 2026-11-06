@@ -12,6 +12,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Work on the macOS, Linux and Windows desktop app (Electron) | [Desktop app](architecture/desktop-app.md), [desktop styles](guides/desktop-styles.md) |
 | Build, install, restart and run checks | [Development](guides/development.md), [Codync Dev beside production](guides/dev-app.md) |
 | Write or refactor code in any module | [Clean code](guides/clean-code.md) |
+| Change something users see or do (keep the codync.dev manual current) | [User docs](guides/user-docs.md) |
 | Change an iPhone or desktop screen or button | [UI conventions](design/ui-conventions.md) |
 | Change the composer | [Composer behavior and checks](guides/composer.md) |
 | Ship app and host updates | [Updates](guides/updates.md), [client and host compatibility](reference/compatibility.md) |
@@ -27,9 +28,13 @@ Source review, a passing build, local integration tests and production acceptanc
 
 ## Features
 
+- [Lead bot](features/lead-bot.md) (every computer's own bot: on top, checks in, speaks first on calls)
 - [Chat messages](features/chat-messages.md)
 - [Group chats and replies](features/groups-and-replies.md)
 - [Bot-to-bot collaboration](features/bot-collaboration.md)
+- [codync-network](features/codync-network.md) (your computers' network: bots message bots on the user's other computers)
+- [Cloud assistants](features/cloud-assistants.md) (ChatGPT, Claude and others message the bots through the Codync connector)
+- [codync-network and cloud assistants: design](design/codync-network.md) (why iroh, connectors and relays, trust, addresses, quiet letters, the connector's choices, next steps)
 - [Context and memory](features/context-and-memory.md)
 - [Bot memory and compaction](design/bot-memory.md) (design; storage, gate and dreaming built, compaction to come)
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
@@ -37,7 +42,9 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
 - [Voice calls](features/voice-call.md)
+- [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)
+- [Artifacts and the Library](features/artifacts.md)
 - [Remote screen](features/remote-screen.md) and [computer use](features/computer-use.md)
 - [Computer identity and list ordering](features/computer-order.md)
 - [Notch island (desktop)](features/notch-island.md)
@@ -56,6 +63,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Android parity and acceptance](plans/android-app.md)
 - [Viabilidad de compilación Android en la nube (expo.dev)](viabilidad-compilacion-android-expo.md) (estudio de viabilidad técnica y alternativas para reducir recursos locales)
 - [Guía de reutilización de Openstark](guia-paso-a-paso-reutilizacion-openstark.md) (hoja de ruta paso a paso por fases y contratos de alto impacto)
+- [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)
 

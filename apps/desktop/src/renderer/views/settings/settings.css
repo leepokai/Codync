@@ -148,6 +148,11 @@
   flex: none;
   text-align: right;
 }
+.settings-usage-note {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
 .settings-usage-reset {
   width: 130px;
   flex: none;
@@ -162,6 +167,15 @@
 }
 .settings-computers-content {
   padding: 14px 14px 20px;
+}
+/* Over SSH: room between its note and the SSH config card or hosts under it. */
+.settings-ssh > .reveal + .settings-card {
+  margin-top: 12px;
+}
+/* The SSH config question's icon sits on its title's line. */
+.ssh-config-icon {
+  height: 20px;
+  align-items: center;
 }
 .settings-ssh-editor {
   width: 460px;
@@ -211,22 +225,4 @@
 /* A row that appears fades in. */
 .settings-appear {
   animation: fade-in var(--layout) both;
-}
-
-/* Show/hide: fade with a short drop from the top (`.opacity.combined(with: .move(edge: .top))`). */
-.settings-reveal {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transform: translateY(-4px);
-  transition: grid-template-rows var(--layout), opacity var(--layout), transform var(--layout);
-}
-.settings-reveal.shown {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transform: none;
-}
-.settings-reveal > div {
-  min-height: 0;
-  overflow: hidden;
 }

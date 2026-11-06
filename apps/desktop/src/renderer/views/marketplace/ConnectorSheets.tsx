@@ -9,7 +9,11 @@ import { ErrorText, Field, WebLink } from './pieces'
 import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
 
-export function InstallConnectorSheet({ item, requestId, done }: { item: MarketConnector; requestId?: string; done: () => void }) {
+/**
+ * `addsAtOnce`: opened by an Add, so a connector with nothing to fill in installs at once. Opened to
+ * look at it, nothing installs until Add in the header.
+ */
+export function InstallConnectorSheet({ item, requestId, addsAtOnce = true, done }: { item: MarketConnector; requestId?: string; addsAtOnce?: boolean; done: () => void }) {
   const store = useStore()
   const plugins = usePlugins(store)
   const dismiss = useDismiss()
@@ -21,6 +25,8 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
   const started = useRef(false)
   const option = item.options.find((o) => o.id === optionId) ?? item.options[0]
   const value = (input: MarketInput) => values[input.name] ?? ''
+  // After a try that failed, Add with nothing typed tries the connector it saved again.
+  const retrying = installed !== null && !Object.values(values).some((v) => v !== '')
 
   const install = async () => {
     if (!option) return
@@ -28,13 +34,10 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
     setError(null)
     try {
       const client = await store.ready()
-      let c: InstalledConnector
-      if (installed) c = (await market.connectors(client)).find((x) => x.id === installed.id) ?? installed
-      else {
-        c = await plugins.installConnector(item, option.id, values)
-        setInstalled(c)
-        setValues({})
-      }
+      // The host keeps the connector a try saved unless new values or another way to run it come in.
+      const c = await plugins.installConnector(item, option.id, values)
+      setInstalled(c)
+      setValues({})
       if (needsSignIn(c)) await plugins.signIn(c.id)
       if (requestId) await market.finishConnectionRequest(client, requestId, { connectorId: c.id })
       else await market.verifyConnector(client, c.id)
@@ -50,7 +53,7 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
   useEffect(() => {
     if (started.current) return
     started.current = true
-    if (item.options.length === 1 && item.options[0].inputs.length === 0) void install()
+    if (addsAtOnce && item.options.length === 1 && item.options[0].inputs.length === 0) void install()
   }, [])
 
   const tr = useTr()
@@ -61,7 +64,7 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
       <ModalHeader
         icon="point.3.connected.trianglepath.dotted"
         title={tr(`Add connector`)}
-        trailing={saving ? <Spinner /> : <IconButton title="Add" icon="plus" disabled={installed === null && missing} onClick={() => void install()} />}
+        trailing={saving ? <Spinner /> : <IconButton title="Add" icon="plus" disabled={missing && !retrying} onClick={() => void install()} />}
       />
       <CardForm>
         <CardSection>

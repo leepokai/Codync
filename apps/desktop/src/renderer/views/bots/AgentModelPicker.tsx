@@ -1,26 +1,36 @@
-import { useEffect, useRef, useState } from 'react'
-import { ChoicePicker, IconButton, Pill, Spinner } from '../../components/Controls'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
+import { Icon } from '../../components/Icon'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import type { AgentModelsState } from './agent-models'
 import { useTr } from '../../lib/use-language'
+import './agent-picker.css'
+import { isReasoningOption, ReasoningSlider } from './ReasoningSlider'
 
+type Stage = 'closed' | 'settings' | 'agents' | 'models'
+type Choice = { id: string; label: string; leading?: ReactNode }
 
-/** The bot's model and its options, from the list `useAgentModels` loaded for its agent. */
-export function AgentModelPicker({ backend, models, selection, onChange, options: chosen, onOptionsChange, sessionNote = true }: {
+/** One compact entry for the harness, model, model options and the bot's Fast mode. */
+export function AgentModelPicker({ backend, models, selection, onChange, options: chosen, onOptionsChange,
+  sessionNote = true, agents = [], onAgentChange, fastControl, fast = false, children }: {
   backend: string
   models: AgentModelsState
   selection: string | null | undefined
   onChange: (model: string | null) => void
   options: Record<string, string>
   onOptionsChange: (options: Record<string, string>) => void
-  /** Says that a change starts a new session: true for a bot's own model, not for one it hasn't used yet. */
   sessionNote?: boolean
+  agents?: Choice[]
+  onAgentChange?: (id: string) => void
+  fastControl?: ReactNode
+  fast?: boolean
+  children?: ReactNode
 }) {
   const tr = useTr()
+  const [stage, setStage] = useState<Stage>('closed')
+  const [query, setQuery] = useState('')
   const { catalog, loading, failure } = models
-  const custom = backend === 'custom'
-  const [search, setSearch] = useState('')
 
   // A different agent starts on its own default model.
   const lastBackend = useRef(backend)
@@ -30,75 +40,79 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
     onChange(null)
   }, [backend, onChange])
 
-  // The agent's own "Default (recommended)" entry is the same choice as leaving the model unset,
-  // so it folds into the single Default row instead of showing twice.
   const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
   const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
-  const current = available.find((m) => m.id === catalog?.currentModelId)?.name
-  const query = search.trim().toLowerCase()
-  const matching = available.filter((m) => [m.id, m.name, m.description ?? ''].some((text) => text.toLowerCase().includes(query)))
-  const options = [{ id: '', label: agentDefault?.name ?? (current ? `Default · ${current}` : 'Default') }, ...matching.map((m) => ({ id: m.id, label: m.name }))]
-  // The selected model stays listed while the query hides it, under its name from the full list —
-  // the pill reads this label, so a raw id would show there.
-  if (selection && selection !== agentDefault?.id && !matching.some((m) => m.id === selection)) {
-    options.push({ id: selection, label: available.find((m) => m.id === selection)?.name ?? selection })
-  }
+  const current = catalog?.models.find((m) => m.id === catalog.currentModelId)
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
-  const set = (v: string) => onChange(v ? v : null)
-  const empty = catalog?.models.length === 0
-  const modelOptions = available.find((m) => m.id === value)?.options ?? []
-  const setOption = (id: string, v: string) => {
-    const { [id]: _, ...rest } = chosen
-    onOptionsChange(v ? { ...rest, [id]: v } : rest)
+  const selected = catalog?.models.find((m) => m.id === (value || agentDefault?.id || catalog.currentModelId))
+  const modelOptions = value || catalog?.defaultModelOptions ? selected?.options ?? [] : []
+  const options: Choice[] = [{ id: '', label: agentDefault?.name ?? (current ? `Default · ${current.name}` : 'Default') }, ...available.map((m) => ({ id: m.id, label: m.name }))]
+  if (value && !available.some((m) => m.id === value)) options.push({ id: value, label: value })
+  const agent = agents.find((a) => a.id === backend)
+  const modelName = value ? options.find((o) => o.id === value)?.label ?? value : tr('Default')
+  const summary = modelOptions.map((o) => o.values.find((v) => v.id === (chosen[o.id] ?? o.default))?.name).filter(Boolean).join(' · ')
+  const browse = stage === 'agents' || stage === 'models'
+  const choices = (stage === 'agents' ? agents : options).filter((o) => o.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const open = (next: Stage) => { setQuery(''); setStage(next) }
+  const pick = (id: string) => {
+    if (stage === 'agents') {
+      if (id !== backend) onAgentChange?.(id)
+      open('models')
+    } else {
+      if (id !== value) onChange(id || null)
+      open('settings')
+    }
   }
-
+  const setOption = (id: string, value?: string) => {
+    const next = { ...chosen }
+    if (value === undefined) delete next[id]
+    else next[id] = value
+    onOptionsChange(next)
+  }
   return (
-    <VStack gap={6}>
-      <HStack gap={8}>
-        <Text tone="text" className="model-picker-label">{tr(`Model`)}</Text>
-        <Spacer />
-        <HStack gap={4} shrink>
-          {custom ? null : (
-            // Loading and refresh share one fixed slot, so the row never grows for loading.
-            <div className="model-picker-slot">
-              <div className={`model-picker-refresh ${loading ? 'hidden' : ''}`}>
-                <IconButton title={failure ? 'Retry model list' : 'Refresh model list'} icon="arrow.clockwise" disabled={loading} onClick={models.reload} />
-              </div>
-              {loading ? (
-                <HStack align="stretch" className="fade-in" aria-label="Loading available models">
-                  <Spinner size={12} />
-                </HStack>
-              ) : null}
-            </div>
-          )}
-          {custom || (!loading && (!catalog || empty)) ? (
-            <Pill outlined className="model-picker-pill">
-              <input className="model-picker-input" value={value} placeholder="Default" spellCheck={false} onChange={(e) => set(e.target.value)} />
-            </Pill>
-          ) : (
-            <HStack align="stretch" shrink>
-              <ChoicePicker selection={value} options={options} onChange={set} search={{ value: search, onChange: setSearch, placeholder: 'Search models...' }} />
-            </HStack>
-          )}
-        </HStack>
-      </HStack>
-      {modelOptions.map((o) => {
-        const fallback = o.values.find((v) => v.id === o.default)?.name
-        const choices = [{ id: '', label: fallback ? `Default · ${fallback}` : 'Default' }, ...o.values.map((v) => ({ id: v.id, label: v.name }))]
-        return (
-          <HStack key={o.id} gap={8} className="fade-in">
-            <Text tone="text" className="model-picker-label">{o.name}</Text>
-            <Spacer />
-            <ChoicePicker selection={chosen[o.id] ?? ''} options={choices} onChange={(v) => setOption(o.id, v)} />
+    <VStack gap={8} className="agent-picker">
+      <button className="agent-picker-summary" title={[agent?.label ?? backend, modelName, summary, fast ? tr("Fast") : ""].filter(Boolean).join(" · ")} aria-expanded={stage !== 'closed'} onClick={() => open(stage === 'closed' ? 'models' : 'closed')}>
+        <span className="agent-picker-identity">{agent?.leading}<Text key={backend} className="agent-picker-text-change">{agent?.label ?? backend}</Text></span>
+        <span className="agent-picker-model" title={modelName}><span key={modelName} className="agent-picker-text-change">{modelName}</span></span>
+        {summary && <span className="agent-picker-effort" title={summary}><span key={summary} className="agent-picker-text-change">{summary}</span></span>}
+        {fast && <Icon name="bolt" size={12} title={tr('Fast mode')} />}
+        <Icon name={stage === 'closed' ? 'chevron.down' : 'chevron.up'} size={10} />
+      </button>
+      {stage !== 'closed' && <VStack gap={10} className="agent-picker-panel fade-in">
+        <div className="agent-picker-selectors">
+          {onAgentChange && <button className="agent-picker-choice" title={agent?.label ?? backend} aria-expanded={stage === 'agents'} onClick={() => open(stage === 'agents' ? 'settings' : 'agents')}>{agent?.leading}<Text truncate>{agent?.label ?? backend}</Text><Icon name={stage === 'agents' ? 'chevron.up' : 'chevron.down'} size={10} /></button>}
+          <button className="agent-picker-choice" title={options.find((o) => o.id === value)?.label} aria-expanded={stage === 'models'} onClick={() => open(stage === 'models' ? 'settings' : 'models')}><Text truncate>{modelName}</Text><Icon name={stage === 'models' ? 'chevron.up' : 'chevron.down'} size={10} /></button>
+        </div>
+        {children}
+        {browse && <VStack gap={4}>
+          <HStack gap={6} className="agent-picker-search">
+            {stage === 'models' && onAgentChange ? <IconButton title="Back" icon="chevron.left" onClick={() => open('agents')} /> : <Icon name="magnifyingglass" size={14} />}
+            <input aria-label={tr(stage === 'agents' ? 'Search agents' : 'Search models')} placeholder={tr(stage === 'agents' ? 'Search agents' : 'Search models')} value={query} onChange={(e) => setQuery(e.target.value)} />
+            {loading ? <Spinner size={12} /> : <IconButton title="Refresh model list" icon="arrow.clockwise" onClick={models.reload} />}
           </HStack>
-        )
-      })}
-      {!custom && !loading && failure ? (
-        <Text size="caption" tone="attention">{failure}</Text>
-      ) : !custom && !loading && empty ? (
-        <Text size="caption" tone="secondary">{tr(`This agent doesn't advertise a model list. Leave Default or enter a model ID.`)}</Text>
-      ) : null}
-      {sessionNote ? <Text size="caption" tone="secondary">{tr(`Changing the model starts a new agent session. Chat history is kept.`)}</Text> : null}
+          <div className="agent-picker-list">
+            {choices.map((o) => <button key={o.id} className="agent-picker-item" aria-pressed={o.id === (stage === 'agents' ? backend : value)} onClick={() => pick(o.id)}>
+              {o.leading}<Text className="agent-picker-result-name">{tr(o.label)}</Text><Spacer />{o.id === (stage === 'agents' ? backend : value) && <Icon name="checkmark" size={12} />}
+            </button>)}
+            {!choices.length && <Text size="caption" tone="secondary">{tr('No results')}</Text>}
+          </div>
+          {stage === 'models' && (backend === 'custom' || (!loading && !catalog?.models.length)) && <input className="field-box" aria-label={tr('Model')} placeholder={tr('Default')} value={selection ?? ''} onChange={(e) => onChange(e.target.value || null)} />}
+        </VStack>}
+        {selected?.optionsError && <Text size="caption" tone="attention">{selected.optionsError}</Text>}
+        {failure && <Text size="caption" tone="attention">{failure}</Text>}
+        {modelOptions.map((o) => {
+          if (isReasoningOption(o)) return <ReasoningSlider key={o.id} option={o} value={chosen[o.id]} onChange={(v) => setOption(o.id, v)} onReset={() => setOption(o.id)} />
+          const defaultName = o.values.find((v) => v.id === o.default)?.name
+          return <VStack key={o.id} gap={8} className="agent-picker-setting">
+            <HStack gap={8}><Text size="caption" tone="secondary">{o.name}</Text><Spacer />
+              <button className="agent-picker-default" aria-pressed={chosen[o.id] === undefined} onClick={() => setOption(o.id)}>{tr('Default')}{defaultName ? ` · ${defaultName}` : ''}{chosen[o.id] === undefined ? ' ✓' : ''}</button>
+            </HStack>
+            <div className="agent-picker-options"><SegmentedChoice selection={chosen[o.id] ?? o.default ?? ''} options={o.values.map((v) => ({ id: v.id, label: v.name }))} onChange={(v) => setOption(o.id, v)} /></div>
+          </VStack>
+        })}
+        {fastControl}
+        {sessionNote && <Text size="caption" tone="secondary" className="agent-picker-note">{tr('Changing the model starts a new agent session. Chat history is kept.')}</Text>}
+      </VStack>}
     </VStack>
   )
 }

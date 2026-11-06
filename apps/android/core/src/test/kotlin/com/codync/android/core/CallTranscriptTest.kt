@@ -6,7 +6,7 @@ import org.junit.Test
 
 class CallTranscriptTest {
     @Test fun invalidNulTextDoesNotLoseTheReceipt() {
-        val capture = CallTranscript()
+        val capture = CallReceiptTranscript()
         capture.add("user", "recognized", "\u0000")
         capture.add("user", "recognized", "hello\u0000 there", "user")
         capture.add("user", "recognized", "\u0000!", "user", delta = true)
@@ -17,7 +17,7 @@ class CallTranscriptTest {
         assertEquals("hello there!", entries[0].jsonObject["text"]!!.jsonPrimitive.content)
     }
     @Test fun providerTextNeverClaimsPlayback() {
-        val capture = CallTranscript()
+        val capture = CallReceiptTranscript()
         val event = buildJsonObject {
             put("type", "response.output_audio_transcript.done"); put("item_id", "item"); put("content_index", 0); put("transcript", "Hello")
         }
@@ -27,7 +27,7 @@ class CallTranscriptTest {
         assertEquals("generated", entries[0].jsonObject["source"]!!.jsonPrimitive.content)
     }
     @Test fun limitsPreserveUnicode() {
-        val capture = CallTranscript()
+        val capture = CallReceiptTranscript()
         capture.add("user", "recognized", "a".repeat(3999) + "😀")
         val snapshot = capture.snapshot()
         assertTrue(snapshot["truncated"]!!.jsonPrimitive.boolean)

@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react'
+import { IconButton } from '../components/Controls'
 import { Icon } from '../components/Icon'
-import { pointerDrag } from '../lib/pointer-drag'
+import type { pointerDrag } from '../lib/pointer-drag'
 import { useTr } from '../lib/use-language'
 import { useSlide } from '../lib/slide'
 import type { BotStore } from '../store/bot-store'
@@ -13,38 +14,24 @@ interface Props {
   collapsed: boolean
   previous?: string
   next?: string
-  dragged: string | null
-  setDragged: (id: string | null) => void
+  /** Its heading's copy is under the pointer: the section keeps its slot empty. */
+  lifted: boolean
+  drag: ReturnType<typeof pointerDrag>
   toggle: () => void
   move: (id: string, target: string) => void
-  notice: ReactNode
+  /** This computer's own Extensions; absent while it can't be reached. */
+  openExtensions?: () => void
   children: ReactNode
 }
 
-export function ComputerRosterSection({ store, compact, collapsed, previous, next, dragged, setDragged, toggle, move, notice, children }: Props) {
+export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, children }: Props) {
   const section = useRef<HTMLElement>(null)
-  const tr = useTr()
-  const dropTarget = useRef<string | null>(null)
   const id = store.computer.id
   useSlide(section)
-  const drag = pointerDrag({
-    start: () => {
-      dropTarget.current = null
-      setDragged(id)
-    },
-    over: (_, under) => {
-      dropTarget.current = under?.closest<HTMLElement>('[data-computer-section]')?.dataset.computerSection ?? null
-    },
-    drop: () => {
-      if (dropTarget.current && dropTarget.current !== id) move(id, dropTarget.current)
-      setDragged(null)
-    },
-    cancel: () => setDragged(null),
-  })
   return (
-    <section ref={section} className={`computer-roster-section ${dragged === id ? 'dragging' : ''}`} aria-label={store.hostName} data-computer-section={id}>
+    <section ref={section} className={`computer-roster-section ${lifted ? 'lifted' : ''}`} aria-label={store.hostName} data-computer-section={id}>
       <div className="computer-roster-heading">
-        <button className="computer-roster-toggle" aria-expanded={!collapsed}
+        <button className="computer-roster-toggle" aria-expanded={!collapsed} data-computer-heading={id}
           aria-label={`${store.hostName}, ${store.connectionLabel}`} title={`${store.hostName} · ${store.connectionLabel}. Drag to reorder.`}
           onClick={toggle}
           {...drag}
@@ -55,15 +42,30 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
             const target = event.key === 'ArrowUp' ? previous : next
             if (target) move(id, target)
           }}>
-          <ComputerBadge computer={store.computer} size={20} />
-          {!compact ? <span className="computer-roster-label"><strong>{store.hostName}</strong><span className={store.shownConnection.kind === 'online' ? '' : 'warning'}>{tr(store.connectionLabel)}</span></span> : null}
-          <span className={`computer-roster-chevron ${collapsed ? 'collapsed' : ''}`}><Icon name="chevron.down" size={9} /></span>
+          <ComputerHeadingLabel store={store} compact={compact} collapsed={collapsed} />
         </button>
+        {openExtensions && !compact ? <IconButton className="computer-roster-extensions" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
       </div>
-      {notice}
       <div className={`computer-roster-content ${collapsed ? 'collapsed' : ''}`} inert={collapsed} aria-hidden={collapsed}>
         <div>{children}</div>
       </div>
     </section>
+  )
+}
+
+/** A heading's badge, name, connection and fold chevron; also its lifted copy while dragged. */
+export function ComputerHeadingLabel({ store, compact, collapsed }: { store: BotStore; compact: boolean; collapsed: boolean }) {
+  const tr = useTr()
+  return (
+    <>
+      <ComputerBadge computer={store.computer} size={20} />
+      {!compact ? (
+        <span className="computer-roster-label">
+          <strong>{store.hostName}</strong>
+          <span className={`computer-roster-status ${store.shownConnection.kind === 'online' ? '' : 'warning'}`}>{tr(store.connectionLabel)}</span>
+        </span>
+      ) : null}
+      <span className={`computer-roster-chevron ${collapsed ? 'collapsed' : ''}`}><Icon name="chevron.down" size={9} /></span>
+    </>
   )
 }

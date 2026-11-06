@@ -19,11 +19,14 @@ use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
 mod documents;
+pub mod flows;
 mod order;
 mod reactions;
 mod stop;
 mod sync;
 mod terminal;
+mod validate;
+pub(crate) use validate::validate;
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -78,6 +81,12 @@ pub struct Hub {
     pub budget: crate::budget::Budgets,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
+    /// The user's other computers (codync-network), once this one is in a network.
+    pub network: crate::network::Network,
+    /// Requests this computer's bots sent to bots on the other computers, until they're answered.
+    pub waiting: crate::chat::team::remote::Waiting,
+    /// The user's cloud assistant: its requests to this computer's bots and their replies.
+    pub assistant: crate::chat::team::assistant::Replies,
     pub store: Store,
     pub host_id: String,
     pub identity: Identity,
@@ -126,6 +135,9 @@ impl Hub {
             budget: crate::budget::Budgets::load(&store),
             team: crate::chat::team::Requests::default(),
             groups: crate::chat::group::Rooms::default(),
+            network: crate::network::Network::default(),
+            waiting: crate::chat::team::remote::Waiting::default(),
+            assistant: crate::chat::team::assistant::Replies::default(),
             store,
             host_id,
             identity,
@@ -156,6 +168,7 @@ impl Hub {
         self.store.expire_pending()?;
         crate::chat::memory::import_old_memory(self);
         self.routines.restore(&self.store)?;
+        crate::routines::flow::recover(self)?;
         crate::market::turn_on_installed_once(&self.store)?;
         for row in self.store.bots()? {
             if row.deleted {
@@ -167,6 +180,7 @@ impl Hub {
                 self.spawn_bot(row.config);
             }
         }
+        crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
         Ok(())
@@ -209,7 +223,7 @@ impl Hub {
     }
 
     /// A group is busy while one of its members works in it: that member's status and activity.
-    fn group_runtime(&self, group: &BotConfig) -> Runtime {
+    pub fn group_runtime(&self, group: &BotConfig) -> Runtime {
         let busy = {
             let runtime = self.runtime.locked();
             group.members.iter().find_map(|m| {
@@ -250,6 +264,7 @@ impl Hub {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
+        crate::network::publish(self);
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
             crate::market::agent_sign_in::ask_before_first_message(self, &cfg);
@@ -265,7 +280,7 @@ impl Hub {
         let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
         let mut merged = serde_json::to_value(&row.config)?;
         for (k, v) in patch.as_object().into_iter().flatten() {
-            if !matches!(k.as_str(), "id" | "createdAt" | "createdBy") {
+            if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead") {
                 merged[k] = v.clone();
             }
         }
@@ -309,6 +324,7 @@ impl Hub {
             }
             return Err(error);
         }
+        crate::network::publish(self);
         if !cfg.is_group() {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&row.config) {
                 crate::chat::memory::changed(self, Some(&id));
@@ -342,10 +358,12 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
+        crate::chat::lead::may_delete(&self.store, id)?;
         // A terminal session leaves with its bot, and a hook waiting on one of its cards is freed at once.
         self.external.forget(self, id);
         self.computer.revoke_all(id);
         self.screen.forget_bot_snapshots(id);
+        crate::routines::flow::forget_bot(self, id);
         self.routines.disable_bot(&self.store, id)?;
         // A locked vault keeps them; Credentials lists them under "A removed bot" to remove.
         if let Err(error) = crate::market::bot_secrets::remove_bot(&self.store, id) {
@@ -363,15 +381,18 @@ impl Hub {
             let _ =
                 self.events.send(json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}}));
         }
-        // Its shared files are unreachable once the bot is deleted.
-        let files = crate::chat::files::root(id);
+        crate::network::publish(self);
+        // Its shared files and artifacts are unreachable once the bot is deleted.
+        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
         let bot = id.to_owned();
         tokio::task::spawn_blocking(move || {
             crate::chat::memory::files::remove_bot(&bot);
-            if let Err(error) = std::fs::remove_dir_all(&files)
-                && error.kind() != std::io::ErrorKind::NotFound
-            {
-                tracing::warn!(error = %error, "couldn't remove a deleted bot's shared files");
+            for folder in folders {
+                if let Err(error) = std::fs::remove_dir_all(&folder)
+                    && error.kind() != std::io::ErrorKind::NotFound
+                {
+                    tracing::warn!(error = %error, "couldn't remove a deleted bot's shared files or artifacts");
+                }
             }
         });
         // A deleted bot leaves its groups; what it said there stays.
@@ -411,6 +432,13 @@ impl Hub {
 
     fn bot_value(&self, id: &str) -> Option<Value> {
         self.store.bot(id).ok().flatten().map(|r| self.bot_json(&r))
+    }
+
+    /// Saves a change that stamps its own rev and broadcasts the event `save` returns, in rev order.
+    pub fn emit_change(&self, save: impl FnOnce() -> Result<Value>) -> Result<()> {
+        let _g = self.emit_lock.locked();
+        let _ = self.events.send(save()?);
+        Ok(())
     }
 
     /// Bumps the bot's rev and broadcasts its current state.
@@ -522,6 +550,20 @@ impl Hub {
         }
     }
 
+    /// Changes part of an entry and broadcasts it, reading and writing under the emission lock: an edit made
+    /// meanwhile elsewhere (a reaction from another device) isn't written over. `edit` returns `false` to leave the
+    /// entry as it is.
+    pub fn edit_entry(&self, id: &str, edit: impl FnOnce(&mut Entry) -> Result<bool>) -> Result<Entry> {
+        let _g = self.emit_lock.locked();
+        let mut e = self.store.entry(id).ok_or_else(|| anyhow!("unknown message"))?;
+        if !edit(&mut e)? {
+            return Ok(e);
+        }
+        let e = self.store.update_entry(id, &e.data)?.ok_or_else(|| anyhow!("unknown message"))?;
+        let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+        Ok(e)
+    }
+
     pub fn set_usage(&self, usage: Usage) {
         let _ = self.events.send(json!({"type": "usage", "usage": usage}));
         *self.usage.locked() = usage;
@@ -547,30 +589,4 @@ impl Hub {
     pub fn phone_connected(&self) -> bool {
         self.phone_clients.load(Ordering::Relaxed) > 0
     }
-}
-
-pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
-    if let Some(id) = &cfg.account {
-        if cfg.is_group() {
-            bail!("Groups cannot select an agent account");
-        }
-        crate::agent::account::validate(id, &cfg.backend)?;
-    }
-    if cfg.name.trim().is_empty() {
-        bail!("name is required");
-    }
-    if cfg.is_group() {
-        return Ok(());
-    }
-    crate::agent::approval_rules::validate(&cfg.approval_rules)?;
-    if !cfg.cwd.is_empty() && !std::path::Path::new(&cfg.cwd).is_dir() {
-        bail!("workspace folder does not exist: {}", cfg.cwd);
-    }
-    if cfg.command.as_deref().map(str::trim).unwrap_or_default().is_empty()
-        && !crate::agent::backends::is_known(&cfg.backend)
-        && !crate::external::is_external(cfg)
-    {
-        bail!("unknown backend {}", cfg.backend);
-    }
-    crate::agent::fallback::check(cfg)
 }

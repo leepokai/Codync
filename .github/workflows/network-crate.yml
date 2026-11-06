@@ -1,0 +1,100 @@
+# Ships host/crates/network with each Codync release (docs/guides/development.md#crate-releases), like codync-mem: a
+# pull request into main that changes the crate must raise its version; the push to main mirrors it to
+# leepokai/codync-network, read-only, and publishes that version. The split is deterministic, so each push
+# fast-forwards the mirror as long as nobody commits there and the crate's commits reach main unrewritten.
+name: codync-network
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["host/crates/network/**"]
+  push:
+    branches: [main]
+    paths: ["host/crates/network/**"]
+
+concurrency:
+  group: network-crate-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: A changed crate has a new version
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # Its .github is the mirror's CI, not part of the package.
+          if git diff --quiet "$BASE" HEAD -- host/crates/network ':!host/crates/network/.github'; then exit 0; fi
+          # A crate main has never had starts at the version it was first published with.
+          if ! git cat-file -e "$BASE:host/crates/network/Cargo.toml" 2>/dev/null; then exit 0; fi
+          version() { sed -n 's/^version = "\(.*\)"$/\1/p' | head -n 1; }
+          before=$(git show "$BASE:host/crates/network/Cargo.toml" | version)
+          after=$(version < host/crates/network/Cargo.toml)
+          if [ "$before" = "$after" ]; then
+            echo "::error file=host/crates/network/Cargo.toml::codync-network changed but is still $after: raise its version."
+            exit 1
+          fi
+
+  mirror:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Split the crate's history
+        run: git subtree split --prefix=host/crates/network -b mirror
+      - name: Push it to the mirror
+        env:
+          # A deploy key with write access on leepokai/codync-network.
+          KEY: ${{ secrets.CODYNC_NETWORK_DEPLOY_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::notice::CODYNC_NETWORK_DEPLOY_KEY isn't set, so the mirror isn't updated."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/mirror
+          chmod 600 ~/.ssh/mirror
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/mirror -o StrictHostKeyChecking=accept-new" \
+            git push git@github.com:leepokai/codync-network.git mirror:main
+
+  publish:
+    # Trusted publishing: crates.io trusts this workflow file, so no token is stored.
+    needs: mirror
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v4
+      - name: Is this version on crates.io yet?
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/network/Cargo.toml | head -n 1)
+          code=$(curl -s -o /dev/null -w '%{http_code}' -A "codync-ci (https://github.com/leepokai/Codync)" \
+            "https://crates.io/api/v1/crates/codync-network/$version")
+          case "$code" in
+            200) echo "::notice::codync-network $version is already on crates.io."; echo "new=false" >> "$GITHUB_OUTPUT" ;;
+            404) echo "new=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::crates.io answered $code for codync-network $version."; exit 1 ;;
+          esac
+      - name: Install Rust (rust-toolchain.toml)
+        if: steps.version.outputs.new == 'true'
+        run: rustup toolchain install
+      - uses: rust-lang/crates-io-auth-action@v1
+        if: steps.version.outputs.new == 'true'
+        id: auth
+      - name: Publish
+        if: steps.version.outputs.new == 'true'
+        run: cargo publish -p codync-network --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

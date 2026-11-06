@@ -24,6 +24,12 @@ impl App {
         });
         let mut items: Vec<GotoItem> = bots.into_iter().map(|b| GotoItem::Bot(b.id.clone())).collect();
         if want.is_none() {
+            // First among the actions, so they show without scrolling past the long list.
+            let unhide = super::super::l10n::tr("Unhide");
+            let mut hidden: Vec<&Bot> =
+                self.bots.values().filter(|b| b.hidden && fuzzy(q, &[&b.name, "Unhide", unhide.as_ref()])).collect();
+            hidden.sort_by(|a, b| a.name.cmp(&b.name));
+            items.extend(hidden.into_iter().map(|b| GotoItem::Unhide(b.id.clone())));
             items.extend(
                 ACTIONS
                     .iter()
@@ -46,9 +52,11 @@ impl App {
             Action::Details => self.open_routines(),
             Action::Documents => self.open_documents(),
             Action::Computer => self.open_computer_panel(),
+            Action::Library => self.open_library(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
-            Action::Usage => self.overlays.push(Overlay::Usage),
+            Action::Network => self.open_network(),
+            Action::Usage => self.overlays.push(Overlay::Usage(0)),
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
@@ -60,6 +68,11 @@ impl App {
                 let title = super::super::l10n::cycle_language();
                 self.flash(title.as_ref());
             }
+            Action::ThinkingDetails => self.flash(if super::super::details::toggle() {
+                "Thinking details on: > unfolds a working bot's steps"
+            } else {
+                "Thinking details off"
+            }),
             Action::Keys => self.overlays.push(Overlay::Help(Editor::default())),
         }
     }
@@ -116,17 +129,42 @@ impl App {
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
+            Overlay::Flow(f) => self.flow_key(f, k),
+            Overlay::Library(l) => self.library_key(l, k),
             Overlay::Market(m) => self.market_key(m, k),
             Overlay::Agent(a) => self.agent_key(a, k),
             Overlay::Fields(f) => self.fields_key(f, k),
             Overlay::Skill(s) => self.skill_key(s, k),
             Overlay::Analytics(s) => s.key(k),
+            Overlay::Network(n) => self.network_key(n, k),
             // A new code: after a failure, or in place of the one shown.
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
                 self.call("pairing", json!({}), After::Pairing);
                 Some(Overlay::Pair(PairCode::Loading))
             }
-            o @ (Overlay::Usage | Overlay::Pair(_)) => {
+            Overlay::LeadAgent(scroll) => {
+                let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+                let max = super::super::view::lead_agent_scroll_max(width, height);
+                match k.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'I') => None,
+                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::LeadAgent((scroll + 1).min(max))),
+                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::LeadAgent(scroll.saturating_sub(1))),
+                    _ => Some(Overlay::LeadAgent(scroll.min(max))),
+                }
+            }
+            Overlay::Usage(scroll) => {
+                let (_, height) = crossterm::terminal::size().unwrap_or((80, 24));
+                let max = super::super::view::usage_scroll_max(self, height);
+                match k.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P') => None,
+                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::Usage((scroll + 1).min(max))),
+                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::Usage(scroll.saturating_sub(1))),
+                    KeyCode::PageDown | KeyCode::Char(' ') => Some(Overlay::Usage((scroll + 10).min(max))),
+                    KeyCode::PageUp => Some(Overlay::Usage(scroll.saturating_sub(10))),
+                    _ => Some(Overlay::Usage(scroll)),
+                }
+            }
+            o @ Overlay::Pair(_) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None
                 } else {
@@ -167,6 +205,9 @@ impl App {
                         self.start_typing();
                     }
                     Some(GotoItem::Action(a)) => self.run_action(*a),
+                    Some(GotoItem::Unhide(id)) => {
+                        self.call("updateBot", json!({"id": id, "hidden": false}), After::Nothing);
+                    }
                     None => {}
                 }
                 return None;
@@ -242,5 +283,30 @@ impl App {
         if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
             f.cwd = path;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Bot, Editor, Goto, GotoItem, test_app};
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn the_palette_offers_to_unhide_hidden_bots() {
+        let mut app = test_app();
+        for (id, hidden) in [("shown", false), ("hidden", true)] {
+            let bot = Bot::parse(&json!({"id": id, "name": id, "hidden": hidden})).expect("a bot with an id parses");
+            app.bots.insert(id.into(), bot);
+        }
+        let g = Goto { query: Editor::default(), filter: 0, cursor: 0 };
+        let unhide: Vec<String> = app
+            .goto_items(&g)
+            .into_iter()
+            .filter_map(|i| match i {
+                GotoItem::Unhide(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(unhide, ["hidden"]);
     }
 }

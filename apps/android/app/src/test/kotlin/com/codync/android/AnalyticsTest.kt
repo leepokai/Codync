@@ -1,7 +1,10 @@
 package com.codync.android
 
+import com.codync.android.core.CallQuality
 import com.codync.android.core.HostError
 import com.codync.android.core.PairingProblem
+import com.codync.android.core.VoiceFailureKind
+import com.codync.android.core.VoiceStuck
 import java.io.IOException
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
@@ -22,6 +25,11 @@ class AnalyticsTest {
         assertEquals("""{"setting":"live_activities","on":false}""", json(AnalyticsEvent.SettingChanged(PhoneSetting.LiveActivities, false)))
         assertEquals("""{"via":"link","computer":"fbfcd4f4fe9f876c"}""", json(AnalyticsEvent.ComputerPaired(PairedVia.Link, "tZ1WMzsVltt-fj7mUDwZsg")))
         assertEquals("{}", json(AnalyticsEvent.SignedOut))
+        assertEquals("""{"engine":"gemini","reconnects":1,"stuck":"none","failure":"connection","ready_ms":1200}""",
+            json(AnalyticsEvent.VoiceCallQuality(VoiceEngineKind.Gemini, CallQuality.Report(1_200, 1, VoiceStuck.None, VoiceFailureKind.Connection))))
+        // An engine that was never ready leaves `ready_ms` out.
+        assertEquals("""{"engine":"on_device","reconnects":0,"stuck":"connecting","failure":"none"}""",
+            json(AnalyticsEvent.VoiceCallQuality(VoiceEngineKind.OnDevice, CallQuality.Report(null, 0, VoiceStuck.Connecting, null))))
     }
 
     @Test fun `pairing failures map to the catalog's reasons`() {

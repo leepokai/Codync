@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { groupFastMode } from '@shared/fast-mode'
+import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
 import { isGroup, isWorkingIn, quoteOf, type Bot, type Entry } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { DropdownMenu } from '../../components/Controls'
@@ -29,13 +30,15 @@ type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
 /**
  * The message box under a chat: send, or stop while the bot (or the group) is working there. A leading `/` lists
  * the commands (a group's are its bots'); in a group, typing `@` suggests its bots. While `reply` is set, the
- * message it quotes sits at the top of the box and goes out with the next send.
+ * message it quotes sits at the top of the box and goes out with the next send. Under an artifact, `about` is the
+ * artifact: the box keeps a draft of its own, and every message replies to the artifact's card.
  */
-export function Composer({ botId, thread = null, reply = null, cancelReply, onCall, onInterrupt }: {
+export function Composer({ botId, thread = null, reply = null, about = null, cancelReply, onCall, onInterrupt }: {
   botId: string
   /** A document's side conversation (`doc:<id>`) the message goes to, instead of the chat. */
   thread?: string | null
   reply?: Entry | null
+  about?: Artifact | null
   cancelReply?: () => void
   /** Starts a voice call; while the box is empty it takes the send button's place. */
   onCall?: (() => void) | null
@@ -44,12 +47,12 @@ export function Composer({ botId, thread = null, reply = null, cancelReply, onCa
 }) {
   const store = useStore()
   // Remount transient editor state (selection, attachments, IME) when its destination changes.
-  return <DestinationComposer key={JSON.stringify([store.contextId, store.computer.id, botId, thread])}
-    botId={botId} thread={thread} reply={reply} cancelReply={cancelReply} onCall={onCall} onInterrupt={onInterrupt} />
+  return <DestinationComposer key={JSON.stringify([store.contextId, store.computer.id, botId, thread, about?.id])}
+    botId={botId} thread={thread} about={about} reply={reply} cancelReply={cancelReply} onCall={onCall} onInterrupt={onInterrupt} />
 }
 
-function DestinationComposer({ botId, thread, reply, cancelReply, onCall, onInterrupt }: {
-  botId: string; thread: string | null; reply: Entry | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
+function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall, onInterrupt }: {
+  botId: string; thread: string | null; about: Artifact | null; reply: Entry | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
   const tr = useTr()
@@ -57,7 +60,7 @@ function DestinationComposer({ botId, thread, reply, cancelReply, onCall, onInte
   const bot = store.bots.get(botId) ?? null
   const drafts = store.composerDrafts
   // A document's conversation keeps its own draft.
-  const draftKey = thread ? `${botId}/${thread}` : botId
+  const draftKey = thread ? `${botId}/${thread}` : about ? artifactDraftKey(about) : botId
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(draftKey))
   const setDraft = (text: string) => drafts.set(draftKey, text)
   const [files, setFiles] = useState<OutgoingFile[]>([])
@@ -79,7 +82,9 @@ function DestinationComposer({ botId, thread, reply, cancelReply, onCall, onInte
   const name = bot?.name ?? ''
   const placeholder = terminal
     ? tr('This bot runs in your terminal — reply there; approvals still work here')
-    : reply || thread
+    : about
+      ? tr('Message about “{title}”').replace('{title}', about.title)
+      : reply || thread
       ? tr('Reply…')
       : bot && isGroup(bot)
         ? tr('Ask everyone · @ to ask one bot')
@@ -87,8 +92,8 @@ function DestinationComposer({ botId, thread, reply, cancelReply, onCall, onInte
           ? tr('Queue a message for {name}').replace('{name}', name)
           : tr('Ask {name}').replace('{name}', name)
 
-  // A routine's "Try it" fills the box.
-  const routineDraft = store.routineDrafts.get(botId)
+  // A routine's "Try it" fills the chat's box (an artifact's leaves it for the chat).
+  const routineDraft = about ? undefined : store.routineDrafts.get(botId)
   useEffect(() => {
     if (routineDraft === undefined) return
     const incoming = store.consumeRoutineDraft(botId)
@@ -205,7 +210,7 @@ function DestinationComposer({ botId, thread, reply, cancelReply, onCall, onInte
     dictation.cancel()
     if (command) return run(command)
     if (!canSend || terminal) return
-    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply && quoteOf(reply), thread })
+    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ? quoteOf(reply) : about && artifactQuote(about), thread })
     cancelReply?.()
     pasted.current = []
     setDraft('')

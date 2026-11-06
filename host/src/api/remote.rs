@@ -4,6 +4,7 @@ use super::devices::Caller;
 use super::str_arg;
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
+use crate::remote::cloud::TokenChange;
 use crate::remote::crypto;
 use crate::store::DeviceSource;
 use anyhow::{Context, Result, anyhow, bail};
@@ -103,9 +104,22 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let enabled = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
             serde_json::to_value(crate::remote::cloud::set_cloud(hub, enabled)?)?
         }
+        "setCloudUrl" => {
+            let url = match &b["url"] {
+                Value::Null => None,
+                Value::String(url) => Some(url.as_str()),
+                _ => bail!("`url` must be a string"),
+            };
+            let token = TokenChange::from_json(b.get("token"))?;
+            serde_json::to_value(crate::remote::cloud::set_cloud_url(hub, url, token)?)?
+        }
         "setApproval" => {
             let approval = serde_json::from_value(b["approval"].clone()).context("`approval` is code or auto")?;
             serde_json::to_value(crate::remote::cloud::set_approval(hub, approval)?)?
+        }
+        "setAssistants" => {
+            let on = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
+            serde_json::to_value(crate::chat::team::assistant::set_enabled(hub, on)?)?
         }
         "claimSign" => claim_sign(hub, &b).await?,
         _ => return Ok(ControlFlow::Continue(b)),
@@ -137,6 +151,7 @@ async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
 
 /// Signs this computer into an account claim (§4.2 A) for the signed-in desktop app to complete.
 async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
+    crate::remote::cloud::require_accounts(&hub.store)?;
     let field = |k: &str| -> Result<&str> {
         let v = str_arg(b, k)?;
         // Fields are newline-separated in the signed string: a newline would forge another field.

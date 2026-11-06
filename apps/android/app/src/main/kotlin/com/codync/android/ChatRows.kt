@@ -2,11 +2,18 @@ package com.codync.android
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,31 +22,34 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -111,9 +121,10 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
         color = Palette.tertiary, textAlign = TextAlign.Center)
 }
 
-/** One chat-visible entry, with what can be done to it. `reply` opens its thread (main chat only). */
+/** One chat-visible entry, with what can be done to it. `reply` quotes it in the composer; `addFallback` opens a bot's fallbacks;
+ *  `openArtifact` opens an artifact card's artifact. */
 @Composable internal fun ChatRow(entry: Entry, groupStart: Boolean, chat: Bot?, state: AppState, store: AppStore,
-    openTrace: () -> Unit, reply: (() -> Unit)?, connect: ConnectionRequestActions, thread: String? = null) {
+    openTrace: () -> Unit, reply: (() -> Unit)?, connect: ConnectionRequestActions, thread: String? = null, addFallback: (Bot) -> Unit = {}, openArtifact: (OpenArtifact) -> Unit = {}) {
     val group = chat?.kind == "group"
     val compact = LocalUiDensity.current == UiDensity.Compact
     val topGroupGap = if (compact) 8.dp else 12.dp
@@ -129,7 +140,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
         "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
-            AgentBubble(entry, state, store, openTrace, reply, thread)
+            AgentBubble(entry, state, store, openTrace, reply, thread, openArtifact)
             Column(Modifier.padding(start = if (group) 34.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ReactionsRow(entry, store)
                 ThreadChip(entry, state, reply)
@@ -156,120 +167,11 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
     }
 }
 
-/** Sandboxed mini-app card published by the bot in chat (Ideas 1–7). */
-@Composable private fun BotAppNoticeCard(entry: Entry, store: AppStore) {
-    val appJson = entry.data["botApp"] as? JsonObject ?: return
-    val app = remember(appJson, entry.botId) { runCatching { botAppFromNotice(entry.botId, appJson) }.getOrNull() }
-    if (app == null) {
-        Text("Mini-app details are unavailable. Open the bot's settings to try again.", style = Type.chatFootnote, color = Palette.danger)
-        return
-    }
-    var open by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Symbol("macwindow", size = 16.dp, tint = Palette.accent)
-            Text(app.title, style = Type.chatSubheadline.semibold, color = Palette.text)
-            Text("v${app.version}", Modifier.clip(Capsule()).background(Palette.surface).padding(horizontal = 6.dp, vertical = 2.dp),
-                style = Type.caption2.semibold, color = Palette.secondary)
-        }
-        app.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = Type.chatFootnote, color = Palette.secondary) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PrimaryButton("Open App") { open = true }
-        }
-    }
-    if (open) CodyncSheet(app, { open = false }) { BotAppSheet(botId = entry.botId, app = it, store = store) }
-}
-
-/** Ideas 13, 19 & 20: Human takeover request card with action bar in chat. */
-@Composable private fun TakeoverRequestCard(entry: Entry, state: AppState, store: AppStore) {
-    val req = entry.data["takeoverRequest"] as? JsonObject ?: return
-    val reason = req.text("reason").orEmpty()
-    val url = req.text("url").orEmpty()
-    val status = req.text("status")
-    val resolved = status == "resolved" || status == "cancelled"
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Symbol("hand.raised.fill", size = 16.dp, tint = Palette.warning)
-            Text("Human Takeover Requested", style = Type.chatSubheadline.semibold, color = Palette.warning)
-        }
-        Text(if (url.isNotBlank()) "$reason · $url" else reason, style = Type.chatFootnote, color = Palette.secondary)
-        if (!resolved) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PrimaryButton("Done — hand back") {
-                    store.sendDraft(entry.botId, entry.threadId, "I have completed the requested step in the browser. Please continue.") {}
-                }
-                SecondaryButton("Cancel") { state.bots.firstOrNull { it.id == entry.botId }?.let { store.stopBot(it) } }
-            }
-        } else {
-            Text(if (status == "resolved") "Completed" else "Cancelled", style = Type.caption, color = Palette.tertiary)
-        }
-    }
-}
-
-/** Interactive Passkey / 2FA / Captcha assistance card from CDP browser detector (INIC-02). */
-@Composable private fun PasskeyWallCard(entry: Entry, state: AppState, store: AppStore) {
-    val wall = entry.data["passkeyWall"] as? JsonObject ?: return
-    val kind = wall.text("kind")?.uppercase() ?: "AUTH"
-    val url = wall.text("url").orEmpty()
-    val reason = wall.text("reason").orEmpty()
-    val status = wall.text("status")
-    val resolved = status == "resolved" || status == "cancelled"
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Symbol("person.badge.key.fill", size = 16.dp, tint = Palette.warning)
-            Text("Authentication Required ($kind)", style = Type.chatSubheadline.semibold, color = Palette.warning)
-        }
-        Text("$reason · $url", style = Type.chatFootnote, color = Palette.secondary)
-        if (!resolved) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PrimaryButton("Continue") {
-                    store.sendDraft(entry.botId, entry.threadId, "I have completed the authentication in the browser. Please continue.") {}
-                }
-                SecondaryButton("Cancel") { state.bots.firstOrNull { it.id == entry.botId }?.let { store.stopBot(it) } }
-            }
-        } else {
-            Text(if (status == "resolved") "Authentication completed" else "Cancelled", style = Type.caption, color = Palette.tertiary)
-        }
-    }
-}
-
-/** Chief of Staff automatic intervention / escalation card (INIC-04). */
-@Composable private fun ChiefIncidentCard(entry: Entry, state: AppState, store: AppStore) {
-    val inc = entry.data["chiefIncident"] as? JsonObject ?: return
-    val workerId = inc.text("workerBotId").orEmpty()
-    val workerName = state.bots.firstOrNull { it.id == workerId }?.name ?: workerId
-    val reason = inc.text("reason").orEmpty()
-    val summary = inc.text("summary").orEmpty()
-    val attempt = inc["retryAttempt"]?.jsonPrimitive?.intOrNull ?: 1
-    val escalated = inc.text("status") == "escalated" || attempt >= 2
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Symbol("shield.lefthalf.filled", size = 16.dp, tint = if (escalated) Palette.danger else Palette.warning)
-            Text(if (escalated) "Chief of Staff · Escalated Incident" else "Chief of Staff · Intervention (Attempt $attempt/2)",
-                style = Type.chatSubheadline.semibold, color = if (escalated) Palette.danger else Palette.warning)
-        }
-        Text("Worker: $workerName · Reason: $reason", style = Type.chatFootnote, color = Palette.secondary)
-        if (summary.isNotEmpty()) Text(summary, style = Type.chatFootnote, color = Palette.text)
-        if (escalated) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryButton("Retry manually") {
-                    store.sendDraft(entry.botId, entry.threadId, "Retry assignment for $workerName") {}
-                }
-                SecondaryButton("Stop worker") { state.bots.firstOrNull { it.id == workerId }?.let { store.stopBot(it) } }
-            }
-        }
-    }
-}
-
 /** What a connection request in the chat opens. */
 internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Unit, val install: (String, MarketConnector) -> Unit)
 
-/** Who wrote a message in a group: their avatar and name in their color. */
-@Composable internal fun AuthorLabel(botId: String?, state: AppState) {
+/** Who wrote a message: their avatar and name in their color, or [name] for a bot on another computer. */
+@Composable internal fun AuthorLabel(botId: String?, state: AppState, name: String? = null) {
     val bot = state.bots.firstOrNull { it.id == botId }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp)
@@ -386,12 +288,20 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, thread: String?) {
+@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, thread: String?, openArtifact: (OpenArtifact) -> Unit) {
     val context = LocalContext.current
     val files = entry.files
+    val artifact = entry.artifact
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // A message with files is its files: the text is only the computer's fallback.
-        if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store)) { messageMenu(context, entry, reply, openTrace, store) { store.quoteMessage(entry, thread) } },
+        // Artifact cards and downloaded files keep the original message's actions.
+        if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store,
+            Modifier.contextActions(reactions = reactionPick(entry, store),
+                onClick = { openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) {
+                messageMenu(context, entry, reply, openTrace, store) { store.quoteMessage(entry, thread) }
+            })
+        else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store)) {
+            messageMenu(context, entry, reply, openTrace, store) { store.quoteMessage(entry, thread) }
+        },
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (file in files) FileDownloadCard(entry, file, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).swipeToReply(reply)
@@ -488,41 +398,6 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         }
         else -> Text(text, Modifier.fillMaxWidth(), style = Type.chatFootnote, color = Palette.secondary, textAlign = TextAlign.Center)
     }
-}
-
-/**
- * The bot's live activity line: a turning orb, what it's doing and for how long. Tapping it
- * unfolds what the bot is thinking right now.
- */
-@Composable internal fun WorkingIndicator(bot: Bot, thinking: String?) {
-    var expanded by remember { mutableStateOf(false) }
-    val needs = bot.status == "needsInput"
-    val turn by animateFloatAsState(if (expanded) 180f else 0f, Motion.layout(), label = "Thinking")
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp, end = 40.dp)) {
-        Column(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .clickable(enabled = thinking != null, role = Role.Button) { expanded = !expanded }
-            .animateContentSize(Motion.layoutSize).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ThinkingOrb(if (needs) ThinkingOrbState.Listening else ThinkingOrbState.Working, 16.dp, if (needs) Palette.warning else Palette.secondary)
-                Text(bot.activity.ifEmpty { "Working…" }, Modifier.weight(1f, fill = false).shimmerEffect(active = !needs), style = Type.chatSubheadline,
-                    color = if (needs) Palette.warning else Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                bot.startedAt?.let { Elapsed(it) }
-                if (thinking != null) Symbol("chevron.down", Modifier.rotate(turn), size = 12.dp, tint = Palette.tertiary)
-            }
-            if (expanded && thinking != null) Box(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState(Int.MAX_VALUE))) {
-                SelectionContainer { Text(thinking, style = Type.chatFootnote, color = Palette.secondary) }
-            }
-        }
-    }
-}
-
-/** `Text(date, style: .timer)`: the time since `startedAt`, every second. */
-@Composable private fun Elapsed(startedAt: Long) {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(startedAt) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
-    val seconds = maxOf(0, (now - startedAt) / 1000)
-    Text(if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60),
-        style = Type.chatFootnote.monospacedDigit, color = Palette.tertiary)
 }
 
 /** The latest thinking of the turn running in a chat (`thread` null) or thread. */

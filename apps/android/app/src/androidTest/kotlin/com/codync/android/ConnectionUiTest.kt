@@ -17,14 +17,14 @@ class ConnectionUiTest {
 
     @Test fun theComputerRowNamesTheActualConnectionState() {
         val state = mutableStateOf(fixture(LinkState.Failed("Your access was revoked.", 403)))
-        compose.setContent { Hosted { SettingsView(state.value, viewModel(), null, {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(state.value, viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Your access was revoked.").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Extensions").assertDoesNotExist()
+        compose.onNodeWithText("Extensions").assertDoesNotExist()
         compose.runOnUiThread { state.value = fixture(LinkState.ComputerOffline(null)) }
         compose.onNodeWithText("Offline").assertIsDisplayed()
         compose.runOnUiThread { state.value = fixture(LinkState.Ready(HostRoute.Direct)).copy(bots = listOf(Bot("bot", "Saved bot"))) }
         compose.onNodeWithText("1 bot · Wi-Fi/Tailscale").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Extensions").assertIsDisplayed()
+        compose.onNodeWithText("Extensions").assertIsDisplayed()
     }
 
     @Test fun cachedBotsStayListedWhileOfflineAndAnEmptyRosterOffersTheFirstBot() {

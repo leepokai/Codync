@@ -357,7 +357,7 @@ internal object NavigationPreferences {
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(statusLine, style = Type.caption2, color = statusInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            CallLevelDots(voice.level, speaking && online, bot?.status == "working" && online, color,
+            CallLevelDots(voice.level, speaking && online, bot?.status == "working" && online, voice.phase == VoicePhase.Starting && online, color,
                 Modifier.widthIn(min = 32.dp, max = 52.dp).height(16.dp))
         }
         Box(

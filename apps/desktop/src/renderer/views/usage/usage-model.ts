@@ -13,7 +13,16 @@ export const providerTintCSS = (id: string) => (id === 'claude' ? '#D97757' : 'v
 /** The character that stands for this provider. */
 export const mascotShape = (id: string) => (id === 'codex' ? 'hex' : 'blob')
 
-export const tightest = (p: UsageProvider) => p.windows.reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
+/** A plan window. Notes (today's tokens, a dollar balance) are not limits. */
+export const isLimit = (w: UsageWindow) => !w.text
+
+export const tightest = (p: UsageProvider) =>
+  p.windows.filter(isLimit).reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
+
+/** The percent, or the note when this window isn't a share of a cap. */
+export function windowReading(w: UsageWindow) {
+  return w.text || `${Math.round(w.percent)}%`
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 

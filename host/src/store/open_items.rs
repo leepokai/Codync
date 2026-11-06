@@ -1,6 +1,7 @@
 //! Persistence for tracked open items (`open_items`, Idea 8) and routine deduplication
 //! (`reported_items`, Idea 9).
 
+use super::visibility::PUBLIC;
 use super::{Store, now_ms};
 use crate::LockExt;
 use anyhow::{Context, Result, bail};
@@ -271,10 +272,13 @@ impl Store {
 
     pub fn list_bookmarks(&self, bot_id: &str) -> Result<Vec<MessageBookmark>> {
         let c = self.db.locked();
-        let mut st = c.prepare(
+        let mut st = c.prepare(&format!(
             "SELECT id, bot_id, entry_id, thread_id, author, preview, note, created_at, updated_at
-             FROM message_bookmarks WHERE bot_id = ?1 ORDER BY updated_at DESC LIMIT 100",
-        )?;
+             FROM message_bookmarks WHERE bot_id = ?1
+             AND NOT EXISTS(SELECT 1 FROM entries WHERE entries.id = message_bookmarks.entry_id
+                            AND entries.bot_id = ?1 AND NOT ({PUBLIC}))
+             ORDER BY updated_at DESC LIMIT 100"
+        ))?;
         Ok(st
             .query_map([bot_id], |r| {
                 Ok(MessageBookmark {
@@ -304,6 +308,9 @@ impl Store {
         let entry_id = entry_id.trim();
         if entry_id.is_empty() {
             bail!("entryId is required");
+        }
+        if self.entry(entry_id).is_some_and(|entry| entry.bot_id == bot_id && super::is_internal(&entry.data)) {
+            bail!("internal messages cannot be bookmarked");
         }
         let preview: String = preview.trim().chars().take(320).collect();
         let note: String = note.trim().chars().take(600).collect();

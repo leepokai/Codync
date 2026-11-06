@@ -4,8 +4,9 @@
   transition: opacity var(--layout);
 }
 
-.computer-roster-section.dragging {
-  opacity: 0.45;
+/* Its heading's lifted copy follows the pointer; the slot stays open. */
+.computer-roster-section.lifted {
+  opacity: 0;
 }
 
 .computer-roster-heading {
@@ -30,6 +31,10 @@
 .computer-roster-toggle:hover {
   background: var(--bubble-agent);
 }
+/* Headings the pointer passes over while dragging don't light up. */
+.pointer-dragging .computer-roster-toggle:hover {
+  background: none;
+}
 
 .computer-roster-label {
   display: flex;
@@ -53,8 +58,18 @@
   white-space: nowrap;
 }
 
+/* The connection sits at the trailing edge, before the chevron. */
+.computer-roster-label > .computer-roster-status {
+  margin-left: auto;
+}
+
 .computer-roster-label > .warning {
   color: var(--attention);
+}
+
+/* A computer's own Extensions, always beside its heading. */
+.computer-roster-extensions {
+  flex: none;
 }
 
 .computer-roster-chevron {

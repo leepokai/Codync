@@ -67,6 +67,8 @@ const bridge: CodyncBridge = {
     disconnect() {},
     trustHostKey() {},
     chooseKey: async () => null,
+    configHosts: async () => ({ access: 'denied', hosts: [] }),
+    setConfigAccess: async () => ({ access: 'denied', hosts: [] }),
   },
   island: {
     supported: false,
@@ -91,6 +93,7 @@ const bridge: CodyncBridge = {
   },
   cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }) },
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
+  artifacts: { show: async () => {}, openInBrowser: unavailable },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
   app: {
     reportError() {},

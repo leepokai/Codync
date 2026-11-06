@@ -18,9 +18,11 @@ export const ORIGIN = `https://${AUTHORITY}`;
 
 let clerkKey: Promise<CryptoKey> | undefined;
 
+/** A Clerk session token, or with `typ: "at+jwt"` an OAuth access token Clerk issued to a cloud assistant. */
 export async function clerkToken(
   sub: string,
   claims: Record<string, unknown> = {},
+  typ = "JWT",
 ): Promise<string> {
   clerkKey ??= crypto.subtle.importKey(
     "jwk",
@@ -31,7 +33,7 @@ export async function clerkToken(
   );
   const now = Math.floor(Date.now() / 1000);
   const part = (v: unknown) => b64url(enc.encode(JSON.stringify(v)));
-  const head = `${part({ alg: "RS256", typ: "JWT", kid: "ins_test" })}.${part({
+  const head = `${part({ alg: "RS256", typ, kid: "ins_test" })}.${part({
     iss: env.CLERK_ISSUER,
     sub,
     sid: `sess_${sub}`,

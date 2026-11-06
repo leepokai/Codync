@@ -36,6 +36,14 @@ private func metadata(_ data: Data, name: String = "file.bin") -> SharedFile {
     }
 }
 
+@Test func sharedFileReadsWholeInMemoryAndChecksItsDigest() async throws {
+    let bytes = Data((0..<(FileDownload.chunkSize + 7)).map { UInt8($0 % 256) })
+    let client = HostClient(transport: FileTransport(bytes: bytes))
+    #expect(try await FileDownload().data(client: client, entryId: "entry", file: metadata(bytes, name: "picture.png")) == bytes)
+    let bad = SharedFile(id: "id", name: "picture.png", size: Int64(bytes.count), sha256: String(repeating: "0", count: 64))
+    await #expect(throws: FileDownloadError.self) { try await FileDownload().data(client: client, entryId: "entry", file: bad) }
+}
+
 @Test func generatedFileFailuresRemovePartialBytes() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

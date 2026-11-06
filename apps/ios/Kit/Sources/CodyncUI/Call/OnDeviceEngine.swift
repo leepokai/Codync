@@ -13,7 +13,7 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "Call")
 @Observable
 final class OnDeviceEngine: VoiceEngine {
     private(set) var phase: VoicePhase = .starting {
-        didSet { onActivityChanged?(!ended && phase.isActive) }
+        didSet { onActivityChanged?(!ended && phase.holdsCall) }
     }
     var provider: VoiceProvider? { nil }
     /// Keep the transport attached while audio is active, even without a visible UI update.
@@ -35,7 +35,10 @@ final class OnDeviceEngine: VoiceEngine {
     /// The language picked in the call settings, else the phone's.
     private let recognizer = UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey)
         .flatMap { $0.isEmpty ? nil : SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
-    private let engine = AVAudioEngine()
+    /// Created when the microphone first opens: touching the audio system starts it.
+    @ObservationIgnored private lazy var engine = AVAudioEngine()
+    /// The microphone tap is on.
+    private var tapped = false
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     /// Bumped per utterance so late callbacks from a cancelled recognition are dropped.
@@ -44,12 +47,15 @@ final class OnDeviceEngine: VoiceEngine {
     private let synthesizer = AVSpeechSynthesizer()
     private var speechDone: SpeechDone?
     private var ended = false
+    private var events: AudioSessionEvents?
+    /// Replies and notices that came while another app had the audio, said once it's back.
+    private var unsaid: [String] = []
 
     /// Call settings (the gear), kept across calls.
     static let pauseKey = "callPause"
     static let rateKey = "callRate"
     /// On-device recognition language (a locale identifier); empty follows the system.
-    static let languageKey = "callLanguage"
+    nonisolated static let languageKey = "callLanguage"
 
     /// Settings options: the system's language, then every language the recognizer supports, by name.
     static var languageOptions: [(String, String)] {
@@ -72,37 +78,70 @@ final class OnDeviceEngine: VoiceEngine {
 
     func start() async {
         guard await AVAudioApplication.requestRecordPermission() else {
-            return fail("Allow the microphone for Codync in Settings to talk to your bots.")
+            return fail("Allow the microphone for Codync in Settings to talk to your bots.", .microphone)
         }
         guard await Self.speechAuthorized() else {
-            return fail("Allow Speech Recognition for Codync in Settings to talk to your bots.")
+            return fail("Allow Speech Recognition for Codync in Settings to talk to your bots.", .microphone)
         }
         guard let recognizer, recognizer.isAvailable else {
-            return fail("Speech recognition isn't available for this language right now.")
+            return fail("Speech recognition isn't available for this language right now.", .provider)
         }
         guard !ended else { return }
-            do {
-                let audio = AVAudioSession.sharedInstance()
-                try audio.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
-                try audio.setActive(true)
-            } catch {
-                return fail("Couldn't start audio: \(error.localizedDescription)")
-            }
+        do {
+            try CallAudioSession.activate()
+        } catch {
+            return fail("Couldn't start audio: \(error.localizedDescription)", .microphone)
+        }
+        // A route change (AirPods) stops the engine mid-utterance: listen again on the new microphone.
+        events = AudioSessionEvents(engine: engine, interrupted: { [weak self] in self?.interrupted($0) },
+                                    reconfigured: { [weak self] in
+            guard let self, !self.ended, self.phase == .listening, !self.engine.isRunning else { return }
+            self.listen()
+        })
         listen()
+    }
+
+    /// Back from an interruption (it ended, or the user tapped the call's line): what came meanwhile is said, then
+    /// listening again.
+    func resume() {
+        guard !ended, phase == .interrupted else { return }
+        try? CallAudioSession.activate()
+        listen()
+        guard !unsaid.isEmpty else { return }
+        let waiting = unsaid.joined(separator: "\n\n")
+        unsaid.removeAll()
+        speak(reply: waiting)
+    }
+
+    private func interrupted(_ change: AudioInterruption) {
+        guard !ended else { return }
+        switch change {
+        case .began:
+            guard phase.isActive else { return }
+            stopListening()
+            synthesizer.stopSpeaking(at: .immediate)
+            phase = .interrupted
+        case .ended(let shouldResume):
+            if shouldResume { resume() }
+        }
     }
 
     func end() {
         ended = true
         onActivityChanged?(false)
+        events?.stop()
+        events = nil
         stopListening()
         synthesizer.stopSpeaking(at: .immediate)
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        CallAudioSession.release()
     }
 
     /// Reads a reply aloud (the bot's final message), pausing the microphone meanwhile.
     func speak(reply markdown: String) {
         let text = SpokenText.from(markdown)
-        guard !ended, !text.isEmpty, phase != .starting, !(phase.isFailed) else { return }
+        guard !ended, !text.isEmpty else { return }
+        if phase == .interrupted { return unsaid.append(markdown) }
+        guard phase.isActive else { return }
         stopListening()
         said = text
         phase = .speaking
@@ -141,11 +180,12 @@ final class OnDeviceEngine: VoiceEngine {
             input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.tap(request) { [weak self] level in
                 Task { @MainActor in self?.level = level }
             })
+            tapped = true
             engine.prepare()
             try engine.start()
         } catch {
             log.error("audio engine: \(error.localizedDescription, privacy: .public)")
-            return fail("Couldn't use the microphone: \(error.localizedDescription)")
+            return fail("Couldn't use the microphone: \(error.localizedDescription)", .microphone)
         }
         task = recognizer.recognitionTask(with: request, resultHandler: Self.results(self, generation: generation))
     }
@@ -158,8 +198,11 @@ final class OnDeviceEngine: VoiceEngine {
         task = nil
         request?.endAudio()
         request = nil
-        if engine.isRunning { engine.stop() }
-        engine.inputNode.removeTap(onBus: 0)
+        if tapped {
+            if engine.isRunning { engine.stop() }
+            engine.inputNode.removeTap(onBus: 0)
+            tapped = false
+        }
         level = 0
     }
 
@@ -188,9 +231,9 @@ final class OnDeviceEngine: VoiceEngine {
         listen()
     }
 
-    private func fail(_ message: String) {
+    private func fail(_ message: String, _ kind: VoiceFailureKind) {
         stopListening()
-        phase = .failed(message)
+        phase = .failed(message, kind)
     }
 
     // MARK: audio-thread closures (built outside the main actor)

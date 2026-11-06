@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { IconButton } from '../../components/Controls'
 import { Sheet, usePresence } from '../../components/Overlay'
 import { Icon } from '../../components/Icon'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
+import { EXTENSION_SECTIONS, type ExtensionSection } from './market-models'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import './marketplace.css'
+import './extensions-layout.css'
 
 // Building blocks the Marketplace's screens share (kit MarketplaceView.swift "Pieces").
 
@@ -100,17 +102,49 @@ export function ItemRow({ title, subtitle, icon, trailing, onOpen }: {
 
 /** Placeholder rows while a list loads, shaped like the real ones. */
 export function SkeletonGrid() {
+  const tr = useTr()
   return (
-    <div className="item-grid skeleton">
-      {[0, 1, 2, 3].map((i) => (
-        <HStack key={i} gap={14} className="skeleton-row">
-          <div className="skeleton-icon" />
-          <VStack gap={8}>
-            <div className="skeleton-title" />
-            <div className="skeleton-subtitle" />
-          </VStack>
+    <VStack gap={8} aria-busy="true" aria-label={tr('Loading…')}>
+      <Text size="footnote" tone="secondary">{tr('Loading…')}</Text>
+      <div className="item-grid skeleton">
+        {[0, 1, 2, 3].map((i) => (
+          <HStack key={i} gap={14} className="skeleton-row">
+            <div className="skeleton-icon" />
+            <VStack gap={8}>
+              <div className="skeleton-title" />
+              <div className="skeleton-subtitle" />
+            </VStack>
+          </HStack>
+        ))}
+      </div>
+    </VStack>
+  )
+}
+
+/**
+ * The end of a list the registry continues (kit `LoadMoreRow`). In view, it asks for the page at
+ * `cursor`, and again each time the cursor moves on while it stays in view. After a failure it shows
+ * Try again, and asks again once it scrolls back into view.
+ */
+export function LoadMoreRow({ cursor, failed, onLoad }: { cursor: string; failed: boolean; onLoad: () => void }) {
+  const end = useRef<HTMLDivElement>(null)
+  const [inView, setInView] = useState(false)
+  const load = useEffectEvent(onLoad)
+  useEffect(() => {
+    const seen = new IntersectionObserver(([e]) => setInView(e!.isIntersecting))
+    seen.observe(end.current!)
+    return () => seen.disconnect()
+  }, [])
+  useEffect(() => {
+    if (inView) load()
+  }, [inView, cursor])
+  return (
+    <div ref={end} className="load-more">
+      {failed ? (
+        <HStack justify="center">
+          <IconButton title="Try again" icon="arrow.clockwise" onClick={onLoad} />
         </HStack>
-      ))}
+      ) : <SkeletonGrid />}
     </div>
   )
 }
@@ -288,6 +322,23 @@ export function useWindowHeight() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
   return height
+}
+
+/** Agents, Connectors, Skills: a row of filled chips over the list, the chosen one in the text color. */
+export function ExtensionTabs({ selection, onChange }: { selection: ExtensionSection; onChange: (id: ExtensionSection) => void }) {
+  const tr = useTr()
+  return (
+    <nav className="market-tabs" role="tablist" aria-label={tr('Extensions sections')}>
+      {EXTENSION_SECTIONS.map((section) => {
+        const on = section.id === selection
+        return (
+          <button key={section.id} type="button" role="tab" aria-selected={on} className={`market-tab${on ? ' on' : ''}`} onClick={() => onChange(section.id)}>
+            {tr(section.label)}
+          </button>
+        )
+      })}
+    </nav>
+  )
 }
 
 /**

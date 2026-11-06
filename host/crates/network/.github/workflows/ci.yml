@@ -1,0 +1,25 @@
+# Runs in the codync-network mirror, where this folder is the repository root. In Codync it is inert: GitHub reads
+# only the root .github, and Codync's host workflow checks the crate there.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      # On Windows the crate builds; its tests and the daemon's control socket come later.
+      - run: cargo test
+        if: runner.os != 'Windows'

@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 
 /** Shared single-source-of-truth mutations for the bot roster. */
 internal fun AppStore.toggleBotPin(bot: Bot) {
+    if (bot.lead) return
     command("updateBot", buildJsonObject { put("id", bot.id); put("pinned", !bot.pinned) }, "roster:" + bot.id)
 }
 
@@ -20,6 +21,7 @@ internal fun AppStore.markBotRead(bot: Bot) {
 }
 
 internal fun AppStore.hideBotFromRoster(bot: Bot) {
+    if (bot.lead) return
     command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", true) }, "roster:" + bot.id)
 }
 
@@ -72,9 +74,10 @@ internal suspend fun AppStore.peekBotHistory(botId: String, limit: Int = 3) {
 }
 
 /** Both roster presentations and accessibility actions send the same intents to the host. */
-internal fun botRosterActions(bot: Bot, store: AppStore, edit: () -> Unit, delete: () -> Unit): List<MenuItem> =
+internal fun botRosterActions(bot: Bot, store: AppStore, edit: () -> Unit, delete: () -> Unit,
+    newSession: () -> Unit = { store.command("newSession", body("botId" to bot.id)) }): List<MenuItem> =
     buildList {
-        add(
+        if (!bot.lead) add(
             MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
                 store.toggleBotPin(bot)
             },
@@ -97,10 +100,11 @@ internal fun botRosterActions(bot: Bot, store: AppStore, edit: () -> Unit, delet
                 store.markBotRead(bot)
             },
         )
-        add(
+        if (bot.kind != "group") add(MenuItem("New session", icon = "arrow.counterclockwise", action = newSession))
+        if (!bot.lead) add(
             MenuItem("Hide from list", icon = "eye.slash") {
                 store.hideBotFromRoster(bot)
             },
         )
-        add(MenuItem("Delete", icon = "trash", destructive = true, divider = true, action = delete))
+        if (!bot.lead) add(MenuItem("Delete", icon = "trash", destructive = true, divider = true, action = delete))
     }

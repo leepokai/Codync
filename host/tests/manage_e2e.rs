@@ -121,9 +121,13 @@ async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {
         serde_json::from_str(&std::fs::read_to_string(workspace.join("servers.json")).unwrap()).unwrap();
     let manage = servers.as_array().unwrap().iter().find(|s| s["name"] == "manage").unwrap();
     let args: Vec<&str> = manage["args"].as_array().unwrap().iter().map(|a| a.as_str().unwrap()).collect();
+    // Started the way the agent would, with the server's own env: it carries the host's data directory.
+    let env =
+        manage["env"].as_array().unwrap().iter().map(|e| (e["name"].as_str().unwrap(), e["value"].as_str().unwrap()));
     let mut mcp = std::process::Command::new(manage["command"].as_str().unwrap())
         .args(args)
-        .env("CODYNC_HOME", &host.home)
+        .env_remove("CODYNC_HOME")
+        .envs(env)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .spawn()

@@ -56,10 +56,18 @@ public struct UpdateNeededCard: View {
 
     var title: String { UpdateNeededText.title(mismatch, host: store.hostName) }
     var detail: String {
+        let offer = hostOffer
+        if offer == .updating { return UpdateNeededText.updating(host: store.hostName) }
         let text = UpdateNeededText.detail(mismatch, host: store.hostName, hostVersion: store.hostVersion?.version,
                                            // With a button here, instructions for that computer would only confuse.
                                            os: store.hello?.os, instructions: action == nil)
+        if case let .available(last?) = offer { return "\(text) \(UpdateNeededText.notUpdated(last, host: store.hostName))" }
         return inReview ? "\(text) That version is still in App Store review; it'll be there soon." : text
+    }
+
+    /// What this app can do about a computer that's behind; nil when the app itself is.
+    private var hostOffer: HostUpdateOffer? {
+        if case .updateHost = mismatch { store.hostUpdateOffer() } else { nil }
     }
 
     /// The App Store doesn't have the app this computer needs yet. An unknown store version
@@ -75,8 +83,9 @@ public struct UpdateNeededCard: View {
             guard let appUpdate else { return nil }
             return ("Update Codync", { appUpdate() })
         case .updateHost:
-            // The computer updates itself; the card says how.
-            return nil
+            // Otherwise the card says how to update it on the computer.
+            guard case .available = hostOffer else { return nil }
+            return ("Update now", { store.requestHostUpdate() })
         }
     }
 }
@@ -98,13 +107,30 @@ public enum UpdateNeededText {
             let runs = hostVersion.map { "\(host) runs Codync \($0) and" } ?? host
             return "\(runs) needs this app to be \(minimum) or newer. Your chats are safe on the computer."
         case let .updateHost(version, minimum):
-            let how = switch os {
-            case "macos": "Open Codync on that Mac and choose Check for Updates."
-            case "linux": "Run codync-host update there."
-            default: "Update Codync on that computer."
-            }
             let needs = "\(host) runs Codync \(version); this app needs \(minimum) or newer."
-            return instructions ? "\(needs) \(how)" : needs
+            return instructions ? "\(needs) \(how(os: os))" : needs
+        }
+    }
+
+    /// How to update Codync on a computer this app can't update.
+    public static func how(os: String?) -> String {
+        switch os {
+        case "macos": "Open Codync on that Mac and choose Check for Updates."
+        case "linux": "Run codync-host update there."
+        default: "Update Codync on that computer."
+        }
+    }
+
+    /// A computer updating at this app's request.
+    public static func updating(host: String) -> String {
+        "Updating Codync on \(host). This takes a few minutes."
+    }
+
+    /// Why the last update asked of the computer didn't take.
+    public static func notUpdated(_ last: HostUpdate, host: String) -> String {
+        switch last {
+        case let .failed(message): message
+        case .requested: "\(host) didn't finish updating. Try again, or update Codync on that computer."
         }
     }
 }

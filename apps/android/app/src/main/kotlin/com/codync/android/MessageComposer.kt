@@ -73,15 +73,18 @@ import kotlinx.serialization.json.put
 private enum class Trailing { Interrupt, Stop, Call, Send }
 
 /**
- * The message box under a chat or a thread, as iOS `Composer`: a glass + for files, a glass
- * field whose trailing button morphs between call, send, stop and interrupt. `onInterrupt`
- * cuts the bot off while it speaks in a voice call.
+ * The message box under a chat, as iOS `Composer`: a glass + for files, a glass field whose
+ * trailing button morphs between call, send, stop and interrupt. `onInterrupt` cuts the bot off
+ * while it speaks in a voice call. `replyTo` is the message the next send quotes, shown on top. `about`, in an artifact's
+ * viewer: the artifact's title, which the box names in place of the quote (its card) it sends with; `draftKey` is then the
+ * artifact's draft, apart from the chat's.
  */
 @OptIn(ExperimentalFoundationApi::class)
 /** `replyingTo`: the chat message this one answers (`replyTo`), shown above the box until sent or cancelled. */
 @Composable fun MessageComposer(bot: Bot, thread: String?, state: AppState, store: AppStore, onCall: (() -> Unit)?,
-    onInterrupt: (() -> Unit)? = null, replyingTo: Entry? = null, cancelReply: () -> Unit = {}) {
-    val lane = ComposerDraft.lane(bot.id, thread)
+    onInterrupt: (() -> Unit)? = null, replyingTo: Entry? = null, cancelReply: () -> Unit = {}, about: String? = null,
+    draftKey: String = ComposerDraft.lane(bot.id, thread), replyQuote: ReplyQuote? = replyingTo?.replyQuote) {
+    val lane = draftKey
     val draft = state.drafts[lane]
     val text = rememberTextFieldState(initialText = draft?.text.orEmpty())
     val files = draft?.files.orEmpty()
@@ -89,11 +92,11 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val importing = "attachments" in state.busy
     val haptics = LocalCodyncHaptics.current
     // What this box sent to the store, so a draft set elsewhere (a routine request) can be told from our own echo.
-    val echoes = remember(lane) { ArrayDeque<String>() }
-    LaunchedEffect(text, bot.id, thread) {
+    val echoes = remember(draftKey) { ArrayDeque<String>() }
+    LaunchedEffect(text, draftKey) {
         snapshotFlow { text.text.toString() }.collect {
             echoes.addLast(it); while (echoes.size > 32) echoes.removeFirst()
-            store.editDraft(bot.id, thread, it)
+            store.editDraft(bot.id, thread, it, draftKey)
         }
     }
     LaunchedEffect(draft?.text) {
@@ -105,10 +108,10 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val clips = context.getSystemService(ClipboardManager::class.java)
     val scope = rememberCoroutineScope()
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it, draftKey) }
     }
     val documents = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it, draftKey) }
     }
     // A session running in the person's own terminal is read here and answered in that terminal.
     val terminal = bot.backend == "external"
@@ -127,7 +130,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         if (importing || queuing || terminal) content else {
             val uris = mutableListOf<android.net.Uri>()
             val remaining = content.consume { item -> item.uri?.takeIf { it.scheme == "content" }?.let { uris.add(it); true } ?: false }
-            if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+            if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it, draftKey) }
             remaining
         }
     } }
@@ -146,6 +149,8 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     }
     val placeholder = when {
         terminal -> "This bot runs in your terminal — reply there; approvals still work here"
+        about != null -> tr("Message about “{title}”").replace("{title}", about)
+        replyQuote != null -> tr("Reply…")
         thread != null -> "Reply…"
         bot.kind == "group" -> "Message everyone · @ to ask one bot"
         working -> "Queue a message for ${bot.name}"
@@ -180,6 +185,10 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
         replyingTo?.let { ReplyBanner(it, state, cancelReply) }
     }
+    if (replyingTo == null && replyQuote != null && about == null) Row(Modifier.padding(horizontal = 16.dp)) {
+        Text(replyQuote.text, Modifier.weight(1f), style = Type.caption, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        IconButton("Cancel reply", "xmark", action = cancelReply)
+    }
     AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
         MentionChips(mentions, state.bots) { member -> text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ") }
     }
@@ -202,7 +211,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
             if (clipOffersFiles(clips.primaryClipDescription?.mimeTypes().orEmpty())) add(MenuItem("Paste", icon = "doc.on.clipboard") { scope.launch {
                 val data = clipboard.getClipEntry()?.clipData
                 val uris = if (data == null) emptyList() else (0 until data.itemCount).mapNotNull { data.getItemAt(it).uri?.takeIf { uri -> uri.scheme == "content" } }
-                if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+                if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it, draftKey) }
             } })
         } }, Modifier.size(FIELD_HEIGHT).glass(Capsule()), enabled = !queuing && !terminal, label = "Add files") {
             Symbol("plus", size = 26.dp, tint = Palette.text)
@@ -210,7 +219,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         Column(Modifier.weight(1f).glass(RoundedRectangle(24.dp)).animateContentSize(Motion.layoutSize)) {
             if (files.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (file in files) ComposerAttachment(file) { store.removeDraftFile(bot.id, thread, file) }
+                for (file in files) ComposerAttachment(file) { store.removeDraftFile(bot.id, thread, file, draftKey) }
             }
             Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -225,7 +234,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                         Trailing.Call -> onCall?.invoke()
                         Trailing.Send -> {
                             val command = if (files.isEmpty()) SlashCommands.builtIn(bot, typed) else null
-                            if (command != null) run(command) else store.sendDraft(bot.id, thread, typed, replyingTo?.replyQuote) {
+                            if (command != null) run(command) else store.sendDraft(bot.id, thread, typed, replyQuote, draftKey) {
                                 haptics.perform(CodyncHaptic.MessageSent)
                                 clear()
                                 cancelReply()
@@ -238,7 +247,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     }
     CodyncSheet(annotating, { annotating = null }) { (uri, file) ->
         PhotoAnnotation(uri, file) { exported ->
-            store.importFiles(listOf(exported)) { store.addDraftFiles(bot.id, thread, it) }
+            store.importFiles(listOf(exported)) { store.addDraftFiles(bot.id, thread, it, draftKey) }
             annotating = null
         }
     }
@@ -304,4 +313,12 @@ fun formatBytes(size: Long): String = when {
         }
         IconButton("Cancel reply", "xmark", action = cancel)
     }
+}
+
+/** Artifact messages use a draft separate from the main chat, without creating a side conversation. */
+@Composable fun MessageComposer(bot: Bot, state: AppState, store: AppStore, onCall: (() -> Unit)?,
+    onInterrupt: (() -> Unit)? = null, replyTo: ReplyQuote? = null, cancelReply: () -> Unit = {}, about: String? = null,
+    draftKey: String = ComposerDraft.lane(bot.id, null)) {
+    MessageComposer(bot, null, state, store, onCall, onInterrupt, cancelReply = cancelReply,
+        about = about, draftKey = draftKey, replyQuote = replyTo)
 }

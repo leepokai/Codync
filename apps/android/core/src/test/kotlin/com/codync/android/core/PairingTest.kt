@@ -25,6 +25,15 @@ class PairingTest {
         assertEquals(fixture.getValue("pairing").let { it as kotlinx.serialization.json.JsonObject }.text("offerId"), pairing.offerId)
     }
 
+    @Test fun `pairing again keeps the color route and push switch picked on this phone`() {
+        val paired = Pairing.parse(link(), "codync").computer
+        val picked = paired.copy(name = "Old name", color = "mint", route = ConnectionRoute.DirectOnly, notifications = false)
+        val kept = paired.keepingDevicePicks(picked)
+        assertEquals(Triple("mint", ConnectionRoute.DirectOnly, false), Triple(kept.color, kept.route, kept.notifications))
+        assertEquals(params["name"], kept.name)
+        assertEquals(paired, paired.keepingDevicePicks(null))
+    }
+
     @Test fun `Codync Dev and Codync only accept their own pairing links`() {
         val dev = link().replace("codync://", "codync-dev://")
         assertEquals(params["id"], Pairing.parse(dev, "codync-dev").computer.id)

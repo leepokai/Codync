@@ -5,8 +5,8 @@
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
-const IDLE: Duration = Duration::from_secs(30 * 60);
-const LONGEST: Duration = Duration::from_secs(24 * 60 * 60);
+const IDLE: Duration = Duration::from_mins(30);
+const LONGEST: Duration = Duration::from_hours(24);
 
 #[derive(Default)]
 pub struct Session {

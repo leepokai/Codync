@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { computerSections, moveInOrder, orderedComputers } from './computer-roster.ts'
+import { computerSections, moveInOrder, orderedComputers, rosterBand, rosterOrder } from './computer-roster.ts'
 
 test('saved computer order survives reconnect order and appends new computers', () => {
   const computers = [{ id: 'new' }, { id: 'a' }, { id: 'b' }]
@@ -28,4 +28,14 @@ test('each computer keeps its own bots in activity order, including duplicate bo
   const sections = computerSections([{ id: 'a' }, { id: 'b' }, { id: 'empty' }], roster)
   assert.deepEqual(sections.map((s) => s.items.map((i) => i.id)), [['same'], ['same', 'older'], []])
   assert.equal(sections[0]?.items[0]?.ref.computerId, 'a')
+})
+
+test('the lead sorts first, even above pinned bots, and no drag crosses into its band', () => {
+  const bot = (id: string, over: Partial<{ lead: boolean; pinned: boolean; position: number; lastAt: number }> = {}) =>
+    ({ id, lead: false, pinned: false, position: 0, lastAt: 0, ...over })
+  const bots = [bot('recent', { lastAt: 9 }), bot('pinned', { pinned: true, position: -5 }), bot('lead', { lead: true, position: 3 }), bot('dragged', { position: -1 })]
+  assert.deepEqual([...bots].sort(rosterOrder).map((b) => b.id), ['lead', 'pinned', 'dragged', 'recent'])
+  const bands = new Set(bots.map(rosterBand))
+  assert.equal(bands.size, 3, 'lead, pinned and the rest are separate bands: a drag stays inside its own')
+  assert.notEqual(rosterBand(bot('x', { lead: true, pinned: true })), rosterBand(bot('y', { pinned: true })))
 })

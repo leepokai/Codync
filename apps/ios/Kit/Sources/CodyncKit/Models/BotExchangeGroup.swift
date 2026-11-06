@@ -10,6 +10,8 @@ public struct BotExchangeGroup: Identifiable, Equatable, Sendable {
     public var id: String { exchanges[0].id }
     public var first: BotExchange { exchanges[0] }
     public var peerId: String { first.peerId }
+    /// The peer's name when it is on another computer.
+    public var peerName: String? { exchanges.peerName }
     public var count: Int { exchanges.count }
     public var date: Date { first.date }
     /// Any exchange failed.
@@ -63,4 +65,10 @@ public struct BotExchangeGroup: Identifiable, Equatable, Sendable {
         flush()
         return out
     }
+}
+
+public extension [BotExchange] {
+    /// The peer's name when it is on another computer: it isn't in this computer's list, so the
+    /// exchanges carry it.
+    var peerName: String? { lazy.compactMap(\.peerName).first }
 }

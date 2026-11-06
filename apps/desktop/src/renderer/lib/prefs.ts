@@ -57,7 +57,7 @@ export const prefs = {
   textSize: pref('conversationFontSize', DEFAULT_TEXT_SIZE),
   sidebarCompact: pref('sidebarCompact', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
-  detailsPanelWidth: pref('detailsPanelWidth', 292),
+  detailsPanelWidth: pref('detailsPanelWidth', 400),
   hiddenComputers: pref('hiddenComputers', ''),
   computerOrder: pref<string[]>('computerOrder', []),
   collapsedComputers: pref<string[]>('collapsedComputerSections', []),
@@ -67,6 +67,9 @@ export const prefs = {
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
   appLanguage: pref<AppLanguage>('appLanguage', 'system'),
+  /** The working pill unfolds the turn's thinking and steps; off keeps the chat to its messages. */
+  thinkingDetails: pref('showThinkingDetails', false),
+  extensionsMovedTipSeen: pref('extensionsMovedTipSeen', false),
 }
 
 /** The Mac preference supplies one scale for conversation text and app chrome. */

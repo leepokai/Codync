@@ -19,11 +19,10 @@ struct AccountSwitcherButton: View {
     }
 }
 
-/// Who you're signed in as, the other accounts on this iPhone, and the way to the computers.
+/// Who you're signed in as, and the other accounts on this iPhone.
 struct AccountSwitcherView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountSession.self) private var account
-    @State private var showSettings = false
     @State private var confirmSignOut = false
     @State private var pairing = false
     @State private var addingAccount = false
@@ -53,12 +52,8 @@ struct AccountSwitcherView: View {
                 if addingAccount { SignInButtons().transition(.opacity.combined(with: .move(edge: .top))) }
             }
 
-            CardSection {
-                Button { showSettings = true } label: {
-                    RowLabel("Computers", systemImage: "desktopcomputer", chevron: true)
-                }
-                .buttonStyle(.plain)
-                if account.isSignedIn {
+            if account.isSignedIn {
+                CardSection {
                     Button { confirmSignOut = true } label: {
                         RowLabel("Sign out", systemImage: "rectangle.portrait.and.arrow.right", tint: Palette.danger)
                     }
@@ -89,8 +84,6 @@ struct AccountSwitcherView: View {
         .animation(Motion.fade, value: account.errorMessage)
         .tracked(.screenViewed(.account))
         .onChange(of: account.userID) { _, _ in withAnimation(Motion.layout) { addingAccount = false } }
-        .hidesSystemNavigationBar()
-        .navigationDestination(isPresented: $showSettings) { SettingsView(pushed: true) }
         .codyncSheet(isPresented: $pairing) { PairingView(inModal: true) }
         .codyncDialog("Sign out of \(account.email ?? "this account")?", isPresented: $confirmSignOut,
                       message: "This iPhone forgets the account's computers. Your bots stay on them.") {
@@ -187,36 +180,6 @@ struct GoogleSignInButton: View {
         .buttonStyle(.secondary)
         .disabled(account.isBusy)
         .animation(Motion.fade, value: account.isBusy)
-    }
-}
-
-/// An icon and a short name, with a chevron when it leads somewhere.
-private struct RowLabel: View {
-    let title: String
-    let systemImage: String
-    var tint: Color = Palette.text
-    var chevron = false
-
-    init(_ title: String, systemImage: String, tint: Color = Palette.text, chevron: Bool = false) {
-        self.title = title
-        self.systemImage = systemImage
-        self.tint = tint
-        self.chevron = chevron
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 17))
-                .frame(width: 26)
-            Text(L10n.tr(title))
-            Spacer(minLength: 8)
-            if chevron {
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
-            }
-        }
-        .foregroundStyle(tint)
-        .contentShape(Rectangle())
     }
 }
 

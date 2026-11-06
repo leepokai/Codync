@@ -30,6 +30,7 @@ import coil3.ImageLoader
 import coil3.disk.DiskCache
 import com.codync.android.core.ShareIntake
 import com.codync.android.design.CodyncTheme
+import com.codync.android.design.AppearancePreferences
 import com.codync.android.design.OverlayRoot
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +57,8 @@ class MainActivity : FragmentActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         applyWindowOrientation(resources.configuration)
+        AppearancePreferences.get(applicationContext)
+        ThinkingDetails.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
         Analytics.userId = { store.state.value.account.userId }

@@ -1,6 +1,8 @@
-// Authentication: Clerk session JWTs (users) and Codync-Sig (host and device keys, spec §5).
+// Authentication: Clerk session JWTs (users), Clerk OAuth access tokens (the cloud assistant, §7.9)
+// and Codync-Sig (host and device keys, spec §5).
 
 import { verifyToken } from "@clerk/backend";
+import { verifyMachineAuthToken } from "@clerk/backend/internal";
 import type { Env } from "./index";
 
 // ---- encoding ----
@@ -127,6 +129,27 @@ export async function verifyClerk(req: Request, env: Env): Promise<ClerkUser | n
     if (claims.iss !== env.CLERK_ISSUER || typeof claims.sub !== "string" || !claims.sub || !claims.sid) return null;
     const email = (claims as { email?: unknown }).email;
     return { userId: claims.sub, email: typeof email === "string" && email ? email : null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Codync account behind a cloud assistant's OAuth access token, which Clerk issued as the
+ * connector's authorization server for `audience` (the connector's URL) alone. Opaque tokens are
+ * checked with Clerk, JWTs against its keys. `null` when the bearer token is missing or doesn't verify.
+ */
+export async function verifyAssistant(req: Request, env: Env, audience: string): Promise<string | null> {
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!auth.startsWith("Bearer ")) return null;
+  try {
+    const r = await verifyMachineAuthToken(
+      auth.slice(7).trim(),
+      { audience, ...(env.CLERK_JWT_KEY ? { jwtKey: env.CLERK_JWT_KEY } : { secretKey: env.CLERK_SECRET_KEY }) },
+    );
+    if (r.errors || r.tokenType !== "oauth_token" || !("clientId" in r.data)) return null;
+    const t = r.data;
+    return !t.revoked && !t.expired && t.subject.startsWith("user_") ? t.subject : null;
   } catch {
     return null;
   }

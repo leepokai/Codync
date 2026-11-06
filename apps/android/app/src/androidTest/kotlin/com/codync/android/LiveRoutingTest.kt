@@ -78,7 +78,7 @@ class LiveRoutingTest {
                         compose.waitUntil(10_000) { compose.onAllNodes(usage).fetchSemanticsNodes().size == 1 }
                         instrumentation.runOnMainSync { store.openLink(link(id = parent)) }
                         withTimeout(10_000) { store.state.first { it.selectedBot == parent && it.error == null } }
-                        compose.onNode(chatMenu).assertIsDisplayed()
+                        compose.onNode(chatTitle).assertIsDisplayed()
                         // Recreating the Activity must retain the current navigation, not replay its original intent.
                         scenario.recreate()
                         scenario.onActivity { activity ->

@@ -19,6 +19,9 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -49,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,7 +63,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -70,7 +73,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.shapes.Capsule
@@ -165,10 +167,10 @@ import com.kyant.shapes.RoundedRectangle
 @Composable fun <T> SegmentedChoice(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalCodyncHaptics.current
     BoxWithConstraints(modifier.fillMaxWidth().clip(Capsule()).background(Palette.bubbleUser).padding(3.dp)) {
-        val index = options.indexOfFirst { it.first == selection }.coerceAtLeast(0)
+        val index = options.indexOfFirst { it.first == selection }
         val segment = (maxWidth - 2.dp * (options.size - 1)) / options.size
         val thumb by animateDpAsState((segment + 2.dp) * index, Motion.morph(), label = "Thumb")
-        Box(Modifier.offset(x = thumb).width(segment).height(36.dp).clip(Capsule()).background(Palette.background))
+        if (index >= 0) Box(Modifier.offset(x = thumb).width(segment).height(36.dp).clip(Capsule()).background(Palette.background))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             for ((id, label) in options) {
                 val on = id == selection
@@ -180,6 +182,19 @@ import com.kyant.shapes.RoundedRectangle
                     Text(label, style = Type.subheadline.medium, color = if (on) Palette.text else Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+        }
+    }
+}
+
+/** Tabs as text, the chosen one on a filled pill (a details sheet's pages): `TabChoice`. */
+@Composable fun <T> TabChoice(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier) {
+    // Four long labels (German) on a narrow phone scroll rather than cut a label short.
+    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        for ((id, label) in options) {
+            val on = id == selection
+            val fill by animateColorAsState(if (on) Palette.bubbleAgent else Color.Transparent, Motion.morph(), label = "Tab")
+            Text(tr(label), Modifier.clip(Capsule()).background(fill).selectable(on, role = Role.Tab) { select(id) }
+                .padding(horizontal = 12.dp, vertical = 6.dp), style = Type.subheadline, color = if (on) Palette.text else Palette.secondary, maxLines = 1)
         }
     }
 }
@@ -243,10 +258,10 @@ class CardRows internal constructor() {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (title != null) Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, Modifier.weight(1f).semantics { heading() }, style = Type.system(15f).semibold, color = Palette.text)
+            SectionHeading(title, Modifier.weight(1f))
             accessory()
         }
-        if (list.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface)) {
+        if (list.isNotEmpty()) Column(Modifier.fillMaxWidth().cardGroup()) {
             for ((index, row) in list.withIndex()) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = verticalPadding).heightIn(min = 32.dp),
                     contentAlignment = Alignment.CenterStart) {
@@ -259,6 +274,25 @@ class CardRows internal constructor() {
             color = Palette.secondary)
     }
 }
+
+/** How `CardSection` draws its group: filled (Settings style), or outlined on the page like Grok Bot's routine cards (the bot details sheet). */
+enum class CardStyle { Filled, Outlined }
+
+val LocalCardStyle = staticCompositionLocalOf { CardStyle.Filled }
+
+/** A `CardSection` heading: small, bold, a heading to TalkBack. */
+@Composable fun SectionHeading(title: String, modifier: Modifier = Modifier) =
+    Text(tr(title), modifier.semantics { heading() }, style = Type.system(15f).semibold, color = Palette.text)
+
+/** A `CardSection`'s group, drawn in the [LocalCardStyle]. */
+@Composable fun Modifier.cardGroup(): Modifier =
+    if (LocalCardStyle.current == CardStyle.Outlined) cardOutline() else clip(RoundedRectangle(16.dp)).background(Palette.surface)
+
+/** Grok Bot's list cards (routines): an outline on the page, no fill. */
+@Composable fun Modifier.outlinedCard(vertical: Dp = 12.dp): Modifier =
+    fillMaxWidth().cardOutline().padding(horizontal = 14.dp, vertical = vertical)
+
+@Composable private fun Modifier.cardOutline(): Modifier = border(1.dp, Palette.border, RoundedRectangle(14.dp))
 
 /** A 1-pixel separator line in the border color. */
 @Composable fun Hairline(modifier: Modifier = Modifier) {

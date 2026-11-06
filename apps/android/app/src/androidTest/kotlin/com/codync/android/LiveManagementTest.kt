@@ -50,27 +50,30 @@ class LiveManagementTest {
             val replies = store.state.value.entries.filter { it.botId == group.id && it.kind == "agent" && it.isChat }
             assertTrue(replies.isNotEmpty())
             assertTrue(replies.all { it.data["author"]?.jsonPrimitive?.content == member.id })
-            openEditor()
+            // A group's title opens its editor.
+            compose.openChatDetails()
             // The name field shows the members' names until the group has its own.
             compose.onNode(hasSetTextAction() and hasText(group.name.ifBlank { "${member.name}, ${parent.name}" })).performTextReplacement("Edited group")
             compose.onNodeWithContentDescription("Save").performClick()
             compose.waitUntil(30_000) { store.state.value.bots.firstOrNull { it.id == group.id }?.name == "Edited group" }
             assertEquals(group.members, store.state.value.bots.single { it.id == group.id }.members)
-            compose.waitUntil(10_000) { compose.onAllNodes(chatMenu).fetchSemanticsNodes().size == 1 }
+            compose.waitUntil(10_000) { compose.onAllNodes(chatTitle).fetchSemanticsNodes().size == 1 }
             compose.runOnUiThread { store.openBot(null) }
-            rosterActions("Edited group")
+            compose.rosterActions("Edited group")
+            // A group has no agent session of its own.
+            compose.onNodeWithText("New session").assertDoesNotExist()
             compose.onNodeWithText("Pin").performScrollTo().performClick()
             compose.waitUntil(30_000) { store.state.value.bots.single { it.id == group.id }.pinned }
-            rosterActions("Edited group")
+            compose.rosterActions("Edited group")
             compose.onNodeWithText("Hide from list").performScrollTo().performClick()
             compose.waitUntil(30_000) { store.state.value.bots.single { it.id == group.id }.hidden }
-            // Hidden bots come back from Computers & settings.
+            // Hidden bots come back from Computer management.
             compose.computerAction("Manage computers")
             compose.onRowButton("Unhide", "Edited group").performClick()
             compose.waitUntil(30_000) { !store.state.value.bots.single { it.id == group.id }.hidden }
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            compose.waitUntil(10_000) { compose.onAllNodesWithText("Computers & settings").fetchSemanticsNodes().isEmpty() }
-            rosterActions("Edited group")
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Computer management").fetchSemanticsNodes().isEmpty() }
+            compose.rosterActions("Edited group")
             compose.onNodeWithText("Edit group").performClick()
             compose.onNodeWithText("Delete group chat").performScrollTo().performClick()
             compose.onAllNodesWithText("Delete group chat").onLast().performClick()
@@ -84,15 +87,5 @@ class LiveManagementTest {
             runBlocking { for (id in created.asReversed()) channel.call("deleteBot", body("botId" to id)) }
             channel.close()
         }
-    }
-
-    private fun openEditor() {
-        // The host event can arrive before the save callback closes the editor.
-        compose.chatAction("Edit group")
-    }
-
-    private fun rosterActions(name: String) {
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText(name) and hasClickAction()).fetchSemanticsNodes().size == 1 }
-        compose.onNode(hasText(name) and hasClickAction()).performTouchInput { longClick() }
     }
 }

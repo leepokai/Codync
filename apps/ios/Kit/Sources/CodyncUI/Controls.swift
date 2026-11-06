@@ -420,14 +420,17 @@ public struct CardSection<Content: View, Accessory: View>: View {
                 }
                 .padding(.leading, 2)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                _VariadicView.Tree(HairlineRows()) { content }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardStyle == .filled ? Palette.surface : .clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                if cardStyle == .outlined {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.border)
+            // No rows (`{}`): a footer-only note, without an empty card.
+            if Content.self != EmptyView.self {
+                VStack(alignment: .leading, spacing: 0) {
+                    _VariadicView.Tree(HairlineRows()) { content }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(cardStyle == .filled ? Palette.surface : .clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay {
+                    if cardStyle == .outlined {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.border)
+                    }
                 }
             }
             if let footer {

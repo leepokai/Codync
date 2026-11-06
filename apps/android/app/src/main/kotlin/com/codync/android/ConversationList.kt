@@ -92,6 +92,17 @@ import kotlinx.coroutines.launch
         withFrameNanos {}
         list.scrollToEnd(animated = false)
     }
+    // The working steps can grow without a new chat entry. Follow their measured size,
+    // not its offset (scrolling itself changes offsets), and always yield to the reader.
+    LaunchedEffect(list) {
+        snapshotFlow {
+            val layout = list.layoutInfo
+            layout.visibleItemsInfo.lastOrNull()?.takeIf { it.index == layout.totalItemsCount - 1 }
+                ?.let { Triple(it.key, it.size, layout.viewportEndOffset - layout.viewportStartOffset) }
+        }.collect { size ->
+            if (size != null && following.value && !list.isScrollInProgress) list.scrollToEnd(animated = false)
+        }
+    }
     // A new message, or the box growing (keyboard, more lines): stay on the newest.
     LaunchedEffect(last, rev, working, bottom) {
         if (following.value && list.layoutInfo.totalItemsCount > 0) list.scrollToEnd(animated = true)

@@ -111,19 +111,17 @@ final class PushRegistrar {
         resync()
     }
 
-    /// The in-app switch; off asks every computer to stop alerting this phone.
-    static var enabled: Bool { UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true }
-
     func resync() {
         for entry in stores.values { if let store = entry.store { syncDevice(with: store) } }
     }
 
-    /// Sends our ticket to a computer whenever we have both a token and a connection to it.
+    /// Sends our ticket to a computer whenever we have both a token and a connection to it; a computer
+    /// whose switch is off in Computer management is asked to stop alerting this phone.
     func syncDevice(with store: BotStore) {
         let id = store.computer.id
         stores[id] = WeakStore(store: store)
         LiveActivities.shared.resume(with: store)
-        guard Self.enabled else {
+        guard store.computer.notifications ?? true else {
             registrations[id]?.cancel()
             registrations[id] = Task { [weak store] in
                 do { try await store?.client?.unregisterDevice() } catch {
@@ -204,34 +202,49 @@ final class LiveActivities {
     }
 
     private nonisolated static func find(_ ref: BotReference) -> Activity<BotActivityAttributes>? {
-        Activity<BotActivityAttributes>.activities.first { $0.attributes.botId == ref.botId && $0.attributes.computerId == ref.computerId }
+        BotActivityAttributes.shown(botId: ref.botId, computerId: ref.computerId)
     }
 
     /// Follows a message from this phone: the activity starts as it leaves (Sending), waits with
     /// it in the relay mailbox while the computer is offline, then follows the bot's own status.
+    /// On a call with the bot, the activity stays up for the call and shows it.
     func sent(_ ref: BotReference, bot: Bot, progress: SendProgress, store: BotStore) {
+        let onCall = CallActivity.isLive(botId: ref.botId)
         let status: String
         switch progress {
         case .sending: status = "sending"
         case .queued: status = "queued"
         case .delivered: status = bot.needsInput ? "needsInput" : "working"
         case .failed:
-            let state = BotActivityAttributes.ContentState(status: "error", activity: "Couldn't send", startedAt: nil)
-            Task.detached { await Self.apply(ref, state: state, end: true) }
+            let state = CallActivity.withCall(.init(status: "error", activity: "Couldn't send", startedAt: nil), botId: ref.botId)
+            Task.detached { await Self.apply(ref, state: state, end: !onCall) }
+            return
+        case .cancelled where onCall:
+            let state = CallActivity.withCall(.init(status: "idle", activity: "", startedAt: nil), botId: ref.botId)
+            Task.detached { await Self.apply(ref, state: state, end: false) }
             return
         case .cancelled:
             Task.detached { await Self.find(ref)?.end(nil, dismissalPolicy: .immediate) }
             return
         }
-        let state = BotActivityAttributes.ContentState(status: status, activity: "", startedAt: progress == .delivered ? .now : nil)
+        let state = CallActivity.withCall(.init(status: status, activity: "", startedAt: progress == .delivered ? .now : nil),
+                                          botId: ref.botId)
         // A mailbox message may wait hours for its computer: that isn't a delayed update.
         let staleDate: Date? = progress == .queued ? nil : .now + 15 * 60
-        if Self.find(ref) != nil {
-            Task.detached { await Self.find(ref)?.update(.init(state: state, staleDate: staleDate)) }
-            return
+        if let current = Self.find(ref) {
+            guard CallActivity.started(current) else {
+                Task.detached { await Self.find(ref)?.update(.init(state: state, staleDate: staleDate)) }
+                return
+            }
+            // The call's own activity can't take the computer's updates: the task gets one that can, in its place.
+            let id = current.id
+            Task.detached {
+                for activity in Activity<BotActivityAttributes>.activities where activity.id == id {
+                    await activity.end(nil, dismissalPolicy: .immediate)
+                }
+            }
         }
-        guard UserDefaults.standard.object(forKey: "liveActivitiesEnabled") as? Bool ?? true,
-              ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard BotActivityAttributes.mayStart else { return }
         let attributes = BotActivityAttributes(bot: bot, computerId: ref.computerId, link: store.storage.botURL(ref))
         do {
             let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: staleDate), pushType: .token)
@@ -244,11 +257,25 @@ final class LiveActivities {
 
     /// Reattach token observers after a relaunch or connection replacement.
     func resume(with store: BotStore) {
-        guard UserDefaults.standard.object(forKey: "liveActivitiesEnabled") as? Bool ?? true else { return }
+        guard BotActivityAttributes.isOn else { return }
+        endLeftoverCalls()
         guard let client = store.client else { return }
         for activity in Activity<BotActivityAttributes>.activities
             where activity.attributes.computerId == store.computer.id {
             observe(activity, client: client)
+        }
+    }
+
+    /// A call the app was closed in the middle of leaves its fields on the activity: they go, and an activity with
+    /// nothing else to show ends.
+    private func endLeftoverCalls() {
+        let over = Activity<BotActivityAttributes>.activities
+            .filter { $0.content.state.call != nil && !CallActivity.isLive(botId: $0.attributes.botId) }.map(\.id)
+        guard !over.isEmpty else { return }
+        Task.detached {
+            for activity in Activity<BotActivityAttributes>.activities where over.contains(activity.id) {
+                await CallActivity.callEnded(on: activity, dismissNow: true)
+            }
         }
     }
 
@@ -288,14 +315,15 @@ final class LiveActivities {
         // Until the computer starts on the message, an idle bot just hasn't begun yet.
         let local = ["sending", "queued"].contains(current.content.state.status)
         guard !local || bot.isWorking else { return }
-        let state = BotActivityAttributes.ContentState(
+        let state = CallActivity.withCall(.init(
             status: bot.status,
             // ACP activity is already visible in the app. Show it in the local Live Activity
             // while this phone is connected; APNs payloads continue to contain no free text.
             activity: bot.activity,
             startedAt: bot.startedAt.map(Date.init(milliseconds:))
-        )
-        let working = bot.isWorking
+        ), botId: ref.botId)
+        // A call with the bot keeps its activity up after the task.
+        let working = bot.isWorking || CallActivity.isLive(botId: ref.botId)
         Task.detached { await Self.apply(ref, state: state, end: !working) }
     }
 

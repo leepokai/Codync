@@ -379,7 +379,7 @@ export function SheetPage({ className, children }: { className?: string; childre
 /**
  * A modal's title row: an optional icon, the title (and a line under it), optional trailing
  * actions, and a close button that dismisses the modal, or calls `onClose` for a panel that
- * isn't one.
+ * isn't one. `onClose={null}` leaves the close button out (a modal only its own action ends).
  */
 export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTitle = 'Close' }: {
   title: ReactNode
@@ -387,7 +387,7 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
   /** An SF Symbol name (shown on a tile), or a picture of its own (an agent's logo). */
   icon?: string | ReactElement
   trailing?: ReactNode
-  onClose?: () => void
+  onClose?: (() => void) | null
   closeTitle?: string
 }) {
   const dismiss = useDismiss()
@@ -404,7 +404,7 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
         {subtitle !== undefined ? <Text size="callout" tone="secondary" lines={2} title={typeof subtitle === 'string' ? subtitle : undefined}>{subtitle}</Text> : null}
       </VStack>
       {trailing}
-      <IconButtonBase title={closeTitle} icon="xmark" onClick={onClose ?? dismiss} />
+      {onClose === null ? null : <IconButtonBase title={closeTitle} icon="xmark" onClick={onClose ?? dismiss} />}
     </div>
   )
 }

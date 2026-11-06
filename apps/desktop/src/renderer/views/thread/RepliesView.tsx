@@ -6,7 +6,9 @@ import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
 import { buildChat, rowIn, useArrivals } from './chat-items'
-import { ChatRow, WorkingIndicator } from './ChatRows'
+import { ChatRow } from './ChatRows'
+import { WorkingIndicator } from './WorkingIndicator'
+import { workingSteps } from './trace-turns'
 import { Composer } from './Composer'
 import { TraceView } from './TraceView'
 
@@ -61,7 +63,7 @@ export function RepliesView({ botId, rootId, close, documentTitle }: { botId: st
           )}
           {chat && live ? (
             <div className={arrivals.has('working') ? 'chat-working row-in' : 'chat-working'}>
-              <WorkingIndicator bot={chat} />
+              <WorkingIndicator bot={chat} steps={workingSteps(replies)} />
             </div>
           ) : null}
           <div className="chat-end" />

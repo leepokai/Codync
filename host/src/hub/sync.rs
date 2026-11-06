@@ -15,6 +15,7 @@ impl Hub {
         v["harnessMemory"] =
             (!cfg.is_group() && crate::agent::own_memory::switchable(cfg)).then_some(cfg.harness_memory).into();
         if !cfg.is_group() {
+            v["harnessMemoryShared"] = crate::agent::own_memory::shared(cfg).into();
             v["sharedMemory"] = crate::chat::memory::shared(cfg).into();
             v["memoryRev"] = self.store.memory_rev().into();
         }

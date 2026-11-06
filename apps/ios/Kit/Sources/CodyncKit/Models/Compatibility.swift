@@ -11,7 +11,7 @@ public enum VersionMismatch: Equatable, Sendable {
 
     /// The oldest host this app works with. Raise it only when the app starts depending on
     /// something older hosts don't have (an optional feature hides its control instead).
-    public static let minHost = "2.20.1"
+    public static let minHost = "2.26.0"
 
     /// Checks this app (`app`) against a host's version and `minApp` (nil from hosts that predate it).
     public static func check(app: String, minHost: String = minHost, hostVersion: String, minApp: String?) -> VersionMismatch? {
@@ -65,6 +65,8 @@ public enum AppVersion {
 public enum AppStoreRelease {
     public static let appID = "6760984418"
     public static let page = URL(string: "https://apps.apple.com/app/id\(appID)")!
+
+    public static let reviewPage = URL(string: "https://apps.apple.com/app/id\(appID)?action=write-review")!
 
     /// The version live in the App Store; nil when the lookup has no result.
     public static func latestVersion(session: URLSession = .shared) async throws -> String? {

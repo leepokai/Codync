@@ -27,6 +27,7 @@ public extension View {
                       actions: @escaping () -> [DialogAction]) -> some View {
         modifier(CodyncDialog(title: title, message: message, cancel: cancel, inPlace: inPlace,
                               isPresented: isPresented, actions: actions))
+            .reviewInterruption(active: isPresented.wrappedValue)
     }
 }
 

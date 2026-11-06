@@ -1,0 +1,137 @@
+/* The Library: artifact cards in the chat, an artifact over its chat, and the details panel's list. */
+
+/* The card: the top of the artifact, drawn at a desktop width and scaled to half, cut off at the footer. */
+.artifact-card {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  overflow: hidden;
+  transition: transform var(--press);
+}
+.artifact-card:active {
+  transform: scale(0.98);
+}
+.artifact-card-preview {
+  position: relative;
+  height: 220px;
+  /* The frame is its own layer: clipped by this path, its corners follow the card's (just inside its border). */
+  clip-path: inset(0 round calc(var(--radius-l) - 1px) calc(var(--radius-l) - 1px) 0 0);
+}
+/* White behind an artifact without a background of its own, kept off the clipped edge: under the frame's
+   antialiased corners it would show as light slivers. */
+.artifact-card-preview::before {
+  content: '';
+  position: absolute;
+  inset: 2px 2px 0;
+  background: white;
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+}
+.artifact-card-footer {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.artifact-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: white;
+}
+.artifact-frame.preview {
+  position: relative;
+  background: none;
+  width: 760px;
+  height: 440px;
+  transform: scale(0.5);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* The artifact over its chat: the chat's own chrome on top, the artifact under it, the message box floating below. */
+.artifact-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: var(--background);
+}
+.artifact-body {
+  position: absolute;
+  inset: 60px 0 0;
+}
+.artifact-state {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 0 24px;
+}
+.artifact-share {
+  width: 32px;
+  height: 32px;
+}
+.artifact-title-field {
+  min-width: 240px;
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: center;
+  color: var(--text);
+  border: none;
+  outline: none;
+}
+.artifact-error {
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: 0 24px 6px;
+}
+
+/* The details panel's Library. */
+.library-empty {
+  padding: 14px 16px;
+}
+.library-row {
+  min-height: 46px;
+  padding: 4px 6px 4px 14px;
+}
+.library-row-main {
+  min-width: 0;
+}
+.library-row-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  flex: none;
+}
+.library-row-open {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  text-align: left;
+}
+.library-row-field {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  font: inherit;
+  font-size: var(--text-callout);
+  color: var(--text);
+  background: none;
+  border: none;
+  outline: none;
+}
+.library-row-menu {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.library-row:hover .library-row-menu,
+.library-row-menu[aria-expanded='true'],
+.library-row-menu:focus-visible {
+  opacity: 1;
+}

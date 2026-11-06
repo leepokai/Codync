@@ -50,37 +50,6 @@ textarea.field-box {
   min-width: 0;
 }
 
-/* The model row and its options (AgentModelPicker). */
-.model-picker-label {
-  white-space: nowrap;
-}
-/* Loading and refresh share one fixed slot. */
-.model-picker-slot {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 28px;
-  height: 28px;
-}
-.model-picker-slot > * {
-  grid-area: 1 / 1;
-}
-.model-picker-refresh {
-  transition: opacity var(--fade);
-}
-.model-picker-refresh.hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-.model-picker-input {
-  width: 142px;
-  max-width: 100%;
-  min-width: 0;
-  text-align: right;
-  color: var(--text);
-  user-select: text;
-}
-
 /* Fallbacks in the Agent card (Fallbacks.tsx). */
 .fallback-switch-back {
   flex: none;
@@ -396,10 +365,6 @@ button.member-row:hover {
 .member-row.removable:hover > :last-child,
 .member-row.removable:focus-within > :last-child {
   opacity: 1;
-}
-.model-picker-pill {
-  min-width: 0;
-  max-width: 160px;
 }
 .workspace-pill {
   gap: 6px;

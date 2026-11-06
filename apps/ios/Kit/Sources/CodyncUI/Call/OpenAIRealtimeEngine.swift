@@ -14,7 +14,7 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "Call")
 @Observable
 final class OpenAIRealtimeEngine: VoiceEngine {
     private(set) var phase: VoicePhase = .starting {
-        didSet { onActivityChanged?(!ended && phase.isActive) }
+        didSet { onActivityChanged?(!ended && phase.holdsCall) }
     }
     private(set) var level: Float = 0
     var muted = false {
@@ -26,9 +26,13 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     var provider: VoiceProvider? { .openAI }
     @ObservationIgnored var onActivityChanged: ((Bool) -> Void)?
 
-    /// A short-lived credential for the provider, minted by the computer that holds the key.
-    private let credential: @MainActor () async throws -> String
-    private let op: CallOperator
+    private let model: String
+    private let voice: String
+    /// The call on the computer: the client secret, the voice's instructions and tools, the transcript.
+    private let link: CallLink
+    private var session: CallSession?
+    /// Tool calls still running on the computer: replies wait, so the model gets each result first.
+    private var toolsRunning = 0
     private var pc: RTCPeerConnection?
     private var events: RTCDataChannel?
     private var mic: RTCAudioTrack?
@@ -38,30 +42,45 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     private var responding = false
     private var pending: [String] = []
     private var dropTimer: Task<Void, Never>?
+    /// The session was set up once: a drop after that is tried again instead of ending the call.
+    private var connected = false
+    private var reconnects = 0
+    private var audioEvents: AudioSessionEvents?
 
-    init(credential: @escaping @MainActor () async throws -> String, op: CallOperator) {
-        self.credential = credential
-        self.op = op
+    init(model: String, voice: String, link: CallLink) {
+        self.model = model
+        self.voice = voice
+        self.link = link
     }
 
     func start() async {
         guard await AVAudioApplication.requestRecordPermission() else {
-            return fail("Allow the microphone for Codync in Settings to talk to your bots.")
+            return fail("Allow the microphone for Codync in Settings to talk to your bots.", .microphone)
         }
+        // WebRTC pauses and restarts its own audio; the call shows the pause.
+        audioEvents = AudioSessionEvents(engine: nil, interrupted: { [weak self] in self?.interrupted($0) })
+        await open()
+    }
+
+    /// A session with OpenAI: the computer mints its client secret and writes the voice's instructions (with the call
+    /// so far, for a session that replaces a dropped one).
+    private func open() async {
         do {
-            let secret = try await credential()
+            let session = try await link.start("realtime", provider: .openAI, model: model, voice: voice)
             guard !ended else { return }
+            guard let secret = session.credential else { throw VoiceError("OpenAI sent no session credential.") }
+            self.session = session
             try await connect(secret: secret)
         } catch {
             guard !ended else { return }
-            fail(error.localizedDescription)
+            if connected { dropped(error.localizedDescription) } else { fail(error.localizedDescription, .provider) }
         }
     }
 
     private func connect(secret: String) async throws {
-            let audio = RTCAudioSessionConfiguration.webRTC()
-            audio.categoryOptions = [.defaultToSpeaker, .allowBluetoothHFP]
-            RTCAudioSessionConfiguration.setWebRTC(audio)
+        let audio = RTCAudioSessionConfiguration.webRTC()
+        audio.categoryOptions = CallAudioSession.options
+        RTCAudioSessionConfiguration.setWebRTC(audio)
 
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
@@ -100,14 +119,20 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         try await pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: String(decoding: data, as: UTF8.self)))
         dropTimer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(15))
-            guard let self, !Task.isCancelled, self.phase == .starting else { return }
-            self.fail("Couldn't reach OpenAI.")
+            guard let self, !Task.isCancelled, self.phase.isConnecting else { return }
+            if self.connected { self.dropped("Couldn't reach OpenAI.") } else { self.fail("Couldn't reach OpenAI.", .connection) }
         }
     }
 
     func end() {
         ended = true
         onActivityChanged?(false)
+        audioEvents?.stop()
+        audioEvents = nil
+        close()
+    }
+
+    private func close() {
         dropTimer?.cancel()
         events?.close()
         pc?.close()
@@ -115,6 +140,41 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         pc = nil
         mic = nil
         delegate = nil
+        responding = false
+    }
+
+    /// The connection to OpenAI dropped mid-call: a new session, primed by the computer with the call so far, a few
+    /// times before the call falls back.
+    private func dropped(_ reason: String) {
+        guard !ended else { return }
+        guard reconnects < Reconnect.delays.count else { return fail(reason, .connection) }
+        let delay = Reconnect.delays[reconnects]
+        reconnects += 1
+        close()
+        if phase != .interrupted { phase = .reconnecting }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !self.ended else { return }
+            await self.open()
+        }
+    }
+
+    func resume() {
+        guard !ended, phase == .interrupted else { return }
+        phase = pc == nil ? .reconnecting : .listening
+        flush()
+    }
+
+    private func interrupted(_ change: AudioInterruption) {
+        guard !ended else { return }
+        switch change {
+        case .began:
+            guard phase.isActive else { return }
+            level = 0
+            phase = .interrupted
+        case .ended(let shouldResume):
+            if shouldResume { resume() }
+        }
     }
 
     func interrupt() {
@@ -126,13 +186,21 @@ final class OpenAIRealtimeEngine: VoiceEngine {
 
     func speak(reply: String) {
         guard !ended, !phase.isFailed else { return }
-        pending.append(op.reply(reply))
+        pending.append(link.reply(reply))
         flush()
     }
 
     func announce(_ notice: String) {
         guard !ended, !phase.isFailed else { return }
-        pending.append(op.notice(notice))
+        pending.append(link.notice(notice))
+        flush()
+    }
+
+    /// Only the newest progress waits to be said.
+    func progress(_ text: String) {
+        guard !ended, !phase.isFailed else { return }
+        pending.removeAll { $0.hasPrefix(CallLink.progressTag) }
+        pending.append(link.progress(text))
         flush()
     }
 
@@ -140,41 +208,66 @@ final class OpenAIRealtimeEngine: VoiceEngine {
 
     fileprivate func opened() {
         guard !ended else { return }
-        dropTimer?.cancel()
-        let tools: [[String: Any]] = CallOperator.tools.map {
-            ["type": "function", "name": $0.name, "description": $0.description, "parameters": $0.parameters]
+        let declared = session.flatMap { (try? JSONSerialization.jsonObject(with: $0.tools)) as? [[String: Any]] } ?? []
+        let tools: [[String: Any]] = declared.map {
+            ["type": "function", "name": $0["name"] ?? "", "description": $0["description"] ?? "", "parameters": $0["parameters"] ?? [:]]
         }
         send([
             "type": "session.update",
             "session": [
                 "type": "realtime",
-                "instructions": op.instructions,
+                "instructions": session?.instructions ?? "",
                 "tools": tools,
-                "audio": ["input": ["turn_detection": ["type": "semantic_vad"]]],
+                // What the user says is transcribed too, for the call's line in the chat.
+                "audio": ["input": [
+                    "turn_detection": ["type": "semantic_vad"],
+                    "transcription": ["model": VoiceSettings.transcribeModel(.openAI)],
+                ]],
             ] as [String: Any],
         ])
-        phase = .listening
-        flush()
     }
 
-    fileprivate func received(_ data: Data) {
+    func received(_ data: Data) {
         guard !ended, let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         switch msg["type"] as? String {
+        // Connected once the session has the instructions and tools, not when the channel opens.
+        case "session.updated" where phase.isConnecting:
+            dropTimer?.cancel()
+            connected = true
+            reconnects = 0
+            phase = .listening
+            flush()
         case "input_audio_buffer.speech_started": level = muted ? 0 : 0.7
         case "input_audio_buffer.speech_stopped": level = 0
-        case "output_audio_buffer.started": phase = .speaking
+        case "input_audio_buffer.committed": link.transcribing(true)
+        case "conversation.item.input_audio_transcription.failed": link.transcribing(false)
+        case "output_audio_buffer.started" where phase.isActive: phase = .speaking
         case "output_audio_buffer.stopped", "output_audio_buffer.cleared": if phase == .speaking { phase = .listening }
         case "response.created": responding = true
         case "response.done":
             responding = false
             flush()
+        case "conversation.item.input_audio_transcription.completed":
+            link.add("user", msg["transcript"] as? String ?? "")
+            link.endTurn()
+        case "response.output_audio_transcript.done":
+            link.add("voice", msg["transcript"] as? String ?? "")
+            link.endTurn()
         case "response.function_call_arguments.done":
             guard let id = msg["call_id"] as? String, let name = msg["name"] as? String else { return }
-            let args = (msg["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-            let output = op.call(name, arguments: args ?? [:])
-            send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": id, "output": output]])
-            // An empty entry asks for a response once this one is done, so the model speaks the result.
-            pending.append("")
+            let args = Data((msg["arguments"] as? String ?? "{}").utf8)
+            // The tool runs on the computer.
+            toolsRunning += 1
+            Task { [weak self, link] in
+                let output = String(decoding: await link.tool(name, arguments: args), as: UTF8.self)
+                guard let self else { return }
+                self.toolsRunning -= 1
+                guard !self.ended else { return }
+                self.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": id, "output": output]])
+                // An empty entry asks for a response once this one is done, so the model speaks the result.
+                self.pending.append("")
+                self.flush()
+            }
         case "error":
             let error = msg["error"] as? [String: Any]
             log.error("realtime: \(error?["message"] as? String ?? "?", privacy: .public)")
@@ -182,25 +275,32 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         }
     }
 
-    fileprivate func iceChanged(_ state: RTCIceConnectionState) {
-        guard !ended else { return }
+    func iceChanged(_ state: RTCIceConnectionState) {
+        // While connecting, only a failure counts: the start timer runs until the session is set up.
+        guard !ended, !phase.isConnecting || state == .failed else { return }
         switch state {
-        case .connected, .completed: dropTimer?.cancel()
+        case .connected, .completed: if phase.isActive || phase == .interrupted { dropTimer?.cancel() }
         case .disconnected:
             dropTimer?.cancel()
             dropTimer = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(5))
                 guard let self, !Task.isCancelled else { return }
-                self.fail("Lost the connection to OpenAI.")
+                self.dropped("Lost the connection to OpenAI.")
             }
-        case .failed: fail("Lost the connection to OpenAI.")
+        case .failed: if connected { dropped("Lost the connection to OpenAI.") } else { fail("Couldn't reach OpenAI.", .connection) }
         default: break
         }
     }
 
+    /// The events channel closed under a running session.
+    fileprivate func channelClosed(_ channel: ObjectIdentifier) {
+        guard !ended, connected, events.map(ObjectIdentifier.init) == channel else { return }
+        dropped("Lost the connection to OpenAI.")
+    }
+
     /// Hands waiting replies (and tool results, as empty entries) to the model once it's free.
     private func flush() {
-        guard !responding, phase.isActive, events?.readyState == .open, !pending.isEmpty else { return }
+        guard !responding, toolsRunning == 0, phase.isActive, events?.readyState == .open, !pending.isEmpty else { return }
         for text in pending where !text.isEmpty {
             send(["type": "conversation.item.create", "item": [
                 "type": "message", "role": "user", "content": [["type": "input_text", "text": text]],
@@ -217,9 +317,9 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         events.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
 
-    private func fail(_ message: String) {
+    private func fail(_ message: String, _ kind: VoiceFailureKind) {
         end()
-        phase = .failed(message)
+        phase = .failed(message, kind)
     }
 
     private static let factory: RTCPeerConnectionFactory = {
@@ -251,9 +351,11 @@ private final class RealtimeEvents: NSObject, RTCPeerConnectionDelegate, RTCData
     }
 
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-        guard dataChannel.readyState == .open else { return }
+        let (state, channel) = (dataChannel.readyState, ObjectIdentifier(dataChannel))
         let owner = owner
-        Task { @MainActor in owner.value?.opened() }
+        Task { @MainActor in
+            if state == .open { owner.value?.opened() } else if state == .closed { owner.value?.channelClosed(channel) }
+        }
     }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {

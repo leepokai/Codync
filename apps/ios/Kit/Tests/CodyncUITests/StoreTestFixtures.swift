@@ -95,6 +95,10 @@ actor FakeRemote: RemoteTransport {
             replyTos.append(b["replyTo"])
             let entry = #"{"id":"e\#(sent.count)","seq":\#(sent.count),"botId":"\#(b["botId"] ?? "")","rev":\#(sent.count),"kind":"user","turn":1,"data":{"text":"\#(b["text"] ?? "")","clientNonce":"\#(b["clientNonce"] ?? "")"},"createdAt":1,"updatedAt":1}"#
             return Data(#"{"entry":\#(entry)}"#.utf8)
+        case "startCall":
+            // A fresh credential per provider session, so a test can tell a replaced session from the first.
+            let n = calls.filter { $0 == "startCall" }.count
+            return Data(#"{"instructions":"Be the relay.","tools":[],"credential":"token-\#(n)"}"#.utf8)
         default:
             return Data("{}".utf8)
         }
@@ -125,7 +129,14 @@ actor FakeRemote: RemoteTransport {
 
     nonisolated func computerUpdates() -> AsyncStream<Computer> { AsyncStream { _ in } }
 
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws { enqueued.append(clientNonce) }
+    private var enqueueError: (any Error)?
+    /// Every later `enqueue` throws `error`.
+    func failEnqueue(_ error: any Error) { enqueueError = error }
+
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws {
+        if let enqueueError { throw enqueueError }
+        enqueued.append(clientNonce)
+    }
     func cancelQueued(clientNonce: String) async -> MailboxCancel { cancelResult }
     func listQueued() async throws -> [QueuedItem] { enqueued.map { QueuedItem(nonce: $0, exp: nil, state: "queued") } }
 

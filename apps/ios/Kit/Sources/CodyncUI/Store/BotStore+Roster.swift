@@ -17,7 +17,7 @@ extension BotStore {
         let client = try await ready()
         let response: Response = try await client.call("rosterPreview", ["botId": id])
         try Task.checkCancellation()
-        return response.entries
+        return response.entries.visibleEntries()
     }
 
     public func rosterContext(_ hit: RosterSearchHit) async throws -> [Entry] {
@@ -25,6 +25,6 @@ extension BotStore {
         let client = try await ready()
         let response: Response = try await client.call("messageContext", ["botId": hit.botId, "entryId": hit.id])
         try Task.checkCancellation()
-        return response.entries
+        return response.entries.visibleEntries()
     }
 }

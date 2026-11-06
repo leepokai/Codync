@@ -6,7 +6,7 @@ const points = [
   {
     icon: HardDrives,
     title: "Your data stays home",
-    body: "Bots, transcripts and memory live on your Mac, Windows PC or Linux machine. Agents run there with your own logins. No Codync account, no cloud copy of your files or conversations.",
+    body: "Bots, transcripts and memory live on your Mac, Windows PC or Linux machine. Agents run there with your own logins. No account needed, no cloud copy of your files or conversations.",
   },
   {
     icon: WifiHigh,

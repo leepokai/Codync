@@ -123,4 +123,15 @@ public extension SharedStore.Context {
         for report in usage.values { for provider in report.providers { names[provider.id] = provider.name } }
         return names.map { (id: $0.key, name: $0.value) }.sorted { $0.name < $1.name }
     }
+
+    /// 2.28.0 kept one push switch for every computer (`notificationsEnabled` in `defaults`). Switched off, it
+    /// becomes the switch of every computer saved in `contexts`; the old key goes either way, so this runs once.
+    static func splitPushSwitch(from defaults: UserDefaults, into contexts: [Self]) {
+        let key = "notificationsEnabled"
+        defer { defaults.removeObject(forKey: key) }
+        guard defaults.object(forKey: key) as? Bool == false else { return }
+        for context in contexts {
+            context.computers = context.computers.map { var computer = $0; computer.notifications = false; return computer }
+        }
+    }
 }

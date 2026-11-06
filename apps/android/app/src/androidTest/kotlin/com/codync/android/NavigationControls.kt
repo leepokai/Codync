@@ -26,18 +26,30 @@ internal fun ComposeTestRule.onRowButton(label: String, text: String): Semantics
     return buttons[index]
 }
 
-/** Extensions opens from the paired computer's row in Computers & settings. */
+/** Extensions opens from the paired computer's row in Computer management. */
 internal fun ComposeTestRule.openExtensions() {
     computerAction("Manage computers")
-    waitUntil(10_000) { onAllNodesWithContentDescription("Extensions").fetchSemanticsNodes().size == 1 }
-    onNodeWithContentDescription("Extensions").performClick()
+    waitUntil(10_000) { onAllNodesWithText("Extensions").fetchSemanticsNodes().size == 1 }
+    onNodeWithText("Extensions").performClick()
 }
 
-/** The open chat's title menu ("<bot> actions"). */
-internal val chatMenu = hasContentDescription(" actions", substring = true)
+/** The open chat's title ("<bot>, view details"): it opens the bot's details, a group's editor. */
+internal val chatTitle = hasContentDescription(", view details", substring = true)
 
-internal fun ComposeTestRule.chatAction(label: String) {
-    waitUntil(10_000) { onAllNodes(chatMenu).fetchSemanticsNodes().size == 1 }
-    onNode(chatMenu).performClick()
+internal fun ComposeTestRule.openChatDetails() {
+    waitUntil(10_000) { onAllNodes(chatTitle).fetchSemanticsNodes().size == 1 }
+    onNode(chatTitle).performClick()
+}
+
+/** The roster row's touch-and-hold menu for the bot or group named [name] (the row's label; its text isn't merged in). */
+internal fun ComposeTestRule.rosterActions(name: String) {
+    val row = hasContentDescription(name) and hasClickAction()
+    waitUntil(10_000) { onAllNodes(row).fetchSemanticsNodes().size == 1 }
+    onNode(row).performTouchInput { longClick() }
+}
+
+/** [label] in the roster's touch-and-hold menu for [name]. */
+internal fun ComposeTestRule.rosterAction(name: String, label: String) {
+    rosterActions(name)
     onNodeWithText(label).performClick()
 }

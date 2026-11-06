@@ -81,7 +81,7 @@ class BlockBUiTest {
         val backBounds = compose.onNodeWithContentDescription("Back").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val identityBounds = compose.onNodeWithContentDescription("$longName details").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val routinesBounds = compose.onNodeWithContentDescription("Open routines").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val menuBounds = compose.onNode(chatMenu).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val menuBounds = compose.onNode(hasContentDescription(" actions", substring = true)).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
 
         // Identity stays left-aligned next to Back and never overlaps trailing actions
         assertTrue("Identity must be to the right of Back", identityBounds.left >= backBounds.right)
@@ -118,7 +118,7 @@ class BlockBUiTest {
                         observedDensity = LocalUiDensity.current
                         observedScale = LocalChatTextScale.current
                         CompositionLocalProvider(LocalCodyncHaptics provides recorder) {
-                            SettingsView(state, store, {}, {}, {}, {})
+                            SettingsView(state, store)
                         }
                     }
                 }
@@ -294,7 +294,7 @@ class BlockBUiTest {
                 CodyncTheme(preferences = prefs) {
                     OverlayRoot {
                         if (showSettings) {
-                            SettingsView(state, store, {}, {}, {}, {})
+                            SettingsView(state, store)
                         } else {
                             ChatScreen(state, store, {})
                         }

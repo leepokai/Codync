@@ -27,15 +27,12 @@ struct Ledger {
 /// The hour of day and the date in `zone` (the computer's own zone when unset or unknown).
 fn local_clock(now: i64, zone: Option<&str>) -> (u32, String) {
     let at = DateTime::<Utc>::from_timestamp_millis(now).unwrap_or_default();
-    match zone.and_then(|z| z.parse::<Tz>().ok()) {
-        Some(tz) => {
-            let t = at.with_timezone(&tz);
-            (t.hour(), t.format("%Y-%m-%d").to_string())
-        }
-        None => {
-            let t = at.with_timezone(&Local);
-            (t.hour(), t.format("%Y-%m-%d").to_string())
-        }
+    if let Some(tz) = zone.and_then(|z| z.parse::<Tz>().ok()) {
+        let t = at.with_timezone(&tz);
+        (t.hour(), t.format("%Y-%m-%d").to_string())
+    } else {
+        let t = at.with_timezone(&Local);
+        (t.hour(), t.format("%Y-%m-%d").to_string())
     }
 }
 
@@ -73,26 +70,34 @@ fn key(bot_id: &str) -> String {
 }
 
 fn check_in(hub: &Hub, now: i64) {
-    let Ok(bots) = hub.store.bots() else { return };
+    let bots = match hub.store.bots() {
+        Ok(bots) => bots,
+        Err(error) => {
+            tracing::warn!(error = format!("{error:#}"), "couldn't list bots for proactive check-ins");
+            return;
+        }
+    };
     for row in bots.into_iter().filter(|r| !r.deleted) {
         let cfg = &row.config;
         let id = &cfg.id;
         if !cfg.proactive.enabled || cfg.is_group() || crate::external::is_external(cfg) {
-            hub.store.kv_delete(&key(&id)).ok();
+            if let Err(error) = hub.store.kv_delete(&key(id)) {
+                tracing::warn!(bot = id, error = format!("{error:#}"), "couldn't clear the proactive ledger");
+            }
             continue;
         }
-        let ledger = hub.store.kv_get(&key(&id)).and_then(|raw| serde_json::from_str::<Ledger>(&raw).ok());
+        let ledger = hub.store.kv_get(&key(id)).and_then(|raw| serde_json::from_str::<Ledger>(&raw).ok());
         let (next, due) = decide(&cfg.proactive, ledger, now);
         // A busy bot is asked again on the next tick, without using up today's budget.
-        if due && hub.runtime(&id).status != BotStatus::Idle {
+        if due && hub.runtime(id).status != BotStatus::Idle {
             continue;
         }
-        if due && let Err(error) = dispatch_bot_turn(hub, &id, PROMPT, "proactive") {
+        if due && let Err(error) = dispatch_bot_turn(hub, id, PROMPT, "proactive") {
             tracing::warn!(bot = id, error = format!("{error:#}"), "proactive check-in failed");
             continue;
         }
         if let Ok(raw) = serde_json::to_string(&next)
-            && let Err(error) = hub.store.kv_set(&key(&id), &raw)
+            && let Err(error) = hub.store.kv_set(&key(id), &raw)
         {
             tracing::warn!(bot = id, error = format!("{error:#}"), "saving the proactive ledger failed");
         }

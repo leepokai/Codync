@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { Button, Spinner } from '../../components/Controls'
+import { Button, Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import type { Approval } from '../../store/app-model'
 import { useApp } from '../../store/context'
-import { deviceIcon, errorText, Reveal, spacedCode } from './parts'
+import { deviceIcon, errorText, spacedCode } from './parts'
 import { useTr } from '../../lib/use-language'
 
 

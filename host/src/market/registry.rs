@@ -94,17 +94,62 @@ pub(super) fn listing(server: &Value, installed: &[Connector]) -> Option<Value> 
 /// Browse the whole MCP Registry a page at a time (featured connectors lead the first
 /// page of the unfiltered list), or search it. `nextCursor` fetches the following page.
 pub async fn browse_connectors(store: &crate::store::Store, search: &str, cursor: &str) -> Result<Value> {
+    let deadline = Instant::now() + BROWSE_BUDGET;
     let installed = connectors(store)?;
     let search = search.trim();
     let (servers, next) =
         if search.is_empty() && cursor.is_empty() { first_page().await? } else { later_page(search, cursor).await? };
+    let (items, next) = past_empty_pages((listings(&servers, &installed), next), cursor, deadline, |after| {
+        let installed = &installed;
+        async move {
+            let (servers, next) = later_page(search, &after).await?;
+            Ok((listings(&servers, installed), next))
+        }
+    })
+    .await?;
+    Ok(json!({"items": items, "nextCursor": next}))
+}
+
+/// The servers on a page that Codync can install, each once.
+fn listings(servers: &[Value], installed: &[Connector]) -> Vec<Value> {
     let mut seen = std::collections::HashSet::new();
-    let items: Vec<Value> = servers
+    servers
         .iter()
         .filter(|s| seen.insert(s["name"].as_str().unwrap_or_default().to_owned()))
-        .filter_map(|s| listing(s, &installed))
-        .collect();
-    Ok(json!({"items": items, "nextCursor": next}))
+        .filter_map(|s| listing(s, installed))
+        .collect()
+}
+
+/// Registry pages read past one with nothing Codync can install, within `BROWSE_BUDGET`, so an app
+/// gets rows in fewer round trips. An app that still gets an empty page with a cursor reads on by itself.
+const EMPTY_PAGE_SKIPS: usize = 3;
+/// The apps wait 60 s for `marketConnectors`, and one registry page can take 45 s: skipping stops
+/// in time to answer, handing back the cursor it didn't get to.
+const BROWSE_BUDGET: Duration = Duration::from_secs(40);
+
+async fn past_empty_pages<F, Fut>(page: Page, cursor: &str, deadline: Instant, mut fetch: F) -> Result<Page>
+where
+    F: FnMut(String) -> Fut,
+    Fut: Future<Output = Result<Page>>,
+{
+    let (mut items, mut next) = page;
+    let mut asked = cursor.to_owned();
+    for _ in 0..EMPTY_PAGE_SKIPS {
+        if !items.is_empty() {
+            break;
+        }
+        let Some(after) = following(&asked, next.take()) else { break };
+        let Some(left) = deadline.checked_duration_since(Instant::now()) else { return Ok((items, Some(after))) };
+        let Ok(page) = tokio::time::timeout(left, fetch(after.clone())).await else { return Ok((items, Some(after))) };
+        (items, next) = page?;
+        asked = after;
+    }
+    Ok((items, following(&asked, next)))
+}
+
+/// The registry handing back the cursor it was asked with would page the same rows forever: that ends the list.
+fn following(cursor: &str, next: Option<String>) -> Option<String> {
+    next.filter(|n| n != cursor)
 }
 
 type Page = (Vec<Value>, Option<String>);
@@ -112,7 +157,7 @@ type Page = (Vec<Value>, Option<String>);
 /// The unfiltered first page (featured servers, then the registry's first page), kept in memory
 /// because the registry often takes 15-45 s to answer.
 static FIRST_PAGE: Mutex<Option<(Instant, Page)>> = Mutex::new(None);
-const FIRST_PAGE_FRESH: Duration = Duration::from_secs(600);
+const FIRST_PAGE_FRESH: Duration = Duration::from_mins(10);
 
 /// Serves the cached first page at once (refreshing it in the background when stale).
 async fn first_page() -> Result<Page> {
@@ -179,5 +224,38 @@ mod tests {
         assert_eq!(title_from_name("com.notion/mcp"), "Notion");
         assert_eq!(title_from_name("com.vercel/vercel-mcp"), "Vercel");
         assert_eq!(title_from_name("io.github.microsoft/playwright-mcp"), "Playwright");
+    }
+
+    #[tokio::test]
+    async fn an_empty_page_with_a_cursor_reads_on() {
+        let pages = |cursor: String| async move {
+            Ok(match cursor.as_str() {
+                "b" => (vec![], Some("c".to_owned())),
+                "c" => (vec![json!({"name": "found"})], Some("d".to_owned())),
+                _ => (vec![], Some(cursor)),
+            })
+        };
+        let later = Instant::now() + Duration::from_mins(1);
+        let (items, next) = past_empty_pages((vec![], Some("b".into())), "", later, pages).await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(next.as_deref(), Some("d"));
+        let (items, next) = past_empty_pages((vec![], Some("x".into())), "", later, pages).await.unwrap();
+        assert!(items.is_empty() && next.is_none(), "a cursor the registry repeats still ends the list");
+        let (items, next) = past_empty_pages((vec![json!({})], Some("b".into())), "", later, pages).await.unwrap();
+        assert_eq!((items.len(), next.as_deref()), (1, Some("b")), "a page with rows is kept as it is");
+        let slow = |_: String| async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            Ok((vec![json!({})], None))
+        };
+        let soon = Instant::now() + Duration::from_millis(20);
+        let (items, next) = past_empty_pages((vec![], Some("b".into())), "", soon, slow).await.unwrap();
+        assert!(items.is_empty() && next.as_deref() == Some("b"), "past the deadline the cursor comes back unread");
+    }
+
+    #[test]
+    fn a_repeated_cursor_ends_the_list() {
+        assert_eq!(following("a", Some("a".into())), None);
+        assert_eq!(following("a", Some("b".into())), Some("b".into()));
+        assert_eq!(following("", None), None);
     }
 }

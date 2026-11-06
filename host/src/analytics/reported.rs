@@ -81,6 +81,15 @@ pub enum Reported {
     VoiceCallStarted {
         engine: Engine,
     },
+    VoiceCallQuality {
+        engine: Engine,
+        /// Milliseconds until the engine was ready; left out when it never was.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ready_ms: Option<u64>,
+        reconnects: u32,
+        stuck: VoiceStuck,
+        failure: VoiceFailure,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
@@ -167,6 +176,9 @@ pub enum Screen {
     RemoteScreen,
     ComputerAccess,
     Help,
+    Library,
+    Artifact,
+    Network,
     #[serde(other)]
     Other,
 }
@@ -178,6 +190,30 @@ pub enum Engine {
     Openai,
     Gemini,
     Cloud,
+    #[serde(other)]
+    Other,
+}
+
+/// The first phase of a call's engine that lasted too long.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceStuck {
+    None,
+    Connecting,
+    Reconnecting,
+    Speaking,
+    #[serde(other)]
+    Other,
+}
+
+/// Why a call's engine gave up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceFailure {
+    None,
+    Microphone,
+    Connection,
+    Provider,
     #[serde(other)]
     Other,
 }
@@ -277,6 +313,11 @@ mod tests {
                 Event::OnboardingStepViewed,
             ),
             (json!({"event": "onboarding_abandoned", "app": "desktop", "step": "account"}), Event::OnboardingAbandoned),
+            (
+                json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,
+                    "reconnects": 1, "stuck": "none", "failure": "none"}),
+                Event::VoiceCallQuality,
+            ),
         ];
         for (body, event) in cases {
             let mut expected = body.clone();

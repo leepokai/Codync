@@ -28,6 +28,8 @@ pub struct Exchange {
     pub reply: Option<String>,
     pub created_at: i64,
     pub outcome: Outcome,
+    /// The peer's name when it is a bot on another computer (its id is `name@computer`).
+    pub peer_name: Option<String>,
 }
 
 impl Exchange {
@@ -55,6 +57,7 @@ impl Exchange {
             reply: reply.map(str::to_owned),
             created_at: e.created_at,
             outcome,
+            peer_name: message["peerName"].as_str().map(str::to_owned),
         })
     }
 
@@ -85,6 +88,7 @@ pub struct Group<'a> {
     /// The run's first exchange: its id keys the row and opens the conversation.
     pub first: &'a Entry,
     pub peer: String,
+    pub peer_name: Option<String>,
     pub count: usize,
     /// Any exchange in the run failed.
     pub failed: bool,
@@ -106,6 +110,7 @@ pub fn group<'a>(chat: &str, entries: &[&'a Entry]) -> Vec<Item<'a>> {
             [(first, x), ..] => out.push(Item::Group(Group {
                 first,
                 peer: x.peer().to_owned(),
+                peer_name: run.iter().find_map(|(_, x)| x.peer_name.clone()),
                 count: run.len(),
                 failed: run.iter().any(|(_, x)| matches!(x.outcome, Outcome::Failed(_))),
             })),

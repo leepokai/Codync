@@ -1,4 +1,3 @@
-import AVFoundation
 import CodyncKit
 import Foundation
 import Observation
@@ -7,13 +6,14 @@ import os
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Call")
 
 /// Gemini Live over a WebSocket, phone ↔ Google directly: 16 kHz PCM up, 24 kHz PCM down,
-/// echo-cancelled by the voice-processing input so you can talk over it. The user's key stays on the
-/// computer, which mints one-use ephemeral tokens; a session the server ends (`goAway`) is resumed with a fresh one.
+/// echo-cancelled by the voice-processing input so you can talk over it. The computer runs the call (`CallLink`): it
+/// mints one-use ephemeral tokens on the user's key and writes the voice's instructions and tools, again for each
+/// session; a session the server ends (`goAway`) is resumed with a fresh one, and a dropped one is tried again.
 @MainActor
 @Observable
 final class GeminiLiveEngine: VoiceEngine {
     private(set) var phase: VoicePhase = .starting {
-        didSet { onActivityChanged?(!ended && phase.isActive) }
+        didSet { onActivityChanged?(!ended && phase.holdsCall) }
     }
     private(set) var level: Float = 0
     var muted = false {
@@ -25,23 +25,33 @@ final class GeminiLiveEngine: VoiceEngine {
     }
     var provider: VoiceProvider? { .gemini }
     @ObservationIgnored var onActivityChanged: ((Bool) -> Void)?
+    /// Playback stopped reporting progress after the voice's turn, and the call went back to listening.
+    @ObservationIgnored var onStall: (() -> Void)?
 
-    /// A short-lived credential for the provider, minted by the computer that holds the key.
-    private let credential: @MainActor () async throws -> String
     private let model: String
     private let voice: String
-    private let op: CallOperator
-    private var socket: URLSessionWebSocketTask?
+    private let link: CallLink
+    private let audio: any CallAudio
+    private let openSocket: @MainActor (URL) -> any LiveSocket
+    /// The current provider session's instructions and tools, from the computer.
+    private var session: CallSession?
+    /// Tool calls still running on the computer: replies wait, so the model gets each answer first.
+    private var toolsRunning = 0
+    private var socket: (any LiveSocket)?
     /// Setup is done on the current socket.
     private var ready = false
+    /// A session was set up once: a drop after that is tried again instead of ending the call.
+    private var connected = false
+    /// The server said it ends this connection (`goAway`): carry on in a resumed one at once.
+    private var replacing = false
     private var resumeHandle: String?
     private var reconnects = 0
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    private var audioRunning = false
-    /// Buffers scheduled and not played yet; bumping the generation drops late callbacks.
+    private var audioStarted = false
+    /// Pieces handed to the speaker and not rendered yet; bumping the generation drops late callbacks.
     private var queued = 0
     private var playGeneration = 0
+    private var lastPlayed = ContinuousClock.now
+    private var watchdog: Task<Void, Never>?
     /// The model finished its turn (nothing more is coming until we or the user speak).
     private var turnDone = true
     /// After a local interrupt, the rest of the turn's audio is dropped.
@@ -49,47 +59,55 @@ final class GeminiLiveEngine: VoiceEngine {
     private var pending: [String] = []
     private var ended = false
 
-    private static let playFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false)
+    /// Without playback progress this long after the voice's turn, the call stops waiting for the speaker (#214:
+    /// buffers that never finish would keep it on "speaking" and the bot's replies unsaid).
+    static var stallTimeout: Duration = .seconds(4)
 
-    init(model: String, voice: String, credential: @escaping @MainActor () async throws -> String, op: CallOperator) {
-        self.credential = credential
+    init(model: String, voice: String, link: CallLink, audio: any CallAudio = VoiceProcessingAudio(),
+         socket: @escaping @MainActor (URL) -> any LiveSocket = { URLSessionLiveSocket($0) }) {
         self.model = model
         self.voice = voice
-        self.op = op
+        self.link = link
+        self.audio = audio
+        openSocket = socket
     }
 
     func start() async {
-        guard await AVAudioApplication.requestRecordPermission() else {
-            return fail("Allow the microphone for Codync in Settings to talk to your bots.")
+        guard await audio.permission() else {
+            return fail("Allow the microphone for Codync in Settings to talk to your bots.", .microphone)
         }
+        audio.interruption = { [weak self] in self?.interrupted($0) }
         await connect()
     }
 
     private func connect() async {
         do {
-            let token = try await credential()
+            let session = try await link.start("realtime", provider: .gemini, model: model, voice: voice)
             guard !ended else { return }
+            guard let token = session.credential else { throw VoiceError("Gemini sent no session credential.") }
+            self.session = session
             var url = URLComponents(string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained")
             url?.queryItems = [URLQueryItem(name: "access_token", value: token)]
-            guard let url = url?.url else { throw VoiceError( "Couldn't reach Gemini.") }
-            let socket = URLSession.shared.webSocketTask(with: url)
-            socket.maximumMessageSize = 16 << 20
+            guard let url = url?.url else { throw VoiceError("Couldn't reach Gemini.") }
+            let socket = openSocket(url)
             self.socket = socket
             ready = false
-            socket.resume()
             receive(socket)
             sendSetup(on: socket)
         } catch {
             guard !ended else { return }
-            fail(error.localizedDescription)
+            // Starting fails over; mid-call, the computer or Google may be back in a moment.
+            if connected { dropped(error.localizedDescription) } else { fail(error.localizedDescription, .provider) }
         }
     }
 
-    private func sendSetup(on socket: URLSessionWebSocketTask) {
-        let tools: [[String: Any]] = CallOperator.tools.map { tool in
-            var declaration: [String: Any] = ["name": tool.name, "description": tool.description]
-            if let properties = tool.parameters["properties"] as? [String: any Sendable], !properties.isEmpty {
-                declaration["parameters"] = Self.geminiSchema(tool.parameters)
+    private func sendSetup(on socket: any LiveSocket) {
+        let declared = session.flatMap { (try? JSONSerialization.jsonObject(with: $0.tools)) as? [[String: Any]] } ?? []
+        let tools: [[String: Any]] = declared.map { tool in
+            var declaration: [String: Any] = ["name": tool["name"] ?? "", "description": tool["description"] ?? ""]
+            if let parameters = tool["parameters"] as? [String: Any], let properties = parameters["properties"] as? [String: Any],
+               !properties.isEmpty {
+                declaration["parameters"] = Self.geminiSchema(parameters)
             }
             return declaration
         }
@@ -99,10 +117,13 @@ final class GeminiLiveEngine: VoiceEngine {
                 "responseModalities": ["AUDIO"],
                 "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": voice]]],
             ] as [String: Any],
-            "systemInstruction": ["parts": [["text": op.instructions]]],
+            "systemInstruction": ["parts": [["text": session?.instructions ?? ""]]],
             "tools": [["functionDeclarations": tools]],
             // Audio sessions are otherwise capped at 15 minutes.
             "contextWindowCompression": ["slidingWindow": [String: Any]()],
+            // What both sides said, for the call's line in the chat.
+            "inputAudioTranscription": [String: Any](),
+            "outputAudioTranscription": [String: Any](),
             "sessionResumption": resumeHandle.map { ["handle": $0] } ?? [:],
         ]
         send(["setup": setup], on: socket)
@@ -111,15 +132,14 @@ final class GeminiLiveEngine: VoiceEngine {
     func end() {
         ended = true
         onActivityChanged?(false)
-        socket?.cancel(with: .normalClosure, reason: nil)
+        socket?.close()
         socket = nil
         stopPlayback()
-        if audioRunning {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-            audioRunning = false
+        audio.interruption = nil
+        if audioStarted {
+            audio.stop()
+            audioStarted = false
         }
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func interrupt() {
@@ -131,68 +151,114 @@ final class GeminiLiveEngine: VoiceEngine {
 
     func speak(reply: String) {
         guard !ended, !phase.isFailed else { return }
-        pending.append(op.reply(reply))
+        pending.append(link.reply(reply))
         flush()
     }
 
     func announce(_ notice: String) {
         guard !ended, !phase.isFailed else { return }
-        pending.append(op.notice(notice))
+        pending.append(link.notice(notice))
         flush()
+    }
+
+    /// Only the newest progress waits to be said.
+    func progress(_ text: String) {
+        guard !ended, !phase.isFailed else { return }
+        pending.removeAll { $0.hasPrefix(CallLink.progressTag) }
+        pending.append(link.progress(text))
+        flush()
+    }
+
+    /// The audio is back (the user tapped the call's line, or the interruption ended): listening once the
+    /// microphone delivers again.
+    func resume() {
+        guard !ended, phase == .interrupted else { return }
+        do {
+            try audio.resume()
+        } catch {
+            return fail("Couldn't use the microphone: \(error.localizedDescription)", .microphone)
+        }
+        phase = .reconnecting
+    }
+
+    private func interrupted(_ change: AudioInterruption) {
+        guard !ended else { return }
+        switch change {
+        case .began:
+            guard phase.holdsCall || phase == .starting else { return }
+            stopPlayback()
+            dropping = !turnDone
+            level = 0
+            phase = .interrupted
+            send(["realtimeInput": ["audioStreamEnd": true]])
+        case .ended(let shouldResume):
+            if shouldResume { resume() }
+        }
     }
 
     // MARK: socket
 
-    private func receive(_ socket: URLSessionWebSocketTask) {
+    private func receive(_ socket: any LiveSocket) {
         Task { [weak self] in
             while true {
-                let message: URLSessionWebSocketTask.Message
+                let text: String
                 do {
-                    message = try await socket.receive()
+                    text = try await socket.receive()
                 } catch {
                     self?.closed(socket)
                     return
                 }
                 guard let self, self.socket === socket else { return }
-                switch message {
-                case .data(let data): self.received(data)
-                case .string(let text): self.received(Data(text.utf8))
-                @unknown default: break
-                }
+                self.received(Data(text.utf8))
             }
         }
     }
 
-    private func closed(_ socket: URLSessionWebSocketTask) {
+    private func closed(_ socket: any LiveSocket) {
         guard !ended, self.socket === socket else { return }
         self.socket = nil
         ready = false
-        let reason = socket.closeReason.map { String(decoding: $0, as: UTF8.self) } ?? ""
-        log.info("gemini closed: \(reason, privacy: .public)")
-        if resumeHandle != nil, reconnects < 3 {
-            reconnects += 1
+        let (code, reason) = (socket.closeCode, socket.closeReason)
+        log.info("gemini closed: \(code) \(reason, privacy: .public)")
+        guard connected else { return fail(reason.isEmpty ? "Couldn't reach Gemini." : reason, .provider) }
+        // Gemini refused the session (a key, a model, a request): trying again won't help.
+        if code == 1007 || code == 1008 { return fail(reason.isEmpty ? "Gemini ended the call." : reason, .provider) }
+        if replacing {
+            replacing = false
+            // The turn under way ends with this connection: the resumed one won't complete it.
+            turnEnded()
             Task { await connect() }
         } else {
-            fail(reason.isEmpty ? "Lost the connection to Gemini." : reason)
+            dropped(reason)
+        }
+    }
+
+    /// The connection to Gemini dropped mid-call: tried again a few times (a resumed session when Gemini gave a handle,
+    /// else a fresh one the computer primes with the call so far) before the call falls back.
+    private func dropped(_ reason: String) {
+        guard reconnects < Reconnect.delays.count else {
+            return fail(reason.isEmpty ? "Lost the connection to Gemini." : reason, .connection)
+        }
+        let delay = Reconnect.delays[reconnects]
+        reconnects += 1
+        stopPlayback()
+        turnDone = true
+        dropping = false
+        if phase != .interrupted { phase = .reconnecting }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !self.ended else { return }
+            await self.connect()
         }
     }
 
     private func received(_ data: Data) {
         guard !ended, let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-        if msg["setupComplete"] != nil {
-            ready = true
-            reconnects = 0
-            if !audioRunning {
-                do {
-                    try startAudio()
-                } catch {
-                    return fail("Couldn't use the microphone: \(error.localizedDescription)")
-                }
-            }
-            if phase == .starting { phase = .listening }
-            flush()
-        }
+        if msg["setupComplete"] != nil { setupCompleted() }
         if let content = msg["serverContent"] as? [String: Any] {
+            if let heard = (content["inputTranscription"] as? [String: Any])?["text"] as? String { link.add("user", heard) }
+            if let said = (content["outputTranscription"] as? [String: Any])?["text"] as? String { link.add("voice", said) }
+            if content["turnComplete"] as? Bool == true || content["interrupted"] as? Bool == true { link.endTurn() }
             if content["interrupted"] as? Bool == true {
                 stopPlayback()
                 dropping = false
@@ -204,21 +270,27 @@ final class GeminiLiveEngine: VoiceEngine {
                     if let audio = (part["inlineData"] as? [String: Any])?["data"] as? String, !dropping { play(audio) }
                 }
             }
-            if content["turnComplete"] as? Bool == true {
-                turnDone = true
-                dropping = false
-                if queued == 0, phase == .speaking { phase = .listening }
-                flush()
-            }
+            if content["turnComplete"] as? Bool == true { turnEnded() }
         }
         if let calls = (msg["toolCall"] as? [String: Any])?["functionCalls"] as? [[String: Any]] {
-            let responses: [[String: Any]] = calls.compactMap { call in
+            let asked: [(id: String, name: String, args: Data)] = calls.compactMap { call in
                 guard let id = call["id"] as? String, let name = call["name"] as? String else { return nil }
-                let output = op.call(name, arguments: call["args"] as? [String: Any] ?? [:])
-                let result = (try? JSONSerialization.jsonObject(with: Data(output.utf8))) ?? [:]
-                return ["id": id, "name": name, "response": ["result": result]]
+                let args = (try? JSONSerialization.data(withJSONObject: call["args"] as? [String: Any] ?? [:])) ?? Data("{}".utf8)
+                return (id, name, args)
             }
-            send(["toolResponse": ["functionResponses": responses]])
+            // The tools run on the computer; their answers go back together.
+            toolsRunning += 1
+            Task { [weak self, link] in
+                var responses: [[String: Any]] = []
+                for call in asked {
+                    let result = (try? JSONSerialization.jsonObject(with: await link.tool(call.name, arguments: call.args))) ?? [:]
+                    responses.append(["id": call.id, "name": call.name, "response": ["result": result]])
+                }
+                guard let self else { return }
+                self.toolsRunning -= 1
+                self.send(["toolResponse": ["functionResponses": responses]])
+                self.flush()
+            }
         }
         if let update = msg["sessionResumptionUpdate"] as? [String: Any],
            update["resumable"] as? Bool == true, let handle = update["newHandle"] as? String {
@@ -226,21 +298,43 @@ final class GeminiLiveEngine: VoiceEngine {
         }
         if msg["goAway"] != nil {
             // The server ends this connection soon; carry on in a resumed one.
-            socket?.cancel(with: .normalClosure, reason: nil)
+            replacing = true
+            socket?.close()
         }
     }
 
-    private func send(_ message: [String: Any], on socket: URLSessionWebSocketTask? = nil) {
+    private func setupCompleted() {
+        ready = true
+        connected = true
+        reconnects = 0
+        if !audioStarted {
+            do {
+                try audio.start { [weak self] audio, level in self?.captured(audio, level: level) }
+                audioStarted = true
+            } catch {
+                return fail("Couldn't use the microphone: \(error.localizedDescription)", .microphone)
+            }
+        }
+        flush()
+    }
+
+    /// The model's turn is over: listening once what's queued has played.
+    private func turnEnded() {
+        turnDone = true
+        dropping = false
+        if queued == 0 { finishSpeaking() } else { watch() }
+    }
+
+    private func send(_ message: [String: Any], on socket: (any LiveSocket)? = nil) {
         guard let socket = socket ?? (ready ? self.socket : nil),
               let data = try? JSONSerialization.data(withJSONObject: message) else { return }
-        socket.send(.string(String(decoding: data, as: UTF8.self))) { error in
-            if let error { log.error("gemini send: \(error.localizedDescription, privacy: .public)") }
-        }
+        socket.send(String(decoding: data, as: UTF8.self))
     }
 
-    /// Replies wait for the model to finish talking; `turnComplete` here would cut it off.
+    /// Replies wait for the model to finish talking (`turnComplete` here would cut it off), and for the audio to be
+    /// back after an interruption.
     private func flush() {
-        guard ready, turnDone, queued == 0, !pending.isEmpty else { return }
+        guard ready, turnDone, queued == 0, toolsRunning == 0, phase != .interrupted, !pending.isEmpty else { return }
         let text = pending.joined(separator: "\n\n")
         pending.removeAll()
         turnDone = false
@@ -249,84 +343,84 @@ final class GeminiLiveEngine: VoiceEngine {
 
     // MARK: audio
 
-    private func startAudio() throws {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
-            try session.setActive(true)
-        let input = engine.inputNode
-        try input.setVoiceProcessingEnabled(true)
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: Self.playFormat)
-        let format = try MicTap.format(of: input)
-        input.installTap(onBus: 0, bufferSize: 2048, format: format, block: MicTap.pcm16k(from: format) { [weak self] pcm, level in
-            let audio = pcm.base64EncodedString()
-            Task { @MainActor in self?.captured(audio, level: level) }
-        })
-        engine.prepare()
-        try engine.start()
-        player.play()
-        audioRunning = true
-    }
-
     private func captured(_ audio: String, level: Float) {
+        // Ready once the microphone delivers after setup (again, after a reconnect), not when the socket opens.
+        if !ended, ready, phase.isConnecting {
+            phase = .listening
+            flush()
+        }
         guard !ended, !muted, phase.isActive else { return }
         self.level = phase == .speaking ? 0 : level
         send(["realtimeInput": ["audio": ["data": audio, "mimeType": "audio/pcm;rate=16000"]]])
     }
 
     private func play(_ base64: String) {
-        guard let format = Self.playFormat, let data = Data(base64Encoded: base64), data.count >= 2 else { return }
-        let frames = data.count / 2
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
-              let out = buffer.floatChannelData?[0] else { return }
-        buffer.frameLength = AVAudioFrameCount(frames)
-        data.withUnsafeBytes { raw in
-            for i in 0..<frames {
-                let sample = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: i * 2, as: Int16.self))
-                out[i] = Float(sample) / 32768
-            }
-        }
+        // Another app has the audio: what the model says meanwhile isn't heard.
+        guard phase != .interrupted, let data = Data(base64Encoded: base64), data.count >= 2 else { return }
         queued += 1
         level = 0
         phase = .speaking
         let generation = playGeneration
-        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            Task { @MainActor in self?.played(generation) }
-        }
+        audio.play(data) { [weak self] in self?.played(generation) }
     }
 
     private func played(_ generation: Int) {
         guard generation == playGeneration, !ended else { return }
+        lastPlayed = .now
         queued = max(0, queued - 1)
         guard queued == 0, turnDone else { return }
+        finishSpeaking()
+    }
+
+    private func finishSpeaking() {
+        watchdog?.cancel()
+        watchdog = nil
         if phase == .speaking { phase = .listening }
         flush()
     }
 
-    private func stopPlayback() {
-        playGeneration += 1
-        queued = 0
-        if audioRunning {
-            player.stop()
-            player.play()
+    /// After the voice's turn, playback that stops reporting progress doesn't hold the call (see [`stallTimeout`]).
+    private func watch() {
+        watchdog?.cancel()
+        lastPlayed = .now
+        watchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.stallTimeout)
+                guard let self, !Task.isCancelled, !self.ended, self.queued > 0, self.turnDone else { return }
+                guard ContinuousClock.now - self.lastPlayed >= Self.stallTimeout else { continue }
+                log.error("gemini playback stalled; back to listening")
+                self.playGeneration += 1
+                self.queued = 0
+                self.onStall?()
+                self.finishSpeaking()
+                return
+            }
         }
     }
 
-    private func fail(_ message: String) {
+    private func stopPlayback() {
+        watchdog?.cancel()
+        watchdog = nil
+        playGeneration += 1
+        queued = 0
+        if audioStarted { audio.stopPlayback() }
+    }
+
+    private func fail(_ message: String, _ kind: VoiceFailureKind) {
         end()
-        phase = .failed(message)
+        phase = .failed(message, kind)
     }
 
     // MARK: helpers
 
     /// Gemini's schema spells types in capitals (`OBJECT`, `STRING`).
-    private static func geminiSchema(_ schema: [String: any Sendable]) -> [String: Any] {
+    private static func geminiSchema(_ schema: [String: Any]) -> [String: Any] {
         var out: [String: Any] = [:]
         for (key, value) in schema {
             switch value {
             case let type as String where key == "type": out[key] = type.uppercased()
-            case let nested as [String: any Sendable] where key == "properties":
-                out[key] = nested.mapValues { ($0 as? [String: any Sendable]).map(geminiSchema) ?? [:] }
+            case let nested as [String: Any] where key == "properties":
+                out[key] = nested.mapValues { ($0 as? [String: Any]).map(geminiSchema) ?? [:] }
             default: out[key] = value
             }
         }

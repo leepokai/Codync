@@ -44,7 +44,9 @@ same way; the shared desktop behavior covers macOS and Linux.
 
 When several computers are selected, the sidebar groups bots by computer, with connection
 status and update notices in each section. Drag a heading or press Alt+Up/Down on the
-heading to reorder sections. Click a heading to fold its bots.
+heading to reorder sections: as on the iPhone, a dragged heading lifts (a copy follows the
+pointer), every section folds into its heading, the others make room as it passes them, and
+they unfold on release (`BotRoster.tsx`). Click a heading to fold its bots.
 Order and folded sections stay on this device; the iPhone and other computers keep
 independent orders even when signed in to the same account. Filtering a computer out
 does not discard its position. One selected computer keeps a flat roster. Bots stay within
@@ -92,7 +94,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
   Agents start through `cmd /c` (`host/src/shell.rs`), setup terminals use ConPTY
   (`portable-pty`), and the vault key lives in Credential Manager. Not on Windows yet: Remote
   screen and the `computer` MCP (no screen helper), on-device speech, the Claude Code status
-  line hook (usage still comes from `claude -p /usage` and ACP), and `curl | bash`
+  line hook (usage still comes from `claude -p /usage`, ACP and each agent's own report), and `curl | bash`
   installers (npm installs and Claude Code's PowerShell installer
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)

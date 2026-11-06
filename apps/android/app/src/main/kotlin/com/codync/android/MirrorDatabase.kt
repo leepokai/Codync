@@ -53,6 +53,12 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         )
     }
 
+    /** Pagination keeps the raw cursor even when a whole page contains host-internal entries. */
+    @Synchronized fun oldestEntrySeq(botId: String): Long? = readableDatabase.rawQuery(
+        "SELECT MIN(seq) FROM entries WHERE bot_id=? AND seq>0", arrayOf(botId)).use {
+        if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
+    }
+
     @Synchronized fun revision(): Long = meta(readableDatabase, "rev")?.toLong() ?: 0
 
     /**
@@ -84,7 +90,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
-            MirrorEvent.Resync, MirrorEvent.Ignored -> Unit
+            // Artifacts and the network live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`).
+            MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged, is MirrorEvent.Call, is MirrorEvent.Network -> Unit
         }
     }
 

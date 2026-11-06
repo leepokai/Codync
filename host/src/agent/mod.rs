@@ -22,6 +22,6 @@ pub mod sandbox;
 pub mod term;
 pub mod workspace;
 
-pub mod process;
+pub(crate) mod process;
 #[cfg(windows)]
 mod process_windows;

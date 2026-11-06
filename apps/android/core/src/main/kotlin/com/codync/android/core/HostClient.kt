@@ -38,6 +38,10 @@ data class Bot(
     val computer: Boolean = false,
     /** The bot can create bots (which can too) and change its own setup and the bots it created (the built-in `manage` tools); null from an older host. */
     val manageTeam: Boolean? = null,
+    /** The user's other computers list this bot and may message it; null from an older host. */
+    val offeredToNetwork: Boolean? = null,
+    /** The user's cloud assistant lists this bot and may message it; null from an older host. */
+    val reachableByAssistants: Boolean? = null,
     /** The bot that created this one; null when the user did. */
     val createdBy: String? = null,
     val computerPermissions: ComputerPermissions = ComputerPermissions(),
@@ -51,6 +55,8 @@ data class Bot(
     val activity: String = "",
     val backend: String = "",
     val pinned: Boolean = false,
+    /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
+    val lead: Boolean = false,
     /** Where the user dragged it in the roster, synced by the host to every device. */
     val position: Int = 0,
     val hidden: Boolean = false,
@@ -76,6 +82,9 @@ data class Bot(
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
 ) {
+    /** Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band. */
+    val band: Int get() = when { lead -> 0; pinned -> 1; else -> 2 }
+
     /** [agent]'s rest, unless it's over. */
     fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
 

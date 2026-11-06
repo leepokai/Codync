@@ -1,5 +1,6 @@
 //! Host API over HTTP: JSON commands and the SSE event stream (same wire as the apps).
 
+pub mod artifacts;
 pub mod files;
 
 use futures::StreamExt;

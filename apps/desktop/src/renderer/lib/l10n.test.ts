@@ -65,7 +65,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Check for updates', 'zh', false), '检查更新')
   assert.equal(translate('Computer access is ready.', 'zh', false), '电脑访问已就绪。')
   assert.equal(translate('Storage', 'zh', false), '存储')
-  assert.equal(translate('Load more agents', 'zh', false), '加载更多智能体')
+  assert.equal(translate('Extensions sections', 'zh', false), '扩展分类')
   assert.equal(
     translate('listing skills on GitHub: https://api.github.com/repos/anthropics/skills answered 403 Forbidden', 'zh', false),
     '无法列出 GitHub 上的技能：https://api.github.com/repos/anthropics/skills 返回了 403 Forbidden',
@@ -124,6 +124,10 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Usage', 'zh', false), '用量')
   assert.equal(translate('Computers & devices', 'zh', false), '电脑和设备')
   assert.equal(translate('Reachable from anywhere through Cloudflare (encrypted).', 'zh', false), '通过 Cloudflare 随时随地连接（已加密）。')
+  assert.equal(
+    translate('Reachable from anywhere through Private relay (relay.example.com) (encrypted).', 'zh', false),
+    '通过私人中继（relay.example.com）随时随地连接（已加密）。',
+  )
   assert.equal(translate('Use Anthropic Console (API usage billing)', 'zh', false), '使用 Anthropic 控制台（按 API 用量计费）')
   assert.equal(translate('12 pt (Default)', 'zh', false), '12 pt（默认）')
   assert.equal(

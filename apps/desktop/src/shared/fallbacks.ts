@@ -35,4 +35,6 @@ export function moveFallback(list: Fallback[], index: number, by: number): Fallb
 }
 
 /** The bot on agent `backend`: a fallback on that agent goes (an agent is in the chain once, as the host keeps it). */
-export const withBackend = (d: BotDraft, backend: string): BotDraft => ({ ...d, backend, fallbacks: d.fallbacks?.filter((f) => f.backend !== backend) })
+export const withBackend = (d: BotDraft, backend: string): BotDraft => d.backend === backend ? d : ({
+  ...d, backend, model: null, modelOptions: {}, fallbacks: d.fallbacks?.filter((f) => f.backend !== backend),
+})

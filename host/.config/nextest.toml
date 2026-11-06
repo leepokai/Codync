@@ -1,0 +1,10 @@
+# cargo-nextest, as CI runs it (`cargo nextest run --workspace --profile ci`).
+# Each test runs in its own process, so fixture hosts no longer share process-global locks and
+# can run side by side on every OS.
+
+[profile.ci]
+# A test that fails and then passes on a retry is reported as FLAKY, and the run still passes.
+retries = 2
+fail-fast = false
+# Report a test after a minute; stop one that hangs after five.
+slow-timeout = { period = "60s", terminate-after = 5 }

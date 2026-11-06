@@ -3,6 +3,7 @@ mod check;
 pub use check::Checked;
 mod editor;
 mod failed;
+pub mod flow;
 mod idle;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
 pub mod hooks;
@@ -14,7 +15,7 @@ mod runner;
 mod schedule;
 mod watch;
 pub use runner::start;
-pub use schedule::Trigger;
+pub use schedule::{Trigger, local_zone};
 
 use crate::{
     LockExt,
@@ -132,6 +133,8 @@ pub struct Routines {
     stopping: std::sync::atomic::AtomicBool,
     /// Bumped whenever the webhook set the relay registers (`hooks()`) changes.
     hooks_rev: tokio::sync::watch::Sender<u64>,
+    /// The routine flows running now (`flow`).
+    flows: flow::Registry,
 }
 
 impl Default for Routines {
@@ -142,6 +145,7 @@ impl Default for Routines {
             scheduler: Mutex::default(),
             stopping: std::sync::atomic::AtomicBool::default(),
             hooks_rev: tokio::sync::watch::channel(0).0,
+            flows: flow::Registry::default(),
         }
     }
 }
@@ -232,6 +236,10 @@ impl Routines {
         let state = self.state.locked();
         json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
             "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
+    }
+
+    pub fn owns(&self, bot: &str, id: &str) -> bool {
+        self.state.locked().routines.iter().any(|r| r.id == id && r.bot_id == bot && !r.deleted)
     }
 
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
@@ -338,6 +346,7 @@ impl Routines {
             Ok(retry::forget(s, |run| run.routine_id == id))
         })?;
         retry::withdraw(hub, &withdrawn);
+        flow::forget_routine(hub, id, bot);
         Ok(json!({"ok":true}))
     }
 
@@ -382,8 +391,9 @@ impl Routines {
         })
     }
 
-    /// The routine's webhook: the public URL through the Codync cloud (when it's on), the
-    /// local one, and the key. `rotate` replaces the key first, cutting off the old one.
+    /// The routine's webhook: the public URL through the Codync cloud (when it's on; a private
+    /// relay doesn't deliver them), the local one, and the key. `rotate` replaces the key first,
+    /// cutting off the old one.
     pub fn credentials(&self, hub: &Hub, bot: &str, id: &str, rotate: bool) -> Result<Value> {
         if rotate {
             self.change(&hub.store, |s| {
@@ -407,7 +417,8 @@ impl Routines {
                 .clone()
         };
         let cloud = hub.cloud.status();
-        let url = crate::remote::cloud::url(&hub.store)
+        let url = crate::remote::cloud::codync_url(hub)
+            .ok()
             .map(|base| format!("{}/v1/hooks/{}/{id}", base.trim_end_matches('/'), hub.identity.computer_id()));
         Ok(json!({
             "url": url,
@@ -444,7 +455,7 @@ impl Routines {
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
     body[key].as_str().with_context(|| format!("{key} is required"))
 }
-fn public(r: &Routine) -> Value {
+pub(crate) fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})

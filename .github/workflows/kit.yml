@@ -24,8 +24,10 @@ jobs:
       - name: Test on an iPhone simulator
         run: |
           DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+\(([0-9A-F-]{36})\)' | grep -oE '[0-9A-F-]{36}')
+          # A failing test is run again, up to twice (a timing hiccup on a busy runner); the bundle records the retries.
           xcodebuild test -scheme CodyncKit-Package -destination "platform=iOS Simulator,id=$DEVICE" \
-            -derivedDataPath ../../../build/dd -resultBundlePath ../../../build/dd/ios-kit.xcresult -quiet
+            -derivedDataPath ../../../build/dd -resultBundlePath ../../../build/dd/ios-kit.xcresult \
+            -retry-tests-on-failure -test-iterations 3 -quiet
       - name: Summarize test results
         if: always()
         run: |

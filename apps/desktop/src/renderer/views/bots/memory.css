@@ -21,3 +21,4 @@
 .memory-file-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font: var(--text-callout)/1.5 var(--mono); }
 .memory-info-icon { padding-top: 2px; }
 .switch.memory-harness-switch { flex: 1; justify-content: flex-end; }
+.memory-harness-shared { flex: 1; text-align: end; }

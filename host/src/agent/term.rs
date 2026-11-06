@@ -19,7 +19,7 @@ use tokio::sync::{broadcast, mpsc};
 /// Output kept for a client that (re)attaches mid-run.
 const SCROLLBACK: usize = 256 * 1024;
 /// A finished terminal stays readable this long.
-const LINGER: Duration = Duration::from_secs(10 * 60);
+const LINGER: Duration = Duration::from_mins(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "camelCase")]

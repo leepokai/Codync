@@ -1,7 +1,7 @@
-//! The Codync cloud (Cloudflare relay + accounts, spec §4.2, §4.3, §8.4, §9.6): which one
-//! this host uses, its `/v1/host/*` API (signed with `Codync-Sig`), the state pull that may
-//! only renew or remove account devices, never add one, and account access requests with
-//! the commit-then-reveal SAS. The relay socket itself lives in `relay`.
+//! The Codync cloud (Cloudflare relay + accounts, spec §4.2, §4.3, §8.4, §9.6): its
+//! `/v1/host/*` API (signed with `Codync-Sig`), the state pull that may only renew or remove
+//! account devices, never add one, and account access requests with the commit-then-reveal
+//! SAS. Which cloud this host uses lives in `cloud_url`, the relay socket in `relay`.
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -16,12 +16,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::watch;
 
-/// The cloud this build belongs to: main only for builds made with `CODYNC_ENV=main` (the
-/// release workflows), dev for every local build, debug or release, like the apps built next
-/// to it.
-fn build_cloud_url() -> &'static str {
-    crate::environment::Environment::current().cloud_url()
-}
+pub use super::cloud_url::{Address, RelayKind, TokenChange, current, set_cloud, set_cloud_url, show, url};
 
 /// How long one successful state pull keeps an account device allowed.
 pub const LEASE_MS: i64 = 15 * 60 * 1000;
@@ -42,35 +37,6 @@ const SAS_NONCES: &str = "sas_nonces";
 const SAS_NONCES_PER_HOUR: usize = 5;
 const HOUR_MS: i64 = 60 * 60 * 1000;
 
-/// The cloud base URL in use, or `None` when the cloud is off.
-/// `CODYNC_CLOUD=off` > turned off here > `CODYNC_CLOUD_URL` (a cloud you're developing) > the
-/// build's cloud. Which cloud is never saved here: on/off is the only stored cloud setting.
-/// Unit tests point at a fake cloud through kv `test_cloud_url`, so they never reach a real one.
-pub fn url(store: &Store) -> Option<String> {
-    if std::env::var("CODYNC_CLOUD").is_ok_and(|v| v == "off")
-        || store.kv_get("cloud_enabled").as_deref() == Some("false")
-    {
-        return None;
-    }
-    if cfg!(test) {
-        return store.kv_get("test_cloud_url");
-    }
-    let custom = std::env::var("CODYNC_CLOUD_URL")
-        .ok()
-        .map(|u| u.trim().trim_end_matches('/').to_owned())
-        .filter(|u| valid_url(&format!("{u}/")));
-    Some(custom.unwrap_or_else(|| build_cloud_url().to_owned()))
-}
-
-/// A cloud URL this host may be pointed at: https, or plain http to this computer (local dev).
-fn valid_url(u: &str) -> bool {
-    let Ok(parsed) = reqwest::Url::parse(u) else { return false };
-    let local = matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
-    parsed.path() == "/"
-        && parsed.query().is_none()
-        && (parsed.scheme() == "https" || (parsed.scheme() == "http" && local))
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Owner {
@@ -82,14 +48,21 @@ pub struct Owner {
 /// `cloudStatus` and the `cloud` event.
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools, reason = "independent facts the apps show, sent as JSON")]
 pub struct CloudStatus {
     pub enabled: bool,
     pub url: Option<String>,
+    /// The relay in use has a registration token. The token itself is never sent.
+    pub token_set: bool,
     pub registered: bool,
     pub connected: bool,
     pub owner: Option<Owner>,
     pub last_error: Option<String>,
     pub approval: Approval,
+    /// The user's cloud assistant may message this computer's bots (`setAssistants`, local only).
+    pub assistants: bool,
+    /// Whose relay: on a private one there is no account, access request or relayed screen.
+    pub relay: RelayKind,
 }
 
 /// How account devices get in (`setApproval`, local only).
@@ -224,18 +197,41 @@ pub fn authority(base: &str) -> Result<String> {
     .to_ascii_lowercase())
 }
 
-fn base(hub: &Hub) -> Result<String> {
-    url(&hub.store).ok_or_else(|| anyhow!("The Codync cloud is off on this computer."))
+const NO_ACCOUNTS: &str = "This computer uses a private relay, which has no Codync accounts or remote screen.";
+
+/// The Codync cloud's base URL. Accounts, access requests, grants, public webhooks and the
+/// screen's TURN live only there: refused while the cloud is off or a private relay is in use.
+pub fn codync_url(hub: &Hub) -> Result<String> {
+    match current(&hub.store) {
+        None => bail!("The Codync cloud is off on this computer."),
+        Some(address) if address.kind == RelayKind::Private => bail!(NO_ACCOUNTS),
+        Some(address) => Ok(address.url),
+    }
+}
+
+/// Refuses an account change (claim, approval) while this computer uses a private relay.
+pub fn require_accounts(store: &Store) -> Result<()> {
+    if current(store).is_some_and(|address| address.kind == RelayKind::Private) {
+        bail!(NO_ACCOUNTS);
+    }
+    Ok(())
+}
+
+/// A `/v1/host/*` request signed with `Codync-Sig`.
+fn signed(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<reqwest::RequestBuilder> {
+    let bytes = body.map(serde_json::to_vec).transpose()?.unwrap_or_default();
+    let sig = hub.identity.sign_request(method.as_str(), &authority(base)?, path, &bytes);
+    let req = crate::http().request(method, format!("{base}{path}")).header("Codync-Sig", sig).timeout(TIMEOUT);
+    Ok(if body.is_some() { req.header("content-type", "application/json").body(bytes) } else { req })
 }
 
 /// One signed `/v1/host/*` call.
 async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
-    let bytes = body.map(serde_json::to_vec).transpose()?.unwrap_or_default();
-    let sig = hub.identity.sign_request(method.as_str(), &authority(base)?, path, &bytes);
-    let mut req = crate::http().request(method, format!("{base}{path}")).header("Codync-Sig", sig).timeout(TIMEOUT);
-    if body.is_some() {
-        req = req.header("content-type", "application/json").body(bytes);
-    }
+    answer(signed(hub, base, method, path, body)?).await
+}
+
+/// Sends `req`; a refusal becomes a `CloudError`.
+async fn answer(req: reqwest::RequestBuilder) -> Result<Value> {
     let res = req.send().await.context("the Codync cloud is unreachable")?;
     let status = res.status();
     let v: Value = res.json().await.unwrap_or(Value::Null);
@@ -252,7 +248,7 @@ async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&V
 }
 
 /// `POST /v1/host/register`: makes this computer known to the cloud (no account needed).
-pub async fn register(hub: &Hub, base: &str) -> Result<()> {
+pub async fn register(hub: &Hub, cloud: &Address) -> Result<()> {
     let body = json!({
         "boxKey": hub.identity.box_pub_b64(),
         "name": crate::service::host_name(),
@@ -260,7 +256,13 @@ pub async fn register(hub: &Hub, base: &str) -> Result<()> {
         "device": tokio::task::spawn_blocking(crate::service::device).await?,
         "version": env!("CARGO_PKG_VERSION"),
     });
-    let v = call(hub, base, Method::POST, "/v1/host/register", Some(&body)).await?;
+    let mut req = signed(hub, &cloud.url, Method::POST, "/v1/host/register", Some(&body))?;
+    // A private relay requires it to enroll a new computer. It stays out of the URL `hello`
+    // publishes, so phones never see it, and no other request carries it.
+    if let Some(token) = &cloud.token {
+        req = req.header("Codync-Relay-Token", token);
+    }
+    let v = answer(req).await?;
     if v["computerId"].as_str() != Some(hub.identity.computer_id().as_str()) {
         bail!("the cloud registered a different computer id");
     }
@@ -272,7 +274,8 @@ pub async fn register(hub: &Hub, base: &str) -> Result<()> {
 /// Short-lived media credentials, issued only after the host checks screen authorization.
 pub async fn screen_ice(hub: &Hub, device_key: &str) -> Result<crate::screen::IceConfig> {
     let value =
-        call(hub, &base(hub)?, Method::POST, "/v1/host/screen-ice", Some(&json!({"deviceKey": device_key}))).await?;
+        call(hub, &codync_url(hub)?, Method::POST, "/v1/host/screen-ice", Some(&json!({"deviceKey": device_key})))
+            .await?;
     let config: crate::screen::IceConfig =
         serde_json::from_value(value).context("invalid screen relay configuration")?;
     if config.ice_servers.is_empty() || config.expires_at <= now_ms() + 60_000 {
@@ -522,7 +525,7 @@ async fn deny(hub: &Hub, base: &str, id: &str) {
 /// compared) with the grant the cloud returns; nothing else can add an account device.
 /// `how`: the user compared the code, or the computer approves on its own (`Approval::Auto`).
 pub async fn decide(hub: &Hub, id: &str, approve: bool, how: Approval) -> Result<()> {
-    let base = base(hub)?;
+    let base = codync_url(hub)?;
     let r =
         hub.cloud.requests.locked().iter().find(|r| r.id == id).cloned().ok_or_else(|| anyhow!("unknown request"))?;
     if approve && r.code.is_none() {
@@ -578,7 +581,8 @@ pub async fn revoke_grant(hub: Arc<Hub>, grant_id: String) {
         pending.push(grant_id);
         set_pending_revokes(&hub.store, &pending);
     }
-    if let Ok(base) = base(&hub) {
+    // On a private relay it waits for the next pull from the Codync cloud.
+    if let Ok(base) = codync_url(&hub) {
         retry_revokes(&hub, &base).await;
     }
 }
@@ -606,26 +610,15 @@ async fn retry_revokes(hub: &Hub, base: &str) {
 
 /// `unclaim`: takes this computer out of its account.
 pub async fn unclaim(hub: &Hub) -> Result<()> {
-    let base = base(hub)?;
+    let base = codync_url(hub)?;
     call(hub, &base, Method::POST, "/v1/host/unclaim", Some(&json!({}))).await?;
     tracing::info!("left the account");
     pull(hub, &base).await
 }
 
-/// `setCloud`: turns the cloud on or off; the relay restarts.
-pub fn set_cloud(hub: &Hub, enabled: bool) -> Result<CloudStatus> {
-    hub.store.kv_set("cloud_enabled", if enabled { "true" } else { "false" })?;
-    let now = url(&hub.store);
-    update_status(hub, |s| {
-        s.enabled = now.is_some();
-        s.url.clone_from(&now);
-    });
-    hub.cloud.config.send_modify(|g| *g += 1);
-    Ok(hub.cloud.status())
-}
-
 /// `setApproval`: whether account devices need the 6-digit check. Local only.
 pub fn set_approval(hub: &Hub, approval: Approval) -> Result<CloudStatus> {
+    require_accounts(&hub.store)?;
     hub.store.kv_set(APPROVAL, if approval == Approval::Auto { "auto" } else { "code" })?;
     tracing::info!(?approval, "account approval changed");
     update_status(hub, |s| s.approval = approval);
@@ -678,12 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn only_safe_cloud_urls() {
-        assert!(valid_url("https://codync-cloud.example.workers.dev/"));
-        assert!(valid_url("http://127.0.0.1:8787/"));
-        assert!(!valid_url("http://example.com/"));
-        assert!(!valid_url("https://example.com/path/"));
-        assert!(!valid_url("ftp://example.com/"));
+    fn signed_authority_omits_the_default_port() {
         assert_eq!(authority("https://Codync.Example.dev").unwrap(), "codync.example.dev");
         assert_eq!(authority("http://127.0.0.1:8787").unwrap(), "127.0.0.1:8787");
         assert_eq!(authority("https://x.dev:443").unwrap(), "x.dev", "default port is left out");
@@ -821,5 +809,24 @@ mod tests {
         pull(&hub, &base).await.unwrap();
         assert_eq!(fake.posts.lock().unwrap().len(), SAS_NONCES_PER_HOUR);
         assert!(hub.cloud.status().last_error.is_some(), "the Mac hears about it, though the pull worked");
+    }
+
+    #[tokio::test]
+    async fn a_private_relay_takes_no_account_change() {
+        let hub = temp_hub();
+        hub.store.kv_set("test_cloud_url", "http://127.0.0.1:9").unwrap();
+        hub.store.kv_set("test_cloud_token", "s3cret-token-value").unwrap();
+        assert!(set_approval(&hub, Approval::Auto).unwrap_err().to_string().contains("private relay"));
+        assert_eq!(approval(&hub.store), Approval::Code);
+        assert!(unclaim(&hub).await.unwrap_err().to_string().contains("private relay"));
+        let screen = screen_ice(&hub, "dk").await.err().expect("no TURN on a private relay");
+        assert!(screen.to_string().contains("private relay"), "{screen}");
+        let claim = json!({"claimId": "clm_1", "nonce": "n", "userId": "user_1"});
+        let local = crate::api::devices::Caller::Local;
+        let refused = crate::api::dispatch(&hub, &local, "claimSign", claim.clone()).await.unwrap_err();
+        assert!(refused.to_string().contains("private relay"), "{refused}");
+        hub.store.kv_delete("test_cloud_token").unwrap();
+        assert!(crate::api::dispatch(&hub, &local, "claimSign", claim).await.is_ok(), "a Codync cloud signs claims");
+        assert!(require_accounts(&hub.store).is_ok(), "a Codync cloud has accounts");
     }
 }

@@ -12,7 +12,7 @@ sealed interface VersionMismatch {
 
     companion object {
         /** The oldest host this app works with; raise it only when a core flow needs something older hosts lack. */
-        const val MIN_HOST = "2.20.1"
+        const val MIN_HOST = "2.26.0"
 
         /** An unknown version is never a reason to lock someone out. */
         fun check(app: String, hostVersion: String?, minApp: String?, minHost: String = MIN_HOST): VersionMismatch? = when {

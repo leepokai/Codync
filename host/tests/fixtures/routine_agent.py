@@ -27,6 +27,11 @@ def log(event, sid, text):
             output.write(json.dumps({"event": event, "session": sid, "text": text}) + "\n")
 
 
+def answer_late(answer):
+    log("late", answer["result"]["sessionId"], "")
+    send(answer)
+
+
 def prompt(request, stop):
     sid = request["params"]["sessionId"]
     text = request["params"]["prompt"][0]["text"]
@@ -97,7 +102,8 @@ def verify_routine_tools():
         assert init["serverInfo"]["name"] == "codync-routines"
         names = {t["name"] for t in rpc("tools/list", {})["tools"]}
         assert names == {"list_routines", "save_routine", "set_routine_enabled",
-                         "delete_routine", "run_routine", "routine_webhook"}, names
+                         "delete_routine", "run_routine", "routine_webhook", "link_routine_bots",
+                         "unlink_routine_bots", "list_routine_flow"}, names
         assert not call("list_routines", {})["routines"]
         invalid = rpc("tools/call", {"name": "save_routine", "arguments": {
             "name": "Invalid", "instruction": "Check", "triggers": [{"type": "interval", "seconds": 0}]}})
@@ -123,6 +129,9 @@ def verify_routine_tools():
         call("delete_routine", {"id": extra["id"]})
         listed = call("list_routines", {})["routines"]
         assert len(listed) == 1 and listed[0]["name"] == "Edited through MCP"
+        # A routine that isn't this bot's doesn't run: the error says to ask its bot.
+        foreign = rpc("tools/call", {"name": "run_routine", "arguments": {"id": "another-bots-routine"}})
+        assert foreign.get("isError") and "message_bot" in foreign["content"][0]["text"], foreign
         call("run_routine", {"id": identifier_value})
         mcp.stdin.close()
 
@@ -132,12 +141,21 @@ for line in sys.stdin:
     method = request.get("method")
     if method == "initialize":
         log("initialize", "", str(os.getpid()))
-        capabilities = {"loadSession": not pathlib.Path("no-load").exists(), "sessionCapabilities": {"close": {}}}
+        resumable = not pathlib.Path("no-load").exists() and "--no-load" not in sys.argv
+        capabilities = {"loadSession": resumable, "sessionCapabilities": {"close": {}}}
         send({"id": request["id"], "result": {"agentCapabilities": capabilities}})
     elif method == "session/new":
         servers = request["params"]["mcpServers"]
-        if "--hang-new" not in sys.argv:  # an agent stuck starting never answers
-            send({"id": request["id"], "result": {"sessionId": str(uuid.uuid4())}})
+        answer = {"id": request["id"], "result": {"sessionId": str(uuid.uuid4())}}
+        if "--slow-new" in sys.argv and not pathlib.Path("slowed").exists():
+            # The first session ever opens 4 s late (its tools starting), and is logged as it does, unless the agent
+            # is stopped first.
+            pathlib.Path("slowed").touch()
+            late = threading.Timer(4, answer_late, args=(answer,))
+            late.daemon = True
+            late.start()
+        elif "--hang-new" not in sys.argv:  # an agent stuck starting never answers
+            send(answer)
     elif method == "session/load":
         sid = request["params"]["sessionId"]
         if sid in sessions:

@@ -11,12 +11,12 @@ import kotlinx.serialization.json.*
 
 // Composer drafts (saved as you type) and the files that go with them.
 
-fun AppStore.editDraft(botId: String, thread: String?, text: String) {
+fun AppStore.editDraft(botId: String, thread: String?, text: String, draftKey: String = ComposerDraft.lane(botId, thread)) {
     if (state.value.loading) return
-    val lane = ComposerDraft.lane(botId, thread)
+    val lane = draftKey
     val current = state.value.drafts[lane]
     if (current?.text == text || current == null && text.isEmpty()) return
-    try { updateDraft((current ?: ComposerDraft(botId, thread)).copy(text = text)) }
+    try { updateDraft((current ?: ComposerDraft(botId, thread, draftKey = draftKey.takeUnless { it == ComposerDraft.lane(botId, thread) })).copy(text = text)) }
     catch (error: Exception) { showError(error) }
 }
 
@@ -30,9 +30,9 @@ fun AppStore.quoteMessage(entry: Entry, thread: String? = entry.threadId) {
     editDraft(entry.botId, thread, if (current.isEmpty()) "$quoted\n\n" else "$current\n$quoted\n\n")
 }
 
-fun AppStore.addDraftFiles(botId: String, thread: String?, files: List<OutgoingFile>) {
+fun AppStore.addDraftFiles(botId: String, thread: String?, files: List<OutgoingFile>, draftKey: String = ComposerDraft.lane(botId, thread)) {
     check(!state.value.loading) { "Wait for the account to finish opening before adding files." }
-    val current = state.value.drafts[ComposerDraft.lane(botId, thread)] ?: ComposerDraft(botId, thread)
+    val current = state.value.drafts[draftKey] ?: ComposerDraft(botId, thread, draftKey = draftKey.takeUnless { it == ComposerDraft.lane(botId, thread) })
     updateDraft(current.copy(files = current.files + files))
 }
 
@@ -47,8 +47,8 @@ internal fun AppStore.addShareToDraft(botId: String, text: String, files: List<O
     ))
 }
 
-fun AppStore.removeDraftFile(botId: String, thread: String?, file: OutgoingFile) = action("draft-file:" + file.path) {
-    val current = state.value.drafts[ComposerDraft.lane(botId, thread)] ?: return@action
+fun AppStore.removeDraftFile(botId: String, thread: String?, file: OutgoingFile, draftKey: String = ComposerDraft.lane(botId, thread)) = action("draft-file:" + file.path) {
+    val current = state.value.drafts[draftKey] ?: return@action
     updateDraft(current.copy(files = current.files - file))
     draftWriter?.join()
     check(savedDrafts.values.none { draft -> draft.files.any { it.path == file.path } }) { "Couldn't save the attachment removal. Retry before leaving this chat." }
@@ -80,9 +80,9 @@ internal fun AppStore.persistDrafts() {
     }
 }
 
-fun AppStore.sendDraft(botId: String, thread: String?, text: String, replyTo: ReplyQuote? = null, onQueued: () -> Unit) {
-    editDraft(botId, thread, text)
-    val lane = ComposerDraft.lane(botId, thread)
+fun AppStore.sendDraft(botId: String, thread: String?, text: String, replyTo: ReplyQuote? = null, draftKey: String = ComposerDraft.lane(botId, thread), onQueued: () -> Unit) {
+    editDraft(botId, thread, text, draftKey)
+    val lane = draftKey
     val draft = state.value.drafts[lane] ?: return
     if (draft.text != text) return
     if (draft.text.isBlank() && draft.files.isEmpty()) return
@@ -117,15 +117,27 @@ fun AppStore.importFiles(uris: List<Uri>, onImported: (List<OutgoingFile>) -> Un
 }
 fun AppStore.removeFile(file: OutgoingFile) = action("remove:" + file.path) { withContext(Dispatchers.IO) { attachments.discard(file) } }
 
-suspend fun AppStore.attachment(botId: String, file: Attachment): File {
-    val request = contextScope.async { downloadLocks.getOrPut(file.id) { Mutex() }.withLock {
-    val destination = withContext(Dispatchers.IO) { attachments.cached(file.id) }
-    if (!destination.exists() || destination.length() != file.size) {
-        val active = ready()
-        HostFiles(active).download(botId, file, destination)
+suspend fun AppStore.attachment(botId: String, file: Attachment): File =
+    cachedFile(file.id, file.size) { files, destination -> files.download(botId, file, destination) }
+
+/** A picture a bot shared (iOS `sharedFileData`): checked against its SHA-256 on its way into the same cache. */
+suspend fun AppStore.sharedImage(entryId: String, file: SharedFile): File = cachedFile(file.id, file.size) { files, destination ->
+    val folder = withContext(Dispatchers.IO) { attachments.shareFolder() }
+    val saved = files.downloadShared(entryId, file, folder)
+    withContext(Dispatchers.IO) { try { saved.copyTo(destination, overwrite = true) } finally { folder.deleteRecursively() } }
+}
+
+/** A file from the computer, fetched once into the attachment cache by `fetch`. */
+private suspend fun AppStore.cachedFile(id: String, size: Long, fetch: suspend (HostFiles, File) -> Unit): File {
+    val request = contextScope.async { downloadLocks.getOrPut(id) { Mutex() }.withLock {
+    val destination = withContext(Dispatchers.IO) { attachments.cached(id) }
+    if (!destination.exists() || destination.length() != size) {
+        fetch(HostFiles(ready()), destination)
         withContext(Dispatchers.IO) { attachments.trim() }
     }
     destination
     } }
     try { return request.await() } finally { request.cancel() }
 }
+
+fun AppStore.editDraft(botId: String, text: String) = editDraft(botId, null, text)

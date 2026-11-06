@@ -36,7 +36,7 @@ pub const OWN_AGENT_ENV: &str = "CODYNC_BOT";
 pub const DECISION_WAIT: Duration = Duration::from_secs(108);
 
 /// Sessions idle this long are forgotten (a terminal closed without a `SessionEnd`).
-const STALE_AFTER: Duration = Duration::from_secs(6 * 60 * 60);
+const STALE_AFTER: Duration = Duration::from_hours(6);
 
 pub fn is_external(cfg: &BotConfig) -> bool {
     cfg.backend == BACKEND

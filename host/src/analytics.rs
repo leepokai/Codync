@@ -81,6 +81,8 @@ pub enum Event {
     RoutineRetried,
     VoiceCallStarted,
     VoiceCallFinished,
+    /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
+    VoiceCallQuality,
     RemoteScreenOpened,
     ScreenTakenOver,
     ConnectorInstalled,
@@ -90,11 +92,16 @@ pub enum Event {
     SkillInstalled,
     SkillRemoved,
     SkillWritten,
+    /// A bot's `publish_artifact`.
+    ArtifactPublished,
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
     SettingChanged,
     HostUpdateInstalled,
+    /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
+    NetworkJoined,
+    NetworkChanged,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -143,6 +150,7 @@ impl Event {
             Self::RoutineRetried => "routine_retried",
             Self::VoiceCallStarted => "voice_call_started",
             Self::VoiceCallFinished => "voice_call_finished",
+            Self::VoiceCallQuality => "voice_call_quality",
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
@@ -152,11 +160,14 @@ impl Event {
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
             Self::SkillWritten => "skill_written",
+            Self::ArtifactPublished => "artifact_published",
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::SettingChanged => "setting_changed",
             Self::HostUpdateInstalled => "host_update_installed",
+            Self::NetworkJoined => "network_joined",
+            Self::NetworkChanged => "network_changed",
             Self::Exception => "$exception",
         }
     }

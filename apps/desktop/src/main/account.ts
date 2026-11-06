@@ -130,7 +130,20 @@ export class AccountService extends EventEmitter {
     } catch {
       // Offline at launch: the saved session still counts; the next call refreshes it.
     }
+    await this.signInWithDevTicket()
     this.set({ ready: true })
+  }
+
+  /** An unpackaged Codync Dev run with a test account's one-time sign-in token (tools/dev-account.mjs): signs in without a browser. */
+  private async signInWithDevTicket() {
+    const ticket = process.env.CODYNC_DEV_SIGN_IN_TICKET
+    if (!ticket || app.isPackaged || identity.environment !== 'dev' || !this.config.clerkPublishableKey?.startsWith('pk_test_') || this.activeSession) return
+    try {
+      await this.request<SignInResource>('POST', '/v1/client/sign_ins', { strategy: 'ticket', ticket })
+      await this.refreshClient()
+    } catch (error) {
+      this.set({ error: `Test account sign-in failed: ${error instanceof Error ? error.message : String(error)}` })
+    }
   }
 
   private async persist() {

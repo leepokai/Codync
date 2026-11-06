@@ -9,7 +9,7 @@ struct CodyncWidgets: WidgetBundle {
     var body: some Widget {
         BotsWidget()
         BotsTeamWidget()
-        LeadBotControl()
+        UrgentBotControl()
         UsageWidget()
         ProviderUsageWidget()
         ClaudeUsageWidget()
@@ -117,7 +117,7 @@ struct BotsWidgetView: View {
                 BotsWidgetCard(bots: entry.bots, wide: true, links: entry.links)
             default:
                 BotsWidgetCard(bots: entry.bots, wide: false)
-                    .widgetURL(entry.lead.flatMap { entry.links[$0.id] })
+                    .widgetURL(entry.mostUrgent.flatMap { entry.links[$0.id] })
             }
         }
     }
@@ -231,7 +231,7 @@ struct TeamTimeline: AppIntentTimelineProvider {
 
 extension BotsEntry {
     /// Needs you first, then working, then most recent.
-    var lead: Bot? {
+    var mostUrgent: Bot? {
         bots.filter { !$0.hidden }.min {
             let rank = { (b: Bot) in b.needsInput ? 0 : b.isWorking ? 1 : 2 }
             return rank($0) != rank($1) ? rank($0) < rank($1) : $0.lastAt > $1.lastAt
@@ -242,11 +242,12 @@ extension BotsEntry {
 // MARK: - Control Center
 
 /// A Control Center button: the bot that needs you most and its state; a tap opens it.
-struct LeadBotControl: ControlWidget {
+struct UrgentBotControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "CodyncLeadBot", provider: LeadBotProvider()) { lead in
-            ControlWidgetButton(action: OpenURLIntent(lead.url)) {
-                Label(lead.text, systemImage: lead.symbol)
+        // The kind keeps its first name, so controls already placed stay.
+        StaticControlConfiguration(kind: "CodyncLeadBot", provider: UrgentBotProvider()) { urgent in
+            ControlWidgetButton(action: OpenURLIntent(urgent.url)) {
+                Label(urgent.text, systemImage: urgent.symbol)
             }
         }
         .displayName("Bots")
@@ -254,30 +255,30 @@ struct LeadBotControl: ControlWidget {
     }
 }
 
-struct LeadBot: Sendable {
+struct UrgentBot: Sendable {
     let text: String
     let symbol: String
     let url: URL
 
     static let home = AppEnvironment.current.link("computers")
 
-    init(text: String, symbol: String, url: URL = LeadBot.home) {
+    init(text: String, symbol: String, url: URL = UrgentBot.home) {
         self.text = text; self.symbol = symbol; self.url = url
     }
 
     init(_ entry: BotsEntry) {
         guard entry.paired else { self.init(text: "Connect a computer", symbol: "desktopcomputer"); return }
-        guard let bot = entry.lead, bot.isWorking else { self.init(text: "All quiet", symbol: "moon.zzz.fill"); return }
+        guard let bot = entry.mostUrgent, bot.isWorking else { self.init(text: "All quiet", symbol: "moon.zzz.fill"); return }
         self.init(text: "\(bot.name): \(bot.widgetState.label)",
                   symbol: bot.needsInput ? "hand.raised.fill" : "ellipsis.bubble.fill",
-                  url: entry.links[bot.id] ?? LeadBot.home)
+                  url: entry.links[bot.id] ?? UrgentBot.home)
     }
 }
 
-struct LeadBotProvider: ControlValueProvider {
-    var previewValue: LeadBot { LeadBot(text: "Reviewer: Needs you", symbol: "hand.raised.fill") }
+struct UrgentBotProvider: ControlValueProvider {
+    var previewValue: UrgentBot { UrgentBot(text: "Reviewer: Needs you", symbol: "hand.raised.fill") }
 
-    func currentValue() async throws -> LeadBot { LeadBot(.current) }
+    func currentValue() async throws -> UrgentBot { UrgentBot(.current) }
 }
 
 private struct EmptyWidget: View {
@@ -374,7 +375,7 @@ struct UsageWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
     private var windows: [(provider: String, window: UsageWindow)] {
-        entry.usage.providers.flatMap { p in p.windows.map { (p.name, $0) } }
+        entry.usage.providers.flatMap { p in p.limits.map { (p.name, $0) } }
     }
 
     private var tightest: (provider: String, window: UsageWindow)? { windows.max { $0.window.percent < $1.window.percent } }
@@ -578,7 +579,7 @@ struct ProviderUsageView: View {
 
     var body: some View {
         Group {
-            if let provider, !provider.windows.isEmpty {
+            if let provider, !provider.limits.isEmpty {
                 ProviderWidgetCard(provider: provider, layout: family == .systemSmall ? .small : family == .systemLarge ? .large : .medium, date: entry.date)
             } else {
                 EmptyWidget(text: L10n.tr("Open Codync to connect a computer and check {provider} usage.").replacingOccurrences(of: "{provider}", with: entry.provider.capitalized))
@@ -596,16 +597,23 @@ struct BotLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BotActivityAttributes.self) { context in
             let state = presentation(context)
-            BotActivityCard(name: context.attributes.name, state: state,
-                            startedAt: context.state.startedAt, link: context.attributes.link) {
-                avatar(context, state: state, size: 32)
-            } mark: {
-                indicator(context, state: state, size: 28)
+            Group {
+                if context.state.call != nil {
+                    CallActivityViews(context: context, state: state).card
+                } else {
+                    BotActivityCard(name: context.attributes.name, state: state,
+                                    startedAt: since(context), link: context.attributes.link) {
+                        avatar(context, state: state, size: 32)
+                    } mark: {
+                        indicator(context, state: state, size: 28)
+                    }
+                }
             }
             .modifier(SurfaceTint())
                 .widgetURL(context.attributes.link ?? AppEnvironment.current.link("computers"))
         } dynamicIsland: { context in
             let state = presentation(context)
+            if context.state.call != nil { return CallActivityViews(context: context, state: state).island }
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     avatar(context, state: state, size: 26).frame(maxHeight: .infinity)
@@ -627,7 +635,7 @@ struct BotLiveActivity: Widget {
                     .animation(Motion.activityPhase, value: state)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    ActivityIslandFooter(state: state, startedAt: context.state.startedAt, link: context.attributes.link)
+                    ActivityIslandFooter(state: state, startedAt: since(context), link: context.attributes.link)
                         .padding(.horizontal, 4)
                 }
             } compactLeading: {
@@ -644,7 +652,12 @@ struct BotLiveActivity: Widget {
     }
 
     private func presentation(_ context: ActivityViewContext<BotActivityAttributes>) -> BotActivityPresentation {
-        .init(status: context.state.status, activity: context.state.activity, isStale: context.isStale)
+        .init(status: context.state.status, activity: context.state.activity, isStale: context.isStale, call: context.state.call)
+    }
+
+    /// The time shown: the call's length while this phone is on a call with the bot, else how long it has worked.
+    private func since(_ context: ActivityViewContext<BotActivityAttributes>) -> Date? {
+        context.state.call == nil ? context.state.startedAt : context.state.callStartedAt
     }
 
     /// While the bot works, the orb keeps orbiting (in step with the face); otherwise it holds

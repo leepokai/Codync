@@ -18,4 +18,12 @@ class RosterMoveTest {
         assertNull(moved(roster, "c", 1))
         assertNull(moved(roster, "missing", 1))
     }
+
+    @Test fun theLeadComesFirstAndStaysThere() {
+        val bots = listOf(Bot("pin", pinned = true, lastAt = 9), Bot("a", lastAt = 5), Bot("lead", lead = true, position = 3, lastAt = 1))
+        val sorted = roster(bots)
+        assertEquals(listOf("lead", "pin", "a"), sorted.map(Bot::id))
+        assertNull(moved(sorted, "lead", 1))
+        assertNull(moved(sorted, "pin", -1))
+    }
 }

@@ -25,10 +25,18 @@ pub fn args(backend: &str) -> &'static str {
 /// are the user's.
 pub fn switchable(cfg: &BotConfig) -> bool {
     match cfg.backend.as_str() {
-        "claude" | "copilot" | "codebuddy" => true,
+        "claude" | "copilot" | "codebuddy" | "workbuddy" => true,
         "qwen" => crate::agent::workspace::is_managed(cfg),
         _ => false,
     }
+}
+
+/// Whether the bot's harness keeps one memory of its own for all its sessions that Codync can't turn off: every bot
+/// on it, and the harness used outside Codync, share it. Gemini CLI's is `~/.gemini/GEMINI.md`, Hermes Agent's
+/// `~/.hermes/memories` ([design](../../../docs/design/bot-memory.md#instructions-in-every-harness)). The apps say so
+/// where other harnesses have a switch.
+pub fn shared(cfg: &BotConfig) -> bool {
+    matches!(cfg.backend.as_str(), "gemini" | "hermes")
 }
 
 /// Whether the user kept the bot's harness's own memory on beside Codync's.
@@ -164,9 +172,16 @@ mod tests {
         };
         let own = crate::agent::workspace::path(id).to_string_lossy().into_owned();
         assert!(kept(&bot("claude", "/work/app")), "Claude Code's is switched through its settings, in any folder");
+        assert!(
+            switchable(&bot("workbuddy", "/work/app")),
+            "WorkBuddy is the CodeBuddy CLI and honors the same switch"
+        );
         assert!(kept(&bot("qwen", &own)));
         assert!(!switchable(&bot("qwen", "/work/app")), "Qwen Code's lives in the project's own files");
         assert!(!switchable(&bot("codex", &own)) && !switchable(&bot("gemini", &own)));
+        // Where there's no switch, the apps say when every bot on the harness shares its memory.
+        assert!(shared(&bot("gemini", &own)) && shared(&bot("hermes", "/work/app")));
+        assert!(!shared(&bot("claude", &own)) && !shared(&bot("codex", &own)));
         let mut off = bot("claude", &own);
         off.harness_memory = false;
         assert!(!kept(&off));

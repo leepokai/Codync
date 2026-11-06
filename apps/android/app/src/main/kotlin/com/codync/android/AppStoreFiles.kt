@@ -89,3 +89,10 @@ private fun AppStore.showing(export: FileExport): Boolean {
     val current = state.value
     return foreground && current.selectedBot == export.botId && (current.thread == export.threadId || current.thread == export.entryId)
 }
+
+/** Library downloads retain the same deferred share ownership as conversation cards. */
+fun AppStore.saveFile(entryId: String, botId: String, file: SharedFile) {
+    val entry = state.value.entries.firstOrNull { it.id == entryId && it.botId == botId }
+        ?: Entry(entryId, 0, botId, 0, "agent", 0, kotlinx.serialization.json.JsonObject(emptyMap()))
+    saveFile(entry, file)
+}

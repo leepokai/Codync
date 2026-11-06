@@ -21,11 +21,34 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.scope.outputs.package }}
     defaults:
       run:
         working-directory: apps/desktop
     steps:
       - uses: actions/checkout@v4
+      - name: Package on this run?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # Tags, manual runs and release PRs into main always package. Other PRs package only when they
+        # touch what the installers are built from: the main process, preload, build config, tools,
+        # resources, dependencies, the shared app config, the Mac screen helper and packaging/. A
+        # renderer-only change is covered by typecheck, tests and the build.
+        run: |
+          if [ "$EVENT" != pull_request ] || [ "$BASE_REF" = main ]; then
+            echo package=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          if git diff --name-only FETCH_HEAD HEAD | grep -Eq '^(apps/desktop/(package(-lock)?\.json|electron-builder[^/]*|electron\.vite\.config\.ts|tools/|src/main/|src/preload/|src/shared/|resources/|native/)|apps/shared/Config/|apps/screen-macos/|packaging/|\.github/workflows/release-desktop\.yml)'; then
+            echo package=true >> "$GITHUB_OUTPUT"
+          else
+            echo package=false >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -46,9 +69,11 @@ jobs:
     needs: check
     # Fork PRs get no signing secrets, so they stop at check, Windows and Linux; the release PR into main
     # builds the Mac app before the tag.
-    # A repository without the Apple signing secrets (this fork) sets no `MAC_SIGNING` variable and skips it.
+    # A repository without the Apple signing secrets (this fork) sets no `MAC_SIGNING` variable and skips it; the
+    # release PR into main only builds the Mac app when a package is wanted.
     if: >-
       vars.MAC_SIGNING == 'true' &&
+      needs.check.outputs.package == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-26
     steps:
@@ -58,9 +83,11 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - name: Install Rust (rust-toolchain.toml)
+      - name: Install Rust (host/rust-toolchain.toml)
+        working-directory: host
         run: rustup toolchain install
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        working-directory: host
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host
@@ -162,6 +189,7 @@ jobs:
 
   windows:
     needs: check
+    if: needs.check.outputs.package == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -173,7 +201,8 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - name: Install Rust (rust-toolchain.toml)
+      - name: Install Rust (host/rust-toolchain.toml)
+        working-directory: host
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
@@ -220,6 +249,7 @@ jobs:
 
   linux:
     needs: check
+    if: needs.check.outputs.package == 'true'
     strategy:
       matrix:
         include:

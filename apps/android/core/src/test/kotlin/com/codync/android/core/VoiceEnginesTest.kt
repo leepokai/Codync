@@ -44,6 +44,26 @@ class VoiceEnginesTest {
         assertEquals("61", prefs.values["callUsage.openai.2026-10"])
     }
 
+    @Test fun aCallTakesAnotherEngineOnlyWhenWhatItsEngineIsBuiltFromChanges() {
+        val choices = Prefs().choices; val gemini = VoiceProvider.Gemini
+        assertEquals(choices.engineChoice(null, ""), choices.engineChoice(null, ""))
+        assertNotEquals(choices.engineChoice(null, ""), choices.engineChoice(null, "ja-JP"))
+        assertNotEquals(choices.engineChoice(gemini, ""), choices.engineChoice(VoiceProvider.OpenAI, ""))
+        val seen = mutableListOf(choices.engineChoice(gemini, ""))
+        for (change in listOf<() -> Unit>(
+            { choices.choose(gemini, VoiceChoices.Model.Realtime, "live-9") },
+            { choices.voice(gemini, "Puck") },
+            { choices.speechMode(gemini, true) },
+            { choices.choose(gemini, VoiceChoices.Model.Transcribe, "flash-9") },
+            { choices.choose(gemini, VoiceChoices.Model.Speech, "tts-9") })) {
+            change()
+            val choice = choices.engineChoice(gemini, "")
+            assertEquals(choice, choices.engineChoice(gemini, ""))
+            assertFalse(choice, choice in seen)
+            seen += choice
+        }
+    }
+
     @Test fun utterancesStartAtSpeechEndAtThePauseAndDropCoughs() {
         val detector = UtteranceDetector(); val frame = ByteArray(3_200)
         assertNull(detector.feed(frame, 0f, 0, 1_000))
@@ -68,47 +88,60 @@ class VoiceEnginesTest {
         assertEquals(1f, Pcm.level(ShortArray(4) { Short.MAX_VALUE }, 4), .01f); assertEquals(0f, Pcm.level(ShortArray(4), 4))
     }
 
-    private class Desk(override val bots: List<Bot>, override var entries: List<Entry>) : CallTarget {
-        val sent = mutableListOf<String>(); val answered = mutableListOf<Pair<String, String>>()
-        override fun send(text: String) { sent += text }
-        override fun respond(entry: Entry, optionId: String) { answered += entry.id to optionId }
+    /** The computer's side of a call, for the engines' tests: one session, tools answered here. */
+    private class Link(val credential: String = "ek_secret") : CallLink {
+        val tools = mutableListOf<Pair<String, JsonObject>>(); val lines = mutableListOf<Pair<String, String>>(); var turns = 0
+        var started: Triple<VoiceProvider, String, String>? = null; var starts = 0
+        override suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession {
+            started = Triple(provider, model, voice); starts++
+            return CallSession.decode(Json.parseToJsonElement("""{"credential":"$credential","instructions":"You are the voice relay for Ada",
+                "tools":[{"name":"send_to_bot","description":"Send","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}},
+                {"name":"bot_status","description":"Status","parameters":{"type":"object","properties":{}}}]}""").jsonObject)
+        }
+        override suspend fun tool(name: String, arguments: JsonObject): JsonElement {
+            tools += name to arguments
+            return buildJsonObject { if (name == "bot_status") put("status", "idle") else put("sent", true) }
+        }
+        override fun add(from: String, piece: String) { lines += from to piece }
+        override fun transcribing(on: Boolean) { }
+        override fun endTurn() { turns++ }
+        override fun reply(text: String) = "[Ada replied] ${SpokenText.from(text)}"
     }
     private fun entry(id: String, seq: Long, kind: String, data: JsonObjectBuilder.() -> Unit, bot: String = "ada") =
         Entry(id, seq, bot, seq, kind, data = buildJsonObject(data))
-    private val card = entry("card", 4, "permission", {
-        put("status", "pending"); put("title", "Run npm test")
-        putJsonArray("options") {
-            addJsonObject { put("optionId", "allow_once"); put("name", "Allow once"); put("kind", "allow_once") }
-            addJsonObject { put("optionId", "reject"); put("name", "Deny"); put("kind", "reject_once") }
-        }
-    })
 
-    @Test fun theOperatorRelaysToTheBotAndAnswersApprovalsByName() {
-        val desk = Desk(listOf(Bot("ada", "Ada", description = "web app", status = "working", activity = "Running tests")), listOf(
-            entry("u", 1, "user", { put("text", "Run the tests") }),
-            entry("a", 2, "agent", { put("text", "**Started** `npm test`"); put("final", true) }), card))
-        val operator = CallOperator("ada", desk)
-        assertTrue(operator.instructions.startsWith("You are the voice on a phone call between the user and Ada (web app), a coding agent"))
-        assertTrue("[Ada replied]" in operator.instructions)
-        assertEquals("Nothing to send.", operator.call("send_to_bot", buildJsonObject { put("text", "  ") })["error"]?.jsonPrimitive?.content)
-        operator.call("send_to_bot", buildJsonObject { put("text", " Fix the build ") }); assertEquals(listOf("Fix the build"), desk.sent)
-        val status = operator.call("bot_status", JsonObject(emptyMap()))
-        assertEquals("Run npm test", status["approval"]!!.jsonObject["request"]!!.jsonPrimitive.content)
-        val messages = operator.call("recent_messages", buildJsonObject { put("count", 2.0) })["messages"]!!.jsonArray
-        assertEquals(listOf("ada" to "Started npm test", "approval request" to "Run npm test"),
-            messages.map { it.jsonObject["from"]!!.jsonPrimitive.content.lowercase() to it.jsonObject["text"]!!.jsonPrimitive.content })
-        assertEquals("Allow once", operator.call("answer_approval", buildJsonObject { put("option", "allow") })["answered"]?.jsonPrimitive?.content)
-        assertEquals(listOf("card" to "allow_once"), desk.answered)
-        assertEquals(2, operator.call("answer_approval", buildJsonObject { put("option", "maybe") })["options"]!!.jsonArray.size)
-        assertEquals("Unknown tool shell.", operator.call("shell", JsonObject(emptyMap()))["error"]?.jsonPrimitive?.content)
-        assertEquals("[Ada replied] Done", operator.reply("**Done**")); assertEquals("[Notice] Hi", operator.notice("Hi"))
-        val group = CallOperator("team", Desk(listOf(Bot("team", "Team", kind = "group", members = listOf("ada", "bo")), Bot("ada", "Ada"), Bot("bo", "Bo")), emptyList()))
-        assertTrue("the group chat Team on the user's computer, where the bots Ada, Bo answer in turn" in group.instructions)
-        val declarations = CallOperator.tools.map(CallTool::gemini)
+    @Test fun aCallsTranscriptJoinsEachTurnAndItsMessagesHideBehindItsLine() {
+        var now = 0L
+        val transcript = CallTranscript({ ++now }, { it.uppercase() }, { "l$now" }) { }
+        transcript.add("user", "看一下 "); transcript.add("user", "git"); transcript.add("voice", " Checking.")
+        assertEquals("the line being said stays", listOf(CallLine("user", "看一下 GIT", 1, "l1")), transcript.drain(withOpen = false))
+        transcript.restore(listOf(CallLine("user", "AGAIN", 0)))
+        assertEquals(listOf(CallLine("user", "AGAIN", 0), CallLine("voice", "CHECKING.", 2, "l2")), transcript.drain(withOpen = true))
+        assertTrue(transcript.drain(withOpen = true).isEmpty())
+
+        val line = entry("n1", 9, "notice", { put("text", "Git"); put("callSeconds", 26); put("call", "c")
+            putJsonArray("transcript") { addJsonObject { put("from", "user"); put("text", "看一下 git"); put("at", 1) } } })
+        val entries = listOf(
+            entry("u1", 2, "user", { put("text", "check git"); put("call", "c"); put("from", "voice") }),
+            entry("a1", 3, "agent", { put("text", "Clean"); put("final", true); put("call", "c") }),
+            entry("u2", 4, "user", { put("text", "on this phone"); put("call", "live") }),
+            entry("x1", 5, "user", { put("text", "typed") }), line,
+        ).map { it.copy(createdAt = it.seq) }
+        assertEquals(listOf("x1", "n1"), entries.hidingCalls().map(Entry::id))
+        val file = entry("f1", 10, "agent", { put("text", "log.txt (3 bytes)"); put("final", true); put("call", "c")
+            putJsonArray("files") { addJsonObject { put("id", "f"); put("name", "log.txt"); put("size", 3); put("sha256", "") } } })
+        assertEquals("a file the call brought stays, to be opened", listOf("x1", "n1", "f1"), (entries + file).hidingCalls().map(Entry::id))
+        assertEquals(listOf("User: 看一下 git", "VoiceToBot: check git", "Bot: Clean"),
+            entries.callConversation(line).map { "${it.speaker}: ${it.text}" })
+        // A call older than the chat the phone holds: its own entries, fetched, fill in the conversation once each.
+        val old = listOf(line)
+        assertTrue(old.callConversation(line).size == 1)
+        val fetched = entries.filter { it.call == "c" && it.kind != "notice" }
+        assertEquals(old.callConversation(line).size + 2, old.withCallEntries(fetched).callConversation(line).size)
+        assertEquals(entries.size, entries.withCallEntries(fetched).size)
+        val declarations = runBlocking { Link().start(VoiceProvider.Gemini, "m", "v") }.tools.map(CallTool::gemini)
         assertNull(declarations.first { it["name"]!!.jsonPrimitive.content == "bot_status" }["parameters"])
-        assertEquals("OBJECT", declarations[0]["parameters"]!!.jsonObject["type"]!!.jsonPrimitive.content)
         assertEquals("STRING", declarations[0]["parameters"]!!.jsonObject["properties"]!!.jsonObject["text"]!!.jsonObject["type"]!!.jsonPrimitive.content)
-        assertEquals("function", CallOperator.tools[0].openAI()["type"]!!.jsonPrimitive.content)
     }
 
     private class Mic : MicSource {
@@ -124,7 +157,7 @@ class VoiceEnginesTest {
         val engine = CloudSpeechEngine(backgroundScope, VoiceProvider.Gemini, VoiceSettings(pauseMillis = 1_000), mic,
             { _, _ -> val clip = CompletableDeferred<Unit>().also { playing += it }
                 try { clip.await() } catch (cancelled: CancellationException) { clip.cancel(); throw cancelled } }, speech) { testScheduler.currentTime }
-        runCurrent(); assertEquals(VoicePhase.Listening, engine.state.value.phase)
+        runCurrent(); assertEquals(VoicePhase.Starting, engine.state.value.phase) // Until the microphone delivers.
         val frame = ByteArray(3_200)
         repeat(6) { mic.frames!!(frame, .8f); advanceTimeBy(100); runCurrent() }
         mic.frames!!(frame, 0f); advanceTimeBy(1_100); runCurrent(); mic.frames!!(frame, 0f); runCurrent()
@@ -169,13 +202,15 @@ class VoiceEnginesTest {
     }
 
     @Test fun openAIRealtimeRelaysRepliesOneResponseAtATimeAndRunsTools() = runTest {
-        val peer = Peer(); val desk = Desk(listOf(Bot("ada", "Ada")), emptyList()); var exchanged: Pair<String, String>? = null
-        val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), { "ek_secret" }, CallOperator("ada", desk), peer) { secret, offer ->
+        val peer = Peer(); val link = Link(); var exchanged: Pair<String, String>? = null
+        val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), "gpt-realtime", "marin", "gpt-transcribe", link, peer) { secret, offer ->
             exchanged = secret to offer; "answer-sdp" }
         runCurrent()
         assertEquals("ek_secret" to "offer-sdp", exchanged); assertEquals("answer-sdp", peer.answer); assertEquals(true, peer.micOn)
         engine.speak("Early reply"); runCurrent(); assertTrue(peer.sent.isEmpty()) // Waits for the channel.
         peer.isOpen = true; peer.events!!.opened(); runCurrent()
+        assertEquals(listOf("session.update"), peer.types()); assertEquals(VoicePhase.Starting, engine.state.value.phase)
+        peer.events!!.received("""{"type":"session.updated"}"""); runCurrent()
         assertEquals(listOf("session.update", "conversation.item.create", "response.create"), peer.types())
         assertEquals("[Ada replied] Early reply", peer.sent[1]["item"]!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
         assertEquals(VoicePhase.Listening, engine.state.value.phase)
@@ -183,7 +218,7 @@ class VoiceEnginesTest {
         assertEquals(3, peer.sent.size)
         peer.events!!.received("""{"type":"response.function_call_arguments.done","call_id":"c1","name":"send_to_bot","arguments":"{\"text\":\"Ship it\"}"}""")
         peer.events!!.received("""{"type":"response.done"}"""); runCurrent()
-        assertEquals(listOf("Ship it"), desk.sent)
+        assertEquals(listOf("send_to_bot" to "Ship it"), link.tools.map { it.first to it.second["text"]!!.jsonPrimitive.content })
         assertEquals(listOf("function_call_output", "message"), peer.sent.drop(3).dropLast(1).map { it["item"]!!.jsonObject["type"]!!.jsonPrimitive.content })
         assertEquals("response.create", peer.types().last())
         peer.events!!.received("""{"type":"output_audio_buffer.started"}"""); runCurrent()
@@ -193,15 +228,68 @@ class VoiceEnginesTest {
         engine.mute(true); runCurrent(); assertEquals(false, peer.micOn)
         peer.events!!.ice(RealtimePeer.Ice.Disconnected); advanceTimeBy(4_000); runCurrent(); assertEquals(VoicePhase.Listening, engine.state.value.phase)
         peer.events!!.ice(RealtimePeer.Ice.Connected); advanceTimeBy(2_000); runCurrent(); assertEquals(VoicePhase.Listening, engine.state.value.phase)
-        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent(); engine.awaitEnd()
-        assertEquals("Lost the connection to OpenAI.", engine.state.value.error); assertEquals(1, peer.closed)
+        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent()
+        assertEquals(VoicePhase.Reconnecting, engine.state.value.phase); assertEquals(1, peer.closed) // Tried again, not hung up.
+        engine.end(); engine.awaitEnd()
+    }
+
+    @Test fun openAIRealtimeReconnectsADroppedSessionPrimedByTheComputerAndGivesUpAfterThreeTries() = runTest {
+        val peer = Peer(); val link = Link()
+        var offers = 0
+        val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), "gpt-realtime", "marin", "gpt-transcribe", link, peer) { _, _ ->
+            // OpenAI answers the first two sessions, then stops answering.
+            if (++offers > 2) throw IOException("OpenAI answered 503."); "answer-sdp" }
+        runCurrent(); peer.isOpen = true; peer.events!!.opened(); peer.events!!.received("""{"type":"session.updated"}"""); runCurrent()
+        assertEquals(VoicePhase.Listening, engine.state.value.phase)
+        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent()
+        assertEquals(VoicePhase.Reconnecting, engine.state.value.phase)
+        engine.speak("Waits for the new session"); runCurrent()
+        advanceTimeBy(Reconnect.delays[0] + 1); runCurrent()
+        assertEquals(2, offers); assertEquals(2, link.starts) // A fresh secret and instructions from the computer.
+        peer.events!!.opened(); peer.events!!.received("""{"type":"session.updated"}"""); runCurrent()
+        assertEquals(VoicePhase.Listening, engine.state.value.phase)
+        assertEquals("[Ada replied] Waits for the new session",
+            peer.sent.last { it["type"]!!.jsonPrimitive.content == "conversation.item.create" }["item"]!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
+        // A drop the new sessions never recover from: three tries, then the call fails over.
+        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent()
+        repeat(Reconnect.delays.size) { advanceTimeBy(Reconnect.delays.max() + 15_001); runCurrent() }
+        engine.awaitEnd()
+        assertEquals(5, offers) // Each failed answer is a try of its own, not the end of the call.
+        assertEquals(VoicePhase.Failed, engine.state.value.phase)
+        assertEquals(VoiceFailureKind.Connection, engine.state.value.failureKind)
+    }
+
+    @Test fun callQualityReportsReadyTimeReconnectsStallsAndFailureOncePerEngine() {
+        var now = 0L
+        val reports = mutableListOf<Pair<String, CallQuality.Report>>()
+        val quality = CallQuality<String>({ now }) { engine, report -> reports += engine to report }
+        quality.begin("gemini")
+        now = 1_200; quality.phase(VoicePhase.Listening, null)
+        quality.phase(VoicePhase.Reconnecting, null); now = 2_000; quality.phase(VoicePhase.Listening, null)
+        quality.stalled()
+        quality.phase(VoicePhase.Failed, VoiceFailureKind.Connection)
+        quality.begin("on_device")
+        assertEquals("gemini" to CallQuality.Report(1_200, 1, VoiceStuck.Speaking, VoiceFailureKind.Connection), reports.single())
+        now += CallQuality.STUCK_MILLIS; quality.report()
+        assertEquals("on_device" to CallQuality.Report(null, 0, VoiceStuck.Connecting, null), reports.last())
     }
 
     @Test fun openAIRealtimeGivesUpWhenTheChannelNeverOpens() = runTest {
         val peer = Peer()
-        val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), { "ek" }, CallOperator("ada", Desk(emptyList(), emptyList())), peer) { _, _ -> "sdp" }
+        val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), "gpt-realtime", "marin", "gpt-transcribe", Link("ek"), peer) { _, _ -> "sdp" }
         advanceTimeBy(15_001); runCurrent(); engine.awaitEnd()
         assertEquals(VoicePhase.Failed, engine.state.value.phase); assertEquals("Couldn't reach OpenAI.", engine.state.value.error)
+    }
+
+    @Test fun openAIRealtimeStartTimerOutlastsIceUntilTheSessionIsSetUp() = runTest {
+        val peer = Peer()
+        val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), "gpt-realtime", "marin", "gpt-transcribe", Link("ek"), peer) { _, _ -> "sdp" }
+        runCurrent(); peer.isOpen = true; peer.events!!.opened()
+        peer.events!!.ice(RealtimePeer.Ice.Disconnected); advanceTimeBy(5_001); runCurrent()
+        assertEquals(VoicePhase.Starting, engine.state.value.phase) // No 5 s drop timer while starting.
+        peer.events!!.ice(RealtimePeer.Ice.Connected); advanceTimeBy(10_000); runCurrent()
+        assertEquals("Couldn't reach OpenAI.", engine.state.value.error) // ICE alone isn't connected.
+        engine.awaitEnd()
     }
 
     @Test fun openAICallsEndpointPostsTheOfferAndExplainsRefusals() = runBlocking {
@@ -233,9 +321,9 @@ class VoiceEnginesTest {
             }))
             val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
             val scope = CoroutineScope(SupervisorJob() + dispatcher)
-            val mic = Mic(); val player = Player(); val desk = Desk(listOf(Bot("ada", "Ada", status = "idle")), emptyList())
+            val mic = Mic(); val player = Player(); val link = Link("token/1")
             val endpoint = mock.url("/live").toString().replace("http://", "ws://")
-            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", { "token/1" }, CallOperator("ada", desk), mic, player,
+            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", link, mic, player,
                 OkHttpClient(), endpoint)
             fun next() = requireNotNull(inbound.poll(5, TimeUnit.SECONDS)) { "Nothing arrived" }
             suspend fun until(check: (VoiceState) -> Boolean) = withTimeout(5_000) { engine.state.first(check) }
@@ -244,12 +332,16 @@ class VoiceEnginesTest {
             val setup = next()["setup"]!!.jsonObject
             assertEquals("models/gemini-live-test", setup["model"]!!.jsonPrimitive.content)
             assertEquals("Puck", setup["generationConfig"]!!.jsonObject["speechConfig"]!!.jsonObject["voiceConfig"]!!.jsonObject["prebuiltVoiceConfig"]!!.jsonObject["voiceName"]!!.jsonPrimitive.content)
-            assertEquals(4, setup["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray.size)
+            assertEquals(2, setup["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray.size)
+            assertEquals("You are the voice relay for Ada", setup["systemInstruction"]!!.jsonObject["parts"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
+            assertTrue("inputAudioTranscription" in setup && "outputAudioTranscription" in setup)
             engine.speak("Queued before setup")
             server!!.send("""{"setupComplete":{}}""")
-            until { it.phase == VoicePhase.Listening }
             assertEquals("[Ada replied] Queued before setup", next()["clientContent"]!!.jsonObject["turns"]!!.jsonArray[0].jsonObject["parts"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
+            assertEquals(VoicePhase.Starting, engine.state.value.phase) // Connecting until the microphone delivers.
+            withTimeout(5_000) { while (mic.frames == null) delay(10) }
             mic.frames!!(byteArrayOf(1, 2), .5f)
+            until { it.phase == VoicePhase.Listening }
             assertEquals("audio/pcm;rate=16000", next()["realtimeInput"]!!.jsonObject["audio"]!!.jsonObject["mimeType"]!!.jsonPrimitive.content)
             val audio = Base64.getEncoder().encodeToString(ByteArray(480))
             server!!.send("""{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"mimeType":"audio/pcm;rate=24000","data":"$audio"}}]}}}""")
@@ -268,5 +360,60 @@ class VoiceEnginesTest {
             assertEquals(1, mic.stops); assertEquals(1, player.closed)
             scope.cancel(); dispatcher.close()
         }
+    }
+
+    @Test fun geminiLiveResumesADroppedSessionAndAStuckSpeakerGoesBackToListening() = runBlocking {
+        val delays = Reconnect.delays; val stall = GeminiLiveEngine.stallMillis
+        Reconnect.delays = listOf(20L, 20L, 20L); GeminiLiveEngine.stallMillis = 150L
+        val inbound = LinkedBlockingQueue<Pair<Int, JsonObject>>(); val servers = LinkedBlockingQueue<WebSocket>()
+        MockWebServer().use { mock ->
+            repeat(2) { n ->
+                mock.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) { servers += webSocket }
+                    override fun onMessage(webSocket: WebSocket, text: String) { inbound += n to Json.parseToJsonElement(text).jsonObject }
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, null) }
+                }))
+            }
+            val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+            val scope = CoroutineScope(SupervisorJob() + dispatcher)
+            val mic = Mic(); val player = Player(); val link = Link("token")
+            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", link, mic, player, OkHttpClient(),
+                mock.url("/live").toString().replace("http://", "ws://"))
+            var stalls = 0
+            engine.onStall = { stalls++ }
+            fun next(key: String): Pair<Int, JsonObject> {
+                while (true) { val m = requireNotNull(inbound.poll(5, TimeUnit.SECONDS)) { "No $key arrived" }; if (key in m.second) return m }
+            }
+            suspend fun until(check: (VoiceState) -> Boolean) = withTimeout(5_000) { engine.state.first(check) }
+            next("setup")
+            val first = requireNotNull(servers.poll(5, TimeUnit.SECONDS))
+            first.send("""{"setupComplete":{}}""")
+            withTimeout(5_000) { while (mic.frames == null) delay(10) }
+            mic.frames!!(byteArrayOf(1, 2), .5f)
+            until { it.phase == VoicePhase.Listening }
+            first.send("""{"sessionResumptionUpdate":{"newHandle":"h1","resumable":true}}""")
+            first.close(1011, "Internal error")
+            until { it.phase == VoicePhase.Reconnecting }
+            engine.speak("Said after the drop")
+            val (session, setup) = next("setup")
+            assertEquals(1, session); assertEquals(2, link.starts) // A fresh credential from the computer.
+            assertEquals("h1", setup["setup"]!!.jsonObject["sessionResumption"]!!.jsonObject["handle"]!!.jsonPrimitive.content)
+            val second = requireNotNull(servers.poll(5, TimeUnit.SECONDS))
+            second.send("""{"setupComplete":{}}""")
+            assertEquals(1, next("clientContent").first) // The reply that waited goes to the new session.
+            assertEquals(VoicePhase.Reconnecting, engine.state.value.phase) // Ready again once the microphone delivers.
+            mic.frames!!(byteArrayOf(1, 2), .5f)
+            until { it.phase == VoicePhase.Listening }
+            // The speaker never reports the chunk heard: the watchdog takes the call back to listening.
+            val audio = Base64.getEncoder().encodeToString(ByteArray(480))
+            second.send("""{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"data":"$audio"}}]}}}""")
+            until { it.phase == VoicePhase.Speaking }
+            second.send("""{"serverContent":{"turnComplete":true}}""")
+            until { it.phase == VoicePhase.Listening }
+            assertEquals(1, stalls)
+            engine.end(); withTimeout(5_000) { engine.awaitEnd() }
+            scope.cancel(); dispatcher.close()
+        }
+        Reconnect.delays = delays; GeminiLiveEngine.stallMillis = stall
     }
 }

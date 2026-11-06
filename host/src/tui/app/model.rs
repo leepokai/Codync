@@ -1,13 +1,9 @@
-//! What the host sends: bots, transcript entries, and the messages that carry them.
+//! What the host sends: transcript entries and the messages that carry them, and the states a bot shows (the bot
+//! itself is in `bot`).
 
-use serde::Deserialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
-
-use crate::agent::fallback::Reason;
 
 use super::super::manage::Reply;
-use super::tilde;
 
 pub enum Msg {
     Online(bool),
@@ -53,6 +49,8 @@ pub enum After {
     Installed,
     /// Memory, routines, marketplace, sign-in (`manage`).
     Sheet(Reply),
+    /// The network sheet's calls.
+    Network(super::super::manage::NetReply),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -85,217 +83,6 @@ impl Mark {
     }
 }
 
-#[derive(Clone, Debug)]
-#[allow(clippy::struct_excessive_bools, reason = "mirrors the host's bot JSON")]
-pub struct Bot {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub color: String,
-    pub shape: String,
-    pub backend: String,
-    pub cwd: String,
-    pub managed_workspace: bool,
-    pub auto: bool,
-    pub account: Option<String>,
-    pub model: Option<String>,
-    /// The model's own settings (effort, fast…): option id → value.
-    pub model_options: BTreeMap<String, String>,
-    pub fast_mode: bool,
-    /// What the agent says about Fast mode: `unknown`, `offered`, `unsupported` or `refused`.
-    pub fast_support: String,
-    /// Why the agent refused it.
-    pub fast_issue: Option<String>,
-    pub pinned: bool,
-    /// Where the user dragged it (see `App::roster`).
-    pub position: i64,
-    pub hidden: bool,
-    pub notify: bool,
-    pub computer: bool,
-    /// It creates bots and changes any bot's setup (`chat::manage`); `None` from a host without it.
-    pub manage_team: Option<bool>,
-    /// The bot that created this one; `None` when the user did.
-    pub created_by: Option<String>,
-    pub created_at: i64,
-    /// The harness's own memory kept on beside Codync's; `None` where it has no switch.
-    pub harness_memory: Option<bool>,
-    /// Agents that carry on, in order, when its own can't answer (`agent::fallback`).
-    pub fallbacks: Vec<crate::store::Fallback>,
-    /// The bot may set its own fallbacks.
-    pub self_fallbacks: bool,
-    /// The fallback agent it's on now; `None` on its own.
-    pub agent_step: Option<String>,
-    /// Agents of its chain resting now.
-    pub resting: Vec<Rest>,
-    pub connectors: Vec<String>,
-    pub skills: Vec<String>,
-    pub status: Status,
-    pub activity: String,
-    pub started_at: Option<i64>,
-    pub unread: i64,
-    pub last_message: String,
-    pub last_at: i64,
-    /// A group chat: several bots and the user, no agent of its own.
-    pub group: bool,
-    pub members: Vec<String>,
-    /// Where the running turn talks: a chat (`None` = its own).
-    pub working_chat: Option<String>,
-}
-
-/// An agent of a bot's chain that rests (`agent::fallback::resting`) until `until` (epoch ms).
-#[derive(Deserialize, Clone, Debug)]
-pub struct Rest {
-    pub agent: String,
-    pub until: i64,
-    pub reason: Reason,
-}
-
-fn strs(v: &Value) -> Vec<String> {
-    v.as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
-}
-
-/// A model an agent offers (`agentModels`), with its own settings.
-pub struct AgentModel {
-    pub id: String,
-    pub name: String,
-    pub options: Vec<ModelOption>,
-}
-
-/// A model setting (effort, fast…) and its values as `(id, name)`.
-pub struct ModelOption {
-    pub id: String,
-    pub name: String,
-    pub values: Vec<(String, String)>,
-}
-
-impl AgentModel {
-    pub fn parse(v: &Value) -> Option<Self> {
-        let pair = |v: &Value| {
-            let id = v["id"].as_str()?.to_owned();
-            Some((v["name"].as_str().unwrap_or(&id).to_owned(), id))
-        };
-        let (name, id) = pair(v)?;
-        let options = v["options"].as_array().into_iter().flatten().filter_map(|o| {
-            let (name, id) = pair(o)?;
-            let values = o["values"].as_array()?.iter().filter_map(|v| pair(v).map(|(n, i)| (i, n))).collect();
-            Some(ModelOption { id, name, values })
-        });
-        Some(Self { id, name, options: options.collect() })
-    }
-}
-
-impl Bot {
-    /// An agent bot unless its agent said it has no Fast mode (an unknown one may: its first
-    /// session settles it), or one that has it on (so it can be turned off).
-    pub fn fast_shown(&self) -> bool {
-        !self.group && (self.fast_mode || self.fast_support != "unsupported")
-    }
-
-    /// Why Fast mode isn't in effect, when the agent turned it off itself.
-    pub fn fast_refusal(&self) -> Option<String> {
-        (self.fast_mode && self.fast_support == "refused").then(|| {
-            format!(
-                "The agent turned it off: {}. Switch it off and on to try again.",
-                self.fast_issue.as_deref().unwrap_or("not available")
-            )
-        })
-    }
-
-    /// What picking `/fast` does, or why Fast mode isn't in effect.
-    pub fn fast_detail(&self) -> String {
-        match self.fast_refusal() {
-            Some(why) => why,
-            None if self.fast_mode => "Turn off and return to standard speed".to_owned(),
-            None => "Turn on for faster replies and more usage".to_owned(),
-        }
-    }
-
-    /// Where it works, as the header shows it.
-    pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
-    }
-
-    pub(super) fn parse(v: &Value) -> Option<Self> {
-        let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
-        Some(Self {
-            id: v["id"].as_str()?.to_owned(),
-            name: s("name"),
-            description: s("description"),
-            color: v["avatarColor"].as_str().unwrap_or("blue").to_owned(),
-            shape: v["avatarShape"].as_str().unwrap_or("blob").to_owned(),
-            backend: s("backend"),
-            account: v["account"].as_str().map(str::to_owned),
-            cwd: s("cwd"),
-            managed_workspace: v["managedWorkspace"] == true,
-            auto: v["permission"] == "auto",
-            model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
-            model_options: v["modelOptions"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
-                .collect(),
-            fast_mode: v["fastMode"].as_bool().unwrap_or(false),
-            fast_support: v["fastModeSupport"].as_str().unwrap_or("unknown").to_owned(),
-            fast_issue: v["fastModeIssue"].as_str().map(str::to_owned),
-            pinned: v["pinned"].as_bool().unwrap_or(false),
-            position: v["position"].as_i64().unwrap_or(0),
-            hidden: v["hidden"].as_bool().unwrap_or(false),
-            notify: v["notify"].as_bool().unwrap_or(true),
-            computer: v["computer"].as_bool().unwrap_or(false),
-            manage_team: v["manageTeam"].as_bool(),
-            created_by: v["createdBy"].as_str().map(str::to_owned),
-            created_at: v["createdAt"].as_i64().unwrap_or(0),
-            harness_memory: v["harnessMemory"].as_bool(),
-            fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
-            self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
-            agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
-            resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
-            connectors: strs(&v["connectors"]),
-            skills: strs(&v["skills"]),
-            status: match v["status"].as_str() {
-                Some("working") => Status::Working,
-                Some("needsInput") => Status::NeedsInput,
-                Some("error") => Status::Error,
-                _ => Status::Idle,
-            },
-            activity: s("activity"),
-            started_at: v["startedAt"].as_i64(),
-            unread: v["unread"].as_i64().unwrap_or(0),
-            last_message: s("lastMessage"),
-            last_at: v["lastAt"].as_i64().unwrap_or(0),
-            group: v["kind"] == "group",
-            members: strs(&v["members"]),
-            working_chat: v["workingChat"].as_str().map(str::to_owned),
-        })
-    }
-
-    /// Agent `agent`'s rest, while it lasts at `now`.
-    pub fn rests(&self, agent: &str, now: i64) -> Option<&Rest> {
-        self.resting.iter().find(|r| r.agent == agent && r.until > now)
-    }
-
-    /// Whether the running turn talks in this chat.
-    pub fn works_here(&self) -> bool {
-        self.away().is_none()
-    }
-
-    /// The other chat (a group) the running turn talks in, if it isn't this bot's own.
-    pub fn away(&self) -> Option<&str> {
-        self.working_chat.as_deref().filter(|c| *c != self.id)
-    }
-
-    pub fn mark(&self) -> Mark {
-        match self.status {
-            Status::NeedsInput => Mark::Need,
-            Status::Error => Mark::Error,
-            Status::Working => Mark::Work,
-            Status::Idle if self.unread > 0 => Mark::Unread,
-            Status::Idle => Mark::Idle,
-        }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     User,
@@ -319,6 +106,9 @@ pub struct Entry {
 }
 
 impl Entry {
+    pub fn is_internal(&self) -> bool {
+        crate::store::is_internal(&self.data)
+    }
     pub(in crate::tui) fn parse(v: &Value) -> Option<(String, Self)> {
         let kind = match v["kind"].as_str()? {
             "user" => Kind::User,
@@ -366,12 +156,27 @@ impl Entry {
     }
 
     pub fn is_final(&self) -> bool {
-        self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
+        !self.is_internal() && self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
+    }
+
+    /// A step the working line unfolds: thinking, narration, a tool call or a plan, never the bot's bookkeeping
+    /// (nor a call an older host didn't flag either way).
+    pub fn is_working_step(&self) -> bool {
+        if self.is_internal() {
+            return false;
+        }
+        match self.kind {
+            Kind::Thought => !self.text().trim().is_empty(),
+            Kind::Agent => !self.is_final() && !crate::chat::group::is_pass(self.text()),
+            Kind::Tool => self.data["bookkeeping"] == false,
+            Kind::Plan => true,
+            _ => false,
+        }
     }
 
     /// A message the user can answer with a reply: theirs, or a final reply (the host checks too).
     pub fn takes_reply(&self) -> bool {
-        self.kind == Kind::User || self.is_final()
+        !self.is_internal() && (self.kind == Kind::User || self.is_final())
     }
 
     /// The text a reply quotes: the message's, or its files' names.
@@ -381,12 +186,23 @@ impl Entry {
 
     /// What the chat shows as a message: the user's, and each turn's final reply.
     pub fn is_message(&self) -> bool {
-        self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
+        !self.is_internal()
+            && (self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object())
     }
 
-    /// A line that folds away a longer text: a handoff (`o` shows it).
+    /// An artifact card's artifact id (`docs/features/artifacts.md`): `o` opens it, `f` saves it.
+    pub fn artifact(&self) -> Option<&str> {
+        if self.is_final() { self.data["artifact"]["id"].as_str() } else { None }
+    }
+
+    /// A line that folds away a longer text: a handoff, or a voice call's conversation (`o` shows it).
     pub fn unfolds(&self) -> bool {
-        crate::tui::view::unfoldable(self).is_some()
+        crate::tui::view::unfoldable(self).is_some() || (self.kind == Kind::Notice && self.call().is_some())
+    }
+
+    /// The voice call this was said in, or that this line ends (`chat::calls`).
+    pub fn call(&self) -> Option<&str> {
+        self.data["call"].as_str()
     }
 
     /// A failure notice that offers adding a fallback agent (`A`).
@@ -407,7 +223,7 @@ impl Entry {
     }
 
     pub fn pending(&self) -> bool {
-        self.kind == Kind::Permission && self.data["status"] == "pending"
+        !self.is_internal() && self.kind == Kind::Permission && self.data["status"] == "pending"
     }
 
     /// Approval options in the apps' order: allow once, allow always, reject once, reject always.
@@ -437,6 +253,25 @@ impl Entry {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn internal_activity_is_not_a_message_step_approval_or_reply_target() {
+        for kind in [Kind::User, Kind::Agent, Kind::Thought, Kind::Tool, Kind::Plan, Kind::Permission, Kind::Notice] {
+            let entry = Entry {
+                id: "internal".into(),
+                seq: 1,
+                turn: 1,
+                kind,
+                data: json!({"internal":true,"text":"NO_UPDATE","final":true,"status":"pending"}),
+                created_at: 0,
+            };
+            assert!(entry.is_internal());
+            assert!(!entry.is_message());
+            assert!(!entry.is_working_step());
+            assert!(!entry.takes_reply());
+            assert!(!entry.pending());
+        }
+    }
 
     #[test]
     fn permission_options_follow_app_order() {

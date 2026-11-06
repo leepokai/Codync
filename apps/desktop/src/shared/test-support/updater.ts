@@ -60,11 +60,11 @@ export function updaterFixture(options: { packaged?: boolean; main?: boolean; pr
     downloadUpdate: async () => { calls.download++; await behavior.download() },
     quitAndInstall: () => { calls.install++; behavior.install() },
   })
-  const host = {
+  const host = Object.assign(new EventEmitter(), {
     prepareForUpdate: async () => { calls.prepare++; await behavior.prepare() },
     resumeAfterCancelledUpdate: () => { calls.resume++ },
     isIdleForUpdate: async () => behavior.hostIdle,
-  }
+  })
   const timer = (callback: () => unknown, ms: number) => {
     const id = ++nextTimer
     timers.set(id, { callback, ms })
@@ -100,5 +100,5 @@ export function updaterFixture(options: { packaged?: boolean; main?: boolean; pr
     }
     await settle()
   }
-  return { updates, yieldsToInstall, app, ipc, handlers, updater, calls, opened, spawned, behavior, preferences, sent, timers, shipIt, emit, tick, now: () => now, advance: (ms: number) => { now += ms } }
+  return { updates, yieldsToInstall, app, host, ipc, handlers, updater, calls, opened, spawned, behavior, preferences, sent, timers, shipIt, emit, tick, now: () => now, advance: (ms: number) => { now += ms } }
 }

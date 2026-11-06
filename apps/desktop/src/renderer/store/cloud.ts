@@ -2,6 +2,7 @@ import type { CloudStatus, ClaimSignature } from '@shared/models'
 import { mayAutoClaim } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
+import { relayAddressToSave } from '../lib/relay-address'
 import { pref, type Pref } from '../lib/prefs'
 import { account } from './account'
 import type { AppModel } from './app-model'
@@ -268,11 +269,43 @@ export class CloudModel extends Observable {
     }
   }
 
+  /** Points this computer's relay at `raw`, or clears it when `raw` is blank. False when the host refuses. */
+  async setCloudUrl(store: BotStore, raw: string): Promise<boolean> {
+    const next = relayAddressToSave(raw, store.cloud?.url)
+    return next === null || (await this.saveRelay(store, { url: next }))
+  }
+
+  /** Saves the private relay's registration token for the address in use. Blank leaves it as it is. */
+  async setRelayToken(store: BotStore, token: string): Promise<void> {
+    const url = store.cloud?.url
+    if (url && token.trim()) await this.saveRelay(store, { url, token: token.trim() })
+  }
+
+  /** The host's `setCloudUrl`. The relay restarts, same as turning the cloud on or off. */
+  private async saveRelay(store: BotStore, body: { url: string; token?: string }): Promise<boolean> {
+    try {
+      await (await store.ready()).call('setCloudUrl', body, 30_000)
+      return true
+    } catch (error) {
+      this.fail(error)
+      return false
+    }
+  }
+
   async setCloud(store: BotStore, enabled: boolean) {
     include(cloudDefaultApplied, store.computer.id)
     try {
       if (enabled) await this.enableCloud(store)
       else await (await store.ready()).call<CloudStatus>('setCloud', { enabled: false }, 30_000)
+    } catch (error) {
+      this.fail(error)
+    }
+  }
+
+  /** Whether the user's cloud assistant may message this computer's bots (the host's `cloud` event follows). */
+  async setAssistants(store: BotStore, enabled: boolean) {
+    try {
+      await (await store.ready()).call<CloudStatus>('setAssistants', { enabled })
     } catch (error) {
       this.fail(error)
     }

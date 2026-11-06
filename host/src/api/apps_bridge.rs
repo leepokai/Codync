@@ -4,7 +4,7 @@
 use super::apps_runtime::handle_request;
 use super::str_arg;
 use crate::hub::Hub;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use axum::body::{Bytes, to_bytes};
 use axum::http::{Method, header};
 use base64::Engine;
@@ -26,7 +26,10 @@ pub(super) async fn request(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
     let path = b["path"].as_str().unwrap_or_default();
     let rel = path.split(['?', '#']).next().unwrap_or_default().trim_start_matches('/').to_owned();
     if rel.contains('\\') || rel.split('/').any(|part| part == "..") {
-        bail!("invalid `path`");
+        return Ok(json!({
+            "status":400, "contentType":"text/plain; charset=utf-8", "csp":"",
+            "body":STANDARD.encode("invalid `path`"),
+        }));
     }
     let body = Bytes::from(b["body"].as_str().unwrap_or_default().to_owned());
     let hub = Arc::clone(hub);
@@ -44,3 +47,7 @@ pub(super) async fn request(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
         "body": STANDARD.encode(&bytes),
     }))
 }
+
+#[cfg(test)]
+#[path = "apps_bridge_tests.rs"]
+mod tests;

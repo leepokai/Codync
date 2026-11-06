@@ -30,7 +30,7 @@ Give every reviewer the same absolute worktree, base commit, owned scope, change
 | Reviewer | Focus |
 | --- | --- |
 | Correctness | Concrete bugs, regressions, error handling, security, and compatibility with older hosts/clients; consult `docs/reference/compatibility.md`. |
-| Completeness | All affected clients, stale documentation, missing behavioral tests, release versions and iOS What's New requirements. |
+| Completeness | All affected clients, stale documentation (including the user manual page, `docs/guides/user-docs.md`), missing behavioral tests, release versions and iOS What's New requirements. |
 | Refactor | Responsibility splits, files over ~500 lines, long functions, layer leaks, missed reuse, and applicable language conventions. Only suggestions worth their diff. |
 
 Each finding includes file, line when available, severity (`high`, `medium`, `low`), summary, concrete failure scenario (or cost of leaving a refactor), and suggested fix. Empty results are valid. Style preferences alone are not defects.

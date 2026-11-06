@@ -6,8 +6,10 @@ import type { BotDraft } from './models'
  * fallbacks (they depend on the agents a computer has).
  */
 export function encodeTemplate(draft: BotDraft): string {
-  const { id: _id, pinned: _pinned, hidden: _hidden, account: _account, manageTeam: _manage, fallbacks: _fallbacks,
-    selfFallbacks: _selfFallbacks, ...rest } = draft
+  const {
+    id: _id, pinned: _pinned, hidden: _hidden, account: _account, manageTeam: _manage, fallbacks: _fallbacks,
+    selfFallbacks: _selfFallbacks, offeredToNetwork: _offered, reachableByAssistants: _reachable, ...rest
+  } = draft
   const sorted = Object.fromEntries(
     Object.entries(rest)
       .filter(([, v]) => v !== null && v !== undefined)

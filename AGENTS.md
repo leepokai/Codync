@@ -7,7 +7,7 @@
 - `apps/desktop/`: desktop app for macOS, Linux and Windows (Electron, React, TypeScript): [docs/architecture/desktop-app.md](docs/architecture/desktop-app.md); how its views are styled: [docs/guides/desktop-styles.md](docs/guides/desktop-styles.md).
 - `apps/android/`: Android phone app (Kotlin, Jetpack Compose), ported from the iPhone app: `core` (models, crypto, transport), `design` (Codync's components), `app` (screens, store, widgets): [apps/android/README.md](apps/android/README.md).
 - `apps/screen-macos` and `apps/screen-linux`: Remote screen helpers.
-- `cloud/`: Cloudflare accounts, encrypted relay, Durable Objects and D1; tests live in `cloud/test/`.
+- `cloud/`: Cloudflare accounts, encrypted relay, Durable Objects and D1; tests live in `cloud/test/`. `private-relay/`: a single-process subset of that relay a person runs for their own computers (Node, `node:sqlite`), tests in `private-relay/test/`.
 - `relay/`: Cloudflare push worker and `test/`; `web/`: website (Next.js); `packaging/`: distribution templates; `docs/`: architecture and naming guidance.
 
 ## Host owns the logic
@@ -23,7 +23,7 @@ Run from the repository root unless a command changes directories:
 - `cd apps/desktop && npm ci && npm run dev`: run the desktop app while developing and for its e2e check (renderer reloads on save, restart after `src/main` or preload changes; unpackaged, unsigned). In a linked worktree it runs a [sandbox](docs/guides/dev-app.md#worktree-sandboxes) beside the main checkout's Codync Dev; `--sandbox` does the same from the main checkout. In the main checkout, after a host change run `node tools/native-host.mjs dev` there first: `npm run dev` prefers that build over `host/target/debug`. Package `npm run dist:mac:dev` (about 45 s) only for what an unpackaged run lacks (bundled host install, Codync Screen / computer use, system permissions); `dist:*:main` only to check the production app. `npm run typecheck && npm test` for its CI checks.
 - `cd host && cargo build`: build the host; `cargo run -- serve` starts it in the foreground.
 - `cd host && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`: run host CI checks.
-- `cd apps/android && ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` (JDK 21, Android SDK 37): Android checks; `adb install -r app/build/outputs/apk/debug/app-debug.apk` installs Codync Dev.
+- `cd apps/android && ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` (JDK 21, Android SDK 37): Android checks; `adb install -r -d app/build/outputs/apk/debug/app-debug.apk` installs Codync Dev.
 - `cd apps/ios/Kit && xcodebuild test -scheme CodyncKit-Package -destination 'platform=iOS Simulator,name=<any iPhone>'`: run the iPhone package tests.
 - `cd cloud && npm ci && npm test && npm run typecheck`: validate the cloud service; see `docs/guides/cloudflare-testing.md` for integration checks.
 - `cd relay && npm ci && npm test && npm run typecheck`: install dependencies and validate the relay.
@@ -45,7 +45,7 @@ After every change, test it end to end on the real apps, not just builds and uni
 - **Every source change ships as a release.** A version bump on `main` is the only release trigger (Auto Tag → desktop app for macOS, Linux and Windows, host, Homebrew, in-app update), so any change to shipped code (`apps/`, `host/`, `packaging/`) bumps the version before it reaches `main`, without being asked. Docs, `web/`, `cloud/`, `relay/` and CI-only changes don't bump.
 - Phone ↔ host compatibility: each side names the oldest version of the other it works with (`minApp` in the host's `hello`, `minHost` in each client). Additive changes need nothing; a rename/removal raises `minApp` in the same release, and the release gate holds that release until the App Store has the iPhone app: [docs/reference/compatibility.md](docs/reference/compatibility.md)
 - Pick the bump yourself: patch for fixes and small tweaks, minor for new features or protocol additions. Never bump major (stay on 2.x). One bump per merge into `main`: if `MARKETING_VERSION` is already ahead of the latest `v*` tag, leave it. A change to `host/crates/memory` also raises `codync-mem`'s own 0.x version once per release (leave it if it's already ahead of `main`'s); CI blocks a PR into `main` that forgets, and the merge publishes it to crates.io ([codync-mem releases](docs/guides/development.md#codync-mem-releases)).
-- How: set `MARKETING_VERSION` in `apps/project.yml` and `version` in `host/Cargo.toml` (+ its `Cargo.lock` entry) and `apps/desktop/package.json` (+ `package-lock.json`) to the same value, run `xcodegen generate --spec apps/project.yml`, commit as `build: bump version to X.Y.Z`. Never touch `CURRENT_PROJECT_VERSION` (Xcode Cloud sets the iOS build number). When the iOS app changes, also write that version's section in `apps/ios/WhatsNew.md` (zh-Hant + en-US, what iPhone users notice); it becomes the App Store "What's New".
+- How: set `MARKETING_VERSION` in `apps/project.yml` and `version` in `host/Cargo.toml` (+ its `Cargo.lock` entry) and `apps/desktop/package.json` (+ `package-lock.json`) to the same value, run `xcodegen generate --spec apps/project.yml`, commit as `build: bump version to X.Y.Z`. Never touch `CURRENT_PROJECT_VERSION` (Xcode Cloud sets the iOS build number). When a phone app changes, also write that version's section in its notes (zh-Hant + en-US, what that app's users notice): `apps/ios/WhatsNew.md` becomes the App Store "What's New", `apps/android/WhatsNew.md` the Google Play release notes.
 
 ## Coding Style & Naming Conventions
 
@@ -57,12 +57,12 @@ Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and
 
 ## Clean code
 
-- Keep code modular and clean on every change: reuse before writing, one responsibility per file/type, no new code appended to files past ~500 lines (split first), views/components hold no I/O or logic, short single-purpose functions, enums over flags, no dead code, no swallowed errors. Full rules: [docs/guides/clean-code.md](docs/guides/clean-code.md).
+- Keep code modular and clean on every change: reuse before writing (existing code first, then a proven component/framework that already fits, see [prefer ready-made](docs/guides/clean-code.md#modules)), one responsibility per file/type, no new code appended to files past ~500 lines (split first), views/components hold no I/O or logic, short single-purpose functions, enums over flags, no dead code, no swallowed errors. Full rules: [docs/guides/clean-code.md](docs/guides/clean-code.md).
 - After every code change (tests green, before commit): review → fix, refactor and cleanup → end-to-end test. In Codex, use the [after-change skill](.agents/skills/after-change/SKILL.md); in Claude Code, use the `after-change` workflow: [after every change](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
 
 ## Cross-platform UI changes
 
-- Any UI change in any client must include the corresponding updates to the other clients in the same change: iOS (`apps/ios/`, `apps/ios/Kit/Sources/CodyncUI/`), Android (`apps/android/app/`), desktop (`apps/desktop/src/renderer/`, macOS, Linux and Windows), and terminal UI (`host/src/tui/`). This applies in every direction.
+- Any UI change in any client must include the corresponding updates to the other clients in the same change: iOS (`apps/ios/`, `apps/ios/Kit/Sources/CodyncUI/`), Android (`apps/android/app/`), desktop (`apps/desktop/src/renderer/`, macOS, Linux and Windows), and terminal UI (`host/src/tui/`). This applies in every direction. The iPhone and Android apps go further: every change to either one, not only UI (behavior, flows, copy, tests, docs), lands in the other in the same change and is checked on both (iOS Simulator and Android emulator) before it merges, contributor PRs included; only Apple-only or Android-only capabilities stay on one side.
 - Keep shared features, actions, terminology, displayed information, and loading, empty, error, and permission states consistent. Adapt layout, controls, and input to each platform, including terminal keyboard interaction, while preserving the same user-facing behavior.
 - Inspect every client's corresponding implementation before finishing a UI task. Implement applicable changes together; do not silently defer another client. For a platform-only change or an unsupported capability, document which clients are unaffected and the concrete reason in the change summary.
 - Validate each affected client with its relevant build/tests and UI checks. Report any checks that could not run and why.
@@ -74,6 +74,8 @@ Use Swift Testing (`@Test`, `#expect`), Rust unit tests, `node --test` in the de
 
 ## Several agents share `dev`
 
+- Every large feature and every bug fix must use its own branch in a separate git worktree, including implementation, builds, tests and app E2E; never do that work in the shared checkout. Use the [worktree sandbox](docs/guides/dev-app.md#worktree-sandboxes) and follow the [handoff and cleanup workflow](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
+- After creating or selecting a task worktree, `cd` into it and show `pwd` and `git branch --show-current` so the user can see where the work is happening. Run subsequent task commands from that worktree; tools without a persistent working directory must explicitly set it on every call.
 - Several agents often work in this checkout on `dev` at once. Before touching files with someone else's uncommitted changes, or anything tree-wide (renames, `xcodegen`, version bump, `git stash`/`reset`/`checkout`), tell the other agents what you'll change if your tool can message them; otherwise ask the user first. Never discard, revert or reformat hunks that aren't yours.
 - Before starting any task, sync with origin: `git pull --rebase --autostash origin dev`, then push any finished local commits that aren't on `origin/dev` yet (`git push origin dev`). The pull is tree-wide, so the rule above applies; if the autostash conflicts, keep both sides' intent and never drop another agent's hunk.
 
@@ -87,10 +89,10 @@ Use Swift Testing (`@Test`, `#expect`), Rust unit tests, `node --test` in the de
 - English only.
 - Thank external contributors when responding to their PRs. After merging an external PR, leave a brief thank-you comment acknowledging their contribution and confirming the merge.
 
-PRs should explain behavior changes, link relevant issues, list validation performed, and include screenshots for UI changes. Fill the template's *What's New* bullets (zh-Hant + en-US) for iOS changes users can see; they become the App Store notes when `apps/ios/WhatsNew.md` has no section for the release. Update affected documentation in the same change.
+PRs should explain behavior changes, link relevant issues, list validation performed, and include screenshots for UI changes. Fill the template's *What's New* bullets (zh-Hant + en-US, one section per phone app) for changes that app's users can see; they become the App Store or Google Play notes when that app's `WhatsNew.md` has no section for the release. Update affected documentation in the same change.
 
 ## Keeping this file short
 
 - CLAUDE.md and AGENTS.md hold only rules an agent needs on every task. Reference material (file structure, naming tables, API details, audits, how-tos) goes in `docs/` as its own file, with a one-line pointer here.
 - Whenever you edit either file, check its length: past ~100 lines, or a section past a few lines of reference detail, refactor that detail into `docs/` and leave the pointer, without being asked.
-- Keep `docs/` current: update the doc in the same change that makes it stale.
+- Keep `docs/` current: update the doc in the same change that makes it stale. A change users can see also updates its page of the user manual (`web/content/docs/`): [user docs](docs/guides/user-docs.md).

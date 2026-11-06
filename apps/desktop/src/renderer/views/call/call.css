@@ -82,3 +82,13 @@
     animation: none;
   }
 }
+
+/* A voice call's line in the chat: centered like a bot message line, it opens the call. */
+.call-line-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto;
+  padding: 6px 0;
+  max-width: 100%;
+}

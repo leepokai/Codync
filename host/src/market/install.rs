@@ -350,6 +350,12 @@ async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| anyhow!("give a command or a URL"))?;
+    // A listing may name a program in the home folder, such as `~/.paper/bin/paper`.
+    let line = match (line.strip_prefix("~/"), dirs::home_dir()) {
+        (Some(rest), Some(home)) => home.join(rest).to_string_lossy().into_owned(),
+        _ => line.to_owned(),
+    };
+    let line = line.as_str();
     let mut words = match b["args"].as_array() {
         Some(args) => {
             std::iter::once(line.to_owned()).chain(args.iter().filter_map(|a| a.as_str().map(str::to_owned))).collect()

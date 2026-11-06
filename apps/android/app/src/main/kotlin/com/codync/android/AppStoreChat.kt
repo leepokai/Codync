@@ -57,15 +57,6 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
     }
 }
 
-/** Marks the chats on screen read (`chats`: only these): the host leaves one marked unread alone, and ignores it when nothing there is unread. */
-internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
-    if (!foreground || channel?.state?.value !is LinkState.Ready) return
-    for (chat in chats) {
-        if (chat in unsentOpens) readOpened(chat)
-        else action("read:" + chat) { channel?.call("markRead", buildJsonObject { put("botId", chat); put("automatic", true) }) }
-    }
-}
-
 /** The entries of a host reply (`callEntries`, `botConversation`). */
 internal fun entriesOf(response: JsonElement): List<Entry> =
     response.jsonObject["entries"]?.jsonArray?.map { Entry.decode(it.jsonObject) }.orEmpty()

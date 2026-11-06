@@ -10,9 +10,8 @@ import kotlinx.serialization.json.*
 
 /** [onFailure] runs when the computer didn't take it (unreachable or refused, before the error shows) or it never went (still loading, or [key] under way). */
 fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), key: String = method, onFailure: () -> Unit = {},
-    after: Job? = null, onSuccess: () -> Unit = {}) {
+    onSuccess: () -> Unit = {}) {
     val started = action(key) {
-        after?.join()
         val response = try { ready().call(method, body) }
             catch (error: CancellationException) { throw error }
             catch (error: Exception) { onFailure(); throw error }
@@ -23,7 +22,7 @@ fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), 
 }
 
 /** Takes in the bot or entry a command's reply carries, then shows it. */
-private suspend fun AppStore.receiveReply(response: JsonElement) {
+internal suspend fun AppStore.receiveReply(response: JsonElement) {
     response.jsonObject["bot"]?.let { value ->
         withContext(Dispatchers.IO) { requireNotNull(database).receive(HostClient.decode(value.jsonObject)) }
     }

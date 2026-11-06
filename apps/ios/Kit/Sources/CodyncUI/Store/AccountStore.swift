@@ -404,6 +404,13 @@ public final class AccountStore {
         }
     }
 
+    /// Shows a chat from outside the roster (a notification, a link, a shortcut). One already on screen doesn't
+    /// appear again (`ReadingConversation`): picking it is still the user opening it.
+    public func open(_ ref: BotReference) {
+        if selection == ref { store(for: ref.computerId)?.openConversation(ref.botId) }
+        selection = ref
+    }
+
     // MARK: lifecycle
 
     public func setActive(_ active: Bool) {

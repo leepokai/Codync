@@ -37,7 +37,7 @@ fn read_before_key(id: &str) -> String {
     format!("read.before.{id}")
 }
 
-/// Set by `mark_unread` until the chat is read again: clients leave it unread while it stays on screen.
+/// Set by `mark_unread` until a plain read: `Hub::read_on_screen` leaves the chat alone while it's set.
 fn kept_unread_key(id: &str) -> String {
     format!("unread.kept.{id}")
 }
@@ -137,14 +137,17 @@ impl Store {
     /// The chat back to unread: what was unread before the last read, or else its latest message. `None` when
     /// it has nothing that could count as unread.
     pub fn mark_unread(&self, id: &str) -> Result<Option<i64>> {
+        let Some(row) = self.bot(id)? else { return Ok(None) };
         let before = self.kv_get(&read_before_key(id)).and_then(|v| v.parse::<i64>().ok());
-        let read_rev = if let Some(r) = before.filter(|&r| self.unread(id, r) > 0) {
-            r
-        } else if let Some(latest) = self.latest_unread_rev(id)? {
-            latest - 1
-        } else {
-            return Ok(None);
-        };
+        // What's unread now keeps its count: a reply can beat a mark asked for when nothing was.
+        let read_rev =
+            if let Some(r) = [Some(row.read_rev), before].into_iter().flatten().find(|&r| self.unread(id, r) > 0) {
+                r
+            } else if let Some(latest) = self.latest_unread_rev(id)? {
+                latest - 1
+            } else {
+                return Ok(None);
+            };
         let mut c = self.db.locked();
         let tx = c.transaction()?;
         let rev = next_rev(&tx)?;
@@ -296,6 +299,28 @@ mod tests {
         assert!(s.insert_entry(&Lane::main("b1"), EntryKind::Notice, 3, &reply).is_err());
         s.save_bot(&cfg).unwrap();
         assert!(s.bot("b1").unwrap().unwrap().deleted);
+    }
+
+    #[test]
+    fn mark_unread_keeps_the_count_of_what_is_unread_now() {
+        let s = temp_store();
+        s.save_bot(&agent("b1")).unwrap();
+        let reply = || {
+            let data = serde_json::json!({"text": "Done.", "final": true});
+            s.insert_entry(&Lane::main("b1"), EntryKind::Agent, 1, &data).unwrap();
+        };
+        let unread = || s.unread("b1", s.bot("b1").unwrap().unwrap().read_rev);
+
+        reply();
+        reply();
+        s.mark_unread("b1").unwrap();
+        assert_eq!(unread(), 2, "never read: both stay unread");
+        assert!(s.kept_unread("b1"));
+
+        s.mark_read("b1").unwrap();
+        reply();
+        s.mark_unread("b1").unwrap();
+        assert_eq!(unread(), 1, "a reply that beat the mark, without the two read before it");
     }
 
     #[test]

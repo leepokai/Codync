@@ -67,6 +67,11 @@ test.describe.serial('Mark as Unread', () => {
     await read.getByText('Mark as Unread', { exact: true }).click()
     await expect(badge(page, name)).toHaveText('2')
     await page.locator('.transcript').click()
+    // The window coming back into focus isn't opening the chat.
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event('blur'))
+      window.dispatchEvent(new Event('focus'))
+    })
     await page.waitForTimeout(2000)
     await expect(badge(page, name)).toHaveText('2')
 
@@ -74,6 +79,12 @@ test.describe.serial('Mark as Unread', () => {
     await expect(held).toContainText('Mark as Read')
     await expect(held).not.toContainText('Mark as Unread')
     await held.getByText('Mark as Read', { exact: true }).click()
+    await expect(badge(page, name)).toHaveCount(0)
+
+    // Its row, while the chat is already on screen: picking it opens it.
+    await pick(page, name, 'Mark as Unread')
+    await expect(badge(page, name)).toHaveText('2')
+    await rowOf(page, name).click()
     await expect(badge(page, name)).toHaveCount(0)
 
     // Away and back: opening reads it.

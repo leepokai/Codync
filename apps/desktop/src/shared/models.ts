@@ -83,7 +83,7 @@ export interface Bot {
   startedAt?: number | null
   workingChat?: string | null
   unread: number
-  /** Marked unread from the roster: it stays unread on screen until opened again or marked read. */
+  /** Marked unread from the roster: it stays unread on screen until opened again, marked read or sent from. */
   keptUnread: boolean
   lastMessage?: string | null
   lastAt: number

@@ -261,8 +261,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit reports its category,
-/// never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and a connector edit or a mark as unread reports its
+/// category, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
@@ -272,6 +272,12 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         Event::ConnectorUpdated => {
             let category =
                 error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::ChatMarkedUnread => {
+            let category = if error.to_string() == "unknown bot" { "unknown_bot" } else { "other" };
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

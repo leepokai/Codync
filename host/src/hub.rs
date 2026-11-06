@@ -245,8 +245,13 @@ impl Hub {
         if self.store.touch_bot(id).is_ok()
             && let Some(v) = self.bot_value(id)
         {
-            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
+            self.broadcast_bot(&v);
         }
+    }
+
+    /// Tells every client how a bot is now. Under `emit_lock`, so events leave in rev order.
+    fn broadcast_bot(&self, bot: &Value) {
+        let _ = self.events.send(json!({"type": "bot", "rev": bot["rev"], "bot": bot}));
     }
 
     pub fn set_runtime(&self, id: &str, f: impl FnOnce(&mut Runtime)) {

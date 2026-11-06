@@ -69,7 +69,7 @@ data class Bot(
     val position: Int = 0,
     val hidden: Boolean = false,
     val unread: Int = 0,
-    /** Marked unread from the roster: it stays unread on screen until opened again or marked read. */
+    /** Marked unread from the roster: it stays unread on screen until opened again, marked read or sent from. */
     val keptUnread: Boolean = false,
     val rev: Long = 0,
     val deleted: Boolean = false,

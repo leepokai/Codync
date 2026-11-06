@@ -4,7 +4,7 @@
 use super::Hub;
 use crate::LockExt;
 use anyhow::{Result, bail};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 impl Hub {
     /// The user read the chat: opened it, picked "Mark as read" or sent from it, which also ends a mark as unread.
@@ -33,7 +33,7 @@ impl Hub {
         }
         self.store.mark_read(id)?;
         if let Some(v) = self.bot_value(id) {
-            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
+            self.broadcast_bot(&v);
         }
         Ok(())
     }
@@ -45,7 +45,7 @@ impl Hub {
         let marked = self.store.mark_unread(id)?.is_some();
         let Some(v) = self.bot_value(id) else { bail!("unknown bot") };
         if marked {
-            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
+            self.broadcast_bot(&v);
         }
         Ok(v)
     }

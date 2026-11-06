@@ -65,7 +65,7 @@ extension BotStore {
     /// back what the action already showed, before it reaches the dialog.
     @discardableResult
     func attempt(replay: Bool = false, undo: @MainActor () -> Void = {},
-                         _ op: @MainActor (HostClient) async throws -> Void) async -> Bool {
+                 _ op: @MainActor (HostClient) async throws -> Void) async -> Bool {
         do {
             try await withLink(replay: replay, op)
             return true

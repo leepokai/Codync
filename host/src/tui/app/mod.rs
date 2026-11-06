@@ -144,8 +144,8 @@ pub struct App {
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
     reading: HashSet<String>,
-    /// The chat on screen at the last tick: one that appears there has just been opened.
-    shown_chat: Option<String>,
+    /// The user picked the selected chat since the last tick: its read is theirs (`read_due`).
+    chat_opened: bool,
     history_busy: HashSet<String>,
     /// Permission cards whose answer is on its way, with the chosen option.
     pub answering: HashMap<String, String>,
@@ -223,7 +223,7 @@ impl App {
             modes: HashMap::new(),
             shell: None,
             reading: HashSet::new(),
-            shown_chat: None,
+            chat_opened: false,
             history_busy: HashSet::new(),
             answering: HashMap::new(),
             history_done: HashSet::new(),
@@ -328,7 +328,9 @@ impl App {
             || self.bots.values().any(|b| b.status == Status::Working)
     }
 
+    /// The user picks a chat, also the one already selected.
     fn select(&mut self, id: &str) {
+        self.chat_opened = true;
         if self.selected.as_deref() != Some(id) {
             self.selected = Some(id.to_owned());
             self.reply = None;
@@ -383,11 +385,7 @@ impl App {
 
     /// Drops expired toasts and keeps the viewed bot marked read.
     pub fn tick(&mut self) {
-        if self.selected.is_none()
-            && let Some(id) = self.roster().first().map(|b| b.id.clone())
-        {
-            self.selected = Some(id);
-        }
+        self.select_first_bot();
         let now = Instant::now();
         self.toasts.retain(|t| t.until > now);
         if self.hint.as_ref().is_some_and(|(_, until)| *until <= now) {
@@ -396,6 +394,15 @@ impl App {
         self.read_what_is_on_screen();
         if self.chat_top && self.chat_visible() {
             self.load_history();
+        }
+    }
+
+    /// Nothing selected: the first bot, which the user didn't pick.
+    fn select_first_bot(&mut self) {
+        if self.selected.is_none()
+            && let Some(id) = self.roster().first().map(|b| b.id.clone())
+        {
+            self.selected = Some(id);
         }
     }
 

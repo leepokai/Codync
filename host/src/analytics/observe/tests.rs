@@ -318,4 +318,12 @@ fn marking_a_chat_unread_says_whether_it_had_anything_to_mark() {
     let outcome = |answer: Value| answered(event, p.clone(), &answer).expect("reported")["outcome"].clone();
     assert_eq!(outcome(json!({"bot": {"keptUnread": true}})), "marked");
     assert_eq!(outcome(json!({"bot": {"keptUnread": false}})), "empty");
+
+    let failure = |message: &'static str| {
+        let (failed_event, q) = failed(event, p.clone(), &anyhow::anyhow!(message)).expect("reported");
+        assert_eq!(failed_event, Event::ChatMarkedUnread);
+        (q["outcome"].clone(), q["error"].clone())
+    };
+    assert_eq!(failure("unknown bot"), (json!("failed"), json!("unknown_bot")));
+    assert_eq!(failure("disk full"), (json!("failed"), json!("other")));
 }

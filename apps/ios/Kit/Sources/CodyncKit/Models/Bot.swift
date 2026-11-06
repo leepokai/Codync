@@ -87,7 +87,7 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// What it keeps running on the computer. Empty from an older host, and for a group.
     public var devServers: [DevServer] = []
     public var unread: Int
-    /// Marked unread from the roster: it stays unread on screen until opened again or marked read.
+    /// Marked unread from the roster: it stays unread on screen until opened again, marked read or sent from.
     public var keptUnread: Bool = false
     public var lastMessage: String?
     public var lastAt: Int64

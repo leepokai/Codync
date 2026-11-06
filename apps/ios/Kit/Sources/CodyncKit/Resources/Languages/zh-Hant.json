@@ -126,6 +126,8 @@
   "Still connecting: try again in a moment.": "還在連線中，請稍後再試。",
   "Update Codync on {host}: sections need {version} or newer.": "請在 {host} 上更新 Codync：分組需要 {version} 或更新的版本。",
   "Update Codync on {host}: changing the lead needs {version} or newer.": "請在 {host} 上更新 Codync：更換主助理需要 {version} 或更新的版本。",
+  "Update Codync on {host}: marking a chat unread needs {version} or newer.": "請在 {host} 上更新 Codync：標為未讀需要 {version} 或更新的版本。",
+  "Nothing to mark unread": "沒有可標為未讀的內容",
   "{name}, 1 bot": "{name}，1 個 Bot",
   "{name}, {count} bots": "{name}，{count} 個 Bot",
   "{name}, 1 bot, {unread} unread": "{name}，1 個 Bot，{unread} 則未讀",

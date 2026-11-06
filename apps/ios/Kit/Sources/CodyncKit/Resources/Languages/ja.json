@@ -126,6 +126,8 @@
   "Still connecting: try again in a moment.": "まだ接続中です。少し待ってからもう一度お試しください。",
   "Update Codync on {host}: sections need {version} or newer.": "{host} の Codync をアップデートしてください。セクションには {version} 以降が必要です。",
   "Update Codync on {host}: changing the lead needs {version} or newer.": "{host} の Codync をアップデートしてください。リードエージェントの変更には {version} 以降が必要です。",
+  "Update Codync on {host}: marking a chat unread needs {version} or newer.": "{host} の Codync をアップデートしてください。チャットを未読にするには {version} 以降が必要です。",
+  "Nothing to mark unread": "未読にできるものがありません",
   "{name}, 1 bot": "{name}、ボット 1 個",
   "{name}, {count} bots": "{name}、ボット {count} 個",
   "{name}, 1 bot, {unread} unread": "{name}、ボット 1 個、未読 {unread} 件",

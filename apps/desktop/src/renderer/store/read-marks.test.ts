@@ -114,6 +114,29 @@ test('a refused mark as read gives the hold and the unread count back and reache
   assert.deepEqual(errors, ['dialog'])
 })
 
+test('two reads refused in a row both give back what was there before the first', async () => {
+  const { reads, bot, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
+  reads.open('a')
+  reads.open('a')
+  answer(0, false)
+  await settle()
+  answer(1, false)
+  await settle()
+  assert.deepEqual([bot().unread, bot().keptUnread], [3, true])
+})
+
+test('a read after a newer bot event gives back what that event showed', async () => {
+  const { reads, bot, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
+  reads.open('a')
+  Object.assign(bot(), { rev: 2, unread: 1, keptUnread: false })
+  reads.open('a')
+  answer(0, false)
+  await settle()
+  answer(1, false)
+  await settle()
+  assert.deepEqual([bot().unread, bot().keptUnread], [1, false])
+})
+
 test('a refused mark as read keeps what a newer bot event from the host shows', async () => {
   const { reads, bot, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
   reads.markRead('a')

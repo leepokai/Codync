@@ -126,6 +126,8 @@
   "Still connecting: try again in a moment.": "Verbindung wird noch hergestellt: Versuche es gleich noch einmal.",
   "Update Codync on {host}: sections need {version} or newer.": "Aktualisiere Codync auf {host}: Abschnitte brauchen {version} oder neuer.",
   "Update Codync on {host}: changing the lead needs {version} or newer.": "Aktualisiere Codync auf {host}: Den leitenden Agenten zu ändern braucht {version} oder neuer.",
+  "Update Codync on {host}: marking a chat unread needs {version} or newer.": "Aktualisiere Codync auf {host}: Einen Chat als ungelesen zu markieren braucht {version} oder neuer.",
+  "Nothing to mark unread": "Nichts als ungelesen zu markieren",
   "{name}, 1 bot": "{name}, 1 Bot",
   "{name}, {count} bots": "{name}, {count} Bots",
   "{name}, 1 bot, {unread} unread": "{name}, 1 Bot, {unread} ungelesen",

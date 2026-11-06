@@ -30,6 +30,8 @@ export class ReadMarks {
   private readonly host: ReadMarksHost
   /** Each chat's last read mark on its way, retries included: the next waits for it, so the host gets them in the order they were made. */
   private sending = new Map<string, Promise<boolean>>()
+  /** What each chat showed before the reads on their way: a second read mustn't take the first's optimistic state for it. */
+  private beforeReads = new Map<string, Bot>()
   /** Chats whose last open never reached the host: they're read as opened once they're on screen with a link (`retryOpen`). */
   private unsentOpens = new Set<string>()
   constructor(host: ReadMarksHost) {
@@ -81,9 +83,12 @@ export class ReadMarks {
     const bot = this.host.bots().get(botId)
     if (!bot) return
     this.unsentOpens.delete(botId)
+    const kept = this.beforeReads.get(botId)
+    const before = kept?.rev === bot.rev ? kept : bot
+    this.beforeReads.set(botId, before)
     this.patch(botId, { unread: 0, keptUnread: false })
     void this.inOrder(botId, perform, (c) => c.call('markRead', { botId }), () => {
-      if (this.host.bots().get(botId)?.rev === bot.rev) this.patch(botId, { unread: bot.unread, keptUnread: bot.keptUnread })
+      if (this.host.bots().get(botId)?.rev === before.rev) this.patch(botId, { unread: before.unread, keptUnread: before.keptUnread })
     })
   }
 
@@ -95,7 +100,9 @@ export class ReadMarks {
     }, undo)
     this.sending.set(botId, sent)
     void sent.then(() => {
-      if (this.sending.get(botId) === sent) this.sending.delete(botId)
+      if (this.sending.get(botId) !== sent) return
+      this.sending.delete(botId)
+      this.beforeReads.delete(botId)
     })
     return sent
   }

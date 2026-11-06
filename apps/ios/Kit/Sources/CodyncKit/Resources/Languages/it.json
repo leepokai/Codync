@@ -1292,6 +1292,8 @@
   "Update Codync on that computer.": "Aggiorna Codync su quel computer.",
   "Update Codync on your computer to use its screen from here.": "Aggiorna Codync sul tuo computer per usarne lo schermo da qui.",
   "Update Codync on {host}: changing the lead needs {version} or newer.": "Aggiorna Codync su {host}: per cambiare l'agente principale serve la versione {version} o successiva.",
+  "Update Codync on {host}: marking a chat unread needs {version} or newer.": "Aggiorna Codync su {host}: per segnare una chat come non letta serve la versione {version} o successiva.",
+  "Nothing to mark unread": "Niente da segnare come non letto",
   "Update Codync on {host}: sections need {version} or newer.": "Aggiorna Codync su {host}: le sezioni richiedono la versione {version} o successiva.",
   "Update delayed": "Aggiornamento ritardato",
   "Update to {version}": "Aggiorna a {version}",

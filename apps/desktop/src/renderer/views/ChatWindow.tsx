@@ -43,8 +43,9 @@ import { DeleteAccountPrompt } from './DeleteAccountPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
 import { DesktopActionMenu, type ActionItem } from './DesktopActionMenu'
-import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus'
-import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
+import { sectionHeaderItems, type SectionNaming } from './section-menus'
+import { voiceTarget } from './lead-menus'
+import { botActions } from './bot-menus'
 import { SectionNameDialog } from './SectionNameDialog'
 import { useTraySummary } from './tray-summary'
 import { useIslandSummary } from './island-summary'
@@ -297,20 +298,6 @@ function ChatSplitView() {
 
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
 
-  // One plain list. The lead stays in sight: no hide.
-  const botActions = (bot: Bot, store: BotStore): ActionItem[] => [
-    { title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) },
-    ...moveToSectionItems(bot, store, setNaming),
-    store.offersMarkUnread(bot)
-      ? { title: 'Mark as Unread', icon: 'record.circle', action: () => store.reads.markUnread(bot.id) }
-      : { title: 'Mark as Read', icon: 'bell.badge', action: () => store.reads.markRead(bot.id) },
-    { title: 'Edit Profile…', icon: 'square.and.pencil', action: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }) },
-    { title: 'Copy conversation ID', icon: 'square.on.square', action: () => window.codync.app.copy(bot.id) },
-    ...makeLeadItems(bot, store),
-    ...(bot.lead ? [] : [{ title: 'Hide from sidebar', icon: 'eye.slash', action: () => store.setHidden(bot, true) }]),
-    ...(offersDelete(bot, store) ? [{ title: 'Delete', icon: 'trash', destructive: true, action: () => setConfirmDelete({ bot, store }) }] : []),
-  ]
-
   // ↑/↓ in the roster move the selection; Alt+↑/↓ moves the selected bot itself.
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
@@ -325,7 +312,7 @@ function ChatSplitView() {
     e.preventDefault()
     const current = refs.findIndex((r) => sameRef(r, app.selection))
     const next = e.key === 'ArrowDown' ? Math.min(current + 1, refs.length - 1) : Math.max(current - 1, 0)
-    app.select(refs[next]!)
+    if (next !== current) app.select(refs[next]!)
   }
 
   // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
@@ -392,7 +379,15 @@ function ChatSplitView() {
         <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
           {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
           <BotRoster roster={roster} compact={compact}
-            onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
+            onContext={(bot, store, x, y) => setContext({
+              items: botActions(bot, store, {
+                askName: setNaming,
+                edit: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }),
+                confirmDelete: () => setConfirmDelete({ bot, store }),
+              }),
+              x,
+              y,
+            })}
             onSectionContext={(section, store, x, y) => {
               const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
               if (items.length) setContext({ items, x, y })

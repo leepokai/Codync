@@ -137,7 +137,7 @@ export class BotSync extends BotMirror {
       this.connection = next
       this.changed()
     }
-    if (recovering) for (const botId of new Set(this.readingViews.values())) this.markRead(botId)
+    if (recovering) for (const botId of new Set(this.readingViews.values())) this.readOnScreen(botId)
   }
 
   /** Events (catch-up since `rev`, then live) for as long as the store lives. */
@@ -429,7 +429,7 @@ export class BotSync extends BotMirror {
   setReading(token: string, botId: string, active: boolean) {
     if (active) {
       this.readingViews.set(token, botId)
-      if (this.connection.kind === 'online') this.markRead(botId)
+      if (this.connection.kind === 'online') this.readOnScreen(botId)
     } else {
       this.readingViews.delete(token)
     }
@@ -438,11 +438,11 @@ export class BotSync extends BotMirror {
   private acknowledgeVisible(botId: string, entry?: Entry) {
     if (this.connection.kind !== 'online') return
     if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
-    this.markRead(botId)
+    this.readOnScreen(botId)
   }
 
   /** The chat on screen is read: the host leaves one marked unread alone, and ignores it when nothing there is unread. */
-  markRead(botId: string) {
+  private readOnScreen(botId: string) {
     if (this.reads.retryOpen(botId)) return
     void (async () => {
       if (!this.live) await sleep(INITIAL_GRACE)

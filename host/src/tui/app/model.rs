@@ -57,6 +57,8 @@ pub enum After {
     Network(super::super::manage::NetReply),
     /// A move in the Usage chooser, to this row.
     UsageOrder(usize),
+    /// `markUnread`, which may have had nothing to mark.
+    MarkedUnread,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -44,7 +44,7 @@ export class FakeHost {
       ...[...this.bots.values()].filter((b) => b.rev > since).map((b) => ({ rev: b.rev, line: { type: 'bot', rev: b.rev, bot: this.botJSON(b) } })),
       ...this.entries.filter((e) => e.rev > since).map((e) => ({ rev: e.rev, line: { type: 'entry', rev: e.rev, entry: e } })),
     ].sort((a, b) => a.rev - b.rev)
-    const hello = { type: 'hello', hostId: this.hostId, computerId: story.COMPUTER_ID, rev: this.rev, usage: story.usage(Date.now()), screen: null, catchUp: catchUp.length }
+    const hello = { type: 'hello', hostId: this.hostId, computerId: story.COMPUTER_ID, rev: this.rev, usage: story.usage(Date.now()), screen: null }
     let open = true
     const listener = (line: string) => open && onData(line)
     setTimeout(() => {

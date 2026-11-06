@@ -164,38 +164,3 @@ async fn lead_role_opens_from_the_keyboard_and_badge_without_changing_selection(
     app.on_key(KeyEvent::from(KeyCode::Enter));
     assert!(app.overlays.is_empty());
 }
-
-#[test]
-fn a_tick_reads_what_is_unread_automatically_and_any_chat_it_opens_as_the_user() {
-    for (unread, opened, read) in [
-        (0, false, None),
-        (2, false, Some(json!({"botId": "a", "automatic": true}))),
-        (0, true, Some(json!({"botId": "a", "automatic": false}))),
-        (2, true, Some(json!({"botId": "a", "automatic": false}))),
-    ] {
-        let bot = Bot::parse(&json!({"id": "a", "unread": unread})).expect("a bot with an id parses");
-        assert_eq!(bot.read_on_tick(opened), read, "unread {unread}, opened {opened}");
-    }
-}
-
-#[tokio::test]
-async fn opening_a_chat_reads_it_again_after_watching_it() {
-    let mut app = test_app();
-    let bot =
-        |id: &str, unread: i64| Bot::parse(&json!({"id": id, "unread": unread})).expect("a bot with an id parses");
-    app.bots.insert("a".into(), bot("a", 2));
-    app.bots.insert("b".into(), bot("b", 0));
-    app.selected = Some("a".into());
-    app.chat_page = true;
-    app.term_focused = true;
-    app.tick();
-    assert!(app.reading.contains("a"), "the first tick opens it");
-
-    // Still unread: a chat marked unread on another device, which the host keeps so.
-    app.tick();
-    assert!(app.reading.contains("a"), "once per change while it's watched");
-
-    app.select("b");
-    app.tick();
-    assert!(app.reading.contains("b"), "a chat with nothing unread here is read too: the host may know better");
-}

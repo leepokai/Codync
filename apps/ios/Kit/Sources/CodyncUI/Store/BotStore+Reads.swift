@@ -21,7 +21,7 @@ extension BotStore {
     func setReading(_ token: UUID, botId: String, active: Bool) {
         if active {
             readingViews[token] = botId
-            if connection == .online { markRead(botId) }
+            if connection == .online { readOnScreen(botId) }
         } else {
             readingViews[token] = nil
         }
@@ -30,11 +30,11 @@ extension BotStore {
     func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
         guard connection == .online else { return }
         guard readingViews.values.contains(botId), entry?.isChat != false else { return }
-        markRead(botId)
+        readOnScreen(botId)
     }
 
     /// The chat on screen is read: the host leaves one marked unread alone, and ignores it when nothing there is unread.
-    public func markRead(_ botId: String) {
+    func readOnScreen(_ botId: String) {
         if unsentOpens.contains(botId) {
             openConversation(botId)
             return
@@ -63,7 +63,7 @@ extension BotStore {
     }
 
     /// The user opened the chat, which reads it whatever is known here of it. A failure never reaches the
-    /// dialog: it's read as opened the next time it's on screen with a link (`markRead`).
+    /// dialog: it's read as opened the next time it's on screen with a link (`readOnScreen`).
     func openConversation(_ botId: String) {
         readAll(botId) { error in
             log.debug("opened chat stays unread for now: \(error.localizedDescription)")
@@ -88,15 +88,17 @@ extension BotStore {
     private func readAll(_ botId: String, failed: @escaping @MainActor (any Error) -> Void) {
         guard let bot = bots[botId] else { return }
         unsentOpens.remove(botId)
+        let before = beforeReads[botId].flatMap { $0.rev == bot.rev ? $0 : nil } ?? bot
+        beforeReads[botId] = before
         bots[botId]?.unread = 0
         bots[botId]?.keptUnread = false
         inOrder(botId) {
             do {
                 try await self.withLink(replay: true) { try await $0.markRead(botId) }
             } catch {
-                if self.bots[botId]?.rev == bot.rev {
-                    self.bots[botId]?.unread = bot.unread
-                    self.bots[botId]?.keptUnread = bot.keptUnread
+                if self.bots[botId]?.rev == before.rev {
+                    self.bots[botId]?.unread = before.unread
+                    self.bots[botId]?.keptUnread = before.keptUnread
                 }
                 failed(error)
             }
@@ -113,7 +115,9 @@ extension BotStore {
         sendingReadMarks[botId] = sending
         Task {
             await sending.value
-            if sendingReadMarks[botId] == sending { sendingReadMarks[botId] = nil }
+            guard sendingReadMarks[botId] == sending else { return }
+            sendingReadMarks[botId] = nil
+            beforeReads[botId] = nil
         }
     }
 }

@@ -41,8 +41,7 @@ class AppStore internal constructor(
     internal val attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
     internal val mutableState = MutableStateFlow(AppState(computer, contextId = contextId, generation = generation))
-    /** Chats whose last open never reached the host. */
-    internal val unsentOpens = mutableSetOf<String>()
+    internal val reads = ReadMarks(::action)
     val state = mutableState.asStateFlow()
     internal val feed = TaskFeed(local.directory, computer.id)
     internal var database: MirrorDatabase? = null

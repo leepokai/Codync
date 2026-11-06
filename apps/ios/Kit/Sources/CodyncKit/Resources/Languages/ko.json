@@ -126,6 +126,8 @@
   "Still connecting: try again in a moment.": "아직 연결 중입니다. 잠시 후 다시 시도하세요.",
   "Update Codync on {host}: sections need {version} or newer.": "{host}에서 Codync를 업데이트하세요. 섹션을 쓰려면 {version} 이상이 필요합니다.",
   "Update Codync on {host}: changing the lead needs {version} or newer.": "{host}에서 Codync를 업데이트하세요. 리드 에이전트를 바꾸려면 {version} 이상이 필요합니다.",
+  "Update Codync on {host}: marking a chat unread needs {version} or newer.": "{host}에서 Codync를 업데이트하세요. 채팅을 읽지 않음으로 표시하려면 {version} 이상이 필요합니다.",
+  "Nothing to mark unread": "읽지 않음으로 표시할 내용이 없습니다",
   "{name}, 1 bot": "{name}, 봇 1개",
   "{name}, {count} bots": "{name}, 봇 {count}개",
   "{name}, 1 bot, {unread} unread": "{name}, 봇 1개, 읽지 않은 메시지 {unread}개",

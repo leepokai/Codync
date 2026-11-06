@@ -229,6 +229,7 @@ impl App {
             KeyCode::Enter => {
                 if roster_page || self.focus == Focus::Roster {
                     if self.selected.is_some() {
+                        self.chat_opened = true;
                         self.chat_page = true;
                         self.focus = Focus::Chat;
                         self.start_typing();
@@ -362,6 +363,7 @@ impl App {
                     self.call("updateBot", json!({"id": id, "pinned": pinned}), After::Nothing);
                 }
             }
+            KeyCode::Char('.') => self.toggle_unread(),
             KeyCode::Char('w') => self.ask_section(),
             KeyCode::Char('W') => self.ask_rename_section(),
             KeyCode::Char('z') => self.toggle_section(),

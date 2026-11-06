@@ -16,8 +16,12 @@ export const APP_STORE = "https://apps.apple.com/app/codync/id6760984418";
 export const ANDROID_TEST = "https://docs.google.com/forms/d/e/1FAIpQLScvtCO7edjgFHKozWbHQ-9dDIJturifAA8znvhLVfCtRzu8cg/viewform";
 export const GITHUB = "https://github.com/leepokai/Codync";
 export const DISCORD = "https://discord.gg/KBAX3Qznxh";
-export const WECHAT = "/wechat";
+// Lists the WeChat and Lark groups; the route stays /wechat because the README and shared links point to it.
+export const CHINA_COMMUNITY = "/wechat";
 export const WECHAT_QR = "/wechat-group.png";
+export const LARK_QR = "/lark-group.png";
+// The join link inside the Lark group's permanent QR code.
+export const LARK_JOIN = "https://applink.larksuite.com/client/chat/chatter/add_by_link?link_token=210q827f-a135-4b31-8be0-d4baf5lgh4cj&qr_code=true";
 // Donation page.
 export const KO_FI = "https://ko-fi.com/leepokai";
 export const EMAIL = "kevin@codync.dev";

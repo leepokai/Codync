@@ -122,6 +122,9 @@ impl Hub {
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
+        let n8n =
+            Arc::new(crate::n8n::N8n::new(&store, events.clone(), format!("http://127.0.0.1:{port}"), token.clone()));
+        let usage = crate::usage::load(&store);
         Arc::new(Self {
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
@@ -140,7 +143,7 @@ impl Hub {
             bots: Mutex::default(),
             runtime: Mutex::default(),
             phone_clients: AtomicUsize::new(0),
-            usage: Mutex::default(),
+            usage: Mutex::new(usage),
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
             pairing: Mutex::default(),
@@ -148,6 +151,7 @@ impl Hub {
             cloud_synced: AtomicBool::new(false),
             cloud: crate::remote::cloud::Cloud::default(),
             screen,
+            n8n,
             terms: Arc::default(),
         })
     }
@@ -155,6 +159,13 @@ impl Hub {
     pub fn start(self: &Arc<Self>) -> Result<()> {
         // Approval cards and queued sends from a previous run can't be honored anymore.
         self.store.expire_pending()?;
+        // A reading that hovered at a threshold used to leave one memory banner per
+        // sample; keep the newest per chat so the thread reads as one line.
+        match self.store.coalesce_health_notices() {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(banners = n, "coalesced repeated memory notices"),
+            Err(error) => tracing::warn!(error = format!("{error:#}"), "couldn't coalesce memory notices"),
+        }
         crate::chat::memory::import_old_memory(self);
         self.routines.restore(&self.store)?;
         crate::market::turn_on_installed_once(&self.store)?;
@@ -168,6 +179,8 @@ impl Hub {
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
+        // The n8n instance starts with the host when its service is on.
+        self.n8n.start(self);
         Ok(())
     }
 
@@ -192,6 +205,7 @@ impl Hub {
         if tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks)).await.is_err() {
             tracing::warn!("some bots didn't stop within 5 s");
         }
+        self.n8n.stop(&self.store).await;
         self.keep_awake.locked().set(false);
     }
 
@@ -223,6 +237,7 @@ impl Hub {
                 return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
             }
         }
+        Self::settle_profile(None, &mut cfg);
         crate::agent::fallback::tidy(&mut cfg);
         cfg.section = sections::normalize_section(cfg.section.as_deref())?;
         validate(&cfg)?;
@@ -231,6 +246,7 @@ impl Hub {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
+        self.set_profile_budget(&cfg);
         crate::network::publish(self);
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
@@ -459,6 +475,7 @@ impl Hub {
     }
 
     pub fn set_usage(&self, usage: Usage) {
+        crate::usage::save(&self.store, &usage);
         let _ = self.events.send(json!({"type": "usage", "usage": usage}));
         *self.usage.locked() = usage;
     }

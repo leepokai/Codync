@@ -14,10 +14,15 @@ import { useAgentModels } from './agent-models'
 import { AgentModelPicker } from './AgentModelPicker'
 import { ApprovalRow } from './ApprovalRow'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
-import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
+import { useAgentSetup } from './agent-status'
+import { lastPathComponent } from '../../lib/path'
+import { errorText, isValid, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
+import { ApprovalRulesEditor } from './ApprovalRulesEditor'
+import { SecurityProfilePicker } from './SecurityProfilePicker'
+import { profileRules } from '@shared/security-profiles'
 import { NetworkSwitches } from './NetworkSwitches'
 import { FolderPicker } from './FolderPicker'
 import './bots.css'
@@ -120,11 +125,14 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
 }) {
   const tr = useTr()
   const store = useStore()
+  const setup = useAgentSetup()
   const [pickingAvatar, setPickingAvatar] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
+  const setLayer = (layer: keyof Personality, value: string) =>
+    onChange((d) => ({ ...d, personality: { soul: '', persona: '', heartbeat: '', ...d.personality, [layer]: value } }))
   // Options belong to one model.
   const setModel = useCallback((model: string | null) => onChange((d) => (d.model === model ? d : { ...d, model, modelOptions: {} })), [onChange])
   const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
@@ -136,11 +144,48 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const connectors = plugins?.connectors ?? []
   const skills = plugins?.skills ?? []
 
-  const instructions = (
-    <Field label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
-      <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
-    </Field>
-  )
+  // The agent's own models; a model that is set but not listed (an older host, another agent) stays pickable.
+  const backgroundChoices = [
+    { id: '', label: 'The bot\'s own model' },
+    ...(models.catalog?.models ?? []).map((m) => ({ id: m.id, label: m.name })),
+    ...(draft.backgroundModel && !models.catalog?.models.some((m) => m.id === draft.backgroundModel)
+      ? [{ id: draft.backgroundModel, label: draft.backgroundModel }]
+      : []),
+  ]
+  const loadProfiles = useCallback(() => store.securityProfiles(), [store])
+  const instructions = [
+      <Field key="standing" label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
+        <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
+      </Field>,
+      <Field key="check" label="Check before done" detail="A command run in the workspace after each turn. If it fails, the turn doesn't count as done.">
+        <AutoTextArea className="field-box" value={draft.verifyCommand ?? ''} placeholder="e.g. npm test" minRows={1} maxRows={3} onChange={(v) => set('verifyCommand', v)} />
+      </Field>,
+      <Field key="soul" label="Soul" detail="Values and boundaries that never change. Written by you; the bot can't edit it.">
+        <AutoTextArea className="field-box" value={draft.personality?.soul ?? ''} placeholder="e.g. Honest, careful with other people's data." minRows={2} maxRows={8} onChange={(v) => setLayer('soul', v)} />
+      </Field>,
+      <Field key="persona" label="Persona" detail="Its voice and manner.">
+        <AutoTextArea className="field-box" value={draft.personality?.persona ?? ''} placeholder="e.g. Dry and brief. No emoji." minRows={2} maxRows={8} onChange={(v) => setLayer('persona', v)} />
+      </Field>,
+      <Field key="heartbeat" label="Heartbeat" detail="What it does when it checks in on its own.">
+        <AutoTextArea className="field-box" value={draft.personality?.heartbeat ?? ''} placeholder="e.g. Look for failing tests and say only if something broke." minRows={2} maxRows={8} onChange={(v) => setLayer('heartbeat', v)} />
+      </Field>,
+      <Field key="background" label="Background model" detail="A cheaper model for routines and check-ins, where nobody is waiting.">
+        <ChoicePicker
+          selection={draft.backgroundModel ?? ''}
+          options={backgroundChoices}
+          onChange={(id) => set('backgroundModel', id || null)}
+        />
+      </Field>,
+      draft.backgroundModel ? (
+        <SwitchRow
+          key="saver"
+          title="Saver"
+          detail="At 80 percent of this bot's daily token budget, new sessions start on the background model until tomorrow."
+          on={draft.saver ?? false}
+          onChange={(on) => set('saver', on)}
+        />
+      ) : null,
+    ]
   const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
   const agent = (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
@@ -180,6 +225,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           </CardSection>
           {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
         </div>
+        {setup.sheet}
       </div>
     )
   }
@@ -298,6 +344,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           }}
         />
       </Sheet>
+      {setup.sheet}
     </div>
   )
 }

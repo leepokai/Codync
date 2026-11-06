@@ -41,8 +41,11 @@ fun AppStore.openLink(uri: Uri) {
         val completed = withTimeoutOrNull(30_000) {
             val activated = activated()
             val usage = uri.host == "usage"
+            // The overview widget's team and approvals zones land on the bot list, where the requests waiting on you are.
+            val page = uri.host in WidgetPage.entries.map { it.host }
             val destination = try {
                 if (usage) { val target = UsageDestination.parse(uri.toString(), BuildConfig.URL_SCHEME); BotDestination(target.scope, target.computerId, "") }
+                else if (page) { val target = PageDestination.parse(uri.toString(), BuildConfig.URL_SCHEME); BotDestination(target.scope, target.computerId, "") }
                 else BotDestination.parse(uri.toString(), BuildConfig.URL_SCHEME)
             }
             catch (_: Exception) { mutableState.update { it.copy(error = "This notification has an invalid destination.") }; return@withTimeoutOrNull true }
@@ -61,10 +64,10 @@ fun AppStore.openLink(uri: Uri) {
                 return@withTimeoutOrNull true
             }
             val generation = activated.generation
-            if (usage) {
+            if (usage || page) {
                 if (state.value.generation == generation) {
                     openBot(null)
-                    mutableState.update { it.copy(error = null, navigationRequest = it.navigationRequest + 1, navigationPage = LinkPage.Usage) }
+                    mutableState.update { it.copy(error = null, navigationRequest = it.navigationRequest + 1, navigationPage = if (usage) LinkPage.Usage else LinkPage.Bots) }
                 }
                 return@withTimeoutOrNull true
             }

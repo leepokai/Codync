@@ -1,0 +1,47 @@
+n8n runs on your computer as a window of Codync: an n8n instance the host starts and stops for you, alongside your bots. Build flows — triggers, integrations, schedules, human approvals — in n8n's editor. You never start or babysit the instance yourself; the host runs it, the way it runs your bots and their routines.
+
+It's a two-way street: a workflow can send a message to one of your bots and wait for its answer, and a bot can drive the instance through its MCP server, the way it drives any other connector.
+
+The instance is an install of [n8n](https://github.com/n8n-io/n8n), the open-source workflow tool. Its data lives in its own folder next to the host's, and it listens only on this computer (`127.0.0.1`), so nothing outside it can reach it.
+
+## Requirements
+
+- Node.js 24 or newer on the computer's PATH.
+- An install folder with an n8n build in it: the folder that contains `packages/cli/bin/automan`. Codync starts that entry point for you.
+
+## Set it up
+
+n8n is a desktop feature. Its settings are in **Settings → n8n**, and the sidebar's **n8n** button opens the editor directly.
+
+1. Choose the **Install folder** with **Change…**: the folder where n8n is installed.
+2. Pick the **Port** (default 5678, 1024 or above) and **Save** it.
+3. Turn on **Run n8n with this computer** and choose **Start**.
+
+The first start can take a few minutes: it sets up the instance's database and runs its migrations. The dot next to **n8n** in the sidebar shows the state: it pulses while starting, stays lit while running, and turns red on an error.
+
+The switch and **Stop** act differently: **Stop** stops the instance but leaves it on, so it starts again the next time the host starts. Turning the switch off stops it and keeps it off until you turn it on again.
+
+## Use the editor
+
+Choose **Open** in the settings page or the sidebar's **n8n** button to open the editor in its own Codync window. When the instance isn't running, the window offers to start it; once it answers, the window switches to the editor on its own.
+
+The editor opens signed in: the first start creates the instance's owner for the host, so there's no sign-in to do.
+
+Workflows run on your computer. Their credentials, executions and data live in the instance's folder, next to the host's data in `~/.codync/n8n`. Deleting that folder removes the instance and everything it ran.
+
+If the state turns red, the settings page shows the instance's last output lines below the state, which is usually the fastest way to see what went wrong: a missing Node.js version, a bad install folder, or a busy port are the common causes.
+
+## Talk to your bots from a workflow
+
+The editor ships with a **Codync Bot** node (under **Custom Nodes**): it talks to the bots on this computer. Pick a bot from its dropdown and choose an operation:
+
+- **Send a message** sends the input to the bot and waits for its reply, which comes out as the node's output.
+- **List the bots**, **Read the history** of a chat, **Run a routine**, **Stop a bot**, or **Start a new session** for it.
+
+The node finds the host on its own, so it needs no credentials. You can still configure a **Codync API** credential — the host's URL and token — if you point the node at another computer's host.
+
+## Give your bots the instance
+
+While the instance runs, the host registers its MCP server as a connector named **n8n** on every bot, so a bot can work n8n the way it works any other connector: look at its workflows, start an execution, follow the result. While the instance runs, the settings page shows the connection under the **Instance** section.
+
+When the instance stops, the connector goes away with it; the next start brings it back.

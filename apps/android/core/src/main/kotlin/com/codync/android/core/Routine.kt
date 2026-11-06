@@ -14,22 +14,44 @@ import java.time.format.FormatStyle
     val createdAt: Long = 0, val updatedAt: Long = 0,
     val triggerDescriptions: List<String> = emptyList(), val nextRunAt: Long? = null,
     val timeoutSeconds: Int? = null, val lastError: String? = null,
+    /** What a due occurrence that could not run follows: `skip` or `runOnce` (older hosts send nothing). */
+    val missedPolicy: String? = null,
+    /** What a run that would pass the bot's daily token limit follows: `wait` or `skip` (older hosts send nothing). */
+    val limitPolicy: String? = null,
 ) {
     val keepsOriginal: Boolean get() = triggers.size != 1 || triggers.single()["type"]?.jsonPrimitive?.content !in listOf("cron", "interval", "webhook")
     val hasWebhook: Boolean get() = triggers.any { it["type"]?.jsonPrimitive?.content in listOf("webhook", "event") }
 }
+
+/** Occurrences that came due and did not run; `count` is how many. */
+@Serializable data class RoutineRunMissed(val count: Int, val until: Long? = null)
 
 @Serializable data class RoutineRun(
     val id: String, val routineId: String, val botId: String, val status: String,
     val createdAt: Long = 0, val finishedAt: Long? = null, val detail: String? = null,
     /** A retry of a run that failed before acting waits until then. */
     val notBefore: Long? = null,
+    /** The occurrence this run stands for, when its schedule named one. */
+    val scheduledFor: Long? = null,
+    /** Occurrences that came due and did not run (older hosts send nothing). */
+    val missed: RoutineRunMissed? = null,
+    /** A run holds the bot's turn and it is asking a question: it waits on the user. */
+    val needsAttention: Boolean? = null,
 ) {
     val isActive: Boolean get() = status in listOf("pending", "starting", "running", "recovering")
-    val label: String get() = when (status) {
-        "pending" -> notBefore?.let { retrying(it) } ?: "Queued"; "starting" -> "Starting"; "running" -> "Running"
-        "recovering" -> "Resuming after restart"; "failed" -> "Failed"; "interrupted" -> "Interrupted"
-        else -> status.replaceFirstChar { it.uppercase() }
+    val label: String get() {
+        val missedSuffix = missed?.takeIf { it.count > 0 }?.let { " · ${it.count} missed" } ?: ""
+        return when (status) {
+            "pending" -> notBefore?.let { retrying(it) } ?: "Queued"
+            "starting" -> "Starting"
+            "running" -> if (needsAttention == true) "Waiting on you" else "Running"
+            "recovering" -> "Resuming after restart"
+            "failed" -> "Failed$missedSuffix"
+            "interrupted" -> "Interrupted$missedSuffix"
+            "cancelled" -> // A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped.
+                if (scheduledFor != null || missed != null) "Skipped$missedSuffix" else "Cancelled"
+            else -> status.replaceFirstChar { it.uppercase() }
+        }
     }
 
     /** A retry waiting until `at` (Unix ms). */
@@ -44,10 +66,14 @@ import java.time.format.FormatStyle
     fun summary(routine: Routine): String {
         runs.firstOrNull { it.routineId == routine.id && it.isActive }?.let { return it.label }
         if (routine.lastError != null) return "Schedule needs attention"
-        runs.firstOrNull { it.routineId == routine.id }?.takeIf { it.status in listOf("failed", "interrupted") }
-            ?.let { return "Last run ${it.label.lowercase()}" }
+        runs.firstOrNull { it.routineId == routine.id }?.let { last ->
+            if (last.status in listOf("failed", "interrupted") || isSkipped(last)) return "Last run ${last.label.lowercase()}"
+        }
         return routine.triggerDescriptions.joinToString(" · ")
     }
+
+    /** A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped. */
+    private fun isSkipped(run: RoutineRun): Boolean = run.status == "cancelled" && (run.scheduledFor != null || run.missed != null)
 }
 
 /**
@@ -60,7 +86,15 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 @Serializable data class RoutineScheduleDraft(
     val kind: String = "cron", val amount: String = "1", val unit: Long = 3600,
     val calendarStyle: String = "daily", val weekday: Int = 1, val selectedDays: List<Int> = emptyList(),
-    val monthDay: Int = 1, val minuteStep: Int = 15, val hour: Int = 9, val minute: Int = 0,
+    val monthDay: Int = 1,
+    /** Yearly: the month (1-12) of the one date. */
+    val yearMonth: Int = 1,
+    val minuteStep: Int = 15,
+    /** Hourly: repeat every N hours (1, 2, 3, 4, 6, 8, 12); 1 runs on the hour. */
+    val everyHours: Int = 1,
+    /** Hourly: the window, in minutes from midnight; `null` on either end runs through the day. */
+    val windowStart: Int? = null, val windowEnd: Int? = null,
+    val hour: Int = 9, val minute: Int = 0,
     val at: Long = 0, val expression: String = "", val zone: String = "", val original: List<JsonObject> = emptyList(),
 ) {
     /**
@@ -83,7 +117,9 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 @Serializable data class RoutineWebhook(val url: String? = null, val localUrl: String, val key: String, val connected: Boolean)
 
 data class RoutineDraft(val id: String? = null, val name: String = "", val instruction: String = "",
-    val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600") {
+    val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600",
+    /** Absent (null) keeps the saved policies, the host's default on a new routine. */
+    val missedPolicy: String? = null, val limitPolicy: String? = null) {
     /** The timeout in words: whole hours, else whole minutes, else seconds; anything else as typed. */
     val timeoutText: String get() {
         val seconds = timeoutSeconds.toLongOrNull() ?: return "${timeoutSeconds}s"
@@ -98,5 +134,6 @@ data class RoutineDraft(val id: String? = null, val name: String = "", val instr
     fun body(botId: String): JsonObject = buildJsonObject {
         put("botId", botId); id?.let { put("id", it) }; put("name", name); put("instruction", instruction)
         put("schedule", WireJson.encodeToJsonElement(schedule)); put("timeoutSeconds", timeoutSeconds)
+        missedPolicy?.let { put("missedPolicy", it) }; limitPolicy?.let { put("limitPolicy", it) }
     }
 }

@@ -143,7 +143,7 @@ function CatalogSheet({ item, catalog, added, busy, onAdd }: { item: Item; catal
               <HStack key={p.id} gap={12} align="flex-start">
                 <ProfileFace profile={p} size={32} />
                 <VStack gap={2} shrink>
-                  <Text weight="semibold" tone="text">{index === 0 ? tr('{name} Â· Coordinator').replaceAll('{name}', p.name) : p.name}</Text>
+                  <Text weight="semibold" tone="text">{index === 0 ? tr('{name} · Coordinator').replaceAll('{name}', p.name) : p.name}</Text>
                   <Text size="caption" tone="secondary">{p.summary}</Text>
                 </VStack>
               </HStack>

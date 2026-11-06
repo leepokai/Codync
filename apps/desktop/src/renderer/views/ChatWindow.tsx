@@ -5,7 +5,7 @@ import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
-import { HStack, Spacer } from '../components/Stack'
+import { HStack, Spacer, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
@@ -53,6 +53,9 @@ import './chat-window.css'
 import './sidebar-header.css'
 import { useTr } from '../lib/use-language'
 
+
+/** The icon rail is always visible; the list panel beside it can be collapsed. */
+const RAIL_WIDTH = 52
 
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
 export function ChatWindow() {
@@ -210,19 +213,19 @@ function ChatSplitView() {
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
+  const [canvasOpen, setCanvasOpen] = useState(false)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
-  const railNewButton = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   useModels([...app.stores.values()])
 
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420 - RAIL_WIDTH)))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -254,6 +257,7 @@ function ChatSplitView() {
         if (c.kind === 'search') setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
+        if (c.kind === 'openN8nSettings') setSettings('n8n')
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)
           queueVoiceKey(c.key)
@@ -326,10 +330,11 @@ function ChatSplitView() {
     app.select(refs[next]!)
   }
 
-  // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
+  // The panel's edge drags its width; narrower than 180 collapses it to the rail.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - 420)
-  const resizeSidebar = (proposed: number) => {
+  const sidebarMax = Math.max(260, Math.min(420, window.innerWidth - 420 - RAIL_WIDTH))
+  const resizeSidebar = (proposedTotal: number) => {
+    const proposed = proposedTotal - RAIL_WIDTH
     const nextCompact = proposed < 180
     if (nextCompact !== compact) setCompact(nextCompact)
     if (!nextCompact) setSidebarWidth(Math.min(Math.max(260, proposed), sidebarMax))
@@ -367,7 +372,8 @@ function ChatSplitView() {
     )
   }
 
-  const width = compact ? 76 : sidebarWidth
+  const width = compact ? RAIL_WIDTH : sidebarWidth + RAIL_WIDTH
+  const railActive = canvasOpen ? 'canvas' : settings === 'usage' ? 'usage' : marketplace !== null ? 'marketplace' : settings !== null ? 'settings' : 'bots'
   return (
     <div className={`split ${showAccount || context ? 'covered' : ''}`}>
       <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
@@ -424,7 +430,7 @@ function ChatSplitView() {
           <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} onComputers={() => setSettings('computers')} />
         )}
       </aside>
-      <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
+      <ResizeHandle label="Resize sidebar" width={width} min={RAIL_WIDTH} max={sidebarMax + RAIL_WIDTH} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
@@ -477,6 +483,21 @@ function ChatSplitView() {
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>
             <MarketplaceView key={marketplace} />
+          </StoreContext.Provider>
+        ) : null}
+      </Sheet>
+      <Sheet open={canvasOpen && !!selectedBot && !!selectedStore} onClose={() => setCanvasOpen(false)} width={Math.min(1120, windowSize.width - 40)} height={Math.min(760, windowSize.height - 40)}>
+        {selectedBot && selectedStore ? (
+          <StoreContext.Provider value={selectedStore}>
+            <VStack gap={14} className="routine-flow-sheet">
+              <ModalHeader
+                icon="arrow.triangle.branch"
+                title={tr('Bot canvas')}
+                subtitle={tr('Every routine that starts or passes through this bot, and where its replies go.')}
+                onClose={() => setCanvasOpen(false)}
+              />
+              <RoutineFlowView botId={selectedBot.id} />
+            </VStack>
           </StoreContext.Provider>
         ) : null}
       </Sheet>

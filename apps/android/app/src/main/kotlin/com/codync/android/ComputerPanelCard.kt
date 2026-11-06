@@ -29,6 +29,7 @@ import kotlinx.serialization.json.contentOrNull
         if (model.loading && snapshot == null) row { Waiting("Loading computer…") }
         if (tab == "status" && snapshot != null) {
             row { Text("Workspace: ${snapshot.workspace}", style = Type.caption, color = Palette.secondary) }
+            healthRows(store, state.generation)
             row { Text(if (snapshot.screen["userControl"]?.jsonPrimitive?.booleanOrNull == true) "You control the screen" else "Host controls the screen", style = Type.body, color = Palette.text) }
             row { SwitchRow("Use the computer", null, snapshot.enabled, {
                 if (!model.busy) model.permissions(it, snapshot.permissions) { changed(it, snapshot.permissions) }

@@ -17,6 +17,7 @@ impl Actor {
             Cmd::RefreshTools => {
                 self.tools_changed = true;
             }
+            Cmd::FreeMemory => self.free_memory().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await,
             Cmd::Group(turn) => {

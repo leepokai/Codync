@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CardSection, ChipChoice, ChoicePicker } from '../../components/Controls'
+import { Button, CardSection, ChipChoice, ChoicePicker } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
@@ -17,8 +17,27 @@ const weekdays = [
   { id: 6, label: 'Sat', title: 'Saturday' },
   { id: 0, label: 'Sun', title: 'Sunday' },
 ]
+const months = [
+  { id: 1, label: 'Jan' }, { id: 2, label: 'Feb' }, { id: 3, label: 'Mar' }, { id: 4, label: 'Apr' },
+  { id: 5, label: 'May' }, { id: 6, label: 'Jun' }, { id: 7, label: 'Jul' }, { id: 8, label: 'Aug' },
+  { id: 9, label: 'Sep' }, { id: 10, label: 'Oct' }, { id: 11, label: 'Nov' }, { id: 12, label: 'Dec' },
+]
+/// The steps an hourly run repeats at; the host accepts exactly these.
+const everyHours = [
+  { id: 1, label: 'hour' }, { id: 2, label: '2 hours' }, { id: 3, label: '3 hours' }, { id: 4, label: '4 hours' },
+  { id: 6, label: '6 hours' }, { id: 8, label: '8 hours' }, { id: 12, label: '12 hours' },
+]
 const pad = (n: number) => String(n).padStart(2, '0')
 const minutes = Array.from({ length: 60 }, (_, m) => ({ id: m, label: `:${pad(m)}` }))
+/// A leap year, so February 29 is a date, like the host counts it.
+const daysIn = (month: number) => new Date(2024, month, 0).getDate()
+/// `HH:MM` a window's minute of the day, as a time input shows it; `''` runs through the day.
+const windowTime = (value: number | null) => (value === null ? '' : `${pad(Math.floor(value / 60))}:${pad(value % 60)}`)
+const fromWindowTime = (value: string): number | null => {
+  if (!value) return null
+  const [hour, minute] = value.split(':').map(Number)
+  return Number.isNaN(hour) || Number.isNaN(minute) ? null : hour * 60 + minute
+}
 
 /**
  * A schedule's fields in one group (how often, the day and time, the time zone), then what the
@@ -49,10 +68,60 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
           <ChipChoice label="Day" selection={schedule.weekday} options={weekdays} onChange={(weekday) => update({ weekday })} />
         </LabeledRow>
       ) : null}
-      {repeat === 'hourly' ? (
-        <LabeledRow key="At minute" label="At minute">
-          <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
+      {repeat === 'yearly' ? (
+        <LabeledRow key="On" label="On">
+          <HStack gap={8}>
+            <ChoicePicker
+              selection={schedule.yearMonth}
+              options={months}
+              onChange={(yearMonth) => update({ yearMonth, monthDay: Math.min(schedule.monthDay, daysIn(yearMonth)) })}
+              fits
+            />
+            <ChoicePicker selection={schedule.monthDay} options={Array.from({ length: daysIn(schedule.yearMonth) }, (_, d) => ({ id: d + 1, label: String(d + 1) }))} onChange={(monthDay) => update({ monthDay })} fits />
+          </HStack>
         </LabeledRow>
+      ) : null}
+      {repeat === 'hourly' ? (
+        <VStack key="Hourly" gap={10}>
+          {schedule.windowStart === null && schedule.windowEnd === null ? (
+            <LabeledRow label="At minute">
+              <HStack gap={8}>
+                <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
+                {/* The window the TUI starts from: the workday, 09:00 to 18:00. */}
+                <Button kind="secondary" title="Only run between two times" onClick={() => update({ windowStart: 9 * 60, windowEnd: 18 * 60 })}>
+                  Window
+                </Button>
+              </HStack>
+            </LabeledRow>
+          ) : (
+            // A window's start sets the minute of every run in it.
+            <LabeledRow label="Window">
+              <HStack gap={8}>
+                <input
+                  type="time"
+                  className="schedule-input schedule-time"
+                  aria-label="Window start"
+                  value={windowTime(schedule.windowStart)}
+                  onChange={(e) => update({ windowStart: fromWindowTime(e.target.value) })}
+                />
+                <Text size="callout" tone="secondary">to</Text>
+                <input
+                  type="time"
+                  className="schedule-input schedule-time"
+                  aria-label="Window end"
+                  value={windowTime(schedule.windowEnd)}
+                  onChange={(e) => update({ windowEnd: fromWindowTime(e.target.value) })}
+                />
+                <Button kind="secondary" title="Run through the whole day" onClick={() => update({ windowStart: null, windowEnd: null })}>
+                  Off
+                </Button>
+              </HStack>
+            </LabeledRow>
+          )}
+          <LabeledRow label="Every">
+            <ChoicePicker selection={schedule.everyHours} options={everyHours} onChange={(everyHours) => update({ everyHours })} fits />
+          </LabeledRow>
+        </VStack>
       ) : repeat === 'custom' ? (
         <LabeledRow key="Cron" label="Cron" top>
           <VStack gap={6} grow>

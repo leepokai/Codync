@@ -164,11 +164,27 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                     &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
                     t.dim.patch(base),
                 );
-                let when: Vec<&str> =
-                    it["triggerDescriptions"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-                let (line, style) = match it["lastError"].as_str() {
-                    Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
-                    None => (when.join(" · "), t.secondary),
+                // The row's second line reads like the other clients: what's happening now, else when it runs.
+                let (line, style) = match l.runs.iter().find(|r| r["routineId"] == it["id"] && is_active(r)) {
+                    Some(run) => (run_label(run), t.amber),
+                    _ if it["lastError"].is_string() => (tr("Schedule needs attention").into_owned(), t.red),
+                    _ => {
+                        let last = l.runs.iter().find(|r| r["routineId"] == it["id"]);
+                        let when: Vec<&str> = it["triggerDescriptions"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str)
+                            .collect();
+                        match last {
+                            Some(r)
+                                if matches!(r["status"].as_str(), Some("failed" | "interrupted")) || is_skipped(r) =>
+                            {
+                                (format!("Last run {}", run_label(r).to_lowercase()), t.secondary)
+                            }
+                            _ => (when.join(" · "), t.secondary),
+                        }
+                    }
                 };
                 let room = usize::from(inner.width.saturating_sub(2));
                 put(buf, inner.x + 2, y + 1, u(room), &truncate(&line, room), style.patch(t.panel));
@@ -182,6 +198,44 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
         None,
         "n new · c ask the bot · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc",
     );
+}
+
+/// A run still holding the bot's turn: the row reads its label, the other clients' words.
+fn is_active(run: &Value) -> bool {
+    matches!(run["status"].as_str(), Some("pending" | "starting" | "running" | "recovering"))
+}
+
+/// A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped.
+fn is_skipped(run: &Value) -> bool {
+    run["status"] == "cancelled" && (run["scheduledFor"].is_i64() || run["missed"].is_object())
+}
+
+/// A run's status in words: a waiting retry says when it goes, a skipped run why.
+fn run_label(run: &Value) -> String {
+    let missed =
+        run["missed"]["count"].as_i64().filter(|n| *n > 0).map(|n| format!(" · {n} missed")).unwrap_or_default();
+    match run["status"].as_str().unwrap_or_default() {
+        "pending" => run["notBefore"].as_i64().map_or_else(
+            || "Queued".into(),
+            |ms| {
+                if ms > crate::store::now_ms() { format!("Retrying at {}", when_future(ms)) } else { "Retrying".into() }
+            },
+        ),
+        "starting" => "Starting".into(),
+        "running" => {
+            if run["needsAttention"] == true {
+                "Waiting on you".into()
+            } else {
+                "Running".into()
+            }
+        }
+        "recovering" => "Resuming after restart".into(),
+        "failed" => format!("Failed{missed}"),
+        "interrupted" => format!("Interrupted{missed}"),
+        "cancelled" if is_skipped(run) => format!("Skipped{missed}"),
+        "cancelled" => "Cancelled".into(),
+        other => other.to_string(),
+    }
 }
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
@@ -210,7 +264,14 @@ pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
         &f.original_text
     };
     input_line(buf, at(inner.y + 7), inner.y + 7, &f.when, placeholder, f.field == RoutineField::When, false);
-    put(buf, vx, inner.y + 8, vw, "or hourly :30 · weekly mon 09:00 · 2026-10-01 09:00 (once)", t.dim.patch(t.panel));
+    put(
+        buf,
+        vx,
+        inner.y + 8,
+        vw,
+        "or hourly :30 · weekly mon 09:00 · yearly mar 15 09:00 · 2026-10-01 09:00 (once)",
+        t.dim.patch(t.panel),
+    );
     put(buf, vx, inner.y + 9, vw, "every = from now on · webhook = when called", t.dim.patch(t.panel));
     let (zone_hint, zone_style) = match super::manage::complete_zone(&f.when.text, crate::store::now_ms()) {
         Some(done) => (format!("tab → {done}"), t.secondary),
@@ -268,6 +329,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     let signed_in =
         a.auth.as_ref().map_or_else(|| b.and_then(|b| b["signedIn"].as_bool()), |v| v["signedIn"].as_bool());
+    let email = b.and_then(|b| b["email"].as_str());
     let set_up = app.agent_set_up(a);
     let curated = b.is_some_and(|b| b["curated"] == true);
     let status = if a.busy {
@@ -282,7 +344,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         if curated { "Install it first.".into() } else { format!("Not set up on {} yet.", app.host) }
     } else {
         match signed_in {
-            Some(true) => "Signed in.".into(),
+            Some(true) => email.map_or_else(|| "Signed in.".to_owned(), |e| format!("Signed in as {e}.")),
             Some(false) => "Not signed in yet.".into(),
             None => format!("Couldn't tell. Skip this if you've already signed in on {}.", app.host),
         }

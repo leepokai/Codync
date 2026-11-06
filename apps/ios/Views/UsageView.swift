@@ -6,6 +6,7 @@ import SwiftUI
 struct UsageView: View {
     @Environment(BotStore.self) private var model
     @State private var collapsed: Set<String> = []
+    @State private var week: WeekSummary?
 
     var body: some View {
         ScrollView {
@@ -16,6 +17,7 @@ struct UsageView: View {
                         set: { if $0 { collapsed.insert(provider.id) } else { collapsed.remove(provider.id) } }
                     ))
                 }
+                if let week, week.activeBots > 0 { WeekCard(week: week) }
                 if model.usage.providers.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "chart.bar").font(.system(size: 40)).foregroundStyle(Palette.tertiary)
@@ -32,6 +34,39 @@ struct UsageView: View {
         }
         .background(Palette.background)
         .refreshable { await model.refreshUsage() }
+        .task { week = await model.weekSummary() }
+    }
+}
+
+/// The last seven days, as counts: what was said, done and approved.
+private struct WeekCard: View {
+    let week: WeekSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.tr("Your week")).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
+            row("Messages you sent", "\(week.messages)")
+            row("Replies from your bots", "\(week.replies)")
+            row("Tool calls", "\(week.tools)")
+            row("File edits", "\(week.fileEdits)")
+            row("Approvals answered", "\(week.approvalsAnswered) / \(week.approvalsAsked)")
+            if week.approvalsWaiting > 0 { row("Approvals still waiting", "\(week.approvalsWaiting)") }
+            if !week.topBots.isEmpty {
+                Text("\(L10n.tr("Busiest")): \(week.topBots.map { $0.name.isEmpty ? L10n.tr("Bot") : $0.name }.joined(separator: ", "))")
+                    .font(.caption).foregroundStyle(Palette.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(L10n.tr(label)).font(.footnote).foregroundStyle(Palette.secondary)
+            Spacer()
+            Text(value).font(.footnote.monospacedDigit()).foregroundStyle(Palette.text)
+        }
     }
 }
 

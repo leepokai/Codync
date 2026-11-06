@@ -60,7 +60,7 @@ interface Deps {
  */
 export class Island {
   private window: BrowserWindow | null = null
-  private summary: IslandSummary = { bots: [], permissions: [], usage: [] }
+  private summary: IslandSummary = { bots: [], permissions: [], usage: [], health: null }
   private screen: IslandScreen = { notch: null }
   private rect: IslandRect = { x: 0, y: 0, width: 0, height: 0 }
   private inside = false

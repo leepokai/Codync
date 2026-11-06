@@ -239,6 +239,7 @@ class BdotsModelsTest {
                 {"optionId":"yes","name":"Allow","kind":"allow_once"},{"optionId":"no","name":"Reject","kind":"reject_once"}]}"""),
             entry("h", 2, "notice", """{"text":"Human takeover requested: log in","takeoverRequest":{"reason":"log in","status":"waiting"}}"""),
             entry("hd", 3, "notice", """{"text":"x","takeoverRequest":{"reason":"done","status":"resolved"}}"""),
+            entry("hx", 3, "notice", """{"text":"x","takeoverRequest":{"reason":"late","status":"expired"}}"""),
             entry("e", 4, "notice", """{"text":"The agent stopped","style":"error"}"""),
         )
         val byId = collectPendingDecisions(entries).associateBy { it.entryId }

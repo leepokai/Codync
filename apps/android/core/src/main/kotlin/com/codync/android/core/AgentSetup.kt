@@ -11,7 +11,11 @@ import kotlinx.serialization.json.*
 @Serializable data class AgentBackend(val id: String, val name: String, val installed: Boolean = false,
     val available: Boolean = false, val description: String? = null, val installHint: String = "",
     val signedIn: Boolean? = null, val canInstall: Boolean = false, val curated: Boolean = false,
-    val registry: String? = null, val node: String? = null) {
+    val registry: String? = null, val node: String? = null, val email: String? = null,
+    /** Keeps isolated accounts beside the computer's own sign-in. */
+    val accounts: Boolean? = null,
+    /** The computer's own sign-in can be removed. */
+    val signOut: Boolean? = null) {
     /** Runs on Node.js and the computer has none yet. */
     val needsNode: Boolean get() = node == "missing"
 }

@@ -51,6 +51,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
         val kind = when (AppWidgetManager.getInstance(this).getAppWidgetInfo(id)?.provider) {
             ComponentName(this, ProviderWidgetReceiver::class.java) -> WidgetKind.Provider
             ComponentName(this, TeamWidgetReceiver::class.java) -> WidgetKind.Team
+            ComponentName(this, OverviewWidgetReceiver::class.java) -> WidgetKind.Overview
             else -> { finish(); return }
         }
         enableEdgeToEdge()
@@ -63,10 +64,14 @@ class WidgetConfigurationActivity : ComponentActivity() {
                     var error by remember { mutableStateOf<String?>(null) }
                     var provider by rememberSaveable { mutableStateOf(WidgetStore.provider(this, id)) }
                     var team by rememberSaveable { mutableStateOf(WidgetStore.team(this, id)) }
+                    var overview by rememberSaveable { mutableStateOf(WidgetStore.overview(this, id).encode()) }
+                    val computers = remember { WidgetStore.owner(this)?.let { owner -> runCatching { LocalStore(this, owner.context).computers().map { it.id to it.name } }.getOrNull() }.orEmpty() }
                     Column(Modifier.fillMaxSize().background(Palette.background).safeDrawingPadding()) {
                         ScreenHeader({ IconButton("Cancel", "xmark") { finish() } },
-                            { Text(if (kind == WidgetKind.Team) "Team" else "Provider usage", style = Type.body.semibold, color = Palette.text) })
+                            { Text(when (kind) { WidgetKind.Team -> "Team"; WidgetKind.Overview -> "Codync"; else -> "Provider usage" }, style = Type.body.semibold, color = Palette.text) })
                         CardForm(Modifier.weight(1f)) {
+                            if (kind == WidgetKind.Overview) OverviewSettings(com.codync.android.core.OverviewConfig.decode(overview), feed, computers) { overview = it.encode() }
+                            else {
                             Preview(feed, kind, provider, team)
                             CardSection(footer = if (kind == WidgetKind.Team) "Empty spots show the bots that need you first." else "Follows the account selected in Codync.") {
                                 row { ValueRow("Computer", feed.computerName.ifBlank { "No computer yet" }) }
@@ -81,14 +86,18 @@ class WidgetConfigurationActivity : ComponentActivity() {
                                     }
                                 }
                             }
+                            }
                             error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
                             PrimaryButton(if (busy) "Saving…" else "Save widget", Modifier.fillMaxWidth(), enabled = !busy) {
                                 busy = true
                                 lifecycleScope.launch {
                                     try {
-                                        if (kind == WidgetKind.Team) WidgetStore.selectTeam(this@WidgetConfigurationActivity, id, team)
-                                        else WidgetStore.selectProvider(this@WidgetConfigurationActivity, id, provider)
-                                        val glance: GlanceAppWidget = if (kind == WidgetKind.Team) TeamWidget() else ProviderWidget()
+                                        when (kind) {
+                                            WidgetKind.Team -> WidgetStore.selectTeam(this@WidgetConfigurationActivity, id, team)
+                                            WidgetKind.Overview -> WidgetStore.selectOverview(this@WidgetConfigurationActivity, id, com.codync.android.core.OverviewConfig.decode(overview))
+                                            else -> WidgetStore.selectProvider(this@WidgetConfigurationActivity, id, provider)
+                                        }
+                                        val glance: GlanceAppWidget = when (kind) { WidgetKind.Team -> TeamWidget(); WidgetKind.Overview -> OverviewWidget(); else -> ProviderWidget() }
                                         glance.update(this@WidgetConfigurationActivity, GlanceAppWidgetManager(this@WidgetConfigurationActivity).getGlanceIdBy(id))
                                         setResult(RESULT_OK, result); finish()
                                     } catch (_: Exception) { error = "Couldn't update the widget. Try again."; busy = false }

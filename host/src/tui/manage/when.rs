@@ -99,8 +99,25 @@ fn parse_in(text: &str, zone: &str, now: i64) -> Result<Value, String> {
 /// Weekdays in cron order (0 = Sunday); the first three letters are the short name.
 const DAYS: [&str; 7] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
+/// Months as the host numbers them (1 = January); the first three letters are the short name.
+const MONTHS: [&str; 12] = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+];
+
 /// The cron the host's routine editor compiles for a Repeat preset (`hourly`, `hourly :30`,
-/// `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00`), or `None` when the words aren't one.
+/// `hourly 09:00-18:00`, `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00`, `yearly mar 15 09:00`),
+/// or `None` when the words aren't one.
 fn preset_cron(words: &[&str]) -> Option<Result<String, String>> {
     let (&style, rest) = words.split_first()?;
     let time = |example: &str| match rest {
@@ -114,14 +131,31 @@ fn preset_cron(words: &[&str]) -> Option<Result<String, String>> {
         weekday,
         ..ScheduleDraft::default()
     };
+    let hourly = |minute: u8, every: u8, window: Option<(u16, u16)>| {
+        let mut d = draft((0, minute), 1);
+        d.every_hours = every;
+        d.window_start = window.map(|(start, _)| start);
+        d.window_end = window.map(|(_, end)| end);
+        d
+    };
+    let window_word = |word: &str| -> Option<u16> {
+        let (h, m) = word.split_once(':')?;
+        let (h, m) = (u8::from_str(h).ok()?, u8::from_str(m).ok()?);
+        (m <= 59).then(|| u16::from(h) * 60 + u16::from(m))
+    };
     let draft = match style {
         "hourly" => match rest {
             [] => Ok(draft((0, 0), 1)),
-            [m] => m
+            [m] if m.starts_with(':') => m
                 .strip_prefix(':')
                 .and_then(|m| small(m, 59))
                 .map(|m| draft((0, m), 1))
                 .ok_or_else(|| "Use a minute, like hourly :30.".into()),
+            [m] if m.contains('-') => m
+                .split_once('-')
+                .and_then(|(from, to)| Some((window_word(from)?, window_word(to)?)))
+                .map(|window| hourly(0, 1, Some(window)))
+                .ok_or_else(|| "Use times, like hourly 09:00-18:00.".into()),
             _ => Err("Use a minute, like hourly :30.".into()),
         },
         "daily" | "weekdays" => time(&format!("{style} 09:00")).map(|at| draft(at, 1)),
@@ -132,6 +166,26 @@ fn preset_cron(words: &[&str]) -> Option<Result<String, String>> {
                 return Some(Err("Use a day from sun to sat, like weekly mon 09:00.".into()));
             };
             clock(at).map(|at| draft(at, d)).ok_or_else(|| "Use a 24-hour time, like weekly mon 09:00.".into())
+        }
+        "yearly" => {
+            let [month, day, at] = rest else {
+                return Some(Err("Use a month, day and time, like yearly mar 15 09:00.".into()));
+            };
+            let Some(mo) =
+                (1..=12u8).zip(MONTHS).find_map(|(m, full)| (month.len() >= 3 && full.starts_with(month)).then_some(m))
+            else {
+                return Some(Err("Use a month from jan to dec, like yearly mar 15 09:00.".into()));
+            };
+            let Some(day) = small(day, crate::routines::days_in_month(mo)).filter(|d| *d >= 1) else {
+                return Some(Err(format!("Use a day {month} has, like yearly mar 15 09:00.")));
+            };
+            let Some(at) = clock(at) else {
+                return Some(Err("Use a 24-hour time, like yearly mar 15 09:00.".into()));
+            };
+            let mut d = draft(at, 1);
+            d.year_month = mo;
+            d.month_day = day;
+            Ok(d)
         }
         _ => return None,
     };
@@ -145,10 +199,27 @@ fn preset_text(expression: &str) -> Option<String> {
     draft.read_cron();
     let (minute, at) = (draft.minute, format!("{:02}:{:02}", draft.hour, draft.minute));
     Some(match draft.calendar_style.as_str() {
-        "hourly" if minute == 0 => "hourly".into(),
-        "hourly" => format!("hourly :{minute:02}"),
+        "hourly"
+            if matches!((draft.window_start, draft.window_end), (None, None))
+                && draft.every_hours == 1
+                && minute == 0 =>
+        {
+            "hourly".into()
+        }
+        "hourly" if matches!((draft.window_start, draft.window_end), (None, None)) && draft.every_hours == 1 => {
+            format!("hourly :{minute:02}")
+        }
+        "hourly" if draft.every_hours == 1 => {
+            let (start, end) = (draft.window_start?, draft.window_end?);
+            format!("hourly {:02}:{:02}-{:02}:{:02}", start / 60, start % 60, end / 60, end % 60)
+        }
         "daily" | "weekdays" => format!("{} {at}", draft.calendar_style),
         "weekly" => format!("weekly {} {at}", DAYS.get(usize::from(draft.weekday))?.get(..3)?),
+        "yearly" => format!(
+            "yearly {} {} {at}",
+            MONTHS.get(usize::from(draft.year_month).saturating_sub(1))?.get(..3)?,
+            draft.month_day
+        ),
         _ => return None,
     })
 }
@@ -245,6 +316,11 @@ mod tests {
             ("weekly mon 09:00", "0 9 * * 1", "weekly mon 09:00"),
             ("weekly Friday 17:45", "45 17 * * 5", "weekly fri 17:45"),
             ("weekly sat 12:00", "0 12 * * 6", "weekly sat 12:00"),
+            ("hourly 09:00-18:00", "0 9-18 * * *", "hourly 09:00-18:00"),
+            ("hourly 09:30-17:30", "30 9-17 * * *", "hourly 09:30-17:30"),
+            ("yearly mar 15 09:00", "0 9 15 3 *", "yearly mar 15 09:00"),
+            ("yearly feb 29 08:30", "30 8 29 2 *", "yearly feb 29 08:30"),
+            ("yearly dec 31 23:59", "59 23 31 12 *", "yearly dec 31 23:59"),
         ] {
             let t = json!({"type": "cron", "expression": cron, "timeZone": zone});
             assert_eq!(parse_when(typed, zone, now), Ok(t.clone()), "{typed}");
@@ -255,7 +331,7 @@ mod tests {
         let padded = json!([{"type": "cron", "expression": "0 09 * * *", "timeZone": zone}]);
         assert_eq!(when_text(&padded, zone).as_deref(), Some("daily 09:00"));
         // Crons no preset writes stay raw, and save back unchanged.
-        for cron in ["0 9 * * 1,3,5", "*/15 * * * *", "0 9 1 * *", "0 9 * * 7", "0 * * * 1-5"] {
+        for cron in ["0 9 * * 1,3,5", "*/15 * * * *", "0 9 1 * *", "0 9 * * 7", "0 9-18/2 * * *", "0 */4 * * *"] {
             let t = json!({"type": "cron", "expression": cron, "timeZone": zone});
             assert_eq!(when_text(&json!([t]), zone).as_deref(), Some(cron));
             assert_eq!(parse_when(cron, zone, now), Ok(t), "{cron}");
@@ -263,6 +339,8 @@ mod tests {
         for (typed, error) in [
             ("hourly 30", "Use a minute, like hourly :30."),
             ("hourly :60", "Use a minute, like hourly :30."),
+            ("hourly 09:00 18:00", "Use a minute, like hourly :30."),
+            ("hourly 9:70-18:00", "Use times, like hourly 09:00-18:00."),
             ("daily", "Use a 24-hour time, like daily 09:00."),
             ("daily 24:00", "Use a 24-hour time, like daily 09:00."),
             ("daily 9am", "Use a 24-hour time, like daily 09:00."),
@@ -272,6 +350,12 @@ mod tests {
             ("weekly mo 09:00", "Use a day from sun to sat, like weekly mon 09:00."),
             ("weekly funday 09:00", "Use a day from sun to sat, like weekly mon 09:00."),
             ("weekly tue 7:5x", "Use a 24-hour time, like weekly mon 09:00."),
+            ("yearly 15 09:00", "Use a month, day and time, like yearly mar 15 09:00."),
+            ("yearly ma 15 09:00", "Use a month from jan to dec, like yearly mar 15 09:00."),
+            ("yearly march 32 09:00", "Use a day march has, like yearly mar 15 09:00."),
+            ("yearly feb 30 09:00", "Use a day feb has, like yearly mar 15 09:00."),
+            ("yearly mar 15", "Use a month, day and time, like yearly mar 15 09:00."),
+            ("yearly mar 15 9am", "Use a 24-hour time, like yearly mar 15 09:00."),
         ] {
             assert_eq!(parse_when(typed, zone, now), Err(error.into()), "{typed}");
         }

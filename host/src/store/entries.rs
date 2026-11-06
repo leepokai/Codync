@@ -6,6 +6,7 @@ use crate::LockExt;
 use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::fmt::Write as _;
 
 pub(crate) fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
@@ -134,6 +135,16 @@ impl Store {
         let c = self.db.locked();
         let n = c.query_row("SELECT COALESCE(MAX(turn), 0) FROM entries WHERE bot_id = ?1", [bot_id], |r| r.get(0));
         logged("max turn", n).unwrap_or(0)
+    }
+
+    /// The kind and title of every tool call of `turn` in `bot_id`'s conversations (any lane), in order.
+    pub fn tools_in_turn(&self, bot_id: &str, turn: i64) -> Result<Vec<(String, String)>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(
+            "SELECT COALESCE(json_extract(data, '$.toolKind'), 'other'), COALESCE(json_extract(data, '$.title'), '')
+             FROM entries WHERE bot_id = ?1 AND turn = ?2 AND kind = 'tool' ORDER BY seq",
+        )?;
+        Ok(st.query_map(params![bot_id, turn], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Whether the agent used a tool in `turn` of `bot_id`'s chat that may have changed something:
@@ -289,6 +300,21 @@ impl Store {
         logged("last entry of kind", row.optional()).flatten()
     }
 
+    /// The newest health notice in `lane` (the computer's memory banner), if any.
+    pub fn last_health_notice(&self, lane: &Lane) -> Option<Entry> {
+        let c = self.db.locked();
+        let row = c.query_row(
+            &format!(
+                "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND thread_id IS ?3 AND kind = 'notice'
+                   AND json_extract(data, '$.health') = 1
+                 ORDER BY seq DESC LIMIT 1"
+            ),
+            params![lane.chat, lane.thread],
+            row_entry,
+        );
+        logged("last health notice", row.optional()).flatten()
+    }
+
     /// The `seq` of `bot`'s last reply in `lane` (0 if it hasn't spoken there).
     pub fn last_spoke(&self, lane: &Lane, bot: &str) -> i64 {
         let c = self.db.locked();
@@ -342,6 +368,31 @@ impl Store {
         }
         Ok(ids.len())
     }
+
+    /// Older memory banners are noise: a reading that hovered at a threshold
+    /// used to write one every sample. Keep only the newest per chat, so the
+    /// thread reads as one line (the newest is updated in place from now on).
+    pub fn coalesce_health_notices(&self) -> Result<usize> {
+        let rows: Vec<(String, String, Option<String>)> = {
+            let c = self.db.locked();
+            let mut st = c.prepare(
+                "SELECT id, bot_id, thread_id FROM entries WHERE kind = 'notice'
+                   AND json_extract(data, '$.text') LIKE 'This computer''s memory is %'
+                 ORDER BY seq DESC",
+            )?;
+            st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?
+        };
+        let mut seen = HashSet::new();
+        let mut deleted = 0;
+        let c = self.db.locked();
+        for (id, bot, thread) in rows {
+            if seen.insert((bot, thread)) {
+                continue;
+            }
+            deleted += c.execute("DELETE FROM entries WHERE id = ?1", [&id])?;
+        }
+        Ok(deleted)
+    }
 }
 
 #[cfg(test)]
@@ -386,6 +437,44 @@ mod tests {
         assert_eq!(texts(&[], Some(seqs[2])), ["note 3", "note 2"], "starts at the message itself");
         assert_eq!(texts(&["1".to_owned()], Some(seqs[2])), ["note 1"]);
         assert_eq!(texts(&[], None), ["note 4", "note 3"]);
+    }
+
+    #[test]
+    fn old_memory_banners_keep_only_the_newest_per_chat() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        for used in [82, 86, 84] {
+            s.insert_entry(
+                &main,
+                EntryKind::Notice,
+                1,
+                &json!({"text": format!("This computer's memory is {used} % full")}),
+            )
+            .unwrap();
+        }
+        s.insert_entry(&main, EntryKind::Notice, 1, &json!({"text": "Something else"})).unwrap();
+        s.insert_entry(
+            &Lane::main("b2"),
+            EntryKind::Notice,
+            1,
+            &json!({"text": "This computer's memory is 90 % full"}),
+        )
+        .unwrap();
+        assert_eq!(s.coalesce_health_notices().unwrap(), 2, "two older banners in b1");
+        let entries = s.entries_since(0, 100).unwrap();
+        let banners = |bot: &str| {
+            entries
+                .iter()
+                .filter(|e| {
+                    e.bot_id == bot
+                        && e.data["text"].as_str().is_some_and(|t| t.starts_with("This computer's memory is"))
+                })
+                .count()
+        };
+        assert_eq!(banners("b1"), 1);
+        assert_eq!(banners("b2"), 1);
+        assert!(entries.iter().any(|e| e.data["text"] == "Something else"), "other notices stay");
+        assert_eq!(s.coalesce_health_notices().unwrap(), 0, "idempotent");
     }
 
     #[test]

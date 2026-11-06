@@ -20,9 +20,13 @@ import {
   type SentinelReport,
   type SharedFile,
   type Usage,
+  type WeekSummary,
 } from '@shared/models'
 import type { BotCatalog } from '@shared/catalog'
 import type { CallLine } from '@shared/calls'
+import { cleanRules, type ApprovalEvaluation, type ApprovalRule, type RuleProposal } from '@shared/approval-rules'
+import type { HostHealth } from '@shared/health'
+import type { SecurityProfile } from '@shared/security-profiles'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { FileDownloads } from './file-downloads'
@@ -296,12 +300,61 @@ export class BotStore extends BotSync {
     })()
   }
 
-  respond(entry: Entry, option: string | null) {
+  /** The security profiles the host offers; null from an older host. */
+  async securityProfiles(): Promise<SecurityProfile[] | null> {
+    try {
+      return (await (await this.ready()).call<{ profiles: SecurityProfile[] }>('securityProfiles', {})).profiles
+    } catch {
+      return null
+    }
+  }
+
+  /** The rule "always allow" on this card would keep; null when the host can't say (an older one). */
+  async proposeRule(entry: Entry): Promise<RuleProposal | null> {
+    try {
+      return await (await this.ready()).call<RuleProposal>('proposeRule', { entryId: entry.id })
+    } catch {
+      return null
+    }
+  }
+
+  /** Answers a card; with `rule`, an "always allow" also keeps that rule for the bot. */
+  respond(entry: Entry, option: string | null, rule?: ApprovalRule) {
     this.answer(entry, option ?? '', async (c) => {
-      await c.call('respondPermission', { entryId: entry.id, optionId: option })
+      await c.call('respondPermission', { entryId: entry.id, optionId: option, ...(rule ? { rule } : {}) })
       // The card's own update follows on the events stream; hold the spinner until then.
       await sleep(2000)
     })
+  }
+
+  /** What the bot would do with `command` under `rules` (the saved ones when omitted); null when the host can't say. */
+  async testApprovalRule(
+    botId: string,
+    command: string,
+    rules?: ApprovalRule[],
+    quick?: { on: boolean; policies: Record<string, string> },
+  ): Promise<ApprovalEvaluation | null> {
+    try {
+      const body = {
+        botId,
+        command,
+        ...(rules ? { rules: cleanRules(rules) } : {}),
+        ...(quick ? { actionRulesOn: quick.on, actionRules: quick.policies } : {}),
+      }
+      return (await (await this.ready()).call<{ evaluation: ApprovalEvaluation }>('testApprovalRule', body)).evaluation
+    } catch {
+      return null
+    }
+  }
+
+  /** Continues a turn that stopped half done, from its card; the host refuses a card already used. */
+  async continueTurn(entry: Entry): Promise<string | null> {
+    try {
+      await (await this.ready()).call('continueTurn', { entryId: entry.id })
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
   }
 
   /** Saves the user's version of a handoff that hasn't been sent; whether it did. */
@@ -484,6 +537,8 @@ export class BotStore extends BotSync {
 
   async save(draft: BotDraft) {
     const client = await this.ready()
+    // A rule left blank in the editor is no rule.
+    const draft = saved.approvalRules ? { ...saved, approvalRules: cleanRules(saved.approvalRules) } : saved
     const res = draft.id
       ? await client.call<{ bot: Bot }>('updateBot', { ...draft, model: draft.model ?? null, account: draft.account ?? null })
       : await client.call<{ bot: Bot }>('createBot', draft)
@@ -578,10 +633,58 @@ export class BotStore extends BotSync {
     return result.account
   }
 
+  async deleteAgentAccount(accountId: string): Promise<void> {
+    await (await this.ready()).call('deleteAccount', { accountId }, 30_000)
+    await this.refreshBackends()
+  }
+
+  /** Removes the computer's own sign-in for an agent, without touching its isolated accounts. */
+  async signOutAgent(backend: string): Promise<void> {
+    await (await this.ready()).call('agentSignOut', { backend }, 60_000)
+    await this.refreshBackends()
+  }
+
+  /** The last seven days on this computer; null when the host can't say (an older one). */
+  async weekSummary(): Promise<WeekSummary | null> {
+    if (this.retired || !this.client) return null
+    try {
+      return await this.client.call<WeekSummary>('weekSummary', { days: 7 })
+    } catch {
+      return null
+    }
+  }
+
+  /** Takes back what the bot just learned (the notice's Undo); the notice itself comes back changed. */
+  async undoMemoryChange(entry: Entry) {
+    const res = await (await this.ready()).call<{ entry: Entry }>('undoMemoryChange', { botId: entry.botId, entryId: entry.id })
+    this.upsert(res.entry)
+    this.changed()
+  }
+
+  /** Reads the computer's health; an older host keeps what was there (nothing). */
+  async refreshHealth() {
+    if (this.retired || !this.client) return
+    try {
+      this.health = await this.client.call<HostHealth>('hostHealth', {})
+      this.changed()
+    } catch {}
+  }
+
+  /** Changes the memory levels that warn and that stop new turns; throws the host's reason when they make no sense. */
+  async setHealthThresholds(warn: number, critical: number) {
+    if (this.retired || !this.client) return
+    this.health = await this.client.call<HostHealth>('setHealthThresholds', { warn, critical })
+    this.changed()
+  }
+
   async refreshUsage() {
     if (this.retired || !this.client) return
     try {
-      this.usage = await this.client.call<Usage>('usage', { refresh: true })
+      const next = await this.client.call<Usage>('usage', { refresh: true })
+      // A probe already in flight answers with the store it had before it
+      // started (often empty on launch). Keep what is on screen until a real
+      // reading arrives instead of flashing "No usage".
+      if (next.providers.length > 0 || this.usage.providers.length === 0) this.usage = next
       this.changed()
     } catch {}
   }

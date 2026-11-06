@@ -22,6 +22,9 @@ pub struct Identity {
     /// The skills block the agent is told (`market::skills_brief`), so a skill renamed or redescribed counts too.
     #[serde(default)]
     pub skills_brief: String,
+    /// The personality block the agent is told (`Personality::render`).
+    #[serde(default)]
+    pub personality: String,
 }
 
 impl Identity {
@@ -30,6 +33,7 @@ impl Identity {
             name: cfg.name.trim().to_owned(),
             description: cfg.description.trim().to_owned(),
             skills_brief: crate::market::skills_brief(store, &cfg.skills).unwrap_or_default(),
+            personality: cfg.personality.render(),
         }
     }
 }
@@ -218,6 +222,10 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         lines.push(String::new());
         lines.push(skills);
     }
+    if !cfg.personality.is_empty() {
+        lines.push(String::new());
+        lines.push(cfg.personality.render());
+    }
     lines.push(String::new());
     lines.push(codync_mem::compaction::KEEP.to_owned());
     let mut out = lines.join("\n");
@@ -244,6 +252,7 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
         format!("Current name: {}", or_none(&identity.name, "(no name)")),
         format!("Current description: {}", or_none(&identity.description, "(no description)")),
         skills.to_owned(),
+        or_none(&identity.personality, "Personality: none."),
         "Use this identity until a future conversation summary folds it into the Agent profile section.".to_owned(),
         "</agent_profile_update>".to_owned(),
     ]

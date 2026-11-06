@@ -5,6 +5,7 @@ mod app;
 mod appearance;
 mod choice;
 mod connections;
+mod demo;
 mod details;
 mod drafts;
 mod l10n;
@@ -48,6 +49,16 @@ fn restore(enhanced: bool) {
     let _ = terminal::disable_raw_mode();
 }
 
+/// The app the person is looking at: the demo's while it is on, else the real one (which keeps running underneath).
+macro_rules! active {
+    ($app:ident, $demo:ident) => {
+        match $demo.as_mut() {
+            Some((demo, _)) => demo,
+            None => &mut $app,
+        }
+    };
+}
+
 pub async fn run(url: String, token: Option<String>) -> Result<()> {
     let client = net::Client::new(&url, token.as_deref());
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -85,6 +96,8 @@ pub async fn run(url: String, token: Option<String>) -> Result<()> {
     let mut tick = tokio::time::interval(Duration::from_millis(100));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut dirty = true;
+    // Demo mode: a second app on a script, with its own channel; leaving drops it and the real one is as it was.
+    let mut demo: Option<(app::App, tokio::sync::mpsc::UnboundedReceiver<app::Msg>)> = None;
     // A setup terminal has the real screen (not the alternate one) while it runs.
     let mut in_shell = false;
     loop {
@@ -105,19 +118,25 @@ pub async fn run(url: String, token: Option<String>) -> Result<()> {
             out.flush()?;
         }
         if dirty && !in_shell {
-            app.tick();
-            app.report_screen();
-            term.draw(|f| view::draw(f, &mut app))?;
+            let shown = active!(app, demo);
+            shown.tick();
+            shown.report_screen();
+            term.draw(|f| view::draw(f, shown))?;
             dirty = false;
         }
         tokio::select! {
             ev = events.next() => match ev {
-                Some(Ok(Event::Key(k))) if k.kind != KeyEventKind::Release => app.on_key(k),
-                Some(Ok(Event::Paste(s))) => app.on_paste(&s),
-                Some(Ok(Event::Mouse(m))) => app.on_mouse(m),
-                Some(Ok(Event::FocusGained)) => app.term_focused = true,
-                Some(Ok(Event::FocusLost)) => app.term_focused = false,
-                Some(Ok(Event::Resize(cols, rows))) => app.on_resize(cols, rows),
+                Some(Ok(Event::Key(k))) if k.kind != KeyEventKind::Release => active!(app, demo).on_key(k),
+                Some(Ok(Event::Paste(s))) => active!(app, demo).on_paste(&s),
+                Some(Ok(Event::Mouse(m))) => active!(app, demo).on_mouse(m),
+                Some(Ok(Event::FocusGained)) => active!(app, demo).term_focused = true,
+                Some(Ok(Event::FocusLost)) => active!(app, demo).term_focused = false,
+                Some(Ok(Event::Resize(cols, rows))) => {
+                    app.on_resize(cols, rows);
+                    if let Some((d, _)) = demo.as_mut() {
+                        d.on_resize(cols, rows);
+                    }
+                }
                 Some(Ok(_)) => {}
                 Some(Err(_)) | None => break,
             },
@@ -128,14 +147,43 @@ pub async fn run(url: String, token: Option<String>) -> Result<()> {
                     app.on_msg(msg);
                 }
             }
+            Some(msg) = async {
+                match demo.as_mut() {
+                    Some((_, demo_rx)) => demo_rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some((d, demo_rx)) = demo.as_mut() {
+                    d.on_msg(msg);
+                    while let Ok(msg) = demo_rx.try_recv() {
+                        d.on_msg(msg);
+                    }
+                }
+            }
             _ = tick.tick() => {
-                if !app.animating() {
+                let shown = active!(app, demo);
+                if !shown.animating() {
                     continue;
                 }
-                app.frame += 1;
+                shown.frame += 1;
             }
         }
         dirty = true;
+        if app.demo_toggle {
+            app.demo_toggle = false;
+            if demo.is_none() {
+                let (demo_tx, demo_rx) = tokio::sync::mpsc::unbounded_channel();
+                let client = net::Client::demo();
+                let mut shown = app::App::new(client.clone(), demo_tx.clone(), "demo".to_owned());
+                shown.demo = true;
+                shown.call("hello", serde_json::json!({}), app::After::Hello);
+                client.spawn_stream(demo_tx);
+                demo = Some((shown, demo_rx));
+            }
+        }
+        if demo.as_ref().is_some_and(|(d, _)| d.quit) {
+            demo = None;
+        }
         if let Some(saved) = drafts.as_mut()
             && let Err(error) = saved.save(&app.drafts).await
         {

@@ -19,13 +19,63 @@ interface Props {
   onMove: (nodeKey: string, x: number, y: number) => void
   /** A bot's connection was dropped on another bot. */
   onConnect: (fromBotId: string, toBotId: string, at: { x: number; y: number }) => void
+  /** Runs this routine's flow now, from its card. */
+  onRun: (routineId: string) => void
 }
 
 const NUDGE = 20
 const DRAG_SLOP = 3
 
+/** A small overview of the canvas: every card, and the part the viewport shows. */
+function MiniMap({ nodes, view, box, onCenter }: {
+  nodes: FlowNode[]
+  view: View
+  box: { width: number; height: number }
+  onCenter: (x: number, y: number) => void
+}) {
+  const tr = useTr()
+  if (nodes.length === 0) return null
+  const pad = 10
+  const left = Math.min(...nodes.map((n) => n.x)) - pad
+  const top = Math.min(...nodes.map((n) => n.y)) - pad
+  const right = Math.max(...nodes.map((n) => n.x + NODE_WIDTH)) + pad
+  const bottom = Math.max(...nodes.map((n) => n.y + NODE_HEIGHT)) + pad
+  const scale = Math.min(150 / (right - left), 90 / (bottom - top))
+  const offsetX = (150 - (right - left) * scale) / 2 - left * scale
+  const offsetY = (90 - (bottom - top) * scale) / 2 - top * scale
+  const at = (x: number, y: number) => ({ x: x * scale + offsetX, y: y * scale + offsetY })
+  const visible = {
+    x: at(-view.x / view.scale, 0).x,
+    y: at(0, -view.y / view.scale).y,
+    width: (box.width / view.scale) * scale,
+    height: (box.height / view.scale) * scale,
+  }
+  return (
+    <button
+      type="button"
+      className="flow-minimap"
+      aria-label={tr('Canvas overview')}
+      title={tr('Canvas overview')}
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const px = ((event.clientX - rect.left) / rect.width) * 150
+        const py = ((event.clientY - rect.top) / rect.height) * 90
+        onCenter((px - offsetX) / scale + left, (py - offsetY) / scale + top)
+      }}
+    >
+      <svg viewBox="0 0 150 90" aria-hidden="true">
+        {nodes.map((node) => {
+          const p = at(node.x, node.y)
+          return <rect key={node.key} x={p.x} y={p.y} width={NODE_WIDTH * scale} height={NODE_HEIGHT * scale} rx={2} data-kind={node.kind} />
+        })}
+        <rect className="flow-minimap-view" x={visible.x} y={visible.y} width={visible.width} height={visible.height} rx={2} />
+      </svg>
+    </button>
+  )
+}
+
 /** The canvas: routine and bot nodes, the edges between them, pan (drag the background), zoom (wheel and buttons). */
-export function FlowCanvasView({ canvas, bots, selection, disabled, onSelect, onMove, onConnect }: Props) {
+export function FlowCanvasView({ canvas, bots, selection, disabled, onSelect, onMove, onConnect, onRun }: Props) {
   const tr = useTr()
   const nodes = useMemo(() => layoutNodes(canvas), [canvas])
   const edges = useMemo(() => flowEdges(canvas), [canvas])
@@ -33,9 +83,20 @@ export function FlowCanvasView({ canvas, bots, selection, disabled, onSelect, on
   const [live, setLive] = useState<{ key: string; x: number; y: number } | null>(null)
   const [wire, setWire] = useState<{ from: string; x: number; y: number } | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState({ width: 800, height: 500 })
   const fitted = useRef(false)
   const viewRef = useRef(view)
   viewRef.current = view
+
+  useLayoutEffect(() => {
+    const element = viewport.current
+    if (!element) return
+    const read = () => setBox({ width: element.clientWidth, height: element.clientHeight })
+    read()
+    const observer = new ResizeObserver(read)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   const size = () => viewport.current?.getBoundingClientRect() ?? new DOMRect(0, 0, 800, 500)
   useLayoutEffect(() => {
@@ -191,14 +252,23 @@ export function FlowCanvasView({ canvas, bots, selection, disabled, onSelect, on
               onDragStart={(e) => startDrag(raw, e)}
               onPortStart={(e) => startWire(raw, e)}
               onKey={(e) => keyOnNode(raw, e)}
+              onRun={raw.kind === 'routine' ? () => onRun(raw.id) : undefined}
             />
           )
         })}
       </div>
-      <div className="flow-zoom">
+      <MiniMap
+        nodes={nodes.map(placed)}
+        view={view}
+        box={box}
+        onCenter={(x, y) => setView((v) => ({ ...v, x: box.width / 2 - x * v.scale, y: box.height / 2 - y * v.scale }))}
+      />
+      <div className="flow-toolbar">
         <IconButton title={tr('Zoom out')} icon="minus" onClick={() => zoom(1 / 1.25)} />
+        <span className="flow-zoom-value" aria-label={tr('Zoom level')}>{Math.round(view.scale * 100)}%</span>
         <IconButton title={tr('Zoom in')} icon="plus" onClick={() => zoom(1.25)} />
-        <IconButton title={tr('Fit to view')} icon="arrow.up.left.and.arrow.down.right" onClick={() => setView(fitView(nodes, size().width, size().height))} />
+        <span className="flow-toolbar-separator" aria-hidden />
+        <IconButton title={tr('Fit to view')} icon="arrow.up.left.and.arrow.down.right" onClick={() => setView(fitView(nodes, box.width, box.height))} />
       </div>
     </div>
   )

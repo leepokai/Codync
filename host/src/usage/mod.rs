@@ -3,8 +3,9 @@
 //! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
 //! Codex: the CLI's live account rate limits. The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
-//! `kiro-cli /usage`, a `kimi` screen, Antigravity's language server, OpenCode's
-//! database, Vibe's session logs, and the `JetBrains` IDE quota file.
+//! `kiro-cli /usage`, `gemini /usage`, a `kimi` screen, Antigravity's language
+//! server, OpenCode's console usage endpoint, Vibe's session logs, and the
+//! `JetBrains` IDE quota file.
 //!
 //! Cursor has no local report. The host reads the token the Cursor app saved
 //! and asks `cursor.com/api/usage-summary`. That is the only provider call, and
@@ -16,6 +17,8 @@ mod claude;
 mod codex;
 mod command;
 mod cursor;
+mod gemini;
+mod grok;
 mod junie;
 mod kimi;
 mod kiro;
@@ -27,7 +30,7 @@ pub use claude::{ingest_claude_rate_limit, ingest_statusline};
 
 use crate::LockExt;
 use crate::hub::Hub;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,12 +49,12 @@ fn over_headroom(windows: &[Window]) -> bool {
 }
 
 /// Everything the apps show about limits (wire shape of the `usage` event).
-#[derive(Serialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Usage {
     pub providers: Vec<Provider>,
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Provider {
     pub id: &'static str,
@@ -59,11 +62,11 @@ pub struct Provider {
     pub windows: Vec<Window>,
     /// Where the numbers came from: `claude` (CLI), `statusline`, `agent`, `sessions`,
     /// or a short phrase for the other agents.
-    pub source: &'static str,
+    pub source: String,
     pub updated_at: i64,
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Window {
     pub id: String,
@@ -132,6 +135,18 @@ pub async fn poll(hub: Arc<Hub>) {
     }
 }
 
+/// The last reading saved on this computer, so a restart shows the counters
+/// immediately instead of waiting a minute for the first probe.
+pub fn load(store: &crate::store::Store) -> Usage {
+    store.kv_read(KV_USAGE).ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+}
+
+pub fn save(store: &crate::store::Store, usage: &Usage) {
+    if let Ok(raw) = serde_json::to_string(usage) {
+        let _ = store.kv_set(KV_USAGE, &raw);
+    }
+}
+
 pub async fn refresh(hub: &Hub) {
     let (
         codex,
@@ -145,6 +160,8 @@ pub async fn refresh(hub: &Hub) {
         vibe_notes,
         junie,
         cursor_windows,
+        gemini_windows,
+        grok_windows,
     ) = tokio::join!(
         codex::collect(),
         claude::collect(),
@@ -153,10 +170,12 @@ pub async fn refresh(hub: &Hub) {
         kiro::collect(),
         tokio::task::spawn_blocking(kimi::collect),
         antigravity::collect(),
-        tokio::task::spawn_blocking(opencode::collect),
+        opencode::collect(),
         tokio::task::spawn_blocking(vibe::collect),
         tokio::task::spawn_blocking(junie::collect),
         cursor::collect(),
+        gemini::collect(),
+        grok::collect(),
     );
     apply(hub, codex, "codex", "Codex", "Codex CLI");
     apply(hub, claude, "claude", "Claude", "claude");
@@ -189,8 +208,22 @@ pub(super) fn finite_i64(n: f64) -> Option<i64> {
     Some(rounded as i64)
 }
 
-fn apply(hub: &Hub, windows: Option<Vec<Window>>, id: &'static str, name: &'static str, source: &'static str) {
+fn signed_out_base(signed_out: &std::collections::HashSet<&str>, id: &str) -> bool {
+    signed_out.contains(id.split(':').next().unwrap_or(id))
+}
+
+fn apply(
+    hub: &Hub,
+    signed_out: &std::collections::HashSet<&str>,
+    windows: Option<Vec<Window>>,
+    id: &'static str,
+    name: &'static str,
+    source: &'static str,
+) {
     let Some(windows) = windows else { return };
+    if signed_out_base(signed_out, id) {
+        return;
+    }
     let mut usage = hub.usage.locked().clone();
     usage.replace(id, name, source, windows);
     hub.set_usage(usage);
@@ -200,6 +233,14 @@ fn apply(hub: &Hub, windows: Option<Vec<Window>>, id: &'static str, name: &'stat
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn a_signed_out_backend_keeps_its_local_history_off_the_bars() {
+        let signed_out = std::collections::HashSet::from(["opencode"]);
+        assert!(signed_out_base(&signed_out, "opencode"));
+        assert!(signed_out_base(&signed_out, "opencode:work"));
+        assert!(!signed_out_base(&signed_out, "claude"));
+    }
 
     #[test]
     fn merge_replaces_only_matching_windows() {
@@ -212,7 +253,7 @@ mod tests {
         );
         u.merge("claude", "Claude", "statusline", vec![Window::new("five_hour", "5-hour", 12.0, None)]);
         let c = &u.providers[0];
-        assert_eq!((c.windows.len(), c.source), (2, "statusline"));
+        assert_eq!((c.windows.len(), c.source.as_str()), (2, "statusline"));
         assert!((c.windows[0].percent - 12.0).abs() < f64::EPSILON, "five_hour updated");
         assert_eq!(serde_json::to_value(&u).unwrap()["providers"][0]["windows"][1]["resetsAt"], Value::Null);
     }
@@ -247,5 +288,20 @@ mod tests {
         let note = Window { percent: 99.0, ..Window::note("cost", "Cost today", "$9") };
         assert!(!over_headroom(&[note]));
         assert!(over_headroom(&[Window::new("five_hour", "5-hour", 80.0, None)]));
+    }
+
+    #[test]
+    fn a_saved_reading_comes_back_after_a_restart() {
+        let store = crate::store::tests::temp_store();
+        let mut usage = Usage::default();
+        usage.replace(
+            "grok",
+            "Grok",
+            "grok billing",
+            vec![Window::new("grok", "Weekly", 42.0, Some(1_794_096_000_000))],
+        );
+        save(&store, &usage);
+        assert_eq!(load(&store), usage);
+        assert_eq!(load(&crate::store::tests::temp_store()), Usage::default(), "another computer starts empty");
     }
 }

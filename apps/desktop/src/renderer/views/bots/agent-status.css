@@ -1,0 +1,25 @@
+/* The agent's sign-in status (agent-status.tsx): the pickers' badge and the editor's sign-in row. */
+.agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 40%;
+  flex: 0 1 auto;
+}
+.agent-status-check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+}
+.agent-signin-row .styled-button {
+  flex: none;
+  min-height: 26px;
+  padding: 0 12px;
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}

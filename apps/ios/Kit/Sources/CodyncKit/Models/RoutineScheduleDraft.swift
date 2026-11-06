@@ -9,7 +9,14 @@ public struct RoutineScheduleDraft: Codable, Hashable, Sendable {
     public var weekday = 1
     public var selectedDays: Set<Int> = []
     public var monthDay = 1
+    /// Yearly: the month (1-12) of the one date.
+    public var yearMonth = 1
     public var minuteStep = 15
+    /// Hourly: repeat every N hours (1, 2, 3, 4, 6, 8, 12); 1 runs on the hour.
+    public var everyHours = 1
+    /// Hourly: the window, in minutes from midnight; `nil` on either end runs through the day.
+    public var windowStart: Int?
+    public var windowEnd: Int?
     public var hour = 9
     public var minute = 0
     public var at: Int64 = 0
@@ -39,7 +46,8 @@ public struct RoutineScheduleDraft: Codable, Hashable, Sendable {
 
     /// The Repeat choices the phone offers for a schedule, in menu order.
     public static let repeatChoices = [("hourly", "Hourly"), ("daily", "Daily"), ("weekdays", "Weekdays"),
-                                       ("weekly", "Weekly"), ("custom", "Custom")].map { (id: $0.0, label: $0.1) }
+                                       ("weekly", "Weekly"), ("yearly", "Yearly"), ("custom", "Custom")]
+        .map { (id: $0.0, label: $0.1) }
 
     /// The phone edits the `repeatChoices` styles; the host's others (every N minutes, some days, monthly)
     /// open as Custom, whose expression already holds their cron. A trigger it has no fields for is kept.
@@ -86,7 +94,8 @@ extension HostClient {
     }
 
     public func saveRoutine(botId: String, id: String?, name: String, instruction: String,
-                            schedule: RoutineScheduleDraft, timeoutSeconds: String) async throws -> Routine {
+                            schedule: RoutineScheduleDraft, timeoutSeconds: String,
+                            missedPolicy: String? = nil, limitPolicy: String? = nil) async throws -> Routine {
         struct Body: Encodable {
             let botId: String
             let id: String?
@@ -94,10 +103,13 @@ extension HostClient {
             let instruction: String
             let schedule: RoutineScheduleDraft
             let timeoutSeconds: String
+            let missedPolicy: String?
+            let limitPolicy: String?
         }
         struct Response: Decodable { let routine: Routine }
         let response: Response = try await call("saveRoutine", Body(botId: botId, id: id, name: name,
-            instruction: instruction, schedule: schedule, timeoutSeconds: timeoutSeconds))
+            instruction: instruction, schedule: schedule, timeoutSeconds: timeoutSeconds,
+            missedPolicy: missedPolicy, limitPolicy: limitPolicy))
         return response.routine
     }
 }

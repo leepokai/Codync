@@ -89,6 +89,33 @@ fn workbuddy_cli_is_not_codebuddy_code() {
 }
 
 #[test]
+fn every_agent_that_can_hold_accounts_names_its_home() {
+    let homes: Vec<_> = HARNESSES.iter().filter_map(|h| profile_home(h.id).map(|home| (h.id, home))).collect();
+    assert_eq!(
+        homes,
+        vec![
+            ("claude", "CLAUDE_CONFIG_DIR"),
+            ("codex", "CODEX_HOME"),
+            ("opencode", "XDG_DATA_HOME"),
+            ("grok", "GROK_HOME"),
+            ("gemini", "GEMINI_CLI_HOME"),
+            ("antigravity", "GEMINI_HOME"),
+        ]
+    );
+    assert_eq!(profile_home("pi"), None, "one sign-in on the computer");
+}
+
+#[test]
+fn sign_out_is_offered_for_every_agent_with_a_sign_in_to_remove() {
+    for id in ["claude", "codex", "grok", "gemini", "antigravity", "opencode"] {
+        assert!(sign_out_available(id), "{id} has credentials to remove");
+    }
+    for id in ["cursor", "copilot", "not-an-agent"] {
+        assert!(!sign_out_available(id), "{id} has no sign-out to offer");
+    }
+}
+
+#[test]
 fn a_codebuddy_on_path_is_not_workbuddy() {
     let dir = TempDir::new();
     write_cli(&dir.0, "codebuddy");

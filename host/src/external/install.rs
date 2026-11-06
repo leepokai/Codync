@@ -20,6 +20,10 @@ const EVENTS: &[&str] = &[
 /// Seconds Claude Code lets a hook run. Only a permission request waits for a person.
 const PERMISSION_TIMEOUT: u64 = 120;
 const QUICK_TIMEOUT: u64 = 10;
+/// The tools whose answer a person may give from any client: Claude Code's questions and plan approvals.
+const ASK_MATCHER: &str = "AskUserQuestion|ExitPlanMode";
+/// Marks the hook that waits for that answer; the plain `PreToolUse` hook never does.
+pub const ASK_FLAG: &str = "--ask";
 
 /// The command Claude Code runs. A forward-slash path in double quotes works in Git Bash and PowerShell alike.
 fn command(exe: &Path) -> String {
@@ -33,7 +37,11 @@ fn command(exe: &Path) -> String {
 }
 
 fn is_ours(command: &str) -> bool {
-    command.ends_with(" hook") && command.contains("codync-host")
+    (command.ends_with(" hook") || command.ends_with(&format!(" hook {ASK_FLAG}"))) && command.contains("codync-host")
+}
+
+fn is_ask_group(group: &Value) -> bool {
+    group["matcher"].as_str() == Some(ASK_MATCHER) && group_is_ours(group)
 }
 
 fn group_is_ours(group: &Value) -> bool {
@@ -61,6 +69,10 @@ pub fn install(settings: &Path, exe: &Path) -> Result<bool> {
         groups.retain(|g| !group_is_ours(g));
         let timeout = if *event == "PermissionRequest" { PERMISSION_TIMEOUT } else { QUICK_TIMEOUT };
         groups.push(json!({"hooks": [{"type": "command", "command": command(exe), "timeout": timeout}]}));
+        if *event == "PreToolUse" {
+            let ask = format!("{} {ASK_FLAG}", command(exe));
+            groups.push(json!({"matcher": ASK_MATCHER, "hooks": [{"type": "command", "command": ask, "timeout": PERMISSION_TIMEOUT}]}));
+        }
     }
     if root == before {
         return Ok(false);
@@ -93,7 +105,8 @@ pub fn uninstall(settings: &Path) -> Result<bool> {
 /// Whether Codync's hook is set for every event it listens to.
 pub fn installed(settings: &Path) -> Result<bool> {
     let Some(root) = read_settings(settings)? else { return Ok(false) };
-    Ok(EVENTS.iter().all(|event| root["hooks"][event].as_array().is_some_and(|g| g.iter().any(group_is_ours))))
+    let ask = root["hooks"]["PreToolUse"].as_array().is_some_and(|g| g.iter().any(is_ask_group));
+    Ok(ask && EVENTS.iter().all(|event| root["hooks"][event].as_array().is_some_and(|g| g.iter().any(group_is_ours))))
 }
 
 #[cfg(test)]
@@ -124,7 +137,15 @@ mod tests {
         assert!(install(&file, Path::new(EXE)).unwrap());
         let v = read(&file);
         assert_eq!(v["theme"], "dark");
-        assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 2, "theirs stays, ours is added");
+        assert_eq!(
+            v["hooks"]["PreToolUse"].as_array().unwrap().len(),
+            3,
+            "theirs stays, ours and the asking one are added"
+        );
+        let ask = &v["hooks"]["PreToolUse"][2];
+        assert_eq!(ask["matcher"], ASK_MATCHER);
+        assert!(ask["hooks"][0]["command"].as_str().unwrap().ends_with(" hook --ask"));
+        assert_eq!(ask["hooks"][0]["timeout"], PERMISSION_TIMEOUT);
         assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "lint");
         assert_eq!(v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], PERMISSION_TIMEOUT);
         assert!(installed(&file).unwrap());

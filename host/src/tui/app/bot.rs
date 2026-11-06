@@ -53,6 +53,23 @@ pub struct Bot {
     /// `None`: the host has no per-bot network switches.
     pub offered_to_network: Option<bool>,
     pub reachable_by_assistants: Option<bool>,
+    /// A command run after each turn: the turn counts as done only if it passes (empty: none).
+    pub verify_command: String,
+    /// The model routine runs and check-ins use instead of its own (empty: its own).
+    pub background_model: String,
+    /// The user's approval rules, first match first, as the host sends them.
+    pub approval_rules: Vec<Value>,
+    /// The quick rules by kind of action (class → allow, ask or block), and whether they are enforced (`None`: an older
+    /// host has none).
+    pub action_rules: serde_json::Map<String, Value>,
+    pub action_rules_on: Option<bool>,
+    /// The security profile the bot follows, until its rules are changed away from it.
+    pub security_profile: Option<String>,
+    /// Saver: at 80 percent of its daily token budget, new sessions start on the background model; `None` from an
+    /// older host.
+    pub saver: Option<bool>,
+    /// Its soul, persona and heartbeat, written by the user.
+    pub personality: [String; 3],
     /// The bot that created this one; `None` when the user did.
     pub created_by: Option<String>,
     pub created_at: i64,
@@ -193,6 +210,15 @@ impl Bot {
             manage_team: v["manageTeam"].as_bool(),
             offered_to_network: v["offeredToNetwork"].as_bool(),
             reachable_by_assistants: v["reachableByAssistants"].as_bool(),
+            verify_command: s("verifyCommand"),
+            background_model: s("backgroundModel"),
+            approval_rules: v["approvalRules"].as_array().cloned().unwrap_or_default(),
+            action_rules: v["actionRules"].as_object().cloned().unwrap_or_default(),
+            action_rules_on: v["actionRulesOn"].as_bool(),
+            security_profile: v["securityProfile"].as_str().map(str::to_owned),
+            saver: v["saver"].as_bool(),
+            personality: ["soul", "persona", "heartbeat"]
+                .map(|layer| v["personality"][layer].as_str().unwrap_or_default().to_owned()),
             created_by: v["createdBy"].as_str().map(str::to_owned),
             created_at: v["createdAt"].as_i64().unwrap_or(0),
             harness_memory: v["harnessMemory"]
@@ -261,5 +287,30 @@ impl Bot {
             Status::Idle if self.unread > 0 => Mark::Unread,
             Status::Idle => Mark::Idle,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::app::ui::{FIELDS, Field};
+    use serde_json::json;
+
+    #[test]
+    fn a_bot_reads_what_only_the_user_writes_about_it() {
+        let bot = Bot::parse(&json!({
+            "id": "b", "name": "B", "verifyCommand": "npm test", "backgroundModel": "haiku",
+            "personality": {"soul": "s", "persona": "p"}
+        }))
+        .expect("a bot");
+        assert_eq!((bot.verify_command.as_str(), bot.background_model.as_str()), ("npm test", "haiku"));
+        assert_eq!(bot.personality, ["s".to_owned(), "p".to_owned(), String::new()]);
+    }
+
+    #[test]
+    fn each_character_field_has_its_own_editor_slot() {
+        let slots: Vec<usize> = FIELDS.iter().filter_map(|f| f.slot()).collect();
+        assert_eq!(slots, [0, 1, 2, 3, 4]);
+        assert!(Field::Soul.multiline() && !Field::Check.multiline());
     }
 }

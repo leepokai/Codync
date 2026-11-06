@@ -6,7 +6,7 @@
 //!
 //! Adapted from the MIT-licensed `coucou-hook` (github.com/Louis-CFM/coucou, `windows/hook/src/reply.rs`).
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 /// The agents whose permission requests Codync can answer: Claude Code (no `--agent`), Codex, Copilot CLI.
 /// A decision for any other agent is ignored, whatever the host sent.
@@ -46,10 +46,56 @@ pub fn stdout(agent: &str, event: &str, decision: Option<&str>) -> Option<String
     Some(json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": behavior}}).to_string())
 }
 
+/// What a `PreToolUse` hook of a question or a plan prints, from the host's reply (`{"preToolUse": {...}}`). Only
+/// a verdict the host made from a person's choice is ever printed: a missing or malformed one is silence, and the
+/// terminal asks as usual.
+pub fn pre_tool(reply: &Value) -> Option<String> {
+    let verdict = reply.get("preToolUse")?;
+    let mut out = match verdict.get("permissionDecision")?.as_str()? {
+        "allow" => json!({"permissionDecision": "allow"}),
+        "deny" => json!({
+            "permissionDecision": "deny",
+            "permissionDecisionReason": verdict.get("reason").and_then(Value::as_str).unwrap_or("Declined from Codync"),
+        }),
+        _ => return None,
+    };
+    if let Some(input) = verdict.get("updatedInput").filter(|i| i.is_object()) {
+        out["updatedInput"] = input.clone();
+    }
+    out["hookEventName"] = "PreToolUse".into();
+    Some(json!({"hookSpecificOutput": out}).to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
+
+    #[test]
+    fn a_question_answer_prints_an_allow_with_the_answers_and_nothing_else_does() {
+        let reply = json!({"decision": null, "preToolUse": {"permissionDecision": "allow",
+            "updatedInput": {"questions": [], "answers": {"Which?": "A"}}}});
+        let out: Value = serde_json::from_str(&pre_tool(&reply).unwrap()).unwrap();
+        assert_eq!(out["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+        assert_eq!(out["hookSpecificOutput"]["permissionDecision"], "allow");
+        assert_eq!(out["hookSpecificOutput"]["updatedInput"]["answers"]["Which?"], "A");
+        for silent in [
+            json!({}),
+            json!({"decision": "allow"}),
+            json!({"preToolUse": {}}),
+            json!({"preToolUse": {"permissionDecision": "ask"}}),
+            json!({"preToolUse": "allow"}),
+        ] {
+            assert_eq!(pre_tool(&silent), None, "{silent}");
+        }
+    }
+
+    #[test]
+    fn a_rejected_plan_prints_a_denial_with_its_reason() {
+        let reply = json!({"preToolUse": {"permissionDecision": "deny", "reason": "Not this plan"}});
+        let out: Value = serde_json::from_str(&pre_tool(&reply).unwrap()).unwrap();
+        assert_eq!(out["hookSpecificOutput"]["permissionDecision"], "deny");
+        assert_eq!(out["hookSpecificOutput"]["permissionDecisionReason"], "Not this plan");
+    }
 
     const AGENTS: &[&str] = &["", "gemini", "antigravity", "cursor", "codex", "copilot", "my-tool"];
     const EVENTS: &[&str] =

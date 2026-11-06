@@ -66,7 +66,10 @@ class MainActivity : FragmentActivity() {
         if (savedInstanceState == null) lifecycleScope.launch { CodyncWidgets.publishPreviews(applicationContext) }
         enableEdgeToEdge()
         setContent {
-            val state by store.state.collectAsStateWithLifecycle()
+            val realState by store.state.collectAsStateWithLifecycle()
+            val demo by DemoMode.active.collectAsStateWithLifecycle()
+            // The demo shows sample data over the real state's shell; the real state keeps living underneath.
+            val state = if (demo) DemoMode.shown(realState, remember { System.currentTimeMillis() }) else realState
             val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { store.syncPush() }
             LaunchedEffect(state.computers.isNotEmpty(), state.contextId) {
                 if (BuildConfig.PUSH_CONFIGURED && state.computers.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 33 && !PushPreferences.asked(applicationContext)) {
@@ -84,7 +87,7 @@ class MainActivity : FragmentActivity() {
             DisposableEffect(images) { onDispose { AccountImages.close(images) } }
             CompositionLocalProvider(LocalNetworkImages provides images) {
                 key(state.contextId, state.generation) {
-                    CodyncTheme { OverlayRoot { CodyncApp(state, store); LaunchLayer(state.loading) } }
+                    CodyncTheme { OverlayRoot { CodyncApp(state, store); if (demo) DemoBadge(); LaunchLayer(state.loading) } }
                 }
             }
         }
@@ -153,7 +156,7 @@ class MainActivity : FragmentActivity() {
             store.pair(uri.toString())
         }
         // Retain the scoped, non-secret destination for Activity/process restoration.
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) store.openLink(uri)
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage", "team", "approvals")) store.openLink(uri)
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; store.finishConnectorSignIn(uri) }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; store.openScreenLink() }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; store.openPage(LinkPage.Computers) }

@@ -21,7 +21,7 @@ pub async fn call(hub: &Arc<Hub>, method: &str, body: &Value, actor_kind: &str, 
         let row = hub.store.bot(bot)?.filter(|row| !row.deleted && !row.config.is_group()).context("unknown bot")?;
         return Ok(json!({"enabled":row.config.computer,"permissions":row.config.computer_permissions,
             "workspace":row.config.cwd,"screen":hub.screen.state(),"activity":hub.store.computer_activity(bot)?,"protectedBrowserAvailable":cfg!(windows),
-            "services":{"research":crate::research::configuration_state(&hub.store),"slack":crate::slack::configuration_state(&hub.store)}}));
+            "services":{"research":crate::research::configuration_state(&hub.store),"slack":crate::slack::configuration_state(&hub.store),"telegram":crate::telegram::configuration_state(&hub.store)}}));
     }
     let name = match method {
         "listComputerFiles" => "workspace_list",

@@ -91,3 +91,32 @@ async fn lead_role_opens_from_the_keyboard_and_badge_without_changing_selection(
     app.on_key(KeyEvent::from(KeyCode::Enter));
     assert!(app.overlays.is_empty());
 }
+
+#[tokio::test]
+async fn the_rules_sheet_opens_edits_reorders_and_draws() {
+    use crossterm::event::{KeyCode, KeyEvent};
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = test_app();
+    let bot = json!({"id": "b", "name": "Bot", "approvalRules": [{"pattern": "git *", "decision": "allow"}]});
+    app.bots.insert("b".into(), Bot::parse(&bot).expect("valid bot"));
+    app.selected = Some("b".into());
+    app.open_rules();
+    let Some(Overlay::Rules(sheet)) = app.overlays.last() else { panic!("the rules sheet opens") };
+    assert_eq!((sheet.rules.len(), sheet.bot_name.as_str()), (1, "Bot"));
+    // Add a rule, type its pattern, keep it; then move it first.
+    app.on_key(KeyEvent::from(KeyCode::Char('a')));
+    for c in "rm *".chars() {
+        app.on_key(KeyEvent::from(KeyCode::Char(c)));
+    }
+    app.on_key(KeyEvent::from(KeyCode::Enter));
+    app.on_key(KeyEvent::from(KeyCode::Char('K')));
+    let Some(Overlay::Rules(sheet)) = app.overlays.last() else { panic!("still open") };
+    assert_eq!(sheet.rules.iter().map(|r| r.pattern.as_str()).collect::<Vec<_>>(), ["rm *", "git *"]);
+    assert_eq!(sheet.body().as_array().map(Vec::len), Some(2));
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+    terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("the sheet draws");
+    let text: String = terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect();
+    assert!(text.contains("Approval rules") && text.contains("rm *"), "{text}");
+    app.on_key(KeyEvent::from(KeyCode::Esc));
+    assert!(app.overlays.is_empty());
+}

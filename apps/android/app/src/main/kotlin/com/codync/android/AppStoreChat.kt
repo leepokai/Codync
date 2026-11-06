@@ -169,6 +169,10 @@ internal suspend fun AppStore.savePending(send: PendingSend) {
     withContext(Dispatchers.IO) { requireNotNull(database).save(send) }
     refresh()
 }
+/** Continues a turn that stopped half done, from its card; the host refuses a card already used. */
+fun AppStore.continueTurn(entry: Entry) = action("continue:" + entry.id) {
+    ready().call("continueTurn", body("entryId" to entry.id))
+}
 fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + entry.id) {
     // A command or a file change on the computer takes a thumb first; a deny never does.
     if (!Approvals.confirmCurrent(entry, option)) return@action

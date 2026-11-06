@@ -6,7 +6,7 @@ use ratatui::style::{Modifier, Style};
 
 use super::super::app::{COLORS, NewBot, NewBotField, SHAPES};
 use super::super::l10n::tr;
-use super::super::md::width as w;
+use super::super::md::{truncate, width as w};
 use super::buffer::{centered, frame_box, put, rput, u};
 use super::overlay::input_line;
 use super::style::{FACE, bot_color, face_style, theme};

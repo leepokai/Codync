@@ -457,3 +457,7 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+.island-health {
+  color: var(--warning, #ff9f0a);
+}

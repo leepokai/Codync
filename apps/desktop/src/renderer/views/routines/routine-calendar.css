@@ -1,0 +1,99 @@
+/* The routines calendar (RoutineCalendarView): a month grid, one dot per kind of moment,
+   then the chosen day's moments. No borders on the filled cells, per the conventions. */
+.routine-calendar {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 38px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  padding: 2px;
+  font: inherit;
+  color: var(--text);
+}
+
+.cal-head .cal-cell {
+  min-height: 20px;
+}
+
+.cal-blank {
+  pointer-events: none;
+}
+
+button.cal-day {
+  cursor: pointer;
+  flex-direction: column;
+  gap: 2px;
+}
+
+button.cal-day:hover {
+  background: var(--surface);
+}
+
+.cal-day.today > :first-child {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cal-day.selected {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.cal-dots {
+  display: flex;
+  gap: 2px;
+  min-height: 5px;
+}
+
+.cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.cal-dot.upcoming { background: var(--accent); }
+.cal-dot.done { background: var(--secondary); }
+.cal-dot.failed { background: var(--danger); }
+.cal-dot.skipped { background: transparent; box-shadow: inset 0 0 0 1.5px var(--tertiary); }
+
+.cal-legend {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-caption);
+  color: var(--secondary);
+}
+
+.cal-detail {
+  gap: 4px;
+}
+
+.cal-moment {
+  font-size: var(--text-callout);
+}
+
+.cal-moment-time {
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+}

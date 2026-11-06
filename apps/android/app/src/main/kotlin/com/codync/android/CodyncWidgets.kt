@@ -104,17 +104,6 @@ abstract class CodyncWidget(private val kind: WidgetKind) : GlanceAppWidget() {
     }
 }
 
-private val ink = ColorProvider(day = Color(0xFF141414), night = Color(0xFFF2F2F2))
-private val secondary = ColorProvider(day = Color(0xFF6B6B6B), night = Color(0xFF9A9A9A))
-private val tertiary = ColorProvider(day = Color(0xFF767676), night = Color(0xFF929292))
-private val attention = ColorProvider(day = Color(0xFF936000), night = Color(0xFFECAF52))
-private val danger = ColorProvider(day = Color(0xFFC23A2B), night = Color(0xFFF0A7A7))
-private val tile = ColorProvider(day = Color(0xFFF0F0F0), night = Color(0xFF1C1C1C))
-private val divider = ColorProvider(day = Color(0xFFE6E6E6), night = Color(0xFF262626))
-private val ground = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF141414))
-
-private fun style(size: Float, color: Ink, weight: FontWeight = FontWeight.Normal) = TextStyle(color, size.sp, weight)
-
 @Composable private fun WidgetCard(feed: WidgetFeed, kind: WidgetKind, providerId: String, team: List<String?>, sample: Boolean) {
     val context = LocalContext.current
     val size = LocalSize.current
@@ -266,58 +255,7 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
 
 private const val WARNING = 0xFFF0A030.toInt()
 
-@Composable private fun phrase(text: String): String {
-    val context = LocalContext.current
-    val language = AppLanguageStore.get(context).resolved(context.resources.configuration.locales[0].toLanguageTag())
-    val table = AppLanguageStore.phrases(context, language)
-    return translate(text, language, language.usesChinese(false), table)
-}
-
-@Composable private fun resetSpoken(raw: String): String {
-    val context = LocalContext.current
-    val language = AppLanguageStore.get(context).resolved(context.resources.configuration.locales[0].toLanguageTag())
-    val table = AppLanguageStore.phrases(context, language)
-    val systemChinese = language.usesChinese(false)
-    return spokenReset(raw, language.usesChinese(systemChinese)) { translate(it, language, systemChinese, table) }
-}
-
-/** Fine, separated ticks (iOS `UsageTicks`), as a bitmap: widgets can't draw. */
-@Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp) {
-    val red = danger.getColor(context).toArgb()
-    val bitmap = remember(percent, tint, red) { ticks(percent, tint, red) }
-    Image(ImageProvider(bitmap), "${percent.roundToInt()} percent", GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
-}
-
-private fun ticks(percent: Double, tint: Int, red: Int): Bitmap {
-    val count = 60; val unit = 8f; val gap = 3f
-    val bitmap = Bitmap.createBitmap((count * (unit + gap)).toInt(), 26, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val value = if (percent.isFinite()) percent.coerceIn(0.0, 100.0) else 0.0
-    val color = if (value >= 90) red else tint
-    val filled = (count * value / 100).roundToInt()
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    for (i in 0 until count) {
-        paint.color = if (i < filled) color else (color and 0x00FFFFFF) or (0x29 shl 24)
-        canvas.drawRoundRect(RectF(i * (unit + gap), 0f, i * (unit + gap) + unit, 26f), 2f, 2f, paint)
-    }
-    return bitmap
-}
-
-@Composable private fun Face(context: Context, shape: String, color: String, size: Dp, highlight: Int? = null) {
-    val pixels = (size.value * context.resources.displayMetrics.density).toInt().coerceIn(1, 256)
-    val inkColor = ink.getColor(context).toArgb()
-    val bitmap = remember(shape, color, pixels, inkColor, highlight) { characterAvatarBitmap(shape, color, pixels, inkColor, highlight) }
-    Image(ImageProvider(bitmap), null, GlanceModifier.size(size))
-}
-
 private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "working" -> 1; else -> 2 }
-
-private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
-    "needsInput" -> "Needs you" to attention
-    "error" -> "Failed" to danger
-    "working" -> "Working" to ink
-    else -> "Ready" to secondary
-}
 
 /** Who needs you and who's still working: a count, then the bots in that order. */
 @Composable private fun BotsCard(context: Context, feed: WidgetFeed, layout: ProviderLayout, sample: Boolean) {
@@ -409,10 +347,12 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
     }
 }
 
-internal fun widgetIntent(context: Context, feed: WidgetFeed, bot: String? = null, usage: Boolean = false): Intent {
+/** The app, or the exact page a zone leads to: a bot's chat (`bot`), usage, or the bot list for the team and approvals (`page`). */
+internal fun widgetIntent(context: Context, feed: WidgetFeed, bot: String? = null, usage: Boolean = false,
+    page: com.codync.android.core.WidgetPage? = null): Intent {
     val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
     val computer = feed.computerId ?: return intent
-    if (bot != null || usage) intent.data = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority(if (usage) "usage" else "bot")
+    if (bot != null || usage || page != null) intent.data = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority(page?.host ?: if (usage) "usage" else "bot")
         .apply { if (bot != null) appendPath(bot) }.appendQueryParameter("scope", feed.scope).appendQueryParameter("computer", computer).build()
     return intent
 }
@@ -438,13 +378,13 @@ abstract class CodyncWidgetReceiver : GlanceAppWidgetReceiver() {
 
 internal object CodyncWidgets {
     val receivers = listOf(ProviderWidgetReceiver::class.java, UsageWidgetReceiver::class.java, BotsWidgetReceiver::class.java,
-        TeamWidgetReceiver::class.java, LockSummaryWidgetReceiver::class.java)
+        TeamWidgetReceiver::class.java, LockSummaryWidgetReceiver::class.java, OverviewWidgetReceiver::class.java)
     fun installed(context: Context): Int = receivers.sumOf { AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, it)).size }
     suspend fun update(context: Context) {
         LeadBotTile.refresh(context)
         if (installed(context) == 0) return
         ProviderWidget().updateAll(context); UsageWidget().updateAll(context); BotsWidget().updateAll(context); TeamWidget().updateAll(context)
-        LockSummaryWidget().updateAll(context)
+        LockSummaryWidget().updateAll(context); OverviewWidget().updateAll(context)
     }
     /** The launcher's widget picker shows each widget drawn from sample data (Android 15+); the system rate-limits it. */
     suspend fun publishPreviews(context: Context) {
@@ -460,7 +400,7 @@ internal object CodyncWidgets {
         if (!manager.isRequestPinAppWidgetSupported) return false
         val receiver = when (kind) { WidgetKind.Provider -> ProviderWidgetReceiver::class.java; WidgetKind.Usage -> UsageWidgetReceiver::class.java
             WidgetKind.Bots -> BotsWidgetReceiver::class.java; WidgetKind.Team -> TeamWidgetReceiver::class.java
-            WidgetKind.LockSummary -> LockSummaryWidgetReceiver::class.java }
+            WidgetKind.LockSummary -> LockSummaryWidgetReceiver::class.java; WidgetKind.Overview -> OverviewWidgetReceiver::class.java }
         return manager.requestPinAppWidget(ComponentName(context, receiver), null, null)
     }
 }

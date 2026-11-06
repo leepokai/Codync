@@ -124,6 +124,9 @@ const bridge: CodyncBridge = {
     show: (id, html) => ipcRenderer.invoke('artifacts:show', id, html),
     openInBrowser: (id, html) => ipcRenderer.invoke('artifacts:openInBrowser', id, html),
   },
+  agentImport: {
+    pick: () => ipcRenderer.invoke('agentImport:pick'),
+  },
   files: {
     begin: (file) => ipcRenderer.invoke('files:begin', file),
     write: (id, offset, data) => ipcRenderer.invoke('files:write', id, offset, data),
@@ -156,6 +159,11 @@ const bridge: CodyncBridge = {
   screen: {
     open: (request) => ipcRenderer.invoke('screen:open', request),
     target: (computerId) => ipcRenderer.invoke('screen:target', computerId),
+  },
+  n8n: {
+    open: () => ipcRenderer.invoke('n8n:open'),
+    gotoEditor: () => ipcRenderer.invoke('n8n:gotoEditor'),
+    openSettings: () => ipcRenderer.send('n8n:openSettings'),
   },
 }
 

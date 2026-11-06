@@ -19,6 +19,7 @@ pub mod outbox;
 pub mod profile;
 pub mod prompt;
 pub mod reactions;
+pub mod recap;
 pub mod replies;
 pub mod skills;
 pub mod team;

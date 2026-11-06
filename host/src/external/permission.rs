@@ -6,7 +6,7 @@ use super::{DECISION_WAIT, Decision, External, reply, tool};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::remote::push::{self, AlertKind};
-use crate::store::{EntryKind, Lane};
+use crate::store::{BotConfig, EntryKind, Lane};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -68,21 +68,43 @@ pub(super) async fn request(hub: &Arc<Hub>, ev: &Event) -> Option<Decision> {
     if ev.tool == "AskUserQuestion" || !reply::takes_decisions(&ev.agent) {
         return None;
     }
+    let (bot, config) = target(hub, ev)?;
+    let data = card(ev, &bot, &config.cwd);
+    // Forbidden for every bot: the terminal is told to refuse, and no card asks.
+    if data["command"].as_str().is_some_and(|command| crate::agent::blocklist::blocked(command).is_some()) {
+        return Some(Decision::Deny);
+    }
+    let title = data["title"].as_str().unwrap_or("Use a tool").to_owned();
+    wait_card(hub, ev, &bot, &config, &data, &title).await
+}
+
+/// The bot standing for the event's session and its settings.
+pub(super) fn target(hub: &Arc<Hub>, ev: &Event) -> Option<(String, BotConfig)> {
     let bot = bot_for(hub, ev)?;
     let config = hub.store.bot(&bot).ok().flatten()?.config;
-    let data = card(ev, &bot, &config.cwd);
-    let title = data["title"].as_str().unwrap_or("Use a tool").to_owned();
-    let entry = hub.add_entry(&Lane::main(&bot), EntryKind::Permission, turn_of(hub, &ev.session), &data)?;
+    Some((bot, config))
+}
+
+/// Shows `data` as a card, tells the person and holds until it is answered; `None` when nobody answers in time.
+pub(super) async fn wait_card(
+    hub: &Arc<Hub>,
+    ev: &Event,
+    bot: &str,
+    config: &BotConfig,
+    data: &Value,
+    title: &str,
+) -> Option<Decision> {
+    let entry = hub.add_entry(&Lane::main(bot), EntryKind::Permission, turn_of(hub, &ev.session), data)?;
 
     let (tx, rx) = oneshot::channel();
     hub.external.state.locked().waiting.insert(entry.id.clone(), tx);
-    let waiting = Waiting { hub: hub.clone(), entry: entry.id, bot: bot.clone() };
-    hub.set_runtime(&bot, |r| {
+    let waiting = Waiting { hub: hub.clone(), entry: entry.id, bot: bot.to_owned() };
+    hub.set_runtime(bot, |r| {
         r.status = BotStatus::NeedsInput;
         r.activity = format!("Needs approval: {title}");
-        r.lane = Some(Lane::main(&bot));
+        r.lane = Some(Lane::main(bot));
     });
-    push::notify(hub, &config, Some(&bot), &format!("{} needs you", config.name), &title, AlertKind::NeedsInput);
+    push::notify(hub, config, Some(bot), &format!("{} needs you", config.name), title, AlertKind::NeedsInput);
 
     let answer = tokio::time::timeout(DECISION_WAIT, rx).await;
     drop(waiting);
@@ -91,17 +113,23 @@ pub(super) async fn request(hub: &Arc<Hub>, ev: &Event) -> Option<Decision> {
 
 /// See [`External::answer`].
 pub(super) fn answer(external: &External, hub: &Hub, entry_id: &str, option_id: Option<&str>) -> bool {
+    let Some(mut entry) = hub.store.entry(entry_id) else { return is_ours(hub, entry_id) };
+    // An answer must be one of the options the card showed; anything else leaves the card waiting.
+    let known = |id: &str| entry.data["options"].as_array().is_some_and(|o| o.iter().any(|o| o["optionId"] == id));
+    if option_id.is_some_and(|id| !known(id)) {
+        return external.state.locked().waiting.contains_key(entry_id) || is_ours(hub, entry_id);
+    }
     let Some(waiting) = external.state.locked().waiting.remove(entry_id) else {
         return is_ours(hub, entry_id);
     };
     let decision = match option_id {
         Some(ALLOW) => Some(Decision::Allow),
         Some(DENY) => Some(Decision::Deny),
-        _ => None,
+        Some(index) => index.parse().ok().map(Decision::Pick),
+        None => None,
     };
-    let Some(mut entry) = hub.store.entry(entry_id) else { return true };
     entry.data["status"] = if decision.is_some() { "answered" } else { "cancelled" }.into();
-    entry.data["selected"] = decision.map(Decision::as_str).into();
+    entry.data["selected"] = option_id.into();
     hub.set_entry(entry_id, &entry.data);
     let bot = entry.data["author"].as_str().unwrap_or(&entry.bot_id).to_owned();
     hub.set_runtime(&bot, |r| {

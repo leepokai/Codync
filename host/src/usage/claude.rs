@@ -1,9 +1,17 @@
-//! Claude plan windows: the CLI's `/usage` report, the status-line hook, and
-//! the ACP adapter's rate-limit event.
-
-use serde_json::Value;
+//! Claude plan windows: the ACP adapter's own `/usage` report for the signed-in
+//! account, the CLI's `/usage` report, the status-line hook, and the ACP
+//! rate-limit event.
 
 use super::Window;
+use crate::agent::acp::{Acp, Incoming};
+use crate::agent::auth;
+use crate::hub::Hub;
+use crate::store::Store;
+use anyhow::{Result, bail};
+use serde_json::{Value, json};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::mpsc;
 
 /// Flags for `claude -p /usage`. The empty strict MCP config keeps the check
 /// from starting every MCP server the user has set up.
@@ -22,7 +30,7 @@ const USAGE_ARGS: [&str; 8] = [
 pub(super) async fn collect() -> Option<Vec<Window>> {
     let bin = super::command::program("claude")?;
     let out = tokio::time::timeout(
-        std::time::Duration::from_mins(1),
+        Duration::from_mins(1),
         tokio::process::Command::new(bin)
             .args(USAGE_ARGS)
             .current_dir(dirs::home_dir()?)
@@ -59,7 +67,7 @@ pub fn parse_claude_usage(text: &str) -> Vec<Window> {
 }
 
 /// `POST /ingest/statusline` body: Claude Code's statusline JSON.
-pub fn ingest_statusline(hub: &crate::hub::Hub, body: &Value) {
+pub fn ingest_statusline(hub: &Hub, body: &Value) {
     let rl = &body["rate_limits"];
     let windows: Vec<Window> = [("five_hour", "5-hour"), ("seven_day", "Weekly")]
         .into_iter()
@@ -74,7 +82,7 @@ pub fn ingest_statusline(hub: &crate::hub::Hub, body: &Value) {
 }
 
 /// Claude ACP adapter: `usage_update._meta["_claude/rateLimit"]` (the SDK's `SDKRateLimitInfo`).
-pub fn ingest_claude_rate_limit(hub: &crate::hub::Hub, info: &Value) {
+pub fn ingest_claude_rate_limit(hub: &Hub, info: &Value) {
     if let Some(w) = claude_window(info) {
         super::merge(hub, "claude", "Claude", "agent", vec![w]);
     }
@@ -90,7 +98,7 @@ fn claude_window(info: &Value) -> Option<Window> {
         _ => return None,
     };
     let u = info["utilization"].as_f64()?;
-    // The SDK reports a 0–1 fraction (from the unified rate-limit headers).
+    // The SDK reports a 0-1 fraction (from the unified rate-limit headers).
     let percent = if u <= 1.0 { u * 100.0 } else { u };
     // Seconds, but accept milliseconds too.
     let resets = info["resetsAt"].as_i64().map(|t| if t > 100_000_000_000 { t } else { t.saturating_mul(1000) });
@@ -100,7 +108,6 @@ fn claude_window(info: &Value) -> Option<Window> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn usage_check_starts_no_mcp_servers() {
@@ -121,6 +128,28 @@ mod tests {
         assert!((w[0].percent - 11.0).abs() < f64::EPSILON);
         assert_eq!(w[0].resets_text.as_deref(), Some("Sep 25 at 5am (Asia/Taipei)"));
         assert_eq!(w[2].label, "Weekly · Fable");
+    }
+
+    #[test]
+    fn parses_the_acp_markdown_report() {
+        let w = parse_acp_usage(
+            "## Usage\n\n### Limits\n\n**5-hour limit** — **5%** · Resets Nov 5, 2:00 AM GMT-6\n\n**Weekly · all models** — **6%** · Resets Nov 10, 2:00 PM GMT-6\n\n**Weekly · Opus** — **0%** · Resets Nov 10, 2:00 PM GMT-6",
+        );
+        assert_eq!(w.len(), 3);
+        assert_eq!(w[0].id, "five_hour");
+        assert!((w[0].percent - 5.0).abs() < f64::EPSILON);
+        assert_eq!(w[0].resets_text.as_deref(), Some("Nov 5, 2:00 AM GMT-6"));
+        assert_eq!(w[1].label, "Weekly");
+        assert_eq!(w[2].label, "Weekly · Opus");
+    }
+
+    #[test]
+    fn acp_report_ignores_other_bold_lines() {
+        let w = parse_acp_usage(
+            "**Last 24h** — 23 requests · 14 sessions\n\n**92%** See what fills your context\n\n**5-hour limit** — **7%** · Resets Nov 5, 5:09 PM CST",
+        );
+        assert_eq!(w.len(), 1);
+        assert!((w[0].percent - 7.0).abs() < f64::EPSILON);
     }
 
     #[test]

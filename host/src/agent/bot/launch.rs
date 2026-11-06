@@ -77,6 +77,15 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     Ok(current)
 }
 
+/// The bot as a routine run sees it: on its `background_model` when it has one (that model's options are its own,
+/// so the bot's are dropped).
+pub(crate) fn for_background(cfg: &BotConfig) -> BotConfig {
+    let Some(model) = cfg.background_model.as_deref().map(str::trim).filter(|m| !m.is_empty()) else {
+        return cfg.clone();
+    };
+    BotConfig { model: Some(model.to_owned()), model_options: BTreeMap::new(), ..cfg.clone() }
+}
+
 /// The model to select and the options to set on it: the model id's variant, then the bot's own. How the agent
 /// approves tools is the bot's Approvals, never a model option (`opus[mode=acceptEdits]`).
 fn model_choice<'a>(
@@ -180,6 +189,21 @@ fn adapter(init: &Value) -> Adapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_routine_run_uses_the_background_model_and_drops_the_bots_model_options() {
+        let mut cfg: BotConfig =
+            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude"})).expect("bot");
+        cfg.model = Some("opus".into());
+        cfg.model_options = BTreeMap::from([("effort".to_owned(), "high".to_owned())]);
+        assert_eq!(for_background(&cfg).model.as_deref(), Some("opus"), "no background model: unchanged");
+        cfg.background_model = Some(" haiku ".into());
+        let background = for_background(&cfg);
+        assert_eq!(background.model.as_deref(), Some("haiku"));
+        assert!(background.model_options.is_empty());
+        cfg.background_model = Some("  ".into());
+        assert_eq!(for_background(&cfg).model.as_deref(), Some("opus"), "blank counts as none");
+    }
 
     #[test]
     fn variant_ids_become_options_only_when_the_agent_lists_plain_models() {

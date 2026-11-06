@@ -88,7 +88,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
         when {
             shown == null -> Column(Modifier.fillMaxSize().background(Palette.background)) {
                 ModalHeader(backend.name)
-                Overview(backend, auth, checking, authenticating, error, state, { route = it }, ::check) { method ->
+                Overview(backend, auth, checking, authenticating, error, state, store, { route = it }, ::check) { method ->
                     authenticating = method.id
                     scope.launch {
                         try { auth = store.agentAuthenticate(backend.id, method.id); error = null }
@@ -104,7 +104,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
     }
 }
 
-@Composable private fun Overview(backend: AgentBackend, auth: AgentAuth?, checking: Boolean, authenticating: String?, error: String?, state: AppState,
+@Composable private fun Overview(backend: AgentBackend, auth: AgentAuth?, checking: Boolean, authenticating: String?, error: String?, state: AppState, store: AppStore,
     go: (SetupRoute) -> Unit, check: () -> Unit, authenticate: (AgentAuthMethod) -> Unit) {
     val host = state.hostName
     val signedIn = auth?.signedIn ?: backend.signedIn
@@ -176,6 +176,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 }
             }
         }
+        if (backend.accounts == true) AgentAccountsSection(backend, state, store, check)
         error?.let { CardSection { row { SelectionContainer { ErrorRow(it) } } } }
     }
 }
@@ -185,7 +186,7 @@ private fun setUp(backend: AgentBackend, auth: AgentAuth?) = backend.installed |
 
 private fun statusText(backend: AgentBackend, setUp: Boolean, auth: AgentAuth?, signedIn: Boolean?, checking: Boolean, host: String) = when {
     checking -> if (auth == null) "Checking with ${backend.name}… The first check can download it." else "Checking…"
-    signedIn == true -> "Signed in."
+    signedIn == true -> backend.email?.let { "Signed in as $it." } ?: "Signed in."
     backend.needsNode -> "Add Node.js first."
     !setUp -> if (backend.curated) "Install it first." else "Not set up on $host yet."
     signedIn == false -> "Not signed in yet."

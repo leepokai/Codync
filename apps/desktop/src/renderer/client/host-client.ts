@@ -3,6 +3,7 @@ import {
   normalizeBot,
   normalizeScreen,
   type AccessRequest,
+  type N8nState,
   type Bot,
   type CloudStatus,
   type Entry,
@@ -75,6 +76,7 @@ export type HostEvent =
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
   | { type: 'screen'; screen: ScreenState }
+  | { type: 'n8n'; n8n: N8nState }
   | { type: 'accessRequests'; requests: AccessRequest[] }
   | { type: 'pairingRequests'; requests: PairingRequest[] }
   | { type: 'cloud'; cloud: CloudStatus }
@@ -150,6 +152,21 @@ export function parseEvent(line: string): HostEvent | null {
       return { type }
     default:
       return null
+  }
+}
+
+/** The host's n8n state; null on a host that predates it. */
+export function normalizeN8n(raw: N8nState | undefined): N8nState | null {
+  if (!raw || typeof raw.state !== 'string' || !['stopped', 'starting', 'running', 'error'].includes(raw.state)) return null
+  return {
+    enabled: raw.enabled ?? false,
+    state: raw.state,
+    error: raw.error ?? null,
+    url: raw.url ?? null,
+    port: raw.port ?? 5679,
+    path: raw.path ?? null,
+    mcp: raw.mcp ?? false,
+    auth: raw.auth ?? null,
   }
 }
 

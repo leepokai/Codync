@@ -104,10 +104,11 @@ struct RoutinesView: View {
 
     /// The row's second line: what's happening now, else when it runs.
     private func summary(_ routine: Routine) -> String {
-        if let active = runs.first(where: { $0.routineId == routine.id && $0.isActive }) { return runLabel(active) }
+        if let active = runs.first(where: { $0.routineId == routine.id && $0.isActive }) { return active.label }
         if routine.lastError != nil { return "Schedule needs attention" }
-        if let last = runs.first(where: { $0.routineId == routine.id }), ["failed", "interrupted"].contains(last.status) {
-            return "Last run \(runLabel(last).lowercased())"
+        if let last = runs.first(where: { $0.routineId == routine.id }),
+           ["failed", "interrupted"].contains(last.status) || isSkipped(last) {
+            return "Last run \(last.label.lowercased())"
         }
         return routine.triggerDescriptions.joined(separator: " · ")
     }

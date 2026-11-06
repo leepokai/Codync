@@ -394,6 +394,7 @@ impl Actor {
             let body = final_text.unwrap_or_else(|| match (kind, reacted) {
                 (AlertKind::Done, Reacted::With(emoji)) => format!("Reacted {emoji} to your message"),
                 (AlertKind::Done, _) => "Finished.".into(),
+                (AlertKind::Paused, _) => "Paused halfway. Open the chat to continue.".into(),
                 _ => "The agent didn't finish.".into(),
             });
             push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind);
@@ -464,12 +465,20 @@ impl Actor {
 
 /// A finished turn alerts once the user's work is done: not when it's `quiet` (their next message
 /// is already queued, or it said nothing on purpose). A turn that ended short of `end_turn` always
-/// reports the failure.
-fn turn_alert(failed: bool, stop_reason: &str, quiet: bool) -> Option<AlertKind> {
-    if failed || !matches!(stop_reason, "end_turn" | "cancelled") {
+/// reports the failure. A scheduled check-in (`check_in`) that stopped half done has nothing to tell yet: it stays
+/// private, like one that said nothing.
+fn turn_alert(failed: bool, stop_reason: &str, quiet: bool, check_in: bool) -> Option<AlertKind> {
+    use super::verdict::TurnVerdict;
+    if failed {
         return Some(AlertKind::Failed);
     }
-    (stop_reason == "end_turn" && !quiet).then_some(AlertKind::Done)
+    match TurnVerdict::of(stop_reason) {
+        TurnVerdict::Completed => (!quiet).then_some(AlertKind::Done),
+        TurnVerdict::Cancelled => None,
+        // Half done: told differently from "finished", and not held back by a queued message.
+        TurnVerdict::Paused | TurnVerdict::Truncated => (!check_in).then_some(AlertKind::Paused),
+        TurnVerdict::Failed => Some(AlertKind::Failed),
+    }
 }
 
 #[cfg(test)]
@@ -478,10 +487,22 @@ mod tests {
 
     #[test]
     fn only_finished_tasks_alert() {
-        assert_eq!(turn_alert(false, "end_turn", false), Some(AlertKind::Done));
-        assert_eq!(turn_alert(false, "end_turn", true), None, "next message queued, or a reaction held back");
-        assert_eq!(turn_alert(false, "cancelled", false), None);
-        assert_eq!(turn_alert(false, "max_turn_requests", false), Some(AlertKind::Failed));
-        assert_eq!(turn_alert(true, "error", true), Some(AlertKind::Failed));
+        assert_eq!(turn_alert(false, "end_turn", false, false), Some(AlertKind::Done));
+        assert_eq!(turn_alert(false, "end_turn", true, false), None, "next message queued, or a reaction held back");
+        assert_eq!(turn_alert(false, "cancelled", false, false), None);
+        assert_eq!(turn_alert(false, "max_turn_requests", false, false), Some(AlertKind::Paused));
+        assert_eq!(turn_alert(false, "max_turn_requests", false, true), None, "a half-done check-in stays private");
+        assert_eq!(
+            turn_alert(true, "error", false, true),
+            Some(AlertKind::Failed),
+            "an error in a check-in is still told"
+        );
+        assert_eq!(
+            turn_alert(false, "max_tokens", true, false),
+            Some(AlertKind::Paused),
+            "a queued message doesn't hide a pause"
+        );
+        assert_eq!(turn_alert(false, "refusal", false, false), Some(AlertKind::Failed));
+        assert_eq!(turn_alert(true, "error", true, false), Some(AlertKind::Failed));
     }
 }

@@ -8,11 +8,22 @@ import kotlinx.serialization.Serializable
     /** When the bot last did something, to break ties for the Bots tile. */
     val lastAt: Long = 0, val avatarLook: String? = null)
 
+/**
+ * A permission request waiting on a bot, as the widget may act on it. It never carries the command or the file: only which
+ * options exist and how risky the request is, decided when the report was made (`WidgetActions`).
+ */
+@Serializable data class WidgetApproval(val botId: String, val entryId: String, val allowOptionId: String? = null,
+    val denyOptionId: String? = null, val risk: String = "high", val at: Long = 0)
+
 @Serializable data class WidgetFeed(val scope: String = "local", val computerId: String? = null,
     val computerName: String = "", val bots: List<WidgetBot> = emptyList(), val botsAt: Long = 0,
-    val usage: UsageReport = UsageReport(), val usageAt: Long = 0)
+    val usage: UsageReport = UsageReport(), val usageAt: Long = 0,
+    /** Waiting permission requests, from the app's mirror; empty when the report came from a background read. */
+    val approvals: List<WidgetApproval> = emptyList(),
+    /** Since when the last background read failed (0: it didn't), so the widget says it is offline instead of showing old numbers as current. */
+    val offlineSince: Long = 0)
 
-enum class WidgetKind { Provider, Usage, Bots, Team, LockSummary }
+enum class WidgetKind { Provider, Usage, Bots, Team, LockSummary, Overview }
 
 /** Freshness state for lock screen summary (`plan-widget-bloqueo-android.md` Phase 3). */
 enum class WidgetFreshness { NoComputer, NoData, Fresh, Stale }

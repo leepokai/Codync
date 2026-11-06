@@ -14,6 +14,7 @@ export const scheduleStyles = [
   { id: 'weekly', label: 'Weekly' },
   { id: 'days', label: 'Chosen days' },
   { id: 'monthly', label: 'Monthly' },
+  { id: 'yearly', label: 'Yearly' },
   { id: 'custom', label: 'Cron' },
 ]
 
@@ -33,7 +34,7 @@ export const weekdayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursd
 export const weekdayInitials = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
 /** Styles whose cron has an hour as well as a minute. */
-export const usesTime = (style: string) => ['daily', 'weekdays', 'weekly', 'days', 'monthly'].includes(style)
+export const usesTime = (style: string) => ['daily', 'weekdays', 'weekly', 'days', 'monthly', 'yearly'].includes(style)
 
 /** The kind the editor shows for what the host read: kinds it can't edit keep the original triggers. */
 export const editorKind = (kind: string) => (editableKinds.includes(kind) ? kind : 'keep')

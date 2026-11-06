@@ -12,6 +12,10 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
+/// The session a scheduled check-in uses when the bot has a background model: the model is fixed when a session
+/// starts, so a check-in can only run on it from a session of its own.
+const CHECK_IN_SLOT: &str = "check-in";
+
 impl Actor {
     /// Which session the running turn uses: a routine run has one of its own (by its slot); everything else uses
     /// the main one.
@@ -179,6 +183,7 @@ impl Actor {
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 match self.start_candidate(candidate, &env, budget, &progress).await {
                     Ok(conn) => {
+                        self.hub.health.set_agent(&self.cfg.id, conn.acp.pid());
                         self.conn = Some(conn);
                         break;
                     }

@@ -4,6 +4,7 @@
 pub mod acp;
 pub mod auth;
 pub mod backends;
+pub mod blocklist;
 pub mod bot;
 pub mod config;
 pub mod fallback;
@@ -11,6 +12,7 @@ pub mod gear;
 pub mod new_bot;
 pub mod node;
 pub mod own_memory;
+pub mod personality;
 pub mod registry;
 pub mod term;
 pub mod workspace;

@@ -221,6 +221,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
 
     /** The ready channel, waiting briefly for a reconnect; a timeout is an error the action shows. */
     internal suspend fun ready(): EncryptedChannel = deadline(20_000, "Can't reach the computer. Check that it's on, then try again.") {
+        // The demo shows sample data: nothing may reach the real computer meanwhile.
+        if (DemoMode.active.value) throw IOException(com.codync.android.core.DemoScript.REFUSAL)
         while (true) {
             val active = channel
             if (active?.state?.value is LinkState.Ready) return@deadline active
@@ -247,16 +249,18 @@ class AppStore(application: Application) : AndroidViewModel(application) {
 
     internal fun showError(error: Exception) { mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.") } }
 
-    private data class WidgetSource(val computer: Computer?, val bots: List<Bot>, val usage: JsonObject, val fresh: Boolean)
+    private data class WidgetSource(val computer: Computer?, val bots: List<Bot>, val usage: JsonObject, val fresh: Boolean,
+        val approvals: List<WidgetApproval>)
     @OptIn(FlowPreview::class)
     private fun observeWidgets(owner: WidgetOwner) {
         contextScope.launch {
             state.filter { !it.loading && it.contextId == owner.scope }
-                .map { WidgetSource(it.computer, it.bots, it.usage, it.widgetBotsCurrent) }
+                .map { WidgetSource(it.computer, it.bots, it.usage, it.widgetBotsCurrent, widgetApprovals(it.entries)) }
                 .distinctUntilChanged().debounce(350).collect { source ->
                     try {
                         val usage = UsageReport.decode(source.usage)
-                        val accepted = withContext(Dispatchers.IO) { WidgetStore.publish(getApplication(), owner, source.computer, source.bots, usage, source.fresh, false) }
+                        val accepted = withContext(Dispatchers.IO) { WidgetStore.publish(getApplication(), owner, source.computer, source.bots, usage, source.fresh, false,
+                            approvals = if (source.fresh) source.approvals else emptyList()) }
                         if (!accepted) return@collect
                         WidgetRefreshWorker.schedule(getApplication(), source.computer != null)
                         CodyncWidgets.update(getApplication())

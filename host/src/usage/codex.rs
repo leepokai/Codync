@@ -203,4 +203,24 @@ mod tests {
         let error = result.unwrap_err();
         assert!(format!("{error:#}").contains("initializing Codex usage probe: initialize rejected"));
     }
+
+    #[test]
+    fn reads_the_app_server_answer_with_camel_case_windows() {
+        let w = parse_app_server(&json!({
+            "rateLimitsByLimitId": {"codex": {
+                "primary": {"usedPercent": 0, "windowDurationMins": 43200, "resetsAt": 1_796_445_049},
+                "secondary": null
+            }}
+        }));
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].label, "Monthly");
+        assert_eq!(w[0].percent, 0.0);
+        assert_eq!(w[0].resets_at, Some(1_796_445_049_000));
+    }
+
+    #[test]
+    fn a_plan_without_windows_is_not_zero_usage() {
+        assert_eq!(parse_app_server(&json!({"rateLimitsByLimitId": null, "rateLimits": null})).len(), 0);
+        assert_eq!(parse_app_server(&json!({"rateLimits": {"primary": null}})).len(), 0);
+    }
 }

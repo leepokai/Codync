@@ -185,23 +185,6 @@ textarea.field-box {
   padding: 4px 20px 8px;
 }
 
-/* Folder levels slide in from the side they were opened toward. */
-.level-slide {
-  animation: level-in var(--layout) both;
-}
-.level-slide.from-trailing {
-  --from: 40px;
-}
-.level-slide.from-leading {
-  --from: -40px;
-}
-@keyframes level-in {
-  from {
-    opacity: 0;
-    transform: translateX(var(--from));
-  }
-}
-
 /* Create template (BotTemplateView). */
 .bot-template {
   width: 560px;

@@ -18,6 +18,17 @@ export type HostState =
   | { kind: 'failed'; message: string }
 
 /** This computer's own host, once it answered. */
+/** The files of another agent's folder that the importer reads (`main/agent-import.ts`). */
+export interface AgentFolder {
+  root: string
+  /** Path relative to the agent's home (or its workspace) → text. */
+  files: Record<string, string>
+  /** Settings and secret files: named, never read. */
+  secretPaths: string[]
+  /** Something was left out for size. */
+  truncated: boolean
+}
+
 export interface LocalHost {
   computerId: string
   baseURL: string
@@ -107,6 +118,8 @@ export type WindowCommand =
   | { kind: 'voiceKey'; key: VoiceKey }
   /** The chat window was shown again after being hidden (`window_opened`). */
   | { kind: 'windowOpened' }
+  /** The n8n window's start page asks for its Settings page. */
+  | { kind: 'openN8nSettings' }
 
 /** The app's own updates (electron-updater, release builds only). */
 export interface UpdateState {
@@ -240,6 +253,10 @@ export interface CodyncBridge {
     show(id: string, html: Uint8Array): Promise<void>
     openInBrowser(id: string, html: Uint8Array): Promise<void>
   }
+  agentImport: {
+    /** Asks for another agent's folder and reads the few files that matter; null when cancelled. */
+    pick(): Promise<AgentFolder | null>
+  }
   files: {
     begin(file: SharedFile): Promise<string | null>
     write(id: string, offset: number, data: Uint8Array): Promise<void>
@@ -282,5 +299,14 @@ export interface CodyncBridge {
   screen: {
     open(request: { computerId: string; name: string; vncPort?: number }): Promise<void>
     target(computerId: string): Promise<{ computerId: string; name: string; url: string }>
+  }
+  /** The n8n window: the n8n editor, or this window's start page while the host brings it up. */
+  n8n: {
+    /** Opens (or focuses) the window, from the chat window. */
+    open(): Promise<void>
+    /** The start page calls it once the instance runs: the window then loads the editor. */
+    gotoEditor(): Promise<void>
+    /** The start page's "Open settings": the chat window shows Settings → n8n. */
+    openSettings(): void
   }
 }

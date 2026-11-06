@@ -1,0 +1,17 @@
+.demo-badge {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  align-items: center;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
+}
+
+.demo-badge-text {
+  color: var(--background);
+  white-space: nowrap;
+}

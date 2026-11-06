@@ -1,5 +1,5 @@
 import type { CallError } from '@shared/ipc'
-import { isChat, isReplyable, normalizeBot, quoteOf, type Bot, type BotDraft, type Entry, type GroupDraft } from '@shared/models'
+import { isChat, isReplyable, normalizeBot, quoteOf, type N8nState, type Bot, type BotDraft, type Entry, type GroupDraft } from '@shared/models'
 import * as story from './story'
 
 // An in-memory codync-host for the website demo: the methods the renderer calls, with the
@@ -21,6 +21,7 @@ export class FakeHost {
   private nextReply = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
   private analytics = true
+  private n8n: N8nState = { enabled: false, state: 'stopped', error: null, url: null, port: 5679, path: null, mcp: false, auth: null }
 
   constructor(
     readonly version: string,
@@ -44,7 +45,7 @@ export class FakeHost {
       ...[...this.bots.values()].filter((b) => b.rev > since).map((b) => ({ rev: b.rev, line: { type: 'bot', rev: b.rev, bot: this.botJSON(b) } })),
       ...this.entries.filter((e) => e.rev > since).map((e) => ({ rev: e.rev, line: { type: 'entry', rev: e.rev, entry: e } })),
     ].sort((a, b) => a.rev - b.rev)
-    const hello = { type: 'hello', hostId: this.hostId, computerId: story.COMPUTER_ID, rev: this.rev, usage: story.usage(Date.now()), screen: null }
+    const hello = { type: 'hello', hostId: this.hostId, computerId: story.COMPUTER_ID, rev: this.rev, usage: story.usage(Date.now()), screen: null, n8n: this.n8n }
     let open = true
     const listener = (line: string) => open && onData(line)
     setTimeout(() => {
@@ -61,6 +62,10 @@ export class FakeHost {
   private emit(event: object) {
     const line = JSON.stringify(event)
     for (const l of this.listeners) l(line)
+  }
+
+  private emitN8n() {
+    this.emit({ type: 'n8n', n8n: this.n8n })
   }
 
   private emitBot(bot: Bot) {
@@ -168,6 +173,7 @@ export class FakeHost {
         return {
           hostId: this.hostId, computerId: story.COMPUTER_ID, signKey: '', boxKey: '', cloud: null, name: story.HOST_NAME,
           version: this.version, minApp: this.version, os: 'macos', device: 'MacBookPro', home: '/Users/demo', rev: this.rev, analytics: this.analytics,
+          n8n: this.n8n,
           urls: [], backends: [
             { id: 'claude', name: 'Claude Code', available: true, installed: true, signedIn: true, command: 'claude', installHint: '' },
             { id: 'codex', name: 'Codex', available: true, installed: true, signedIn: true, command: 'codex', installHint: '' },
@@ -306,6 +312,44 @@ export class FakeHost {
         return { enabled: this.analytics }
       case 'track':
         return {}
+      case 'n8nStatus':
+        return this.n8n
+      case 'n8nStart': {
+        if (this.n8n.state !== 'stopped') return this.n8n
+        this.n8n = { ...this.n8n, enabled: true, state: 'starting', error: null, url: this.n8n.path ? `http://127.0.0.1:${this.n8n.port}` : null }
+        this.emitN8n()
+        setTimeout(() => {
+          if (this.n8n.state !== 'starting') return
+          this.n8n = { ...this.n8n, state: 'running' }
+          this.emitN8n()
+        }, 1200)
+        return this.n8n
+      }
+      case 'n8nStop': {
+        this.n8n = { ...this.n8n, state: 'stopped', error: null }
+        this.emitN8n()
+        return this.n8n
+      }
+      case 'setN8nEnabled': {
+        this.n8n = { ...this.n8n, enabled: b.enabled === true }
+        if (b.enabled === true) void this.call('n8nStart', {})
+        else this.n8n = { ...this.n8n, state: 'stopped', error: null }
+        this.emitN8n()
+        return this.n8n
+      }
+      case 'setN8nPath': {
+        const path = str('path') || null
+        this.n8n = { ...this.n8n, path, url: path ? `http://127.0.0.1:${this.n8n.port}` : null }
+        this.emitN8n()
+        return this.n8n
+      }
+      case 'setN8nPort': {
+        const port = Number(b.port)
+        if (!Number.isInteger(port) || port < 1024) throw fail('Port must be 1024 or higher')
+        this.n8n = { ...this.n8n, port, url: this.n8n.path ? `http://127.0.0.1:${port}` : null }
+        this.emitN8n()
+        return this.n8n
+      }
       default:
         throw fail(DEMO_UNAVAILABLE)
     }

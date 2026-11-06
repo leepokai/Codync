@@ -34,7 +34,7 @@ export function UsageLimits({ usage }: { usage: Usage }) {
                   <Text tone="secondary" truncate className="settings-usage-reset">{resetLine(resetDescription(w) ?? '')}</Text>
                 </>
               )}
-            </HStack>
+            </div>
           ))}
         </VStack>
       ))}

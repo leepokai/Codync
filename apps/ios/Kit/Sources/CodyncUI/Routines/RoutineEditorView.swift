@@ -12,6 +12,8 @@ struct RoutineEditorView: View {
     @State private var instruction = ""
     @State private var schedule = RoutineScheduleDraft()
     @State private var timeout = "3600"
+    @State private var missedPolicy = "skip"
+    @State private var limitPolicy = "wait"
     @State private var busy = false
     @State private var error: String?
     @State private var advanced = false
@@ -80,6 +82,8 @@ struct RoutineEditorView: View {
                 name = routine.name
                 instruction = routine.instruction
                 timeout = String(routine.timeoutSeconds ?? 3600)
+                missedPolicy = routine.missedPolicy ?? "skip"
+                limitPolicy = routine.limitPolicy ?? "wait"
             }
             await loadSchedule()
         }
@@ -130,6 +134,18 @@ struct RoutineEditorView: View {
                     if advanced {
                         Field("Timeout (seconds)") { TextField("3600", text: $timeout).routineInput().focused($typing) }
                         Text(L10n.tr("A run is stopped after this long. 1 second to 24 hours."))
+                            .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
+                        Field("Missed runs") {
+                            ChoicePicker(selection: $missedPolicy,
+                                         options: [("skip", "Skip it"), ("runOnce", "Run the newest one")], fitsAvailableWidth: true)
+                        }
+                        Text(L10n.tr("When this computer is off at a run's time, its missed runs follow this rule."))
+                            .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
+                        Field("When out of usage") {
+                            ChoicePicker(selection: $limitPolicy,
+                                         options: [("wait", "Wait for the limit to reset"), ("skip", "Skip the run")], fitsAvailableWidth: true)
+                        }
+                        Text(L10n.tr("The bot's daily token limit is used up: its runs follow this rule."))
                             .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     }
                 }
@@ -213,8 +229,36 @@ struct RoutineEditorView: View {
         }
         switch schedule.calendarStyle {
         case "hourly":
-            Field("At minute") {
-                ChoicePicker(selection: $schedule.minute, options: (0..<60).map { (id: $0, label: String(format: ":%02d", $0)) })
+            if schedule.windowStart == nil && schedule.windowEnd == nil {
+                Field("At minute") {
+                    HStack(spacing: 8) {
+                        ChoicePicker(selection: $schedule.minute, options: (0..<60).map { (id: $0, label: String(format: ":%02d", $0)) })
+                        // The window the TUI starts from: the workday, 09:00 to 18:00.
+                        IconButton("Only run between two times", systemImage: "clock") {
+                            schedule.windowStart = 9 * 60
+                            schedule.windowEnd = 18 * 60
+                        }
+                    }
+                }
+            } else {
+                // A window's start sets the minute of every run in it.
+                Field("Window") {
+                    HStack(spacing: 8) {
+                        DatePicker("Window start", selection: windowBinding(\.windowStart), displayedComponents: .hourAndMinute)
+                            .labelsHidden().environment(\.timeZone, .gmt)
+                        Text("to").font(.caption).foregroundStyle(Palette.secondary)
+                        DatePicker("Window end", selection: windowBinding(\.windowEnd), displayedComponents: .hourAndMinute)
+                            .labelsHidden().environment(\.timeZone, .gmt)
+                        IconButton("Run through the whole day", systemImage: "xmark.circle") {
+                            schedule.windowStart = nil
+                            schedule.windowEnd = nil
+                        }
+                    }
+                }
+            }
+            Field("Every") {
+                ChoicePicker(selection: $schedule.everyHours,
+                             options: [1, 2, 3, 4, 6, 8, 12].map { (id: $0, label: $0 == 1 ? "hour" : "\($0) hours") })
             }
         case "daily", "weekdays":
             timeField
@@ -225,9 +269,55 @@ struct RoutineEditorView: View {
                              options: [1, 2, 3, 4, 5, 6, 0].map { (id: $0, label: Calendar.current.standaloneWeekdaySymbols[$0]) })
             }
             timeField
+        case "yearly":
+            Field("On") {
+                HStack(spacing: 8) {
+                    ChoicePicker(selection: yearMonthBinding,
+                                 options: (1...12).map { (id: $0, label: Calendar.current.monthSymbols[$0 - 1]) })
+                    ChoicePicker(selection: $schedule.monthDay,
+                                 options: (1...Self.daysInMonth(schedule.yearMonth)).map { (id: $0, label: String($0)) })
+                }
+            }
+            timeField
         default:
             EmptyView()
         }
+    }
+
+    /// A window's minute of the day as a GMT time-of-day Date for a DatePicker; `nil` shows the end of the day.
+    private func windowBinding(_ keyPath: WritableKeyPath<RoutineScheduleDraft, Int?>) -> Binding<Date> {
+        Binding(
+            get: {
+                let minutes = schedule[keyPath: keyPath] ?? 1439
+                return Date(timeIntervalSinceReferenceDate: TimeInterval(minutes * 60))
+            },
+            set: { date in
+                let seconds = Int(date.timeIntervalSinceReferenceDate.rounded(.down)) % 86_400
+                let day = seconds < 0 ? seconds + 86_400 : seconds
+                schedule[keyPath: keyPath] = day / 60
+            }
+        )
+    }
+
+    /// Choosing a month keeps a date that month has; February 29 is one, like the host counts it.
+    private var yearMonthBinding: Binding<Int> {
+        Binding(
+            get: { schedule.yearMonth },
+            set: { month in
+                schedule.yearMonth = month
+                if schedule.monthDay > Self.daysInMonth(month) {
+                    schedule.monthDay = Self.daysInMonth(month)
+                }
+            }
+        )
+    }
+
+    /// The days a month has, counting the leap year, so February 29 is a valid yearly date.
+    private static func daysInMonth(_ month: Int) -> Int {
+        let calendar = Calendar(identifier: .gregorian)
+        guard let date = DateComponents(calendar: calendar, year: 2024, month: month, day: 1).date,
+              let range = calendar.range(of: .day, in: .month, for: date) else { return 31 }
+        return range.count
     }
 
     private var timeField: some View {
@@ -363,7 +453,8 @@ struct RoutineEditorView: View {
             defer { busy = false }
             do {
                 let result = try await client.saveRoutine(botId: botId, id: routine?.id, name: name,
-                    instruction: instruction, schedule: schedule, timeoutSeconds: timeout)
+                    instruction: instruction, schedule: schedule, timeoutSeconds: timeout,
+                    missedPolicy: missedPolicy, limitPolicy: limitPolicy)
                 saved(result)
             } catch { self.error = error.localizedDescription }
         }

@@ -19,7 +19,10 @@ impl Actor {
         match level {
             Level::Within => {}
             Level::Warning => self.notice(
-                &format!("{used} of {whose} {limit} daily tokens used. Routines pause at the limit."),
+                &format!(
+                    "{used} of {whose} {limit} daily tokens used. Routines pause at the limit.{}",
+                    self.saver_note()
+                ),
                 NoticeStyle::Info,
             ),
             Level::Exceeded => {
@@ -29,6 +32,16 @@ impl Actor {
                     NoticeStyle::Error,
                 );
             }
+        }
+    }
+
+    /// What the saver does from here, when this bot has it on and a background model to use.
+    fn saver_note(&self) -> &'static str {
+        let has_model = self.cfg.background_model.as_deref().is_some_and(|m| !m.trim().is_empty());
+        if self.cfg.saver && has_model {
+            " Saver is on: new sessions use the background model until tomorrow."
+        } else {
+            ""
         }
     }
 

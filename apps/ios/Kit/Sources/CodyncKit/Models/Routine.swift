@@ -13,6 +13,10 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
     public var nextRunAt: Int64?
     public var timeoutSeconds: Int?
     public var lastError: String?
+    /// What a due occurrence that could not run follows: `skip` or `runOnce` (older hosts send nothing).
+    public var missedPolicy: String?
+    /// What a run that would pass the bot's daily token limit follows: `wait` or `skip` (older hosts send nothing).
+    public var limitPolicy: String?
 
     /// A timeout as typed, in words: whole hours, else whole minutes, else seconds; anything else as typed.
     public static func timeoutText(_ text: String) -> String {
@@ -52,6 +56,12 @@ public struct RoutineTrigger: Codable, Hashable, Sendable {
     }
 }
 
+/// Occurrences that came due and did not run; `count` is how many.
+public struct RoutineRunMissed: Codable, Hashable, Sendable {
+    public var count: Int
+    public var until: Int64?
+}
+
 public struct RoutineRun: Codable, Identifiable, Hashable, Sendable {
     public var id: String
     public var routineId: String
@@ -62,7 +72,35 @@ public struct RoutineRun: Codable, Identifiable, Hashable, Sendable {
     public var detail: String?
     /// A retry of a run that failed before acting waits until then.
     public var notBefore: Int64?
+    /// The occurrence this run stands for, when its schedule named one.
+    public var scheduledFor: Int64?
+    /// Occurrences that came due and did not run (older hosts send nothing).
+    public var missed: RoutineRunMissed?
+    /// A run holds the bot's turn and it is asking a question: it waits on the user.
+    public var needsAttention: Bool?
     public var isActive: Bool { ["pending", "starting", "running", "recovering"].contains(status) }
+
+    /// A run's status in the routines list; a waiting retry says when it goes, a skipped run why.
+    public var label: String {
+        let missedSuffix = self.missed.map { $0.count > 0 ? " · \($0.count) missed" : "" } ?? ""
+        switch status {
+        case "pending":
+            if let at = notBefore {
+                let date = Date(milliseconds: at)
+                return date > .now ? "Retrying at \(date.formatted(date: .omitted, time: .shortened))" : "Retrying"
+            }
+            return "Queued"
+        case "starting": return "Starting"
+        case "running": return needsAttention == true ? "Waiting on you" : "Running"
+        case "recovering": return "Resuming after restart"
+        case "failed": return "Failed\(missedSuffix)"
+        case "interrupted": return "Interrupted\(missedSuffix)"
+        case "cancelled":
+            // A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped.
+            return scheduledFor != nil || missed != nil ? "Skipped\(missedSuffix)" : "Cancelled"
+        default: return status.capitalized
+        }
+    }
 }
 
 public struct RoutineListing: Codable, Sendable {
@@ -105,7 +143,8 @@ extension HostClient {
 
 extension HostClient {
     public func saveRoutine(botId: String, id: String?, name: String, instruction: String,
-                            triggers: [RoutineTrigger], timeoutSeconds: Int) async throws -> Routine {
+                            triggers: [RoutineTrigger], timeoutSeconds: Int,
+                            missedPolicy: String? = nil, limitPolicy: String? = nil) async throws -> Routine {
         struct Body: Encodable {
             let botId: String
             let id: String?
@@ -113,10 +152,13 @@ extension HostClient {
             let instruction: String
             let triggers: [RoutineTrigger]
             let timeoutSeconds: Int
+            let missedPolicy: String?
+            let limitPolicy: String?
         }
         struct Response: Decodable { let routine: Routine }
         let response: Response = try await call("saveRoutine", Body(botId: botId, id: id, name: name,
-            instruction: instruction, triggers: triggers, timeoutSeconds: timeoutSeconds))
+            instruction: instruction, triggers: triggers, timeoutSeconds: timeoutSeconds,
+            missedPolicy: missedPolicy, limitPolicy: limitPolicy))
         return response.routine
     }
 }

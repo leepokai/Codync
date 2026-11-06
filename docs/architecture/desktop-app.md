@@ -60,7 +60,11 @@ also stays inside its section); drag a bot row or press Alt+Up/Down on the selec
 it ([bot order](../features/computer-order.md#bot-order), synced through the host), and
 Up/Down navigation skips folded computers and sections.
 Search still includes their bots. The compact sidebar uses computer badges for the same
-section controls. Ordering is saved locally immediately and survives restart, with separate
+section controls. The window keeps a 52 px icon rail at the far left (bots, usage, n8n,
+extensions, settings and account), with the list panel beside it; narrowing the panel
+collapses it to the rail (`AppRail.tsx`, `app-rail.css`). On a first run the host finds an
+n8n monorepo in `~/Documents/automan` (or the other usual places), so a machine that
+already has it starts without a setup step. Ordering is saved locally immediately and survives restart, with separate
 preferences per account and cloud environment. See [computer ordering](../features/computer-order.md).
 The TUI connects to one host at a time, so it keeps its single roster.
 

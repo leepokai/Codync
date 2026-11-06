@@ -30,6 +30,10 @@ export interface Routine {
   nextRuns?: number[] | null
   timeoutSeconds?: number | null
   lastError?: string | null
+  /** What a due occurrence that cannot run follows: `runOnce` or `skip`. */
+  missedPolicy?: string | null
+  /** What a run that would pass the bot's daily token limit follows: `wait` or `skip`. */
+  limitPolicy?: string | null
 }
 
 export interface RoutineRun {
@@ -42,12 +46,19 @@ export interface RoutineRun {
   detail?: string | null
   /** A retry of a run that failed before acting waits until then. */
   notBefore?: number | null
+  /** The occurrence this run stands for, when its schedule named one. */
+  scheduledFor?: number | null
+  /** Occurrences that came due and did not run; `missed.count` is how many. */
+  missed?: { count: number; until?: number | null } | null
+  /** A run holds the bot's turn and it is asking a question: it waits on the user. */
+  needsAttention?: boolean | null
 }
 
 export const isActiveRun = (run: RoutineRun) => ['pending', 'starting', 'running', 'recovering'].includes(run.status)
 
-/** A run's status in the routines list; a waiting retry says when it goes. */
+/** A run's status in the routines list; a waiting retry says when it goes, a skipped run why. */
 export function runLabel(run: RoutineRun, now = Date.now()) {
+  const missed = run.missed && run.missed.count > 0 ? ` · ${run.missed.count} missed` : ''
   switch (run.status) {
     case 'pending':
       if (run.notBefore && run.notBefore > now) return `Retrying at ${new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })}`
@@ -55,13 +66,16 @@ export function runLabel(run: RoutineRun, now = Date.now()) {
     case 'starting':
       return 'Starting'
     case 'running':
-      return 'Running'
+      return run.needsAttention ? 'Waiting on you' : 'Running'
     case 'recovering':
       return 'Resuming after restart'
     case 'failed':
-      return 'Failed'
+      return `Failed${missed}`
     case 'interrupted':
-      return 'Interrupted'
+      return `Interrupted${missed}`
+    case 'cancelled':
+      // A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped.
+      return run.scheduledFor || run.missed ? `Skipped${missed}` : 'Cancelled'
     default:
       return run.status.charAt(0).toUpperCase() + run.status.slice(1)
   }
@@ -80,6 +94,25 @@ export interface RoutineWebhook {
   connected: boolean
 }
 
+/** A moment on the routines calendar: a run that stood for it, or an occurrence still to come. */
+export interface RoutineCalendarMoment {
+  routineId: string
+  at: number
+}
+
+export interface RoutineCalendarRun extends RoutineCalendarMoment {
+  id: string
+  status: string
+  /** It stands for a due occurrence that did not run; a cancelled run that only stopped isn't. */
+  skipped?: boolean | null
+}
+
+export interface RoutineCalendarListing {
+  routines: Routine[]
+  runs: RoutineCalendarRun[]
+  scheduled: RoutineCalendarMoment[]
+}
+
 /** Form values only. */
 export interface RoutineScheduleDraft {
   kind: string
@@ -87,9 +120,17 @@ export interface RoutineScheduleDraft {
   unit: number
   calendarStyle: string
   weekday: number
-  selectedDays: number[]
+  /** Hourly: the weekdays it runs on; null or empty is every day. */
+  selectedDays: number[] | null
   monthDay: number
+  /** Yearly: the month (1-12) of the one date. */
+  yearMonth: number
   minuteStep: number
+  /** Hourly: repeat every N hours (1, 2, 3, 4, 6, 8, 12); 1 runs on the hour. */
+  everyHours: number
+  /** Hourly: the window, minutes from midnight; null on either end runs through the day. */
+  windowStart: number | null
+  windowEnd: number | null
   hour: number
   minute: number
   at: number
@@ -104,9 +145,13 @@ export const emptyDraft = (): RoutineScheduleDraft => ({
   unit: 3600,
   calendarStyle: 'daily',
   weekday: 1,
-  selectedDays: [],
+  selectedDays: null,
   monthDay: 1,
+  yearMonth: 1,
   minuteStep: 15,
+  everyHours: 1,
+  windowStart: null,
+  windowEnd: null,
   hour: 9,
   minute: 0,
   at: 0,
@@ -135,6 +180,7 @@ export const repeatChoices = [
   { id: 'daily', label: 'Daily' },
   { id: 'weekdays', label: 'Weekdays' },
   { id: 'weekly', label: 'Weekly' },
+  { id: 'yearly', label: 'Yearly' },
   { id: 'custom', label: 'Custom' },
 ] as const
 

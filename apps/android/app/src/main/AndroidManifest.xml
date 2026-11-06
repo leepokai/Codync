@@ -55,6 +55,10 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_usage" />
         </receiver>
+        <receiver android:name=".OverviewWidgetReceiver" android:exported="true" android:label="Codync">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_overview" />
+        </receiver>
         <receiver android:name=".LockSummaryWidgetReceiver" android:exported="true" android:label="Lock screen summary">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_lock_summary" />
@@ -65,6 +69,9 @@
             <!-- An active tile: the app redraws it whenever the widgets' report changes, not only when Quick Settings opens. -->
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
         </service>
+        <!-- A small message to one bot from the overview widget; only the widget starts it. -->
+        <activity android:name=".WidgetQuickReplyActivity" android:exported="false" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".WidgetConfigurationActivity" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
         </activity>

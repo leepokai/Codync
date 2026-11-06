@@ -1,0 +1,56 @@
+/* The folder browser (components/FolderPicker.tsx): a sheet page that drills down in place. */
+.folder-picker {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--background);
+}
+
+/* Folder levels slide in from the side they were opened toward. */
+.level-slide {
+  animation: level-in var(--layout) both;
+}
+.level-slide.from-trailing {
+  --from: 40px;
+}
+.level-slide.from-leading {
+  --from: -40px;
+}
+@keyframes level-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--from));
+  }
+}
+
+.folder-back {
+  padding-left: 10px;
+}
+.folder-title {
+  flex: 1;
+  min-width: 0;
+}
+.folder-levels {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.folder-level-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  font-size: var(--text-callout);
+}
+.folder-use {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--accent);
+}
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, IconButton, SegmentedChoice, Switch } from '../../components/Controls'
-import { Sheet } from '../../components/Overlay'
+import { ModalHeader, Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useScreenViewed } from '../../store/analytics'
@@ -10,6 +10,7 @@ import { RoutineEditorView } from './RoutineEditorView'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
 import { RoutineRunHistory } from './RoutineRunHistory'
+import { RoutineCalendarView } from './RoutineCalendarView'
 import { RoutineFlowView } from './flow/RoutineFlowView'
 
 
@@ -26,7 +27,8 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
   const [routines, setRoutines] = useState<Routine[]>([])
   const [runs, setRuns] = useState<RoutineRun[]>([])
   const [editing, setEditing] = useState<EditorTarget | null>(null)
-  const [view, setView] = useState<'list' | 'flow'>('list')
+  const [view, setView] = useState<'list' | 'flow' | 'calendar'>('list')
+  const [canvasOpen, setCanvasOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -93,7 +95,8 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
     if (active) return runLabel(active)
     if (routine.lastError) return 'Schedule needs attention'
     const last = runs.find((r) => r.routineId === routine.id)
-    if (last && ['failed', 'interrupted'].includes(last.status)) return `Last run ${runLabel(last).toLowerCase()}`
+    const skipped = last?.status === 'cancelled' && (!!last.scheduledFor || !!last.missed)
+    if (last && (['failed', 'interrupted'].includes(last.status) || skipped)) return `Last run ${runLabel(last).toLowerCase()}`
     return routine.triggerDescriptions.join(' · ')
   }
 
@@ -117,8 +120,14 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
         <IconButton title="Set up a routine" icon="plus" disabled={store.isOffline} onClick={() => open(null)} />
         {onClose ? <IconButton title="Close routines" icon="xmark" onClick={onClose} /> : null}
       </HStack>
-      <SegmentedChoice selection={view} options={[{ id: 'list', label: 'List' }, { id: 'flow', label: 'Flow' }]} onChange={setView} />
-      {view === 'flow' ? <RoutineFlowView botId={botId} /> : (
+      <SegmentedChoice selection={view} options={[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }, { id: 'flow', label: 'Flow' }]} onChange={(next) => {
+        setView(next)
+        // The canvas needs room: the details column is too narrow for a graph.
+        if (next === 'flow') setCanvasOpen(true)
+      }} />
+      {view === 'flow' ? <RoutineFlowView botId={botId} onExpand={() => setCanvasOpen(true)} /> : view === 'calendar' ? (
+        <RoutineCalendarView botId={botId} />
+      ) : (
         <>
         {loadError ? <HStack gap={8}><Text size="caption" tone="danger">{loadError}</Text>{window.codync.platform === 'win32' ? <Button kind="secondary" onClick={() => void load()}>Retry loading routines</Button> : null}</HStack> : null}
         {error ? <Text size="caption" tone="danger" className="routines-error">{error}</Text> : null}
@@ -157,6 +166,17 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
         </Sheet>
         </>
       )}
+      <Sheet open={canvasOpen} onClose={() => setCanvasOpen(false)} width="min(1120px, calc(100vw - 40px))" height="min(760px, calc(100vh - 40px))">
+        <VStack gap={14} className="routine-flow-sheet">
+          <ModalHeader
+            icon="clock.arrow.circlepath"
+            title={tr('Routine flow')}
+            subtitle={tr('Drag from a bot\'s dot to another bot to hand its reply on.')}
+            onClose={() => setCanvasOpen(false)}
+          />
+          <RoutineFlowView botId={botId} />
+        </VStack>
+      </Sheet>
     </VStack>
   )
 }

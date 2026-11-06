@@ -51,6 +51,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   /** Opens an artifact card's artifact over the chat. */
   openArtifact?: (artifactId: string) => void
 }) {
+  const host = useStore()
   const reply = onReply && isReplyable(entry) ? () => onReply(entry) : undefined
   switch (entry.kind) {
     case 'user':
@@ -81,11 +82,12 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       if (entry.data.connectionRequest) return <div className="chat-row group-start"><ConnectionRequestCard entry={entry} /></div>
       if (entry.data.handoff) return <div className="chat-row notice"><HandoffNotice entry={entry} card={entry.data.handoff} /></div>
       if (entry.data.takeoverRequest) return <div className="chat-row group-start"><TakeoverRequestNotice entry={entry} /></div>
+      if (entry.data.pausedTurn) return <div className="chat-row group-start"><PausedTurnNotice entry={entry} /></div>
       if (entry.data.passkeyWall) return <div className="chat-row group-start"><PasskeyWallNotice entry={entry} /></div>
       if (entry.data.chiefIncident) return <div className="chat-row group-start"><ChiefIncidentNotice entry={entry} /></div>
       if (entry.data.botApp) return <div className="chat-row group-start"><BotAppNotice entry={entry} openApp={openApp} /></div>
       if (entry.data.agentSwitch) return <div className="chat-row notice"><AgentSwitchNotice entry={entry} carried={entry.data.agentSwitch.carried} /></div>
-      return <div className="chat-row notice"><NoticeRow entry={entry} addFallback={entry.data.addFallback && openAgent ? () => openAgent(entry.data.author ?? entry.botId) : undefined} /></div>
+      return <div className="chat-row notice"><NoticeRow entry={entry} addFallback={entry.data.addFallback && openAgent ? () => openAgent(entry.data.author ?? entry.botId) : undefined} undo={entry.data.memoryUndo && !entry.data.memoryUndo.undone ? () => void host.undoMemoryChange(entry) : undefined} /></div>
   }
 })
 
@@ -122,13 +124,13 @@ function TakeoverRequestNotice({ entry }: { entry: Entry }) {
   const store = useLiveStore()
   const req = entry.data.takeoverRequest
   if (!req) return null
-  const resolved = req.status === 'resolved' || req.status === 'cancelled'
+  const resolved = req.status === 'resolved' || req.status === 'cancelled' || req.status === 'expired'
   return (
     <ComputerCard
       frame={{
         url: req.url ?? undefined,
         title: req.reason,
-        action: resolved ? 'Completed' : 'Action needed',
+        action: req.status === 'expired' ? 'Expired' : resolved ? 'Completed' : 'Action needed',
         active: !resolved,
       }}
       onFinishTakeover={() =>
@@ -137,6 +139,33 @@ function TakeoverRequestNotice({ entry }: { entry: Entry }) {
         })
       }
     />
+  )
+}
+
+/** A turn that stopped half done: said so, with one tap to go on (a few times in a row, then it asks for words). */
+function PausedTurnNotice({ entry }: { entry: Entry }) {
+  const store = useLiveStore()
+  const tr = useTr()
+  const [error, setError] = useState<string | null>(null)
+  const paused = entry.data.pausedTurn
+  if (!paused) return null
+  const open = paused.status === 'waiting'
+  return (
+    <VStack gap={8} className="bubble agent">
+      <HStack gap={8}>
+        <Icon name="pause.circle.fill" size={14} color="var(--warning, #ff9f0a)" />
+        <Text weight="semibold" tone="attention">{tr(paused.verdict === 'truncated' ? 'Answer cut short' : 'Paused halfway')}</Text>
+      </HStack>
+      <Text size="footnote" tone="secondary">{entry.data.text}</Text>
+      {open && paused.canContinue ? (
+        <Button kind="primary" onClick={() => void store.continueTurn(entry).then(setError)}>{tr('Continue')}</Button>
+      ) : (
+        <Text size="caption" tone="tertiary">
+          {tr(open ? 'Say what remains in a message.' : 'Continued')}
+        </Text>
+      )}
+      {error ? <Text size="caption" tone="danger">{error}</Text> : null}
+    </VStack>
   )
 }
 
@@ -210,7 +239,7 @@ function ChiefIncidentNotice({ entry }: { entry: Entry }) {
 /** Follows the store: the card shows a spinner while its answer is on its way. */
 function LivePermission({ entry }: { entry: Entry }) {
   const store = useLiveStore()
-  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
+  return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o, rule) => store.respond(entry, o, rule)} propose={() => store.proposeRule(entry)} />
 }
 
 /** Who wrote a message: their avatar and name in their color, or `name` for a bot on another computer. */
@@ -342,7 +371,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
   )
 }
 
-export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: () => void }) {
+export function NoticeRow({ entry, addFallback, undo }: { entry: Entry; addFallback?: () => void; undo?: () => void }) {
   if (window.codync.platform === 'win32' && entry.data.source === 'voice_receipt') return <VoiceReceipt entry={entry} />
   const text = entry.data.text ?? ''
   if (entry.data.callSeconds !== undefined) {
@@ -362,6 +391,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
             {addFallback ? <Button kind="secondary" onClick={addFallback}>Add a fallback</Button> : null}
+            {undo ? <Button kind="secondary" onClick={undo}>Undo</Button> : null}
           </VStack>
         </HStack>
       )

@@ -67,7 +67,7 @@ async fn the_lead_is_made_once_with_its_check_in_and_stays() {
     let f = Fixture::new();
     let lead = make(&f.hub, f.cfg(NAME)).unwrap();
     assert_eq!(id(&f.hub.store).unwrap().as_deref(), Some(lead.as_str()));
-    let routines = f.hub.routines.list(&lead);
+    let routines = f.hub.routines.list(&lead, |_| false);
     let check_in = &routines["routines"][0];
     assert_eq!(
         (check_in["name"].as_str(), check_in["triggers"][0]["expression"].as_str()),
@@ -99,7 +99,7 @@ async fn the_lead_is_made_once_with_its_check_in_and_stays() {
 async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
     let f = Fixture::new();
     let lead = make(&f.hub, f.cfg(NAME)).unwrap();
-    let routine = f.hub.routines.list(&lead)["routines"][0]["id"].as_str().unwrap().to_owned();
+    let routine = f.hub.routines.list(&lead, |_| false)["routines"][0]["id"].as_str().unwrap().to_owned();
     let (scheduled, test) = (json!({"source": "schedule"}), json!({"source": "test"}));
     let used = |percent: f64| Usage {
         providers: vec![Provider {

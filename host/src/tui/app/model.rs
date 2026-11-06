@@ -33,6 +33,28 @@ pub enum After {
     Sent(String),
     Connection(String, super::super::connections::Step),
     Hello,
+    /// `testApprovalRule`: what the host says about a command tried in the rules sheet.
+    RuleTest,
+    /// `securityProfiles`.
+    Profiles,
+    /// `hostHealth`: the header's memory word; a host without it says nothing.
+    Health,
+    /// `telegramStatus` and the Telegram calls that answer with it.
+    Channels,
+    /// `slackStatus`.
+    ChannelsSlack,
+    /// `skillProposals` and the calls that answer with the inbox.
+    Proposals,
+    /// `beliefs`: the notes of the bot as beliefs.
+    Beliefs,
+    /// A confirm, forget or restore of a belief went through.
+    BeliefsChanged,
+    /// `proposeRule` for an "always allow" on card `.0`, option `.1`.
+    Proposal(String, String),
+    /// The rules sheet's save (`updateBot`).
+    RulesSaved,
+    /// `weekSummary`: the last seven days, for the usage sheet; a host without it says nothing.
+    Week,
     /// `track`: fire and forget; analytics never surfaces an error.
     Tracked,
     Analytics,

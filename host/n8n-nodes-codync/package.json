@@ -1,0 +1,17 @@
+{
+  "name": "n8n-nodes-codync",
+  "version": "1.0.0",
+  "description": "Codync node: the Codync bots on this computer, from n8n workflows",
+  "keywords": [
+    "codync",
+    "bot"
+  ],
+  "automan": {
+    "nodes": [
+      "dist/CodyncBot.node.js"
+    ],
+    "credentials": [
+      "dist/CodyncApi.credentials.js"
+    ]
+  }
+}

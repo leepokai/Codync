@@ -169,9 +169,15 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     /// Missing when the host can't tell.
     public var signedIn: Bool?
     public var canInstall: Bool?
+    /// The signed-in account, when the agent's own files name it.
+    public var email: String?
     /// Only for an agent that runs on Node.js, on a computer without its own: Codync's copy
     /// is `missing` or `added`.
     public var node: String?
+    /// Whether this agent can keep isolated accounts beside the computer's own sign-in.
+    public var accounts: Bool?
+    /// Whether the computer's own sign-in can be removed (a logout command or its credential files).
+    public var signOut: Bool?
 
     /// It can't run until Node.js is added to the computer.
     public var needsNode: Bool { node == "missing" }
@@ -328,6 +334,11 @@ public struct BotDraft: Codable, Hashable, Sendable {
     /// Nil from a host without the switch, so it isn't sent.
     public var offeredToNetwork: Bool?
     public var reachableByAssistants: Bool?
+    /// Nil from a host without it, so it isn't sent. Empty clears it.
+    public var verifyCommand: String?
+    public var backgroundModel: String?
+    public var saver: Bool?
+    public var personality: Personality?
     /// Only sent when the user changes it: unset, the host picks by the bot's folder.
     public var sharedMemory: Bool?
     /// Only sent when the user changes it.
@@ -372,6 +383,10 @@ public struct BotDraft: Codable, Hashable, Sendable {
         manageTeam = bot.manageTeam
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
+        verifyCommand = bot.verifyCommand
+        backgroundModel = bot.backgroundModel
+        saver = bot.saver
+        personality = bot.personality
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -387,6 +402,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
+        follow(\.verifyCommand); follow(\.backgroundModel); follow(\.saver); follow(\.personality)
         return draft
     }
 }

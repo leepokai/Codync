@@ -12,6 +12,9 @@ impl App {
         // A random look, out of every color with every shape.
         let looks = COLORS.len() * SHAPES.len();
         let n = usize::try_from(crate::store::now_ms()).unwrap_or(0) % looks;
+        if self.profiles.is_empty() {
+            self.call("securityProfiles", json!({}), After::Profiles);
+        }
         self.overlays.push(Overlay::NewBot(NewBot {
             name: Editor::default(),
             color: n % COLORS.len(),
@@ -61,6 +64,7 @@ impl NewBot {
             "name": self.name.text.trim(),
             "cwd": "",
             "permission": "auto",
+            "securityProfile": self.profile,
             "notify": true,
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],

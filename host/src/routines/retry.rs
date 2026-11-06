@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(after_failure(&mut s, i, true, 1_000), Vec::<String>::new());
         assert_eq!(s.runs[0].retry_at, Some(61_000));
         let next = &s.runs[1];
-        assert!(next.status == Status::Pending);
+        assert_eq!(next.status, Status::Pending);
         assert_eq!((next.attempt, next.not_before), (1, Some(61_000)));
         assert_eq!(next.event["source"], "schedule");
         assert_eq!(retry_note(60_000), "Trying again in 1 minute.");

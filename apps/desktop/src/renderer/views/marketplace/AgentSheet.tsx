@@ -13,6 +13,7 @@ import { errorText, market, type AgentAuth, type AuthMethod } from './market-mod
 import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
 import { AgentBrings } from './AgentBrings'
 import { SetupTerminalView } from './SetupTerminal'
+import { AgentAccounts } from './AgentAccounts'
 
 type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
 
@@ -141,7 +142,7 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
 
   const statusText = checking
     ? (auth === null ? `Checking with ${backend.name}… The first check can download it.` : 'Checking…')
-    : signedIn === true ? 'Signed in.'
+    : signedIn === true ? (backend.email ? `Signed in as ${backend.email}.` : 'Signed in.')
     : nodeMissing ? 'Add Node.js first.'
     : !setUp ? (curated ? 'Install it first.' : `Not set up on ${host} yet.`)
     : signedIn === false ? 'Not signed in yet.'

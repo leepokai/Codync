@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import com.codync.android.core.BotDraft
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /** Fork controls shared by the full editor and the details sheet's Settings page. */
 @Composable internal fun ForkBotSettings(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit) {
@@ -22,11 +24,16 @@ import com.codync.android.design.*
 }
 
 internal fun CardRows.botAccountRow(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit) {
-    if (draft.backend != "antigravity") return
+    val info = backends(state).firstOrNull { it.text("id") == draft.backend }
+    val supported = info?.get("accounts")?.jsonPrimitive?.booleanOrNull != false
+    val canSignOut = info?.get("signOut")?.jsonPrimitive?.booleanOrNull == true
+    if (!supported) return
     row {
         AgentAccountPicker(draft.backend, draft.account, state.actualConnection is LinkState.Ready,
             "${state.generation}/${state.computer?.id}/${draft.id}",
-            { store.agentAccounts(draft.backend) }, { store.authenticateAgentAccount(draft.backend) }) {
+            supported, canSignOut,
+            { store.agentAccounts(draft.backend) }, { store.authenticateAgentAccount(draft.backend) },
+            { store.deleteAgentAccount(it) }, { store.signOutAgent(draft.backend) }) {
             change(draft.copy(account = it, model = null, modelOptions = emptyMap()))
         }
     }

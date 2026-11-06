@@ -26,10 +26,16 @@ enum Release {
 
 /// `used`: each live session's last use. Only an agent that can close sessions releases them one
 /// by one; any agent that can load them is stopped once all are idle.
-fn plan(used: &HashMap<String, Instant>, started: Instant, can_close: bool, now: Instant) -> Release {
+fn plan(
+    used: &HashMap<String, Instant>,
+    started: Instant,
+    can_close: bool,
+    now: Instant,
+    idle_for: Duration,
+) -> Release {
     let mut idle: Vec<String> =
-        used.iter().filter(|(_, at)| now.duration_since(**at) >= IDLE).map(|(sid, _)| sid.clone()).collect();
-    if idle.len() == used.len() && now.duration_since(started) >= IDLE {
+        used.iter().filter(|(_, at)| now.duration_since(**at) >= idle_for).map(|(sid, _)| sid.clone()).collect();
+    if idle.len() == used.len() && now.duration_since(started) >= idle_for {
         Release::Agent
     } else if can_close && !idle.is_empty() {
         idle.sort();
@@ -48,6 +54,18 @@ impl Actor {
         }
         self.idle_checked = Instant::now();
         self.tend_idle();
+        self.release(IDLE).await;
+    }
+
+    /// The computer is short of memory: whatever is idle goes now, not after [`IDLE`]. Busy bots keep everything.
+    pub(super) async fn free_memory(&mut self) {
+        if self.at_rest() {
+            tracing::info!(bot = %self.cfg.id, "giving memory back: the computer is short of it");
+            self.release(Duration::ZERO).await;
+        }
+    }
+
+    async fn release(&mut self, idle_for: Duration) {
         if !self.queue.is_empty() {
             return;
         }
@@ -55,7 +73,7 @@ impl Actor {
         if !conn.sessions.load {
             return;
         }
-        let release = plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now());
+        let release = plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now(), idle_for);
         let leader = conn.acp.pid();
         if release == Release::Nothing || background_work(leader).await {
             return;
@@ -210,15 +228,24 @@ mod tests {
         let used =
             |rows: &[(&str, Instant)]| rows.iter().map(|(s, at)| ((*s).to_owned(), *at)).collect::<HashMap<_, _>>();
         assert_eq!(
-            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, now),
+            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, now, IDLE),
             Release::Sessions(vec!["t1".into()])
         );
-        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, now), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, now), Release::Agent);
-        assert_eq!(plan(&used(&[]), started, true, now), Release::Agent);
+        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, now, IDLE), Release::Nothing);
+        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, now, IDLE), Release::Agent);
+        assert_eq!(plan(&used(&[]), started, true, now, IDLE), Release::Agent);
         // A just-started agent isn't stopped before it had a chance to be used.
-        assert_eq!(plan(&used(&[]), now, true, now), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", fresh)]), started, true, now), Release::Nothing);
+        assert_eq!(plan(&used(&[]), now, true, now, IDLE), Release::Nothing);
+        assert_eq!(plan(&used(&[("main", fresh)]), started, true, now, IDLE), Release::Nothing);
+    }
+
+    #[test]
+    fn a_computer_short_of_memory_lets_go_of_what_is_idle_at_once() {
+        let started = Instant::now();
+        let now = started + Duration::from_secs(5);
+        let used = HashMap::from([("main".to_owned(), now)]);
+        assert_eq!(plan(&used, started, true, now, IDLE), Release::Nothing, "a chat that just talked stays warm");
+        assert_eq!(plan(&used, started, true, now, Duration::ZERO), Release::Agent, "under pressure it does not");
     }
 
     #[test]

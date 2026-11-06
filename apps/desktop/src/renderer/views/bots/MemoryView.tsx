@@ -11,11 +11,12 @@ import { useScreenViewed } from '../../store/analytics'
 import { MemoryStore, authorLabel, type MemoryEntry } from '../../store/memory-store'
 import { FormSheet } from '../marketplace/pieces'
 import { relativeTime } from '../thread/chat-items'
+import { BeliefsSection } from './BeliefsSection'
 import { MemoryInfoSheet, dreamsInfo, harnessInfo } from './MemoryInfoSheet'
 import { type FileTarget, MemoryFileSheet, fileRows } from './MemoryFiles'
 import './memory.css'
 
-type Section = 'yours' | 'bot' | 'dreams' | 'harness'
+type Section = 'yours' | 'bot' | 'beliefs' | 'dreams' | 'harness'
 /** What an info button explains. */
 type Info = 'harness' | 'dreams'
 
@@ -38,7 +39,7 @@ export function MemoryCard({ botId }: { botId: string }) {
   const harness = host.backendName(bot?.backend ?? 'claude')
   const own = tr("{name}'s own memory").replaceAll('{name}', harness)
   const sections: { id: Section; label: string }[] = [
-    { id: 'yours', label: 'About you' }, { id: 'bot', label: 'This bot' }, { id: 'dreams', label: 'Dreams' },
+    { id: 'yours', label: 'About you' }, { id: 'bot', label: 'This bot' }, { id: 'beliefs', label: 'What I know' }, { id: 'dreams', label: 'Dreams' },
     ...(view?.projectMemory ? [{ id: 'harness' as const, label: harness }] : []),
   ]
   const layer = section === 'yours' ? view?.yours : section === 'bot' ? view?.bot : undefined
@@ -76,6 +77,7 @@ export function MemoryCard({ botId }: { botId: string }) {
           ...layer.entries.map((entry) => <EntryRow key={entry.id} entry={entry} />),
           ...(view?.files ? fileRows(view.files, section === 'yours', setFile, tr) : []),
         ]}
+        {view && section === 'beliefs' && <BeliefsSection memory={memory} rev={bot?.memoryRev} />}
         {view && section === 'dreams' && [
           <div key="note" className="memory-layer-note">
             <p className="memory-muted">{tr('Between chats the bot tidies its memory from your own words.')}</p>

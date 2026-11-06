@@ -76,6 +76,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "backends": backends::list(),
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
+                "n8n": hub.n8n.state(),
                 "analytics": hub.analytics.state(),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
@@ -91,6 +92,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 usage::refresh(hub).await;
             }
             serde_json::to_value(&*hub.usage.locked())?
+        }
+        "hostHealth" => crate::health::value(hub),
+        "setHealthThresholds" => {
+            let thresholds = crate::health::Thresholds {
+                warn: u8::try_from(b["warn"].as_u64().unwrap_or(0)).unwrap_or(0),
+                critical: u8::try_from(b["critical"].as_u64().unwrap_or(0)).unwrap_or(0),
+            };
+            hub.health.set_thresholds(&hub.store, thresholds)?;
+            crate::health::value(hub)
+        }
+        "weekSummary" => {
+            let days = b["days"].as_i64().unwrap_or(7).clamp(1, 31);
+            let since = crate::store::now_ms() - days * 24 * 60 * 60 * 1000;
+            serde_json::to_value(hub.store.week(since)?)?
         }
         "listDirs" => {
             let path = b["path"].as_str().map(std::path::PathBuf::from);
@@ -187,6 +202,32 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "setScreenEnabled" => {
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
             hub.screen.state()
+        }
+        "n8nStatus" => hub.n8n.state(),
+        "n8nStart" => {
+            hub.n8n.enable(hub)?;
+            hub.n8n.state()
+        }
+        "n8nStop" => {
+            hub.n8n.stop(&hub.store).await;
+            hub.n8n.state()
+        }
+        "setN8nEnabled" => {
+            if b["enabled"].as_bool().context("`enabled` must be a boolean")? {
+                hub.n8n.enable(hub)?;
+            } else {
+                hub.n8n.disable(&hub.store).await?;
+            }
+            hub.n8n.state()
+        }
+        "setN8nPath" => {
+            hub.n8n.set_path(&hub.store, str_arg(&b, "path")?).await?;
+            hub.n8n.state()
+        }
+        "setN8nPort" => {
+            let port = b["port"].as_u64().context("`port` is required")?;
+            hub.n8n.set_port(&hub.store, u16::try_from(port).context("`port` must be 1024 or higher")?).await?;
+            hub.n8n.state()
         }
         "computerTools" => crate::screen::computer_tools(hub).await,
         "computerCall" => {

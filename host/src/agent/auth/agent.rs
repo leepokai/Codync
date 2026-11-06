@@ -18,8 +18,13 @@ pub(super) type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, C
 
 pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
     let mut candidates = backends::launch_candidates(backend)?;
-    // The installed CLI alone when there is one: resolving the registry build can mean a long download.
-    if matches!(candidates.first(), Some(Candidate::Ready(_))) {
+    if registry_only {
+        candidates.retain(|c| matches!(c, Candidate::Build(_)));
+        if candidates.is_empty() {
+            bail!("{backend} has no registry adapter to inspect");
+        }
+    } else if matches!(candidates.first(), Some(Candidate::Ready(_))) {
+        // The installed CLI alone when there is one: resolving the registry build can mean a long download.
         candidates.truncate(1);
     }
     let env = launch_env(store, backend)?;

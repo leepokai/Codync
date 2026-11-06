@@ -37,11 +37,18 @@ pub struct Client {
     token: Option<Arc<str>>,
     /// Highest rev seen; the stream reconnects from here (0 = full catch-up).
     pub rev: Arc<AtomicI64>,
+    /// The demo's client: it never connects, a script answers (`tui::demo`).
+    demo: bool,
 }
 
 impl Client {
     pub fn new(base: &str, token: Option<&str>) -> Self {
-        Self { base: base.trim_end_matches('/').into(), token: token.map(Into::into), rev: Arc::default() }
+        Self { base: base.trim_end_matches('/').into(), token: token.map(Into::into), rev: Arc::default(), demo: false }
+    }
+
+    /// A client that talks to the demo script instead of a host: no connection is ever opened, no token file read.
+    pub fn demo() -> Self {
+        Self { base: "demo://local".into(), token: Some("demo".into()), rev: Arc::default(), demo: true }
     }
 
     pub fn token(&self) -> Option<String> {
@@ -55,6 +62,9 @@ impl Client {
     }
 
     pub async fn call(&self, method: &str, body: &Value) -> Result<Value, String> {
+        if self.demo {
+            return super::demo::answer(method, crate::store::now_ms());
+        }
         let token = self.token().ok_or(NOT_INSTALLED)?;
         let started = std::time::Instant::now();
         let res = loop {
@@ -218,6 +228,14 @@ impl Client {
 
     /// Streams host events forever, reconnecting with `since = last rev`.
     pub fn spawn_stream(&self, tx: UnboundedSender<Msg>) {
+        if self.demo {
+            let _ = tx.send(Msg::Online(true));
+            let _ = tx.send(Msg::Connected { since: 0 });
+            for event in super::demo::events(crate::store::now_ms()) {
+                let _ = tx.send(Msg::Event(event));
+            }
+            return;
+        }
         let c = self.clone();
         tokio::spawn(async move {
             loop {

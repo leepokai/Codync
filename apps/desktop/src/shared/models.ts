@@ -1,3 +1,4 @@
+import type { ApprovalRule } from './approval-rules'
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { isInternalEntry } from './entry-visibility.ts'
@@ -16,6 +17,13 @@ import {
 } from './bdots-models.ts'
 
 export type BotStatus = 'idle' | 'working' | 'needsInput' | 'error'
+
+/** Three layers of a bot's character (see the host's `agent::personality`). */
+export interface Personality {
+  soul: string
+  persona: string
+  heartbeat: string
+}
 
 export interface Bot {
   customIcon?: import('./custom-icons').CustomIcon
@@ -73,6 +81,20 @@ export interface Bot {
   computer: boolean
   /** The bot can create bots (which can too) and change its own setup and the bots it created (the built-in `manage` tools); null from an older host. */
   manageTeam: boolean | null
+  /** A command run in the workspace after each turn: the turn counts as done only if it passes; null when none (or an older host). */
+  verifyCommand: string | null
+  /** The model routine runs and check-ins use instead of `model` (a cheaper one); null when none (or an older host). */
+  backgroundModel: string | null
+  /** Saver: once its daily token budget reaches 80 percent, new sessions start on the background model until tomorrow. */
+  saver: boolean
+  /** The user's rules for the agent's permission requests, first match first. */
+  approvalRules: ApprovalRule[]
+  /** Whether the quick rules (`actionRules`) are enforced; null from an older host. */
+  actionRulesOn: boolean | null
+  /** The security profile it follows (readOnly, builder, operator, full), until its rules are changed away from it. */
+  securityProfile: string | null
+  /** The bot's character, written by the user; empty layers when none (or an older host). */
+  personality: Personality
   /** Other computers in the user's networks list this bot and may message it; null from an older host. */
   offeredToNetwork: boolean | null
   /** The user's cloud assistant lists this bot and may message it; null from an older host. */
@@ -143,6 +165,13 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     skills: raw.skills ?? [],
     computer: raw.computer ?? false,
     manageTeam: raw.manageTeam ?? null,
+    verifyCommand: raw.verifyCommand ?? null,
+    backgroundModel: raw.backgroundModel ?? null,
+    saver: raw.saver ?? false,
+    approvalRules: raw.approvalRules ?? [],
+    actionRulesOn: raw.actionRulesOn ?? null,
+    securityProfile: raw.securityProfile ?? null,
+    personality: { soul: '', persona: '', heartbeat: '', ...raw.personality },
     offeredToNetwork: raw.offeredToNetwork ?? null,
     reachableByAssistants: raw.reachableByAssistants ?? null,
     createdBy: raw.createdBy ?? null,
@@ -348,6 +377,8 @@ export interface AgentSwitch {
 export interface EntryData {
   /** Internal scheduled input or provisional background output; never rendered. */
   internal?: boolean
+  /** An "I learned" notice: what its Undo needs (`undoMemoryChange`); `undone` once taken back. */
+  memoryUndo?: { file: string; shared: boolean; before: number | null; change: number; undone: boolean }
   source?: string
   /** Structured conversation data added to the existing team-tool notice. */
   botMessage?: BotMessage
@@ -359,6 +390,8 @@ export interface EntryData {
   botApp?: BotApp
   /** notice: human takeover request card (Idea 13). */
   takeoverRequest?: { reason: string; url?: string | null; status: string }
+  /** notice: a turn that stopped half done (out of steps, or its answer cut); one tap continues it. */
+  pausedTurn?: { verdict: 'paused' | 'truncated'; status: 'waiting' | 'continued'; round: number; canContinue: boolean }
   /** Interactive Passkey / 2FA assistance card from CDP browser detector (INIC-02). */
   passkeyWall?: PasskeyWallCard
   /** Chief of Staff incident intervention card (INIC-04). */
@@ -378,6 +411,10 @@ export interface EntryData {
   runId?: string
   /** notice: a failed routine run the user can run again (`retryRoutineRun`). */
   retry?: boolean
+  /** notice: the computer's current health banner; the host updates it in place. */
+  health?: boolean
+  /** notice: `warning`, `critical` or `normal`, with `health`. */
+  level?: string
   text?: string
   final?: boolean
   /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */
@@ -501,8 +538,14 @@ export interface Backend {
   curated?: boolean
   signedIn?: boolean
   canInstall?: boolean
+  /** The signed-in account, when the agent's own files name it. */
+  email?: string | null
   /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
   node?: 'missing' | 'added' | null
+  /** Whether this agent can keep isolated accounts beside the computer's own sign-in. */
+  accounts?: boolean
+  /** Whether the computer's own sign-in can be removed (a logout command or its credential files). */
+  signOut?: boolean
 }
 
 export interface ScreenDisplay {
@@ -546,6 +589,20 @@ export function normalizeScreen(raw: Partial<ScreenState> | undefined | null): S
   }
 }
 
+/** The n8n instance the host runs; `url` is set once its folder is. */
+export interface N8nState {
+  enabled: boolean
+  state: 'stopped' | 'starting' | 'running' | 'error'
+  error: string | null
+  url: string | null
+  port: number
+  path: string | null
+  /** Whether the instance's MCP server is connected to the bots. */
+  mcp: boolean
+  /** The instance's session cookie: the editor signs in with it. */
+  auth: string | null
+}
+
 export interface Hello {
   iconsRevision?: number
   icons?: import('./custom-icons').CustomIcons
@@ -558,6 +615,7 @@ export interface Hello {
   backends: Backend[]
   rev: number
   screen?: ScreenState
+  n8n?: N8nState
   urls?: string[]
   computerId?: string
   signKey?: string
@@ -713,6 +771,13 @@ export interface BotDraft {
   skills?: string[]
   computer?: boolean
   manageTeam?: boolean
+  verifyCommand?: string | null
+  backgroundModel?: string | null
+  saver?: boolean
+  approvalRules?: ApprovalRule[]
+  actionRulesOn?: boolean
+  securityProfile?: string | null
+  personality?: Personality
   computerPermissions?: { browser: boolean; files: boolean; shell: boolean }
   offeredToNetwork?: boolean
   reachableByAssistants?: boolean
@@ -749,6 +814,13 @@ export function draftOf(bot: Bot): BotDraft {
     skills: bot.skills,
     computer: bot.computer,
     manageTeam: bot.manageTeam ?? undefined,
+    verifyCommand: bot.verifyCommand,
+    backgroundModel: bot.backgroundModel,
+    saver: bot.saver,
+    approvalRules: bot.approvalRules,
+    actionRulesOn: bot.actionRulesOn ?? undefined,
+    securityProfile: bot.securityProfile,
+    personality: bot.personality,
     computerPermissions: bot.computerPermissions ?? { browser: false, files: false, shell: false },
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
@@ -774,6 +846,18 @@ export interface GroupDraft {
   pinned?: boolean
 }
 
+/** The last days at a glance, counted by the host from this computer's transcripts (`weekSummary`). */
+export interface WeekSummary {
+  messages: number
+  replies: number
+  tools: number
+  fileEdits: number
+  approvalsAsked: number
+  approvalsAnswered: number
+  approvalsWaiting: number
+  activeBots: number
+  topBots: { id: string; name: string; entries: number }[]
+}
 /** One thing `doctor` found wrong with a bot's setup. */
 export interface DoctorFinding {
   botId: string

@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import type { ApprovalRule, RuleProposal } from '@shared/approval-rules'
 import type { Entry, FileDiff, PermissionOption } from '@shared/models'
-import { Disclosure, Spinner } from '../../components/Controls'
+import { Button, Disclosure, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import './permission-card.css'
 import { useTr } from '../../lib/use-language'
+import { AutoTextArea } from '../bots/parts'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
@@ -22,6 +24,10 @@ export const permissionHeadline = (toolKind?: string) => {
     case 'read':
     case 'search':
       return 'Wants to read files'
+    case 'question':
+      return 'Asks you a question'
+    case 'plan':
+      return 'Wants your approval of a plan'
     default:
       return 'Wants to use a tool'
   }
@@ -48,14 +54,35 @@ export function optionLabel(o: PermissionOption) {
 }
 
 /** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, the answers. */
-export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
+export function PermissionCard({ entry, hostName, answering, respond, propose }: {
+  entry: Entry
+  hostName: string
+  answering: string | null
+  respond: (option: string | null, rule?: ApprovalRule) => void
+  /** Asks the host which rule "always allow" would keep; without it the answer goes straight to the agent. */
+  propose?: () => Promise<RuleProposal | null>
+}) {
   const tr = useTr()
   const [expanded, setExpanded] = useState(false)
   const [rejectedShake, setRejectedShake] = useState(false)
+  const [always, setAlways] = useState<{ option: PermissionOption; proposal: RuleProposal; pattern: string } | null>(null)
   const d = entry.data
   const pending = d.status === 'pending'
   const hasDetail = !!d.command || !!d.detail || !!d.diffs?.length
   const options = sortedOptions(d.options ?? [])
+  const once = options.find((o) => o.kind === 'allow_once')
+  // "Always" shows the rule it would keep, which the person may edit, before anything is answered.
+  const choose = async (o: PermissionOption) => {
+    if (o.kind.startsWith('reject')) {
+      setRejectedShake(true)
+      setTimeout(() => setRejectedShake(false), 450)
+    }
+    if (o.kind === 'allow_always' && propose) {
+      const proposal = await propose()
+      if (proposal) return setAlways({ option: o, proposal, pattern: proposal.rule?.pattern ?? '' })
+    }
+    respond(o.optionId)
+  }
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
   return (
     <div className="agent-inset">
@@ -88,7 +115,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
                 <button
                   className={answering === null || answering === o.optionId ? 'permission-option' : 'permission-option dimmed'}
                   disabled={answering !== null}
-                  onClick={() => { if (o.kind.startsWith("reject")) { setRejectedShake(true); setTimeout(() => setRejectedShake(false), 450) } respond(o.optionId) }}
+                  onClick={() => void choose(o)}
                 >
                   <Text size="body" weight={o.kind === 'allow_once' ? 'semibold' : 'regular'} tone={o.kind.startsWith('allow') ? 'text' : 'danger'} className="permission-option-label">{optionLabel(o)}</Text>
                   {answering === o.optionId ? <Spinner size={14} /> : null}
@@ -99,6 +126,34 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
         ) : (
           <Text as="div" size="caption" weight="medium" tone="secondary">{outcome(entry)}</Text>
         )}
+        {pending && always ? (
+          <VStack gap={8} className="permission-always">
+            {always.proposal.rule ? (
+              <>
+                <Text size="footnote" tone="secondary">{tr('Always allow keeps this rule for the bot. Edit it to cover more: * stands for any text.')}</Text>
+                <AutoTextArea className="field-box" value={always.pattern} minRows={1} maxRows={3} onChange={(pattern) => setAlways({ ...always, pattern })} />
+                <HStack gap={8}>
+                  <Button
+                    kind="primary"
+                    disabled={!always.pattern.trim()}
+                    onClick={() => respond(always.option.optionId, { ...always.proposal.rule!, pattern: always.pattern.trim() })}
+                  >
+                    {tr('Keep rule and allow')}
+                  </Button>
+                  <Button kind="secondary" onClick={() => setAlways(null)}>{tr('Cancel')}</Button>
+                </HStack>
+              </>
+            ) : (
+              <>
+                <Text size="footnote" tone="secondary">{always.proposal.reason ?? tr('No rule can be kept for this request.')}</Text>
+                <HStack gap={8}>
+                  {once ? <Button kind="primary" onClick={() => respond(once.optionId)}>{tr('Allow once')}</Button> : null}
+                  <Button kind="secondary" onClick={() => setAlways(null)}>{tr('Cancel')}</Button>
+                </HStack>
+              </>
+            )}
+          </VStack>
+        ) : null}
       </VStack>
     </div>
   )

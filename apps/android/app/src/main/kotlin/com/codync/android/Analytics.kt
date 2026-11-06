@@ -163,6 +163,8 @@ internal object Analytics {
     fun sessionId(): String = session.id(System.currentTimeMillis())
 
     private fun enqueue(name: String, distinctId: String, extra: Map<String, JsonElement>) {
+        // Nothing a person does in the demo is counted.
+        if (DemoMode.active.value) return
         val queue = queue ?: return
         val saved = queue.add(event(name, distinctId, Instant.now().toString(), mapOf("\$session_id" to JsonPrimitive(sessionId())) + extra))
         if (saved && queue.size >= BATCH_SIZE) flush() else scheduleFlush()

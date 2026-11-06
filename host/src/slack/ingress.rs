@@ -1,5 +1,5 @@
 //! Verify the raw request before parsing or acknowledging an event.
-use super::{Arc, Context, Hub, LockExt, Result, Value, json, load};
+use super::{Arc, Config, Context, Hub, LockExt, Result, Value, json, load};
 use axum::{
     Json,
     body::Bytes,
@@ -49,7 +49,9 @@ pub(crate) async fn receive(State(hub): State<Arc<Hub>>, headers: HeaderMap, bod
     let result = (|| -> Result<Response> {
         let _configuration = hub.store.connector_lock.locked();
         let Some(c) = load(&hub.store)? else { return Ok(StatusCode::UNAUTHORIZED.into_response()) };
-        if !authorized(&c.signing_secret, &headers, &body, crate::store::now_ms() / 1000) {
+        // An empty secret would verify anything: with Socket Mode only, this endpoint is closed.
+        if c.signing_secret.is_empty() || !authorized(&c.signing_secret, &headers, &body, crate::store::now_ms() / 1000)
+        {
             return Ok(StatusCode::UNAUTHORIZED.into_response());
         }
         let envelope: Value = serde_json::from_slice(&body)?;
@@ -57,53 +59,7 @@ pub(crate) async fn receive(State(hub): State<Arc<Hub>>, headers: HeaderMap, bod
             let challenge = envelope["challenge"].as_str().filter(|s| s.len() <= 256).context("Invalid challenge")?;
             return Ok(Json(json!({"challenge":challenge})).into_response());
         }
-        if envelope["type"] != "event_callback" || envelope["team_id"] != c.workspace_id {
-            return Ok(StatusCode::OK.into_response());
-        }
-        let event = &envelope["event"];
-        if event.get("bot_id").is_some() || event.get("subtype").is_some() || event["user"] == c.bot_user_id {
-            return Ok(StatusCode::OK.into_response());
-        }
-        let Some(binding) = c.bindings.iter().find(|b| {
-            event["channel"] == b.channel_id
-                && event["user"].as_str().is_some_and(|u| b.allowed_users.iter().any(|v| v == u))
-        }) else {
-            return Ok(StatusCode::OK.into_response());
-        };
-        hub.store
-            .bot(&binding.bot_id)?
-            .filter(|b| !b.deleted && !b.config.is_group())
-            .context("Bound bot unavailable")?;
-        let event_id =
-            envelope["event_id"].as_str().filter(|s| !s.is_empty() && s.len() <= 100).context("Missing event id")?;
-        let ts = event["ts"].as_str().filter(|s| valid_ts(s)).context("Missing message timestamp")?;
-        let thread = event["thread_ts"].as_str().filter(|s| valid_ts(s)).unwrap_or(ts);
-        let mention = event["type"] == "app_mention";
-        let direct = event["type"] == "message" && event["channel_type"] == "im";
-        let reply = event["type"] == "message"
-            && thread != ts
-            && hub.store.slack_thread_exists(&c.generation, &binding.channel_id, thread)?;
-        if !mention && !direct && !reply {
-            return Ok(StatusCode::OK.into_response());
-        }
-        let text =
-            event["text"].as_str().unwrap_or_default().replace(&format!("<@{}>", c.bot_user_id), "").trim().to_owned();
-        if text.is_empty() || text.len() > 32 * 1024 {
-            return Ok(StatusCode::OK.into_response());
-        }
-        let incoming = crate::store::slack::SlackIncoming {
-            event: event_id.into(),
-            generation: c.generation.clone(),
-            bot: binding.bot_id.clone(),
-            channel: binding.channel_id.clone(),
-            thread: thread.into(),
-            entry: stable_id(&[&c.generation, &binding.channel_id, ts]),
-            text,
-            user: event["user"].as_str().context("Missing user")?.into(),
-        };
-        hub.store.enqueue_slack(&incoming)?;
-        let root = stable_id(&[&c.generation, &binding.channel_id, thread, "root"]);
-        hub.store.map_slack_thread(&incoming, &root)?;
+        accept(&hub, &c, &envelope)?;
         Ok(StatusCode::OK.into_response())
     })();
     match result {
@@ -114,6 +70,79 @@ pub(crate) async fn receive(State(hub): State<Arc<Hub>>, headers: HeaderMap, bod
         }
     }
 }
+/// Queues the prompt in one Slack `event_callback`, whether it came signed over HTTP or through Socket Mode. An event
+/// that is not for a bound bot, from an allowed person, in a conversation the bot is in, is dropped without error.
+pub(super) fn accept(hub: &Hub, c: &Config, envelope: &Value) -> Result<()> {
+    if envelope["type"] != "event_callback" || envelope["team_id"] != c.workspace_id {
+        return Ok(());
+    }
+    let event = &envelope["event"];
+    if event.get("bot_id").is_some() || event.get("subtype").is_some() || event["user"] == c.bot_user_id {
+        return Ok(());
+    }
+    let Some(binding) = c.bindings.iter().find(|b| {
+        event["channel"] == b.channel_id
+            && event["user"].as_str().is_some_and(|u| b.allowed_users.iter().any(|v| v == u))
+    }) else {
+        return Ok(());
+    };
+    hub.store.bot(&binding.bot_id)?.filter(|b| !b.deleted && !b.config.is_group()).context("Bound bot unavailable")?;
+    let event_id =
+        envelope["event_id"].as_str().filter(|s| !s.is_empty() && s.len() <= 100).context("Missing event id")?;
+    let ts = event["ts"].as_str().filter(|s| valid_ts(s)).context("Missing message timestamp")?;
+    let thread = event["thread_ts"].as_str().filter(|s| valid_ts(s)).unwrap_or(ts);
+    let mention = event["type"] == "app_mention";
+    let direct = event["type"] == "message" && event["channel_type"] == "im";
+    let reply = event["type"] == "message"
+        && thread != ts
+        && hub.store.slack_thread_exists(&c.generation, &binding.channel_id, thread)?;
+    if !mention && !direct && !reply {
+        return Ok(());
+    }
+    let message = normalize(c, event, &binding.channel_id, thread).context("Missing user")?;
+    if message.text.is_empty() || message.text.len() > 32 * 1024 {
+        return Ok(());
+    }
+    let incoming = crate::store::slack::SlackIncoming {
+        event: event_id.into(),
+        generation: c.generation.clone(),
+        bot: binding.bot_id.clone(),
+        channel: binding.channel_id.clone(),
+        thread: thread.into(),
+        entry: stable_id(&[&c.generation, &binding.channel_id, ts]),
+        text: message.prompt(),
+        user: message.person,
+    };
+    hub.store.enqueue_slack(&incoming)?;
+    let root = stable_id(&[&c.generation, &binding.channel_id, thread, "root"]);
+    hub.store.map_slack_thread(&incoming, &root)?;
+    Ok(())
+}
+
+/// A Slack message event in the shape every channel shares: the bot's own mention is not part of what was said.
+fn normalize(c: &Config, event: &Value, channel: &str, thread: &str) -> Option<crate::channels::Incoming> {
+    let files = event["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f["name"].as_str().filter(|n| n.len() <= 255))
+        .map(|name| crate::channels::FileRef { name: name.to_owned() })
+        .take(10)
+        .collect();
+    Some(crate::channels::Incoming {
+        channel: channel.into(),
+        person: event["user"].as_str()?.into(),
+        thread: thread.into(),
+        text: event["text"]
+            .as_str()
+            .unwrap_or_default()
+            .replace(&format!("<@{}>", c.bot_user_id), "")
+            .trim()
+            .to_owned(),
+        files,
+    })
+}
+
 fn valid_ts(value: &str) -> bool {
     value.len() <= 32 && value.contains('.') && value.bytes().all(|b| b.is_ascii_digit() || b == b'.')
 }

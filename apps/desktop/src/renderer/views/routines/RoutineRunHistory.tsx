@@ -27,6 +27,13 @@ export function RoutineRunHistory({ runs, name }: { runs: RoutineRun[]; name: st
         <Text weight="semibold">{tr(runLabel(current))}</Text>
         <Text size="caption" tone="secondary">{tr('Created')}: {when(current.createdAt)}</Text>
         <Text size="caption" tone="secondary">{tr('Finished')}: {current.finishedAt ? when(current.finishedAt) : tr('Not finished')}</Text>
+        {current.scheduledFor ? <Text size="caption" tone="secondary">{tr('Scheduled for')}: {when(current.scheduledFor)}</Text> : null}
+        {current.missed && current.missed.count > 0 ? (
+          <Text size="caption" tone="secondary">
+            {tr('Missed occurrences')}: {current.missed.count}
+            {current.missed.until ? ` · ${tr('last at')} ${when(current.missed.until)}` : ''}
+          </Text>
+        ) : null}
         {current.notBefore ? <Text size="caption" tone="secondary">{tr('Retry scheduled')}: {when(current.notBefore)}</Text> : null}
         {current.detail ? <Text as="div" size="callout" className="routine-run-detail">{current.detail}</Text> : <Text size="caption" tone="secondary">No additional detail was recorded.</Text>}
       </VStack> : <VStack gap={6}>

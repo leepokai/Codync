@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 pub enum Cmd {
     RefreshTools,
+    /// The computer is short of memory: an idle agent gives its memory back now, without waiting out its idle time.
+    FreeMemory,
     Routine(String),
     /// The user wrote in the bot's chat.
     Send {

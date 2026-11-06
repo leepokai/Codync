@@ -1,0 +1,60 @@
+html[data-window='n8n'],
+html[data-window='n8n'] body,
+html[data-window='n8n'] #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* The start page: a centered status while the host brings the instance up. */
+.n8n-window {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  user-select: none;
+}
+
+.n8n-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  padding: 24px;
+  text-align: center;
+}
+
+.n8n-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--chrome-fill);
+  color: var(--text);
+}
+
+.n8n-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.n8n-detail {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.n8n-detail.n8n-error {
+  color: var(--danger);
+}
+
+.n8n-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}

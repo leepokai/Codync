@@ -20,12 +20,23 @@ class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : Coro
             refresh(applicationContext)
             CodyncWidgets.update(applicationContext)
             return Result.success()
-        } catch (_: TimeoutCancellationException) { return if (runAttemptCount < 2) Result.retry() else Result.failure() }
+        } catch (timeout: TimeoutCancellationException) { return failed() }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { return if (runAttemptCount < 2) Result.retry() else Result.failure() }
+        catch (_: Exception) { return failed() }
     }
+
+    /** The widgets say they are offline, rather than keep showing the last numbers as if they were current. */
+    private suspend fun failed(): Result {
+        WidgetStore.owner(applicationContext)?.let { WidgetStore.markOffline(applicationContext, it) }
+        runCatching { CodyncWidgets.update(applicationContext) }
+        return if (runAttemptCount < 2) Result.retry() else Result.failure()
+    }
+
     companion object {
         private const val NAME = "codync-widget-refresh"
+        /** WorkManager's shortest period; while the app runs, its events refresh the widgets sooner (`AppStore.observeWidgets`). */
+        private const val PERIOD_MINUTES = 15L
+        private const val FLEX_MINUTES = 5L
         private val gate = Mutex()
         internal suspend fun refresh(context: Context): Boolean = gate.withLock {
             val owner = WidgetStore.owner(context) ?: return@withLock false
@@ -52,9 +63,10 @@ class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : Coro
         fun schedule(context: Context, paired: Boolean) {
             val work = WorkManager.getInstance(context)
             if (!paired || CodyncWidgets.installed(context) == 0) { work.cancelUniqueWork(NAME); return }
-            val request = PeriodicWorkRequestBuilder<WidgetRefreshWorker>(30, TimeUnit.MINUTES)
-                .setInitialDelay(30, TimeUnit.MINUTES)
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            val request = PeriodicWorkRequestBuilder<WidgetRefreshWorker>(PERIOD_MINUTES, TimeUnit.MINUTES, FLEX_MINUTES, TimeUnit.MINUTES)
+                .setInitialDelay(PERIOD_MINUTES, TimeUnit.MINUTES)
+                // Battery saver and a low battery postpone the read: the widgets then say how old they are.
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
             work.enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
         }

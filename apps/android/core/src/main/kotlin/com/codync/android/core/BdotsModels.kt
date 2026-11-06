@@ -165,7 +165,7 @@ fun collectPendingDecisions(entries: List<Entry>): List<PendingDecision> {
                 detail = e.data.text("command") ?: e.text, createdAt = e.createdAt,
                 allowOptionId = e.permissionOption("allow_once"), denyOptionId = e.permissionOption("reject_once"),
             )
-            handoff != null && handoff.text("status") !in listOf("resolved", "cancelled") -> out += PendingDecision(
+            handoff != null && handoff.text("status") !in listOf("resolved", "cancelled", "expired") -> out += PendingDecision(
                 entryId = e.id, botId = e.botId, kind = "handoff", title = "Human takeover requested",
                 detail = handoff.text("reason").orEmpty(), createdAt = e.createdAt,
             )

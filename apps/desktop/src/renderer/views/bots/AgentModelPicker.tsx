@@ -5,11 +5,12 @@ import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import type { AgentModelsState } from './agent-models'
 import { useTr } from '../../lib/use-language'
+import { useStore } from '../../store/context'
 import './agent-picker.css'
 import { isReasoningOption, ReasoningSlider } from './ReasoningSlider'
 
 type Stage = 'closed' | 'settings' | 'agents' | 'models'
-type Choice = { id: string; label: string; leading?: ReactNode }
+type Choice = { id: string; label: string; leading?: ReactNode; status?: ReactNode }
 
 /** One compact entry for the harness, model, model options and the bot's Fast mode. */
 export function AgentModelPicker({ backend, models, selection, onChange, options: chosen, onOptionsChange,
@@ -28,6 +29,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   children?: ReactNode
 }) {
   const tr = useTr()
+  const store = useStore()
   const [stage, setStage] = useState<Stage>('closed')
   const [query, setQuery] = useState('')
   const { catalog, loading, failure } = models
@@ -53,7 +55,8 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const summary = modelOptions.map((o) => o.values.find((v) => v.id === (chosen[o.id] ?? o.default))?.name).filter(Boolean).join(' · ')
   const browse = stage === 'agents' || stage === 'models'
   const choices = (stage === 'agents' ? agents : options).filter((o) => o.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-  const open = (next: Stage) => { setQuery(''); setStage(next) }
+  // A fresh list of agents asks the host about their sign-ins.
+  const open = (next: Stage) => { setQuery(''); if (next === 'agents') void store.refreshBackends(); setStage(next) }
   const pick = (id: string) => {
     if (stage === 'agents') {
       if (id !== backend) onAgentChange?.(id)
@@ -92,7 +95,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
           </HStack>
           <div className="agent-picker-list">
             {choices.map((o) => <button key={o.id} className="agent-picker-item" aria-pressed={o.id === (stage === 'agents' ? backend : value)} onClick={() => pick(o.id)}>
-              {o.leading}<Text className="agent-picker-result-name">{tr(o.label)}</Text><Spacer />{o.id === (stage === 'agents' ? backend : value) && <Icon name="checkmark" size={12} />}
+              {o.leading}<Text className="agent-picker-result-name">{tr(o.label)}</Text><Spacer />{o.status}{o.id === (stage === 'agents' ? backend : value) && <Icon name="checkmark" size={12} />}
             </button>)}
             {!choices.length && <Text size="caption" tone="secondary">{tr('No results')}</Text>}
           </div>

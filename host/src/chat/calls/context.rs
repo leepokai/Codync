@@ -220,7 +220,7 @@ fn bot(hub: &Hub, cfg: &BotConfig) -> String {
         lines.push(format!("Skills: {}", cfg.skills.join(", ")));
     }
     lines.push(format!("Computer use: {}", if cfg.computer { "on" } else { "off" }));
-    let routines = hub.routines.list(&cfg.id);
+    let routines = hub.routines.list(&cfg.id, |_| false);
     for r in routines["routines"].as_array().into_iter().flatten() {
         let when: Vec<&str> =
             r["triggerDescriptions"].as_array().into_iter().flatten().filter_map(|t| t.as_str()).collect();

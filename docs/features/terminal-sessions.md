@@ -105,3 +105,18 @@ Because a session is a bot, every client already renders it: no client has its o
   own terminal.
 - Windows: the installed command uses a forward-slash path in double quotes, which Git Bash and PowerShell
   both read; Claude Code's own shell must be one of those.
+
+## Questions and plans from a terminal session
+
+`codync-host hooks install` adds a second `PreToolUse` hook (`codync-host hook --ask`, matcher
+`AskUserQuestion|ExitPlanMode`, 120 s). When Claude Code asks a question or presents a plan, the host shows a card on
+every client (a Permission entry with `toolKind` `question` or `plan`):
+
+- **Question:** one card per question (up to 4), its options are the question's own (2 to 4). The picked labels go back
+  as `updatedInput.answers`, which is how a hook answers `AskUserQuestion`. A multi-select question, one with other
+  than 2 to 4 options, or more than 4 questions stays in the terminal.
+- **Plan:** an Approve / Reject card showing the plan. Reject denies the tool with a reason; Approve allows it with the
+  input unchanged.
+- An answer must be one of the options the card showed; anything else is ignored and the card keeps waiting. With no
+  answer in time, a cancel, or an older install without the `--ask` hook, the terminal asks as before.
+- Rerun `codync-host hooks install` after updating to add the new hook.

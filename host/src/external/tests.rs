@@ -107,7 +107,7 @@ async fn a_hook_that_goes_away_never_leaves_a_card_pending() {
     let (hub, dir) = hub();
     super::ingest(&hub, &prompt("run")).await;
     let request = event(&json!({"hook_event_name": "PermissionRequest", "session_id": "s1", "cwd": "/w/p",
-        "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}));
+        "tool_name": "Bash", "tool_input": {"command": "cargo build"}}));
     let task = tokio::spawn({
         let hub = hub.clone();
         async move { super::ingest(&hub, &request).await }
@@ -204,5 +204,124 @@ async fn a_session_start_only_announces_the_bot() {
     super::ingest(&hub, &event(&start)).await;
     assert!(bot(&hub).is_some(), "the roster shows the session before its first prompt");
     assert_eq!(entries(&hub, "user").len(), 0);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_forbidden_command_from_a_terminal_agent_is_refused_without_a_card() {
+    let (hub, dir) = hub();
+    super::ingest(&hub, &prompt("run")).await;
+    let request = event(&json!({"hook_event_name": "PermissionRequest", "session_id": "s1", "cwd": "/w/p",
+        "tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}));
+    let reply = super::ingest(&hub, &request).await;
+    assert!(entries(&hub, "permission").is_empty(), "no card asks about a command nobody may run");
+    assert!(reply.to_string().contains("deny"), "{reply}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A `PreToolUse` of `tool` from the hook installed to wait (`hook --ask`), or from the plain one.
+fn asking(tool: &str, input: &Value, ask: bool) -> Value {
+    let mut body = event(&json!({"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": "/w/p",
+        "tool_name": tool, "tool_use_id": "q1", "tool_input": input}));
+    body["ask"] = ask.into();
+    body
+}
+
+async fn cards(hub: &Hub, count: usize) -> Vec<Entry> {
+    for _ in 0..400 {
+        let found = entries(hub, "permission");
+        if found.len() >= count {
+            return found;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("expected {count} cards");
+}
+
+fn two_questions() -> Value {
+    json!({"questions": [
+        {"question": "Which database?", "header": "DB", "multiSelect": false,
+         "options": [{"label": "SQLite", "description": "one file"}, {"label": "Postgres", "description": "a server"}]},
+        {"question": "Add tests?", "header": "Tests", "multiSelect": false,
+         "options": [{"label": "Yes"}, {"label": "No"}]},
+    ]})
+}
+
+#[tokio::test]
+async fn questions_are_asked_one_card_at_a_time_and_answered_by_label() {
+    let (hub, dir) = hub();
+    super::ingest(&hub, &prompt("plan")).await;
+    let task = tokio::spawn({
+        let hub = hub.clone();
+        let body = asking("AskUserQuestion", &two_questions(), true);
+        async move { super::ingest(&hub, &body).await }
+    });
+    let first = cards(&hub, 1).await.pop().unwrap();
+    assert_eq!(first.data["title"], "Which database?");
+    // An option the card never showed is ignored; the card keeps waiting.
+    assert!(hub.external.answer(&hub, &first.id, Some("7")));
+    assert_eq!(hub.store.entry(&first.id).unwrap().data["status"], "pending");
+    assert!(hub.external.answer(&hub, &first.id, Some("1")));
+    let second = cards(&hub, 2).await.pop().unwrap();
+    assert_eq!(second.data["title"], "Add tests?");
+    // A late second tap on the first card is a no-op.
+    assert!(hub.external.answer(&hub, &first.id, Some("0")));
+    assert!(hub.external.answer(&hub, &second.id, Some("0")));
+
+    let reply = task.await.unwrap();
+    let verdict = &reply["preToolUse"];
+    assert_eq!(verdict["permissionDecision"], "allow");
+    assert_eq!(verdict["updatedInput"]["answers"], json!({"Which database?": "Postgres", "Add tests?": "Yes"}));
+    assert_eq!(verdict["updatedInput"]["questions"].as_array().unwrap().len(), 2, "the questions are echoed");
+    assert_eq!(hub.store.entry(&first.id).unwrap().data["selected"], "1");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_cancelled_question_leaves_the_terminal_to_ask() {
+    let (hub, dir) = hub();
+    super::ingest(&hub, &prompt("plan")).await;
+    let task = tokio::spawn({
+        let hub = hub.clone();
+        let body = asking("AskUserQuestion", &two_questions(), true);
+        async move { super::ingest(&hub, &body).await }
+    });
+    let card = cards(&hub, 1).await.pop().unwrap();
+    assert!(hub.external.answer(&hub, &card.id, None));
+    let reply = task.await.unwrap();
+    assert!(reply.get("preToolUse").is_none(), "{reply}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_plan_is_approved_or_rejected_from_a_card() {
+    let (hub, dir) = hub();
+    super::ingest(&hub, &prompt("plan")).await;
+    let plan = json!({"plan": "1. Add the table\n2. Migrate"});
+    let task = tokio::spawn({
+        let hub = hub.clone();
+        let body = asking("ExitPlanMode", &plan, true);
+        async move { super::ingest(&hub, &body).await }
+    });
+    let card = cards(&hub, 1).await.pop().unwrap();
+    assert_eq!(card.data["detail"], "1. Add the table\n2. Migrate");
+    assert!(hub.external.answer(&hub, &card.id, Some("deny")));
+    let reply = task.await.unwrap();
+    assert_eq!(reply["preToolUse"]["permissionDecision"], "deny");
+    assert!(reply["preToolUse"]["reason"].as_str().unwrap().contains("rejected"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn the_plain_hook_and_other_agents_never_ask() {
+    let (hub, dir) = hub();
+    super::ingest(&hub, &prompt("plan")).await;
+    // The plain PreToolUse hook only reports: no card, and it answers at once.
+    let reply = super::ingest(&hub, &asking("AskUserQuestion", &two_questions(), false)).await;
+    assert!(reply.get("preToolUse").is_none());
+    // A tool the waiting hook was not installed for is not asked about.
+    let reply = super::ingest(&hub, &asking("Bash", &json!({"command": "ls"}), true)).await;
+    assert!(reply.get("preToolUse").is_none());
+    assert!(entries(&hub, "permission").is_empty());
     let _ = std::fs::remove_dir_all(dir);
 }

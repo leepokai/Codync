@@ -22,6 +22,8 @@ use crate::store::{self, Result};
 use crate::tokens;
 
 /// The file every session opens with in full.
+pub mod belief;
+
 pub const MAIN: &str = "MEMORY.md";
 /// The most one note may hold, in estimated tokens.
 pub const FILE_CAP: usize = 2_000;

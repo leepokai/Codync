@@ -56,6 +56,7 @@ pub fn tools() -> Value {
     ]);
     if let Some(list) = tools.as_array_mut() {
         list.extend(super::file_tools::definitions());
+        list.extend(super::beliefs::definitions());
     }
     tools
 }
@@ -66,6 +67,10 @@ pub async fn call(hub: &Arc<Hub>, bot_id: &str, name: &str, args: &Value) -> Res
         "search_memory" => search_memory(hub, &cfg, args["query"].as_str().unwrap_or_default()).await,
         "search_history" => search_history(hub, &cfg, args).await,
         "read_memory" | "edit_memory" => super::file_tools::call(hub, &cfg, name, args).await,
+        "confirm_memory" | "correct_memory" | "forget_memory" => {
+            let (hub, name, args) = (hub.clone(), name.to_owned(), args.clone());
+            tokio::task::spawn_blocking(move || super::beliefs::tool(&hub, &cfg, &name, &args)).await?
+        }
         _ => bail!("unknown memory tool: {name}"),
     }
 }

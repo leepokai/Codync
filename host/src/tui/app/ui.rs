@@ -56,6 +56,11 @@ pub enum Action {
     RefreshAgents,
     Pair,
     Network,
+    Rules,
+    Channels,
+    Beliefs,
+    Proposals,
+    Demo,
     Usage,
     CheckUpdate,
     Analytics,
@@ -76,6 +81,11 @@ pub const ACTIONS: [(&str, &str, Action); 19] = [
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
+    ("Approval rules of this bot…", "", Action::Rules),
+    ("Channels: Telegram and Slack…", "", Action::Channels),
+    ("What this bot knows about you…", "", Action::Beliefs),
+    ("Skills this bot proposes…", "", Action::Proposals),
+    ("Demo mode: try it, or leave it", "", Action::Demo),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
@@ -160,6 +170,12 @@ pub use crate::store::{AVATAR_COLORS as COLORS, AVATAR_SHAPES as SHAPES};
 pub enum Field {
     Name,
     Instructions,
+    Check,
+    Soul,
+    Persona,
+    Heartbeat,
+    Background,
+    Saver,
     Agent,
     Model,
     ModelOptions,
@@ -182,6 +198,12 @@ pub enum Field {
 pub const FIELDS: [Field; 19] = [
     Field::Name,
     Field::Instructions,
+    Field::Check,
+    Field::Soul,
+    Field::Persona,
+    Field::Heartbeat,
+    Field::Background,
+    Field::Saver,
     Field::Agent,
     Field::Model,
     Field::ModelOptions,
@@ -212,6 +234,11 @@ pub struct Form {
     pub bot_id: String,
     pub name: Editor,
     pub instructions: Editor,
+    /// What the user writes about how the bot works: check before done, soul, persona, heartbeat, background
+    /// model (see [`Field::slot`]).
+    pub character: [Editor; 5],
+    /// `None`: the host has no saver.
+    pub saver: Option<bool>,
     pub backend: String,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
@@ -242,9 +269,38 @@ pub struct Form {
     pub opened: serde_json::Value,
 }
 
+impl Field {
+    /// Where a text field of the bot's character keeps its editor in [`Form::character`].
+    pub fn slot(self) -> Option<usize> {
+        match self {
+            Self::Check => Some(0),
+            Self::Soul => Some(1),
+            Self::Persona => Some(2),
+            Self::Heartbeat => Some(3),
+            Self::Background => Some(4),
+            _ => None,
+        }
+    }
+
+    /// Whether Shift+Enter starts a new line in it.
+    pub fn multiline(self) -> bool {
+        matches!(self, Self::Instructions | Self::Soul | Self::Persona | Self::Heartbeat)
+    }
+}
+
 impl Form {
     pub fn current(&self) -> Field {
         FIELDS[self.field]
+    }
+
+    /// The text editor behind `field`, when it is one.
+    pub fn editor_mut(&mut self, field: Field) -> Option<&mut Editor> {
+        match field {
+            Field::Name => Some(&mut self.name),
+            Field::Instructions => Some(&mut self.instructions),
+            Field::Model => Some(&mut self.model),
+            other => other.slot().map(|slot| &mut self.character[slot]),
+        }
     }
 
     /// The settings picked for the model now in the field; another model has none yet.
@@ -327,6 +383,10 @@ pub enum Overlay {
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
+    /// A bot's approval rules.
+    Rules(Box<super::rules::RulesSheet>),
+    /// "Always allow" on a card: the rule to keep, to edit.
+    Always(Box<super::always::AlwaysSheet>),
 }
 
 pub struct Toast {

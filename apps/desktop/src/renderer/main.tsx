@@ -2,11 +2,15 @@ import { createRoot } from 'react-dom/client'
 import './styles/theme.css'
 import { ChatWindow } from './views/ChatWindow'
 import { ScreenWindow } from './views/screen/ScreenWindow'
+import { N8nWindow } from './views/n8n/N8nWindow'
 import { PairingWindow } from './views/PairingWindow'
 import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
 import { AppModel } from './store/app-model'
 import { AppContext } from './store/context'
+import { demoMode } from './store/demo-mode'
+import { useModel } from './lib/observable'
+import { DemoBadge } from './views/DemoBadge'
 import { applyTextSize, prefs } from './lib/prefs'
 import { account } from './store/account'
 import { errorReport } from '@shared/error-report'
@@ -17,6 +21,14 @@ const report = (error: unknown, mechanism: string) => window.codync.app.reportEr
 window.addEventListener('error', (e) => { if (e.error != null) report(e.error, 'onerror') })
 window.addEventListener('unhandledrejection', (e) => report(e.reason, 'unhandledrejection'))
 
+/** The chat window: the real model, or the demo's while the person tries it (the real one keeps running underneath). */
+function ChatRoot({ app }: { app: AppModel }) {
+  const demo = useModel(demoMode).model
+  return demo
+    ? <AppContext.Provider value={demo}><ChatWindow key="demo" /><DemoBadge /></AppContext.Provider>
+    : <AppContext.Provider value={app}><ChatWindow /></AppContext.Provider>
+}
+
 const page = new URLSearchParams(location.search).get('window') ?? 'chat'
 document.title = window.codync.appName
 document.documentElement.dataset.platform = window.codync.platform
@@ -26,6 +38,9 @@ const root = createRoot(document.getElementById('root')!)
 
 if (page === 'screen') {
   root.render(<ScreenWindow />)
+} else if (page === 'n8n') {
+  // The start page: it talks to the host itself, no mirror of the bots.
+  root.render(<N8nWindow />)
 } else if (page === 'island') {
   // The island only draws what the chat window sends it: no host connection of its own.
   const island = new IslandModel()
@@ -36,5 +51,5 @@ if (page === 'screen') {
   const app = new AppModel(page !== 'pairing')
   void app.start()
   if (page !== 'pairing') void account.start()
-  root.render(<AppContext.Provider value={app}>{page === 'pairing' ? <PairingWindow /> : <ChatWindow />}</AppContext.Provider>)
+  root.render(page === 'pairing' ? <AppContext.Provider value={app}><PairingWindow /></AppContext.Provider> : <ChatRoot app={app} />)
 }

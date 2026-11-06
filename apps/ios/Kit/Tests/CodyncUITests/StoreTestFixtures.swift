@@ -50,6 +50,27 @@ actor FakeRemote: RemoteTransport {
     /// The next `count` calls of `method` fail as if the link dropped under them.
     func fail(_ method: String, times count: Int) { failures[method] = count }
     private(set) var enqueued: [String] = []
+    /// Each `setUsageOrder`'s ids, in order.
+    private(set) var usageOrders: [[String]] = []
+    private var holdsUsageOrders = false
+    private var heldUsageOrders: [CheckedContinuation<Void, Never>] = []
+
+    /// While on, each `setUsageOrder` waits for `answerUsageOrder`; turning it off answers the ones waiting.
+    func holdUsageOrders(_ hold: Bool) {
+        holdsUsageOrders = hold
+        if !hold { while !heldUsageOrders.isEmpty { answerUsageOrder() } }
+    }
+
+    func answerUsageOrder() {
+        if !heldUsageOrders.isEmpty { heldUsageOrders.removeFirst().resume() }
+    }
+
+    private func receiveUsageOrder(_ body: Data) async {
+        let ids = (try? JSONSerialization.jsonObject(with: body) as? [String: [String]])?["ids"]
+        usageOrders.append(ids ?? [])
+        if holdsUsageOrders { await withCheckedContinuation { heldUsageOrders.append($0) } }
+    }
+
     var cancelResult = MailboxCancel.cancelled
 
     private var hello = #"{"hostId":"h1","name":"Mac","version":"3.0.0","os":"macos","backends":[],"rev":0}"#
@@ -100,6 +121,8 @@ actor FakeRemote: RemoteTransport {
             // A fresh credential per provider session, so a test can tell a replaced session from the first.
             let n = calls.filter { $0 == "startCall" }.count
             return Data(#"{"instructions":"Be the relay.","tools":[],"credential":"token-\#(n)"}"#.utf8)
+        case "setUsageOrder":
+            return Data(#"{"providers":[]}"#.utf8)
         case "createBot", "updateBot":
             // The host's reply bot, which never carries a custom icon (icons sync on their own).
             let id = (try JSONSerialization.jsonObject(with: body) as? [String: Any])?["id"] as? String ?? "new"
@@ -110,7 +133,8 @@ actor FakeRemote: RemoteTransport {
     }
 
     nonisolated func call(_ method: String, body: Data, timeout: TimeInterval) async throws -> Data {
-        try await respond(method, body)
+        if method == "setUsageOrder" { await receiveUsageOrder(body) }
+        return try await respond(method, body)
     }
 
     private func addEvents(_ c: AsyncThrowingStream<Data, Error>.Continuation) {

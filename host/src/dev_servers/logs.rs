@@ -62,7 +62,11 @@ async fn pump(mut from: impl AsyncRead + Unpin, writer: Arc<Mutex<Writer>>) {
     let mut buffer = vec![0; 8192];
     loop {
         match from.read(&mut buffer).await {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
+            Err(error) => {
+                tracing::warn!(error = format!("{error:#}"), "couldn't read a dev server's output");
+                break;
+            }
             Ok(read) => {
                 if let Err(error) = writer.lock().await.write(&buffer[..read]).await {
                     // Keep reading: a full disk mustn't block the server on a full pipe.

@@ -231,8 +231,11 @@ fn held_readings(hub: &Hub) -> HashSet<&'static str> {
     hub.usage.locked().providers.iter().map(|provider| provider.id).collect()
 }
 
-/// Brings the chooser's list up to date and drops readings nobody wants any more.
+/// Brings the chooser's list up to date and drops readings nobody wants any more. One at a time: a sync that read the
+/// settings before a change can't land after the sync that change made.
 pub(super) fn sync(hub: &Hub) {
+    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _turn = ONE_AT_A_TIME.locked();
     let store = &hub.store;
     let used = used_agents(store);
     // The database and the disk stay outside the usage lock: a reading landing meanwhile is kept.

@@ -8,18 +8,17 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 
 ## 2.40.0
 ### zh-Hant
+- bot 現在可以讓 dev server 持續在電腦上執行，不會因為 bot 閒置或重新啟動而中斷。port 會顯示在聊天標題下方；點 bot 的名稱，就能看記錄、重新啟動或停止；手機連得到電腦時，也能直接開啟。
+- 用量頁面可以自己選要看哪些服務：預設只顯示 bot 正在用的，也可以打開或隱藏其他服務。另外支援顯示 Google Antigravity 和 GitHub Copilot 的額度。
+- 修正 bot 更新時，選單偶爾點了沒反應的問題。
 - 全尺寸看圖可以雙指縮放（最多 8 倍）、放大後拖動，點兩下放大或還原。
 - 看圖頁頂部新增「複製圖片」按鈕，會把圖片本身放進剪貼簿；bot 分享的圖片在關閉按鈕旁也能直接下載。
 - 長按聊天裡的圖片，選單中的「複製」改為「複製圖片」和「複製名稱」；看圖時長按圖片也能使用回應和回覆。
 
 ### en-US
+- Bots can now keep a dev server running on your computer, even when the bot goes idle or restarts. Its port shows under the chat title; tap the bot's name to read its logs, restart or stop it, and to open it when your phone can reach it.
+- Choose which agents show in Usage: by default it lists the ones your bots run, and you can turn others on or hide them. Usage now also reads Google Antigravity's and GitHub Copilot's limits.
+- Fixed menus sometimes ignoring a tap while a bot was updating.
 - Pinch to zoom a full-size picture up to 8x, drag it once zoomed in, or double-tap to zoom in and back.
 - Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
 - Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
-
-## 2.39.1
-### zh-Hant
-- 現在會在你從這支 iPhone 送出第五則訊息後，邀請你到 App Store 評分，一年最多兩次。
-
-### en-US
-- Codync now invites you to rate it on the App Store after your fifth message from this iPhone, at most twice a year.

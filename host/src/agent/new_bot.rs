@@ -13,18 +13,8 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     // A lead is made by the host or picked by the user (`chat::lead`), never on creation.
     b["lead"] = false.into();
     // Connectors are on for a new bot unless the client picked them.
-    // Without a credential store (headless Linux) no connector can run, so the bot starts with none.
     if b["connectors"].is_null() && b["kind"] != "group" {
-        b["connectors"] = match market::vault::unlock(hub.clone()).await {
-            Ok(()) => json!(market::connector_ids(&hub.store)?),
-            Err(e) => {
-                tracing::warn!(
-                    error = format!("{e:#}"),
-                    "credential store unavailable; new bot starts without connectors"
-                );
-                json!([])
-            }
-        };
+        b["connectors"] = default_connectors(hub).await?;
     }
     // Skills too: every installed one is on unless the client picked them, but a bot's skill stays with that bot.
     if b["skills"].is_null() && b["kind"] != "group" {
@@ -40,6 +30,22 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
         b["backend"] = default_backend(&agents).into();
     }
     serde_json::from_value(b).context("invalid bot")
+}
+
+/// Every connector a new bot gets. With none saved the credential store stays shut, which is what keeps the
+/// lead bot of a new computer from opening it at start-up.
+async fn default_connectors(hub: &Arc<Hub>) -> Result<Value> {
+    if !market::connectors_saved(&hub.store)? {
+        return Ok(json!([]));
+    }
+    // Without a credential store (headless Linux) no connector can run, so the bot starts with none.
+    Ok(match market::vault::unlock(hub.clone()).await {
+        Ok(()) => json!(market::connector_ids(&hub.store)?),
+        Err(e) => {
+            tracing::warn!(error = format!("{e:#}"), "credential store unavailable; new bot starts without connectors");
+            json!([])
+        }
+    })
 }
 
 /// A new bot's agent (`agents` as `backends::list` gives them): Claude when it runs here, else the

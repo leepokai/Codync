@@ -77,6 +77,37 @@ private func tracker(_ suite: String) -> ReviewInvitation {
 }
 
 @MainActor
+@Test func reviewSkippedRequestWaitsForTheNextPrompt() throws {
+    let suite = UUID().uuidString
+    defer { UserDefaults(suiteName: suite)!.removePersistentDomain(forName: suite) }
+    let invitation = tracker(suite)
+    for _ in 1...5 { invitation.sent(version: "2.29.0", now: reviewNow) }
+    let skipped = try #require(invitation.opportunity)
+    invitation.skip(skipped)
+    #expect(invitation.opportunity == nil)
+    #expect(!invitation.request(skipped, version: "2.29.0", now: reviewNow))
+    invitation.sent(version: "2.29.0", now: reviewNow)
+    let next = try #require(invitation.opportunity)
+    invitation.skip(skipped)
+    #expect(invitation.opportunity == next, "skipping an older one leaves the new one")
+}
+
+@MainActor
+@Test func reviewStaleRequestWaitsForTheNextPrompt() throws {
+    let suite = UUID().uuidString
+    defer { UserDefaults(suiteName: suite)!.removePersistentDomain(forName: suite) }
+    let invitation = tracker(suite)
+    for _ in 1...5 { invitation.sent(version: "2.29.0", now: reviewNow) }
+    let stale = try #require(invitation.opportunity)
+    let later = reviewNow.addingTimeInterval(300)
+    #expect(!invitation.request(stale, version: "2.29.0", now: later))
+    #expect(invitation.opportunity == nil)
+    invitation.sent(version: "2.29.0", now: later)
+    let next = try #require(invitation.opportunity)
+    #expect(invitation.request(next, version: "2.29.0", now: later.addingTimeInterval(1)))
+}
+
+@MainActor
 @Test func reviewRequestPersistsBeforeCallingStoreKitAndRespectsAnalyticsOptOut() throws {
     let suite = UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!

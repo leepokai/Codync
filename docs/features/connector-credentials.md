@@ -19,6 +19,12 @@ its selected host.
 - Headless Linux: provide a session D-Bus and unlocked Secret Service for the
   service user. An unavailable keyring gives an actionable error. There is no
   plaintext, kernel-keyring-only or automatic ephemeral fallback.
+- Disposable hosts only (tests and [worktree sandboxes](../guides/dev-app.md#worktree-sandboxes)): a Dev build
+  with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
+  A production build ignores the switch.
+
+A host makes its key the first time something needs the vault, such as a connector, voice, credential or agent
+sign-in request, or a new bot once connectors are saved. A new computer's first start makes none.
 
 Unlocking runs on a blocking worker, one read at a time; callers that arrive
 meanwhile share its outcome. A locked Linux keyring gets one unlock prompt that

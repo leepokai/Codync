@@ -96,6 +96,10 @@ internal sealed class AnalyticsEvent(val name: String) {
         override val properties get() = mapOf("action" to action.json, "from" to from.json,
             "outcome" to JsonPrimitive(if (error == null) "done" else "failed")) + listOfNotNull(error?.let { "error" to it.json })
     }
+    /** A dev server opened, or its address copied; the host reports what it does itself. */
+    data class DevServerAction(val use: DevServerUse) : AnalyticsEvent("dev_server_action") {
+        override val properties get() = mapOf("action" to use.json)
+    }
 }
 
 /** One of a property's catalog values, as sent. */
@@ -185,6 +189,8 @@ internal enum class OutboundLink(override val wire: String) : CatalogValue {
     Github("github"), Issues("issues"), AppStore("app_store"), Demo("demo"), Tailscale("tailscale"), Privacy("privacy"), InstallCommand("install_command"),
     InstallLink("install_link"),
 }
+
+internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }
 
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     OnDevice("on_device"), OpenAI("openai"), Gemini("gemini"),

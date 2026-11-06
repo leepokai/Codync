@@ -12,6 +12,7 @@ mod bot_chat;
 mod buffer;
 mod chat;
 mod computer_access;
+mod dev_servers;
 mod fallbacks;
 mod forms;
 mod goto;
@@ -40,7 +41,7 @@ pub(super) use overlay::{field_line, input_line};
 pub(super) use style::theme;
 pub(super) use time::when;
 pub(super) use transcript::{file_size, unfoldable};
-pub(super) use usage::{usage_scroll_max, when_future};
+pub(super) use usage::{usage_scroll_max, usage_services, when_future};
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;

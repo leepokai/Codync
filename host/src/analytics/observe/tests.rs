@@ -89,6 +89,10 @@ fn settings_routines_screen_and_devices() {
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
         Some((Event::RoutineToggled, json!({"enabled": false, "client": "local"})))
     );
+    assert_eq!(
+        props("devServerRestart", &json!({"botId": "b", "id": "s"})),
+        Some((Event::DevServerAction, json!({"action": "restart", "client": "local"})))
+    );
     assert_eq!(props("screenTakeover", &json!({"on": true})).map(|(e, _)| e), Some(Event::ScreenTakenOver));
     assert!(props("screenTakeover", &json!({"on": false})).is_none(), "handing it back");
     assert_eq!(props("pairing", &json!({})), Some((Event::PairingCodeCreated, json!({"client": "local"}))));

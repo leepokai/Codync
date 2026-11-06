@@ -115,6 +115,12 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
     onDeleted()
 }
 
+/** A refusal shows; the bot's next update shows the rest. */
+fun AppStore.devServerAction(action: DevServerAction, botId: String, id: String) = command(action.method, body("botId" to botId, "id" to id), action.method + ":" + id)
+
+suspend fun AppStore.devServerLogs(botId: String, id: String): String =
+    hostQuery("devServerLogs", body("botId" to botId, "id" to id)).jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
+
 /** A host call for the screens that keep their own state (memory): waits for the connection first. */
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
@@ -164,9 +170,14 @@ suspend fun AppStore.agentModels(backend: String): AgentModels {
 suspend fun AppStore.reloadUsage() { refreshUsage(true); actions["usage"]?.join() }
 fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
     val active = ready()
-    // The existing host can spend up to a minute reading an installed provider.
-    val result = active.call("usage", buildJsonObject { put("refresh", force) }, timeoutMillis = 75_000)
-    val response = result.jsonObject
+    // The host answers within a minute: an agent that reads slower lands through its events.
+    landUsage(active.call("usage", buildJsonObject { put("refresh", force) }, timeoutMillis = 75_000).jsonObject)
+}
+/** Whether this computer lists one agent's limits. */
+fun AppStore.setUsageShown(id: String, shown: Boolean) = action("usageShown.$id") {
+    landUsage(ready().call("setUsageShown", buildJsonObject { put("id", id); put("shown", shown) }).jsonObject)
+}
+private suspend fun AppStore.landUsage(response: JsonObject) {
     UsageReport.decode(response)
     withContext(Dispatchers.IO) { requireNotNull(database).apply(MirrorEvent.Usage(response)) }
     refresh()

@@ -9,7 +9,7 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: November 3, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: November 6, 2026</p>
 
         <Section title="Overview">
           Codync is an independent open-source project by leepokai (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
@@ -20,7 +20,7 @@ export default function Privacy() {
             <li><strong>Bots and conversations</strong> are stored by the Codync host on your computer (in <code>~/.codync</code>). Your phone keeps a cache so the app opens instantly.</li>
             <li><strong>Your phone talks to your computer</strong> directly over your local network or Tailscale, or, away from home, through our relay, which only forwards end-to-end encrypted data it can&apos;t read. A message you send while your computer is offline waits in the relay, still encrypted for your computer, for up to 24 hours, and is deleted once delivered. If you point a computer at a relay you run yourself, its traffic goes through that relay instead of ours and we receive none of it; its notifications still go through our push relay.</li>
             <li><strong>Agents run with your own logins</strong> (Claude Code, Codex, Cursor and others). Codync never sees or stores their credentials.</li>
-            <li><strong>Usage limits</strong> are read locally from the agents installed on your computer. Only percentages reach your phone.</li>
+            <li><strong>Usage limits</strong> are read on your computer, only for the agents your bots run and the ones you turn on. Your phone gets the limits as percentages, plus any balance or credits an agent reports as text.</li>
           </ul>
         </Section>
 

@@ -33,6 +33,9 @@ pub enum App {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Reported {
+    DevServerAction {
+        action: DevServerAction,
+    },
     AppOpened {
         /// Opened by the login item (desktop).
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -284,6 +287,16 @@ pub enum ReachOutcome {
     Other,
 }
 
+/// What the apps do with a dev server on their own (the host's methods report the rest).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DevServerAction {
+    Open,
+    Copy,
+    #[serde(other)]
+    Other,
+}
+
 /// Why a computer couldn't be added to the account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -384,6 +397,7 @@ mod tests {
                 Event::StarPromptAnswered,
             ),
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
+            (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
             (json!({"event": "image_preview_opened", "app": "desktop"}), Event::ImagePreviewOpened),
             (

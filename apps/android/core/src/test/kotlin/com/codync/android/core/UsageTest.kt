@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class UsageTest {
+    @Test fun `the chooser list decodes and an older host sends none`() {
+        val report = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[],"services":[{"id":"cursor","name":"Cursor","shown":false}]}"""))
+        assertEquals(listOf(UsageService("cursor", "Cursor", false)), report.services)
+        assertEquals("Cursor", report.services.single().provider.name)
+        val named = UsageReport.decode(WireJson.parseToJsonElement("""{"services":[{"id":"copilot","name":"GitHub Copilot","shown":true,"registry":"github-copilot-cli"}]}"""))
+        assertEquals("github-copilot-cli", named.services.single().provider.registry)
+        assertTrue(UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[]}""")).services.isEmpty())
+    }
     @Test fun `unknown providers and missing windows remain distinct from zero consumption`() {
         val report = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[{"id":"future","name":"Future agent","source":"future-source","windows":[{"id":"unknown","label":"Monthly"},{"id":"zero","label":"Daily","percent":0}]}]}"""))
         val provider = report.providers.single()

@@ -1,5 +1,6 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
+import { normalizeDevServer, type DevServer } from './dev-servers.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -43,6 +44,8 @@ export interface Bot {
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
   resting: Resting[]
+  /** What it keeps running (`dev-servers.ts`). */
+  devServers: DevServer[]
   pinned: boolean
   /** The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it. Placed in the roster like any bot, never hidden. */
   lead: boolean
@@ -110,6 +113,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     resting: raw.resting ?? [],
+    devServers: (raw.devServers ?? []).map(normalizeDevServer),
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,
@@ -421,10 +425,23 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
+  registry?: string
+}
+
+/** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
+export interface UsageService {
+  id: string
+  name: string
+  shown: boolean
+  /** The agent's ACP registry id, which its logo goes by. */
+  registry?: string
 }
 
 export interface Usage {
   providers: UsageProvider[]
+  /** Absent from a host older than the chooser. */
+  services?: UsageService[]
 }
 
 export interface Backend {

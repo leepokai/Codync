@@ -56,7 +56,7 @@ The CLI must be signed in as the user running the host. Missing, rejected or una
 
 ## Cursor usage
 
-Settings > Usage lists Cursor alongside every other provider the host reports. When no desktop login is available in the Cursor app's `state.vscdb`, the host reads the CLI's `accessToken` from its saved `auth.json`: `$XDG_CONFIG_HOME/cursor/auth.json` (normally `~/.config/cursor/auth.json`) on Linux, `%APPDATA%/Cursor/auth.json` on Windows, and `~/.cursor/auth.json` on macOS when the CLI uses file storage. A macOS CLI login stored only in Keychain still needs the desktop-app login for usage reporting.
+Settings > Usage lists Cursor alongside every other provider the host reports, once a bot runs Cursor or the user turns it on ([which agents show](usage-limits.md#which-agents-show)). When no desktop login is available in the Cursor app's `state.vscdb`, the host reads the CLI's `accessToken` from its saved `auth.json`: `$XDG_CONFIG_HOME/cursor/auth.json` (normally `~/.config/cursor/auth.json`) on Linux, `%APPDATA%/Cursor/auth.json` on Windows, and `~/.cursor/auth.json` on macOS when the CLI uses file storage. A macOS CLI login stored only in Keychain still needs the desktop-app login for usage reporting.
 
 Every five minutes, the host calls `https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus` with the saved bearer token. A unified plan (`isUnified: true`, including Super) reports one **Weekly** window from `usagePercent`, resetting at `nextResetTimestampUtc`. Missing usage is not converted to zero. The legacy `https://cursor.com/api/usage-summary` endpoint is read for non-unified plans, retaining their Monthly, Auto and API readings, and also when the dashboard request fails unless the dashboard last named a unified plan; then that poll keeps the previous Weekly window. Its monthly fields can report zero for a unified plan even when the unified allowance is partly used, so they never supply a unified reading. The host sends the existing `usage` event and never logs or changes the credentials. Existing client views render the weekly window without a client or protocol change.
 
@@ -79,9 +79,10 @@ Typing `/` at the start of a message to a bot (desktop, iPhone, Android, termina
 | Command | Title | Does |
 | --- | --- | --- |
 | `/fast` | Fast mode | Switches [Fast mode](#fast-mode) with `updateBot`; listed only while the bot offers it. Its detail says what picking it does, or why the agent refused it (warning color). |
+| `/servers` | Dev servers | Terminal only, listed while the bot has [dev servers](dev-servers.md): opens the sheet, which it has in place of the other clients' inspector section. |
 | `/<skill id>` | the skill's name | Fills in `/<skill id> ` for the rest of the message. |
 
-Picking a built-in command, or sending a message that is just one (`/fast`), runs it in the client and clears the box; nothing reaches the agent. Return on a skill whose name is already typed out sends the message. The host sees a message starting with `/<id of a skill the bot has on>` and hands the agent `[Codync: the user picked the "<name>" skill for this message. Read <path> first and follow it.]` followed by the rest of the message; the chat keeps the text as typed. Any other `/command`, including `/fast` for a bot without Fast mode on offer, reaches the agent unchanged, so its own commands keep working.
+Picking a built-in command, or sending a message that is just one (`/fast`), runs it in the client and clears the box; nothing reaches the agent. Return on a skill whose name is already typed out sends the message. The host sees a message starting with `/<id of a skill the bot has on>` and hands the agent `[Codync: the user picked the "<name>" skill for this message. Read <path> first and follow it.]` followed by the rest of the message; the chat keeps the text as typed. Any other `/command`, including `/fast` for a bot without Fast mode on offer and `/servers` for a bot without dev servers, reaches the agent unchanged, so its own commands keep working.
 
 ## Sign-in for remote connectors (`host/src/market/oauth.rs`)
 

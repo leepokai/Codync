@@ -18,6 +18,11 @@ pub(super) fn collect() -> Option<Vec<Window>> {
     (!windows.is_empty()).then_some(windows)
 }
 
+/// An IDE saved a quota here, with or without the `junie` CLI.
+pub(super) fn quota_saved() -> bool {
+    roots().iter().any(|root| !quota_files(root).is_empty())
+}
+
 fn roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     for base in [dirs::config_dir(), dirs::data_local_dir()].into_iter().flatten() {
@@ -43,12 +48,7 @@ fn parse(xml: &str) -> Vec<Window> {
         return Vec::new();
     }
     let percent = (used / maximum * 100.0).clamp(0.0, 100.0);
-    let resets = option(xml, "nextRefill").and_then(|refill| {
-        refill["next"]
-            .as_str()
-            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
-            .map(|t| t.timestamp_millis())
-    });
+    let resets = option(xml, "nextRefill").and_then(|refill| refill["next"].as_str().and_then(super::iso_ms));
     vec![Window::new("monthly", "AI credits", percent, resets)]
 }
 

@@ -34,6 +34,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case imagePreviewAction(ImageAction, from: ImageFrom, outcome: ImageOutcome = .done)
     case reviewRequested(prompts: Int)
     case reviewLinkOpened
+    /// A dev server opened, or its address copied; the host reports what it does itself.
+    case devServerAction(DevServerUse)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -58,6 +60,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// Why a picture action failed: its bytes aren't there, it couldn't be read or encoded, the pasteboard write
     /// failed, or a download failed. Never the picture or its name.
     public enum ImageError: String, Sendable { case unavailable, convert, clipboard, transfer }
+    public enum DevServerUse: String, Sendable { case open, copy }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
     public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
@@ -136,6 +139,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .imagePreviewAction: "image_preview_action"
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
+        case .devServerAction: "dev_server_action"
         }
     }
 
@@ -176,6 +180,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .reviewRequested(prompts):
             return ["prompts": .int(prompts), "policy": .string("v2")]
         case .reviewLinkOpened: return ["source": .string("settings")]
+        case let .devServerAction(use): return ["action": .string(use.rawValue)]
         case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
         }
     }

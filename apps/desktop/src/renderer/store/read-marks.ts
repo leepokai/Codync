@@ -67,7 +67,6 @@ export class ReadMarks {
   /** The roster's "Mark as Unread". */
   markUnread(botId: string) {
     if (!this.host.bots().has(botId)) return
-    this.unsentOpens.delete(botId)
     let marked: Bot | undefined
     void this.inOrder(botId, this.host.perform, async (c) => {
       marked = (await c.call<{ bot: Bot }>('markUnread', { botId })).bot
@@ -82,7 +81,6 @@ export class ReadMarks {
   private read(botId: string, perform: Perform) {
     const bot = this.host.bots().get(botId)
     if (!bot) return
-    this.unsentOpens.delete(botId)
     const kept = this.beforeReads.get(botId)
     const before = kept?.rev === bot.rev ? kept : bot
     this.beforeReads.set(botId, before)
@@ -93,9 +91,12 @@ export class ReadMarks {
   }
 
   private inOrder(botId: string, perform: Perform, op: Operation, undo: () => void) {
+    this.unsentOpens.delete(botId)
     const before = this.sending.get(botId)
     const sent = perform(async (c) => {
       await before
+      // An open before this mark may have failed while it waited: this one is newer.
+      this.unsentOpens.delete(botId)
       return op(c)
     }, undo)
     this.sending.set(botId, sent)

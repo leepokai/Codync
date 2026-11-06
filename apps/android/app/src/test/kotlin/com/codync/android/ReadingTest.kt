@@ -91,6 +91,15 @@ class ReadingTest {
         assertEquals(false, marks.reads.retryOpen("a") { sent.add("again") })
     }
 
+    @Test fun `an open that fails while a newer mark waits behind it does not go again`() {
+        val marks = Marks()
+        val first = CompletableDeferred<Unit>()
+        marks.reads.open("a") { first.await(); error("no link") }
+        marks.reads.mark("a") {}
+        first.complete(Unit)
+        assertEquals(false, marks.reads.retryOpen("a") {})
+    }
+
     @Test fun `marking a chat drops an open that never reached the host`() {
         val marks = Marks()
         marks.reads.open("a") { error("no link") }

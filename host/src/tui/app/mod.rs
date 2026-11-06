@@ -142,10 +142,7 @@ pub struct App {
     pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
-    /// Chats marked read since their bot's unread count last changed.
-    reading: HashSet<String>,
-    /// The user picked the selected chat since the last tick: its read is theirs (`read_due`).
-    chat_opened: bool,
+    reads: reads::ReadMarks,
     history_busy: HashSet<String>,
     /// Permission cards whose answer is on its way, with the chosen option.
     pub answering: HashMap<String, String>,
@@ -222,8 +219,7 @@ impl App {
             fast_mode: HashSet::new(),
             modes: HashMap::new(),
             shell: None,
-            reading: HashSet::new(),
-            chat_opened: false,
+            reads: reads::ReadMarks::default(),
             history_busy: HashSet::new(),
             answering: HashMap::new(),
             history_done: HashSet::new(),
@@ -330,7 +326,7 @@ impl App {
 
     /// The user picks a chat, also the one already selected.
     fn select(&mut self, id: &str) {
-        self.chat_opened = true;
+        self.reads.chat_opened = true;
         if self.selected.as_deref() != Some(id) {
             self.selected = Some(id.to_owned());
             self.reply = None;

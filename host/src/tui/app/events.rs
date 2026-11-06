@@ -125,7 +125,7 @@ impl App {
         let Some(new) = Bot::parse(v) else { return };
         // Marked read once per change.
         if self.bots.get(&new.id).is_none_or(|old| old.unread != new.unread) {
-            self.reading.remove(&new.id);
+            self.reads.reading.remove(&new.id);
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };

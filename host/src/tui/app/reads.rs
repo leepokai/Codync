@@ -1,7 +1,10 @@
 //! Read marks: reading the chat on screen, and `.`, the roster's "Mark as read" and "Mark as unread". The host
 //! decides what a read does to a chat marked unread.
 
+use std::collections::HashSet;
+
 use serde_json::{Value, json};
+use tokio::task::JoinHandle;
 
 use super::bot::Bot;
 use super::{After, App};
@@ -9,24 +12,40 @@ use super::{After, App};
 /// The first host with `markUnread`.
 const MARK_UNREAD_SINCE: &str = "2.41.0";
 
+/// The read state behind this screen's marks.
+#[derive(Default)]
+pub(super) struct ReadMarks {
+    /// Chats marked read since their bot's unread count last changed.
+    pub reading: HashSet<String>,
+    /// The user picked the selected chat since the last tick: its read is theirs (`read_due`).
+    pub chat_opened: bool,
+    /// The last one on its way, retries included: the next waits for it, so the host gets them in the order they were made.
+    last: Option<JoinHandle<()>>,
+}
+
 impl App {
     pub(super) fn read_what_is_on_screen(&mut self) {
         if let Some(read) = self.read_due() {
-            self.call("markRead", read, After::Nothing);
+            self.send_mark("markRead", read, After::Nothing);
         }
+    }
+
+    fn send_mark(&mut self, method: &'static str, body: Value, after: After) {
+        let before = self.reads.last.take();
+        self.reads.last = Some(self.client.spawn_call_after(before, method, body, after, self.tx.clone()));
     }
 
     /// The `markRead` this tick owes. A chat the user just picked is the user reading it, whatever this screen knows
     /// of it. One that's merely on screen (picked for them at start-up, back from the trace, after a resize) is read
     /// automatically, once per change of its count, and the host leaves one marked unread alone.
     fn read_due(&mut self) -> Option<Value> {
-        let opened = std::mem::take(&mut self.chat_opened);
+        let opened = std::mem::take(&mut self.reads.chat_opened);
         if !self.chat_visible() || !self.term_focused {
             return None;
         }
         let bot = self.bot().filter(|b| opened || b.unread > 0)?;
         let id = bot.id.clone();
-        (self.reading.insert(id.clone()) || opened).then(|| json!({"botId": id, "automatic": !opened}))
+        (self.reads.reading.insert(id.clone()) || opened).then(|| json!({"botId": id, "automatic": !opened}))
     }
 
     /// `.`: the selected chat's "Mark as unread", or "Mark as read" when it has something unread.
@@ -34,12 +53,12 @@ impl App {
         let Some(bot) = self.bot() else { return };
         let id = bot.id.clone();
         if !bot.offers_mark_unread() {
-            self.call("markRead", json!({"botId": id}), After::Nothing);
+            self.send_mark("markRead", json!({"botId": id}), After::Nothing);
         } else if self.host_supports(
             MARK_UNREAD_SINCE,
             "Update Codync on {host}: marking a chat unread needs {version} or newer.",
         ) {
-            self.call("markUnread", json!({"botId": id}), After::MarkedUnread);
+            self.send_mark("markUnread", json!({"botId": id}), After::MarkedUnread);
         }
     }
 

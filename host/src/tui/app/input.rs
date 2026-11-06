@@ -229,7 +229,7 @@ impl App {
             KeyCode::Enter => {
                 if roster_page || self.focus == Focus::Roster {
                     if self.selected.is_some() {
-                        self.chat_opened = true;
+                        self.reads.chat_opened = true;
                         self.chat_page = true;
                         self.focus = Focus::Chat;
                         self.start_typing();

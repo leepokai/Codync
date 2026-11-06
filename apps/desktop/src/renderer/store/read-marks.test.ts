@@ -95,6 +95,15 @@ test('a chat that fails to open stays quiet, gives its count back and reads as o
   assert.equal(reads.retryOpen('a'), false, 'it went')
 })
 
+test('an open that fails while a newer mark waits behind it does not go again', async () => {
+  const { reads, answer } = computer({})
+  reads.open('a')
+  reads.markUnread('a')
+  answer(0, false)
+  await settle()
+  assert.equal(reads.retryOpen('a'), false)
+})
+
 test('marking a chat unread drops an open that never reached the host', async () => {
   const { reads, answer } = computer({})
   reads.open('a')

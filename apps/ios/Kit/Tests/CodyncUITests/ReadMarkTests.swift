@@ -78,6 +78,23 @@ import Testing
     #expect(store.unsentOpens.isEmpty)
 }
 
+@MainActor @Test func anOpenThatFailsWhileANewerMarkWaitsBehindItDoesNotGoAgain() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    await fake.setReadRefusal(true)
+    store.openConversation("b1")
+    store.markUnread("b1")
+    #expect(await until { await fake.calls.contains("markUnread") })
+    #expect(store.unsentOpens.isEmpty)
+}
+
 @MainActor @Test func markAsUnreadShowsTheAnswerUnlessANewerBotEventBeatIt() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

@@ -74,7 +74,6 @@ extension BotStore {
     /// The roster's "Mark as unread".
     public func markUnread(_ botId: String) {
         guard bots[botId] != nil else { return }
-        unsentOpens.remove(botId)
         inOrder(botId) {
             var marked: Bot?
             await self.attempt(replay: true) { marked = try await $0.markUnread(botId) }
@@ -87,7 +86,6 @@ extension BotStore {
     /// the host replaced it.
     private func readAll(_ botId: String, failed: @escaping @MainActor (any Error) -> Void) {
         guard let bot = bots[botId] else { return }
-        unsentOpens.remove(botId)
         let before = beforeReads[botId].flatMap { $0.rev == bot.rev ? $0 : nil } ?? bot
         beforeReads[botId] = before
         bots[botId]?.unread = 0
@@ -107,9 +105,12 @@ extension BotStore {
 
     /// Runs `send` after the chat's last read mark, retries included, so the host gets them in the order they were made.
     private func inOrder(_ botId: String, _ send: @escaping @MainActor () async -> Void) {
+        unsentOpens.remove(botId)
         let before = sendingReadMarks[botId]
         let sending = Task {
             await before?.value
+            // An open before this mark may have failed while it waited: this one is newer.
+            unsentOpens.remove(botId)
             await send()
         }
         sendingReadMarks[botId] = sending

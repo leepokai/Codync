@@ -32,6 +32,8 @@ function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean)
  */
 export class BotSync extends BotMirror {
   readonly artifacts = new Artifacts(() => this.changed())
+  /** The newest `routineFlow` rev heard for each bot: a flow canvas of that bot loads again when it moves. */
+  private readonly flowRevs = new Map<string, number>()
   /** The calls in this app, by id: each hands what the computer tells its voice to its engine. */
   readonly callCues = new Map<string, (cue: CallCue) => void>()
   /** The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again. */
@@ -46,6 +48,11 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private readingViews = new Map<string, string>()
+
+  /** Moves when the host changes a bot's routine-flow canvas (a link, a step, a position). */
+  flowRev(botId: string): number {
+    return this.flowRevs.get(botId) ?? 0
+  }
 
   // MARK: lifecycle
 
@@ -255,6 +262,11 @@ export class BotSync extends BotMirror {
         break
       case 'artifact':
         this.artifacts.upsert(event.artifact)
+        break
+      case 'routineFlow':
+        for (const id of event.botIds) this.flowRevs.set(id, event.rev)
+        this.bump(event.rev)
+        this.changed()
         break
       case 'screen':
         this.screen = event.screen

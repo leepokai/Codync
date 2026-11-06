@@ -79,6 +79,8 @@ export type HostEvent =
   | { type: 'network'; network: NetworkView }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
   | { type: 'call'; cue: CallCue }
+  /** These bots' routine-flow canvases changed: load them again. */
+  | { type: 'routineFlow'; rev: number; botIds: string[] }
   | { type: 'resync' }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
@@ -131,6 +133,10 @@ export function parseEvent(line: string): HostEvent | null {
     case 'call': {
       const cue = parseCallCue(raw)
       return cue ? { type, cue } : null
+    }
+    case 'routineFlow': {
+      const botIds = Array.isArray(raw.botIds) ? raw.botIds.filter((id): id is string => typeof id === 'string') : null
+      return botIds && typeof raw.rev === 'number' ? { type, rev: raw.rev, botIds } : { type: 'undecodable', kind: 'routineFlow' }
     }
     case 'resync':
       return { type }

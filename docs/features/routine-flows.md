@@ -128,6 +128,17 @@ steps, positions and placements in one transaction. Each change stamps a global 
 Only methods, an event type and fields were added: `minApp` and `minHost` do not change, and older apps and hosts
 ignore the new method names and `routineFlow` events (the TUI and apps skip unknown event types by design).
 
+## Screens
+
+In each client, a bot's routines screen has a **List | Flow** selector. Flow shows the canvas of that bot: routine and bot nodes, a fixed dashed edge from each routine to its own bot, link edges, saved positions (nodes never moved sit in automatic columns by depth), and each bot's latest step status (icon and words, never colour alone). A **list** of the same flow is the keyboard and screen-reader equivalent (and the phone's default with TalkBack on or on narrow screens). Both open the same inspector: a routine (pause/resume, test, latest steps, run history), a bot (hand its reply on to…, remove if placed by hand) or a link (instruction, disconnect). States: loading, no routines, not connected, no runs yet, error with retry, offline (read-only) and a host without the methods (the canvas says to update Codync there).
+
+- **Desktop** (`apps/desktop/src/renderer/views/routines/flow/`, model `lib/routine-flow.ts`, state `store/routine-flow-store.ts`): hand-written pan/zoom/drag; connect by dragging from a bot's dot onto another bot, or from the inspector.
+- **Android** (`RoutineFlow*.kt`, model `core/RoutineFlow.kt`): pan, pinch and node dragging; connect from the bot's detail sheet.
+- **Terminal** (`f` on a routine): the chain as rows; same words (Running, Succeeded, Failed, Skipped, Cancelled).
+- **iPhone**: not built yet.
+
+The clients pre-check the connect rules (`connectProblem`, same wording as the host) and the host stays the authority.
+
 ## Trying it
 
 See [Testing routine flows](../guides/routine-flows-testing.md).

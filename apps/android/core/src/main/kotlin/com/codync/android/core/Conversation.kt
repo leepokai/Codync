@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -166,10 +167,18 @@ sealed interface MirrorEvent {
     data class Call(val cue: CallCue) : MirrorEvent
     /** The computer's network changed: live only, never a checkpoint. */
     data class Network(val view: NetworkView) : MirrorEvent
+    /** These bots' routine-flow canvases changed: load them again. Live only, never a checkpoint. */
+    data class RoutineFlow(val rev: Long, val botIds: List<String>) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
     companion object {
+        private fun routineFlow(value: JsonObject): MirrorEvent {
+            val rev = value["rev"]?.jsonPrimitive?.longOrNull ?: return Ignored
+            val bots = (value["botIds"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: return Ignored
+            return RoutineFlow(rev, bots)
+        }
+
         fun decode(value: JsonObject): MirrorEvent = when (value.text("type")) {
             "hello" -> Hello(requireNotNull(value.text("hostId")),
                 requireNotNull(value["rev"]?.jsonPrimitive?.longOrNull),
@@ -184,6 +193,7 @@ sealed interface MirrorEvent {
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
+            "routineFlow" -> routineFlow(value)
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored

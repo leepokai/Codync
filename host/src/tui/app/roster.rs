@@ -281,7 +281,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Bot, Click, Overlay, test_app};
+    use super::super::{Bot, Click, Focus, Overlay, test_app};
     use super::{App, NOT_IN_A_SECTION, RosterLine, cursor_line, rename_fold, roster_lines, section_key};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::layout::Rect;
@@ -410,6 +410,22 @@ mod tests {
             assert_eq!(app.folded.contains("Work"), folded);
             assert_eq!(app.selected.as_deref(), Some(selected), "folding keeps the selection, opening moves it in");
         }
+    }
+
+    #[tokio::test]
+    async fn clicking_a_bot_starts_typing_in_its_chat() {
+        let mut app = test_app();
+        add(&mut app, "a", false, None, 1, 0);
+        app.hits.clicks = vec![(Rect::new(0, 0, 20, 1), Click::Bot("a".into()))];
+        app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(app.selected.as_deref(), Some("a"));
+        assert!(app.typing);
+        assert_eq!(app.focus, Focus::Chat);
     }
 
     #[test]

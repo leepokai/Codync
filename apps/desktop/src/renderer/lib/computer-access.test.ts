@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict'
-import { register } from 'node:module'
+import { existsSync } from 'node:fs'
+import { registerHooks } from 'node:module'
 import { test } from 'node:test'
 import type { AppModel } from '../store/app-model'
 
-await register(new URL('./resolve-hook.mjs', import.meta.url))
+registerHooks({ resolve(specifier, context, nextResolve) {
+  if (specifier.startsWith('@shared/')) return nextResolve(new URL(`../../shared/${specifier.slice(8)}.ts`, import.meta.url).href, context)
+  if (specifier.startsWith('.') && context.parentURL && !/\.[a-z]+$/.test(specifier)) {
+    const url = new URL(`${specifier}.ts`, context.parentURL)
+    if (existsSync(url)) return nextResolve(url.href, context)
+  }
+  return nextResolve(specifier, context)
+} })
 
 test('permission setup uses the local host identity even when a remote computer is selected', async () => {
   Object.assign(globalThis, { window: { codync: { computerName: 'OS computer name' } } })

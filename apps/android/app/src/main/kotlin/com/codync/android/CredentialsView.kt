@@ -19,8 +19,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.codync.android.core.AppVersion
-import com.codync.android.core.BotSecret
 import com.codync.android.core.CredentialStatus
 import com.codync.android.core.InstalledConnector
 import com.codync.android.core.SavedLogin
@@ -28,10 +26,7 @@ import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** The first host that keeps bot secrets. */
-private const val BOT_SECRETS_HOST = "2.20.0"
-
-/** Where the computer keeps secrets (iOS `CredentialsView`): connection keys, sign-ins, bot secrets and 1Password. */
+/** Where the computer keeps secrets (iOS `CredentialsView`): connection keys, sign-ins and 1Password. */
 @Composable internal fun CredentialsView(state: AppState, store: AppStore) {
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf<InstalledConnector?>(null) }
@@ -39,7 +34,6 @@ private const val BOT_SECRETS_HOST = "2.20.0"
     var status by remember { mutableStateOf<CredentialStatus?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val unlock = rememberUnlock(state.contextId, scope) { error = it }
     LaunchedEffect(Unit) {
         store.refreshPlugins()
         try { status = store.credentialStatus() }
@@ -65,7 +59,7 @@ private const val BOT_SECRETS_HOST = "2.20.0"
             }
             CardSection("Saved connections") {
                 for (connector in saved) row {
-                    Row(Modifier.fillMaxWidth().plainButton { unlock("Replace ${connector.name} credentials") { selected = connector } }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().plainButton { selected = connector }, verticalAlignment = Alignment.CenterVertically) {
                         Text(connector.name, Modifier.weight(1f), style = Type.body, color = Palette.text)
                         Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
                     }
@@ -74,14 +68,13 @@ private const val BOT_SECRETS_HOST = "2.20.0"
                 row { Text(tr("Values stay hidden. Select a connection to replace its credentials."), style = Type.caption, color = Palette.secondary) }
             }
             LoginsSection(store)
-            if (!AppVersion.isBelow(state.hello?.text("version") ?: "", BOT_SECRETS_HOST)) BotSecretsSection(store)
             CardSection("1Password", "Use a service account with read access only to a dedicated shared vault. The 1Password CLI must be installed on the computer.") {
                 row { Text(tr(if (status?.onePasswordConnected == true) "Connected" else "Connect a shared vault"), style = Type.body, color = Palette.text) }
                 row { FieldRow("Service account token") { PlainInput(token, { token = it }, "Paste your token", secret = true) } }
                 row {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PrimaryButton("Connect", enabled = !busy && token.isNotEmpty()) { unlock("Connect 1Password") { save(token) } }
-                        if (status?.onePasswordConnected == true) SecondaryButton("Disconnect", enabled = !busy) { unlock("Disconnect 1Password") { save("") } }
+                        PrimaryButton("Connect", enabled = !busy && token.isNotEmpty()) { save(token) }
+                        if (status?.onePasswordConnected == true) SecondaryButton("Disconnect", enabled = !busy) { save("") }
                     }
                 }
                 row {
@@ -138,39 +131,6 @@ private const val BOT_SECRETS_HOST = "2.20.0"
                 run { store.saveLogin(site, username, password); site = ""; username = ""; password = ""; load() }
             }
         }
-        error?.let { row { Text(it, style = Type.footnote, color = Palette.danger) } }
-    }
-}
-
-/** API keys and command variables bots asked for on a secure card (iOS `BotSecretsSection`); values stay hidden. */
-@Composable private fun BotSecretsSection(store: AppStore) {
-    val scope = rememberCoroutineScope()
-    var secrets by remember { mutableStateOf(emptyList<BotSecret>()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        try { secrets = store.botSecrets() }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "Couldn't load bot secrets." }
-    }
-    fun remove(secret: BotSecret) {
-        error = null
-        scope.launch {
-            try { store.removeBotSecret(secret.id); secrets = secrets - secret }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = failure.message ?: "That didn't go through." }
-        }
-    }
-    CardSection("Bot secrets", "Bots ask for these on a secure card. Codync attaches them to the bot's API calls or commands; the bot never sees the value.") {
-        for (secret in secrets) row {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(secret.name, style = Type.body, color = Palette.text)
-                    Text("${secret.botName ?: "A removed bot"} · ${secret.destination}", style = Type.caption, color = Palette.secondary)
-                }
-                IconButton("Remove", "trash") { remove(secret) }
-            }
-        }
-        if (secrets.isEmpty()) row { Text("No bot secrets yet.", style = Type.caption, color = Palette.secondary) }
         error?.let { row { Text(it, style = Type.footnote, color = Palette.danger) } }
     }
 }

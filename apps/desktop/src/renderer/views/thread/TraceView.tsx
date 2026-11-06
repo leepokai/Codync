@@ -11,7 +11,6 @@ import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { MarkdownText } from './Markdown'
 import { CodeBox, DiffView } from './PermissionCard'
-import { filterCounts, matchesFilter, TRACE_FILTERS, type TraceFilterId } from './trace-filter'
 import { useFollowEnd } from './follow-end'
 import { runningTurn, traceTurns } from './trace-turns'
 import './trace.css'
@@ -22,15 +21,12 @@ import { useTr } from '../../lib/use-language'
  * "Full conversation": everything the agent did (narration, thinking, tool calls with output
  * and diffs, plans) grouped by turn.
  */
-/** `thread`: a document's side conversation, whose steps stay out of the chat's. */
-export function TraceView({ botId, thread = null }: { botId: string; thread?: string | null }) {
+export function TraceView({ botId }: { botId: string }) {
   const tr = useTr()
   const store = useStore()
   useScreenViewed('trace')
-  const [filter, setFilter] = useState<TraceFilterId>('all')
-  const all = store.allEntries(botId).filter((e) => (e.threadId ?? null) === thread)
-  const counts = filterCounts(all)
-  const sorted = traceTurns(all.filter((e) => matchesFilter(e, filter)))
+  const all = store.allEntries(botId)
+  const sorted = traceTurns(all)
   // The running turn's thoughts start unfolded.
   const bot = store.bots.get(botId)
   const running = runningTurn(all, !!bot && isWorkingIn(bot, botId))
@@ -38,7 +34,6 @@ export function TraceView({ botId, thread = null }: { botId: string; thread?: st
   return (
     <SheetPage>
       <ModalHeader title={tr(`Full conversation`)} />
-      <TraceFilters selection={filter} counts={counts} onSelect={setFilter} />
       <div ref={follow.ref} className="thread-scroll" onScroll={follow.onScroll}>
         <VStack gap={14} className="trace-content">
           {sorted.length === 0 ? <Text tone="tertiary">{tr(`Nothing yet.`)}</Text> : null}
@@ -57,19 +52,6 @@ export function TraceView({ botId, thread = null }: { botId: string; thread?: st
         </VStack>
       </div>
     </SheetPage>
-  )
-}
-
-/** The "Full conversation" filters: one pill per event type with its count (idea 32). */
-function TraceFilters({ selection, counts, onSelect }: { selection: TraceFilterId; counts: Record<TraceFilterId, number>; onSelect: (id: TraceFilterId) => void }) {
-  return (
-    <div className="trace-filters" role="tablist" aria-label="Filter conversation">
-      {TRACE_FILTERS.map((f) => (
-        <button key={f.id} role="tab" aria-selected={selection === f.id} className={selection === f.id ? 'trace-filter on' : 'trace-filter'} onClick={() => onSelect(f.id)}>
-          {f.id === 'all' ? f.label : `${f.label} ${counts[f.id]}`}
-        </button>
-      ))}
-    </div>
   )
 }
 

@@ -10,10 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.withContext
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import com.codync.android.design.LocalDismissModal
@@ -23,6 +19,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /** The account sheet, Computer management and the Settings tab. Read-only: no test confirms a sign-out, route, removal or reset. */
 class AccountScreenTest {
@@ -71,7 +71,10 @@ class AccountScreenTest {
         compose.onNodeWithText("Continue with Google").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Add account").performScrollTo().performClick()
         compose.onNodeWithText("Continue with Google").assertDoesNotExist()
+        // The sign-in spinner intentionally keeps drawing; freeze it while checking disabled actions.
+        compose.mainClock.autoAdvance = false
         compose.runOnUiThread { state.value = state.value.copy(busy = setOf("session")) }
+        compose.mainClock.advanceTimeBy(300)
         compose.onNodeWithContentDescription("Signing in").assertIsDisplayed()
         compose.onNodeWithContentDescription(second.email).assertIsNotEnabled()
         compose.onNodeWithContentDescription("Add account").assertIsNotEnabled()

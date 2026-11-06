@@ -244,18 +244,3 @@ textarea.routine-input {
 .routine-fade {
   animation: fade-in var(--hover) both;
 }
-
-/* A weekday toggle of the schedule editor's Chosen days (kit-style round chip). */
-.routine-day {
-  width: calc(34px * var(--scale));
-  height: calc(34px * var(--scale));
-  border-radius: var(--radius-pill);
-  background: var(--bubble-user);
-  color: var(--text);
-  font-size: var(--text-caption);
-  font-weight: 500;
-}
-.routine-day.on {
-  background: var(--accent-fill);
-  color: var(--on-accent);
-}

@@ -18,45 +18,6 @@ extension BotStore {
         try await ready().marketSkills()
     }
 
-    public func marketAgents(search: String = "", category: String = "") async throws -> [MarketAgent] {
-        try await ready().marketAgents(search: search, category: category)
-    }
-
-    public func marketAgent(_ id: String) async throws -> MarketAgentDetail {
-        try await ready().marketAgent(id)
-    }
-
-    public func marketApps(search: String = "") async throws -> [MarketApp] {
-        try await ready().marketApps(search: search)
-    }
-
-    /// Creates the agent's bot and selects it.
-    @discardableResult
-    public func installAgent(_ id: String) async throws -> Bot {
-        let bot = try await ready().installAgent(id)
-        bots[bot.id] = bot
-        selection = bot.id
-        onRosterChanged?()
-        return bot
-    }
-
-    /// Adds an app with the values typed. Its sheet runs the sign-in when the connector needs one.
-    @discardableResult
-    public func installApp(_ app: MarketApp, values: [String: String]) async throws -> InstalledConnector {
-        var headers: [String: String] = [:]
-        var env: [String: String] = [:]
-        var url = app.server.url
-        for field in app.fields {
-            let typed = values[field.id]?.trimmingCharacters(in: .whitespaces) ?? ""
-            if field.url { if !typed.isEmpty { url = typed } }
-            else if let header = field.header { headers[header] = typed }
-            else if let name = field.env { env[name] = typed }
-        }
-        return try await addConnector(name: app.server.name.isEmpty ? app.name : app.server.name,
-                                      command: app.server.command, url: url, env: env, headers: headers,
-                                      args: app.server.args, catalog: app.id, description: app.description)
-    }
-
     @discardableResult
     public func installConnector(_ item: MarketConnector, option: String, inputs: [String: String]) async throws -> InstalledConnector {
         let c = try await ready().installConnector(registryName: item.name, option: option, inputs: inputs)
@@ -65,10 +26,8 @@ extension BotStore {
     }
 
     @discardableResult
-    public func addConnector(name: String, command: String?, url: String?, env: [String: String], headers: [String: String],
-                             args: [String] = [], catalog: String? = nil, description: String? = nil) async throws -> InstalledConnector {
-        let c = try await ready().addConnector(name: name, command: command, url: url, env: env, headers: headers,
-                                               args: args, catalog: catalog, description: description)
+    public func addConnector(name: String, command: String?, url: String?, env: [String: String], headers: [String: String]) async throws -> InstalledConnector {
+        let c = try await ready().addConnector(name: name, command: command, url: url, env: env, headers: headers)
         await refreshPlugins()
         return c
     }

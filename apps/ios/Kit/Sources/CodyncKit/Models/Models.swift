@@ -22,8 +22,6 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
     public var data: EntryData
     public var createdAt: Int64
     public var updatedAt: Int64
-    /// A document's or Slack thread's side conversation it's in; nil in the chat itself.
-    public var threadId: String? = nil
 
     public init(id: String, seq: Int64, botId: String, rev: Int64, kind: String, turn: Int64, data: EntryData, createdAt: Int64, updatedAt: Int64) {
         self.id = id
@@ -41,8 +39,7 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
     /// only a fresh conversation gets a line: memory lives in the bot's memory settings, a summary keeps the same
     /// conversation going, and a kept handoff changed nothing.
     public var isChat: Bool {
-        guard !isInternal else { return false }
-        return switch kind {
+        switch kind {
         case "user", "permission": true
         case "notice": data.memory == nil && data.memoryFile == nil && data.compaction == nil && data.handoff?.status != "kept"
         case "agent": data.final == true
@@ -52,7 +49,7 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
 
     /// A message a reply can quote: the user's or a final bot reply, once the computer has it.
     public var isReplyable: Bool {
-        !isInternal && (kind == "user" || (kind == "agent" && data.final == true)) && !id.hasPrefix("local-")
+        (kind == "user" || (kind == "agent" && data.final == true)) && !id.hasPrefix("local-")
     }
 
     /// How a reply quotes this message until the computer's own quote arrives: who wrote it and its
@@ -106,7 +103,6 @@ public struct UsageProvider: Codable, Hashable, Sendable, Identifiable {
     public var windows: [UsageWindow]
     public var source: String
     public var updatedAt: Int64
-    public var status: String? = nil
 }
 
 public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {
@@ -314,7 +310,6 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var model: String?
     public var modelOptions: [String: String] = [:]
     public var fastMode: Bool?
-    public var account: String?
     /// Nil where the host has none (an older one), so it isn't sent.
     public var fallbacks: [BotFallback]?
     public var selfFallbacks: Bool?
@@ -360,7 +355,6 @@ public struct BotDraft: Codable, Hashable, Sendable {
         model = bot.model
         modelOptions = bot.modelOptions
         fastMode = bot.fastMode
-        account = bot.account
         fallbacks = bot.fallbacks
         selfFallbacks = bot.selfFallbacks
         pinned = bot.pinned

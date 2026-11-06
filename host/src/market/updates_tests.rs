@@ -9,7 +9,6 @@ fn connector(command: &str, args: &[&str]) -> Connector {
         name: "GitHub".into(),
         description: String::new(),
         registry_name: Some("io.github.github/github-mcp-server".into()),
-        catalog: None,
         command: Some(command.into()),
         args: args.iter().map(|arg| (*arg).into()).collect(),
         env: BTreeMap::from([("TOKEN".into(), "secret".into())]),

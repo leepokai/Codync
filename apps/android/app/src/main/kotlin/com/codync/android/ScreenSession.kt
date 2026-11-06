@@ -25,7 +25,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.webrtc.AddIceObserver
 import org.webrtc.DataChannel
-import org.webrtc.AddIceObserver
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
@@ -48,8 +47,8 @@ import kotlin.coroutines.resumeWithException
 /**
  * One live view of the computer's screen (CodyncUI `ScreenSession`): a WebRTC peer that receives
  * the display as H.264 and sends input over two data channels (`input` reliable, `input-fast`
- * unordered for pointer moves). Signaling uses trickle ICE when the host supports it and
- * complete SDP otherwise. Lives on the main thread; WebRTC callbacks hop onto it.
+ * unordered for pointer moves). Signaling negotiates trickle ICE, with complete-SDP fallback
+ * for older hosts/helpers. Lives on the main thread; WebRTC callbacks hop onto it.
  */
 class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     sealed interface Phase {
@@ -82,6 +81,7 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     private var fast: DataChannel? = null
     private var gathered: CompletableDeferred<Unit>? = null
     private var signaling: ScreenSignaling? = null
+    private var recoveryAttempts = 0
     private var recoverJob: Job? = null
     private var renewJob: Job? = null
     private var connectionTimer: Job? = null
@@ -118,10 +118,8 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
         val preparing = generation
         val active = store.ready()
         val relay = (active.state.value as? LinkState.Ready)?.route == HostRoute.Relay
-        val connection = WireJson.decodeFromJsonElement<ScreenConnection>(active.call("screenPrepare", buildJsonObject {
-            put("relay", relay)
-            put("trickle", true)
-        }))
+        val connection = WireJson.decodeFromJsonElement<ScreenConnection>(active.call("screenPrepare", buildJsonObject { put("relay", relay); put("trickle", true) }))
+        if (BuildConfig.DEBUG) Log.d("CodyncScreen", "screen prepared: trickle=${connection.trickle}")
         if (generation != preparing || phase == Phase.Closed) {
             closeRemote(connection.session)
             throw Superseded()
@@ -180,28 +178,7 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
         reliable = pc.createDataChannel("input", DataChannel.Init())?.also { it.registerObserver(Messages(current)) }
         fast = pc.createDataChannel("input-fast", DataChannel.Init().apply { ordered = false; maxRetransmits = 0 })
 
-        val exchange = if (connection.trickle) ScreenSignaling(active, connection.session, scope,
-            applyCandidate = { candidate ->
-                if (generation != current || this.pc !== pc) throw Superseded()
-                pc.addCandidate(candidate)
-            }, isMediaConnected = {
-                generation == current && this.pc === pc && pc.iceConnectionState() in listOf(
-                    PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED)
-            }, onFailure = { error ->
-                if (generation == current && this.pc === pc && phase != Phase.Closed) {
-                    close()
-                    phase = Phase.Failed(error.message ?: "Screen signaling failed. Reconnect and try again.")
-                }
-            }).also { signaling = it; it.start() } else null
-        try {
-            exchange?.awaitReady()
-            if (generation != current || this.pc !== pc || phase == Phase.Closed) throw Superseded()
-            negotiate(pc, active, connection.session, exchange)
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) {
-            if (generation != current || this.pc !== pc || phase == Phase.Closed) throw Superseded()
-            throw error
-        }
+        negotiate(pc, active)
         if (generation != current || phase == Phase.Closed) throw Superseded()
         signaling?.check()
         // Refresh both endpoints before TURN credentials expire, including an idle screen.
@@ -220,33 +197,39 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     }
 
     /** Offer → host → answer with the reserved session's ICE configuration. */
-    private suspend fun negotiate(pc: PeerConnection, channel: EncryptedChannel, reservedSession: String, exchange: ScreenSignaling?) {
+    private suspend fun negotiate(pc: PeerConnection, active: EncryptedChannel) {
+        val signaling = signaling
         val offer = suspendCancellableCoroutine { done ->
             pc.createOffer(Sdp({ done.resume(it) }, { done.resumeWithException(IOException(it)) }), MediaConstraints())
         }
-        pc.await { pc.setLocalDescription(it, offer) }
-        if (exchange == null) waitForCandidates(pc)
         if (this.pc !== pc || phase == Phase.Closed) throw Superseded()
-        val sdp = if (exchange == null) pc.localDescription?.description ?: offer.description else offer.description
-        val response = channel.call("screenOffer", buildJsonObject {
+        pc.await { pc.setLocalDescription(it, offer) }
+        if (this.pc !== pc || phase == Phase.Closed) throw Superseded()
+        if (signaling == null) waitForCandidates(pc)
+        if (this.pc !== pc || phase == Phase.Closed) throw Superseded()
+        val sdp = if (signaling == null) pc.localDescription?.description ?: offer.description else offer.description
+        val response = active.call("screenOffer", buildJsonObject {
             put("sdp", sdp)
-            put("session", reservedSession)
+            session?.let { put("session", it) }
             display?.let { put("display", it.id) }
         }, 30_000)
         val answer = WireJson.decodeFromJsonElement<ScreenAnswer>(response)
         if (this.pc !== pc || phase == Phase.Closed) throw Superseded()
-        if (answer.session != reservedSession) throw IOException("The computer answered a different screen session.")
+        session = answer.session
         pc.await { pc.setRemoteDescription(it, SessionDescription(SessionDescription.Type.ANSWER, answer.sdp)) }
         if (this.pc !== pc || phase == Phase.Closed) throw Superseded()
-        exchange?.answerApplied()
+        signaling?.installedAnswer()
     }
 
-    private suspend fun PeerConnection.addCandidate(candidate: ScreenCandidate) = suspendCancellableCoroutine { done ->
-        addIceCandidate(IceCandidate(candidate.sdpMid, requireNotNull(candidate.sdpMLineIndex), requireNotNull(candidate.candidate)),
-            object : AddIceObserver {
-                override fun onAddSuccess() { if (done.isActive) done.resume(Unit) }
-                override fun onAddFailure(error: String?) { if (done.isActive) done.resumeWithException(IOException(error ?: "Couldn't apply a screen candidate.")) }
-            })
+    private suspend fun addCandidate(pc: PeerConnection, event: ScreenCandidate) = suspendCancellableCoroutine<Unit> { done ->
+        // The Linux helper sends no sdpMid; native WebRTC can't take null, and an empty mid falls back to the index.
+        val candidate = IceCandidate(event.sdpMid ?: "", requireNotNull(event.sdpMLineIndex), requireNotNull(event.candidate))
+        pc.addIceCandidate(candidate, object : AddIceObserver {
+            override fun onAddSuccess() { if (done.isActive) done.resume(Unit) }
+            override fun onAddFailure(error: String?) {
+                if (done.isActive) done.resumeWithException(ScreenProtocolException("Couldn't add a screen ICE candidate."))
+            }
+        })
     }
 
     private suspend fun PeerConnection.await(set: (SdpObserver) -> Unit) = suspendCancellableCoroutine { done ->
@@ -341,7 +324,7 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
 
     private fun teardown() {
         generation += 1
-        signaling?.close()
+        signaling?.stop()
         signaling = null
         renewJob?.cancel()
         connectionTimer?.cancel()
@@ -395,18 +378,13 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) { scope.launch { iceChanged(state, generation) } }
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
             if (state != PeerConnection.IceGatheringState.COMPLETE) return
-            scope.launch {
-                if (generation != this@ScreenSession.generation) return@launch
-                signaling?.complete()
-                gathered?.complete(Unit)
-            }
+            signaling?.offerLocal(ScreenCandidate.complete)
+            scope.launch { if (generation == this@ScreenSession.generation) gathered?.complete(Unit) }
         }
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceCandidate(candidate: IceCandidate) {
-            scope.launch {
-                if (generation == this@ScreenSession.generation) signaling?.local(candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid)
-            }
+            signaling?.offerLocal(ScreenCandidate(ScreenCandidate.Kind.Candidate, candidate.sdp, candidate.sdpMLineIndex, candidate.sdpMid))
         }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
         override fun onAddStream(stream: MediaStream) = Unit

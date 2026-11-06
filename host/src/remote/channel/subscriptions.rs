@@ -3,19 +3,19 @@
 use super::*;
 use tokio::sync::watch;
 
-fn screen_authorized(hub: &Hub, owner: &str) -> bool {
-    devices::authorize(hub, owner).is_ok_and(|device| device.scopes.contains(&Scope::Screen))
-}
+/// Who may keep receiving one kind of subscription.
+type Gate = fn(&Hub, &str) -> bool;
 
 /// Keep checking permissions even while a slow device fills the outbound queue.
-pub(super) async fn send_screen_event(
+pub(super) async fn send_allowed(
     hub: &Hub,
     owner: &str,
+    allowed: Gate,
     auth: &mut watch::Receiver<u64>,
     tx: &mpsc::Sender<ToDevice>,
     packet: Value,
 ) -> bool {
-    if !screen_authorized(hub, owner) {
+    if !allowed(hub, owner) {
         return false;
     }
     let send = tx.send(ToDevice::Inner(packet));
@@ -24,7 +24,7 @@ pub(super) async fn send_screen_event(
         tokio::select! {
             biased;
             changed = auth.changed() => {
-                if changed.is_err() || !screen_authorized(hub, owner) { return false; }
+                if changed.is_err() || !allowed(hub, owner) { return false; }
             }
             result = &mut send => return result.is_ok(),
         }
@@ -78,7 +78,7 @@ impl Channel {
                 return;
             }
         };
-        let screen_subscription = kind == "screenCandidates";
+        let allowed: Gate = if kind == "screenCandidates" { devices::may_view_screen } else { |_, _| true };
         let hub = self.hub.clone();
         let owner = self.caller.device_key().to_owned();
         let (jobs, tx) = (self.jobs.clone(), self.tx.clone());
@@ -87,25 +87,18 @@ impl Channel {
         let task = tokio::spawn(async move {
             let mut stream = stream;
             loop {
-                if screen_subscription && !screen_authorized(&hub, &owner) {
+                if !allowed(&hub, &owner) {
                     break;
                 }
                 let ev = tokio::select! {
                     biased;
-                    changed = auth.changed(), if screen_subscription => {
-                        if changed.is_err() || !screen_authorized(&hub, &owner) { break; }
+                    changed = auth.changed() => {
+                        if changed.is_err() || !allowed(&hub, &owner) { break; }
                         continue;
                     }
                     event = stream.next() => { let Some(event) = event else { break }; event }
                 };
-                let packet = json!({"id": id, "ev": ev});
-                let sent = if screen_subscription {
-                    send_screen_event(&hub, &owner, &mut auth, &tx, packet).await
-                } else {
-                    let result = tx.send(ToDevice::Inner(packet)).await;
-                    result.is_ok()
-                };
-                if !sent {
+                if !send_allowed(&hub, &owner, allowed, &mut auth, &tx, json!({"id": id, "ev": ev})).await {
                     break;
                 }
             }

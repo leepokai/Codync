@@ -53,7 +53,7 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
             <img src={code.qr} alt={`Pairing code for ${name}`} width={200} height={200} />
           </div>
           <Text as="div" size="caption" tone="secondary" className="pairing-note">
-            {tr(`On Android or iPhone, open Codync and scan this code from Add computer. Use Codync on both devices, or Codync Dev on both. Your phone connects on the same Wi-Fi, or through the encrypted relay from anywhere.`)}
+            {tr(`Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.`)}
           </Text>
           {cloud?.canJoinAccount ? (
             <Text as="div" size="caption" tone="attention" className="pairing-note">
@@ -64,7 +64,7 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
             <Text as="div" size="caption" tone="attention" className="pairing-note">
               {code.info.urls.length === 0
                 ? tr(`No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.`)
-                : `“Reach from anywhere” is off, so your phone only reaches ${name} on the same network.`}
+                : `“Reach from anywhere” is off, so the iPhone only reaches ${name} on the same network.`}
             </Text>
           ) : null}
           <HStack gap={4}>

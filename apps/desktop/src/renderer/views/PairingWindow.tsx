@@ -11,7 +11,7 @@ export function PairingWindow() {
   const { baseURL, token } = useApp().host.local ?? {}
   const [cloud, setCloud] = useState<CloudStatus | null>(null)
   const [name, setName] = useState('this computer')
-  // The window stays open between uses: each "Pair phone…" shows it again, with a new code.
+  // The window stays open between uses: each "Pair iPhone…" shows it again, with a new code.
   const [shown, setShown] = useState(0)
   useEffect(() => window.codync.app.onCommand((c) => {
     if (c.kind === 'reviewApprovals') setShown((n) => n + 1)

@@ -1,6 +1,5 @@
 import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
 import {
-  isInternalEntry,
   type AccessRequest,
   type Bot,
   type CloudStatus,
@@ -92,7 +91,6 @@ export class BotMirror extends Observable {
   lastError: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
   selection: string | null = null
-  messageContext: { botId: string; id: string; threadId: string | null; entries: Entry[] } | null = null
   /** Permission cards whose answer is on its way, with the chosen option. */
   answering = new Map<string, string>()
 
@@ -203,16 +201,11 @@ export class BotMirror extends Observable {
 
   /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
-    return (this.entries.get(botId) ?? []).filter((e) => !isInternalEntry(e))
-  }
-
-  /** The chat itself, without its documents' side conversations. */
-  chatEntries(botId: string) {
-    return this.allEntries(botId).filter((e) => !e.threadId)
+    return this.entries.get(botId) ?? []
   }
 
   canLoadOlder(botId: string) {
-    return canLoadHistory(this.entries.get(botId) ?? [], this.historyComplete.has(botId))
+    return canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
   }
 
   members(group: Bot) {
@@ -345,8 +338,6 @@ export function builtInBackendName(id: string) {
       return 'Grok Build'
     case 'gemini':
       return 'Gemini CLI'
-    case 'external':
-      return 'Terminal'
     default:
       return 'Custom agent'
   }

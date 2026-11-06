@@ -189,7 +189,6 @@ struct CredentialsView: View {
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 LoginsSection()
-                if !AppVersion.isBelow(model.hello?.version ?? "", BotSecret.minHost) { BotSecretsSection() }
                 CardSection("1Password", footer: "Use a service account with read access only to a dedicated shared vault. The 1Password CLI must be installed on the computer.") {
                     Text(L10n.tr(status?.onePasswordConnected == true ? "Connected" : "Connect a shared vault"))
                     CredentialFieldRow("Service account token") {

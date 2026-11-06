@@ -1,9 +1,8 @@
 import { FileDownloadCard } from './FileDownloadCard'
 import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
-import { groupBotReactions, isGroup, isReplyable, isWorking, type Bot, type BotApp, type Entry, type ReplyQuote } from '@shared/models'
+import { groupBotReactions, isGroup, isReplyable, isWorking, type Bot, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
-import { ComputerCard } from '../../components/ComputerCard'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Overlay'
@@ -17,27 +16,16 @@ import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
 import { relativeTime } from './chat-items'
 import { MarkdownText } from './Markdown'
-import { quoteText } from './composer-edits'
 import { PermissionCard } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
 import { AgentSwitchNotice, HandoffNotice } from './HandoffNotice'
-import { VoiceReceipt } from './VoiceReceipt'
 
 export function reactionPick(store: BotStore, entry: Entry): ReactionPick {
   return { emoji: QUICK_REACTIONS, chosen: entry.data.reactions ?? [], toggle: (e) => store.react(entry, e) }
 }
 
-/** Quotes a whole message into its conversation's draft (idea 34's fallback when there is no selection). */
-export function quoteEntry(store: BotStore, entry: Entry) {
-  const text = entry.data.text ?? ''
-  if (!text) return
-  const current = store.composerDrafts.get(entry.botId)
-  const quoted = quoteText(text)
-  store.composerDrafts.set(entry.botId, current ? `${current}\n${quoted}\n\n` : `${quoted}\n\n`)
-}
-
 /** One chat-visible entry, with what can be done to it. */
-export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, openAgent, openApp, openArtifact }: {
+export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, openAgent, openArtifact }: {
   entry: Entry
   groupStart: boolean
   chat: Bot | null
@@ -46,8 +34,6 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   onReply?: (e: Entry) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
   openAgent?: (botId: string) => void
-  /** Opens a sandboxed mini-app from its chat card. */
-  openApp?: (app: BotApp) => void
   /** Opens an artifact card's artifact over the chat. */
   openArtifact?: (artifactId: string) => void
 }) {
@@ -80,132 +66,10 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
     default:
       if (entry.data.connectionRequest) return <div className="chat-row group-start"><ConnectionRequestCard entry={entry} /></div>
       if (entry.data.handoff) return <div className="chat-row notice"><HandoffNotice entry={entry} card={entry.data.handoff} /></div>
-      if (entry.data.takeoverRequest) return <div className="chat-row group-start"><TakeoverRequestNotice entry={entry} /></div>
-      if (entry.data.passkeyWall) return <div className="chat-row group-start"><PasskeyWallNotice entry={entry} /></div>
-      if (entry.data.chiefIncident) return <div className="chat-row group-start"><ChiefIncidentNotice entry={entry} /></div>
-      if (entry.data.botApp) return <div className="chat-row group-start"><BotAppNotice entry={entry} openApp={openApp} /></div>
       if (entry.data.agentSwitch) return <div className="chat-row notice"><AgentSwitchNotice entry={entry} carried={entry.data.agentSwitch.carried} /></div>
       return <div className="chat-row notice"><NoticeRow entry={entry} addFallback={entry.data.addFallback && openAgent ? () => openAgent(entry.data.author ?? entry.botId) : undefined} /></div>
   }
 })
-
-/** Sandboxed mini-app card published by the bot (Ideas 1–7). */
-function BotAppNotice({ entry, openApp }: { entry: Entry; openApp?: (app: BotApp) => void }) {
-  const app = entry.data.botApp
-  if (!app) return null
-  return (
-    <VStack gap={8} className="bubble agent">
-      <HStack gap={8} align="center">
-        <Icon name="macwindow" size={14} color="var(--accent)" />
-        <Text weight="semibold">{app.title}</Text>
-        <span className="t-tab-badge">v{app.version}</span>
-      </HStack>
-      {app.description ? <Text size="footnote" tone="secondary">{app.description}</Text> : null}
-      <HStack gap={8}>
-        {openApp ? (
-          <Button kind="primary" onClick={() => openApp(app)}>
-            Open App
-          </Button>
-        ) : null}
-        {app.url ? (
-          <Button kind="secondary" onClick={() => window.codync.app.copy(app.url!)}>
-            Copy Link
-          </Button>
-        ) : null}
-      </HStack>
-    </VStack>
-  )
-}
-
-/** Ideas 13, 19 & 20: Human takeover request rendered with ComputerCard and TakeoverModal. */
-function TakeoverRequestNotice({ entry }: { entry: Entry }) {
-  const store = useLiveStore()
-  const req = entry.data.takeoverRequest
-  if (!req) return null
-  const resolved = req.status === 'resolved' || req.status === 'cancelled'
-  return (
-    <ComputerCard
-      frame={{
-        url: req.url ?? undefined,
-        title: req.reason,
-        action: resolved ? 'Completed' : 'Action needed',
-        active: !resolved,
-      }}
-      onFinishTakeover={() =>
-        store.send('I have completed the requested step in the browser. Please continue.', entry.botId, {
-          thread: entry.threadId ?? null,
-        })
-      }
-    />
-  )
-}
-
-/** Interactive Passkey / 2FA / Captcha assistance card from CDP browser detector (INIC-02). */
-function PasskeyWallNotice({ entry }: { entry: Entry }) {
-  const store = useLiveStore()
-  const wall = entry.data.passkeyWall
-  if (!wall) return null
-  const resolved = wall.status === 'resolved' || wall.status === 'cancelled'
-  return (
-    <VStack gap={8} className="bubble agent">
-      <HStack gap={8}>
-        <Icon name="person.badge.key.fill" size={14} color="var(--warning, #ff9f0a)" />
-        <Text weight="semibold" tone="attention">
-          Authentication Required ({wall.kind.toUpperCase()})
-        </Text>
-      </HStack>
-      <Text size="footnote" tone="secondary">{wall.reason} · {wall.url}</Text>
-      {!resolved ? (
-        <HStack gap={8}>
-          <Button kind="primary" onClick={() => store.send('I have completed the authentication in the browser. Please continue.', entry.botId, { thread: entry.threadId ?? null })}>
-            Continue
-          </Button>
-          <Button kind="secondary" onClick={() => store.stop(entry.botId)}>
-            Cancel
-          </Button>
-        </HStack>
-      ) : (
-        <Text size="caption" tone="tertiary">{wall.status === 'resolved' ? 'Authentication completed' : 'Cancelled'}</Text>
-      )}
-    </VStack>
-  )
-}
-
-/** Chief of Staff automatic intervention / escalation card (INIC-04). */
-function ChiefIncidentNotice({ entry }: { entry: Entry }) {
-  const store = useLiveStore()
-  const incident = entry.data.chiefIncident
-  if (!incident) return null
-  const isEscalated = incident.status === 'escalated' || incident.retryAttempt >= 2
-  return (
-    <VStack gap={8} className="bubble agent">
-      <HStack gap={8}>
-        <Icon
-          name="shield.lefthalf.filled"
-          size={14}
-          color={isEscalated ? 'var(--danger)' : 'var(--warning, #ff9f0a)'}
-        />
-        <Text weight="semibold" tone={isEscalated ? 'danger' : 'attention'}>
-          Chief of Staff · {isEscalated ? 'Escalated Incident' : `Intervention (Attempt ${incident.retryAttempt}/2)`}
-        </Text>
-      </HStack>
-      <Text size="footnote" tone="secondary">
-        Worker: {store.authorName(incident.workerBotId)} · Reason: {incident.reason}
-      </Text>
-      <Text size="footnote">{incident.summary}</Text>
-      {isEscalated ? (
-        <HStack gap={8}>
-          <Button kind="secondary" onClick={() => store.send(`Retry assignment for ${store.authorName(incident.workerBotId)}`, entry.botId, { thread: entry.threadId ?? null })}>
-            Retry manually
-          </Button>
-          <Button kind="secondary" onClick={() => store.stop(incident.workerBotId)}>
-            Stop worker
-          </Button>
-        </HStack>
-      ) : null}
-    </VStack>
-  )
-}
 
 /** Follows the store: the card shows a spinner while its answer is on its way. */
 function LivePermission({ entry }: { entry: Entry }) {
@@ -271,8 +135,6 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
             reactions={reactionPick(store, entry)}
             items={() => [
               { title: 'Copy', icon: 'square.on.square', action: copy },
-            { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
-              { title: 'Bookmark', icon: 'bookmark', action: () => void store.saveBookmark(entry.botId, entry.id, entry.data.text ?? '', '', entry.data.author ?? 'user', entry.threadId ?? null) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             ]}
           >
@@ -323,8 +185,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
           reactions={reactionPick(store, entry)}
           items={() => [
             { title: 'Copy', icon: 'square.on.square', action: copy },
-              { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
-              ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+            ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
           ]}
         >
@@ -343,7 +204,6 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
 }
 
 export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: () => void }) {
-  if (window.codync.platform === 'win32' && entry.data.source === 'voice_receipt') return <VoiceReceipt entry={entry} />
   const text = entry.data.text ?? ''
   if (entry.data.callSeconds !== undefined) {
     const s = entry.data.callSeconds

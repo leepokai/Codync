@@ -1,5 +1,3 @@
-import { openComputerScreen } from '../screen/open'
-import { useSSH } from '../settings/ssh-model'
 import { hasLibrary } from '@shared/artifacts'
 import { isGroup, isWorking, type Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
@@ -12,28 +10,21 @@ import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { BotSettingsPanel } from '../bots/BotEditorView'
-import { BotAppsCard } from '../bots/BotAppsView'
 import { MemoryCard } from '../bots/MemoryView'
-import { DocumentsCard } from '../bots/DocumentsView'
-import { ComputerPanel } from '../bots/ComputerPanel'
 import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
 import { MacChatButton } from './MacChatButton'
 import '../bots/bots.css'
 import './details-panel.css'
-import '../bots/documents.css'
 import { useTr } from '../../lib/use-language'
 
 
-export type DetailsTab = 'details' | 'library' | 'apps' | 'memory' | 'documents' | 'computer' | 'settings'
+export type DetailsTab = 'details' | 'library' | 'memory' | 'settings'
 
 const TABS: { id: DetailsTab; label: string }[] = [
   { id: 'details', label: 'Details' },
-  { id: 'apps', label: 'Apps' },
   { id: 'library', label: 'Library' },
   { id: 'memory', label: 'Memory' },
-  { id: 'documents', label: 'Documents' },
-  { id: 'computer', label: 'Computer' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -62,7 +53,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
       <div className="details-scroll">
         {bot ? <Identity bot={bot} /> : null}
         {bot && group ? (
-          <><GroupMembersList group={bot} editGroup={editGroup} /><div className="details-tab"><DocumentsCard bot={bot} store={store} /></div></>
+          <GroupMembersList group={bot} editGroup={editGroup} />
         ) : (
           <>
             <TabChoice label="Conversation details" selection={tab} options={hasLibrary(store.hostVersion?.version) ? TABS : TABS.filter((t) => t.id !== 'library')} onChange={setTab} />
@@ -73,16 +64,10 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
                   {bot ? <ComputerUse bot={bot} /> : null}
                   <RoutinesView botId={botId} initialId={routineId} />
                 </>
-              ) : tab === 'apps' ? (
-                <BotAppsCard botId={botId} />
               ) : tab === 'library' ? (
                 <LibraryView botId={botId} openArtifact={openArtifact} />
               ) : tab === 'memory' ? (
                 <MemoryCard botId={botId} />
-              ) : tab === 'computer' ? (
-                <ComputerPanel key={`${store.contextId}:${store.computer.id}:${botId}`} botId={botId} />
-              ) : tab === 'documents' && bot ? (
-                <DocumentsCard bot={bot} store={store} />
               ) : (
                 <BotSettingsPanel botId={botId} part="rarely" />
               )}
@@ -121,7 +106,6 @@ function Identity({ bot }: { bot: Bot }) {
 function ComputerUse({ bot }: { bot: Bot }) {
   const tr = useTr()
   const store = useStore()
-  const tunnel = useSSH().state.attachments.find((item) => item.computer.id === store.computer.id)
   const screen = store.screen
   if (!screen) return null
   const ready = screen.platform === 'windows' || (screen.enabled && screen.connected && screen.capture && screen.input)
@@ -131,7 +115,6 @@ function ComputerUse({ bot }: { bot: Bot }) {
       <div className="outlined-card details-switch">
         <RowLabel grow label="Use the computer" detail={ready ? null : 'On that computer, open Codync → Settings → Computer access to set it up first.'} />
         <HStack as="span" align="stretch" className="details-switch-control">
-          {tunnel ? <IconButton title="View screen" icon="display" onClick={() => openComputerScreen(store, tunnel)} /> : null}
           <Switch label="Use the computer" on={bot.computer} disabled={store.isOffline} onChange={(on) => store.setComputer(bot, on)} />
         </HStack>
       </div>

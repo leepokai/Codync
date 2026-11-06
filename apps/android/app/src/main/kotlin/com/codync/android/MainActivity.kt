@@ -1,90 +1,103 @@
 package com.codync.android
 
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.ActivityInfo
-import android.content.res.Configuration
-import android.net.Uri
 import android.os.Bundle
-import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.core.view.WindowCompat
 import androidx.activity.viewModels
-
-import androidx.core.content.ContextCompat
-import androidx.core.content.IntentCompat
-import androidx.fragment.app.FragmentActivity
-
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.codync.android.design.CodyncTheme
+import com.codync.android.design.LocalAppLanguage
+import com.codync.android.design.LocalPhrases
+import com.codync.android.design.LocalSetAppLanguage
+import com.codync.android.design.LocalSystemTag
+import com.codync.android.design.LocalSystemChinese
+import com.codync.android.design.systemScript
+import com.codync.android.design.OverlayRoot
 import coil3.ImageLoader
 import coil3.disk.DiskCache
-import com.codync.android.core.ShareIntake
-import com.codync.android.design.CodyncTheme
-import com.codync.android.design.AppearancePreferences
-import com.codync.android.design.OverlayRoot
 import java.io.File
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import okio.Path.Companion.toOkioPath
 
-class MainActivity : FragmentActivity() {
-    private val store: AppStore by viewModels()
-
-    /** A screen that just lit up is not the person deciding: see [Approvals]. */
-    private val screenOn = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            Approvals.screenLit()
-        }
-    }
-
+class MainActivity : ComponentActivity() {
+    private val accounts: AccountStore by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        ContextCompat.registerReceiver(
-            this,
-            screenOn,
-            IntentFilter(Intent.ACTION_SCREEN_ON),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-        )
-        applyWindowOrientation(resources.configuration)
-        AppearancePreferences.get(applicationContext)
+        AppearancePreferences.initialize(applicationContext)
         ThinkingDetails.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
-        Analytics.userId = { store.state.value.account.userId }
+        // Clerk's session, not the UI's copy of it: right as sign-in and sign-out happen.
+        Analytics.userId = NativeAccounts::activeUserId
         NotificationDisplay.channels(this)
         if (savedInstanceState == null) lifecycleScope.launch { CodyncWidgets.publishPreviews(applicationContext) }
         enableEdgeToEdge()
         setContent {
-            val state by store.state.collectAsStateWithLifecycle()
-            val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { store.syncPush() }
+            val state by accounts.state.collectAsStateWithLifecycle()
+            val computers by accounts.computerStates.collectAsStateWithLifecycle()
+            val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                notificationsAnswered(applicationContext, granted, PromptSource.Automatic)
+                accounts.syncPush()
+            }
             LaunchedEffect(state.computers.isNotEmpty(), state.contextId) {
                 if (BuildConfig.PUSH_CONFIGURED && state.computers.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 33 && !PushPreferences.asked(applicationContext)) {
                     PushPreferences.markAsked(applicationContext)
-                    notifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                }
-            }
-            LaunchedEffect(state.bots, state.computer?.id, state.contextId, state.rosterLoaded, state.loading) {
-                val computer = state.computer ?: return@LaunchedEffect
-                if (state.rosterLoaded && !state.loading) withContext(Dispatchers.IO) {
-                    LauncherShortcuts.sync(applicationContext, state.contextId, computer.id, state.bots)
+                    // Already allowed (in Android settings): no prompt to answer.
+                    if (!notificationsAllowed(applicationContext)) notifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
             val images = remember(state.contextId, state.generation) { AccountImages.open(applicationContext, state.contextId) }
             DisposableEffect(images) { onDispose { AccountImages.close(images) } }
-            CompositionLocalProvider(LocalNetworkImages provides images) {
+            var appLanguage by remember { mutableStateOf(AppLanguageStore.get(applicationContext)) }
+            val systemTag = androidx.compose.ui.platform.LocalConfiguration.current.locales[0].toLanguageTag()
+            val phrases = remember(appLanguage, systemTag) { AppLanguageStore.phrases(applicationContext, appLanguage, systemTag) }
+            val systemChinese = remember(systemTag) { systemScript(systemTag) != null }
+            CompositionLocalProvider(
+                LocalNetworkImages provides images,
+                LocalAppLanguage provides appLanguage,
+                LocalSystemChinese provides systemChinese,
+                LocalSystemTag provides systemTag,
+                LocalPhrases provides phrases,
+                LocalSetAppLanguage provides { next ->
+                    appLanguage = next
+                    AppLanguageStore.set(applicationContext, next)
+                    lifecycleScope.launch {
+                        try { CodyncWidgets.update(applicationContext) }
+                        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) { android.util.Log.w("Codync", "Could not refresh widget language", error) }
+                    }
+                },
+            ) {
                 key(state.contextId, state.generation) {
-                    CodyncTheme { OverlayRoot { CodyncApp(state, store); LaunchLayer(state.loading) } }
+                    val appearance by AppearancePreferences.mode.collectAsStateWithLifecycle()
+                    val dark = appearance.isDark(isSystemInDarkTheme())
+                    val darkBars = dark || computers.values.any { it.screenRequest != null }
+                    SideEffect {
+                        WindowCompat.getInsetsController(window, window.decorView).apply {
+                            isAppearanceLightStatusBars = !darkBars
+                            isAppearanceLightNavigationBars = !darkBars
+                        }
+                    }
+                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts)
+                        // Held while sign-in restores too: signed out, the app is only the welcome.
+                        LaunchLayer(state.loading || state.account.restoring,
+                            state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) } }
                 }
             }
         }
@@ -93,18 +106,6 @@ class MainActivity : FragmentActivity() {
         val replayed = savedInstanceState != null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
         if (savedInstanceState?.getString("codync:activityOwner") != accounts.activityOwnerId &&
             !(replayed && intent.action in setOf(LiveShortcut.ACTION, Intent.ACTION_SEND))) handle(intent)
-    }
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        if (store.state.value.screenRequest == null) applyWindowOrientation(newConfig)
-    }
-    private fun applyWindowOrientation(config: Configuration) {
-        val target = if (config.smallestScreenWidthDp >= 600) {
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        }
-        if (requestedOrientation != target) requestedOrientation = target
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("codync:activityOwner", accounts.activityOwnerId)
@@ -115,45 +116,31 @@ class MainActivity : FragmentActivity() {
         setIntent(intent)
         handle(intent)
     }
-    override fun onResume() {
-        super.onResume()
-        // Approvals are tapped on this screen: an activity that isn't on screen can't ask for a thumb.
-        Approvals.attach(this)
+    override fun onStart() {
+        super.onStart(); accounts.setForeground(true); Analytics.becameActive(applicationContext)
+        lifecycleScope.launch { AppUpdates.refresh(applicationContext) }
     }
-    override fun onPause() {
-        Approvals.detach(this)
-        super.onPause()
-    }
-    override fun onDestroy() {
-        unregisterReceiver(screenOn)
-        super.onDestroy()
-    }
-    override fun onStart() { super.onStart(); store.setForeground(true); Analytics.becameActive(this) }
     override fun onStop() {
-        store.setForeground(false)
-        if (!isChangingConfigurations) SensitiveAccess.revoke()
+        accounts.setForeground(false)
         // A rotation isn't a trip to the background.
         if (!isChangingConfigurations) Analytics.enteredBackground()
         super.onStop()
     }
-    /** A system share: copy what it carries now, while its grant lasts, then let the user pick the bot. Returns whether it was one. */
-    private fun handleShare(intent: Intent): Boolean {
-        if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) return false
-        // Consumed: a rotation or process restoration must not share it again.
-        setIntent(Intent(this, MainActivity::class.java))
-        if (!ShareIntake.accepts(intent.type)) return true
-        val uris = if (intent.action == Intent.ACTION_SEND) listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
-            else IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
-        val text = ShareIntake.draftText(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString())
-        if (text.isNotEmpty() || uris.isNotEmpty()) store.receiveShare(text, uris)
-        return true
-    }
     private fun handle(intent: Intent?) {
-        if (intent != null && handleShare(intent)) return
+        if (intent?.action == LiveShortcut.ACTION) { accounts.talkToLead(); return }
+        // Text shared from another app, handed over by `ShareActivity`.
+        if (intent?.action == Intent.ACTION_SEND) {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let(accounts::share)
+            return
+        }
         val uri = intent?.data ?: return
+        intent.getStringExtra(NotificationDisplay.ALERT_KIND)?.let { category ->
+            intent.removeExtra(NotificationDisplay.ALERT_KIND)
+            NotificationKind.of(category)?.let { Analytics.capture(AnalyticsEvent.NotificationOpened(it)) }
+        }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "pair") {
             intent.data = null
-            store.pair(uri.toString())
+            accounts.pair(uri.toString(), PairedVia.Link)
         }
         // Retain the scoped, non-secret destination for Activity/process restoration.
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) accounts.openLink(uri)

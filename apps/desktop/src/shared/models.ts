@@ -1,19 +1,8 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
-import { isInternalEntry } from './entry-visibility.ts'
-export { isInternalEntry } from './entry-visibility.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
-
-export * from './bdots-models.ts'
-import {
-  DEFAULT_PROACTIVE_SETTINGS,
-  type ActionClass,
-  type BotApp,
-  type ProactiveSettings,
-  type RulePolicy,
-} from './bdots-models.ts'
 
 export type BotStatus = 'idle' | 'working' | 'needsInput' | 'error'
 
@@ -23,12 +12,10 @@ export interface Bot {
   /** `agent`, or `group`: several bots and the user in one chat. */
   kind: string
   members: string[]
-  chiefBotId?: string | null
   name: string
   description: string
   avatarColor: string
   avatarShape: string
-  avatarLook?: string | null
   backend: string
   command?: string | null
   cwd: string
@@ -36,8 +23,9 @@ export interface Bot {
   managedWorkspace: boolean
   /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
-  actionRules?: Partial<Record<ActionClass, RulePolicy>>
-  proactive?: ProactiveSettings
+  /** The agent mode it works in (Claude's Manual / Plan / Auto…): the agent's id, or `auto` for its Auto mode under
+   *  any id. Null keeps the agent's default. */
+  mode: string | null
   model?: string | null
   /** The model's own settings (effort, fast…): agent option id → value. */
   modelOptions: Record<string, string>
@@ -47,7 +35,6 @@ export interface Bot {
    *  or `refused` (it turned it off; `fastModeIssue` says why). */
   fastModeSupport: string
   fastModeIssue: string | null
-  account?: string | null
   /** Agents that carry on, in order, when the bot's own can't answer. */
   fallbacks: Fallback[]
   /** The bot may set its own fallbacks; null from an older host (no fallbacks there). */
@@ -69,7 +56,7 @@ export interface Bot {
   skills: string[]
   /** The bot can see and operate the computer's desktop. */
   computer: boolean
-  /** The bot can create bots (which can too) and change its own setup and the bots it created (the built-in `manage` tools); null from an older host. */
+  /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
   manageTeam: boolean | null
   /** Other computers in the user's networks list this bot and may message it; null from an older host. */
   offeredToNetwork: boolean | null
@@ -77,7 +64,6 @@ export interface Bot {
   reachableByAssistants: boolean | null
   /** The bot that created this one; null when the user did. */
   createdBy: string | null
-  computerPermissions?: { browser: boolean; files: boolean; shell: boolean }
   /** Uses the memory all the user's bots share ("About you"). */
   sharedMemory: boolean
   /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
@@ -86,8 +72,6 @@ export interface Bot {
   harnessMemoryShared: boolean
   /** Moves whenever memory changes, so an open memory screen fetches it again. */
   memoryRev: number
-  /** Chief of Staff coordinator role (INIC-04). */
-  isChief: boolean
   autoName: boolean
   createdAt: number
   rev: number
@@ -111,20 +95,17 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     description: raw.description ?? '',
     avatarColor: raw.avatarColor ?? 'blue',
     avatarShape: raw.avatarShape ?? 'blob',
-    avatarLook: raw.avatarLook ?? null,
     backend: raw.backend ?? 'custom',
     command: raw.command ?? null,
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
-    permission: raw.permission ?? 'auto',
-    actionRules: raw.actionRules ?? {},
-    proactive: { ...DEFAULT_PROACTIVE_SETTINGS, ...(raw.proactive ?? {}) },
+    permission: raw.permission ?? 'ask',
+    mode: raw.mode ?? null,
     model: raw.model ?? null,
     modelOptions: raw.modelOptions ?? {},
     fastMode: raw.fastMode ?? false,
     fastModeSupport: raw.fastModeSupport ?? 'unknown',
     fastModeIssue: raw.fastModeIssue ?? null,
-    account: raw.account ?? null,
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
@@ -143,13 +124,10 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     offeredToNetwork: raw.offeredToNetwork ?? null,
     reachableByAssistants: raw.reachableByAssistants ?? null,
     createdBy: raw.createdBy ?? null,
-    computerPermissions: raw.computerPermissions ?? { browser: false, files: false, shell: false },
     sharedMemory: raw.sharedMemory ?? raw.managedWorkspace ?? false,
     harnessMemory: raw.harnessMemory ?? null,
     harnessMemoryShared: raw.harnessMemoryShared ?? false,
     memoryRev: raw.memoryRev ?? 0,
-    isChief: raw.isChief ?? false,
-    chiefBotId: raw.chiefBotId ?? null,
     autoName: raw.autoName ?? false,
     createdAt,
     rev: raw.rev ?? 0,
@@ -197,7 +175,7 @@ export const needsInput = (b: Bot) => b.status === 'needsInput'
 /** Working right now in this chat (its own, or a group it's in). */
 export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingChat ?? b.id) === chat
 export const folderName = (b: Bot) =>
-  b.managedWorkspace ? 'Personal workspace' : (b.cwd.split(/[\\/]/).filter(Boolean).pop() ?? b.cwd)
+  b.managedWorkspace ? 'Personal workspace' : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
 
 export interface FileDiff {
   path: string
@@ -293,44 +271,6 @@ export interface HandoffCard {
   text?: string
 }
 
-export interface PasskeyWallCard {
-  kind: 'webauthn' | 'totp' | 'captcha' | 'login'
-  url: string
-  reason: string
-  tabId?: string
-  status?: 'waiting' | 'resolved' | 'cancelled'
-}
-
-export interface ChiefIncidentCard {
-  chiefBotId: string
-  workerBotId: string
-  reason: 'stall' | 'failed' | 'timeout' | 'loop'
-  retryAttempt: number
-  summary: string
-  status?: 'retrying' | 'escalated' | 'resolved'
-}
-
-export interface SentinelIssue {
-  signature: string
-  kind: 'tool_error' | 'retry_loop' | 'turn_error' | 'queue_lag'
-  severity: 'low' | 'medium' | 'high'
-  title: string
-  toolName?: string
-  botId: string
-  firstSeenAt: number
-  lastSeenAt: number
-  count: number
-  wastedTurns: number
-  evidenceEntryId: string
-}
-
-export interface SentinelReport {
-  scannedAt: number
-  lookbackMs: number
-  entriesExamined: number
-  issues: SentinelIssue[]
-}
-
 /** notice: another agent of the bot's chain carried on, or (`back`) the bot's own is back. */
 export interface AgentSwitch {
   from: string
@@ -343,23 +283,12 @@ export interface AgentSwitch {
 }
 
 export interface EntryData {
-  /** Internal scheduled input or provisional background output; never rendered. */
-  internal?: boolean
-  source?: string
   /** Structured conversation data added to the existing team-tool notice. */
   botMessage?: BotMessage
   /** notice: the agent summarized its context; kept out of the chat. */
   compaction?: Compaction
   /** notice: the bot's chat starts over with this handoff (see `HandoffNotice`). */
   handoff?: HandoffCard
-  /** notice: a bot-built interactive mini-app card (Idea 1). */
-  botApp?: BotApp
-  /** notice: human takeover request card (Idea 13). */
-  takeoverRequest?: { reason: string; url?: string | null; status: string }
-  /** Interactive Passkey / 2FA assistance card from CDP browser detector (INIC-02). */
-  passkeyWall?: PasskeyWallCard
-  /** Chief of Staff incident intervention card (INIC-04). */
-  chiefIncident?: ChiefIncidentCard
   agentSwitch?: AgentSwitch
   /** notice (error): the bot has no fallbacks and its agent ran out; offers to add one. */
   addFallback?: boolean
@@ -407,7 +336,6 @@ export interface EntryData {
   /** agent: an artifact the bot published (or updated) in this turn. */
   artifact?: ArtifactCard
   callSeconds?: number
-  voiceTranscriptText?: string
   /** The voice call it was said in (user), answered during (agent), or that it ends (notice): the chat shows those
    * messages only in the call's conversation. */
   call?: string
@@ -428,13 +356,10 @@ export interface Entry {
   data: EntryData
   createdAt: number
   updatedAt: number
-  /** The side conversation it's in (a document's `doc:<id>`); absent in the chat itself. */
-  threadId?: string | null
 }
 
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */
 export function isChat(e: Entry): boolean {
-  if (isInternalEntry(e)) return false
   switch (e.kind) {
     case 'user':
     case 'permission':
@@ -452,7 +377,7 @@ export function isChat(e: Entry): boolean {
 
 /** Messages a reply can quote: the user's and the bots' final replies, once the computer has them. */
 export function isReplyable(e: Entry): boolean {
-  return !isInternalEntry(e) && !e.id.startsWith('local-') && (e.kind === 'user' || (e.kind === 'agent' && e.data.final === true))
+  return !e.id.startsWith('local-') && (e.kind === 'user' || (e.kind === 'agent' && e.data.final === true))
 }
 
 /** The quote a sending reply shows until the computer's own replaces it. */
@@ -479,7 +404,6 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
-  status?: 'unsupported' | 'unavailable' | string
 }
 
 export interface Usage {
@@ -687,17 +611,15 @@ export interface BotDraft {
   description: string
   avatarColor: string
   avatarShape: string
-  avatarLook?: string | null
   backend: string
   command?: string | null
   cwd: string
   permission: string
-  actionRules?: Partial<Record<ActionClass, RulePolicy>>
-  proactive?: ProactiveSettings
+  /** Null for the agent's default: sent as is, so the host clears it. */
+  mode?: string | null
   model?: string | null
   modelOptions?: Record<string, string>
   fastMode?: boolean
-  account?: string | null
   fallbacks?: Fallback[]
   selfFallbacks?: boolean
   pinned?: boolean
@@ -709,13 +631,10 @@ export interface BotDraft {
   skills?: string[]
   computer?: boolean
   manageTeam?: boolean
-  computerPermissions?: { browser: boolean; files: boolean; shell: boolean }
   offeredToNetwork?: boolean
   reachableByAssistants?: boolean
   sharedMemory?: boolean
   harnessMemory?: boolean
-  isChief?: boolean
-  chiefBotId?: string | null
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -725,17 +644,14 @@ export function draftOf(bot: Bot): BotDraft {
     description: bot.description,
     avatarColor: bot.avatarColor,
     avatarShape: bot.avatarShape,
-    avatarLook: bot.avatarLook ?? null,
     backend: bot.backend,
     command: bot.command ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
-    actionRules: bot.actionRules,
-    proactive: bot.proactive,
+    mode: bot.mode,
     model: bot.model ?? null,
     modelOptions: bot.modelOptions,
     fastMode: bot.fastMode,
-    account: bot.account ?? null,
     fallbacks: bot.fallbacks,
     selfFallbacks: bot.selfFallbacks ?? undefined,
     pinned: bot.pinned,
@@ -745,19 +661,9 @@ export function draftOf(bot: Bot): BotDraft {
     skills: bot.skills,
     computer: bot.computer,
     manageTeam: bot.manageTeam ?? undefined,
-    computerPermissions: bot.computerPermissions ?? { browser: false, files: false, shell: false },
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
-    isChief: bot.isChief,
-    chiefBotId: bot.chiefBotId ?? null,
   }
-}
-
-export interface AgentAccount {
-  id: string
-  name: string
-  backend: string
-  createdAt: number
 }
 
 export interface GroupDraft {
@@ -766,32 +672,5 @@ export interface GroupDraft {
   name: string
   description: string
   members: string[]
-  chiefBotId?: string | null
   pinned?: boolean
 }
-
-/** One thing `doctor` found wrong with a bot's setup. */
-export interface DoctorFinding {
-  botId: string
-  botName: string
-  severity: 'error' | 'warning'
-  problem: string
-  message: string
-}
-
-export interface DoctorReport {
-  checked: number
-  errors: number
-  findings: DoctorFinding[]
-}
-
-/** A daily token limit and today's use; `botId` is `*` for all bots together. */
-export interface TokenBudget {
-  botId: string
-  limit: number
-  used: number
-  level: 'within' | 'warning' | 'exceeded'
-}
-
-/** A bot (or bots) as one portable JSON file: the host makes and reads it. */
-export type BotBundle = Record<string, unknown>

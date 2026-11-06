@@ -109,19 +109,9 @@ fn qr(buf: &mut Buffer, area: Rect, url: &str, short_code: Option<&str>, outside
         put(buf, inner.x, y, inner.width, "Make the window taller to show the QR code.", t.secondary.patch(t.panel));
         y += 1;
     }
-    put(
-        buf,
-        inner.x,
-        y,
-        inner.width,
-        if url.starts_with("codync-dev:") {
-            "Scan with Codync Dev on Android or iPhone:"
-        } else {
-            "Scan with Codync on Android or iPhone:"
-        },
-        t.secondary.patch(t.panel),
-    );
-    put(buf, inner.x, y + 1, inner.width, &truncate(url, usize::from(inner.width)), t.dim.patch(t.panel));
+    for (y, line) in (y..).zip(&below) {
+        put_line(buf, inner.x, y, inner.width, line);
+    }
     put(buf, inner.x, inner.bottom() - 1, inner.width, "r new code · esc close", t.dim.patch(t.panel));
 }
 

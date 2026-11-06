@@ -4,7 +4,6 @@ import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifact
 import { isGroup, isWorkingIn, quoteOf, type Bot, type Entry } from '@shared/models'
 import type { PickedFile } from '@shared/ipc'
 import { BotAvatar } from '../../components/Avatar'
-import { DropdownMenu } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { IconButton } from '../../components/Controls'
 import { RecordingPill } from '../../components/RecordingPill'
@@ -22,7 +21,6 @@ import { composerEnter } from './composer-keyboard'
 import { CommandMenu, useCommandMenu } from './CommandMenu'
 import { ComposerAttachment } from './ComposerAttachment'
 import { QuoteRow } from './ChatRows'
-import { insertCodeBlock, wrapInCode, type ComposerEdit } from './composer-edits'
 import { useDictation } from './dictation-platform'
 import { DictationEngineMenu } from './DictationEngineMenu'
 import { builtInCommand, slashCommands, slashQuery, type SlashCommand } from './slash-commands'
@@ -36,10 +34,8 @@ type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
  * message it quotes sits at the top of the box and goes out with the next send. Under an artifact, `about` is the
  * artifact: the box keeps a draft of its own, and every message replies to the artifact's card.
  */
-export function Composer({ botId, thread = null, reply = null, about = null, cancelReply, onCall, onInterrupt }: {
+export function Composer({ botId, reply = null, about = null, cancelReply, onCall, onInterrupt }: {
   botId: string
-  /** A document's side conversation (`doc:<id>`) the message goes to, instead of the chat. */
-  thread?: string | null
   reply?: Entry | null
   about?: Artifact | null
   cancelReply?: () => void
@@ -50,20 +46,19 @@ export function Composer({ botId, thread = null, reply = null, about = null, can
 }) {
   const store = useStore()
   // Remount transient editor state (selection, attachments, IME) when its destination changes.
-  return <DestinationComposer key={JSON.stringify([store.contextId, store.computer.id, botId, thread, about?.id])}
-    botId={botId} thread={thread} about={about} reply={reply} cancelReply={cancelReply} onCall={onCall} onInterrupt={onInterrupt} />
+  return <DestinationComposer key={JSON.stringify([store.contextId, store.computer.id, botId, about?.id])}
+    botId={botId} reply={reply} about={about} cancelReply={cancelReply} onCall={onCall} onInterrupt={onInterrupt} />
 }
 
-function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall, onInterrupt }: {
-  botId: string; thread: string | null; about: Artifact | null; reply: Entry | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
+function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInterrupt }: {
+  botId: string; reply: Entry | null; about: Artifact | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
   const tr = useTr()
   const plugins = useModel(pluginsFor(store))
   const bot = store.bots.get(botId) ?? null
   const drafts = store.composerDrafts
-  // A document's conversation keeps its own draft.
-  const draftKey = thread ? `${botId}/${thread}` : about ? artifactDraftKey(about) : botId
+  const draftKey = about ? artifactDraftKey(about) : botId
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(draftKey))
   const setDraft = (text: string) => drafts.set(draftKey, text)
   const [files, setFiles] = useState<OutgoingFile[]>([])
@@ -76,36 +71,21 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
   const pasted = useRef<string[]>([])
   const working = !!bot && isWorkingIn(bot, botId)
   const empty = !draft.trim() && !files.length
-  /** A session the person runs in their own terminal: it is read here, answered in that terminal. */
-  const terminal = !!bot && bot.backend === 'external'
-  const canSend = !terminal && !empty && (store.connection.kind === 'online' || (store.canQueue && !files.length))
-  const canAttach = !!bot && !terminal
+  const canSend = !empty && (store.connection.kind === 'online' || (store.canQueue && !files.length))
+  const canAttach = !!bot
 
   const members = bot && isGroup(bot) ? store.members(bot) : []
 
   const name = bot?.name ?? ''
-  const placeholder = terminal
-    ? tr('This bot runs in your terminal — reply there; approvals still work here')
-    : about
-      ? tr('Message about “{title}”').replace('{title}', about.title)
-      : reply || thread
-      ? tr('Reply…')
-      : bot && isGroup(bot)
-        ? tr('Ask everyone · @ to ask one bot')
-        : working
-          ? tr('Queue a message for {name}').replace('{name}', name)
-          : tr('Ask {name}').replace('{name}', name)
-
-  // A routine's "Try it" fills the chat's box (an artifact's leaves it for the chat).
-  const routineDraft = about ? undefined : store.routineDrafts.get(botId)
-  useEffect(() => {
-    if (routineDraft === undefined) return
-    const incoming = store.consumeRoutineDraft(botId)
-    if (incoming === undefined) return
-    const previous = drafts.get(draftKey)
-    drafts.set(draftKey, previous ? `${previous}\n${incoming}` : incoming)
-    field.current?.focus()
-  }, [routineDraft, botId, store, drafts])
+  const placeholder = about
+    ? tr('Message about “{title}”').replace('{title}', about.title)
+    : reply
+    ? tr('Reply…')
+    : bot && isGroup(bot)
+      ? tr('Ask everyone · @ to ask one bot')
+      : working
+        ? tr('Queue a message for {name}').replace('{name}', name)
+        : tr('Ask {name}').replace('{name}', name)
 
   // Picking a message to reply to brings the caret here.
   useEffect(() => {
@@ -186,35 +166,13 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
     setFiles((list) => [...list, ...accepted])
   }
 
-  // A composer shortcut edits one range and moves the selection; it never replaces the draft or sends.
-  const pendingSelection = useRef<[number, number] | null>(null)
-  useLayoutEffect(() => {
-    const el = field.current
-    if (el && pendingSelection.current) {
-      el.focus()
-      el.setSelectionRange(pendingSelection.current[0], pendingSelection.current[1])
-      pendingSelection.current = null
-    }
-  }, [draft])
-  const applyEdit = (edit: ComposerEdit | null) => {
-    if (!edit) return
-    pendingSelection.current = [edit.selectionStart, edit.selectionEnd]
-    setDraft(draft.slice(0, edit.start) + edit.replacement + draft.slice(edit.end))
-  }
-  // The textarea keeps its selection when the menu takes focus, so it is still there at click time.
-  const fieldSelection = () => {
-    const el = field.current
-    return { start: el ? el.selectionStart : draft.length, end: el ? el.selectionEnd : draft.length }
-  }
-
   const submit = () => {
     const command = files.length ? null : builtInCommand(bot, draft, members)
     if (!command && !canSend) return
     // Words still on their way would land in the emptied box (and the shortcut's tap would send them again).
     dictation.cancel()
     if (command) return run(command)
-    if (!canSend || terminal) return
-    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ? quoteOf(reply) : about && artifactQuote(about), thread })
+    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ? quoteOf(reply) : about && artifactQuote(about) })
     cancelReply?.()
     pasted.current = []
     setDraft('')
@@ -223,7 +181,7 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
   }
   useVoiceShortcut(dictation, draft, submit, () => field.current?.focus())
 
-  const trailing: Trailing = terminal ? 'send' : onInterrupt && !draft && !files.length ? 'interrupt' : working && !draft && !files.length ? 'stop' : onCall && !draft && !files.length ? 'call' : 'send'
+  const trailing: Trailing = onInterrupt && !draft && !files.length ? 'interrupt' : working && !draft && !files.length ? 'stop' : onCall && !draft && !files.length ? 'call' : 'send'
   const [symbol, label] = ({
     interrupt: ['stop.fill', 'Interrupt'],
     stop: ['stop.fill', 'Stop'],
@@ -275,17 +233,9 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
           <div className="composer-box">
             {/* One capsule: attachments, the field, and send / stop / call. */}
             {canAttach ? (
-              <DropdownMenu
-                className="press composer-add"
-                title="Add files"
-                items={() => [
-                  { title: 'Add files', icon: 'folder', action: () => void window.codync.app.pickFiles().then(append) },
-                  { title: 'Wrap in code', icon: 'terminal', action: () => applyEdit(wrapInCode(draft, fieldSelection().start, fieldSelection().end)) },
-                  { title: 'Code block', icon: 'terminal', action: () => applyEdit(insertCodeBlock(draft, fieldSelection().start, fieldSelection().end)) },
-                ]}
-              >
+              <button className="press composer-add" aria-label="Add files" title="Add files" onClick={() => void window.codync.app.pickFiles().then(append)}>
                 <Icon name="plus" size={13} weight="medium" color="var(--text)" />
-              </DropdownMenu>
+              </button>
             ) : null}
             <div className="composer-field">
               <div ref={measure} className="composer-measure" aria-hidden="true">{draft + '\u200b'}</div>
@@ -294,7 +244,6 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
                 rows={1}
                 value={draft}
                 placeholder={placeholder}
-                readOnly={terminal}
                 spellCheck
                 aria-label={reply ? 'Reply' : 'Message'}
                 aria-keyshortcuts="Enter Shift+Enter"

@@ -87,7 +87,6 @@ import kotlin.math.roundToInt
             Text(provider.name, Modifier.weight(1f), style = Type.subheadline.semibold, color = Palette.text)
             IconButton(if (collapsed) "Expand" else "Collapse", "chevron.up", Modifier.rotate(turn)) { collapsed = !collapsed }
         }
-        provider.statusLabel?.let { Text(tr(it), style = Type.caption, color = Palette.secondary) }
         provider.tightest?.let { top ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row {

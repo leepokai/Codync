@@ -7,11 +7,7 @@ import { loadMainModule, settle } from './main-module.ts'
 export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platform?: string; devPort?: string; installed?: boolean; missingBinary?: boolean; restartMarker?: boolean } = {}) {
   const identity = environmentProfile(options.environment ?? 'main')
   const platform = options.platform ?? 'darwin'
-  const paths = platform === 'win32' ? path.win32 : path.posix
-  const home = platform === 'win32' ? 'C:\\Users\\test' : '/home/test'
-  const resources = platform === 'win32' ? 'C:\\bundle' : '/bundle'
-  const binary = platform === 'linux' ? paths.join(home, '.local/bin/codync-host')
-    : paths.join(resources, platform === 'win32' ? 'codync-host.exe' : 'codync-host')
+  const binary = platform === 'win32' ? '/bundle/codync-host.exe' : platform === 'linux' ? '/home/test/.local/bin/codync-host' : '/bundle/codync-host'
   const binaryBytes = Buffer.from('new signed host fixture')
   const persisted: Record<string, unknown> = { hostRestartAfterAppUpdate: options.restartMarker ?? false }
   const calls: string[][] = []
@@ -41,14 +37,12 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
     mkdirSync: () => {},
     writeFileSync: (_name: string, value: string) => { Object.assign(persisted, JSON.parse(value)) },
     promises: {
-      mkdir: async () => {},
-      writeFile: async (_name: string, value: string) => { Object.assign(persisted, JSON.parse(value)) },
-      readFile: async (name: string) => name.endsWith(`${paths.sep}token`) ? 'fixture-token' : binaryBytes,
+      readFile: async (name: string) => name.endsWith('/token') ? 'fixture-token' : binaryBytes,
     },
   }
   const module = loadMainModule<typeof import('../../main/host-controller.ts')>('host-controller', {
-    'node:events': { EventEmitter }, 'node:crypto': crypto, 'node:path': paths, 'node:fs': fs,
-    'node:os': { homedir: () => home, platform: () => platform },
+    'node:events': { EventEmitter }, 'node:crypto': crypto, 'node:path': path, 'node:fs': fs,
+    'node:os': { homedir: () => '/home/test', platform: () => platform },
     'node:child_process': {
       execFileSync: () => service(),
       execFile: (_bin: string, args: string[], _options: unknown, callback: (error: { code: number } | null, stdout: string, stderr: string) => void) => {
@@ -67,7 +61,7 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
     './screen': { unregisterScreenAgent: () => { order.push('unregisterScreen') } },
   }, {
     __dirname: '/app/out/main',
-    process: { env: options.devPort ? { CODYNC_PORT: options.devPort } : {}, resourcesPath: resources },
+    process: { env: options.devPort ? { CODYNC_PORT: options.devPort } : {}, resourcesPath: '/bundle' },
     setTimeout: (callback: () => void, ms: number) => { const id = ++timerId; timers.set(id, { callback, ms }); return id },
     clearTimeout: (id: number) => timers.delete(id),
     fetch: async (url: string) => {

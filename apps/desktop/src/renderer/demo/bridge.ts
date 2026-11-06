@@ -88,7 +88,6 @@ const bridge: CodyncBridge = {
     onVoiceKey: none,
     respond() {},
     send() {},
-    dropFiles() {},
     openBot() {},
     newBot() {},
     openApp() {},
@@ -102,8 +101,7 @@ const bridge: CodyncBridge = {
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
     pickFiles: async () => [],
-    readPaths: async () => [],
-    pathForFile: () => '',
+    pickExport: async () => null,
     readClipboardFiles: async () => [],
     setTraySummary() {},
     showWindow() {},
@@ -120,10 +118,6 @@ const bridge: CodyncBridge = {
     screenAgentState: async () => ({ available: false, needsApproval: false, registered: false }),
     setScreenAgent: unavailable,
     syncScreenAgent: async () => ({ needsApproval: false }),
-  },
-  screen: {
-    open: async () => {},
-    target: async () => null,
   },
 }
 

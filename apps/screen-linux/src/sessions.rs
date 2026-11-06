@@ -1,8 +1,8 @@
 //! Serialize registration with close so a late answer cannot resurrect capture.
 
+use crate::candidates::Candidate;
 use crate::stream::Session;
 use anyhow::{Context, Result, bail};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -51,7 +51,7 @@ impl Sessions {
         }
     }
 
-    pub(super) async fn candidate(&self, id: &str, candidate: &Value) -> Result<()> {
+    pub(super) async fn candidate(&self, id: &str, candidate: &Candidate) -> Result<()> {
         let slot = {
             let sessions = self.0.lock().await;
             sessions.get(id).context("unknown screen session")?.clone()
@@ -146,8 +146,7 @@ mod tests {
         let session = Session {
             pipeline: pipeline.clone(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            trickle: true,
-            incoming: std::sync::Mutex::default(),
+            incoming: Some(std::sync::Mutex::default()),
         };
         (session, pipeline)
     }
@@ -195,9 +194,7 @@ mod tests {
             let closed = closing.await;
             closed.unwrap();
             assert_eq!(pipeline.current_state(), gst::State::Null);
-            let candidate = sessions
-                .candidate("viewer", &serde_json::json!({"type": "complete"}))
-                .await;
+            let candidate = sessions.candidate("viewer", &Candidate::Complete).await;
             assert!(
                 candidate.is_err(),
                 "the closed session was not registered later"

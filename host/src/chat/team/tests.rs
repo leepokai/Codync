@@ -5,9 +5,6 @@ use crate::store::Store;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[path = "blocking_tests.rs"]
-mod blocking_tests;
-
 pub(super) struct Fixture {
     pub(super) hub: Arc<Hub>,
     dir: PathBuf,

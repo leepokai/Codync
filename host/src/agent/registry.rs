@@ -311,11 +311,15 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
         return Ok(dir);
     }
     let url = target["archive"].as_str().ok_or_else(|| anyhow!("registry entry has no archive"))?;
+    if !url.starts_with("https://") {
+        bail!("refusing a non-HTTPS download for {id}");
+    }
     progress(&format!("Downloading {}…", agent["name"].as_str().unwrap_or(id)));
-    // The registry is untrusted: the archive (and every redirect) must be a public HTTPS host.
-    let bytes = crate::egress::get_following(crate::egress::Policy::Public, url, Duration::from_mins(10))
-        .await
-        .with_context(|| format!("downloading {id}"))?
+    let bytes = crate::http()
+        .get(url)
+        .timeout(Duration::from_mins(10))
+        .send()
+        .await?
         .error_for_status()?
         .bytes()
         .await

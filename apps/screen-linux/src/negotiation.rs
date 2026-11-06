@@ -1,5 +1,6 @@
 //! WebRTC SDP and ICE negotiation.
 
+use crate::candidates::Candidate;
 use crate::stream::Session;
 use anyhow::{Context, Result, anyhow, bail};
 use gst::prelude::*;
@@ -34,7 +35,7 @@ impl Session {
         self.pipeline
             .set_state(gst::State::Playing)
             .context("starting the video pipeline")?;
-        if self.trickle {
+        if self.incoming.is_some() {
             return answer
                 .sdp()
                 .as_text()
@@ -60,30 +61,26 @@ impl Session {
             .as_text()
             .map_err(|_| anyhow!("couldn't write the answer"))
     }
-    pub fn candidate(&self, candidate: &serde_json::Value) -> Result<()> {
-        if !self.trickle {
-            bail!("screen session does not support trickle ICE");
-        }
+
+    pub fn candidate(&self, candidate: &Candidate) -> Result<()> {
         let mut incoming = self
             .incoming
+            .as_ref()
+            .context("screen session does not support trickle ICE")?
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         incoming.accept(candidate)?;
-        if candidate["type"] == "complete" {
+        match candidate {
             // 1.22 supports end-of-candidates without add-ice-candidate-full.
-            self.webrtc
-                .emit_by_name::<()>("add-ice-candidate", &[&0u32, &None::<String>]);
-        } else {
-            let index = u32::try_from(
-                candidate["sdpMLineIndex"]
-                    .as_u64()
-                    .context("missing media index")?,
-            )?;
-            let sdp = candidate["candidate"]
-                .as_str()
-                .context("missing candidate")?;
-            self.webrtc
-                .emit_by_name::<()>("add-ice-candidate", &[&index, &sdp]);
+            Candidate::Complete => self
+                .webrtc
+                .emit_by_name::<()>("add-ice-candidate", &[&0u32, &None::<String>]),
+            Candidate::Candidate {
+                candidate,
+                sdp_m_line_index,
+            } => self
+                .webrtc
+                .emit_by_name::<()>("add-ice-candidate", &[sdp_m_line_index, candidate]),
         }
         Ok(())
     }

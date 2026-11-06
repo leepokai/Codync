@@ -4,80 +4,21 @@ import kotlinx.serialization.Serializable
 
 /** Private summaries only: widget storage never contains chat text or credentials. */
 @Serializable data class WidgetBot(val id: String, val name: String, val status: String,
-    val unread: Int = 0, val avatarColor: String = "blue", val avatarShape: String = "blob",
-    /** When the bot last did something, to break ties for the Bots tile. */
-    val lastAt: Long = 0, val avatarLook: String? = null)
+    val unread: Int = 0, val avatarColor: String = "blue", val avatarShape: String = "blob", val customIcon: CustomIcon? = null,
+    /** The computer it lives on: bot IDs are only unique per computer. */
+    val computerId: String = "",
+    /** Its last activity, for the Bots tile's tie-break. */
+    val lastAt: Long = 0) {
+    /** The bot across every computer, as the Team widget's picks keep it (iOS re-keys `<computerId>/<botId>`). */
+    val key: String get() = if (computerId.isEmpty()) id else "$computerId/$id"
+}
 
 /** Every computer's bots (the Bots and Team widgets) and one computer's usage: the last active one (iOS `lastComputerId`). */
 @Serializable data class WidgetFeed(val scope: String = "local", val computerId: String? = null,
     val computerName: String = "", val bots: List<WidgetBot> = emptyList(), val botsAt: Long = 0,
     val usage: UsageReport = UsageReport(), val usageAt: Long = 0)
 
-enum class WidgetKind { Provider, Usage, Bots, Team, LockSummary }
-
-/** Freshness state for lock screen summary (`plan-widget-bloqueo-android.md` Phase 3). */
-enum class WidgetFreshness { NoComputer, NoData, Fresh, Stale }
-
-/**
- * Privacy-first lock screen summary (`plan-widget-bloqueo-android.md` Phases 2 & 3):
- * omits bot names, messages, and computer details by default (`includeDetails = false`).
- */
-data class LockScreenSummary(
-    val freshness: WidgetFreshness,
-    val workingCount: Int,
-    val attentionCount: Int,
-    val totalBots: Int,
-    val botsAt: Long,
-    val ageMinutes: Long?,
-    val computerName: String? = null,
-    val leadBotName: String? = null,
-)
-
-const val DEFAULT_LOCK_WIDGET_STALE_MS: Long = 60L * 60_000L
-
-fun lockScreenSummary(
-    feed: WidgetFeed,
-    nowMillis: Long = System.currentTimeMillis(),
-    staleThresholdMillis: Long = DEFAULT_LOCK_WIDGET_STALE_MS,
-    includeDetails: Boolean = false,
-): LockScreenSummary {
-    if (feed.computerId.isNullOrBlank()) {
-        return LockScreenSummary(
-            freshness = WidgetFreshness.NoComputer,
-            workingCount = 0,
-            attentionCount = 0,
-            totalBots = 0,
-            botsAt = 0L,
-            ageMinutes = null,
-        )
-    }
-    if (feed.botsAt <= 0L) {
-        return LockScreenSummary(
-            freshness = WidgetFreshness.NoData,
-            workingCount = 0,
-            attentionCount = 0,
-            totalBots = feed.bots.size,
-            botsAt = 0L,
-            ageMinutes = null,
-            computerName = if (includeDetails) feed.computerName.ifBlank { null } else null,
-        )
-    }
-    val elapsedMs = maxOf(0L, nowMillis - feed.botsAt)
-    val freshness = if (elapsedMs > staleThresholdMillis) WidgetFreshness.Stale else WidgetFreshness.Fresh
-    val working = feed.bots.count { it.status == "working" }
-    val attention = feed.bots.count { it.status == "needsInput" || it.status == "error" }
-    val lead = if (includeDetails) mostUrgentBot(feed.bots)?.name else null
-    return LockScreenSummary(
-        freshness = freshness,
-        workingCount = working,
-        attentionCount = attention,
-        totalBots = feed.bots.size,
-        botsAt = feed.botsAt,
-        ageMinutes = elapsedMs / 60_000L,
-        computerName = if (includeDetails) feed.computerName.ifBlank { null } else null,
-        leadBotName = lead,
-    )
-}
+enum class WidgetKind { Provider, Usage, Bots, Team }
 
 /** A limit in the Usage limits widget, named with its provider. */
 data class ProviderLimit(val provider: String, val window: UsageWindow)
@@ -89,9 +30,9 @@ fun usageLimits(report: UsageReport): List<ProviderLimit> {
     return listOf(top.value) + all.filterIndexed { index, _ -> index != top.index }
 }
 
-/** The Bots tile's bot, as the iPhone's control picks it: one that needs you, else one working; the most recent of those. */
+/** The Bots tile's bot: waiting for you, then working, then the most recent (iOS `mostUrgent`); none while every bot is quiet. */
 fun mostUrgentBot(bots: List<WidgetBot>): WidgetBot? = bots.filter { it.status == "needsInput" || it.status == "working" }
-    .minWithOrNull(compareBy<WidgetBot> { if (it.status == "needsInput") 0 else 1 }.thenByDescending { it.lastAt })
+    .minWithOrNull(compareBy<WidgetBot> { widgetRank(it.status) }.thenByDescending { it.lastAt })
 
 /**
  * The Team widget's four spots: the picked bots first (a deleted pick falls back), then the feed's order (who needs you).
@@ -103,7 +44,22 @@ fun teamSlots(bots: List<WidgetBot>, picks: List<String?>): List<WidgetBot?> {
     return picked.map { it ?: queue.removeFirstOrNull() }
 }
 
-fun widgetBots(bots: List<Bot>): List<WidgetBot> = bots.filter { !it.hidden && !it.deleted }
-    .sortedWith(compareBy<Bot> { when (it.status) { "needsInput" -> 0; "working" -> 1; "error" -> 2; else -> 3 } }
-        .thenByDescending { it.pinned }.thenByDescending { it.lastAt }.thenBy { it.name })
-    .take(256).map { WidgetBot(it.id, it.name.take(256), it.status, it.unread, it.avatarColor, it.avatarShape, it.lastAt, it.avatarLook) }
+/** Who needs you comes first in the widgets: waiting for you, working, failed, then the rest. */
+fun widgetRank(status: String): Int = when (status) { "needsInput" -> 0; "working" -> 1; "error" -> 2; else -> 3 }
+
+/** Every computer's bots, [bots] by computer ID, who needs you first. */
+fun widgetBots(bots: Map<String, List<Bot>>): List<WidgetBot> = bots.flatMap { (computer, list) -> list.map { computer to it } }
+    .filter { (_, bot) -> !bot.hidden && !bot.deleted }
+    .sortedWith(compareBy<Pair<String, Bot>> { (_, bot) -> widgetRank(bot.status) }
+        .thenByDescending { it.second.pinned }.thenByDescending { it.second.lastAt }.thenBy { it.second.name })
+    .take(256).map { (computer, it) -> WidgetBot(it.id, it.name.take(256), it.status, it.unread, it.avatarColor, it.avatarShape, it.customIcon, computer, it.lastAt) }
+
+/**
+ * The feed after reading [computers] (each one's ID and bots; null when it couldn't be read, so the bots it showed stay),
+ * who needs you first. A computer no longer listed takes its bots along; [botsAt] moves to [now] only when every one was [fresh].
+ */
+fun WidgetFeed.readingBots(computers: List<Pair<String, List<Bot>?>>, fresh: Boolean, now: Long): WidgetFeed {
+    val kept = bots.filter { bot -> computers.any { (id, read) -> read == null && id == bot.computerId } }
+    val read = widgetBots(computers.mapNotNull { (id, read) -> read?.let { id to it } }.toMap())
+    return copy(bots = (read + kept).sortedBy { widgetRank(it.status) }.take(256), botsAt = if (computers.isNotEmpty() && fresh) now else botsAt)
+}

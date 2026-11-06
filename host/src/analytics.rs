@@ -19,7 +19,6 @@ mod lifecycle;
 mod observe;
 pub mod reported;
 mod session;
-pub(crate) mod setup;
 mod turns;
 
 pub use lifecycle::{KV_STARTED, Via, device_paired, host_started, phone_connected};
@@ -34,6 +33,9 @@ const KV_IDENTIFIED: &str = "analytics_identified";
 const TOKEN: &str = "phc_rQHvxdSFKnMquPfMjmiMhXhM4tqJ5qCYsWuVEoFxCCWX";
 const BATCH_URL: &str = "https://us.i.posthog.com/batch/";
 const FLUSH_EVERY: Duration = Duration::from_secs(30);
+/// Unsent events kept while offline; the oldest go first.
+const MAX_PENDING: usize = 500;
+
 /// Everything the host reports. Names follow the `object_verb` convention; each event's
 /// sender and properties: docs/reference/analytics-events.md.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -43,11 +45,6 @@ pub enum Event {
     WindowOpened,
     HostStarted,
     OnboardingCompleted,
-    OnboardingStepViewed,
-    OnboardingAbandoned,
-    SetupReady,
-    SetupActivated,
-    SetupFailed,
     ComputerAccessFinished,
     SignInStarted,
     SignInFailed,
@@ -117,11 +114,6 @@ impl Event {
             Self::WindowOpened => "window_opened",
             Self::HostStarted => "host_started",
             Self::OnboardingCompleted => "onboarding_completed",
-            Self::OnboardingStepViewed => "onboarding_step_viewed",
-            Self::OnboardingAbandoned => "onboarding_abandoned",
-            Self::SetupReady => "setup_ready",
-            Self::SetupActivated => "setup_activated",
-            Self::SetupFailed => "setup_failed",
             Self::ComputerAccessFinished => "computer_access_finished",
             Self::SignInStarted => "sign_in_started",
             Self::SignInFailed => "sign_in_failed",
@@ -207,7 +199,6 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
 
 pub struct Analytics {
     enabled: Mutex<bool>,
-    consent: tokio::sync::watch::Sender<bool>,
     tx: mpsc::UnboundedSender<Msg>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<Msg>>>,
     session: Mutex<session::Session>,
@@ -216,6 +207,7 @@ pub struct Analytics {
 }
 
 enum Msg {
+    Event(Value),
     /// A panic, captured off the panicking thread (`errors::report_panics`).
     Report(errors::Report),
     /// Send what's queued now and answer when done.
@@ -224,18 +216,10 @@ enum Msg {
 
 impl Analytics {
     pub fn load(store: &Store) -> Self {
-        let enabled = match store.kv_read(KV_ENABLED) {
-            Ok(value) => value.as_deref() != Some("0"),
-            Err(error) => {
-                tracing::warn!(%error, "Could not read analytics consent; reporting disabled");
-                false
-            }
-        };
+        let enabled = store.kv_get(KV_ENABLED).as_deref() != Some("0");
         let (tx, rx) = mpsc::unbounded_channel();
-        let (consent, _) = tokio::sync::watch::channel(enabled);
         Self {
             enabled: Mutex::new(enabled),
-            consent,
             tx,
             rx: Mutex::new(Some(rx)),
             session: Mutex::default(),
@@ -248,10 +232,8 @@ impl Analytics {
     }
 
     pub fn set_enabled(&self, store: &Store, on: bool) -> Result<()> {
-        let mut enabled = self.enabled.locked();
-        store.set_analytics_enabled(on)?;
-        *enabled = on;
-        self.consent.send_replace(on);
+        save_choice(store, on)?;
+        *self.enabled.locked() = on;
         Ok(())
     }
 }
@@ -298,18 +280,7 @@ pub fn capture(hub: &Hub, event: Event, mut properties: Map<String, Value>) {
     queue(hub, event.name(), account.as_deref().unwrap_or(&hub.host_id), properties);
 }
 
-fn queue(hub: &Hub, event: &str, distinct_id: &str, properties: Map<String, Value>) {
-    if let Err(error) = queue_identified(hub, event, distinct_id, properties, None) {
-        tracing::warn!(%error,"Could not persist analytics event");
-    }
-}
-fn queue_identified(
-    hub: &Hub,
-    event: &str,
-    distinct_id: &str,
-    mut properties: Map<String, Value>,
-    client_id: Option<uuid::Uuid>,
-) -> Result<()> {
+fn queue(hub: &Hub, event: &str, distinct_id: &str, mut properties: Map<String, Value>) {
     properties.extend([
         ("$lib".into(), "codync-host".into()),
         ("app_version".into(), env!("CARGO_PKG_VERSION").into()),
@@ -320,16 +291,14 @@ fn queue_identified(
         ("computer".into(), computer_tag(&hub.identity.computer_id()).into()),
         ("$session_id".into(), hub.analytics.session.locked().id(SystemTime::now()).to_string().into()),
     ]);
-    let payload = json!({
+    let _ = hub.analytics.tx.send(Msg::Event(json!({
         "event": event,
         "distinct_id": distinct_id,
         // When it happened, not when its batch left; the uuid makes a resent batch count once.
         "timestamp": chrono::Utc::now().to_rfc3339(),
-        "uuid": client_id.unwrap_or_else(uuid::Uuid::new_v4).to_string(),
+        "uuid": uuid::Uuid::new_v4().to_string(),
         "properties": properties,
-    });
-    hub.store.enqueue_analytics(&payload, client_id.is_some())?;
-    Ok(())
+    })));
 }
 
 /// A computer's analytics key: a hash of its id, so a phone's `computer_paired` joins the
@@ -350,43 +319,33 @@ pub fn start(hub: &Arc<Hub>) {
     errors::report_panics(hub);
     let hub = hub.clone();
     tokio::spawn(async move {
+        let mut pending: Vec<Value> = Vec::new();
         let mut tick = tokio::time::interval(FLUSH_EVERY);
         loop {
             tokio::select! {
                 msg = rx.recv() => match msg {
+                    Some(Msg::Event(e)) => pending.push(e),
                     Some(Msg::Report(r)) => errors::capture_report(&hub, r),
                     Some(Msg::Flush(done)) => {
-                        flush(&hub).await;
+                        flush(&hub, &mut pending).await;
                         let _ = done.send(());
                     }
                     None => return,
                 },
-                _ = tick.tick() => flush(&hub).await,
+                _ = tick.tick() => flush(&hub, &mut pending).await,
+            }
+            if pending.len() > MAX_PENDING {
+                pending.drain(..pending.len() - MAX_PENDING);
             }
         }
     });
 }
 
-async fn flush(hub: &Hub) {
-    let mut consent = hub.analytics.consent.subscribe();
-    if !*consent.borrow_and_update() {
-        return;
-    }
-    let batch = match hub.store.pending_analytics() {
-        Ok(batch) if !batch.is_empty() => batch,
-        Ok(_) => return,
-        Err(error) => {
-            tracing::warn!(%error,"Could not read analytics outbox");
-            return;
-        }
-    };
-    let sent = tokio::select! {
-        biased;
-        _ = consent.changed() => false,
-        sent = send(&batch) => sent,
-    };
-    if sent && let Err(error) = hub.store.acknowledge_analytics(&batch) {
-        tracing::warn!(%error,"Could not acknowledge analytics batch");
+async fn flush(hub: &Hub, pending: &mut Vec<Value>) {
+    let on = hub.analytics.state();
+    let sent = on && !pending.is_empty() && send(pending).await;
+    if sent || !on {
+        pending.clear();
     }
 }
 
@@ -410,7 +369,7 @@ async fn send(batch: &[Value]) -> bool {
         Ok(r) => {
             tracing::debug!(status = %r.status(), "analytics batch refused");
             // Refused for good (bad payload): retrying would only repeat it.
-            r.status().is_client_error() && !matches!(r.status().as_u16(), 408 | 429)
+            r.status().is_client_error()
         }
         Err(e) => {
             tracing::debug!(error = format!("{e:#}"), "analytics batch not sent");

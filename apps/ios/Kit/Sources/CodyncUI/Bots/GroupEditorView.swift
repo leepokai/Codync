@@ -60,7 +60,6 @@ public struct GroupEditorView: View {
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
-                    DocumentsView(botId: groupId)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(L10n.tr("Members"))
                             .font(.subheadline.weight(.semibold))

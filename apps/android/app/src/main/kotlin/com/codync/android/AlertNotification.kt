@@ -11,8 +11,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
-import androidx.core.text.bold
-import androidx.core.text.buildSpannedString
 import com.codync.android.core.AlertConversation
 import com.codync.android.core.Bot
 import com.codync.android.design.characterAvatarBitmap
@@ -28,7 +26,7 @@ import com.codync.android.design.symbolRes
  */
 internal object AlertConversations {
     /** [id] names the conversation: the alert's notification tag, one per account, computer and chat. */
-    fun style(context: Context, builder: NotificationCompat.Builder, id: String, computer: String, open: Intent, body: String, subtitle: String?,
+    fun style(context: Context, builder: NotificationCompat.Builder, id: String, computer: String, open: Intent, body: String,
         conversation: AlertConversation) {
         val chat = conversation.chat
         val chatFace = IconCompat.createWithBitmap(notificationFace(context, chat, conversation.members))
@@ -36,7 +34,7 @@ internal object AlertConversations {
         val sender = if (speaker == null) person(computer, chat, chatFace)
             else person(computer, speaker, IconCompat.createWithBitmap(notificationFace(context, speaker, emptyList())))
         val style = NotificationCompat.MessagingStyle(Person.Builder().setName("You").setKey("me").build())
-            .addMessage(message(body, subtitle), System.currentTimeMillis(), sender)
+            .addMessage(body, System.currentTimeMillis(), sender)
         if (speaker != null) style.setConversationTitle(chat.name).setGroupConversation(true)
         val shortcut = ShortcutInfoCompat.Builder(context, id).setShortLabel(chat.name.ifBlank { context.getString(R.string.app_name) })
             .setIcon(chatFace).setIntent(open).setLongLived(true).setIsConversation()
@@ -45,18 +43,11 @@ internal object AlertConversations {
         builder.setStyle(style).setShortcutInfo(shortcut)
     }
 
-    /** An account's conversations leave with it, a computer's with it (`prefix`): bot names and faces never outlive them on this phone. */
-    fun forget(context: Context, prefix: String = "") {
+    /** An account's conversations leave with it: bot names and faces never outlive the account on this phone. */
+    fun forget(context: Context) {
         val kept = ShortcutManagerCompat.getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED)
-        ShortcutManagerCompat.removeLongLivedShortcuts(context, kept.map { it.id }.filter { it.startsWith(prefix) })
+        ShortcutManagerCompat.removeLongLivedShortcuts(context, kept.map { it.id })
     }
-
-    /**
-     * What happened ("Task complete") over the text, as the iPhone's subtitle line: the conversation
-     * layout doesn't draw a notification's sub text, so it leads the message in bold.
-     */
-    internal fun message(body: String, subtitle: String?): CharSequence =
-        if (subtitle.isNullOrBlank()) body else buildSpannedString { bold { append(subtitle) }; append('\n'); append(body) }
 
     private fun person(computer: String, bot: Bot, face: IconCompat) =
         Person.Builder().setKey("$computer/${bot.id}").setName(bot.name).setIcon(face).build()

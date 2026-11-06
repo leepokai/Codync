@@ -38,28 +38,22 @@ import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.GroupDraft
 import com.codync.android.core.LinkState
-import com.codync.android.core.from
 import com.codync.android.design.*
 
-/**
- * A new bot from its face, an optional name, what it should help with and its agent and model, or from a ready-made
- * suggestion (desktop `NewBotView`); the rest starts on the defaults and changes later in its Settings.
- */
-@Composable fun NewBotView(state: AppState, store: AppStore) {
+/** A new bot from its face and name (iOS `NewBotView`); the rest starts on the defaults and changes later in its Settings. */
+/** [computers] (ID, label) can take the bot; with more than one it can move to another before it's created ([choose]). */
+@Composable fun NewBotView(state: AppState, store: AppStore, computers: List<Pair<String, String>> = emptyList(), choose: (String) -> Unit = {}) {
     var draft by remember { mutableStateOf(BotDraft()) }
-    val agentDefaults = remember { NewBotAgentDefaults() }
-    val catalog = rememberCatalog(state, store)
     val online = state.actualConnection is LinkState.Ready
     val dismiss = LocalDismissModal.current
-    // A new bot starts on an installed agent we know; the host turns on every connector and skill.
-    LaunchedEffect(state.hello) { draft = agentDefaults.refreshed(draft, state) }
+    // A new bot starts on an installed agent we know (again on another computer); the host turns on every connector and skill.
+    LaunchedEffect(state.computer.id, state.hello) { draft = fillDefaults(draft, state) }
     CreateLayout(state, "New bot", draft.name, { draft = draft.copy(name = it) }, "Name your bot", online, { store.saveBot(draft) { dismiss() } },
         { CharacterAvatar(draft.avatarShape, draft.avatarColor, 96.dp) }) {
         AvatarPicker(draft.avatarShape, draft.avatarColor, { draft = draft.copy(avatarShape = it) }, { draft = draft.copy(avatarColor = it) })
-        PurposeField(draft.description) { draft = draft.copy(description = it) }
-        AgentAndModel(state, store, draft) { draft = agentDefaults.edited(draft, it) }
-        Suggestions(catalog?.bots.orEmpty().filter { it.featured }) { draft = draft.from(it) }
-        if (!online) Text("Connect this computer to create the bot.", style = Type.caption, color = Palette.warning)
+        if (computers.size > 1) ValueRow("Computer") { ChoicePicker(state.computer.id, computers, choose, label = "Computer") }
+        if (!online) Text(if (computers.size > 1) "Connect this computer to create the bot, or choose another computer."
+            else "Connect this computer to create the bot.", style = Type.caption, color = Palette.warning)
     }
 }
 
@@ -117,7 +111,7 @@ import com.codync.android.design.*
 }
 
 /** Picks an installed agent we know (a registry agent nobody chose is never the default). */
-internal fun withKnownAgent(draft: BotDraft, state: AppState): BotDraft {
+private fun fillDefaults(draft: BotDraft, state: AppState): BotDraft {
     val backends = backends(state)
     if (backends.any { it.text("id") == draft.backend && it.available }) return draft
     return backends.firstOrNull { it.available && it.curated }?.text("id")?.let { draft.copy(backend = it) } ?: draft

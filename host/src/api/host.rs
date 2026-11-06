@@ -15,8 +15,7 @@ use std::sync::Arc;
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     Ok(ControlFlow::Break(match method {
         "hostUpdateStatus" => crate::update::status()?,
-        "sentinelHealth" => crate::sentinel::health_json(&hub.store, b["lookbackMs"].as_i64())?,
-        "checkHostUpdate" => crate::update::check()?,
+        "checkHostUpdate" => crate::update::check().await?,
         "setHostAutomaticUpdates" => {
             crate::update::set_automatic(b["enabled"].as_bool().context("enabled must be a boolean")?)?
         }
@@ -120,7 +119,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
             json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
         }
-        "agentModels" => crate::agent::auth::models(&hub.store, str_arg(&b, "backend")?, b["account"].as_str()).await?,
+        "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
         "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
             let backend = str_arg(&b, "backend")?;
             let status = match method {
@@ -138,20 +137,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::market::agent_sign_in::agent_signed_in(hub, backend)?;
             }
             status
-        }
-        "listAccounts" => {
-            let backend = b["backend"].as_str();
-            json!({"accounts": crate::agent::account::list(backend)?})
-        }
-        "accountAuthenticate" => {
-            let backend = str_arg(&b, "backend")?;
-            let name = b["name"].as_str().map(str::to_owned);
-            json!({"account": crate::agent::account::authenticate(&hub.store, backend, name).await?})
-        }
-        "deleteAccount" => {
-            let account_id = str_arg(&b, "accountId")?;
-            crate::agent::account::delete(&hub.store, account_id)?;
-            json!({})
         }
         "termInput" => {
             hub.terms.write(str_arg(&b, "term")?, str_arg(&b, "data")?)?;

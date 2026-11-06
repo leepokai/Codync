@@ -33,9 +33,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,7 +51,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import kotlinx.serialization.json.JsonObject
 import androidx.compose.ui.unit.dp
@@ -59,173 +58,38 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.codync.android.core.Bot
-import com.codync.android.core.LinkState
 import com.codync.android.core.UsageReport
 import com.codync.android.core.WidgetKind
 import com.codync.android.core.teamSlots
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
-import kotlin.math.roundToInt
 
-/** The surfaces outside the app, plus the live Activity overview. */
-private enum class Surface { Widget, LiveUpdate, StatusBar, Activity }
+/** The surfaces outside the app, as the iOS State tab has Widget, Live Activity and Dynamic Island. */
+private enum class Surface { Widget, LiveUpdate, StatusBar }
 
 /**
  * Where your bots show up outside the app, each designed and switched on here: Home Screen
- * widgets, Live updates (Android's Live Activity), the status bar chip (its Dynamic Island),
- * and live Activity (approvals, running tasks, and usage). Usage limits also open from the header.
+ * widgets, Live updates (Android's Live Activity) and the status bar chip (its Dynamic Island).
+ * Usage limits open from the header.
  */
-@Composable internal fun StateScreen(
-    state: AppState,
-    store: AppStore?,
-    usage: () -> Unit,
-    bottomInset: Dp,
-    active: Boolean = true,
-    reselectToken: Int = 0,
-) {
+@Composable internal fun StateScreen(app: AccountContext, report: JsonObject?, accounts: AccountStore?, usage: () -> Unit, bottomInset: Dp, active: Boolean = true) {
     var surface by rememberSaveable { mutableStateOf(Surface.Widget) }
-    val scroll = rememberScrollState()
-    var handledReselect by remember { mutableIntStateOf(reselectToken) }
-    LaunchedEffect(reselectToken) {
-        if (reselectToken != handledReselect) {
-            handledReselect = reselectToken
-            scroll.animateScrollTo(0)
-        }
-    }
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding()) {
         ScreenHeader(title = { Text("State", style = Type.body.semibold, color = Palette.text) },
             trailing = { IconButton("Usage limits", "chart.bar", action = usage) })
-        SegmentedChoice(
-            surface,
-            listOf(
-                Surface.Widget to "Widget",
-                Surface.LiveUpdate to "Live update",
-                Surface.StatusBar to "Status bar",
-                Surface.Activity to "Activity",
-            ),
-            { surface = it },
-            Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
-        )
+        SegmentedChoice(surface, listOf(Surface.Widget to "Widget", Surface.LiveUpdate to "Live update", Surface.StatusBar to "Status bar"),
+            { surface = it }, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
         AnimatedContent(surface, Modifier.weight(1f), transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
             label = "Surface") { shown ->
-            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = bottomInset),
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = bottomInset),
                 verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 when (shown) {
-                    Surface.Widget -> WidgetGallery(state, store, active) { surface = Surface.LiveUpdate }
-                    Surface.LiveUpdate -> LiveUpdateGallery(state, store, chip = false)
-                    Surface.StatusBar -> LiveUpdateGallery(state, store, chip = true)
-                    Surface.Activity -> ActivityGallery(state, store, usage)
+                    Surface.Widget -> WidgetGallery(app, report, accounts, active) { surface = Surface.LiveUpdate }
+                    Surface.LiveUpdate -> LiveUpdateGallery(app, accounts, chip = false)
+                    Surface.StatusBar -> LiveUpdateGallery(app, accounts, chip = true)
                 }
             }
         }
-    }
-}
-
-/** Live activity overview: approvals, active tasks, routines, and usage summary. */
-@Composable private fun ActivityGallery(state: AppState, store: AppStore?, usage: () -> Unit) {
-    val online = state.actualConnection is LinkState.Ready
-    val visibleBots = remember(state.bots) { state.bots.filter { !it.deleted && !it.hidden && it.kind != "group" } }
-    val needsInput = if (online) visibleBots.filter { it.status == "needsInput" } else emptyList()
-    val working = if (online) visibleBots.filter { it.status == "working" } else emptyList()
-    val report = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() }
-
-    if (!online) {
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.surface).padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Symbol("wifi.slash", size = 20.dp, tint = Palette.warning)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(connectionSummary(state), style = Type.subheadline.semibold, color = Palette.text)
-                Text("Live task status and approvals update once the computer is connected.", style = Type.caption, color = Palette.secondary)
-            }
-            if (store != null && state.computers.isNotEmpty()) {
-                SecondaryButton("Reconnect") { store.reconnect() }
-            }
-        }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SectionLabel("Approvals & active work")
-        if (needsInput.isEmpty() && working.isEmpty()) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.surface).padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(if (online) "All bots are idle" else "No live activity", style = Type.subheadline.semibold, color = Palette.text)
-                Text(
-                    if (online) "Bots that need your approval or are working on a task show up here."
-                    else "Cached history stays in your conversations; real-time status requires an active link.",
-                    style = Type.caption,
-                    color = Palette.secondary,
-                )
-            }
-        } else {
-            Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.surface)) {
-                val activeList = needsInput + working
-                for ((index, bot) in activeList.withIndex()) {
-                    ActivityBotRow(bot, state) { store?.openBot(bot.id) }
-                    if (index < activeList.lastIndex) Hairline(Modifier.padding(start = 56.dp))
-                }
-            }
-        }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { SectionLabel("Provider usage") }
-            SettingsLink("Full usage", action = usage)
-        }
-        val providers = report?.providers.orEmpty()
-        if (providers.isEmpty()) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.surface)
-                    .plainButton(action = usage).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text("Check provider limits", style = Type.subheadline.semibold, color = Palette.text)
-                Text("View rate limits and reset windows from Claude Code and Codex.", style = Type.caption, color = Palette.secondary)
-            }
-        } else {
-            Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.surface).plainButton(action = usage).padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                for (provider in providers) {
-                    val top = provider.tightest
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(provider.name, Modifier.weight(1f), style = Type.subheadline.medium, color = Palette.text)
-                        Text(
-                            top?.percent?.takeIf { it.isFinite() }?.let { "${it.roundToInt()}%" } ?: "—",
-                            style = Type.subheadline.monospacedDigit,
-                            color = Palette.secondary,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable private fun ActivityBotRow(bot: Bot, state: AppState, open: () -> Unit) {
-    val waiting = bot.status == "needsInput"
-    Row(
-        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = open).padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        AvatarWithStatus(bot, state.bots, 36.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(bot.name, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                bot.activity.ifEmpty { if (waiting) "Needs your approval" else "Working…" },
-                style = Type.caption,
-                color = if (waiting) Palette.warning else Palette.secondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Symbol("chevron.right", size = 14.dp, tint = Palette.tertiary)
     }
 }
 

@@ -5,7 +5,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -69,15 +68,9 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_usage" />
         </receiver>
-        <receiver android:name=".LockSummaryWidgetReceiver" android:exported="true" android:label="Lock screen summary">
-            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_lock_summary" />
-        </receiver>
         <service android:name=".LeadBotTile" android:exported="true" android:label="Bots"
             android:icon="@drawable/sf_ellipsis_bubble_fill" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
-            <!-- An active tile: the app redraws it whenever the widgets' report changes, not only when Quick Settings opens. -->
-            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
         </service>
         <activity android:name=".WidgetConfigurationActivity" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
@@ -140,21 +133,6 @@
                 <data android:scheme="${urlScheme}" android:host="computers" />
                 <data android:scheme="${urlScheme}" android:host="plugins" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-                <data android:mimeType="image/*" />
-                <data android:mimeType="application/pdf" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="image/*" />
-                <data android:mimeType="application/pdf" />
-            </intent-filter>
         </activity>
-        <!-- An alert's reply or approval: explicit broadcasts only, raised by its own PendingIntent. -->
-        <receiver android:name=".NotificationActionReceiver" android:exported="false" />
     </application>
 </manifest>

@@ -97,15 +97,13 @@ import Testing
     let channel = ChannelTransport(computer: randomComputer("Mac"), identity: identity, pairingCode: nil,
                                    dial: { _ in throw HostError.unreachable }, watchesNetwork: false)
     defer { Task { await channel.shutdown() } }
-    let session = ScreenSession(client: HostClient(transport: channel), display: nil)
     let failed = AsyncStream<Bool>.makeStream()
     let waiting = Task {
         do {
-            try await session.waitForSignalingRoute()
+            try await channel.waitForRoute()
             Issue.record("a stopped route must fail recovery")
         } catch {
-            if needsUpgrade { #expect(error as? HostError == .upgradeRequired) }
-            else { #expect(error as? ScreenError == .signalingFailed("Channel stopped.")) }
+            #expect(error as? HostError == (needsUpgrade ? .upgradeRequired : .unreachable))
             failed.continuation.yield(true)
         }
         failed.continuation.finish()

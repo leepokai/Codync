@@ -14,18 +14,12 @@ import java.util.Locale
 }
 
 @Serializable data class UsageProvider(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(),
-    val source: String = "", val updatedAt: Long? = null, val status: String? = null) {
-    val statusLabel: String? get() = when (status) {
-        "unsupported" -> "Update this agent to read its plan limits."
-        null -> null
-        else -> "Plan limits are unavailable for this account."
-    }
+    val source: String = "", val updatedAt: Long? = null) {
     val limits: List<UsageWindow> get() = windows.filter { it.text.isNullOrBlank() }
     val tightest: UsageWindow? get() = limits.filter { it.percent?.isFinite() == true }.maxByOrNull { requireNotNull(it.percent) }
     val sourceLabel: String get() = when (source) {
         "claude" -> "Claude Code"; "statusline" -> "Claude Code status line"
-        "agent" -> "A running bot"; "sessions" -> "Codex sessions"; "antigravity" -> "Antigravity quota report"
-        "" -> "Unknown source"; else -> source
+        "agent" -> "A running bot"; "sessions" -> "Codex sessions"; "" -> "Unknown source"; else -> source
     }
 }
 

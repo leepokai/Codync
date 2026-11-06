@@ -53,13 +53,9 @@ internal enum class FormPart { All, Often, Rarely }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
         when (part) {
             FormPart.All -> {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Box(Modifier.clip(RoundedRectangle(24.dp)).background(Palette.bubbleAgent).padding(18.dp)) {
-                        val look = draft.avatarLook ?: draft.avatarShape
-                        if (isRobotLook(look)) RobotAvatar(look, draft.avatarColor, 96.dp)
-                        else CharacterAvatar(draft.avatarShape, draft.avatarColor, 96.dp)
-                    }
-                    AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) })
+                CardSection("Profile") {
+                    avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
+                    nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot)
                 }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot); computerRow(state, online)
@@ -69,8 +65,6 @@ internal enum class FormPart { All, Often, Rarely }
                     notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
                 }
                 Plugins(state, draft, change) { viewingSkill = it }
-                draft.id?.let { MemoryCard(it, state, store) }
-                state.error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
             }
             FormPart.Often -> {
                 CardSection("Instructions") { instructionsRow(draft, change) }
@@ -91,7 +85,8 @@ internal enum class FormPart { All, Often, Rarely }
                 Plugins(state, draft, change) { viewingSkill = it }
             }
         }
-        if (part != FormPart.Often) ForkBotSettings(state, store, draft, change)
+        // A save that didn't take, under the form (iOS `error`).
+        error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
     }
     CodyncSheet(folders, { folders = false }) {
         FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer", store::listDirs, store::selectWorkspace) {
@@ -158,12 +153,10 @@ private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
 private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, modelReload: Int,
     reloadModels: () -> Unit, addFallback: () -> Unit) {
     row {
-        androidx.compose.runtime.key(state.generation, state.computer?.id, draft.backend, draft.account) {
-            AgentModelPicker(state, { backend -> store.agentModels(backend, draft.account) }, draft.backend, draft.model, draft.modelOptions,
-                draft.fastMode ?: false, bot,
-                { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
-                agents = agentChoices(state) + ("custom" to "Custom command"),
-                chooseAgent = { if (it != draft.backend) change(draft.withAgent(it).copy(account = null)) }) {
+        AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
+            { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
+            agents = agentChoices(state) + ("custom" to "Custom command"),
+            chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels) {
                 bot?.restOf(draft.backend)?.let { Text(it.line(RelativeTime.clock(it.until)), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
@@ -171,9 +164,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
                 if (draft.backend == "custom") FieldBox(draft.command.orEmpty(), { change(draft.copy(command = it.ifEmpty { null })) },
                     "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
             }
-        }
     }
-    botAccountRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
     row { FallbackList(state, draft.backend, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback) }
@@ -225,7 +216,7 @@ private fun computerUseDetail(screen: ScreenState): String = when {
 private fun CardRows.manageTeamRow(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit) {
     if (state.bots.none { it.manageTeam != null }) return
     row {
-        SwitchRow("Manage the team", "Let this bot create bots and change its own setup and the bots it created. The bots it creates can too.",
+        SwitchRow("Manage the team", "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.",
             draft.manageTeam, { change(draft.copy(manageTeam = it)) })
     }
 }
@@ -247,8 +238,8 @@ private fun CardRows.reachRows(state: AppState, draft: BotDraft, change: (BotDra
 @Composable private fun Plugins(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit, viewSkill: (SkillRef) -> Unit) {
     val plugins = state.plugins
     PluginToggles("Connectors", "No connectors yet. Add GitHub, Linear, Notion and more from Extensions.",
-        plugins?.connectors.orEmpty().map { Triple(it.id, it.name, it.lastFailure?.let { failure -> "⚠ ${failure.kind.uppercase()}: ${failure.message}" } ?: (it.command ?: it.url.orEmpty())) },
-        draft.connectors ?: plugins?.connectors.orEmpty().map { it.id }, { change(draft.copy(connectors = it)) })
+        plugins?.connectors.orEmpty().map { Triple(it.id, it.name, it.command ?: it.url.orEmpty()) },
+        draft.connectors.orEmpty(), { change(draft.copy(connectors = it)) })
     PluginToggles("Skills", "No skills yet. Get some from Extensions, or write your own.",
         plugins?.skills.orEmpty().map { Triple(it.id, it.name, it.description) }, draft.skills.orEmpty(), { change(draft.copy(skills = it)) }) { id ->
         plugins?.skills?.firstOrNull { it.id == id }?.let { viewSkill(SkillRef(it.id, it.name, it.description)) }

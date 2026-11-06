@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The details sheet's pages, as on the desktop inspector.
 enum DetailsTab: Hashable {
-    case details, library, memory, documents, settings
+    case details, library, memory, settings
 }
 
 /// What to open the details sheet on.
@@ -47,7 +47,7 @@ struct BotDetailsView: View {
             VStack(spacing: 0) {
                 if let bot { identity(bot) }
                 TabChoice(selection: $tab, options: [(.details, "Details")] + (model.hasLibrary ? [(.library, "Library")] : [])
-                    + [(.memory, "Memory"), (.documents, "Documents"), (.settings, "Settings")])
+                    + [(.memory, "Memory"), (.settings, "Settings")])
                     .padding(.top, 18)
                 page.padding(.top, 20)
                     .environment(\.cardStyle, .outlined)
@@ -144,8 +144,6 @@ struct BotDetailsView: View {
             LibraryView(botId: botId, openArtifact: openArtifact)
         case .memory:
             MemoryCard(botId: botId)
-        case .documents:
-            DocumentsView(botId: botId)
         case .settings:
             if let draft = Binding($draft) {
                 BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .rarely)

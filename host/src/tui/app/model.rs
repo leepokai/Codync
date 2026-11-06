@@ -27,8 +27,6 @@ pub enum Msg {
 /// What to do with a command's reply.
 #[derive(Clone)]
 pub enum After {
-    Roster(u64, super::roster_tools::RosterRead),
-    RosterStopped(String),
     Nothing,
     /// A permission card's answer arrived (or couldn't).
     Answered(String),
@@ -112,9 +110,6 @@ pub struct Entry {
 }
 
 impl Entry {
-    pub fn is_internal(&self) -> bool {
-        crate::store::is_internal(&self.data)
-    }
     pub(in crate::tui) fn parse(v: &Value) -> Option<(String, Self)> {
         let kind = match v["kind"].as_str()? {
             "user" => Kind::User,
@@ -162,15 +157,12 @@ impl Entry {
     }
 
     pub fn is_final(&self) -> bool {
-        !self.is_internal() && self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
+        self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
     }
 
     /// A step the working line unfolds: thinking, narration, a tool call or a plan, never the bot's bookkeeping
     /// (nor a call an older host didn't flag either way).
     pub fn is_working_step(&self) -> bool {
-        if self.is_internal() {
-            return false;
-        }
         match self.kind {
             Kind::Thought => !self.text().trim().is_empty(),
             Kind::Agent => !self.is_final() && !crate::chat::group::is_pass(self.text()),
@@ -182,7 +174,7 @@ impl Entry {
 
     /// A message the user can answer with a reply: theirs, or a final reply (the host checks too).
     pub fn takes_reply(&self) -> bool {
-        !self.is_internal() && (self.kind == Kind::User || self.is_final())
+        self.kind == Kind::User || self.is_final()
     }
 
     /// The text a reply quotes: the message's, or its files' names.
@@ -192,8 +184,7 @@ impl Entry {
 
     /// What the chat shows as a message: the user's, and each turn's final reply.
     pub fn is_message(&self) -> bool {
-        !self.is_internal()
-            && (self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object())
+        self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
     }
 
     /// An artifact card's artifact id (`docs/features/artifacts.md`): `o` opens it, `f` saves it.
@@ -229,7 +220,7 @@ impl Entry {
     }
 
     pub fn pending(&self) -> bool {
-        !self.is_internal() && self.kind == Kind::Permission && self.data["status"] == "pending"
+        self.kind == Kind::Permission && self.data["status"] == "pending"
     }
 
     /// Approval options in the apps' order: allow once, allow always, reject once, reject always.
@@ -259,25 +250,6 @@ impl Entry {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn internal_activity_is_not_a_message_step_approval_or_reply_target() {
-        for kind in [Kind::User, Kind::Agent, Kind::Thought, Kind::Tool, Kind::Plan, Kind::Permission, Kind::Notice] {
-            let entry = Entry {
-                id: "internal".into(),
-                seq: 1,
-                turn: 1,
-                kind,
-                data: json!({"internal":true,"text":"NO_UPDATE","final":true,"status":"pending"}),
-                created_at: 0,
-            };
-            assert!(entry.is_internal());
-            assert!(!entry.is_message());
-            assert!(!entry.is_working_step());
-            assert!(!entry.takes_reply());
-            assert!(!entry.pending());
-        }
-    }
 
     #[test]
     fn permission_options_follow_app_order() {

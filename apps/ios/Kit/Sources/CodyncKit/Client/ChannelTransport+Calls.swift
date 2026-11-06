@@ -98,8 +98,7 @@ extension ChannelTransport {
     }
 
     public nonisolated func stream(_ request: HostStreamRequest) -> AsyncThrowingStream<Data, Error> {
-        let policy: AsyncThrowingStream<Data, Error>.Continuation.BufferingPolicy = if case .screenCandidates = request { .bufferingOldest(ScreenCandidate.maxCount + 2) } else { .unbounded }
-        return AsyncThrowingStream(bufferingPolicy: policy) { continuation in
+        AsyncThrowingStream(bufferingPolicy: request.bufferLimit.map { .bufferingOldest($0) } ?? .unbounded) { continuation in
             let key = UUID()
             let task = Task { await self.openStream(request, key: key, continuation) }
             continuation.onTermination = { _ in
@@ -128,6 +127,7 @@ extension ChannelTransport {
         }
     }
 
+    /// Tells the host to stop a call or stream.
     func sendCancellation(_ id: UInt32) throws {
         try sendInner(JSONSerialization.data(withJSONObject: ["id": id, "cancel": true]))
     }

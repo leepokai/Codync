@@ -4,8 +4,6 @@
 //! apps' read-only view, dreaming, and the one-time moves from the memory Codync kept before.
 
 mod api;
-#[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
-pub mod budget;
 mod dates;
 mod dream;
 mod file_api;

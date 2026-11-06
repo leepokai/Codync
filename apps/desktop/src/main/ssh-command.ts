@@ -1,4 +1,6 @@
-import { VNC_REMOTE_PORT, type SSHProfile } from '../shared/ssh.ts'
+import { win32 } from 'node:path'
+import type { SSHProfile } from '../shared/ssh.ts'
+import type { Resolved } from './ssh-parse.ts'
 
 // Preserve the login shell's PATH, then try the supported installers and the Mac app bundle.
 const REMOTE_PATH = '$PATH:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/Applications/Codync.app/Contents/Resources'
@@ -13,8 +15,43 @@ export const remoteInfoCommand = (port: number, folder = '.codync') => {
   return `sh -lc 'PATH="${REMOTE_PATH}" codync-host info --json --port ${port}'`
 }
 
-/** `dir` is this app's host data folder (`~/.codync`, or a development sandbox's). */
-export const knownHostsFiles = (h: string, dir = `${h}/.codync`) => [`${h}/.ssh/known_hosts`, `${dir}/ssh_known_hosts`].map((path) => path.replaceAll('\\', '/'))
+const INSTALL_SCRIPT = 'https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh'
+/** The service step prints this when linger is off and turning it on needs sudo (`SSH_LINGER_COMMAND`). */
+export const LINGER_NEEDED = 'codync-linger-needed'
+
+/** Install's two remote steps, in order: each its own SSH command, so the card can say which one runs. */
+export const installSteps = [
+  { kind: 'download', title: 'Installing codync-host…', timeout: 300_000 },
+  { kind: 'service', title: 'Starting codync-host…', timeout: 120_000 },
+] as const
+export type InstallStep = typeof installSteps[number]['kind']
+
+/**
+ * The released host into `~/.local/bin` (where `remoteInfoCommand` looks), then its service on the profile's
+ * validated port. Linux keeps a user's services running after logout only with linger, which usually needs
+ * sudo: the service step tries without it and prints `LINGER_NEEDED` when that fails.
+ */
+export const remoteInstallCommand = (step: InstallStep, port: number) => step === 'download'
+  // Read whole first: piped straight in, a failed download would be an empty script that "succeeds".
+  ? `sh -lc 'script=$(curl -fsSL ${INSTALL_SCRIPT}) && printf "%s\\n" "$script" | CODYNC_BIN_DIR="$HOME/.local/bin" sh -s -- --host-only'`
+  : `sh -lc 'PATH="$HOME/.local/bin:$PATH"; codync-host install --port ${port} && { [ "$(uname -s)" != Linux ] || [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || loginctl --no-ask-password enable-linger 2>/dev/null || echo ${LINGER_NEEDED}; }'`
+
+/** Whether the service step said linger needs the user (`LINGER_NEEDED`). */
+export const needsLinger = (stdout: string) => stdout.split(/\r?\n/).some((line) => line.trim() === LINGER_NEEDED)
+
+/** The last lines an install printed, for the card: its errors (stderr) if any, without colors or progress redraws. */
+export function installOutput(stdout: string, stderr: string, count = 6) {
+  const lines = (text: string) => text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').split(/\r\n|\r|\n/).map((l) => l.trimEnd()).filter(Boolean)
+  const err = lines(stderr)
+  return (err.length > 0 ? err : lines(stdout)).slice(-count).join('\n')
+}
+
+/** Codync's own known_hosts file in `dir`, this app's host data folder (`~/.codync`, or a development sandbox's). */
+export const codyncKnownHosts = (dir: string) => `${dir.replaceAll('\\', '/')}/ssh_known_hosts`
+
+export const knownHostsFiles = (h: string, dir = `${h}/.codync`) => [`${h.replaceAll('\\', '/')}/.ssh/known_hosts`, codyncKnownHosts(dir)]
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** `pkill -f` pattern for the tunnels that use `dir`'s known_hosts file: this copy's own, never another copy's. */
 export const orphanTunnelPattern = (binary: string, dir: string) => `^${escapeRegExp(binary)} -N .*${escapeRegExp(codyncKnownHosts(dir))}`
@@ -77,7 +114,13 @@ const commandArguments = (p: SSHProfile, h: string, dir: string | undefined, com
   '--', p.host, command,
 ]
 
-export const tunnelArguments = (p: SSHProfile, localPort: number, h: string, dir?: string, vncPort?: number) => [
+export const infoArguments = (p: SSHProfile, h: string, folder = '.codync', dir = `${h}/${folder}`) =>
+  commandArguments(p, h, dir, remoteInfoCommand(p.remotePort, folder))
+
+export const installArguments = (p: SSHProfile, step: InstallStep, h: string, dir?: string) =>
+  commandArguments(p, h, dir, remoteInstallCommand(step, p.remotePort))
+
+export const tunnelArguments = (p: SSHProfile, localPort: number, h: string, dir?: string) => [
   '-N', '-T', '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
   // A shared master owns the listener and lets this child exit. The app must own
   // its tunnel process to verify the listener and close the forward on disconnect.
@@ -85,7 +128,5 @@ export const tunnelArguments = (p: SSHProfile, localPort: number, h: string, dir
   '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', 'BatchMode=yes',
   ...hostKeyOptions(h, dir),
   '-L', `127.0.0.1:${localPort}:127.0.0.1:${p.remotePort}`,
-  // The screen viewer. Absent in tests that only check the host forward.
-  ...(vncPort == null ? [] : ['-L', `127.0.0.1:${vncPort}:127.0.0.1:${VNC_REMOTE_PORT}`]),
   ...targetOptions(p), '--', p.host,
 ]

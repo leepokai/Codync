@@ -68,28 +68,30 @@ val LocalNetworkImages = staticCompositionLocalOf<ImageLoader> { error("Missing 
 
 @Composable private fun MarkdownBlock(block: Block, ink: Color) {
     val code = Palette.text.copy(alpha = 0.08f)
-    val linkTint = Palette.accent
     when (block) {
-        is Block.Paragraph -> Text(rememberInline(block.text, code, linkTint), style = Type.chatBody, color = ink)
-        is Block.Heading -> Text(rememberInline(block.text, code, linkTint), style = when (block.level) {
-            1 -> Type.chatTitle3.bold; 2 -> Type.chatHeadline; else -> Type.chatSubheadline.bold
+        is Block.Paragraph -> Text(inline(block.text, code), style = Type.body, color = ink)
+        is Block.Heading -> Text(inline(block.text, code), style = when (block.level) {
+            1 -> Type.title3.bold; 2 -> Type.headline; else -> Type.subheadline.bold
         }, color = ink)
         is Block.Bullet -> Row(Modifier.padding(start = 16.dp * block.depth), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(block.marker, style = Type.chatBody.monospacedDigit, color = Palette.secondary)
-            Text(rememberInline(block.text, code, linkTint), style = Type.chatBody, color = ink)
+            Text(block.marker, style = Type.body.monospacedDigit, color = Palette.secondary)
+            Text(inline(block.text, code), style = Type.body, color = ink)
         }
         Block.Rule -> Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(1.dp).background(Palette.border))
-        is Block.Table -> MarkdownTable(block, code, linkTint, ink)
+        is Block.Table -> MarkdownTable(block, code, ink)
         is Block.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(Palette.border))
-            Text(rememberInline(block.text, code, linkTint), Modifier.padding(start = 10.dp), style = Type.chatBody, color = Palette.secondary)
+            Text(inline(block.text, code), Modifier.padding(start = 10.dp), style = Type.body, color = Palette.secondary)
         }
-        is Block.Code -> CodeBlock(block.text, block.language)
+        is Block.Code -> Box(Modifier.fillMaxWidth().clip(RoundedRectangle(8.dp)).background(Palette.codeBackground)
+            .horizontalScroll(rememberScrollState())) {
+            Text(block.text, Modifier.padding(10.dp), style = Type.footnote.monospaced, color = Palette.text, softWrap = false)
+        }
     }
 }
 
 /** A table: a bold header and hairlines between rows, scrolling sideways when wide. */
-@Composable private fun MarkdownTable(table: Block.Table, code: Color, linkTint: Color, ink: Color) {
+@Composable private fun MarkdownTable(table: Block.Table, code: Color, ink: Color) {
     val columns = maxOf(table.header.size, table.rows.maxOfOrNull { it.size } ?: 0)
     val rows = listOf(table.header) + table.rows
     Box(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp)) {
@@ -97,21 +99,18 @@ val LocalNetworkImages = staticCompositionLocalOf<ImageLoader> { error("Missing 
             for (column in 0 until columns) Column(Modifier.width(IntrinsicSize.Max), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 for ((index, row) in rows.withIndex()) {
                     if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.border))
-                    Text(rememberInline(row.getOrElse(column) { "" }, code, linkTint), Modifier.heightIn(min = 22.dp),
-                        style = if (index == 0) Type.chatBody.semibold else Type.chatBody, color = ink, softWrap = false)
+                    Text(inline(row.getOrElse(column) { "" }, code), Modifier.heightIn(min = 22.dp),
+                        style = if (index == 0) Type.body.semibold else Type.body, color = ink, softWrap = false)
                 }
             }
         }
     }
 }
 
-@Composable private fun rememberInline(source: String, codeTint: Color, linkTint: Color): AnnotatedString =
-    remember(source, codeTint, linkTint) { inline(source, codeTint, linkTint) }
-
 private val inlineParser = Parser.builder().extensions(listOf(StrikethroughExtension.create())).build()
 
-/** Inline Markdown: links underlined and tinted with [linkTint], inline code on a soft tint. */
-internal fun inline(source: String, codeTint: Color, linkTint: Color = Color.Unspecified): AnnotatedString {
+/** Inline Markdown: links underlined (the theme is monochrome), inline code on a soft tint. */
+internal fun inline(source: String, codeTint: Color): AnnotatedString {
     // Inline only: indentation would otherwise read as a code block.
     val document = inlineParser.parse(source.lines().joinToString("\n") { it.trimStart() })
     return buildAnnotatedString {
@@ -125,9 +124,7 @@ internal fun inline(source: String, codeTint: Color, linkTint: Color = Color.Uns
             }
             if (style != null) pushStyle(style)
             val link = (node as? Link)?.destination?.takeIf { it.startsWith("https://") || it.startsWith("http://") || it.startsWith("mailto:") }
-            if (link != null) {
-                pushLink(LinkAnnotation.Url(link, TextLinkStyles(SpanStyle(color = linkTint, textDecoration = TextDecoration.Underline))))
-            }
+            if (link != null) pushLink(LinkAnnotation.Url(link, TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))))
             when (node) {
                 is org.commonmark.node.Text -> append(node.literal)
                 is Code -> append(node.literal)

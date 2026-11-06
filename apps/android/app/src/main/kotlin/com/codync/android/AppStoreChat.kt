@@ -7,66 +7,62 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
-// Conversations: opening a bot or thread, history, sending and its retries.
+// Conversations: opening a bot, history, sending and its retries.
 
-fun AppStore.openBot(id: String?, thread: String? = null) {
-    mutableState.update { it.copy(selectedBot = id, thread = thread, trace = false, removedComputer = false) }
-    if (id != null) {
-        acknowledgeVisible()
-        if (thread != null) action("thread:" + thread) {
-            val active = ready()
-            val response = active.call("thread", body("botId" to id, "rootId" to thread))
-            receiveEntries(response)
-        }
-    }
-}
-
-/** Loads a document's replies without opening a second thread over the underlying chat. */
-internal fun AppStore.loadDocumentConversation(botId: String, rootId: String) {
-    require(rootId.startsWith("doc:"))
-    val generation = state.value.generation
-    action("thread:$rootId") {
-        val response = hostQuery("thread", body("botId" to botId, "rootId" to rootId), expectedGeneration = generation)
-        receiveEntries(response)
-        acknowledgeVisible(listOf(ReadingScope(botId, rootId)))
-    }
+/** Opens a chat on this computer (the account closes any other computer's) or, with null, closes it. */
+fun AppStore.openBot(id: String?) {
+    if (id == null && state.value.selectedBot == null) return
+    // Leaving a chat drops the call "Talk to Codync" asked for there, waiting or not (iOS `cancelVoiceCallRequest`).
+    val leaving = id != state.value.selectedBot
+    if (leaving) callWait?.cancel()
+    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
+    if (id != null) { opened(this); acknowledgeVisible() }
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
-/** A conversation on screen: a bot's main chat (`thread` null) or one of its threads. */
-internal data class ReadingScope(val botId: String, val thread: String?)
-
 /**
- * What's being read (iOS `ReadingConversation`): the open chat, still on screen under its thread
- * or Full conversation, and the open thread.
+ * Starts a call in [botId]'s open chat once this computer is connected (iOS `requestVoiceCall`); the chat takes it
+ * (`takeCallRequest`). A computer that can't be reached is an error instead.
  */
-internal val AppState.readingScopes: List<ReadingScope> get() {
-    val id = selectedBot ?: return emptyList()
-    return listOfNotNull(ReadingScope(id, null), thread?.let { ReadingScope(id, it) })
+fun AppStore.requestCall(botId: String) {
+    callWait?.cancel()
+    callWait = contextScope.launch {
+        val connected = withTimeoutOrNull(20_000) { state.first { it.actualConnection is LinkState.Ready } }
+        if (connected == null) showError(IOException("Can't reach the computer. Check that it's on, then try again."))
+        else mutableState.update { it.copy(callRequest = botId) }
+    }
 }
 
-/** The scopes events make unread while they're on screen: a message in one, or its bot counting unread. */
-internal fun readAfter(events: List<MirrorEvent>, scopes: List<ReadingScope>): List<ReadingScope> = scopes.filter { scope ->
+/** Once: a chat that already has a call takes it too, so it can't start one later. */
+fun AppStore.takeCallRequest(botId: String): Boolean {
+    if (state.value.callRequest != botId) return false
+    mutableState.update { it.copy(callRequest = null) }
+    return true
+}
+
+/** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
+internal val AppState.readingChats: List<String> get() = listOfNotNull(selectedBot)
+
+/** The chats events make unread while they're on screen: a message in one, or its bot counting unread. */
+internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<String> = chats.filter { chat ->
     events.any { event ->
         when (event) {
-            is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == scope.botId && event.entry.threadId == scope.thread
-            is MirrorEvent.BotChanged -> event.bot.id == scope.botId && event.bot.unread > 0
+            is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == chat
+            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unread > 0
             else -> false
         }
     }
 }
 
-/** Marks the conversations on screen read (`scopes`: only these); the host ignores it when nothing there is unread. */
-internal fun AppStore.acknowledgeVisible(scopes: List<ReadingScope> = state.value.readingScopes) {
+/** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
+internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
     if (!foreground || channel?.state?.value !is LinkState.Ready) return
-    for (scope in scopes) action("read:" + scope.botId + ":" + scope.thread) {
-        channel?.call("markRead", body("botId" to scope.botId, "threadId" to scope.thread))
-    }
+    for (chat in chats) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
 }
 
 /** The entries of a host reply (`callEntries`, `botConversation`). */
 internal fun entriesOf(response: JsonElement): List<Entry> =
-    response.jsonObject["entries"]?.jsonArray?.map { Entry.decode(it.jsonObject) }.orEmpty().visibleEntries()
+    response.jsonObject["entries"]?.jsonArray?.map { Entry.decode(it.jsonObject) }.orEmpty()
 
 /** What a voice call carried (iOS `BotStore.callEntries`): the chat this phone holds may not reach back to it. */
 internal suspend fun AppStore.callEntries(botId: String, call: String): List<Entry> =
@@ -80,7 +76,7 @@ fun AppStore.loadHistory() {
             mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
             return@action
         }
-        val before = withContext(Dispatchers.IO) { mirror.oldestEntrySeq(id) } ?: Long.MAX_VALUE
+        val before = state.value.entries.filter { it.botId == id }.minOfOrNull(Entry::seq) ?: Long.MAX_VALUE
         val active = ready()
         val response = active.call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
         val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
@@ -91,13 +87,6 @@ fun AppStore.loadHistory() {
         if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
         refresh()
     }
-}
-
-fun AppStore.send(text: String, files: List<OutgoingFile> = emptyList()) {
-    val id = state.value.selectedBot ?: return
-    if (text.isBlank() && files.isEmpty()) return
-    val send = PendingSend(UUID.randomUUID().toString(), id, text.trim(), System.currentTimeMillis(), files = files, threadId = state.value.thread)
-    action("save:" + send.nonce) { savePending(send); deliver(send) }
 }
 
 fun AppStore.retry(send: PendingSend) = action("send:" + send.nonce) { deliver(send.copy(status = SendStatus.Sending, error = null)) }
@@ -148,10 +137,10 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()
         val bot = state.value.bots.firstOrNull { it.id == send.botId }
-        if (bot != null && PushPreferences.tasks(getApplication()) && getApplication<Application>().getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) {
-            val watch = withContext(Dispatchers.IO) { TaskFeed(local.directory).start(bot) }
-            NotificationDisplay.task(getApplication(), local.referenceId, requireNotNull(state.value.computer).id, watch)
-            syncPush(); PushDelivery.schedule(getApplication())
+        if (bot != null && PushPreferences.tasks(application) && application.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) {
+            val watch = withContext(Dispatchers.IO) { feed.start(bot) }
+            NotificationDisplay.task(application, local.referenceId, id, watch)
+            syncPush(); PushDelivery.schedule(application)
         }
     } catch (error: CancellationException) {
         withContext(NonCancellable) { savePending(send.copy(status = SendStatus.Failed, error = "Sending was interrupted. Retry uses the same message ID.")) }
@@ -169,15 +158,17 @@ internal suspend fun AppStore.savePending(send: PendingSend) {
     refresh()
 }
 fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + entry.id) {
-    // A command or a file change on the computer takes a thumb first; a deny never does.
-    if (!Approvals.confirmCurrent(entry, option)) return@action
     val active = ready()
     active.call("respondPermission", body("entryId" to entry.id, "optionId" to option))
     delay(2_000)
 }
 
-private suspend fun AppStore.receiveEntries(response: JsonElement) {
-    val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
-    withContext(Dispatchers.IO) { requireNotNull(database).receive(entries) }
-    refresh()
-}
+/** Carries on with the bot's current conversation instead of the handoff. */
+internal fun AppStore.keepConversation(entry: Entry) = command("keepConversation", body("entryId" to entry.id), "handoff:" + entry.id)
+
+/** Saves the user's version of a handoff that hasn't been sent; whether it did (its error shows). */
+internal suspend fun AppStore.editHandoff(entry: Entry, text: String): Boolean = try {
+    hostCall("editHandoff", body("entryId" to entry.id, "text" to text), 30_000)
+    true
+} catch (cancelled: CancellationException) { throw cancelled }
+catch (error: Exception) { showError(error); false }

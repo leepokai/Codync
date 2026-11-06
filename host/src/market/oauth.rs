@@ -10,9 +10,15 @@
 //!
 //! The authorization code alone is useless: the PKCE verifier never leaves this host.
 
-use super::discovery::{MAX_METADATA, TIMEOUT, resource_metadata, server_metadata, split};
+mod device;
+mod discovery;
+
+pub use device::offers_sign_in;
+pub use discovery::required;
+use discovery::{resource_metadata, server_metadata, split};
+
 use crate::LockExt;
-use crate::egress::Policy;
+use crate::hub::Hub;
 use crate::market::{self, Connector};
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, bail};
@@ -22,6 +28,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+const TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a started sign-in waits for its callback.
 const PENDING_FOR: Duration = Duration::from_mins(15);
 /// Tokens this close to expiring are refreshed before use.
@@ -121,13 +128,11 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
     let c = market::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("unknown connector"))?;
     let url = c.url.clone().ok_or_else(|| anyhow!("{} runs on this computer; it has nothing to sign in to", c.name))?;
 
-    let resource = resource_metadata(c.egress(), &url).await;
+    let resource = resource_metadata(&url).await;
     let issuer = resource["authorization_servers"][0]
         .as_str()
         .map_or_else(|| split(&url).map(|(origin, _)| origin), |s| Ok(s.trim_end_matches('/').to_owned()))?;
-    let policy = crate::egress::derived(c.egress(), &url).await;
-    let meta = server_metadata(policy, &issuer).await.with_context(|| format!("signing in to {}", c.name))?;
-    let authorize = text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?;
+    let meta = server_metadata(&issuer).await.with_context(|| format!("signing in to {}", c.name))?;
     let token_endpoint = text(&meta["token_endpoint"]).ok_or_else(|| anyhow!("no token endpoint"))?;
     if let Some(app) = device::app(&issuer, &url) {
         if !shows_code {
@@ -155,8 +160,7 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
                 c.name
             )
         })?;
-        let res = crate::egress::client(policy, &register)
-            .await?
+        let res = crate::http()
             .post(&register)
             .json(&json!({
                 "client_name": "Codync",
@@ -229,10 +233,8 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
         .into_iter()
         .find(|c| is_at(c, &p.connector, Some(&p.resource)))
         .ok_or_else(|| anyhow!("unknown connector"))?;
-    let policy = sign_in_policy(&c).await;
     let oauth = c.oauth.ok_or_else(|| anyhow!("unknown connector"))?;
     let v = token_request(
-        policy,
         &oauth,
         &[
             ("grant_type", "authorization_code"),
@@ -246,15 +248,16 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
     update(store, &p.connector, Some(&p.resource), |c| store_tokens(c, &v))
 }
 
-/// The policy for the endpoints a connector's sign-in server names (see `egress::derived`).
-async fn sign_in_policy(c: &Connector) -> Policy {
-    match c.url.as_deref() {
-        Some(url) => crate::egress::derived(c.egress(), url).await,
-        None => Policy::Public,
+async fn token_request(oauth: &OAuth, form: &[(&str, &str)]) -> Result<Value> {
+    let (status, v) = token_post(oauth, form).await?;
+    if !status.is_success() || !v["access_token"].is_string() {
+        bail!("The sign-in server refused the request ({status}). Reopen sign-in and try again.");
     }
+    Ok(v)
 }
 
-async fn token_request(policy: Policy, oauth: &OAuth, form: &[(&str, &str)]) -> Result<Value> {
+/// The token endpoint's answer as is: a device sign-in reads its `error` while it waits.
+async fn token_post(oauth: &OAuth, form: &[(&str, &str)]) -> Result<(reqwest::StatusCode, Value)> {
     let mut form: Vec<(&str, &str)> = form.to_vec();
     form.push(("client_id", &oauth.client_id));
     if let Some(secret) = &oauth.client_secret {
@@ -266,9 +269,8 @@ async fn token_request(policy: Policy, oauth: &OAuth, form: &[(&str, &str)]) -> 
 /// Posts `form`: the status and the JSON answer (`Null` when it isn't JSON).
 async fn post_form(url: &str, form: &[(&str, &str)]) -> Result<(reqwest::StatusCode, Value)> {
     let body = form.iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect::<Vec<_>>().join("&");
-    let res = crate::egress::client(policy, &oauth.token_endpoint)
-        .await?
-        .post(&oauth.token_endpoint)
+    let res = crate::http()
+        .post(url)
         .header("content-type", "application/x-www-form-urlencoded")
         .header("accept", "application/json")
         .body(body)
@@ -276,11 +278,7 @@ async fn post_form(url: &str, form: &[(&str, &str)]) -> Result<(reqwest::StatusC
         .send()
         .await?;
     let status = res.status();
-    let v = crate::egress::json(res, MAX_METADATA).await.unwrap_or(Value::Null);
-    if !status.is_success() || !v["access_token"].is_string() {
-        bail!("The sign-in server refused the request ({status}). Reopen sign-in and try again.");
-    }
-    Ok(v)
+    Ok((status, res.json().await.unwrap_or(Value::Null)))
 }
 
 fn encode(s: &str) -> String {
@@ -310,7 +308,20 @@ fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
     })
 }
 
-/// What the `remote` MCP proxy sends to connector `id`: its URL and headers, with a fresh token, and its egress policy.
+/// Forgets a connector's tokens and its registration: the next sign-in registers again.
+fn unregister(store: &Store, c: &Connector) -> Result<Connector> {
+    update(store, &c.id, c.url.as_deref(), |c| {
+        if let Some(o) = &mut c.oauth {
+            *o = OAuth::default();
+        }
+    })
+}
+
+fn signed_out(c: &Connector) -> anyhow::Error {
+    anyhow!("Sign in to {} in Extensions first.", c.name)
+}
+
+/// What the `remote` MCP proxy sends to connector `id`: its URL and headers, with a fresh token.
 /// `stale`: the server just said 401, so refresh even if the token looks valid.
 pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
     let c = market::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("unknown connector"))?;
@@ -323,8 +334,7 @@ pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
         let o = fresh(store, &c, &url, o, stale).await?;
         headers.insert("Authorization".into(), format!("Bearer {}", o.access_token));
     }
-    // `public`: the URL came from the MCP Registry, so the proxy may not reach the local network.
-    Ok(json!({"url": url, "headers": headers, "public": c.egress() == Policy::Public}))
+    Ok(json!({"url": url, "headers": headers}))
 }
 
 /// `o`, or a new token when it's about to expire (or `stale`). `url`: the connector's.
@@ -354,10 +364,14 @@ async fn renew(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) 
         sign_out(store, c)?;
         return Err(signed_out(c));
     };
-    match token_request(sign_in_policy(c).await, o, &[("grant_type", "refresh_token"), ("refresh_token", &refresh)])
-        .await
-    {
-        Ok(v) => Ok(update(store, &c.id, |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
+    // The old token still works until it expires.
+    let retry = || match o.expires_at {
+        Some(t) if !stale && t > now() => Ok(o.clone()),
+        _ => Err(anyhow!("Couldn't renew the sign-in to {}. Try again in a moment.", c.name)),
+    };
+    let form = [("grant_type", "refresh_token"), ("refresh_token", refresh), ("resource", url)];
+    let (status, v) = match token_post(o, &form).await {
+        Ok(answer) => answer,
         Err(error) => {
             tracing::warn!(connector = %c.id, error = format!("{error:#}"), "token refresh failed");
             return retry();
@@ -409,19 +423,4 @@ fn renewal(status: reqwest::StatusCode, v: &Value) -> Renewal {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn form_values_are_encoded() {
-        assert_eq!(encode("a b&c=d/+"), "a+b%26c%3Dd%2F%2B");
-    }
-
-    #[test]
-    fn unknown_state_is_refused() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-        let err = rt.block_on(finish(&store, "nope", Some("code"), None)).unwrap_err();
-        assert!(err.to_string().contains("expired"));
-    }
-}
+mod tests;

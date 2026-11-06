@@ -1,4 +1,3 @@
-import type { ScreenView, ScreenWindowTarget } from './screen-viewer'
 import type { SignInFailure, SignInProvider } from './analytics'
 import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
@@ -63,7 +62,7 @@ export type TraySymbol = (typeof TRAY_SYMBOLS)[number]
 export interface TraySummary {
   status: string
   canPair: boolean
-  bots: { ref: string; name: string; detail: string; working: boolean; pinned: boolean; avatar: TrayImage | null }[]
+  bots: { ref: string; name: string; detail: string; working: boolean; avatar: TrayImage | null }[]
   approval: string | null
   usage: { name: string; icon: TrayImage | null; lines: { title: string; bar: TrayImage | null }[] }[]
   screen: {
@@ -104,8 +103,6 @@ export type WindowCommand =
   | { kind: 'refresh' }
   | { kind: 'respondPermission'; ref: string; entryId: string; optionId: string }
   | { kind: 'sendMessage'; ref: string; text: string }
-  /** Files dropped on the island: read from disk here and sent to that bot. */
-  | { kind: 'sendFiles'; ref: string; paths: string[] }
   /** The voice input shortcut, while the island is off: a double tap starts dictating into the composer, a tap sends. */
   | { kind: 'voiceKey'; key: VoiceKey }
   /** The chat window was shown again after being hidden (`window_opened`). */
@@ -220,8 +217,6 @@ export interface CodyncBridge {
     onVoiceKey(cb: (key: VoiceKey) => void): () => void
     respond(ref: string, entryId: string, optionId: string): void
     send(ref: string, text: string): void
-    /** Files dropped on the island, by their path on this computer. */
-    dropFiles(ref: string, paths: string[]): void
     openBot(ref: string): void
     newBot(): void
     openApp(): void
@@ -257,12 +252,10 @@ export interface CodyncBridge {
     openExternal(url: string): void
     copy(text: string): void
     /** Files picked in the system dialog: name and bytes. */
-    pickFiles(): Promise<{ name: string; data: Uint8Array }[]>
-    /** Files a window dropped from the OS, by path: name and bytes. */
-    readPaths(paths: string[]): Promise<{ name: string; data: Uint8Array }[]>
-    /** The OS path of a dropped file (a renderer can't see it directly). */
-    pathForFile(file: File): string
-    readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    pickFiles(): Promise<PickedFile[]>
+    /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
+    pickExport(): Promise<string | null>
+    readClipboardFiles(): Promise<PickedFile[]>
     setTraySummary(summary: TraySummary): void
     /** Brings the chat window forward (a phone waits for this computer to let it in). */
     showWindow(): void
@@ -284,11 +277,5 @@ export interface CodyncBridge {
     screenAgentState(): Promise<ScreenAgentState>
     setScreenAgent(on: boolean): Promise<{ needsApproval: boolean }>
     syncScreenAgent(enabled: boolean): Promise<{ needsApproval: boolean }>
-  }
-  /** A window that shows one SSH computer's screen. Input is RFB, through the tunnel. */
-  screen: {
-    open(target: ScreenWindowTarget): Promise<void>
-    /** The computer this screen window was opened for. Null when the window is stale. */
-    target(computerId: string): Promise<ScreenView | null>
   }
 }

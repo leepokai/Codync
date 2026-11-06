@@ -5,8 +5,6 @@ import SwiftUI
 /// The summary expands into one searchable agent/model picker and its settings.
 struct AgentModelPicker: View {
     let backend: String
-    /// The agent account whose model list to load: each account keeps its own sign-in on the computer.
-    var account: String? = nil
     @Binding var selection: String?
     /// The selected model's settings (effort, fast…); they belong to one model.
     @Binding var options: [String: String]
@@ -33,7 +31,7 @@ struct AgentModelPicker: View {
     @State private var retry = 0
 
     private var requestKey: String {
-        "\(ObjectIdentifier(store))/\(store.storage.id)/\(store.computer.id)/\(backend)/\(account ?? "default")/\(store.connection == .online)/\(retry)"
+        "\(store.computer.id)/\(backend)/\(store.connection == .online)/\(retry)"
     }
 
     /// The agent's own "Default (recommended)" entry is the same choice as leaving the model unset,
@@ -164,11 +162,6 @@ struct AgentModelPicker: View {
             }
         }
         .task(id: requestKey) { await load() }
-        // Another account has its own models: the old choice belongs to the previous account.
-        .onChange(of: account) { _, _ in
-            selection = nil
-            options = [:]
-        }
     }
 
     private var searchResults: some View {
@@ -235,7 +228,7 @@ struct AgentModelPicker: View {
     }
 
     @MainActor private func load() async {
-        let scope = "\(store.storage.id)/\(store.computer.id)/\(backend)/\(account ?? "default")"
+        let scope = "\(store.computer.id)/\(backend)"
         if catalogScope != scope {
             catalog = nil
             catalogScope = scope
@@ -243,13 +236,13 @@ struct AgentModelPicker: View {
         failure = nil
         loading = false
         guard backend != "custom" else { return }
-        guard store.connection == .online else {
+        guard store.connection == .online, let client = store.client else {
             failure = "Connect to this computer to load its models. You can still enter a model ID."
             return
         }
         loading = true
         do {
-            let response = try await store.loadAgentModels(backend: backend, account: account)
+            let response = try await client.agentModels(backend)
             try Task.checkCancellation()
             withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { catalog = response }
         } catch {

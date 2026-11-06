@@ -176,7 +176,6 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
 
   interrupt() {
     if (this.phase !== 'speaking') return
-    this.transcript?.interrupted()
     this.send({ type: 'response.cancel' })
     this.send({ type: 'output_audio_buffer.clear' })
     this.setPhase('listening')
@@ -263,12 +262,10 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
         this.flush()
         break
       case 'conversation.item.input_audio_transcription.completed':
-        this.transcript?.openAI(msg)
         this.link.add('user', typeof msg.transcript === 'string' ? msg.transcript : '')
         this.link.endTurn()
         break
       case 'response.output_audio_transcript.done':
-        this.transcript?.openAI(msg)
         this.link.add('voice', typeof msg.transcript === 'string' ? msg.transcript : '')
         this.link.endTurn()
         break

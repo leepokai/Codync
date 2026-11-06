@@ -111,11 +111,6 @@ suspend fun AppStore.saveLogin(site: String, username: String, password: String)
     return WireJson.decodeFromJsonElement(response.jsonObject.getValue("login"))
 }
 suspend fun AppStore.removeLogin(id: String) { hostQuery("credentialRemoveLogin", body("id" to id), 60_000) }
-suspend fun AppStore.botSecrets(): List<BotSecret> {
-    val response = hostQuery("credentialBotSecrets", JsonObject(emptyMap()), 60_000)
-    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("items"))
-}
-suspend fun AppStore.removeBotSecret(id: String) { hostQuery("credentialRemoveBotSecret", body("id" to id), 60_000) }
 suspend fun AppStore.onePasswordToken(token: String): CredentialStatus {
     val response = hostQuery("credentialSetOnePassword", body("token" to token), 60_000)
     return WireJson.decodeFromJsonElement(response)
@@ -204,19 +199,4 @@ fun AppStore.pluginAction(method: String, payload: JsonObject, done: () -> Unit 
     hostQuery(method, payload, 120_000)
     refreshPlugins()
     done()
-}
-
-suspend fun AppStore.marketAgents(search: String, category: String): List<MarketAgent> {
-    val response = hostQuery("marketAgents", body("search" to search, "category" to category), 60_000)
-    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("items"))
-}
-
-suspend fun AppStore.marketAgent(id: String): MarketAgentDetail {
-    val response = hostQuery("marketAgent", body("id" to id), 60_000)
-    return WireJson.decodeFromJsonElement(response)
-}
-
-suspend fun AppStore.marketApps(search: String): List<MarketApp> {
-    val response = hostQuery("marketApps", body("search" to search), 60_000)
-    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("items"))
 }

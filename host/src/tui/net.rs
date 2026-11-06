@@ -16,10 +16,9 @@ use super::app::{After, Msg};
 use super::manage::Reply;
 
 /// Methods that start an agent or download something: they can take minutes.
-const SLOW: [&str; 8] = [
+const SLOW: [&str; 7] = [
     "agentAuth",
     "agentAuthenticate",
-    "accountAuthenticate",
     "agentModels",
     "setAgentEnv",
     "installConnector",

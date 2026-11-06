@@ -38,11 +38,6 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             m
         } else if !app.online {
             vec![("Connecting…".into(), t.secondary)]
-        } else if !app.bots.is_empty() {
-            vec![
-                ("No bots match these filters.".into(), t.text),
-                ("Ctrl+f changes filters; Ctrl+l clears them.".into(), t.dim),
-            ]
         } else {
             vec![("No bots yet.".into(), t.text), ("n creates one.".into(), t.dim)]
         };
@@ -55,27 +50,14 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             y += 1;
         }
     }
-    // Rows: an optional section label, then 2 lines per bot and a gap.
-    let any_pinned = !app.roster_tools.by_project && bots.iter().any(|b| b.pinned);
-    let mut rows: Vec<(u16, Option<String>, Option<usize>)> = vec![];
+    // Lines: a label takes one row, a bot two and a gap.
+    let shown: Vec<&Bot> = bots.iter().collect();
+    let lines = roster_lines(&shown, &app.folded);
+    let mut rows: Vec<u16> = vec![];
     let mut y = 0u16;
-    for (i, b) in bots.iter().enumerate() {
-        if app.roster_tools.by_project {
-            let project = super::super::app::roster_tools::project(b);
-            if i == 0 || super::super::app::roster_tools::project(&bots[i - 1]) != project {
-                rows.push((y, Some(project.to_owned()), None));
-                y += 1;
-            }
-            if app.roster_tools.collapsed.contains(project) {
-                continue;
-            }
-        }
-        if any_pinned && !b.lead && (i == 0 || bots[i - 1].band() != b.band()) {
-            rows.push((y, Some(if b.pinned { "PINNED" } else { "BOTS" }.to_owned()), None));
-            y += 1;
-        }
-        rows.push((y, None, Some(i)));
-        y += 3;
+    for line in &lines {
+        rows.push(y);
+        y += extent(line).0;
     }
     let cursor = cursor_line(&lines, app.selected.as_ref().and_then(|s| bots.iter().find(|b| &b.id == s)));
     let view_h = bottom.saturating_sub(top);
@@ -86,80 +68,18 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         if ry < offset || yy + extent(line).1 > bottom {
             continue;
         }
-        if let Some(l) = label {
-            put(buf, x0 + 1, yy, wd, &l, t.dim.add_modifier(Modifier::BOLD));
-            continue;
+        if let Some(click) = line.click() {
+            app.hits.clicks.push((Rect::new(x0, yy, wd, extent(line).1), click));
         }
-        let Some(i) = idx else { continue };
-        let b = &bots[i];
-        let selected = Some(i) == sel_idx;
-        let row = Rect::new(x0, yy, wd, 2);
-        app.hits.clicks.push((row, Click::Bot(b.id.clone())));
-        if selected {
-            restyle(buf, row, t.sel);
-            let bar = if focused { t.bold } else { t.secondary };
-            put(buf, x0, yy, 1, "▌", bar);
-            put(buf, x0, yy + 1, 1, "▌", bar);
-        }
-        put_line(buf, x0 + 2, yy, 2, &avatar(app, b));
-        let (g, gs) = glyph(app, b.mark());
-        let time = if matches!(b.status, Status::Working | Status::NeedsInput) {
-            if app.online { elapsed(b.started_at) } else { "offline".to_owned() }
-        } else {
-            when(b.last_at)
-        };
-        let tx = rput(buf, r.right() - 1, yy, &time, if b.unread > 0 { t.bold } else { t.dim });
-        let gx = tx.saturating_sub(2);
-        put(buf, gx, yy, 1, g, gs);
-        // The badge sits below the avatar, leaving activity and unread indicators visible.
-        if b.lead {
-            put(buf, x0 + 3, yy + 1, 1, "★", t.amber);
-            app.hits.clicks.push((Rect::new(x0 + 3, yy + 1, 1, 1), Click::LeadAgent));
-        }
-        let name_x = x0 + 5;
-        put(buf, name_x, yy, gx.saturating_sub(name_x + 1), &b.name, t.bold);
-        let (pv, ps) = if let Some((_, at)) = app
-            .roster_tools
-            .stopping
-            .get(&b.id)
-            .filter(|(start, _)| *start == b.started_at && matches!(b.status, Status::Working | Status::NeedsInput))
-        {
-            (
-                if at.elapsed().as_secs() < 20 {
-                    "Stopping…".to_owned()
-                } else {
-                    "Stop confirmation unavailable · s retries".to_owned()
-                },
-                t.amber,
-            )
-        } else {
-            preview(b)
-        };
-        let badge = if b.unread > 0 { format!(" {} ", b.unread) } else { String::new() };
-        let room = usize::from(wd.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
-        put(buf, x0 + 5, yy + 1, u(room), &truncate(&pv, room), ps);
-        if !badge.is_empty() {
-            rput(buf, r.right() - 1, yy + 1, &badge, t.btn_primary);
-        }
-        if !b.group && yy + 2 < bottom {
-            let fast = if b.fast_mode {
-                match b.fast_support.as_str() {
-                    "offered" => " · Fast",
-                    "refused" => " · Fast refused",
-                    "unsupported" => " · Fast unavailable",
-                    _ => " · Fast requested",
-                }
-            } else {
-                ""
-            };
-            put(
-                buf,
-                x0 + 5,
-                yy + 2,
-                wd.saturating_sub(7),
-                &format!("{} · {}{fast}", b.backend, super::super::app::roster_tools::project(b)),
-                t.dim,
-            );
+        let cursor_bar = (cursor == Some(i)).then_some(bar);
+        match line {
+            RosterLine::Label(l) => {
+                put(buf, x0 + 1, yy, wd, l, t.dim.add_modifier(Modifier::BOLD));
+            }
+            RosterLine::Section { name, bots: count, unread, folded, .. } => {
+                section_row(buf, Rect::new(x0, yy, wd, 1), cursor_bar, name, *count, *unread, *folded);
+            }
+            RosterLine::Bot(b) => bot_row(buf, Rect::new(x0, yy, wd, 2), app, b, cursor_bar),
         }
     }
     if !narrow {
@@ -169,8 +89,7 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         x = put(buf, x, hy, 2, "m", t.secondary.add_modifier(Modifier::BOLD)) + 1;
         x = put(buf, x, hy, 10, "group", t.dim) + 2;
         x = put(buf, x, hy, 3, "^k", t.secondary.add_modifier(Modifier::BOLD)) + 1;
-        x = put(buf, x, hy, 8, "go to", t.dim) + 1;
-        put(buf, x, hy, 16, "^f filter/history", t.dim);
+        put(buf, x, hy, 8, "go to", t.dim);
     }
 }
 
@@ -262,9 +181,12 @@ fn preview_raw(b: &Bot) -> (String, Style) {
 pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
     let t = theme();
     app.hits.roster = r;
-    let bots: Vec<Bot> = app.navigable_roster().into_iter().cloned().collect();
-    let sel = app.selected.clone();
-    let sel_idx = sel.as_ref().and_then(|s| bots.iter().position(|b| &b.id == s)).unwrap_or(0);
+    let bots: Vec<Bot> = app.roster().into_iter().cloned().collect();
+    let shown: Vec<&Bot> = bots.iter().collect();
+    let lines = roster_lines(&shown, &app.folded);
+    let cursor = cursor_line(&lines, app.bot());
+    let cells = stops(&lines);
+    let at = cells.iter().position(|&(i, _)| Some(i) == cursor).unwrap_or(0);
     let per = 2u16;
     let view = r.height.saturating_sub(1) / per;
     let offset = (u(at) + 1).saturating_sub(view);

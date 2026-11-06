@@ -37,15 +37,7 @@ class AppStore internal constructor(
     /** One change to this computer's saved copy at a time (`changeComputer`). */
     internal val computerChanges = Mutex()
     internal val screenTakeovers = Mutex()
-    /** Every change to the saved computers goes through `changeComputers`, one at a time. */
-    internal val computerWrites = Mutex()
-    internal var cloud: CloudClient? = null
-    private var sessionJob: Job? = null
-    internal var linkJob: Job? = null
-    internal val asked = mutableSetOf<String>()
-    /** Orders incoming shares: only the newest one may stage itself. */
-    internal val shareRequests = java.util.concurrent.atomic.AtomicInteger()
-    internal var attachments = AttachmentFiles(application, local.directory)
+    internal val attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
     internal val mutableState = MutableStateFlow(AppState(computer, contextId = contextId, generation = generation))
     val state = mutableState.asStateFlow()
@@ -60,10 +52,6 @@ class AppStore internal constructor(
     internal var foreground = false
     internal val foregroundState = MutableStateFlow(false)
     internal val setupTerminals = mutableMapOf<String, SetupTerminalSession>()
-    internal val documentModels = mutableMapOf<String, DocumentsModel>()
-    internal fun documentsFor(botId: String): DocumentsModel = documentModels.getOrPut(botId) {
-        DocumentsModel(botId, this, contextScope, state.value.generation)
-    }
     internal val appConnections = mutableMapOf<String, AppConnectionSession>()
     internal var oauthRequestId: String? = null
     internal val signInCodeAnswer = SignInCodeAnswer()
@@ -98,103 +86,56 @@ class AppStore internal constructor(
         mutableState.update { it.copy(loading = false) }
     }
 
-    internal suspend fun loadContext(userId: String?) {
-        try {
-            WidgetRefreshWorker.stop(getApplication())
-            local = LocalStore(getApplication(), userId ?: "local")
-            widgetOwner = withContext(Dispatchers.IO) { WidgetStore.activate(getApplication(), local.contextId) }
-            PushDelivery.activate(getApplication(), userId)
-            attachments = AttachmentFiles(getApplication(), local.directory)
-            val computers = withContext(Dispatchers.IO) { local.computers() }
-            val complete = withContext(Dispatchers.IO) { local.setupComplete() }
-            mutableState.update { AppState(contextId = local.referenceId, generation = it.generation + 1,
-                account = it.account, computers = computers, setupComplete = complete || computers.isNotEmpty() || userId != null) }
-            mutableState.update { it.copy(tasks = PushPreferences.tasks(getApplication())) }
-            openMirror()
-            if (userId != null) configureCloud(userId)
-            mutableState.update { it.copy(loading = false) }
-            observeWidgets(requireNotNull(widgetOwner))
-            observeExports()
-            if (foreground) connect()
-            refreshCloud()
-        } catch (error: CancellationException) { throw error }
-        catch (error: Exception) { showError(error) }
-    }
+    /** The files this computer's queued messages and drafts still need, so starting up keeps them. */
+    internal fun pendingFiles(): List<OutgoingFile> = state.value.pending.flatMap { it.files } + state.value.drafts.values.flatMap { it.files }
 
-    private suspend fun configureCloud(userId: String) {
-        val identity = withContext(Dispatchers.IO) { local.identity() }
-        cloud = CloudClient(BuildConfig.CLOUD_URL, identity) { NativeAccounts.token(userId) }
-    }
-
-    /**
-     * Join every writer before closing a context's database or replacing its identity. `mode` says what
-     * leaves: the account (push off the shown computer, every notification gone), the shown computer
-     * (its push and notifications only), or nothing but the view (a switch: its tasks stop, alerts stay).
-     */
-    internal suspend fun retireContext(mode: Retirement = Retirement.Account) = withContext(NonCancellable) {
+    /** Joins every writer before the account closes this computer's database or forgets it. */
+    internal suspend fun retire(unregister: Boolean = true) = withContext(NonCancellable) {
         mutableState.update { it.copy(loading = true) }
         retireVoice()
         val writers = actions.values.toList()
         writers.forEach { it.cancel() }; writers.forEach { it.join() }
-        val leaving = state.value.computer
-        if (mode == Retirement.Account) PushDelivery.retire(getApplication())
-        else leaving?.let { NotificationDisplay.cancelComputer(getApplication(), local.referenceId, it.id, tasksOnly = mode == Retirement.Switch) }
-        dropExport()
-        discardShare()
         val retiringChannel = channel?.takeIf { it.state.value is LinkState.Ready }
         if (unregister && retiringChannel != null) withTimeoutOrNull(2_000) {
             try {
-                // A switch keeps the computer's alerts coming; its task watches go with the cleared feed.
-                if (mode != Retirement.Switch) retiringChannel.call("unregisterDevice")
+                retiringChannel.call("unregisterDevice")
                 for (watch in withContext(Dispatchers.IO) { feed.all() }) retiringChannel.call("unregisterActivity", body("botId" to watch.botId))
             } catch (_: Exception) { }
         }
         // Editing is disabled during retirement; let its last coalesced write finish.
         draftWriter?.join()
-        for (documents in documentModels.values.toList()) documents.flushDraft()
-        contextJob.cancelAndJoin()
-        documentModels.clear()
+        job.cancelAndJoin()
         setupTerminals.clear()
         appConnections.clear()
         oauthRequestId = null
         channel?.close(); channel = null
-        connectionJob = null; pairingJob = null; graceJob = null
-        actions.clear(); sends.clear(); downloadLocks.clear(); asked.clear(); cloud = null
+        connectionJob = null; graceJob = null
+        actions.clear(); sends.clear(); downloadLocks.clear()
+        // A cancelled section move never heard back: it would lie over the next mirror for good.
+        pendingSectionMoves.clear(); mirrorBots = emptyList()
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }
 
-    /** One session change at a time; `wait` runs after the current one instead of being dropped (a switch asked for mid-change). */
-    internal fun sessionAction(wait: Boolean = false, operation: suspend () -> Unit) {
-        val previous = sessionJob?.takeIf { it.isActive }
-        if (previous != null && !wait) return
-        sessionJob = viewModelScope.launch {
-            previous?.join()
-            mutableState.update { it.copy(busy = it.busy + "session", error = null) }
-            try { operation() }
-            catch (error: CancellationException) { throw error }
-            catch (error: Exception) { showError(error) }
-            finally { mutableState.update { it.copy(busy = it.busy - "session") } }
+    /**
+     * Deleting the account or starting over: the computer drops this device (`forgetDevice`; one older than that only stops its alerts).
+     * Best effort, three seconds at most: the key is erased right after, so a row left behind can't be used.
+     */
+    internal suspend fun forgetDevice() {
+        val ready = channel?.takeIf { it.state.value is LinkState.Ready } ?: return
+        withTimeoutOrNull(3_000) {
+            for (method in listOf("forgetDevice", "unregisterDevice")) try { ready.call(method); return@withTimeoutOrNull }
+                catch (error: CancellationException) { throw error }
+                catch (_: Exception) { }
         }
     }
 
-    internal suspend fun openMirror() {
-        val computer = state.value.computer ?: return
-        val book = DraftBook(local.directory, computer.id)
-        withContext(Dispatchers.IO) {
-            database?.close()
-            database = MirrorDatabase(getApplication(), local.directory, computer.id)
-            database?.recoverInterrupted()
-            val snapshot = requireNotNull(database).snapshot()
-            val restored = book.recover(snapshot)
-            savedDrafts = restored.associateBy { it.lane }
-            mutableState.update { it.copy(drafts = restored.associateBy { draft -> draft.lane }) }
-            attachments.retainPending(snapshot.pending.flatMap { it.files } + restored.flatMap { it.files })
-        }
-        draftBook = book
-        refresh()
+    /** Saves the computer's latest copy (`changeComputer`), then shows it. */
+    internal suspend fun save(computer: Computer) {
+        saveComputer(computer)
+        mutableState.update { it.copy(computer = computer) }
     }
 
     internal suspend fun refresh() {
@@ -205,16 +146,16 @@ class AppStore internal constructor(
         withContext(Dispatchers.IO) { retired.forEach(attachments::discard) }
         // Like iOS, a screen state this app can't read is a host without remote screen.
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
-        val visible = snapshot.entries.visibleEntries()
-        mutableState.update { current -> current.copy(bots = snapshot.bots, entries = visible,
-            pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev,
+        mirrorBots = snapshot.bots
+        mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = snapshot.entries,
+            pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev, icons = snapshot.icons,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
         if (voiceBinding != null && snapshot.bots.none { it.id == voiceBinding?.botId && !it.deleted }) endVoice("Voice chat ended because its bot was removed.")
         if (PushPreferences.tasks(application)) {
             val watched = withContext(Dispatchers.IO) { feed.all().filter { !it.finished }.map { it.botId }.toSet() }
             for (bot in snapshot.bots.filter { it.id in watched }) {
                 val watch = withContext(Dispatchers.IO) { feed.local(bot) }
-                if (watch != null) NotificationDisplay.task(getApplication(), local.referenceId, requireNotNull(state.value.computer).id, watch)
+                if (watch != null) NotificationDisplay.task(application, local.referenceId, id, watch)
             }
         }
     }
@@ -249,41 +190,17 @@ class AppStore internal constructor(
 
     internal fun showError(error: Exception) { mutableState.update { it.copy(error = error.message ?: "Couldn't complete the action.") } }
 
-    private data class WidgetSource(val computer: Computer?, val bots: List<Bot>, val usage: JsonObject, val fresh: Boolean)
-    @OptIn(FlowPreview::class)
-    private fun observeWidgets(owner: WidgetOwner) {
-        contextScope.launch {
-            state.filter { !it.loading && it.contextId == owner.scope }
-                .map { WidgetSource(it.computer, it.bots, it.usage, it.widgetBotsCurrent) }
-                .distinctUntilChanged().debounce(350).collect { source ->
-                    try {
-                        val usage = UsageReport.decode(source.usage)
-                        val accepted = withContext(Dispatchers.IO) { WidgetStore.publish(getApplication(), owner, source.computer, source.bots, usage, source.fresh, false) }
-                        if (!accepted) return@collect
-                        WidgetRefreshWorker.schedule(getApplication(), source.computer != null)
-                        CodyncWidgets.update(getApplication())
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { mutableState.update { it.copy(error = "Couldn't update widgets. Open State and try again.") } }
-                }
-        }
-    }
-
-    override fun onCleared() {
-        state.value.voice?.id?.let { VoiceService.stop(getApplication(), it) }
+    /** The app is closing: drop the link and save the drafts on the way out. */
+    internal fun close(scope: CoroutineScope) {
+        state.value.voice?.id?.let { VoiceService.stop(application, it) }
         voiceBinding?.engine?.end()
         channel?.close()
         val old = database
         val book = draftBook
         val drafts = state.value.drafts.values.toList()
-        val documents = documentModels.values.toList()
-        CoroutineScope(Dispatchers.IO).launch {
-            retiring.cancelAndJoin()
-            try {
-                withContext(Dispatchers.Main.immediate) {
-                    for (document in documents) document.flushDraft()
-                }
-                book?.save(drafts)
-            }
+        scope.launch {
+            job.cancelAndJoin()
+            try { book?.save(drafts) }
             catch (_: Exception) { /* An already closing activity cannot report a storage error. */ }
             finally { old?.close() }
         }
@@ -292,14 +209,4 @@ class AppStore internal constructor(
 
 fun body(vararg values: Pair<String, String?>): JsonObject = buildJsonObject {
     for ((key, value) in values) if (value != null) put(key, value)
-}
-
-/** What `retireContext` takes away with the view. */
-internal enum class Retirement {
-    /** The account leaves this phone (sign-out, switch, start over): its push and every notification. */
-    Account,
-    /** The shown computer is removed: its push registration and its notifications. */
-    Computer,
-    /** Another computer is shown instead: only this one's task updates stop; its alerts keep coming. */
-    Switch,
 }

@@ -33,8 +33,7 @@ mod agent;
 mod models;
 pub use agent::authenticate;
 use agent::start;
-pub(crate) use agent::start_with_env;
-pub use models::models;
+pub use models::{InFlight, models, shared_models};
 pub(crate) use models::{model_config, model_ids};
 
 #[derive(Clone, Debug, Serialize)]
@@ -84,7 +83,7 @@ pub struct Status {
 static CHECKED: Mutex<BTreeMap<String, Status>> = Mutex::new(BTreeMap::new());
 
 /// Where probe sessions live, away from the user's projects.
-pub(crate) fn probe_dir() -> PathBuf {
+fn probe_dir() -> PathBuf {
     crate::service::data_dir().join("probe")
 }
 

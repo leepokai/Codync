@@ -124,8 +124,8 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
     let (scheduled, test) = (json!({"source": "schedule"}), json!({"source": "test"}));
     let used = |percent: f64| Usage {
         providers: vec![Provider {
-            id: "fixture".into(),
-            name: "Fixture".into(),
+            id: "fixture",
+            name: "Fixture",
             windows: vec![Window {
                 id: "week".into(),
                 label: "Week".into(),
@@ -135,7 +135,6 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
                 text: None,
             }],
             source: "agent",
-            status: None,
             updated_at: 0,
         }],
     };

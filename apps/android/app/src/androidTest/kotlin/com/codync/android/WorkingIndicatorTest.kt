@@ -67,13 +67,11 @@ class WorkingIndicatorTest {
         lateinit var list: LazyListState
         compose.setContent {
             Hosted {
-                val scroll = rememberConversationScroll()
-                list = scroll.list
-                Box(Modifier.size(320.dp).testTag("conversation")) {
-                    ConversationList(scroll, List(30) { "message-$it" }, "message", 1, working = true, padding = PaddingValues(0.dp)) {
-                        items(30) { Box(Modifier.height(48.dp)) { Text("Message $it") } }
-                        item("working") { WorkingIndicator(Bot("bot", "Bot", status = "working", activity = activity.value), emptyList(), details = false) }
-                    }
+                list = rememberLazyListState()
+                rememberFollowing(list, "message", 1, working = true, bottom = 0.dp)
+                LazyColumn(Modifier.size(320.dp).testTag("conversation"), state = list, contentPadding = PaddingValues(0.dp)) {
+                    items(30) { Box(Modifier.height(48.dp)) { Text("Message $it") } }
+                    item("working") { WorkingIndicator(Bot("bot", "Bot", status = "working", activity = activity.value), emptyList(), details = false) }
                 }
             }
         }

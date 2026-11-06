@@ -16,8 +16,6 @@ import okhttp3.OkHttpClient
 
 /** The call in progress: its engine (replaced on a fallback) and start times. */
 internal class VoiceBinding(val id: String, val botId: String, val generation: Int, val startedAt: Long) {
-    /** The call's optional receipt: what it heard and said, logged when it ends. */
-    var transcript: CallReceiptTranscript? = null
     var engine: VoiceEngine? = null
     /** The newest cue the call heard (`CallCue.seq`), kept across engines: a replayed one isn't said again. */
     var heard = 0L
@@ -61,7 +59,6 @@ internal fun AppStore.attachVoice(id: String, botId: String): VoiceBinding? {
     val call = state.value.voice ?: return null
     if (call.id != id || call.botId != botId || voiceGeneration != state.value.generation || state.value.loading || voiceBinding != null) return null
     val binding = VoiceBinding(id, botId, state.value.generation, SystemClock.elapsedRealtime())
-    binding.transcript = if (VoicePreferences.transcripts(getApplication())) CallReceiptTranscript() else null
     voiceBinding = binding
     begin(binding, voiceChoices().provider)
     connect()
@@ -112,7 +109,6 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
             else -> GeminiLiveEngine(contextScope, settings, model, voice, link, mic(), AndroidPcmPlayer(), voiceHttp)
         }
     }
-    engine.transcript = call.transcript
     call.engine = engine
     call.quality.begin(kind)
     (engine as? GeminiLiveEngine)?.onStall = { contextScope.launch { if (call.engine === engine) call.quality.stalled() } }
@@ -222,15 +218,10 @@ internal fun AppStore.finishVoice(id: String, error: String? = null) {
         try {
             engine?.awaitEnd()
             if (call != null && state.value.generation == call.generation) {
-                val seconds = ((SystemClock.elapsedRealtime() - call.startedAt) / 1_000).coerceAtLeast(0)
-                call.link?.end(seconds)
-                withTimeoutOrNull(3_000) { hostQuery("logCall", buildJsonObject {
-                    put("botId", call.botId); put("seconds", seconds); put("callId", call.id)
-                    call.transcript?.let { put("transcript", it.snapshot()) }
-                }, 3_000, call.generation) }
+                call.link?.end(((SystemClock.elapsedRealtime() - call.startedAt) / 1_000).coerceAtLeast(0))
             }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (error: Exception) { android.util.Log.w("CodyncVoice", "Could not finish the call receipt after the link closed", error) }
+        catch (_: Exception) { /* The call's line is best effort once the link is gone. */ }
         finally { if (!transportRequired) { connectionJob?.cancel(); graceJob?.cancel(); channel?.close() } }
     }
 }

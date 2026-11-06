@@ -27,10 +27,7 @@ class BotEditorTest {
     private val store = previewStore(Computer("fixture", "Fixture computer", "fixture-key"))
     private val scout = BotDraft(id = "fixture", name = "Scout", avatarShape = "blob", avatarColor = "blue")
 
-    @Before fun isolatedEmulatorOrExplicitReadOnlyDeviceTest() {
-        assumeTrue(Build.PRODUCT.startsWith("sdk") ||
-            InstrumentationRegistry.getArguments().getString("inspectBotEditor") == "true")
-    }
+    @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
 
     @Test fun settingsShowTheAvatarFirstAndTheAgentPickerOffersACustomCommand() {
         var closed = false
@@ -161,45 +158,6 @@ class BotEditorTest {
         toggle("Fixture skill").performClick().assertIsOff()
         assertEquals(listOf("missing-skill"), selection)
         compose.onNodeWithText("No skills yet.").assertDoesNotExist()
-    }
-
-    @Test fun fallbackSettingsAreEditableAndTheAgentPickerRemovesDuplicates() {
-        render(scout.copy(fallbacks = listOf(Fallback("codex")), selfFallbacks = true),
-            fixture().copy(actualConnection = LinkState.Connecting))
-        compose.onNodeWithText("Fallbacks").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Codex (not installed) · Default").assertIsDisplayed()
-        toggle("Let the bot change its fallbacks").performScrollTo().assertIsOn().performClick().assertIsOff()
-        compose.onNodeWithContentDescription("Agent: Claude").performScrollTo().performClick()
-        compose.onNodeWithText("Codex (not installed)").performClick()
-        compose.onNodeWithText("No fallbacks yet.").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test fun aFallbackCanBeAddedFromTheEditorAndRemovedAgain() {
-        render(scout.copy(fallbacks = emptyList(), selfFallbacks = true),
-            fixture().copy(actualConnection = LinkState.Connecting))
-        compose.onNodeWithContentDescription("Add fallback").performScrollTo().performClick()
-        compose.onAllNodesWithContentDescription("Add fallback").onLast().performClick()
-        compose.onNodeWithText("Codex (not installed) · Default").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Codex (not installed) actions").performClick()
-        compose.onNodeWithText("Remove").performClick()
-        compose.onNodeWithText("No fallbacks yet.").assertIsDisplayed()
-    }
-
-    @Test fun aHostWithoutFallbackSettingsKeepsTheExistingEditor() {
-        render(scout)
-        compose.onNodeWithText("Fallbacks").assertDoesNotExist()
-        compose.onNodeWithText("Let the bot change its fallbacks").assertDoesNotExist()
-    }
-
-    @Test fun aUsageFailureOpensTheFailingBotsFallbackSettings() {
-        val bot = Bot("fixture", "Scout", backend = "claude", fallbacks = emptyList(), selfFallbacks = true)
-        val entry = Entry("limit", 1, "group", rev = 1, kind = "notice", data = buildJsonObject {
-            put("text", "Usage limit reached"); put("style", "error"); put("addFallback", true); put("author", bot.id)
-        })
-        compose.setContent { Hosted { ErrorNotice(entry, fixture().copy(bots = listOf(bot)), viewModel()) } }
-        compose.onNodeWithText("Add a fallback").performClick()
-        compose.onNodeWithText("Fallbacks").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("No fallbacks yet.").assertIsDisplayed()
     }
 
     private fun render(draft: BotDraft, state: AppState = fixture(), close: () -> Unit = {}) {

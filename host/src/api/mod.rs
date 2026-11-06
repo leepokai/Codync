@@ -2,13 +2,8 @@
 //! apps and helpers (loopback + `Authorization: Bearer <token>`), and `GET /channel`, the
 //! direct end-to-end encrypted channel phones use (see `channel`).
 
-mod apps_bridge;
-pub mod apps_runtime;
 mod bots;
-mod catalog;
-mod computer_activity;
 pub mod devices;
-mod documents;
 mod events;
 mod files;
 mod folders;
@@ -16,11 +11,7 @@ mod host;
 mod http;
 mod marketplace;
 mod network;
-mod origin;
-mod rebinding;
 mod remote;
-mod roster;
-mod saved_searches;
 
 pub use events::{events_stream, term_events};
 pub use http::router;
@@ -69,71 +60,22 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
     devices::permit(caller, method)?;
     let observed = crate::analytics::observe_call(hub, caller, method, &b);
     let result = route(hub, caller, method, b).await;
-    if method == "createBot" && result.as_ref().is_ok_and(|value| value["bot"]["kind"] != "group") {
-        crate::analytics::setup::ready(hub);
-    }
-    if method == "setSlackChannel" && result.is_err() {
-        crate::analytics::setup::failed(hub, true);
-    }
-    if let (Ok(answer), Some((event, properties))) = (&result, observed)
-        && let Some(properties) = crate::analytics::answered(event, properties, answer)
-    {
+    let report = observed.and_then(|(event, properties)| match &result {
+        Ok(answer) => crate::analytics::answered(event, properties, answer).map(|p| (event, p)),
+        Err(_) => crate::analytics::failed(event, properties),
+    });
+    if let Some((event, properties)) = report {
         crate::analytics::capture(hub, event, properties);
     }
     result
 }
 
 async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<Value> {
-    if matches!(method, "savedSearches" | "saveSearch" | "deleteSavedSearch") {
-        return saved_searches::call(hub, caller, method, &b);
+    if method == "setIcon" {
+        return crate::icons::set(hub, &b).await;
     }
-    if crate::research::METHODS.contains(&method) {
-        if method == "setResearchKey" && !matches!(caller, Caller::Local) {
-            return Err(Forbidden.into());
-        }
-        return crate::research::call(hub, method, &b).await;
-    }
-    if crate::slack::METHODS.contains(&method) {
-        if !matches!(caller, Caller::Local) && method != "slackStatus" {
-            return Err(Forbidden.into());
-        }
-        return crate::slack::call(hub, method, b).await;
-    }
-    if matches!(method, "beginProtectedEntry" | "finishProtectedEntry") {
-        return crate::screen::protected_entry::call(hub, method, b).await;
-    }
-    if matches!(method, "voiceDecisions" | "confirmVoiceDecisions") {
-        return crate::voice::decisions::call(hub, caller, method, b);
-    }
-    #[cfg(windows)]
-    if matches!(method, "openProtectedBrowser" | "fillProtectedLogin" | "fillProtectedCode") {
-        return crate::screen::protected_browser::call(hub, method, b).await;
-    }
-    if crate::computer::panel::METHODS.contains(&method) {
-        let (kind, id) = match caller {
-            Caller::Device { key, .. } => ("device", key.as_str()),
-            _ => ("owner", "local"),
-        };
-        return crate::computer::panel::call(hub, method, &b, kind, id).await;
-    }
-    if crate::mcp::policy_management::METHODS.contains(&method) {
-        market::vault::unlock(hub.clone()).await?;
-        return crate::mcp::policy_management::call(hub, method, &b);
-    }
-    if crate::mcp::policy::METHODS.contains(&method) {
-        return crate::mcp::policy::call(hub, caller, method, b).await;
-    }
-    if documents::METHODS.contains(&method) {
-        return documents::call(hub, method, b);
-    }
-    if matches!(method, "listComputerActivity" | "exportComputerActivity") {
-        return computer_activity::read(hub, method, &b);
-    }
-    if method == "searchMessages" {
-        return roster::search(hub, &b).await;
-    }
-    if matches!(method, "rosterPreview" | "messageContext") {
-        return roster::read(hub, method, &b).await;
+    if method == "icons" {
+        return Ok(serde_json::to_value(crate::icons::snapshot(&hub.store)?)?);
     }
     if method.contains("onnector")
         || method.starts_with("composio")
@@ -143,7 +85,7 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         || (method == "computerCall" && b["name"] == "type_login")
         || method.starts_with("voice")
         || method == "setVoiceKey"
-        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv" | "accountAuthenticate" | "agentModels")
+        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv")
     {
         market::vault::unlock(hub.clone()).await?;
     }
@@ -156,10 +98,6 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         ControlFlow::Continue(b) => b,
     };
     let b = match marketplace::call(hub, caller, method, b).await? {
-        ControlFlow::Break(v) => return Ok(v),
-        ControlFlow::Continue(b) => b,
-    };
-    let b = match catalog::call(hub, method, b).await? {
         ControlFlow::Break(v) => return Ok(v),
         ControlFlow::Continue(b) => b,
     };

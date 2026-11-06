@@ -1,12 +1,10 @@
-import { VoiceReceipt } from './VoiceReceipt'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { draftOf, folderName, isGroup, isWorkingIn, sharedWorkspacePeers, type Bot, type BotApp, type BotDraft, type Entry } from '@shared/models'
+import { draftOf, isGroup, isWorkingIn, type Bot, type BotDraft, type Entry } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
-import { BotAppPanel } from '../../components/BotAppPanel'
 import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Sheet, usePresence } from '../../components/Overlay'
-import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
+import { HStack, IconSlot, Spacer } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
 import { connectedThrough } from '../../lib/relay-copy'
@@ -24,7 +22,6 @@ import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
-import { useNewMessageCount } from './new-message-counter'
 import { TraceView } from './TraceView'
 import { workingSteps } from './trace-turns'
 import { useReading } from './reading'
@@ -38,7 +35,6 @@ import { ArtifactView } from '../library/ArtifactView'
 import './thread.css'
 import './composer.css'
 import './chat-controls.css'
-import { MessageContext } from '../MessageContext'
 
 const WIDE = 740
 
@@ -66,7 +62,6 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   const [routineId, setRoutineId] = useState<string | null>(null)
   // A group member's settings, opened from its notice.
   const [editingMember, setEditingMember] = useState<string | null>(null)
-  const [activeApp, setActiveApp] = useState<BotApp | null>(null)
   const [routineRequest, setRoutineRequest] = useState(0)
   // The artifact shown over the chat (a card or the Library opened it).
   const [artifactId, setArtifactId] = useState<string | null>(null)
@@ -163,7 +158,6 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
 
   return (
     <div className="thread-view" ref={root}>
-      <MessageContext botId={botId} />
       <div className="conversation">
         <div className="top-chrome">
           <TopFade />
@@ -187,7 +181,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
           </button>
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
-        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openApp={setActiveApp} openArtifact={openArtifact} openCall={setCallLine} />
+        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
           {store.mismatch ? (
@@ -243,17 +237,6 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
       <FormSheet open={!!member} onClose={() => setEditingMember(null)} width={520} height={680} fixed>
         {member ? <BotEditorView key={member.id} draft={draftOf(member)} /> : null}
       </FormSheet>
-      <BotAppPanel
-        app={activeApp}
-        onClose={() => setActiveApp(null)}
-        onCreateShareLink={async (slug, label, mode) => {
-          const shared = await store.createAppLink(botId, slug, mode, label)
-          return shared
-        }}
-        onRevokeShareLink={async (slug, token) => {
-          await store.revokeAppLink(botId, slug, token)
-        }}
-      />
     </div>
   )
 })
@@ -295,13 +278,13 @@ function ConnectionSubtitle() {
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
 
-const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openApp, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openApp?: (app: BotApp) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
   const live = !!bot && isWorkingIn(bot, botId) && !store.isOffline
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
-  const entries = store.chatEntries(botId)
+  const entries = store.allEntries(botId)
   // What voice calls carried shows in each call's conversation, not in the chat.
   const all = useMemo(() => buildChat(hidingCalls(entries)), [entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
@@ -322,8 +305,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   const keepPlace = useRef<number | null>(null)
   const last = items[items.length - 1]
   const jump = usePresence(!following && items.length > 0, 200)
-  const arrivals = useArrivals([...items.map((i) => i.id), ...(live ? ['working'] : [])], following)
-  const newCount = useNewMessageCount(items.map((i) => i.id), following)
+  const arrivals = useArrivals(items.map((i) => i.id), following)
 
   const toBottom = (smooth = false) => {
     const el = scroller.current
@@ -344,7 +326,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
     if (at === 0) {
       const anchor = list[0]?.id
       await store.loadOlder(botId)
-      list = buildChat(hidingCalls(store.chatEntries(botId)))
+      list = buildChat(hidingCalls(store.allEntries(botId)))
       at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
     }
     if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)
@@ -404,17 +386,15 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
           {items.length === 0 && bot ? <div className="transcript-intro">{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
-              <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openApp={openApp} openArtifact={openArtifact} openCall={openCall} />
+              <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />
             </div>
           ))}
-          {bot ? <SharedWorkspaceNotice bot={bot} /> : null}
           {bot ? <WorkingTransition bot={bot} visible={live} steps={steps} /> : null}
           <div className="chat-end" />
         </div>
       </div>
       {jump.mounted ? (
         <div className={`jump-to-latest ${jump.shown ? 'shown' : ''}`} inert={!jump.shown}>
-          {newCount > 0 ? <span className="jump-new-count">{newCount} new</span> : null}
           <MacChatButton
             title="Jump to latest"
             icon="arrow.down"
@@ -430,32 +410,16 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   )
 })
 
-function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openApp, openArtifact, openCall }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openApp?: (app: BotApp) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   if (item.kind === 'separator') {
     return <TimeSeparator date={item.date} />
   }
   if (item.kind === 'exchanges') return <BotMessageRow exchanges={item.exchanges} open={openBotChat} />
   const e = item.entry
   if (e.kind === 'notice' && e.data.routineId) return <RoutineNotice entry={e} open={() => openRoutine(e.data.routineId!)} />
-  if (e.kind === 'notice' && e.data.call) return <div className="chat-row notice"><VStack gap={8}><CallLineRow entry={e} open={() => openCall(e.id)} />{window.codync.platform === 'win32' && e.data.source === 'voice_receipt' ? <VoiceReceipt entry={e} /> : null}</VStack></div>
+  if (e.kind === 'notice' && e.data.call) return <div className="chat-row notice"><CallLineRow entry={e} open={() => openCall(e.id)} /></div>
 
-  return <ChatRow entry={e} groupStart={item.groupStart} chat={chat} openTrace={openTrace} onReply={onReply} openAgent={openAgent} openApp={openApp} openArtifact={openArtifact} />
-}
-
-/** Warns when other bots are actively working in the same project workspace (N16). */
-function SharedWorkspaceNotice({ bot }: { bot: Bot }) {
-  const store = useStore()
-  const peers = sharedWorkspacePeers(bot, store.bots.values())
-  if (peers.length === 0) return null
-  const names = peers.map((p) => p.name).join(', ')
-  return (
-    <HStack gap={6} justify="center" className="chat-row notice">
-      <Icon name="exclamationmark.triangle" size={11} color="var(--warning, #ff9f0a)" />
-      <Text size="caption" tone="attention">
-        {`${names} ${peers.length === 1 ? 'is' : 'are'} also active in ${folderName(bot)}`}
-      </Text>
-    </HStack>
-  )
+  return <ChatRow entry={e} groupStart={item.groupStart} chat={chat} openTrace={openTrace} onReply={onReply} openAgent={openAgent} openArtifact={openArtifact} />
 }
 
 /** The start of an empty group chat: who's in it and how the room works. */

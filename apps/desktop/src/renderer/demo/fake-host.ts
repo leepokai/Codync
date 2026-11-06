@@ -181,25 +181,6 @@ export class FakeHost {
         return story.usage(Date.now())
       case 'history':
         return { entries: [] }
-      case 'rosterPreview':
-        return { entries: this.entries.filter((e) => e.botId === str('botId') && !e.threadId &&
-          (e.kind === 'user' || e.kind === 'agent' && e.data.final)).slice(-3) }
-      case 'searchMessages': {
-        const ids = Array.isArray(b.botIds) ? b.botIds : []
-        const terms = str('query').toLowerCase().trim().split(/\s+/)
-        const limit = 30
-        const entries = this.entries.filter((e) => ids.includes(e.botId) && e.seq < (Number(b.beforeSeq) || Number.MAX_SAFE_INTEGER) &&
-          (e.kind === 'user' || e.kind === 'agent' && e.data.final) && terms.every((term) => (e.data.text ?? '').toLowerCase().includes(term)))
-          .sort((a, c) => c.seq - a.seq)
-        return { results: entries.slice(0, limit).map((e) => ({ id: e.id, botId: e.botId, threadId: e.threadId ?? null, text: e.data.text ?? '', seq: e.seq })), next: entries.length > limit ? entries[limit - 1]!.seq : null }
-      }
-      case 'messageContext': {
-        const target = this.entries.find((e) => e.botId === str('botId') && e.id === str('entryId'))
-        if (!target) throw fail('Message unavailable')
-        return { entries: this.entries.filter((e) => e.botId === target.botId && ((e.threadId ?? null) === (target.threadId ?? null) || e.id === target.threadId)) }
-      }
-      case 'thread':
-        return { entries: this.entries.filter((e) => e.botId === str('botId') && e.threadId === str('rootId')) }
       case 'send': {
         const chat = this.bots.get(str('botId'))
         if (!chat) throw fail('That bot was deleted.')
@@ -234,18 +215,6 @@ export class FakeHost {
         this.settle(id)
         return {}
       }
-      case 'stopAll': {
-        let stopped = 0
-        for (const [id, bot] of this.bots) {
-          if (bot.status === 'idle') continue
-          this.turns.set(id, (this.turns.get(id) ?? 0) + 1)
-          this.settle(id)
-          stopped++
-        }
-        return { stopped }
-      }
-      case 'newSession':
-        return {}
       case 'createBot':
       case 'updateBot':
         return { bot: this.saveBot(b as unknown as BotDraft | GroupDraft) }
@@ -290,7 +259,6 @@ export class FakeHost {
       case 'marketSkills':
       case 'marketConnectors':
       case 'credentialLogins':
-      case 'credentialBotSecrets':
       case 'composioToolkits':
         return { items: [] }
       case 'devices':

@@ -51,7 +51,6 @@ export function optionLabel(o: PermissionOption) {
 export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
   const tr = useTr()
   const [expanded, setExpanded] = useState(false)
-  const [rejectedShake, setRejectedShake] = useState(false)
   const d = entry.data
   const pending = d.status === 'pending'
   const hasDetail = !!d.command || !!d.detail || !!d.diffs?.length
@@ -59,7 +58,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
   return (
     <div className="agent-inset">
-      <VStack gap={10} className={`permission-card t-input-shake ${rejectedShake ? "is-invalid" : ""}`}>
+      <VStack gap={10} className="permission-card">
         <HStack gap={8}>
           <Text size="headline" tone="text">{permissionHeadline(d.toolKind)}</Text>
           {pending ? <span className="permission-card-dot" /> : null}
@@ -73,9 +72,9 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
         </HStack>
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
-            <VStack gap={8} className={`permission-card-details t-resize ${expanded ? "is-open" : ""}`}>
+            <VStack gap={8} className="permission-card-details">
               {d.command ? <CodeBox text={d.command} /> : null}
-              {d.detail ? <CodeBox text={d.detail} /> : null}
+              {d.detail ? <CodeBox text={d.detail.slice(0, 2000)} /> : null}
               {(d.diffs ?? []).map((diff, i) => <DiffView key={i} diff={diff} />)}
             </VStack>
           </Disclosure>
@@ -88,7 +87,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
                 <button
                   className={answering === null || answering === o.optionId ? 'permission-option' : 'permission-option dimmed'}
                   disabled={answering !== null}
-                  onClick={() => { if (o.kind.startsWith("reject")) { setRejectedShake(true); setTimeout(() => setRejectedShake(false), 450) } respond(o.optionId) }}
+                  onClick={() => respond(o.optionId)}
                 >
                   <Text size="body" weight={o.kind === 'allow_once' ? 'semibold' : 'regular'} tone={o.kind.startsWith('allow') ? 'text' : 'danger'} className="permission-option-label">{optionLabel(o)}</Text>
                   {answering === o.optionId ? <Spinner size={14} /> : null}

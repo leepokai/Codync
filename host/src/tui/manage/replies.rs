@@ -17,9 +17,6 @@ impl App {
             }
         };
         match r {
-            Reply::Computer(reply) => self.computer_reply(&reply, Ok(v)),
-            Reply::McpTools(reply) => self.mcp_tools_reply(&reply, Ok(v)),
-            Reply::Documents(reply) => self.on_document_reply(&reply, &v),
             Reply::Memory(bot) => {
                 for o in &mut self.overlays {
                     if let Overlay::Memory(m) = o
@@ -92,7 +89,6 @@ impl App {
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
             }
-            Reply::Flow(bot) => self.flow_loaded(&bot, &v),
             Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
             Reply::Gear(backend) => {
                 let lists = super::gear::GearLists {
@@ -151,35 +147,6 @@ impl App {
                 {
                     m.skills = Some(v["items"].as_array().cloned().unwrap_or_default());
                 }
-            }
-            Reply::Catalog => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
-                    m.catalog = v;
-                }
-            }
-            Reply::Apps => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
-                    m.apps = Some(v["items"].as_array().cloned().unwrap_or_default());
-                }
-            }
-            Reply::MarketAgents => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
-                    m.agents = Some(v["items"].as_array().cloned().unwrap_or_default());
-                }
-            }
-            Reply::CatalogAdded(id) => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
-                    m.added.push(id);
-                }
-                self.flash(&super::super::l10n::tr("Added"));
             }
             Reply::Auth(backend) => {
                 for o in &mut self.overlays {
@@ -243,7 +210,6 @@ impl App {
                     });
                 }
             }
-            Reply::Accounts { scope, authenticate } => self.accounts_reply(&scope, authenticate, &v),
             Reply::Models(backend) => {
                 let mut list: Vec<_> =
                     v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
@@ -286,29 +252,7 @@ impl App {
     }
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
-        if let Reply::Computer(reply) = r {
-            self.computer_reply(reply, Err(e));
-            return;
-        }
-        if let Reply::McpTools(reply) = r {
-            self.mcp_tools_reply(reply, Err(e));
-            return;
-        }
-        if let Reply::Documents(reply) = r {
-            self.document_error(reply, &e);
-            return;
-        }
         match r {
-            // An older host has no catalog: the Bots and Teams tabs stay empty.
-            Reply::Catalog | Reply::Apps | Reply::MarketAgents => {}
-            Reply::Accounts { scope, .. } => {
-                if let Some(Overlay::Form(f)) = self.overlays.last_mut()
-                    && f.account_scope == *scope
-                {
-                    f.account_busy = false;
-                    f.error = Some(e);
-                }
-            }
             Reply::Models(backend) => {
                 self.models.insert(backend.clone(), Some(vec![]));
             }
@@ -449,13 +393,6 @@ impl App {
                 }
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
-                }
-                Overlay::Flow(f) => {
-                    calls.push((
-                        "routineFlowCanvas",
-                        json!({"botId": f.bot}),
-                        After::Sheet(Reply::Flow(f.bot.clone())),
-                    ));
                 }
                 Overlay::Library(l) => {
                     calls.push(("library", json!({"botId": l.bot}), After::Sheet(Reply::Library(l.bot.clone()))));

@@ -345,13 +345,13 @@ extension BotStore {
 
     /// What a voice call carried, for its conversation. Never `upsert`ed, like `botConversation`.
     public func callEntries(_ botId: String, call: String) async throws -> [Entry] {
-        try await ready().callEntries(botId: botId, call: call).visibleEntries()
+        try await ready().callEntries(botId: botId, call: call)
     }
 
     /// The bot-to-bot notices between a chat and a peer. Never `upsert`ed: old notices in the
     /// mirror would break `loadOlder`, which pages from the oldest loaded `seq`.
     public func botConversation(_ botId: String, peer: String) async throws -> [Entry] {
-        try await ready().botConversation(botId: botId, peerId: peer).visibleEntries()
+        try await ready().botConversation(botId: botId, peerId: peer)
     }
 
     public func save(_ draft: BotDraft) async throws -> Bot {
@@ -381,7 +381,7 @@ extension BotStore {
 
     public func loadOlder(_ botId: String) async {
         guard let client, !historyComplete.contains(botId) else { return }
-        let first = (entries[botId] ?? []).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
+        let first = chat(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
         guard let older = try? await client.history(botId: botId, beforeSeq: first, limit: 100) else { return }
         if older.count < 100 { historyComplete.insert(botId) }
         for e in older { upsert(e) }

@@ -110,7 +110,7 @@ export class CallLink {
 
   /** The call is over: its line in the chat, with what's left of the transcript. */
   end(seconds: number) {
-    return this.serial(() => this.store.endCall(this.botId, this.call, seconds, this.drain(true)))
+    void this.serial(() => this.store.endCall(this.botId, this.call, seconds, this.drain(true)))
   }
 
   /** The lines finished so far (`withOpen`: and the one still being said), trimmed and out of the buffer. */

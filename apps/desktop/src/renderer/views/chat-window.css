@@ -114,16 +114,6 @@ html[data-platform="darwin"] .sidebar-header {
   padding-left: 0;
   opacity: 0;
 }
-/* Windows commits the final split width once; header motion stays composited. */
-html[data-platform="win32"] .sidebar {
-  transition: none;
-}
-html[data-platform="win32"] .sidebar-header {
-  transition: opacity var(--layout), transform var(--layout);
-}
-html[data-platform="win32"] .sidebar.compact .sidebar-header {
-  transform: translateX(-18px);
-}
 /* The rail's computer filter. */
 .rail-header {
   width: 70px;

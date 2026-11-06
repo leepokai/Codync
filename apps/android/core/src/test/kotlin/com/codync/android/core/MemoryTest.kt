@@ -1,59 +1,36 @@
 package com.codync.android.core
 
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.decodeFromJsonElement
 import org.junit.Assert.*
 import org.junit.Test
 
 class MemoryTest {
-    private val view = """{"shared":true,
-        "yours":{"entries":[{"id":1,"state":"active","text":"Lives in Taipei","author":"user","pinned":true,"updatedAt":5}],"used":10,"cap":400},
-        "bot":{"entries":[{"id":2,"bot":"b","state":"archived","text":"Likes tea","author":"bot","authorBot":"b","pinned":false,"updatedAt":6,"future":1}],"used":3,"cap":800},
-        "dreams":[{"id":9,"at":7,"undone":false,"added":[{"id":3,"text":"x"}],"archived":[{"id":2,"text":"y"}],"files":[{"name":"people.md","shared":false,"version":4}]}],
-        "projectMemory":{"path":"/p","text":"notes"},
-        "files":{"yours":{"files":[],"folder":"/s"},"bot":{"files":[{"name":"a.md","hash":"h","tokens":12,"deleted":false,"updatedAt":1}],"folder":"/b"},"cap":2000,"folderCap":20}}"""
-
-    @Test fun `a bot's memory decodes its layers dreams notes and the harness notes`() {
-        val memory = WireJson.decodeFromString<BotMemory>(view)
+    @Test fun `a bot's memory decodes both layers, dreams, notes and the harness's own notes`() {
+        val memory = WireJson.decodeFromJsonElement<BotMemory>(WireJson.parseToJsonElement("""{
+            "shared": true,
+            "yours": {"entries": [{"id": 4503599627370495, "bot": null, "state": "active", "text": "Lives in Taipei", "author": "user",
+                "authorBot": null, "pinned": false, "evidence": [], "createdAt": 1, "updatedAt": 2}], "used": 12, "cap": 900},
+            "bot": {"entries": [{"id": 7, "bot": "b", "state": "archived", "text": "Prefers tabs", "author": "bot", "authorBot": "b", "updatedAt": 3}],
+                "used": 4, "cap": 600},
+            "files": {"yours": {"files": [], "folder": "/m"}, "bot": {"files": [{"bot": "b", "name": "release.md", "description": "How releases go",
+                "tokens": 812, "deleted": false, "updatedAt": 5}], "folder": "/m/b"}, "cap": 800, "folderCap": 20},
+            "dreams": [{"id": 1, "at": 9, "undone": false, "added": [{"id": 8, "text": "Ships on Fridays"}], "archived": [],
+                "files": [{"name": "release.md", "shared": false, "version": 2}]}],
+            "projectMemory": {"path": "/home/me/.claude/projects/x/memory/MEMORY.md", "text": ""},
+            "memoryRev": 41}"""))
         assertTrue(memory.shared)
-        assertEquals("Lives in Taipei", memory.yours.entries.single().text)
+        // Fact IDs are 52-bit numbers.
+        assertEquals(4503599627370495, memory.yours.entries.single().id)
         assertTrue(memory.bot.entries.single().archived)
-        assertEquals("people.md", memory.dreams.single().files.orEmpty().single().name)
-        assertEquals("notes", memory.projectMemory?.text)
-        assertEquals(20, memory.files?.folderCap)
-        assertEquals("a.md", memory.files?.bot?.files?.single()?.name)
+        assertEquals(812, memory.files?.bot?.files?.single()?.tokens)
+        assertEquals("release.md", memory.dreams.single().files?.single()?.name)
+        assertEquals("", memory.projectMemory?.text)
     }
 
-    @Test fun `an older host's flat listing is not a memory`() {
-        assertFails<SerializationException> {
-            WireJson.decodeFromString<BotMemory>("""{"facts":[{"id":"a","content":"x"}],"total":1}""")
-        }
-    }
-
-    @Test fun `memory requests leave unset fields out`() {
-        val pin = MemoryCalls.mutation("b", id = 4, pinned = true)
-        assertEquals(setOf("botId", "id", "pinned"), pin.keys)
-        val clear = MemoryCalls.mutation("b", shared = true)
-        assertEquals(setOf("botId", "shared"), clear.keys)
-        val save = MemoryCalls.mutation("b", id = null, shared = false, text = "fact")
-        assertEquals(setOf("botId", "shared", "text"), save.keys)
-    }
-
-    @Test fun `a note change picks save delete or restore and a new note has no base`() {
-        assertEquals("saveMemoryFile", MemoryCalls.fileMethod("text", null))
-        assertEquals("deleteMemoryFile", MemoryCalls.fileMethod(null, null))
-        assertEquals("restoreMemoryFile", MemoryCalls.fileMethod(null, 3))
-        val body = MemoryCalls.fileChange("b", "a.md", false, null, "text", null)
-        assertEquals(setOf("botId", "file", "shared", "content"), body.keys)
-        assertEquals("h", MemoryCalls.fileChange("b", "a.md", true, "h", null, 3).getValue("base").jsonPrimitive.content)
-    }
-
-    @Test fun `a bot carries its memory switches and revision`() {
-        val bot = HostClient.decode(WireJson.parseToJsonElement(
-            """{"id":"b","name":"Bot","sharedMemory":true,"harnessMemory":false,"memoryRev":8}""").jsonObject)
-        assertEquals(true, bot.sharedMemory)
-        assertEquals(false, bot.harnessMemory)
-        assertEquals(8L, bot.memoryRev)
-        assertNull(HostClient.decode(WireJson.parseToJsonElement("""{"id":"c","name":"Old"}""").jsonObject).memoryRev)
+    @Test fun `a host that keeps no harness notes or files still decodes`() {
+        val memory = WireJson.decodeFromJsonElement<BotMemory>(WireJson.parseToJsonElement("""{"shared": false,
+            "yours": {"entries": [], "used": 0, "cap": 900}, "bot": {"entries": [], "used": 0, "cap": 600}, "dreams": [], "projectMemory": null}"""))
+        assertNull(memory.projectMemory)
+        assertNull(memory.files)
     }
 }

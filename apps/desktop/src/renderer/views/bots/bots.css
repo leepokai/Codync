@@ -121,7 +121,7 @@ textarea.field-box {
 
 /* New bot and new group chat (NewBotView): the face, a centered name, the choices, then the buttons. */
 .create-sheet {
-  width: 440px;
+  width: 400px;
 }
 .create-body {
   flex: 1 1 auto;
@@ -149,27 +149,6 @@ textarea.field-box {
 }
 .create-member-name {
   max-width: 100%;
-}
-.create-fields {
-  width: 100%;
-}
-.create-fields .field-box {
-  background: var(--field);
-}
-/* A ready-made starting point: its face, name and what it does. */
-.create-suggestion {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: var(--radius-l);
-  background: var(--field);
-  text-align: left;
-  transition: background-color var(--hover);
-}
-.create-suggestion:hover {
-  background: rgba(var(--text-rgb), 0.1);
 }
 .create-footer {
   padding: 12px 20px 20px;

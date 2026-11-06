@@ -1,16 +1,14 @@
 package com.codync.android
 
+import android.content.res.Configuration
 import android.text.format.DateUtils
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,164 +20,217 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.Bot
 import com.codync.android.core.BotMemory
 import com.codync.android.core.DreamRun
-import com.codync.android.core.MemoryEditTarget
 import com.codync.android.core.MemoryEntry
+import com.codync.android.core.MemoryFileDetail
+import com.codync.android.core.MemoryFiles
 import com.codync.android.design.*
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import kotlinx.coroutines.launch
 
-private enum class Tab { Yours, Bot, Dreams, Harness }
+private enum class MemorySection { Yours, Bot, Dreams, Harness }
+
+/** What an info button explains. */
+private enum class MemoryInfo { Harness, Dreams }
+
+/** A note the sheet opens: its name and whose folder holds it. */
+private data class MemoryNote(val name: String, val shared: Boolean)
 
 /**
- * A bot's memory (iOS `MemoryCard`): what all your bots know about you, what this one knows, its dreams, and its
- * harness's own notes when the user kept them on.
+ * A bot's memory, read-only (iOS `MemoryCard`): what all your bots know about you, what this one knows, its dreams,
+ * and its harness's own notes when the user kept them on. The user changes memory by telling the bot.
  */
-@Composable fun MemoryCard(botId: String, state: AppState, store: AppStore) {
-    val scope = rememberCoroutineScope()
-    val memory = remember(botId) { MemoryModel(botId, store, scope) }
+@Composable internal fun MemoryCard(botId: String, state: AppState, store: AppStore) {
     val bot = state.bots.firstOrNull { it.id == botId }
-    val harness = bot?.let { backendName(state, it.backend) } ?: "Claude Code"
-    val view = memory.view
-    var tab by remember { mutableStateOf(Tab.Bot) }
-    var editor by remember { mutableStateOf<MemoryEditTarget?>(null) }
-    var confirmClear by remember { mutableStateOf(false) }
-    var aboutHarness by remember { mutableStateOf(false) }
+    val memory = remember(botId) { MemoryModel(botId, store) }
+    val scope = rememberCoroutineScope()
+    var section by remember(botId) { mutableStateOf(MemorySection.Bot) }
+    var info by remember { mutableStateOf<MemoryInfo?>(null) }
+    var note by remember { mutableStateOf<MemoryNote?>(null) }
+    // Entries and dreams showing all their lines.
+    var unfolded by remember(botId) { mutableStateOf(emptySet<String>()) }
+    AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Memory))
     // Memory changes anywhere move the bot's `memoryRev`: fetch again.
     LaunchedEffect(botId, bot?.memoryRev, bot?.sharedMemory, bot?.harnessMemory) { memory.load() }
-    // The harness's section goes when its memory is turned off (on another device too).
-    LaunchedEffect(view != null && view.projectMemory == null) { if (view != null && view.projectMemory == null && tab == Tab.Harness) tab = Tab.Bot }
-    val shared = tab == Tab.Yours
-    CardSection("Memory", accessory = {
-        // Read-only: the user changes memory by telling the bot (host 2.21+, as on the other apps).
-        IconButton("Refresh", "arrow.clockwise", enabled = !memory.busy) { memory.refresh() }
-    }) {
-        row {
-            val options = listOf(Tab.Yours to "About you", Tab.Bot to "This bot", Tab.Dreams to "Dreams") +
-                (if (view?.projectMemory != null) listOf(Tab.Harness to harness) else emptyList())
-            SegmentedChoice(tab, options, { tab = it; if (it == Tab.Harness) memory.refresh() })
-        }
-        memory.error?.let { row { SelectionContainer { Text(it, style = Type.body, color = Palette.danger) } } }
-        if (view == null) {
-            if (memory.error == null) row { Text("Loading memory…", style = Type.body, color = Palette.secondary) }
-        } else when (tab) {
-            Tab.Yours, Tab.Bot -> layer(memory, view, bot, state, store, shared, harness, { editor = it }, { aboutHarness = true })
-            Tab.Dreams -> dreams(memory, view.dreams)
-            Tab.Harness -> harnessNotes(view.projectMemory, harness)
+    val view = memory.memory
+    // The harness's tab goes when its memory is turned off (on another device too).
+    LaunchedEffect(view?.projectMemory == null) { if (view != null && view.projectMemory == null && section == MemorySection.Harness) section = MemorySection.Bot }
+    // A long memory stops at a few lines, fewer when the screen is short (landscape); tapping it shows the rest.
+    val short = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val lines = { key: String -> if (key in unfolded) Int.MAX_VALUE else if (short) 2 else 5 }
+    val unfold = { key: String -> unfolded = if (key in unfolded) unfolded - key else unfolded + key }
+    val harness = backendName(state, bot?.backend ?: "claude")
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        TabChoice(section, listOfNotNull(MemorySection.Yours to "About you", MemorySection.Bot to "This bot", MemorySection.Dreams to "Dreams",
+            (MemorySection.Harness to harness).takeIf { view?.projectMemory != null }), { picked ->
+            section = picked
+            // Claude Code writes its notes outside Codync, so nothing moves `memoryRev`: read them again on the way in.
+            if (picked == MemorySection.Harness) scope.launch { memory.load() }
+        })
+        CardSection {
+            memory.error?.let { error -> row { SelectionContainer { Text(tr(error), color = Palette.danger) } } }
+            when {
+                view == null -> if (memory.error == null) row { Text(tr("Loading memory…"), color = Palette.secondary) }
+                section == MemorySection.Yours || section == MemorySection.Bot ->
+                    layerRows(view, bot, section == MemorySection.Yours, state, store, harness, lines, unfold, { info = MemoryInfo.Harness }) { note = it }
+                section == MemorySection.Dreams -> dreamRows(view.dreams, lines, unfold) { info = MemoryInfo.Dreams }
+                else -> harnessRows(view.projectMemory)
+            }
         }
     }
-    CodyncSheet(editor, { editor = null }) { MemoryEditor(memory, it) }
-    CodyncSheet(aboutHarness, { aboutHarness = false }) { HarnessMemorySheet(harness, bot?.backend == "claude") }
-    CodyncDialog(if (shared) "Forget everything your bots share about you?" else "Forget everything this bot remembers?", confirmClear,
-        { confirmClear = false }) {
-        listOf(DialogAction("Forget everything", destructive = true) { memory.mutate("clearMemory", shared = shared) })
+    CodyncSheet(info, { info = null }) { shown ->
+        when (shown) {
+            MemoryInfo.Harness -> InfoSheet(harnessInfo(harness, when {
+                bot?.harnessMemoryShared == true -> HarnessAccess.Shared
+                bot?.backend == "claude" -> HarnessAccess.Readable
+                else -> HarnessAccess.Hidden
+            }))
+            MemoryInfo.Dreams -> InfoSheet(DREAMS_INFO)
+        }
     }
+    CodyncSheet(note, { note = null }) { MemoryNoteView(memory, it) }
 }
 
-private fun CardRows.layer(memory: MemoryModel, view: BotMemory, bot: com.codync.android.core.Bot?, state: AppState, store: AppStore,
-    shared: Boolean, harness: String, edit: (MemoryEditTarget) -> Unit, about: () -> Unit) {
+/** One layer: its switches, what it holds against its cap, its entries and its notes. */
+private fun CardRows.layerRows(view: BotMemory, bot: Bot?, shared: Boolean, state: AppState, store: AppStore, harness: String,
+    lines: (String) -> Int, unfold: (String) -> Unit, aboutHarness: () -> Unit, open: (MemoryNote) -> Unit) {
     val layer = if (shared) view.yours else view.bot
     if (shared && bot != null) row {
-        SwitchRow("Use what your bots share", null, bot.sharedMemory ?: view.shared, {
-            store.command("updateBot", buildJsonObject { put("id", bot.id); put("sharedMemory", it) }, "memory:" + bot.id)
-        })
-    }
-    val harnessOn = bot?.harnessMemory
-    if (!shared && bot != null && harnessOn != null) row {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("$harness's own memory", Modifier.weight(1f), style = Type.body, color = Palette.text, maxLines = 1)
-            IconButton("About $harness's own memory", "info.circle", action = about)
-            CodyncSwitch(harnessOn, {
-                store.command("updateBot", buildJsonObject { put("id", bot.id); put("harnessMemory", it) }, "memory:" + bot.id)
-            }, Modifier.width(34.dp), !memory.busy) {}
+        CodyncSwitch(bot.sharedMemory ?: view.shared, { store.setSharedMemory(bot, it) }, Modifier.fillMaxWidth()) {
+            Text(tr("Use what your bots share"), style = Type.body, color = Palette.text)
         }
+    }
+    // The harness's own memory: a switch where Codync can turn it off, "Shared" where every bot on it shares it.
+    if (!shared && bot != null && (bot.harnessMemory != null || bot.harnessMemoryShared == true)) row {
+        HarnessMemoryRow(bot, harness, store, aboutHarness)
     }
     row {
-        Text((if (shared) "Your name, time zone, people and lasting preferences, shared by your bots." else "What this bot learned about you.") +
-            " ${layer.used} of ${layer.cap} in use (${when {
-                layer.used.toFloat() / maxOf(1, layer.cap) >= 0.9f -> "🔴 Near capacity — auto-rotates"
-                layer.used.toFloat() / maxOf(1, layer.cap) >= 0.7f -> "🟡 Moderate usage"
-                else -> "🟢 Healthy budget"
-            }}).", style = Type.footnote, color = Palette.secondary)
+        Text(tr(if (shared) "Your name, time zone, people and lasting preferences, shared by your bots. {used} of {cap} in use. To change it, tell the bot."
+            else "What this bot learned about you. {used} of {cap} in use. To change it, tell the bot.")
+            .replace("{used}", "${layer.used}").replace("{cap}", "${layer.cap}"), style = Type.footnote, color = Palette.secondary)
     }
-    if (layer.entries.isEmpty()) row {
-        MemoryEmpty("brain", if (shared) "Nothing shared yet." else "Nothing yet. What this bot learns about you shows up here, and you can change any of it.")
-    }
-    for (entry in layer.entries) row { EntryRow(memory, entry, shared, state) { edit(MemoryEditTarget(entry.id, shared, entry.text)) } }
-    view.files?.let { files -> row { MemoryNotes(memory, files, shared, state) } }
+    if (layer.entries.isEmpty()) row { EmptyMemory("brain", if (shared) "Nothing shared yet." else "Nothing yet. What this bot learns about you shows up here.") }
+    for (entry in layer.entries) row { EntryRow(entry, state, lines("entry:${entry.id}")) { unfold("entry:${entry.id}") } }
+    view.files?.let { files -> noteRows(files, shared, open) }
 }
 
-@Composable private fun EntryRow(memory: MemoryModel, entry: MemoryEntry, shared: Boolean, state: AppState, open: () -> Unit) {
-    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (entry.pinned) Symbol("pin.fill", size = 12.dp, tint = Palette.secondary, modifier = Modifier.padding(top = 4.dp))
-                Text(entry.text, style = Type.body, color = if (entry.archived) Palette.tertiary else Palette.text)
+@Composable private fun HarnessMemoryRow(bot: Bot, harness: String, store: AppStore, about: () -> Unit) {
+    val own = tr("{name}'s own memory").replace("{name}", harness)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(own, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        IconButton(tr("About {name}'s own memory").replace("{name}", harness), "info.circle", action = about)
+        Spacer(Modifier.weight(1f))
+        val on = bot.harnessMemory
+        if (on != null) CodyncSwitch(on, { store.setHarnessMemory(bot, it) }, Modifier.width(34.dp)) {}
+        else Text(tr("Shared"), style = Type.body, color = Palette.secondary, maxLines = 1)
+    }
+}
+
+@Composable private fun EntryRow(entry: MemoryEntry, state: AppState, lines: Int, unfold: () -> Unit) {
+    Column(Modifier.fillMaxWidth().plainButton(action = unfold), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (entry.pinned) Symbol("pin.fill", size = 12.dp, tint = Palette.secondary)
+            Text(entry.text, style = Type.body, color = if (entry.archived) Palette.tertiary else Palette.text, maxLines = lines, overflow = TextOverflow.Ellipsis)
+        }
+        val author = when (entry.author) {
+            "user" -> tr("You wrote it")
+            "bot" -> tr("{name} remembered it").replace("{name}", state.bots.firstOrNull { it.id == entry.authorBot }?.name ?: tr("A bot"))
+            "dream" -> tr("Dreaming")
+            else -> tr("Moved from the old memory")
+        }
+        Text("$author · ${relative(entry.updatedAt)}${if (entry.archived) " · " + tr("archived") else ""}", style = Type.caption, color = Palette.secondary)
+    }
+}
+
+/** One layer's long-form notes under its entries: name, description, size and date, marked past a cap. The bot writes them. */
+private fun CardRows.noteRows(files: MemoryFiles, shared: Boolean, open: (MemoryNote) -> Unit) {
+    val live = (if (shared) files.yours else files.bot).files.filter { !it.deleted }
+    row { Text(tr("Notes"), style = Type.footnote.semibold, color = Palette.secondary) }
+    if (live.isEmpty()) row { Text(tr("Longer notes, one topic each. The bot reads one when its topic comes up."), style = Type.footnote, color = Palette.tertiary) }
+    else if (live.size > files.folderCap) row {
+        Text(tr("{count} notes, over the {cap}-note cap. Ask the bot to merge some.").replace("{count}", "${live.size}").replace("{cap}", "${files.folderCap}"),
+            style = Type.footnote, color = Palette.attention)
+    }
+    for (file in live) row {
+        Column(Modifier.fillMaxWidth().plainButton { open(MemoryNote(file.name, shared)) }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Symbol("doc.text", size = 18.dp, tint = Palette.text)
+                Text(file.name, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text("${author(entry, state)} · ${ago(entry.updatedAt)}${if (entry.archived) " · archived" else ""}", style = Type.caption, color = Palette.secondary)
+            file.description?.let { Text(it, style = Type.footnote, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            val over = file.tokens > files.cap
+            Text(tr(if (over) "{tokens} tokens, over the {cap} cap" else "{tokens} tokens").replace("{tokens}", "${file.tokens}")
+                .replace("{cap}", "${files.cap}") + " · " + relative(file.updatedAt), style = Type.caption, color = if (over) Palette.attention else Palette.secondary)
         }
     }
 }
 
-private fun CardRows.dreams(memory: MemoryModel, runs: List<DreamRun>) {
-    row { Text("Between chats the bot tidies its memory from your own words. Each run can be undone.", style = Type.footnote, color = Palette.secondary) }
-    if (runs.isEmpty()) row { MemoryEmpty("moon.zzz.fill", "No dreams yet.") }
+/** What dreaming did. */
+private fun CardRows.dreamRows(runs: List<DreamRun>, lines: (String) -> Int, unfold: (String) -> Unit, about: () -> Unit) {
+    row {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Between chats the bot tidies its memory from your own words."), Modifier.weight(1f), style = Type.footnote, color = Palette.secondary)
+            IconButton("About dreaming", "info.circle", action = about)
+        }
+    }
+    if (runs.isEmpty()) row { EmptyMemory("moon", "No dreams yet.") }
     for (run in runs) row {
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(ago(run.at) + if (run.undone) " · undone" else "", style = Type.body.semibold, color = Palette.text)
-                for (added in run.added) Text("+ ${added.text}", style = Type.body, color = Palette.text)
-                for (gone in run.archived) Text("− ${gone.text}", style = Type.body, color = Palette.tertiary)
-                for (note in run.files.orEmpty()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Symbol("doc.text", size = 14.dp, tint = Palette.secondary)
-                    Text("Added to ${note.name}", style = Type.body, color = Palette.secondary)
-                }
+        val limit = lines("dream:${run.id}")
+        Column(Modifier.fillMaxWidth().plainButton { unfold("dream:${run.id}") }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(relative(run.at) + if (run.undone) " · " + tr("undone") else "", style = Type.body.semibold, color = Palette.text)
+            for (change in run.added) Text("+ ${change.text}", style = Type.body, color = Palette.added, maxLines = limit, overflow = TextOverflow.Ellipsis)
+            for (change in run.archived) Text("− ${change.text}", style = Type.body, color = Palette.removed, maxLines = limit, overflow = TextOverflow.Ellipsis)
+            for (file in run.files.orEmpty()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Symbol("doc.text", size = 16.dp, tint = Palette.secondary)
+                Text(tr("Added to {name}").replace("{name}", file.name), style = Type.body, color = Palette.secondary)
             }
         }
     }
 }
 
-private fun CardRows.harnessNotes(project: BotMemory.Project?, name: String) {
-    if (project == null) return
-    row { Text("$name's own notes, read-only here.", style = Type.footnote, color = Palette.secondary) }
-    row { SelectionContainer { Text(project.path, style = Type.caption, color = Palette.tertiary) } }
-    if (project.text.isEmpty()) row { MemoryEmpty("brain", "Nothing yet. $name's notes show up here once it saves some.") }
-    else row { SelectionContainer { Text(project.text, style = Type.body, color = Palette.text, modifier = Modifier.fillMaxWidth()) } }
+/** Claude Code's own notes, read-only here. */
+private fun CardRows.harnessRows(project: BotMemory.Project?) {
+    project ?: return
+    row {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(tr("Claude Code's own notes, read-only here."), style = Type.footnote, color = Palette.secondary)
+            SelectionContainer { Text(project.path, style = Type.caption, color = Palette.tertiary) }
+        }
+    }
+    if (project.text.isEmpty()) row { EmptyMemory("brain", "Nothing yet. Claude Code's notes show up here once it saves some.") }
+    else row { SelectionContainer { Text(project.text, style = Type.body, color = Palette.text) } }
 }
 
-@Composable private fun MemoryEmpty(icon: String, text: String) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+@Composable private fun EmptyMemory(icon: String, text: String) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Symbol(icon, size = 24.dp, tint = Palette.tertiary)
-        Text(text, style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
+        Text(tr(text), style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
     }
 }
 
-private fun author(entry: MemoryEntry, state: AppState): String = when (entry.author) {
-    "user" -> "You wrote it"
-    "bot" -> "${state.bots.firstOrNull { it.id == entry.authorBot }?.name ?: "A bot"} remembered it"
-    "dream" -> "Dreaming"
-    else -> "Moved from the old memory"
-}
-
-internal fun ago(millis: Long): String =
-    DateUtils.getRelativeTimeSpanString(minOf(millis, System.currentTimeMillis()), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
-
-/** Writes one memory: a new one, or a change to an entry (iOS `MemoryEditorView`). */
-@Composable private fun MemoryEditor(memory: MemoryModel, target: MemoryEditTarget) {
-    val dismiss = LocalDismissModal.current
-    var text by remember(target) { mutableStateOf(target.text) }
-    LaunchedEffect(target) { memory.error = null }
-    Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader(if (target.entry != null) "Edit memory" else if (target.shared) "Add to what your bots share" else "Add memory")
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column(Modifier.heightIn(min = 96.dp)) { FieldBox(text, { text = it }, "One short fact", 2, 6, fill = Palette.surface) }
-            memory.error?.let { Text(it, style = Type.body, color = Palette.danger) }
-            PrimaryButton(if (memory.busy) "Saving…" else "Save", Modifier.fillMaxWidth(), enabled = !memory.busy && text.isNotBlank()) {
-                memory.mutate("saveMemory", id = target.entry, shared = target.shared, text = text.trim(), done = { dismiss() })
-            }
+/** One note, to read (iOS `MemoryFileView`). */
+@Composable private fun MemoryNoteView(memory: MemoryModel, note: MemoryNote) {
+    var detail by remember(note) { mutableStateOf<MemoryFileDetail?>(null) }
+    LaunchedEffect(note) { detail = memory.file(note.name, note.shared) }
+    Column {
+        ModalHeader(note.name)
+        CardForm {
+            memory.error?.let { error -> CardSection { row { SelectionContainer { Text(tr(error), color = Palette.danger) } } } }
+            val shown = detail
+            if (shown != null) CardSection(footer = shown.path) {
+                row { SelectionContainer { Text(shown.content ?: tr("Deleted."), style = Type.footnote.copy(fontFamily = FontFamily.Monospace), color = Palette.text) } }
+            } else CardSection { row { Text(tr("Loading…"), color = Palette.secondary) } }
         }
     }
 }
+
+/** "5 minutes ago", "Yesterday": the system's relative date, as iOS's `.relative(presentation: .named)`. */
+private fun relative(milliseconds: Long): String =
+    DateUtils.getRelativeTimeSpanString(milliseconds, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()

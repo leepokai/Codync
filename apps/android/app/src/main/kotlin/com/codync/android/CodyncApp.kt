@@ -25,7 +25,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.CloudComputer
 import com.codync.android.core.GroupDraft
@@ -34,18 +35,24 @@ import com.codync.android.design.*
 
 private enum class Root { Loading, Welcome, Pairing, Tabs }
 
-/** The app's root, as iOS `RootView`: the welcome and pairing until set up, then the tabs, with every sheet on top. */
-@Composable fun CodyncApp(state: AppState, store: AppStore) {
-    val context = LocalContext.current
-    LaunchedEffect(context) { NavigationPreferences.ensureLoaded(context) }
+/** A new bot or group chat, on the computer it's made on. */
+private data class NewTarget(val group: Boolean, val computerId: String)
+
+/** An editor sheet's draft and the computer its bot lives on. */
+private data class Editing<T>(val computerId: String, val draft: T)
+
+/**
+ * The app's root, as iOS `RootView`: the welcome and pairing until set up, then the tabs, with every sheet
+ * on top. Each computer's screens get that computer's store ([computers] holds their states).
+ */
+@Composable fun CodyncApp(app: AccountContext, computers: Map<String, AppState>, accounts: AccountStore) {
     var welcomed by rememberSaveable { mutableStateOf(false) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var showComputers by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var showUsage by rememberSaveable { mutableStateOf(false) }
-    var showMarketplace by rememberSaveable { mutableStateOf(false) }
-    var requestedTab by rememberSaveable { mutableStateOf<AppTab?>(null) }
-    var requestedTabToken by rememberSaveable { mutableIntStateOf(0) }
+    var marketplace by rememberSaveable { mutableStateOf<String?>(null) }
+    var creating by remember { mutableStateOf<NewTarget?>(null) }
     var access by remember { mutableStateOf<CloudComputer?>(null) }
     var editor by remember { mutableStateOf<Editing<BotDraft>?>(null) }
     var groupEditor by remember { mutableStateOf<Editing<GroupDraft>?>(null) }
@@ -54,8 +61,8 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     var handledNavigation by rememberSaveable { mutableStateOf(accounts.activityOwnerId to 0) }
     var handledGeneration by rememberSaveable { mutableIntStateOf(app.generation) }
     fun closeAll() {
-        showAccount = false; showComputers = false; showPairing = false; showMarketplace = false
-        access = null; editor = null; groupEditor = null
+        showAccount = false; showComputers = false; showPairing = false; marketplace = null
+        creating = null; access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
     LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; handledGeneration = app.generation } }
@@ -65,30 +72,17 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
         val handled = handledNavigation.second.takeIf { handledNavigation.first == accounts.activityOwnerId } ?: 0
         if (handled != app.navigationRequest) {
             closeAll()
-            showUsage = state.navigationPage == LinkPage.Usage
-            when (state.navigationPage) {
-                LinkPage.Computers -> {
-                    requestedTab = AppTab.Computers
-                    requestedTabToken++
-                    // The Settings destination, with Computer management over it.
-                    showComputers = true
-                }
-                LinkPage.Extensions -> {
-                    requestedTab = AppTab.Extensions
-                    requestedTabToken++
-                }
-                else -> {}
-            }
-            handledNavigation = state.navigationRequest
+            tab = if (app.navigationPage == LinkPage.Usage) AppTab.State else AppTab.Bots
+            showUsage = app.navigationPage == LinkPage.Usage
+            showComputers = app.navigationPage == LinkPage.Computers
+            if (app.navigationPage == LinkPage.Extensions) marketplace = app.currentComputerId
+            handledNavigation = accounts.activityOwnerId to app.navigationRequest
         }
     }
-    val signedIn = state.account.userId != null
-    AnalyticsMilestones(state)
-    val onboarding = !state.setupComplete && state.computers.isEmpty() && state.cloudComputers.isEmpty()
-    // Signing in to an account that has computers completes setup, as pairing or skipping does.
-    LaunchedEffect(state.cloudComputers.isNotEmpty(), state.loading) {
-        if (!state.loading && !state.setupComplete && state.cloudComputers.isNotEmpty()) store.skipSetup()
-    }
+    val signedIn = app.account.userId != null
+    // Every build with accounts requires sign-in (iOS `mustSignIn`); only builds without them pair signed out.
+    val required = app.account.configured
+    val onboarding = !app.setupComplete && app.computers.isEmpty() && app.cloudComputers.isEmpty()
     val root = when {
         app.loading || app.account.restoring -> Root.Loading
         required && !signedIn -> Root.Welcome
@@ -96,45 +90,38 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
         onboarding -> Root.Pairing
         else -> Root.Tabs
     }
-    LaunchedEffect(root) {
-        Analytics.onboardingStep(when (root) {
-            Root.Welcome -> RootOnboardingStep.Welcome
-            Root.Pairing -> RootOnboardingStep.Pairing
-            Root.Tabs -> RootOnboardingStep.Ready
-            Root.Loading -> null
-        })
-    }
     BackHandler(root == Root.Pairing && !signedIn) { welcomed = false }
-    val openMarketplace = { showAccount = false; showComputers = false; showMarketplace = true }
-    Box(Modifier.fillMaxSize().background(Palette.background)) {
-        AnimatedContent(root, transitionSpec = {
-            if (initialState == Root.Welcome && targetState == Root.Pairing)
-                (slideInHorizontally(Motion.layoutOffset) { it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { -it } + fadeOut(Motion.fade()))
-            else if (initialState == Root.Pairing && targetState == Root.Welcome)
-                (slideInHorizontally(Motion.layoutOffset) { -it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { it } + fadeOut(Motion.fade()))
-            else fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade())
-        }, label = "Root") { shown ->
-            when (shown) {
-                Root.Loading -> Box(Modifier.fillMaxSize())
-                Root.Welcome -> WelcomeView(state, store) { welcomed = true }
-                Root.Pairing -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                    PairingView(state, store, onSkip = store::skipSetup) {
-                        if (signedIn) AccountSwitcherButton(state) { showAccount = true } else BackButton { welcomed = false }
+    val states = app.computers.mapNotNull { computers[it.id] }
+    val edit = { computerId: String, bot: Bot ->
+        if (bot.kind == "group") groupEditor = Editing(computerId, GroupDraft.from(bot)) else editor = Editing(computerId, BotDraft.from(bot))
+    }
+    val openMarketplace = { id: String -> showAccount = false; showComputers = false; marketplace = id }
+    // The sheets too: a bot's editor sets custom icons, which need sign-in.
+    CompositionLocalProvider(LocalAccounts provides accounts) {
+        Box(Modifier.fillMaxSize().background(Palette.background)) {
+            AnimatedContent(root, transitionSpec = {
+                if (initialState == Root.Welcome && targetState == Root.Pairing)
+                    (slideInHorizontally(Motion.layoutOffset) { it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { -it } + fadeOut(Motion.fade()))
+                else if (initialState == Root.Pairing && targetState == Root.Welcome)
+                    (slideInHorizontally(Motion.layoutOffset) { -it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { it } + fadeOut(Motion.fade()))
+                else fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade())
+            }, label = "Root") { shown ->
+                when (shown) {
+                    Root.Loading -> Box(Modifier.fillMaxSize())
+                    // Computers paired before sign-in was required wait in the signed-out context; signing in moves them.
+                    Root.Welcome -> WelcomeView(app, accounts, signedOutComputers = if (required) app.computers.size else 0) { welcomed = true }
+                    Root.Pairing -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        PairingView(app, accounts, onSkip = accounts::skipSetup) {
+                            if (signedIn) AccountSwitcherButton(app) { showAccount = true } else BackButton { welcomed = false }
+                        }
                     }
-                }
-                Root.Tabs -> MainTabs(
-                    state = state,
-                    store = store,
-                    account = { showAccount = true },
-                    manage = { showComputers = true },
-                    usage = { showUsage = true },
-                    newBot = { editor = BotDraft() },
-                    newGroup = { groupEditor = GroupDraft() },
-                    edit = { bot -> if (bot.kind == "group") groupEditor = GroupDraft.from(bot) else editor = BotDraft.from(bot) },
-                    requestedTab = requestedTab,
-                    requestedTabToken = requestedTabToken,
-                ) {
-                    ChatScreen(state, store) { bot -> if (bot.kind == "group") groupEditor = GroupDraft.from(bot) else editor = BotDraft.from(bot) }
+                    Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
+                        newBot = { creating = NewTarget(group = false, computerId = it) }, newGroup = { creating = NewTarget(group = true, computerId = it) },
+                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage ||
+                            marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null) { chat ->
+                        // A conversation, talking to the computer the bot lives on.
+                        accounts.store(chat.computer.id)?.let { store -> ChatScreen(chat, store) { bot -> edit(chat.computer.id, bot) } }
+                    }
                 }
             }
         }
@@ -203,37 +190,37 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
             listOf(DialogAction("Copy and open") { codeStore?.openSignInCode() })
         }
     }
-    // The account sheet holds its own sign-in and computers, as the iOS sheet's NavigationStack.
-    CodyncSheet(showAccount && (state.setupComplete || signedIn) && !state.loading, { showAccount = false }) {
-        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Account))
-        AccountSwitcherView(state, store) { showPairing = true }
+}
+
+/** The account's store, for the few computer screens that also act on the account (custom icons need sign-in). */
+internal val LocalAccounts = staticCompositionLocalOf<AccountStore?> { null }
+
+/** [content] with computer [id]'s state and store, while both are there (a sheet of one computer). */
+@Composable private fun OnComputer(id: String, computers: Map<String, AppState>, accounts: AccountStore, content: @Composable (AppState, AppStore) -> Unit) {
+    val state = computers[id] ?: return
+    val store = accounts.store(id) ?: return
+    content(state, store)
+}
+
+/** Computers that can take a new bot once they're connected: not ones waiting for an update, or that won't come back (iOS `availableStores`). */
+internal fun availableComputers(app: AccountContext, states: List<AppState>): List<AppState> =
+    states.filter { it.mismatch == null && !app.isStale(it, states) }
+
+/** A computer in the new bot's Computer menu, offline ones marked. */
+private fun computerChoice(state: AppState): String =
+    if (state.actualConnection is LinkState.Ready) state.hostName else "${state.hostName} (offline)"
+
+/** Usage for one computer at a time: the last active one, which the Usage widget shows too (iOS `UsageSheet`). */
+@Composable private fun UsageSheet(app: AccountContext, states: List<AppState>, accounts: AccountStore) {
+    val state = states.firstOrNull { it.computer.id == app.currentComputerId }
+    val store = accounts.store(state?.computer?.id)
+    val picker: @Composable () -> Unit = {
+        if (state != null && states.size > 1) DropdownMenu({
+            states.map { other -> MenuItem(other.computer.name, selected = other.computer.id == state.computer.id, verbatim = true) { accounts.noteActive(other.computer.id) } }
+        }, label = "Computer: ${state.computer.name}") { ComputerBadge(state.hello?.text("device"), 28.dp, state.computer.color) }
     }
-    CodyncSheet(showComputers && !state.loading, { showComputers = false }) {
-        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))
-        ComputersView(state, store, { showPairing = true }, { access = it }, openMarketplace)
-    }
-    CodyncSheet(access, { access = null }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { AccessRequestView(state, store, it) }
-    CodyncSheet(showPairing && !state.loading, { showPairing = false }) { PairingView(state, store, inModal = true) }
-    CodyncSheet(showUsage && !state.loading, { showUsage = false }) { UsageScreen(state, store::refreshUsage, store::reloadUsage) }
-    CodyncSheet(showMarketplace && root == Root.Tabs, { showMarketplace = false }) { MarketplaceView(state, store) }
-    CodyncSheet(groupEditor.takeIf { !state.loading }, { groupEditor = null }) { draft ->
-        key(state.contextId, state.generation, draft.id) {
-            if (draft.id == null) NewGroupView(state, store) else GroupEditor(state, draft, store)
-        }
-    }
-    CodyncSheet(editor.takeIf { !state.loading }, { editor = null }) { draft ->
-        key(state.contextId, state.generation, draft.id) {
-            if (draft.id == null) NewBotView(state, store) else BotEditor(state, draft, store)
-        }
-    }
-    // Content shared from another app: pick the bot whose draft receives it.
-    CodyncSheet(state.incomingShare.takeIf { !state.loading && root == Root.Tabs }, store::discardShare) { share -> ShareTargetView(state, share, store) }
-    // The remote screen opens over the app once its sheets have slid away.
-    LaunchedEffect(state.screenRequest) { if (state.screenRequest != null) { closeAll(); showUsage = false } }
-    ScreenLayer(state, store)
-    // One place for errors the screen showing them doesn't handle itself (pairing, access, the editors do).
-    val inline = root == Root.Pairing || showPairing || access != null || editor != null || groupEditor != null
-    CodyncDialog("Something went wrong", state.error != null && !inline, store::clearError, state.error, cancel = "OK") { emptyList() }
+    if (state == null || store == null) UsageScreen(null, {}, {}, picker)
+    else key(state.computer.id) { UsageScreen(state, store::refreshUsage, store::reloadUsage, picker) }
 }
 
 /** The remote screen as a full-window layer that fades in and out (iOS `.codyncOverlay`); it keeps its computer while fading. */
@@ -246,24 +233,8 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     val (current, owner) = shown ?: return
     Overlay {
         AnimatedVisibility(visible, enter = fadeIn(Motion.layout()), exit = fadeOut(Motion.fade())) {
-            ScreenView(state, store, state.screenRequest?.watching, store::closeScreen)
+            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.RemoteScreen))
+            key(current.computer.id) { ScreenView(current, owner, current.screenRequest?.watching, owner::closeScreen) }
         }
-    }
-}
-
-/** The app-level analytics events (iOS reports the same): setup finished, signed in, signed out. */
-@Composable private fun AnalyticsMilestones(state: AppState) {
-    var setup by remember { mutableStateOf<Boolean?>(null) }
-    var user by remember { mutableStateOf<String?>(null) }
-    var known by remember { mutableStateOf(false) }
-    LaunchedEffect(state.loading, state.setupComplete) {
-        if (state.loading) return@LaunchedEffect
-        if (setup == false && state.setupComplete) Analytics.completeOnboarding(OnboardingVia.Paired)
-        setup = state.setupComplete
-    }
-    LaunchedEffect(state.account.ready, state.account.userId) {
-        if (!state.account.ready) return@LaunchedEffect
-        val now = state.account.userId
-        user = now; known = true
     }
 }

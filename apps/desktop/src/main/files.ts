@@ -4,17 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { clipboard } from 'electron'
 import type { PickedFile } from '../shared/ipc'
 
-/** The composer's own limit (Composer.tsx): one larger file would never send. */
-const MAX_FILE_SIZE = 100 * 1024 * 1024
-/** More files than this in one go is a mistake, not a message. */
-const MAX_FILES = 20
-
 export async function readFiles(paths: string[]) {
-  const out: { name: string; data: Uint8Array }[] = []
-  for (const path of paths.slice(0, MAX_FILES)) {
+  const out: PickedFile[] = []
+  for (const path of paths) {
     try {
-      // A dropped folder or a huge file is skipped rather than half-read.
-      if ((await fs.stat(path)).size > MAX_FILE_SIZE) continue
       out.push({ name: basename(path), data: new Uint8Array(await fs.readFile(path)) })
     } catch {}
   }

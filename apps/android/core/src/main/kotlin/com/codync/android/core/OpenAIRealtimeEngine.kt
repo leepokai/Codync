@@ -135,8 +135,8 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
             "output_audio_buffer.stopped", "output_audio_buffer.cleared" -> if (phase == VoicePhase.Speaking) phase(VoicePhase.Listening)
             "response.created" -> responding = true
             "response.done" -> { responding = false; flush() }
-            "conversation.item.input_audio_transcription.completed" -> { transcript?.openAI(message); link.add("user", message.text("transcript").orEmpty()); link.endTurn() }
-            "response.output_audio_transcript.done" -> { transcript?.openAI(message); link.add("voice", message.text("transcript").orEmpty()); link.endTurn() }
+            "conversation.item.input_audio_transcription.completed" -> { link.add("user", message.text("transcript").orEmpty()); link.endTurn() }
+            "response.output_audio_transcript.done" -> { link.add("voice", message.text("transcript").orEmpty()); link.endTurn() }
             "response.function_call_arguments.done" -> {
                 val id = message.text("call_id") ?: return@hop
                 val name = message.text("name") ?: return@hop
@@ -182,7 +182,6 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
     }
 
     private fun cancelResponse() {
-        transcript?.interrupted()
         send(buildJsonObject { put("type", "response.cancel") })
         send(buildJsonObject { put("type", "output_audio_buffer.clear") })
     }

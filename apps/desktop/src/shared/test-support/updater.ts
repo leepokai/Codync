@@ -79,7 +79,7 @@ export function updaterFixture(options: { packaged?: boolean; main?: boolean; pr
     'node:events': { EventEmitter },
     'node:fs': { existsSync: (file: string) => shipIt.request && file === '/Users/me/Library/Caches/com.pokai.Codync.ShipIt/ShipItState.plist' },
     'node:os': { homedir: () => '/Users/me' },
-    'node:path': path.posix,
+    'node:path': path,
     electron: { app, ipcMain: ipc, shell: { openPath: async (target: string) => { opened.push(target); return '' } }, BrowserWindow: { getFocusedWindow: () => behavior.focused }, powerMonitor: { getSystemIdleTime: () => behavior.idleSeconds } },
     'electron-updater': { autoUpdater: updater },
     './account': { isMainEnvironment: () => options.main ?? true },

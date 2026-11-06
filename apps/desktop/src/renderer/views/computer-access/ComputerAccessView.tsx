@@ -46,7 +46,7 @@ export function ComputerAccessView({ onContinue }: { onContinue?: (ready: boolea
         <div className="computer-access-steps"><AccessSteps access={access} /></div>
         <ul className="computer-access-notes">
           <li><Icon name="lock.shield" size={13} /><p>{tr(onContinue ? 'Permissions stay on this computer. You can change them later in Settings → Computer access.' : 'Permissions stay on this computer. Your other computers keep their own permissions.')}</p></li>
-          <li><Icon name="iphone" size={13} /><p>{tr('On Android or iPhone, connect with a QR code or Ask Access. No SSH setup needed.')}</p></li>
+          <li><Icon name="iphone" size={13} /><p>{tr('On iPhone, connect with a QR code or Ask Access. No SSH setup needed.')}</p></li>
         </ul>
         {onContinue ? <footer className="computer-access-footer">
           <Button kind={ready ? 'primary' : 'secondary'} onClick={() => onContinue(ready)}>{tr(ready ? 'Continue' : 'Set up later')}{ready ? <Icon name="arrow.right" size={12} /> : null}</Button>

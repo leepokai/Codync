@@ -74,12 +74,7 @@ jobs:
     needs: check
     # Fork PRs get no signing secrets, so they stop at check, Windows and Linux; the release PR into main
     # builds the Mac app before the tag.
-    # A repository without the Apple signing secrets (this fork) sets no `MAC_SIGNING` variable and skips it; the
-    # release PR into main only builds the Mac app when a package is wanted.
-    if: >-
-      vars.MAC_SIGNING == 'true' &&
-      needs.check.outputs.package == 'true' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.check.outputs.package == 'true' && !inputs.windows_only && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -232,7 +227,7 @@ jobs:
           test "$(node -p process.arch)" = '${{ matrix.arch }}'
           npm ci
           node --test --experimental-strip-types src/shared/ssh-platform.test.ts
-          npm run dist:win:main -- --publish never
+          npm run dist:win:main -- --${{ matrix.arch }} --publish never
           cd dist
           sha256sum codync-windows-${{ matrix.arch }}.exe > codync-windows-${{ matrix.arch }}.exe.sha256
       - name: Install

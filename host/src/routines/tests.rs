@@ -14,8 +14,6 @@ pub(super) fn routine() -> Routine {
         deleted: false,
         timeout_seconds: default_timeout(),
         last_error: None,
-        watch: vec![],
-        idle_runs: 0,
     }
 }
 #[test]

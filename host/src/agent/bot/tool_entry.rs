@@ -42,7 +42,7 @@ pub(super) fn merge_tool_content(data: &mut Value, content: &Value) {
 }
 
 /// Changed-region summary: trims the common prefix/suffix and reports the middle.
-pub(crate) fn diff_summary(path: &str, old: &str, new: &str) -> Value {
+fn diff_summary(path: &str, old: &str, new: &str) -> Value {
     let a: Vec<&str> = old.lines().collect();
     let b: Vec<&str> = new.lines().collect();
     let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();

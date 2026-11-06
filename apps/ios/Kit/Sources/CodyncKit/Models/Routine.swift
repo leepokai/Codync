@@ -38,10 +38,6 @@ public struct RoutineTrigger: Codable, Hashable, Sendable {
     public var source: String?
     public var event: String?
     public var filters: [String: String]?
-    /// `watch` triggers: `files` or `url`, the path or URL, and how often it's checked.
-    public var kind: String?
-    public var target: String?
-    public var everyMinutes: Int64?
 
     public init(type: String, seconds: Int64? = nil, at: Int64? = nil, expression: String? = nil, timeZone: String? = nil) {
         self.type = type

@@ -24,7 +24,6 @@ import { useSSH } from './ssh-model'
 import { SSHConfigSuggestions } from './SSHConfigSuggestions'
 import { SSHRow } from './SSHRow'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
-import { openComputerScreen } from '../screen/open'
 
 /**
  * Computers this app manages (itself and SSH), with their account, relay and authorized devices;
@@ -99,26 +98,6 @@ export function ComputersView() {
         onClose={() => setRemoving(null)}
       />
     </div>
-  )
-}
-
-/** Opens the live screen when this remote computer is ready to view. */
-function ViewScreenButton({ store }: { store: BotStore }) {
-  const ssh = useSSH()
-  useModel(store)
-  const tunnel = ssh.state.attachments.find((item) => item.computer.id === store.computer.id) ?? null
-  if (!tunnel) return null
-  return <Button kind="secondary" onClick={() => openComputerScreen(store, tunnel)}>View screen</Button>
-}
-
-/** How this app reaches a computer: direct LAN or the encrypted relay. */
-function RouteIcon({ store }: { store: BotStore }) {
-  if (store.connection.kind !== 'online' || !store.hostRoute || store.hostRoute === 'loopback') return null
-  const relay = store.hostRoute === 'relay'
-  return (
-    <HStack as="span" align="stretch" title={relay ? 'Through Cloudflare (encrypted)' : 'Direct: Wi-Fi or Tailscale'} aria-label={relay ? 'Through Cloudflare' : 'Wi-Fi or Tailscale'} className="settings-route">
-      <Icon name={relay ? 'cloud' : 'wifi'} size={12} />
-    </HStack>
   )
 }
 
@@ -198,13 +177,11 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
                 {`${tr(overSSH ? 'Over SSH' : isMacLabel)} · ${tr(statusText(store))}`}
               </Text>
             </VStack>
-            <RouteIcon store={store} />
-            {overSSH ? <ViewScreenButton store={store} /> : null}
             {overSSH ? (
               // This computer's voice settings are their own Settings page.
               <IconButton title="Voice chat" icon="waveform" selected={showVoice} disabled={!online} onClick={() => setShowVoice((s) => !s)} />
             ) : null}
-            <IconButton title="Pair phone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
+            <IconButton title="Pair iPhone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
           </div>,
           // Until the host gives its cloud status, there's no way to tell its relay or account.
           ...(cloud
@@ -282,7 +259,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         </StoreContext.Provider>
       </Sheet>
       <Sheet open={showPairing} onClose={() => setShowPairing(false)} width={340}>
-        <ModalHeader icon="qrcode" title={tr('Pair phone with {name}').replaceAll('{name}', name)} />
+        <ModalHeader icon="qrcode" title={tr('Pair iPhone with {name}').replaceAll('{name}', name)} />
         <PairingPanel store={store} />
       </Sheet>
       <Dialog
@@ -361,7 +338,7 @@ function accountComputerStatus(computer: CloudComputer, olderCopy: boolean) {
   return computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy'
 }
 
-/** "Pair phone" for a computer this app manages, through its store. */
+/** "Pair iPhone" for a computer this app manages, through its store. */
 function PairingPanel({ store }: { store: BotStore }) {
   useModel(store)
   const requestCode = useCallback(async () => {

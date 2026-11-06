@@ -24,7 +24,7 @@ const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit', env: { ..
 // Codync Dev builds in the host's `dev-app` profile: seconds to rebuild instead of minutes.
 const profile = env === 'dev' ? 'dev-app' : 'release'
 const build = (target) => run(cargo, ['build', '--profile', profile, '--manifest-path', join(host, 'Cargo.toml'), '--target', target])
-const built = (target, name) => join(process.env.CARGO_TARGET_DIR ?? join(host, 'target'), target, profile, name)
+const built = (target, name) => join(host, 'target', target, profile, name)
 mkdirSync(out, { recursive: true })
 if (process.platform === 'win32') {
   const target = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'

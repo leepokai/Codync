@@ -48,7 +48,7 @@ public extension Array where Element == Entry {
     /// computer writes when the call ends or its app went away. One that failed to send stays, to be sent again, and a
     /// file or an artifact the bot sent, to be opened.
     func hidingCalls() -> [Entry] {
-        visibleEntries().filter { e in
+        filter { e in
             e.kind == "notice" || e.data.call == nil || e.data.status == "failed" || e.data.files?.isEmpty == false
                 || e.data.artifact != nil
         }
@@ -57,17 +57,17 @@ public extension Array where Element == Entry {
     /// With a call's own entries (`callEntries`), which the chat may not hold: each entry once, the chat's copy first.
     func withCallEntries(_ fetched: [Entry]) -> [Entry] {
         let held = Set(map(\.id))
-        return (self + fetched.filter { !held.contains($0.id) }).visibleEntries()
+        return self + fetched.filter { !held.contains($0.id) }
     }
 
     /// A call's conversation, oldest first: what was said (the voice's transcript) and the messages it carried.
     /// Phone and computer clocks are merged as they are.
     func callConversation(_ line: Entry) -> [CallMessage] {
-        guard !line.isInternal, let call = line.data.call else { return [] }
+        guard let call = line.data.call else { return [] }
         var said: [(at: Int64, message: CallMessage)] = (line.data.transcript ?? []).map {
             ($0.at ?? line.createdAt, CallMessage(speaker: $0.from == "user" ? .user : .voice, text: $0.text))
         }
-        for e in self where !e.isInternal && e.data.call == call && (e.kind == "user" || (e.kind == "agent" && e.data.final == true)) {
+        for e in self where e.data.call == call && (e.kind == "user" || (e.kind == "agent" && e.data.final == true)) {
             let speaker: CallMessage.Speaker = e.kind == "agent" ? .bot : e.data.from == "voice" ? .voiceToBot : .user
             said.append((e.createdAt, CallMessage(speaker: speaker, text: e.data.text ?? "")))
         }

@@ -42,5 +42,5 @@ jobs:
           -derivedDataPath build/screen-ci
           CODE_SIGNING_ALLOWED=NO
 
-      - name: Test helper socket lifecycle
+      - name: Test helper socket lifecycle and candidates
         run: swift test --package-path apps/screen-macos-tests --scratch-path build/dd/screen-macos-tests

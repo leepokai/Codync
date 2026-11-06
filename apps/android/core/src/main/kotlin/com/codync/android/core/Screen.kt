@@ -73,31 +73,12 @@ data class ScreenDisplay(
 /** A reserved viewer session and the ICE servers to reach it (`screenPrepare`). */
 @Serializable
 data class ScreenConnection(val session: String, val iceServers: List<ScreenIceServer>, /** Unix milliseconds. */ val expiresAt: Long,
-    val trickle: Boolean = false) {
+    /** False when an older host or helper requires complete SDP. */ val trickle: Boolean = false) {
     /** Renew five minutes before the TURN credentials expire, never sooner than a second from now. */
     fun renewIn(nowMillis: Long): Long = maxOf(1_000, expiresAt - nowMillis - 300_000)
 }
 
 @Serializable data class ScreenAnswer(val session: String, val sdp: String)
-
-/** Ordered trickle ICE events; absent trickle support preserves the original complete-SDP exchange. */
-@Serializable
-data class ScreenCandidate(val type: String, val candidate: String? = null, val sdpMLineIndex: Int? = null,
-    val sdpMid: String? = null, val message: String? = null) {
-    fun validate() {
-        require(type in setOf("ready", "candidate", "complete", "error")) { "Invalid screen candidate event." }
-        if (type != "candidate") return
-        val sdp = requireNotNull(candidate) { "Missing screen candidate." }
-        require(sdp.startsWith("candidate:") && sdp.toByteArray(Charsets.UTF_8).size <= MAX_CANDIDATE_BYTES &&
-            '\r' !in sdp && '\n' !in sdp && sdpMLineIndex != null && sdpMLineIndex in 0..16 &&
-            (sdpMid?.toByteArray(Charsets.UTF_8)?.size ?: 0) <= 256) { "Invalid screen candidate." }
-    }
-
-    companion object {
-        const val MAX_COUNT = 128
-        const val MAX_CANDIDATE_BYTES = 4096
-    }
-}
 
 /** What the computer said on the `input` channel. */
 sealed interface ScreenReply {

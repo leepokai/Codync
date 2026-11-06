@@ -135,3 +135,28 @@ Confirm with **Delete bot and its conversation**. Deleting your lead bot leaves 
 ## Copy a bot's setup
 
 On the iPhone details sheet or the desktop details panel, **Create template** shows the bot's settings as text you can copy, without its conversation.
+
+
+## Import bots from Grok Bot
+
+Bring your Grok Bot agents over without setting each one up again. Each agent becomes a bot with its instructions, avatar, skills, scheduled tasks (as routines), memories and, if you choose, its workspace files; group chats become groups.
+
+1. In the desktop app, click **+** and choose **Import bots…**, then **Copy export skill**.
+2. In Grok Bot, paste it as a skill of one agent (or into its instructions) and send that agent: *Export my agents for Codync*. It asks which agents to include and whether to add workspace files, then saves `codync-export-<date>.zip` to Downloads.
+3. Back in Codync, click **Choose file…**, pick that file, turn off any bot or group chat you don't want, and click **Import**.
+
+Chats aren't copied: the export keeps what matters in them as memories. The file is read on your computer and isn't uploaded. Codync leaves out secrets it finds in the file (`.env` files, private keys) and anything it can't read, and lists what it left out. An avatar picture needs the computer signed in, like any [custom icon](#custom-icons); otherwise the bot keeps a Codync character. A group chat's routines and memories go to its lead bot.
+
+Exports other apps make from Grok Bot, and their own transfer files, import the same way. From a terminal: `codync-host import <file>` (`--dry-run` lists what the file holds, `--skill` prints the export skill).
+
+## Custom icons
+
+Open an existing bot's avatar picker and choose **Upload from desktop** (**Upload image** on phones), or choose **Paste URL** to reveal the address field, paste an HTTPS image address, and press the arrow button. Changes save immediately. **Tint icon** uses the bot's color; turn it off to keep the picture's original colors. **Use default** restores the character.
+
+PNG, JPEG and WebP files can be up to 5 MiB and 4096 × 4096 pixels. SVG files can be up to 256 KiB; external images and fonts are not loaded. Codync turns the image into a static PNG no larger than 256 × 256 pixels and compresses it to at most 48 KiB. Animated files use a still image.
+
+Sign in to the app and claim your computer before uploading. Choosing an image or Paste URL while signed out opens a sign-in prompt. The computer encrypts images before storing them in private Cloudflare R2 storage. Cached images remain available offline, and showing an icon does not download it from R2 again. New uploads and removals need a connection; a failed save keeps the previous icon. Each computer can have 128 custom icons.
+
+On iPhone, custom pictures stay still in Live Activities and the Dynamic Island. Built-in characters keep their animations. If a cached custom image cannot load, a still default character takes its place.
+
+In the **Terminal UI**, press Ctrl+O in a bot's settings. Enter a local file path or HTTPS URL, choose original colors, tint, or default, then press Enter. The terminal keeps its text avatar; graphical apps show your image.

@@ -78,8 +78,6 @@ function pendingCards({ ref, bot, store }: RosterItem): IslandPermission[] {
         bot: { customIcon: author.customIcon, name: author.name, shape: author.avatarShape, color: author.avatarColor, backend: store.backendName(author.backend) },
         headline: permissionHeadline(e.data.toolKind),
         title: e.data.title ?? '',
-        // The island is small: the first files and their changed lines are enough to judge a card.
-        diffs: (e.data.diffs ?? []).slice(0, 3).map((d) => ({ path: d.path, added: d.added, removed: d.removed, patch: d.patch })),
         options: sortedOptions(e.data.options ?? []).map((o) => ({ id: o.optionId, label: optionLabel(o), kind: o.kind })),
         answering: store.answering.get(e.id) ?? null,
       }

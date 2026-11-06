@@ -24,22 +24,12 @@ public extension Palette {
 }
 
 public extension UsageProvider {
-    var statusLabel: String? {
-        switch status {
-        case "unsupported": "Update this agent to read its plan limits."
-        case nil: nil
-        default: "Plan limits are unavailable for this account."
-        }
-    }
     /// Claude keeps its orange; everyone else is ink, like the rest of the app.
     var tint: Color { id == "claude" ? Color(hex: 0xD97757) : Palette.accent }
 
     /// ACP registry id of the provider's agent, for its logo (`AgentIcon`).
     /// Claude and Codex run through ACP adapters (`claude-acp`, `codex-acp`); others by their own id.
-    var registry: String {
-        let backend = String(id.split(separator: ":", maxSplits: 1).first ?? "")
-        return ["claude", "codex", "antigravity"].contains(backend) ? "\(backend)-acp" : backend
-    }
+    var registry: String { ["claude", "codex"].contains(id) ? "\(id)-acp" : id }
 
     /// The character that stands for this provider.
     var mascotShape: String { id == "codex" ? "hex" : "blob" }
@@ -54,7 +44,7 @@ public extension UsageWindow {
     /// "Session" for the 5-hour window, "Opus" for "Weekly · Opus", else the label.
     var title: String {
         if label == "5-hour" { return "Session" }
-        if label.hasPrefix("Weekly · ") { return String(label.dropFirst("Weekly · ".count)) }
+        if let model = label.split(separator: " · ").dropFirst().first { return String(model) }
         return label
     }
 

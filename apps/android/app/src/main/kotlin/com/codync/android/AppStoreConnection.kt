@@ -20,13 +20,12 @@ fun AppStore.setColor(color: String) = action("color") { changeComputer { it.cop
 fun AppStore.clearError() { mutableState.update { it.copy(error = null) } }
 
 /**
- * Changes the shown computer's latest copy, saved and then shown, one change at a time: a switch
- * flipped while a link's `hello` runs isn't undone by the copy that link saves. The other computers
- * paired with this phone keep their own copies.
+ * Changes this computer's latest copy, saved and then shown, one change at a time: a switch flipped
+ * while a link's `hello` runs isn't undone by the copy that link saves.
  */
-internal suspend fun AppStore.changeComputer(change: (Computer) -> Computer): Computer? = computerChanges.withLock {
-    val changed = change(state.value.computer ?: return@withLock null)
-    saveComputer(changed)
+internal suspend fun AppStore.changeComputer(change: (Computer) -> Computer): Computer = computerChanges.withLock {
+    val changed = change(state.value.computer)
+    save(changed)
     changed
 }
 
@@ -56,46 +55,15 @@ fun AppStore.setForeground(active: Boolean) {
         connect()
         acknowledgeVisible()
     }
-    if (!active) {
-        pairingJob?.cancel()
-        if (!transportRequired) {
-            connectionJob?.cancel()
-            graceJob?.cancel()
-            channel?.close()
-        }
-    }
-}
-
-/** Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside ([PairedVia.Link]). */
-internal fun AppStore.pair(text: String, via: PairedVia = PairedVia.Qr) {
-    if (pairingJob?.isActive == true) return
-    pairingJob = contextScope.launch {
-        state.first { !it.loading }
-        mutableState.update { it.copy(pairing = true, error = null) }
-        try {
-            val pairing = Pairing.parse(text, BuildConfig.URL_SCHEME)
-            // A computer paired before keeps what this phone picked for it; a new one joins the others and is shown.
-            val old = state.value.computers.firstOrNull { it.id == pairing.computer.id }
-            require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Remove it in Computer management, then pair it again." }
-            val identity = withContext(Dispatchers.IO) { local.identity() }
-            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).keepingDevicePicks(old)
-            // Tagged here: the page that asked only learns that pairing ended, maybe before the switch to this computer.
-            Analytics.capture(AnalyticsEvent.ComputerPaired(via, computer.id))
-            withContext(Dispatchers.IO) { local.completeSetup() }
-            if (state.value.computer?.id != computer.id) { addComputer(computer); return@launch }
-            saveComputer(computer)
-            mutableState.update { it.copy(setupComplete = true) }
-            if (database == null) openMirror()
-            connect()
-        } catch (error: CancellationException) { throw error }
-        catch (error: Exception) { showError(error) }
-        finally { mutableState.update { it.copy(pairing = false) } }
+    if (!active && !transportRequired) {
+        connectionJob?.cancel()
+        graceJob?.cancel()
+        channel?.close()
     }
 }
 
 fun AppStore.connect() {
     if (connectionJob?.isActive == true || !transportRequired) return
-    val computer = state.value.computer ?: return
     val previous = connectionJob
     connectionJob = contextScope.launch {
         previous?.cancelAndJoin()
@@ -177,7 +145,7 @@ fun AppStore.connect() {
                 }
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) {
-                if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Sync failed: ${error.javaClass.simpleName}: ${error.message}")
+                if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Sync failed: ${error.javaClass.simpleName}")
                 showConnection(LinkState.Failed(error.message ?: "Can't reach the computer.", (error as? HostError)?.status))
                 if (error is SecurityException || error is HostError && error.status in listOf(403, 426)) return@launch
             } finally {
@@ -210,9 +178,8 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             refresh()
             receiveArtifacts(batch)
             receiveNetwork(batch)
-            receiveRoutineFlows(batch)
             hearCalls(batch)
-            acknowledgeVisible(readAfter(batch, state.value.readingScopes))
+            acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
         }
     } finally { source.cancel() }

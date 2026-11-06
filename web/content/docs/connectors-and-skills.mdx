@@ -5,28 +5,14 @@ You add both in **Extensions**. They install on the computer, so every bot on th
 ## Open Extensions
 
 - **Desktop app:** click **Extensions** at the bottom of the sidebar. With several computers, click the Extensions button on that computer's heading in the sidebar; each computer has its own.
-- **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap **Extensions** on the computer. With several computers, the Extensions button on a computer's heading in the Bots tab opens it too.
-- **Terminal UI:** press `A`, or pick "Extensions: apps, agents, skills…" from the action list. Tab switches between Apps, Agents and Skills.
+- **iPhone and Android:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap **Extensions** on the computer. With several computers, the Extensions button on a computer's heading in the Bots tab opens it too.
+- **Terminal UI:** press `A`, or pick "Extensions: agents, connectors, skills…" from the action list. Tab switches between Agents, Connectors and Skills.
 
 The header names the computer everything installs on. **Credentials** sits on that same row, beside the name. Under the open section, one line says where those items come from and that they install on this computer. Once you've added something, a count under it ("3 installed", **Connectors & skills**) opens your library, where you can sign in to a connector or remove one.
 
-## The three sections
-
-Extensions opens on one section at a time: **Apps**, **Agents**, or **Skills**. On the desktop they are a row of chips under the search field; on a wide phone they are a side list, and on a narrow phone tabs along the top. Each section is one list you scroll, grouped by category with the featured items first.
-
-- **Apps** lists ready-made apps. Each connects a service to this computer with its own browser sign-in, an API key, or a few setup steps. **Custom connector** and the official MCP Registry sit in this section too.
-- **Agents** lists ready-made agents and the ready-made bots and coordinator teams. An agent comes with its own instructions, skills and routines; open it to read them, then **Add agent** to create the bot. The agent CLIs sit at the end.
-- **Skills** lists the bundled skill catalog and the Anthropic skills, and opens with **Your own skill** to write one.
-
-## Add an app
-
-1. Pick an app and read its page: what it does, how it connects and a few example prompts.
-2. Fill in any **Setup** fields, such as an API key. Keys are saved on that computer only.
-3. Press **Connect** (for a browser sign-in) or **Add app**. Codync connects it and finishes the sign-in if the service wants one.
-
 ## Add a connector from the registry
 
-The **MCP Registry** list at the end of Apps starts with the first connectors from the official registry, and more load as you scroll down to the end; if that fails, **Try again** at the end of the list asks again. Search by service name. In the terminal, moving down the list loads more as you near its end.
+Extensions opens on one section at a time: **Agents**, **Connectors**, or **Skills**. On the desktop they are a row of chips under the search field; on a wide phone they are a side list, and on a narrow phone tabs along the top. Each section is one list you scroll. The **Connectors** list starts with the first connectors from the official MCP Registry, and more load as you scroll down to the end; if that fails, **Try again** at the end of the list asks again. Search by service name. In the terminal, Tab switches sections, and moving down the Connectors list loads more as you near its end.
 
 1. Pick a connector. The **Add connector** sheet opens.
 2. If it can run more than one way, choose under **Runs**: hosted by the service, or on your computer as a package.
@@ -58,7 +44,7 @@ A few services don't offer any sign-in Codync can use. For those, add the server
 
 ## Add a custom connector
 
-In the **MCP Registry** list under Apps, choose **Custom connector**, above the registry list, then one of:
+In the **Connectors** section, choose **Custom connector**, above the registry list, then one of:
 
 - **Command:** a command line that starts an MCP server. It runs on the computer in the bot's project folder, and quotes work like in a shell. Put keys under **Environment**, one `KEY=value` per line.
 - **URL:** a hosted MCP server. Add headers under **Headers**, one `Name: value` per line, or leave them empty if the service has you sign in.

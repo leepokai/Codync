@@ -53,14 +53,13 @@ class AlertNotificationTest {
     @Test fun aBotsAlertIsAConversationFromTheBotSayingWhatHappened() {
         val notification = show("reviewer", """{"title":"Reviewer needs you","subtitle":"Response needed","body":"Run cargo test --all?",
             "faces":[${face("reviewer", "Reviewer", "hex", "green")}]}""")
-        // The conversation layout skips sub text, so what happened leads the message (in bold).
-        assertNull(notification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+        assertEquals("Response needed", notification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
         assertEquals("$scope/$computer/reviewer", notification.shortcutId)
         val style = requireNotNull(NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification))
         assertFalse(style.isGroupConversation)
         val message = style.messages.single()
         assertEquals("Reviewer", message.person?.name)
-        assertEquals("Response needed\nRun cargo test --all?", message.text.toString())
+        assertEquals("Run cargo test --all?", message.text)
         assertNotNull(message.person?.icon)
         assertTrue(ShortcutManagerCompat.getDynamicShortcuts(context).any { it.id == "$scope/$computer/reviewer" })
         snapshot("bot")
@@ -74,7 +73,7 @@ class AlertNotificationTest {
         assertTrue(style.isGroupConversation)
         assertEquals("Crew", style.conversationTitle)
         assertEquals("Builder", style.messages.single().person?.name)
-        assertEquals("Task complete\nThe release build passed.", style.messages.single().text.toString())
+        assertEquals("Task complete", notification.extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
         snapshot("group")
     }
 

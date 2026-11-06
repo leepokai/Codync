@@ -5,18 +5,14 @@
 // Key handlers read best with k (key), m / l / f / a (the sheet), n (rows).
 #![allow(clippy::many_single_char_names)]
 
-mod accounts;
 mod agent;
 mod analytics;
 mod bot_chat;
-mod catalog;
-pub(in crate::tui) mod computer;
-pub(in crate::tui) mod documents;
 mod fields;
-mod flow;
+mod gear;
+mod icons;
 mod library;
 mod market;
-pub(in crate::tui) mod mcp_tools;
 mod memory;
 mod network;
 mod network_rules;
@@ -28,9 +24,9 @@ mod skill;
 mod when;
 
 pub use analytics::AnalyticsSheet;
-pub use documents::{DocumentReply, DocumentSheet};
-pub use fields::{handoff_fields, protected_fill_fields, voice_decision_fields};
-pub use flow::{FlowSheet, FlowStage, Target};
+pub use fields::{handoff_fields, section_fields};
+pub use gear::{Gear, GearRow};
+pub use icons::icon_fields;
 pub use library::{ArtifactTitles, LibraryItem};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
@@ -53,16 +49,11 @@ pub const REACTIONS: [&str; 6] = ["👍", "❤️", "😂", "🎉", "👀", "✅
 /// Replies to the sheets' commands.
 #[derive(Clone)]
 pub enum Reply {
-    Computer(computer::ComputerReply),
-    McpTools(mcp_tools::McpReply),
-    Documents(DocumentReply),
     Memory(String),
     MemorySaved(String),
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
-    /// A canvas request, or a change to a flow that needs the canvas again.
-    Flow(String),
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),
@@ -83,12 +74,6 @@ pub enum Reply {
         cursor: Option<String>,
     },
     Skills,
-    Catalog,
-    /// The bundled marketplace apps, and agents.
-    Apps,
-    MarketAgents,
-    /// A catalog bot or team (its id) was created.
-    CatalogAdded(String),
     /// A skill's instructions, for the details sheet with that id.
     SkillDetails(String),
     Auth(String),
@@ -101,10 +86,6 @@ pub enum Reply {
     },
     SignIn,
     Models(String),
-    Accounts {
-        scope: String,
-        authenticate: bool,
-    },
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
@@ -161,15 +142,12 @@ pub struct RoutineForm {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tab {
-    Bots,
-    Teams,
-    Apps,
     Agents,
+    Connectors,
     Skills,
 }
 
-pub const TABS: [(Tab, &str); 5] =
-    [(Tab::Bots, "Bots"), (Tab::Teams, "Teams"), (Tab::Apps, "Apps"), (Tab::Agents, "Agents"), (Tab::Skills, "Skills")];
+pub const TABS: [(Tab, &str); 3] = [(Tab::Agents, "Agents"), (Tab::Connectors, "Connectors"), (Tab::Skills, "Skills")];
 
 pub struct Market {
     pub tab: Tab,
@@ -178,14 +156,7 @@ pub struct Market {
     pub searched: Option<String>,
     pub registry: Vec<Value>,
     pub next: Option<String>,
-    /// The marketplace apps, and the agents, of the bundled catalogs.
-    pub apps: Option<Vec<Value>>,
-    pub agents: Option<Vec<Value>>,
     pub skills: Option<Vec<Value>>,
-    /// The host's ready-made bots and teams (`botCatalog`); empty on an older host.
-    pub catalog: Value,
-    /// Catalog bots and teams added while this sheet is open.
-    pub added: Vec<String>,
     pub loading: bool,
     pub cursor: usize,
     pub error: Option<String>,
@@ -200,14 +171,6 @@ pub enum Row<'a> {
     Registry(&'a Value),
     OwnSkill(&'a Value),
     Skill(&'a Value),
-    /// A ready-made bot from the catalog.
-    Profile(&'a Value),
-    /// A catalog team: a coordinator and the bots it hands work to.
-    Team(&'a Value),
-    /// A marketplace app from the bundled catalog.
-    App(&'a Value),
-    /// A marketplace agent from the bundled catalog.
-    MarketAgent(&'a Value),
 }
 
 pub struct AgentSetup {
@@ -244,19 +207,13 @@ pub enum Submit {
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),
-    /// A marketplace app and the field values its setup collected.
-    App(Value),
     Import,
     /// A handoff card's text (the card's entry id).
     Handoff(String),
-    VoiceDecisions {
-        bot: String,
-        receipt: String,
-    },
-    ProtectedFill {
-        id: String,
-        code: bool,
-    },
+    /// A bot's section (its id): a name, or empty for none.
+    Section(String),
+    /// A section's new name (its current one), or empty to remove it.
+    RenameSection(String),
     RenameArtifact {
         bot: String,
         artifact: String,
@@ -382,44 +339,26 @@ impl App {
 
     // ---------- model picker ----------
 
-    /// The models of `backend` on its default account.
+    /// Loads the models `backend` offers, once per run.
     pub(super) fn want_models(&mut self, backend: &str) {
-        self.want_models_for(backend, None);
-    }
-
-    pub(super) fn cycle_model(&self, backend: &str, current: &str, d: isize) -> Option<String> {
-        self.cycle_model_for(backend, None, current, d)
-    }
-
-    pub(super) fn want_models_for(&mut self, backend: &str, account: Option<&str>) {
-        let key = model_key(backend, account);
-        if !backend.is_empty() && !self.models.contains_key(&key) {
-            self.models.insert(key.clone(), None);
-            self.sheet("agentModels", json!({"backend": backend, "account": account}), Reply::Models(key));
+        if !backend.is_empty() && !self.models.contains_key(backend) {
+            self.models.insert(backend.to_owned(), None);
+            self.sheet("agentModels", json!({"backend": backend}), Reply::Models(backend.to_owned()));
         }
     }
 
-    pub(super) fn cycle_model_for(
-        &self,
-        backend: &str,
-        account: Option<&str>,
-        current: &str,
-        d: isize,
-    ) -> Option<String> {
-        let list = self.models.get(&model_key(backend, account))?.as_ref()?;
+    /// ←→ on the model field: "default", then each advertised model.
+    pub(super) fn cycle_model(&self, backend: &str, current: &str, d: isize) -> Option<String> {
+        let list = self.models.get(backend)?.as_ref()?;
         let mut ids = vec![String::new()];
         ids.extend(list.iter().filter(|m| !m.id.is_empty()).map(|m| m.id.clone()));
         let i = ids.iter().position(|x| x == current).unwrap_or(0);
         Some(ids[super::app::cycle(i, d, ids.len())].clone())
     }
 
-    pub(crate) fn model_settings_for(
-        &self,
-        backend: &str,
-        account: Option<&str>,
-        model: &str,
-    ) -> &[super::app::ModelOption] {
-        let list = self.models.get(&model_key(backend, account)).and_then(Option::as_ref);
+    /// The settings (effort, fast…) `backend`'s `model` offers.
+    pub(crate) fn model_settings(&self, backend: &str, model: &str) -> &[super::app::ModelOption] {
+        let list = self.models.get(backend).and_then(Option::as_ref);
         list.and_then(|l| l.iter().find(|m| m.id == model)).map_or(&[], |m| &m.options)
     }
 }
@@ -428,9 +367,4 @@ impl App {
 pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
     local && !url.is_empty() && crate::shell::open(std::ffi::OsStr::new(url))
-}
-
-/// Model catalogs belong to one host-local credential profile.
-pub(crate) fn model_key(backend: &str, account: Option<&str>) -> String {
-    account.map_or_else(|| backend.to_owned(), |id| format!("{backend}\0{id}"))
 }

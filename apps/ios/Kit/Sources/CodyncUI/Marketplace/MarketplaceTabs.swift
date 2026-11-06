@@ -33,8 +33,8 @@ extension MarketplaceView {
     @ViewBuilder var tabBody: some View {
         VStack(alignment: .leading, spacing: 12) {
             switch section {
-            case .apps: appsTab
             case .agents: agentsTab
+            case .connectors: connectorsTab
             case .skills: skillsTab
             }
         }
@@ -43,92 +43,44 @@ extension MarketplaceView {
         .transition(.opacity)
     }
 
-    /// Featured first, then each category, empty groups left out.
-    func groups<T>(_ items: [T], category: (T) -> String, featured: (T) -> Bool) -> [(String, [T])] {
-        let featuredGroup = [("Featured", items.filter(featured))]
-        let byCategory = MarketCategories.ids.map { id in (MarketCategories.label(id), items.filter { !featured($0) && category($0) == id }) }
-        return (featuredGroup + byCategory).filter { !$0.1.isEmpty }
+    @ViewBuilder private var agentsTab: some View {
+        if model.hello?.backends.contains(where: \.needsNode) == true {
+            NodeNotice { addingNode = true }
+        }
+        if agents.isEmpty {
+            Text(query.isEmpty ? L10n.tr("No agents yet.") : L10n.tr("No agents match “{query}”.").replacingOccurrences(of: "{query}", with: query))
+                .foregroundStyle(Palette.secondary)
+        } else {
+            LazyVGrid(columns: agentColumns, spacing: 10) {
+                ForEach(agents) { b in agentCard(b) }
+            }
+        }
     }
 
-    @ViewBuilder private var appsTab: some View {
+    @ViewBuilder private var connectorsTab: some View {
         MarketRow(title: "Custom connector", subtitle: "Any MCP server: a command or a URL", added: false, addLabel: "New") {
             TileIcon(systemName: "point.3.connected.trianglepath.dotted")
         } add: {
             addingConnector = true
         }
-        if !shownApps.isEmpty {
-            ForEach(groups(shownApps, category: \.category, featured: \.featured), id: \.0) { title, group in
-                MarketSection(title: title) {
-                    ItemGrid {
-                        ForEach(group) { app in
-                            MarketRow(title: app.name, subtitle: app.tagline, added: app.installed || addedApps.contains(app.id),
-                                      open: { viewingApp = app }) {
-                                ServiceLogo(website: app.website, name: app.name, registryName: nil)
-                            } add: {
-                                viewingApp = app
-                            }
-                        }
-                    }
-                }
-            }
-        } else if !query.isEmpty {
-            Text(L10n.tr("No apps match “{query}”.").replacingOccurrences(of: "{query}", with: query))
-                .foregroundStyle(Palette.secondary)
-        }
-        MarketSection(title: "MCP Registry") {
-            if connectors.loading {
-                SkeletonGrid()
-            } else if connectors.items.isEmpty, !connectors.hasMore {
-                Text(query.isEmpty ? L10n.tr("Couldn't load connectors.") : L10n.tr("No connectors match “{query}”.").replacingOccurrences(of: "{query}", with: query))
-                    .foregroundStyle(Palette.secondary)
-            } else {
-                ItemGrid {
-                    ForEach(connectors.items.items) { c in
-                        MarketRow(title: c.title, subtitle: c.description ?? c.name, added: c.installed,
-                                  open: c.installed ? nil : { viewingConnector = c }) {
-                            ServiceLogo(website: c.website, name: c.title, registryName: c.name)
-                        } add: {
-                            installing = c
-                        }
-                    }
-                }
-                if let cursor = connectors.cursor {
-                    LoadMoreRow(cursor: cursor, failed: connectors.error != nil) { await loadMoreConnectors() }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private var agentsTab: some View {
-        if shownMarketAgents.isEmpty {
-            Text(query.isEmpty ? L10n.tr("No agents yet.") : L10n.tr("No agents match “{query}”.").replacingOccurrences(of: "{query}", with: query))
+        if connectors.loading {
+            SkeletonGrid()
+        } else if connectors.items.isEmpty, !connectors.hasMore {
+            Text(query.isEmpty ? L10n.tr("Couldn't load connectors.") : L10n.tr("No connectors match “{query}”.").replacingOccurrences(of: "{query}", with: query))
                 .foregroundStyle(Palette.secondary)
         } else {
-            ForEach(groups(shownMarketAgents, category: \.category, featured: \.featured), id: \.0) { title, group in
-                MarketSection(title: title) {
-                    ItemGrid {
-                        ForEach(group) { a in
-                            MarketRow(title: a.name, subtitle: a.title, added: a.installed || addedAgents.contains(a.id),
-                                      open: { viewingAgent = a }) {
-                                CharacterAvatar(shape: a.avatarShape, color: a.avatarColor, size: 46)
-                            } add: {
-                                viewingAgent = a
-                            }
-                        }
+            ItemGrid {
+                ForEach(connectors.items.items) { c in
+                    MarketRow(title: c.title, subtitle: c.description ?? c.name, added: c.installed,
+                              open: c.installed ? nil : { viewingConnector = c }) {
+                        ServiceLogo(website: c.website, name: c.title, registryName: c.name)
+                    } add: {
+                        installing = c
                     }
                 }
             }
-        }
-        if model.hello?.backends.contains(where: \.needsNode) == true {
-            NodeNotice { addingNode = true }
-        }
-        MarketSection(title: "Agent CLIs") {
-            if agents.isEmpty {
-                Text(L10n.tr("No agents yet.")).foregroundStyle(Palette.secondary)
-            } else {
-                LazyVGrid(columns: agentColumns, spacing: 10) {
-                    ForEach(agents) { b in agentCard(b) }
-                }
+            if let cursor = connectors.cursor {
+                LoadMoreRow(cursor: cursor, failed: connectors.error != nil) { await loadMoreConnectors() }
             }
         }
     }

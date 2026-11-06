@@ -266,6 +266,76 @@
   padding-top: 4px;
 }
 
+/* Codync's own: the plan limits. */
+.island-meter {
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--hover), color var(--hover);
+}
+.island-meter:hover {
+  background: var(--island-fill);
+  color: var(--text);
+}
+.island-mascot {
+  flex: none;
+}
+.island-meter-bar {
+  width: 28px;
+  display: flex;
+}
+.island-usage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+}
+.island-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.island-usage-title {
+  width: 56px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.island-usage-value {
+  /* Grows past this for longer translations (de, fr); the bar gives way. */
+  min-width: 64px;
+  flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.island-usage-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.island-usage-reset {
+  width: 76px;
+  flex: none;
+  text-align: right;
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Nothing running. */
 .island-empty {
   display: flex;
@@ -390,70 +460,4 @@
   to {
     width: 0;
   }
-}
-
-/* An approval's changed lines: one row per file, the patch on demand. */
-.island-diff {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 2px;
-  padding: 4px 7px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.06);
-  cursor: pointer;
-  max-width: 100%;
-}
-.island-diff-file {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 10.5px;
-  line-height: 1.35;
-}
-.island-diff-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
-  opacity: 0.9;
-}
-.island-diff-add {
-  color: #5fd38a;
-  font-variant-numeric: tabular-nums;
-}
-.island-diff-del {
-  color: #ff8a8a;
-  font-variant-numeric: tabular-nums;
-}
-.island-diff.open .island-diff-patch {
-  display: block;
-}
-.island-diff-patch {
-  display: none;
-  margin: 3px 0 0;
-  max-height: 58px;
-  overflow: auto;
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 10px;
-  line-height: 1.4;
-  color: rgba(255, 255, 255, 0.82);
-  white-space: pre;
-}
-.island.dropping .island-body {
-  outline: 2px dashed rgba(255, 255, 255, 0.4);
-  outline-offset: -3px;
-}
-.island-drop {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  font-size: 11px;
-  white-space: nowrap;
-  pointer-events: none;
 }

@@ -37,7 +37,7 @@ def mcp_call(server_name, tool, arguments):
         tools = rpc(2, "tools/list", {})
         assert any(t["name"] == tool for t in tools["result"]["tools"])
         if server_name == "team":
-            assert {"list_bots", "ask_bot", "message_bot"} <= {t["name"] for t in tools["result"]["tools"]}
+            assert {t["name"] for t in tools["result"]["tools"]} == {"list_bots", "message_bot"}
             roster = rpc(3, "tools/call", {"name": "list_bots", "arguments": {}})
             assert any(b["id"] == arguments["botId"] for b in json.loads(roster["result"]["content"][0]["text"])["bots"])
         response = rpc(4, "tools/call", {"name": tool, "arguments": arguments})

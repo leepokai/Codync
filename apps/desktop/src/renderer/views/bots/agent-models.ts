@@ -32,7 +32,7 @@ export interface AgentModelsState {
 }
 
 /** Models come from the selected computer's agent, never a bundled provider list. */
-export function useAgentModels(backend: string, account: string | null = null): AgentModelsState {
+export function useAgentModels(backend: string): AgentModelsState {
   const store = useStore()
   const online = store.connection.kind === 'online'
   const [catalog, setCatalog] = useState<AgentModels | null>(null)
@@ -41,10 +41,9 @@ export function useAgentModels(backend: string, account: string | null = null): 
   const [failure, setFailure] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const custom = backend === 'custom'
-  const contextKey = JSON.stringify([store.contextId, store.computer.id, backend, account])
 
   useEffect(() => {
-    const key = contextKey
+    const key = `${store.computer.id}/${backend}`
     if (scope.current !== key) {
       setCatalog(null)
       scope.current = key
@@ -60,15 +59,14 @@ export function useAgentModels(backend: string, account: string | null = null): 
     let cancelled = false
     setLoading(true)
     client
-      .call<AgentModels>('agentModels', { backend, account }, 300_000)
+      .call<AgentModels>('agentModels', { backend }, 300_000)
       .then((res) => !cancelled && setCatalog(res))
       .catch((e: unknown) => !cancelled && setFailure(`Couldn't load models: ${errorText(e)}`))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [contextKey, store.client, backend, account, online, retry, custom])
+  }, [store.computer.id, store.client, backend, online, retry, custom])
 
-  const current = scope.current === contextKey
-  return { catalog: current ? catalog : null, loading: current ? loading : online && !custom, failure: current ? failure : null, reload: () => setRetry((r) => r + 1) }
+  return { catalog, loading, failure, reload: () => setRetry((r) => r + 1) }
 }

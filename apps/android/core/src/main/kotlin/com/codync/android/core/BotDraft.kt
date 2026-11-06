@@ -15,9 +15,6 @@ data class BotDraft(
     val description: String = "",
     val avatarColor: String = AVATAR_COLORS.random(),
     val avatarShape: String = AVATAR_SHAPES.random(),
-    val avatarLook: String? = null,
-    val actionRules: Map<String, String> = emptyMap(),
-    val proactive: ProactiveSettings? = null,
     val backend: String = "claude",
     val command: String? = null,
     val cwd: String = "",
@@ -33,11 +30,7 @@ data class BotDraft(
     /** Unset on a new bot, like [connectors]: the host turns on every installed one. */
     val skills: List<String>? = null,
     val computer: Boolean = false,
-    val account: String? = null,
     val manageTeam: Boolean = false,
-    val isChief: Boolean = false,
-    val chiefBotId: String? = null,
-    val computerPermissions: ComputerPermissions = ComputerPermissions(),
     /** Null where the host has none (an older one), so it isn't sent. */
     val fallbacks: List<Fallback>? = null,
     val selfFallbacks: Boolean? = null,
@@ -55,11 +48,14 @@ data class BotDraft(
         // A picked mode becomes the new agent's Auto mode (or, without one, asking).
         mode = mode?.let { AgentMode.AUTO })
     fun body(): JsonObject {
-        val normalized = copy(command = command.takeIf { backend == "custom" }, account = account.takeIf { backend == "antigravity" })
+        val normalized = if (backend == "custom") this else copy(command = null)
         // updateBot merges a patch: null clears model, command or the connector choice, but an unset
         // switch or fallback list must stay out (the host's booleans and lists don't take null).
         return JsonObject(WireJson.encodeToJsonElement(normalized).jsonObject.filterNot { (key, value) -> value == JsonNull && key in UNSET })
     }
+    /** A template carries the bot's setup, not its fallbacks (they name this computer's agents): readable JSON, keys sorted as on iOS. */
+    fun template(): String = TemplateJson.encodeToString(JsonObject.serializer(),
+        JsonObject(body().filterKeys { it !in TEMPLATE_SKIPS }.toSortedMap()))
 
     /**
      * This draft with each field it hasn't changed from [base] (the bot as the form loaded it) taken from [fresh] (the
@@ -70,28 +66,20 @@ data class BotDraft(
         val (mine, old, new) = listOf(this, base, fresh).map { WireJson.encodeToJsonElement(it).jsonObject }
         return WireJson.decodeFromJsonElement(JsonObject(mine.mapValues { (key, value) -> if (value == old[key]) new.getValue(key) else value }))
     }
-    /**
-     * A template carries the bot's setup, not this computer's specifics (its account, team management,
-     * fallbacks) or who reaches it on the network: readable JSON, keys sorted as on iOS.
-     */
-    fun template(): String = TemplateJson.encodeToString(JsonObject.serializer(),
-        JsonObject(body().filterKeys { it !in TEMPLATE_SKIPS }.toSortedMap()))
 
     companion object {
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
-        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "proactive", "offeredToNetwork", "reachableByAssistants")
-        /** Who reaches a bot belongs to its computer, not its setup, and neither do this computer's specifics. */
+        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
+        /** Who reaches a bot belongs to its computer, not its setup. */
         private val TEMPLATE_SKIPS =
-            setOf("id", "pinned", "hidden", "account", "manageTeam", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
+            setOf("id", "pinned", "hidden", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
         private val TemplateJson = Json { prettyPrint = true; prettyPrintIndent = "  " }
         val AVATAR_SHAPES = listOf("blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop")
 
         fun from(bot: Bot): BotDraft = BotDraft(bot.id, bot.name, bot.description, bot.avatarColor, bot.avatarShape,
-            bot.avatarLook, bot.actionRules, bot.proactive,
             bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.model,
-            bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.account,
-            bot.manageTeam ?: false, bot.isChief, bot.chiefBotId, bot.computerPermissions, bot.fallbacks, bot.selfFallbacks,
-            bot.offeredToNetwork, bot.reachableByAssistants)
+            bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.manageTeam ?: false, bot.fallbacks, bot.selfFallbacks,
+            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode)
     }
 }

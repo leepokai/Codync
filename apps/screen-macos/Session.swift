@@ -244,7 +244,7 @@ extension Session: RTCPeerConnectionDelegate, RTCDataChannelDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        emitCandidate(SessionCandidate(sdp: candidate.sdp, index: candidate.sdpMLineIndex, mid: candidate.sdpMid))
+        emitCandidate(.candidate(sdp: candidate.sdp, index: candidate.sdpMLineIndex, mid: candidate.sdpMid))
     }
 
     nonisolated private func emitCandidate(_ candidate: SessionCandidate) {

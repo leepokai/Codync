@@ -8,8 +8,6 @@ import { useStore } from '../../store/context'
 import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import { Field } from '../bots/parts'
 import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
-import { IntervalScheduleFields } from './IntervalScheduleFields'
-import { editorKind } from '../../lib/routine-schedule'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
 import { currentZone } from './time-zones'
 import './routines.css'
@@ -42,12 +40,11 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const latest = useRef(schedule)
   latest.current = schedule
 
-  // Unsupported kinds and several triggers stay as the bot set them until replaced.
-  const keepsOriginal = routine ? (routine.triggers.length === 1 ? !['cron', 'interval', 'webhook'].includes(routine.triggers[0]!.type) : routine.triggers.length > 0) : false
+  // Anything the bot set up (a one-off time, an interval, events, several triggers) stays as it is until replaced.
+  const keepsOriginal = routine ? (routine.triggers.length === 1 ? !['cron', 'webhook'].includes(routine.triggers[0]!.type) : routine.triggers.length > 0) : false
   const options = [
     ...(keepsOriginal ? [{ id: 'keep', label: 'Set by bot' }] : []),
     { id: 'cron', label: 'Schedule' },
-    { id: 'interval', label: 'Interval' },
     { id: 'webhook', label: 'Webhook' },
   ]
   const canSave = !!name.trim() && !!instruction.trim() && !store.isOffline && !busy && loaded && sameDraft(checkedSchedule, schedule) && previewError === null
@@ -60,11 +57,10 @@ export function RoutineEditorView({ botId, routine, saved }: {
         timeZone: currentZone(Intl.DateTimeFormat().resolvedOptions().timeZone),
       })
       const draft = { ...result.draft, calendarStyle: repeatChoice(result.draft.calendarStyle) }
-      draft.kind = editorKind(draft.kind)
+      if (!['cron', 'webhook'].includes(draft.kind)) draft.kind = 'keep'
       setSchedule(draft)
       setPreview(result)
-      // What the fields show, not the host's kind: `keep` is already what a later save sends.
-      setCheckedSchedule(draft)
+      setCheckedSchedule(result.draft)
       setLoaded(true)
       setError(null)
     } catch (e) {
@@ -144,8 +140,6 @@ export function RoutineEditorView({ botId, routine, saved }: {
     switch (schedule.kind) {
       case 'cron':
         return <RoutineScheduleFields schedule={schedule} update={update} preview={shownPreview} error={previewError} />
-      case 'interval':
-        return <IntervalScheduleFields schedule={schedule} update={update} preview={shownPreview} error={previewError} />
       case 'webhook':
         return routine && routine.triggers.some((t) => t.type === 'webhook' || t.type === 'event') ? (
           <RoutineWebhookPanel botId={botId} routineId={routine.id} />
@@ -219,7 +213,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             Retry loading schedule
           </button>
         ) : null}
-        {!['cron', 'interval'].includes(schedule.kind) && previewError ? <Text size="caption" tone="danger">{previewError}</Text> : null}
+        {schedule.kind !== 'cron' && previewError ? <Text size="caption" tone="danger">{previewError}</Text> : null}
         {error ? (
           <HStack as="span" gap={6} align="flex-start" className="routine-error">
             <Icon name="exclamationmark.circle" size={12} className="routine-error-icon" />

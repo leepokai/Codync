@@ -10,10 +10,6 @@ export interface RoutineTrigger {
   source?: string | null
   event?: string | null
   filters?: Record<string, string> | null
-  /** `watch` triggers: `files` or `url`, the path or URL, and how often it's checked. */
-  kind?: string | null
-  target?: string | null
-  everyMinutes?: number | null
 }
 
 export interface Routine {
@@ -27,7 +23,6 @@ export interface Routine {
   updatedAt: number
   triggerDescriptions: string[]
   nextRunAt?: number | null
-  nextRuns?: number[] | null
   timeoutSeconds?: number | null
   lastError?: string | null
 }
@@ -122,7 +117,6 @@ export interface RoutineSchedulePreview {
   triggers: RoutineTrigger[]
   summary: string
   nextRunAt?: number | null
-  nextRuns?: number[] | null
   warning?: string | null
 }
 

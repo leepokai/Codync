@@ -164,6 +164,20 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(store.supportsSections)
 }
 
+@MainActor @Test func markAsUnreadIsOfferedForAReadChatOnAHostThatHasIt() throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    let bot = { (json: String) in try JSONDecoder().decode(Bot.self, from: Data(json.utf8)) }
+    let read = try bot(#"{"id":"a"}"#)
+    #expect(!store.offersMarkUnread(read)) // The host hasn't answered yet.
+    store.hostVersion = HostVersion(version: "2.33.0")
+    #expect(!store.offersMarkUnread(read))
+    store.hostVersion = HostVersion(version: BotStore.markUnreadHost)
+    #expect(store.offersMarkUnread(read))
+    #expect(!store.offersMarkUnread(try bot(#"{"id":"a","unread":1}"#)))
+    #expect(!store.offersMarkUnread(try bot(#"{"id":"a","keptUnread":true}"#)))
+}
+
 @MainActor @Test func queueActionsNeedAHostThatTakesThem() throws {
     let (store, done) = rosterStore([])
     defer { done() }

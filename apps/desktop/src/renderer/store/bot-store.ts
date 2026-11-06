@@ -306,20 +306,6 @@ export class BotStore extends BotSync {
     if (runId) this.answer(entry, 'retry', (c) => c.call('retryRoutineRun', { botId: entry.botId, runId }))
   }
 
-  /** The roster's "Mark as read". */
-  markAllRead(botId: string) {
-    this.reads.markRead(botId)
-  }
-
-  /** The roster's "Mark as Unread". */
-  markUnread(botId: string) {
-    this.reads.markUnread(botId)
-  }
-
-  openChat(botId: string) {
-    this.reads.open(botId)
-  }
-
   private patchBot(bot: Bot, change: Partial<BotDraft>) {
     const current = this.bots.get(bot.id)
     if (current) this.bots.set(bot.id, { ...current, ...change } as Bot)

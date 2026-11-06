@@ -1,11 +1,10 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
+import { isChat, normalizeBot, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import { ReadMarks } from './read-marks'
-import { CatchUp } from './catch-up'
 import type { CallCue } from '@shared/calls'
 import { trNow } from '../lib/l10n.ts'
 
@@ -49,10 +48,14 @@ export class BotSync extends BotMirror {
   /** The `since` the current events connection asked for, and the per-bot floors snapshotted at its `hello`. */
   private requestedSince = 0
   private floors = new Map<string, number>()
-  private readonly catchUp = new CatchUp()
-  private readsDeferred = false
   private readingViews = new Map<string, string>()
-  protected readonly reads = new ReadMarks(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
+  readonly reads = new ReadMarks({
+    bots: () => this.bots,
+    changed: () => this.changed(),
+    put: (bot) => this.putHostBot(normalizeBot(bot)),
+    perform: (op, undo) => this.perform(op, true, undo),
+    quietly: (op) => this.withLink(op, true),
+  })
 
   // MARK: lifecycle
 
@@ -169,18 +172,14 @@ export class BotSync extends BotMirror {
         await new Promise<void>((resolve, reject) => {
           this.requestedSince = this.rev
           this.floors = new Map()
-          this.catchUp.reset()
-          this.reads.catchingUp()
           this.closeEvents = client.events(
             this.requestedSince,
             'desktop',
             (event) => {
               if (!alive()) return
-              const caughtUp = this.catchUp.ended(event)
               this.setConnection({ kind: 'online' })
               backoff = 1000
               this.apply(event)
-              if (caughtUp) this.caughtUp()
               this.finishRefresh?.()
             },
             (error) => (error ? reject(error) : resolve()),
@@ -250,7 +249,6 @@ export class BotSync extends BotMirror {
         break
       case 'bot':
         this.putHostBot(event.bot)
-        this.reads.received(event.bot)
         this.bump(event.bot.rev)
         this.onRosterChanged?.()
         if (event.bot.unread > 0) this.acknowledgeVisible(event.bot.id)
@@ -443,25 +441,15 @@ export class BotSync extends BotMirror {
     this.markRead(botId)
   }
 
-  private caughtUp() {
-    this.reads.caughtUp()
-    if (!this.readsDeferred) return
-    this.readsDeferred = false
-    for (const botId of new Set(this.readingViews.values())) this.markRead(botId)
-  }
-
-  /** The chat on screen is read, unless it's held unread (`ReadMarks.held`): only opening it reads that. Not mid catch-up, where a hold set elsewhere may not have arrived yet. */
+  /** The chat on screen is read: the host leaves one marked unread alone, and ignores it when nothing there is unread. */
   markRead(botId: string) {
-    if (this.catchUp.replaying) {
-      this.readsDeferred = true
-      return
-    }
+    if (this.reads.retryOpen(botId)) return
     void (async () => {
       if (!this.live) await sleep(INITIAL_GRACE)
       const client = this.live
-      if (!client || this.reads.held(botId)) return
+      if (!client) return
       try {
-        await client.call('markRead', { botId })
+        await client.call('markRead', { botId, automatic: true })
       } catch {
         // The visible scope is acknowledged again when the link recovers.
       }

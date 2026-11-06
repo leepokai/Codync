@@ -40,13 +40,8 @@ class AppStore internal constructor(
     internal val attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
     internal val mutableState = MutableStateFlow(AppState(computer, contextId = contextId, generation = generation))
-    /** Chats marked unread here whose bot doesn't show the host's `keptUnread` yet. */
-    internal val markingUnread = mutableSetOf<String>()
-    /** Chats opened before the host's state arrived: a hold it shows then was still the user's to read. */
-    internal var openedEarly: MutableSet<String>? = mutableSetOf()
-    /** Mid catch-up ([CatchUpCount.replaying]): automatic reads wait, and [readsDeferred] sends them once it ends. */
-    internal var catchingUp = false
-    internal var readsDeferred = false
+    /** Chats whose last open never reached the host. */
+    internal val unsentOpens = mutableSetOf<String>()
     val state = mutableState.asStateFlow()
     internal val feed = TaskFeed(local.directory, computer.id)
     internal var database: MirrorDatabase? = null

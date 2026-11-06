@@ -18,56 +18,9 @@ fun AppStore.openBot(id: String?) {
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
     if (id == null) return
     opened(this)
-    if (keptUnread(id)) markRead(id) else { openedEarly?.add(id); acknowledgeVisible() }
+    readOpened(id)
 }
 
-/** The stream reached the host's rev: chats opened meanwhile that it holds unread are read. */
-internal fun AppStore.settleEarlyOpens() {
-    val opened = openedEarly.orEmpty()
-    openedEarly = null
-    for (id in opened.filter { keptUnread(it) }) markRead(id)
-}
-
-/** Counts a stream's catch-up by its `hello`'s `catchUp`: the host's rev can be ahead of every event it replays. */
-internal class CatchUpCount {
-    private var left: Long? = null
-
-    /** True once, on the event that ends this stream's catch-up. */
-    /** Between a counted `hello` and its last replayed event: a hold set elsewhere may not have arrived yet. */
-    val replaying: Boolean get() = (left ?: 0) > 0
-
-    fun ended(event: JsonObject): Boolean {
-        left = if (event.text("type") == "hello") event["catchUp"]?.jsonPrimitive?.longOrNull else left?.minus(1)
-        if (left != 0L) return false
-        left = null
-        return true
-    }
-}
-
-/** The roster's "Mark as read", and opening a chat marked unread: after a mark as unread still under way, so the host never gets them the other way round. */
-fun AppStore.markRead(id: String) {
-    markingUnread.remove(id)
-    val marking = actions["roster:$id"]
-    action("open:$id") {
-        marking?.join()
-        ready().call("markRead", body("botId" to id))
-        refresh()
-    }
-}
-
-/** The roster's "Mark as unread": the host counts what comes back unread; until then only the hold shows, so nothing on screen reads it. After a mark as read still under way, so the read can't land last. */
-fun AppStore.markUnread(id: String) {
-    markingUnread.add(id)
-    openedEarly?.remove(id)
-    command("markUnread", body("botId" to id), "roster:$id", onFailure = { markingUnread.remove(id) }, onSuccess = { markingUnread.remove(id) },
-        after = actions["open:$id"])
-}
-
-internal fun AppStore.keptUnread(id: String) = id in markingUnread || state.value.bots.any { it.id == id && it.keptUnread }
-
-/** The chats a batch shows the host holding unread. */
-internal fun keptUnreadIn(events: List<MirrorEvent>): List<String> =
-    events.mapNotNull { event -> (event as? MirrorEvent.BotChanged)?.bot?.takeIf { it.keptUnread }?.id }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
 /**
@@ -104,11 +57,13 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
     }
 }
 
-/** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. Not mid catch-up ([catchingUp]). */
+/** Marks the chats on screen read (`chats`: only these): the host leaves one marked unread alone, and ignores it when nothing there is unread. */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
     if (!foreground || channel?.state?.value !is LinkState.Ready) return
-    if (catchingUp) { readsDeferred = true; return }
-    for (chat in chats.filterNot { keptUnread(it) }) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
+    for (chat in chats) {
+        if (chat in unsentOpens) readOpened(chat)
+        else action("read:" + chat) { channel?.call("markRead", buildJsonObject { put("botId", chat); put("automatic", true) }) }
+    }
 }
 
 /** The entries of a host reply (`callEntries`, `botConversation`). */

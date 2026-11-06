@@ -2,112 +2,116 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Bot } from '@shared/models'
 import type { HostClient } from '../client/host-client'
-import { ReadMarks } from './read-marks.ts'
+import { MARK_UNREAD_HOST, offersMarkUnread, ReadMarks } from './read-marks.ts'
 
 function computer(bot: Partial<Bot>, answer: (bots: Map<string, Bot>) => unknown = () => ({})) {
-  const bots = new Map([['a', { id: 'a', unread: 0, keptUnread: false, ...bot } as Bot]])
+  const bots = new Map([['a', { id: 'a', rev: 1, unread: 0, keptUnread: false, ...bot } as Bot]])
   const sent: unknown[][] = []
   const answers: ((accepted: boolean) => void)[] = []
-  const reads = new ReadMarks(() => bots, () => {}, (op, undo) => new Promise<boolean>((resolve) => {
-    void op({ call: async (method: string, body: unknown) => {
-      sent.push([method, body])
-      return answer(bots)
-    } } as unknown as HostClient)
-    answers.push((accepted) => {
-      if (!accepted) undo()
-      resolve(accepted)
-    })
-  }))
-  return { reads, sent, bot: () => bots.get('a')!, answer: (i: number, accepted: boolean) => answers[i]!(accepted) }
+  const errors: string[] = []
+  const client = { call: async (method: string, body: unknown) => {
+    sent.push([method, body])
+    return answer(bots)
+  } } as unknown as HostClient
+  const reads = new ReadMarks({
+    bots: () => bots,
+    changed: () => {},
+    put: (held) => bots.set(held.id, held),
+    perform: (op, undo) => new Promise<boolean>((resolve) => {
+      void op(client)
+      answers.push((accepted) => {
+        if (!accepted) {
+          undo()
+          errors.push('dialog')
+        }
+        resolve(accepted)
+      })
+    }),
+    quietly: (op) => new Promise((resolve, reject) => {
+      void op(client)
+      answers.push((accepted) => (accepted ? resolve(undefined) : reject(new Error('refused'))))
+    }),
+  })
+  return { reads, sent, errors, bot: () => bots.get('a')!, answer: (i: number, accepted: boolean) => answers[i]!(accepted) }
 }
 
-test('mark as unread holds the chat at once, through a bot event from before it', () => {
-  const { reads, sent, bot } = computer({})
-  reads.markUnread('a')
-  assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
-  reads.received(bot())
-  assert.equal(reads.held('a'), true)
+const settle = () => new Promise((resolve) => setTimeout(resolve))
+
+test('mark as unread is offered for a read chat on a host that has it', () => {
+  const read = { unread: 0, keptUnread: false } as Bot
+  assert.equal(offersMarkUnread(read, MARK_UNREAD_HOST), true)
+  assert.equal(offersMarkUnread({ ...read, unread: 1 }, MARK_UNREAD_HOST), false)
+  assert.equal(offersMarkUnread({ ...read, keptUnread: true }, MARK_UNREAD_HOST), false)
+  assert.equal(offersMarkUnread(read, '2.33.0'), false)
+  assert.equal(offersMarkUnread(read, undefined), false)
 })
 
-test('a refused mark as unread lets the chat be read again', async () => {
-  const { reads, answer } = computer({})
+test('mark as unread shows what the host answers', async () => {
+  const { reads, sent, bot, answer } = computer({}, (bots) => ({ bot: { ...bots.get('a'), rev: 5, unread: 2, keptUnread: true } }))
   reads.markUnread('a')
-  answer(0, false)
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.equal(reads.held('a'), false)
-})
-
-test('the host showing the hold carries it from then on', () => {
-  const { reads, bot } = computer({})
-  reads.markUnread('a')
-  reads.received({ ...bot(), keptUnread: true })
-  assert.equal(reads.held('a'), false)
-})
-
-test('opening a chat marked unread reads it, after the mark goes through', async () => {
-  const { reads, sent, bot, answer } = computer({})
-  reads.markUnread('a')
-  reads.open('a')
-  assert.equal(reads.held('a'), false)
-  await new Promise((resolve) => setTimeout(resolve))
+  await settle()
   assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
   answer(0, true)
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.deepEqual(sent, [['markUnread', { botId: 'a' }], ['markRead', { botId: 'a' }]])
-  assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
+  await settle()
+  assert.deepEqual([bot().rev, bot().unread, bot().keptUnread], [5, 2, true])
 })
 
-test('opening a chat not marked unread leaves reading to the view', () => {
-  const { reads, sent } = computer({ unread: 2 })
-  reads.open('a')
-  assert.deepEqual(sent, [])
-})
-
-test('mark as read clears a hold even with nothing counted unread', async () => {
-  const { reads, sent, bot } = computer({ keptUnread: true })
-  reads.markRead('a')
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
-  assert.equal(bot().keptUnread, false)
-})
-
-test('a mark as unread the host had nothing to hold for lets the chat be read again', async () => {
-  const { reads, answer } = computer({}, (bots) => ({ bot: bots.get('a') }))
-  reads.markUnread('a')
-  await new Promise((resolve) => setTimeout(resolve))
-  answer(0, true)
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.equal(reads.held('a'), false)
-})
-
-test('a mark as unread the host holds keeps the hold until its event', async () => {
-  const { reads, answer } = computer({}, (bots) => ({ bot: { ...bots.get('a'), keptUnread: true } }))
-  reads.markUnread('a')
-  await new Promise((resolve) => setTimeout(resolve))
-  answer(0, true)
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.equal(reads.held('a'), true)
-})
-
-test('a hold the host already let go is dropped by the next bot event after the mark', async () => {
+test('an answer older than the bot event that beat it is left out', async () => {
   const { reads, bot, answer } = computer({}, (bots) => ({ bot: { ...bots.get('a'), rev: 5, keptUnread: true } }))
   reads.markUnread('a')
-  await new Promise((resolve) => setTimeout(resolve))
+  await settle()
+  Object.assign(bot(), { rev: 6, keptUnread: false })
   answer(0, true)
-  await new Promise((resolve) => setTimeout(resolve))
-  reads.received({ ...bot(), rev: 4 })
-  assert.equal(reads.held('a'), true, 'an event from before the mark')
-  reads.received({ ...bot(), rev: 6, keptUnread: false })
-  assert.equal(reads.held('a'), false)
+  await settle()
+  assert.deepEqual([bot().rev, bot().keptUnread], [6, false])
 })
 
-test('a refused mark as read gives the hold and the unread count back', async () => {
-  const { reads, bot, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
+test('opening a chat reads it whatever is known here of it, so a mark set elsewhere and still on its way ends too', async () => {
+  const { reads, sent } = computer({})
+  reads.open('a')
+  await settle()
+  assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
+})
+
+test('opening a chat shows it read at once', () => {
+  const { reads, bot } = computer({ unread: 2, keptUnread: true })
+  reads.open('a')
+  assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
+})
+
+test('a chat that fails to open stays quiet, gives its count back and reads as opened the next time it is on screen', async () => {
+  const { reads, sent, errors, bot, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
+  assert.equal(reads.retryOpen('a'), false, 'nothing to send again yet')
+  reads.open('a')
+  answer(0, false)
+  await settle()
+  assert.deepEqual([bot().unread, bot().keptUnread], [3, true])
+  assert.deepEqual(errors, [])
+  assert.equal(reads.retryOpen('a'), true)
+  answer(1, true)
+  await settle()
+  assert.deepEqual(sent, [['markRead', { botId: 'a' }], ['markRead', { botId: 'a' }]])
+  assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
+  assert.equal(reads.retryOpen('a'), false, 'it went')
+})
+
+test('marking a chat unread drops an open that never reached the host', async () => {
+  const { reads, answer } = computer({})
+  reads.open('a')
+  answer(0, false)
+  await settle()
+  reads.markUnread('a')
+  assert.equal(reads.retryOpen('a'), false)
+})
+
+test('a refused mark as read gives the hold and the unread count back and reaches the dialog', async () => {
+  const { reads, bot, errors, answer } = computer({ rev: 1, unread: 3, keptUnread: true })
   reads.markRead('a')
   assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
   answer(0, false)
-  await new Promise((resolve) => setTimeout(resolve))
+  await settle()
   assert.deepEqual([bot().unread, bot().keptUnread], [3, true])
+  assert.deepEqual(errors, ['dialog'])
 })
 
 test('a refused mark as read keeps what a newer bot event from the host shows', async () => {
@@ -115,52 +119,28 @@ test('a refused mark as read keeps what a newer bot event from the host shows', 
   reads.markRead('a')
   Object.assign(bot(), { rev: 2, unread: 0, keptUnread: false })
   answer(0, false)
-  await new Promise((resolve) => setTimeout(resolve))
+  await settle()
   assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
-})
-
-test('a chat opened before the host caught up is read once its state shows it held', async () => {
-  const { reads, sent, bot } = computer({})
-  reads.catchingUp()
-  reads.open('a')
-  assert.deepEqual(sent, [])
-  bot().keptUnread = true
-  reads.caughtUp()
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
-})
-
-test('a hold arriving after the host caught up waits for the chat to be opened again', async () => {
-  const { reads, sent, bot } = computer({})
-  reads.open('a')
-  reads.caughtUp()
-  reads.catchingUp()
-  bot().keptUnread = true
-  reads.caughtUp()
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.deepEqual(sent, [])
-})
-
-test('marking a chat unread before the host caught up drops its earlier open', async () => {
-  const { reads, sent, bot } = computer({})
-  reads.catchingUp()
-  reads.open('a')
-  reads.markUnread('a')
-  bot().keptUnread = true
-  reads.caughtUp()
-  await new Promise((resolve) => setTimeout(resolve))
-  assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
-  assert.deepEqual([reads.held('a'), bot().keptUnread], [true, true])
 })
 
 test('mark as unread after a mark as read still retrying waits for it, so the read lands first', async () => {
   const { reads, sent, answer } = computer({ unread: 2 })
   reads.markRead('a')
   reads.markUnread('a')
-  await new Promise((resolve) => setTimeout(resolve))
+  await settle()
   assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
   answer(0, true)
-  await new Promise((resolve) => setTimeout(resolve))
+  await settle()
   assert.deepEqual(sent, [['markRead', { botId: 'a' }], ['markUnread', { botId: 'a' }]])
-  assert.equal(reads.held('a'), true)
+})
+
+test('opening a chat right after marking it unread waits for the mark, so the read lands last', async () => {
+  const { reads, sent, answer } = computer({})
+  reads.markUnread('a')
+  reads.open('a')
+  await settle()
+  assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
+  answer(0, true)
+  await settle()
+  assert.deepEqual(sent, [['markUnread', { botId: 'a' }], ['markRead', { botId: 'a' }]])
 })

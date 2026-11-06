@@ -1,106 +1,109 @@
 import type { Bot } from '@shared/models'
 import type { HostClient } from '../client/host-client'
+import { isBelow } from '../../shared/compat.ts'
 
-type Perform = (op: (c: HostClient) => Promise<unknown>, undo: () => void) => Promise<boolean>
+/** The first host with `markUnread`. */
+export const MARK_UNREAD_HOST = '2.41.0'
 
-/** A Mark as Unread on its way; `from` is the host's rev for it once it answered. */
-interface Marking {
-  sent: Promise<boolean>
-  from?: number
+/** The roster offers "Mark as Unread" for a chat with nothing unread; otherwise, or on an older host (it refuses `markUnread`), "Mark as Read". */
+export function offersMarkUnread(bot: Bot, hostVersion: string | undefined) {
+  return bot.unread <= 0 && !bot.keptUnread && hostVersion !== undefined && !isBelow(hostVersion, MARK_UNREAD_HOST)
 }
 
-/** One computer's roster read marks: "Mark as read" and "Mark as Unread", and the hold that keeps a chat unread on screen. */
+type Operation = (c: HostClient) => Promise<unknown>
+type Perform = (op: Operation, undo: () => void) => Promise<boolean>
+
+/** What the read marks need from the store they keep marks for. */
+export interface ReadMarksHost {
+  bots(): Map<string, Bot>
+  changed(): void
+  /** Stores the bot a host's answer carries. */
+  put(bot: Bot): void
+  /** Sends `op`: what fails reaches the dialog, after `undo`. */
+  perform: Perform
+  /** Sends `op`, rejecting when it fails: nothing reaches the dialog. */
+  quietly(op: Operation): Promise<unknown>
+}
+
+/** One computer's read marks: opening a chat, the roster's "Mark as read" and "Mark as Unread". The host decides what a read does to a chat marked unread; here they only go out in order, and show at once. */
 export class ReadMarks {
-  private bots: () => Map<string, Bot>
-  private changed: () => void
-  private perform: Perform
-  /** Mark as Unread sent but not yet seen in a bot event: one from before it mustn't drop the hold. */
-  private marking = new Map<string, Marking>()
-  /** Mark as read sent but not yet settled, retries included: a Mark as Unread after it waits, so the read can't land last. */
-  private reading = new Map<string, Promise<boolean>>()
-  /** Chats opened before the host's state arrived: a hold it shows then was still the user's to read. */
-  private openedEarly: Set<string> | null = new Set()
-  constructor(bots: () => Map<string, Bot>, changed: () => void, perform: Perform) {
-    this.bots = bots
-    this.changed = changed
-    this.perform = perform
+  private readonly host: ReadMarksHost
+  /** Each chat's last read mark on its way, retries included: the next waits for it, so the host gets them in the order they were made. */
+  private sending = new Map<string, Promise<boolean>>()
+  /** Chats whose last open never reached the host: they're read as opened once they're on screen with a link (`retryOpen`). */
+  private unsentOpens = new Set<string>()
+  constructor(host: ReadMarksHost) {
+    this.host = host
   }
 
-  /** Whether automatic reads leave this chat alone. */
-  held(botId: string) {
-    return this.marking.has(botId) || !!this.bots().get(botId)?.keptUnread
-  }
-
-  /** A bot event: once it shows the host's hold, or is from after the mark, the host's state carries it. */
-  received(bot: Bot) {
-    const marking = this.marking.get(bot.id)
-    if (marking && (bot.keptUnread || bot.rev >= (marking.from ?? Infinity))) this.marking.delete(bot.id)
-  }
-
-  /** Sent after a Mark as Unread still under way, so the host never gets them the other way round. */
+  /** The roster's "Mark as read". */
   markRead(botId: string) {
-    const bot = this.bots().get(botId)
-    const marking = this.marking.get(botId)?.sent
-    if (!bot || (bot.unread <= 0 && !this.held(botId))) return
-    this.marking.delete(botId)
-    this.patch(botId, { unread: 0, keptUnread: false })
-    const sent = this.perform(async (c) => {
-      await marking
-      return c.call('markRead', { botId })
-    }, () => {
-      if (this.bots().get(botId)?.rev === bot.rev) this.patch(botId, { unread: bot.unread, keptUnread: bot.keptUnread })
-    })
-    this.reading.set(botId, sent)
-    void sent.then(() => {
-      if (this.reading.get(botId) === sent) this.reading.delete(botId)
-    })
+    this.read(botId, this.host.perform)
   }
 
-  markUnread(botId: string) {
-    if (!this.bots().has(botId)) return
-    this.openedEarly?.delete(botId)
-    const reading = this.reading.get(botId)
-    let held: Bot | undefined
-    const sent = this.perform(async (c) => {
-      if (reading) await reading
-      held = (await c.call<{ bot?: Bot }>('markUnread', { botId })).bot
-    }, () => {})
-    const marking: Marking = { sent }
-    this.marking.set(botId, marking)
-    void sent.then((accepted) => {
-      if (this.marking.get(botId) !== marking) return
-      if (!accepted || held?.keptUnread === false) {
-        this.marking.delete(botId)
-        return
-      }
-      marking.from = held?.rev
-      const now = this.bots().get(botId)
-      if (now) this.received(now)
-    })
-  }
-
-  /** The user opened the chat: one marked unread is read now, or once the host's state arrives. */
+  /** The user opened the chat, which reads it whatever is known here of it. A failure never reaches the dialog. */
   open(botId: string) {
-    if (this.held(botId)) this.markRead(botId)
-    else this.openedEarly?.add(botId)
+    this.read(botId, async (op, undo) => {
+      try {
+        await this.host.quietly(op)
+        return true
+      } catch {
+        undo()
+        this.unsentOpens.add(botId)
+        return false
+      }
+    })
   }
 
-  /** A new events stream: what's here may be behind the host until it catches up. */
-  catchingUp() {
-    this.openedEarly ??= new Set()
+  /** The chat is on screen with a link: true when that sent an open that hadn't reached the host. */
+  retryOpen(botId: string) {
+    if (!this.unsentOpens.has(botId)) return false
+    this.open(botId)
+    return true
   }
 
-  /** The stream reached the host's rev: chats opened meanwhile that it holds unread are read. */
-  caughtUp() {
-    const opened = this.openedEarly ?? []
-    this.openedEarly = null
-    for (const botId of opened) if (this.held(botId)) this.markRead(botId)
+  /** The roster's "Mark as Unread". */
+  markUnread(botId: string) {
+    if (!this.host.bots().has(botId)) return
+    this.unsentOpens.delete(botId)
+    let marked: Bot | undefined
+    void this.inOrder(botId, this.host.perform, async (c) => {
+      marked = (await c.call<{ bot: Bot }>('markUnread', { botId })).bot
+    }, () => {}).then(() => {
+      // A newer bot event may have beaten the answer here.
+      const now = this.host.bots().get(botId)
+      if (marked && now && now.rev < marked.rev) this.host.put(marked)
+    })
+  }
+
+  /** Shows the chat read at once; a refusal gives back what was there, unless a newer bot event from the host replaced it. */
+  private read(botId: string, perform: Perform) {
+    const bot = this.host.bots().get(botId)
+    if (!bot) return
+    this.unsentOpens.delete(botId)
+    this.patch(botId, { unread: 0, keptUnread: false })
+    void this.inOrder(botId, perform, (c) => c.call('markRead', { botId }), () => {
+      if (this.host.bots().get(botId)?.rev === bot.rev) this.patch(botId, { unread: bot.unread, keptUnread: bot.keptUnread })
+    })
+  }
+
+  private inOrder(botId: string, perform: Perform, op: Operation, undo: () => void) {
+    const before = this.sending.get(botId)
+    const sent = perform(async (c) => {
+      await before
+      return op(c)
+    }, undo)
+    this.sending.set(botId, sent)
+    void sent.then(() => {
+      if (this.sending.get(botId) === sent) this.sending.delete(botId)
+    })
+    return sent
   }
 
   private patch(botId: string, change: Partial<Bot>) {
-    const bot = this.bots().get(botId)
+    const bot = this.host.bots().get(botId)
     if (!bot) return
-    this.bots().set(botId, { ...bot, ...change })
-    this.changed()
+    this.host.bots().set(botId, { ...bot, ...change })
+    this.host.changed()
   }
 }

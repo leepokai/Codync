@@ -3,8 +3,7 @@ import Foundation
 public enum HostEvent: Sendable {
     case icons([String: CustomIcon], revision: Int64)
     /// The stream's first event; `network` is nil from hosts before the network view.
-    /// `catchUp` counts the replayed events that follow: the host's rev can be ahead of all of them.
-    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?, catchUp: Int?)
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
@@ -98,7 +97,6 @@ public struct HostClient: Sendable {
             var type: String
             var hostId: String?
             var rev: Int64?
-            var catchUp: Int?
         }
         struct BotWrap: Decodable { var bot: Bot }
         struct StubWrap: Decodable { var bot: BotStub }
@@ -117,7 +115,7 @@ public struct HostClient: Sendable {
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
             let network = (try? d.decode(NetworkWrap.self, from: data))?.network
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network, catchUp: env.catchUp)
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)
@@ -233,23 +231,6 @@ public extension HostClient {
     }
 
     /// The chat read; a no-op when nothing there is unread.
-    func markRead(_ id: String) async throws {
-        let _: Empty = try await call("markRead", ["botId": id])
-    }
-
-    /// The chat back to unread: what was unread before its last read, or else its latest message.
-    /// The host's rev for the hold (`Int64.max` when it names none), or nil when it had nothing to mark,
-    /// so no hold follows.
-    func markUnread(_ id: String) async throws -> Int64? {
-        struct Marked: Decodable {
-            struct Held: Decodable { let keptUnread: Bool?; let rev: Int64? }
-            let bot: Held?
-        }
-        let marked: Marked = try await call("markUnread", ["botId": id])
-        guard marked.bot?.keptUnread != false else { return nil }
-        return marked.bot?.rev ?? .max
-    }
-
     /// Toggles the user's `emoji` reaction on a chat message.
     func react(entryId: String, emoji: String) async throws -> Entry {
         struct Res: Decodable { var entry: Entry }

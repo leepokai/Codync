@@ -64,7 +64,7 @@ extension BotStore {
     /// `perform` for a caller that waits: whether the computer took it. A refusal runs `undo`, taking
     /// back what the action already showed, before it reaches the dialog.
     @discardableResult
-    private func attempt(replay: Bool = false, undo: @MainActor () -> Void = {},
+    func attempt(replay: Bool = false, undo: @MainActor () -> Void = {},
                          _ op: @MainActor (HostClient) async throws -> Void) async -> Bool {
         do {
             try await withLink(replay: replay, op)
@@ -154,124 +154,6 @@ extension BotStore {
             // The card's own update follows on the events stream; hold the spinner until then.
             try? await Task.sleep(for: .seconds(2))
         }
-    }
-
-    /// Views register only while visible in an active scene. Multiple windows may
-    /// read the same conversation without unregistering each other.
-    func setReading(_ token: UUID, botId: String, active: Bool) {
-        if active {
-            readingViews[token] = botId
-            if connection == .online { markRead(botId) }
-        } else {
-            readingViews[token] = nil
-        }
-    }
-
-    func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
-        guard connection == .online else { return }
-        guard readingViews.values.contains(botId), entry?.isChat != false else { return }
-        markRead(botId)
-    }
-
-    /// The chat on screen is read; the host ignores it when nothing there is unread. A chat held unread
-    /// (`heldUnread`) is left alone: only opening it reads it. Mid catch-up it waits for the catch-up to end.
-    public func markRead(_ botId: String) {
-        if replayingCatchUp {
-            readsDeferred = true
-            return
-        }
-        // Entry events may arrive before the roster's unread count. The host is
-        // authoritative and treats a redundant scoped acknowledgement as a no-op.
-        Task {
-            // Opening a cached conversation can race the foreground reconnect.
-            // This background acknowledgement must never interrupt the conversation.
-            if live == nil {
-                try? await Task.sleep(for: Self.initialConnectionGrace)
-            }
-            guard !Task.isCancelled, isActive, !heldUnread(botId), let client = live else { return }
-            do {
-                try await client.markRead(botId)
-            } catch {
-                // The visible scope is acknowledged again when the link recovers.
-                log.debug("read acknowledgement deferred: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    /// The roster's "Mark as read": everything in the chat.
-    /// Sent after a mark as unread still under way, so the host never gets them the other way round.
-    public func markAllRead(_ botId: String) {
-        guard let bot = bots[botId], bot.unread > 0 || heldUnread(botId) else { return }
-        let marking = markingUnread.removeValue(forKey: botId)?.sent
-        bots[botId]?.unread = 0
-        bots[botId]?.keptUnread = false
-        // A refused read gives the hold back, so the chat isn't read on screen behind the error.
-        let reading = Task {
-            _ = await attempt(replay: true, undo: { self.restoreUnread(botId, from: bot) }) {
-                _ = await marking?.value
-                try await $0.markRead(botId)
-            }
-        }
-        markingRead[botId] = reading
-        Task {
-            await reading.value
-            if markingRead[botId] == reading { markingRead[botId] = nil }
-        }
-    }
-
-    /// The roster's "Mark as unread": the host counts what comes back unread; until then only the hold
-    /// shows, so nothing on screen reads it.
-    public func markUnread(_ botId: String) {
-        guard bots[botId] != nil else { return }
-        openedEarly?.remove(botId)
-        let reading = markingRead[botId]
-        let sent = Task {
-            await reading?.value
-            var from: Int64?
-            let accepted = await attempt(replay: true) { from = try await $0.markUnread(botId) }
-            return accepted ? from : nil
-        }
-        markingUnread[botId] = PendingUnread(sent: sent)
-        Task {
-            let from = await sent.value
-            guard markingUnread[botId]?.sent == sent else { return }
-            guard let from else {
-                markingUnread[botId] = nil
-                return
-            }
-            markingUnread[botId]?.from = from
-            if let bot = bots[botId] { settleUnreadHold(bot) }
-        }
-    }
-
-    /// A bot event: once it shows the host's hold, or is from after the mark, the host's state carries it.
-    func settleUnreadHold(_ bot: Bot) {
-        guard let pending = markingUnread[bot.id], bot.keptUnread || bot.rev >= pending.from ?? .max else { return }
-        markingUnread[bot.id] = nil
-    }
-
-    /// A refused read: the hold and what was unread come back, unless a newer bot event from the host replaced them.
-    func restoreUnread(_ botId: String, from bot: Bot) {
-        guard bots[botId]?.rev == bot.rev else { return }
-        bots[botId]?.unread = bot.unread
-        bots[botId]?.keptUnread = bot.keptUnread
-    }
-
-    /// Whether automatic reads leave this chat alone.
-    func heldUnread(_ botId: String) -> Bool {
-        markingUnread[botId] != nil || bots[botId]?.keptUnread == true
-    }
-
-    /// The user opened the chat: one marked unread is read now, or once the host's state arrives.
-    func openConversation(_ botId: String) {
-        if heldUnread(botId) { markAllRead(botId) } else { openedEarly?.insert(botId) }
-    }
-
-    /// The stream reached the host's rev: chats opened meanwhile that it holds unread are read.
-    func settleEarlyOpens() {
-        let opened = openedEarly ?? []
-        openedEarly = nil
-        for botId in opened where heldUnread(botId) { markAllRead(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {

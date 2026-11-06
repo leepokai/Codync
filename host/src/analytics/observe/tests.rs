@@ -306,3 +306,12 @@ fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
     );
     assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
 }
+
+#[test]
+fn marking_a_chat_unread_says_whether_it_had_anything_to_mark() {
+    let (event, p) = observe(&Caller::Local, "markUnread", &json!({"botId": "b1"})).expect("tracked");
+    assert_eq!(event, Event::ChatMarkedUnread);
+    let outcome = |answer: Value| answered(event, p.clone(), &answer).expect("reported")["outcome"].clone();
+    assert_eq!(outcome(json!({"bot": {"keptUnread": true}})), "marked");
+    assert_eq!(outcome(json!({"bot": {"keptUnread": false}})), "empty");
+}

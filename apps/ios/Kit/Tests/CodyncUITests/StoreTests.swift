@@ -262,8 +262,9 @@ import Testing
     #expect(await until { await fake.readReceipts.count == 2 })
     for receipt in await fake.readReceipts {
         let body = try #require(JSONSerialization.jsonObject(with: receipt) as? [String: Any])
-        #expect(body.keys.sorted() == ["botId"])
+        #expect(body.keys.sorted() == ["automatic", "botId"])
         #expect(body["botId"] as? String == "b1")
+        #expect(body["automatic"] as? Bool == true)
     }
 }
 

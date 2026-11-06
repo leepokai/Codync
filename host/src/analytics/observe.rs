@@ -104,6 +104,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         "stop" => Event::TurnStopped,
         "unqueue" => Event::QueuedMessageRemoved,
+        "markUnread" => Event::ChatMarkedUnread,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,
         "react" => Event::ReactionAdded,
@@ -219,7 +220,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), whether a published
-/// artifact's card went into its bot's chat, and whether a connector edit needed a check. `None`: not an event.
+/// artifact's card went into its bot's chat, whether a connector edit needed a check, and whether a chat
+/// had anything to mark unread. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -239,6 +241,9 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
+        }
+        Event::ChatMarkedUnread => {
+            p.insert("outcome".into(), if answer["bot"]["keptUnread"] == true { "marked" } else { "empty" }.into());
         }
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>

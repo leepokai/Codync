@@ -38,7 +38,7 @@ import Testing
 }
 
 
-@MainActor @Test func chatMarkedUnreadStaysUnreadOnScreenUntilOpenedAgain() async throws {
+@MainActor @Test func aChatOnScreenIsReadAutomaticallyAndOpeningItIsTheUserReadingIt() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let fake = FakeRemote(.ready(.direct))
@@ -46,77 +46,76 @@ import Testing
     store.setActive(true)
     defer { store.setActive(false) }
     #expect(await until { await fake.subscribed })
-    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
-    #expect(await until { store.connection == .online })
-    let token = UUID()
-    store.setReading(token, botId: "b1", active: true)
-    #expect(await until { await fake.readReceipts.count == 1 })
-    store.markUnread("b1")
-    #expect(store.heldUnread("b1"))
-    #expect(await until { await fake.calls.contains("markUnread") })
-    // A bot event from before the mark doesn't drop the hold.
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":0}}"#)
-    try await Task.sleep(for: .milliseconds(50))
-    #expect(store.heldUnread("b1"))
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":2,"unread":1,"keptUnread":true}}"#)
-    #expect(await until { store.bots["b1"]?.rev == 2 })
-    // Coming back into focus, or the link coming back, is not opening the chat.
-    store.setReading(token, botId: "b1", active: false)
-    store.setReading(token, botId: "b1", active: true)
-    try await Task.sleep(for: .milliseconds(50))
-    #expect(await fake.readReceipts.count == 1)
-    store.openConversation("b1")
-    #expect(!store.heldUnread("b1"))
-    #expect(await until { await fake.readReceipts.count == 2 })
-}
-
-@MainActor @Test func chatOpenedBeforeCatchUpIsReadOnceTheHostShowsItHeld() async throws {
-    let (storage, suite) = context()
-    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-    let fake = FakeRemote(.ready(.direct))
-    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
-    store.setActive(true)
-    defer { store.setActive(false) }
-    #expect(await until { await fake.subscribed })
-    store.openConversation("b1")
-    // A custom icon saved last left the host's rev ahead of every replayed event.
-    await fake.emit(#"{"type":"hello","hostId":"h1","rev":5,"catchUp":2}"#)
-    await fake.emit(#"{"type":"icons","icons":{},"iconsRevision":1}"#)
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":3,"unread":1,"keptUnread":true}}"#)
-    #expect(await until { await fake.readReceipts.count == 1 })
-    // A hold arriving after catch-up waits for the chat to be opened again.
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":6,"unread":1,"keptUnread":true}}"#)
-    #expect(await until { store.bots["b1"]?.rev == 6 })
-    try await Task.sleep(for: .milliseconds(50))
-    #expect(await fake.readReceipts.count == 1)
-}
-
-@MainActor @Test func chatOnScreenWaitsForCatchUpBeforeItIsReadAutomatically() async throws {
-    let (storage, suite) = context()
-    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-    let fake = FakeRemote(.ready(.direct))
-    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
-    store.setActive(true)
-    defer { store.setActive(false) }
-    #expect(await until { await fake.subscribed })
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":2,"keptUnread":true}}"#)
+    #expect(await until { store.connection == .online && store.bots["b1"]?.keptUnread == true })
+    // Coming back into focus, or the link coming back, is not opening the chat: the host leaves it alone.
     store.setReading(UUID(), botId: "b1", active: true)
-    store.setReading(UUID(), botId: "b2", active: true)
-    await fake.emit(#"{"type":"hello","hostId":"h1","rev":5,"catchUp":2}"#)
-    #expect(await until { store.connection == .online })
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":3,"unread":1,"keptUnread":true}}"#)
-    try await Task.sleep(for: .milliseconds(50))
-    #expect(await fake.readReceipts.isEmpty)
-    await fake.emit(#"{"type":"bot","bot":{"id":"b2","name":"Other","rev":4,"unread":1}}"#)
-    #expect(await until { await fake.readReceipts.count == 1 })
-    try await Task.sleep(for: .milliseconds(50))
-    #expect(await fake.readReceipts.count == 1)
+    #expect(await until { await fake.automaticReads == [true] })
+    #expect(store.bots["b1"]?.keptUnread == true)
+    store.openConversation("b1")
+    #expect(store.bots["b1"]?.keptUnread == false)
+    #expect(store.bots["b1"]?.unread == 0)
+    #expect(await until { await fake.automaticReads == [true, false] })
 }
 
-@MainActor @Test func markingAnEmptyChatUnreadLeavesNoHold() async throws {
+@MainActor @Test func openingAChatReadsItWhateverIsKnownHere() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let fake = FakeRemote(.ready(.direct))
-    await fake.setMarkUnreadAnswer(#"{"bot":{"id":"b1","name":"Bot","rev":1,"unread":0,"keptUnread":false}}"#)
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    // A mark set on another device may still be on its way here.
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    store.openConversation("b1")
+    #expect(await until { await fake.automaticReads == [false] })
+}
+
+@MainActor @Test func aChatThatFailsToOpenStaysQuietAndIsReadAsOpenedOnceOnScreenWithALink() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":3,"keptUnread":true}}"#)
+    #expect(await until { store.connection == .online && store.bots["b1"]?.keptUnread == true })
+    await fake.setReadRefusal(true)
+    store.openConversation("b1")
+    #expect(await until { store.unsentOpens.contains("b1") })
+    #expect(store.bots["b1"]?.unread == 3, "what was unread comes back")
+    #expect(store.bots["b1"]?.keptUnread == true)
+    #expect(store.lastError == nil, "opening a chat never opens a dialog")
+    await fake.setReadRefusal(false)
+    store.setReading(UUID(), botId: "b1", active: true)
+    #expect(await until { await fake.automaticReads == [false] })
+    #expect(store.unsentOpens.isEmpty)
+}
+
+@MainActor @Test func markingAChatUnreadDropsAnOpenThatNeverReachedTheHost() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    await fake.setReadRefusal(true)
+    store.openConversation("b1")
+    #expect(await until { store.unsentOpens.contains("b1") })
+    store.markUnread("b1")
+    #expect(store.unsentOpens.isEmpty)
+}
+
+@MainActor @Test func markAsUnreadShowsTheAnswerUnlessANewerBotEventBeatIt() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
     let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
     store.setActive(true)
     defer { store.setActive(false) }
@@ -124,28 +123,15 @@ import Testing
     await fake.emit(botEvent("b1", name: "Bot", rev: 1))
     #expect(await until { store.connection == .online })
     store.markUnread("b1")
-    #expect(store.heldUnread("b1"))
-    #expect(await until { !store.heldUnread("b1") })
-}
-
-@MainActor @Test func holdTheHostAlreadyLetGoEndsWithTheNextBotEvent() async throws {
-    let (storage, suite) = context()
-    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-    let fake = FakeRemote(.ready(.direct))
-    await fake.setMarkUnreadAnswer(#"{"bot":{"id":"b1","name":"Bot","rev":5,"unread":1,"keptUnread":true}}"#)
-    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
-    store.setActive(true)
-    defer { store.setActive(false) }
-    #expect(await until { await fake.subscribed })
-    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
-    #expect(await until { store.connection == .online })
+    #expect(await until { store.bots["b1"]?.keptUnread == true })
+    #expect(store.bots["b1"]?.unread == 1)
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":9,"unread":0}}"#)
+    #expect(await until { store.bots["b1"]?.rev == 9 })
     store.markUnread("b1")
-    #expect(await until { await fake.calls.contains("markUnread") })
+    #expect(await until { await fake.calls.filter { $0 == "markUnread" }.count == 2 })
     try await Task.sleep(for: .milliseconds(50))
-    #expect(store.heldUnread("b1"))
-    // Its keptUnread event was missed and another device read it since.
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":6,"unread":0}}"#)
-    #expect(await until { !store.heldUnread("b1") })
+    #expect(store.bots["b1"]?.rev == 9, "the answer's rev 2 is older")
+    #expect(store.bots["b1"]?.keptUnread == false)
 }
 
 @MainActor @Test func refusedMarkAsReadGivesTheHoldAndCountBack() async throws {
@@ -164,7 +150,7 @@ import Testing
     #expect(store.bots["b1"]?.unread == 0)
     #expect(await until { store.bots["b1"]?.keptUnread == true })
     #expect(store.bots["b1"]?.unread == 3)
-    #expect(store.heldUnread("b1"))
+    #expect(store.lastError != nil, "the roster's Mark as read shows a refusal")
 }
 
 @MainActor @Test func initialOfflineReportWaitsForReconnect() async throws {
@@ -384,4 +370,22 @@ import Testing
     #expect(await until { await fake.calls.contains("markUnread") })
     let calls = await fake.calls.filter { $0 == "markRead" || $0 == "markUnread" }
     #expect(calls == ["markRead", "markRead", "markRead", "markUnread"])
+}
+
+@MainActor @Test func openingAChatRightAfterMarkingItUnreadWaitsSoTheReadLandsLast() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    await fake.fail("markUnread", times: 2)
+    store.markUnread("b1")
+    store.openConversation("b1")
+    #expect(await until { await fake.calls.contains("markRead") })
+    let calls = await fake.calls.filter { $0 == "markRead" || $0 == "markUnread" }
+    #expect(calls == ["markUnread", "markUnread", "markUnread", "markRead"])
 }

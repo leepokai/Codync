@@ -149,22 +149,10 @@ public final class BotStore {
 
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
-    /// Mark as unread sent but not yet seen in a bot event: one from before it mustn't drop the hold.
-    @ObservationIgnored var markingUnread: [String: PendingUnread] = [:]
-    /// Mark as read sent but not yet settled, retries included: a mark as unread after it waits, so the read can't land last.
-    @ObservationIgnored var markingRead: [String: Task<Void, Never>] = [:]
-    /// Chats opened before the host's state arrived: a hold it shows then was still the user's to read.
-    @ObservationIgnored var openedEarly: Set<String>? = []
-    /// This stream's catch-up events still to come (its `hello`'s `catchUp`): at zero, `openedEarly` is settled.
-    @ObservationIgnored var openCatchUpLeft: Int?
-    /// An automatic read asked for mid catch-up: sent for the chats on screen once it ends.
-    @ObservationIgnored var readsDeferred = false
-
-    /// A mark as unread on its way; `from` is the host's rev for it once it answered.
-    struct PendingUnread {
-        let sent: Task<Int64?, Never>
-        var from: Int64?
-    }
+    /// Each chat's last read mark on its way, retries included: the next waits for it.
+    @ObservationIgnored var sendingReadMarks: [String: Task<Void, Never>] = [:]
+    /// Chats whose last open never reached the host.
+    @ObservationIgnored var unsentOpens: Set<String> = []
 
     var cacheStamp: String?
 
@@ -253,15 +241,6 @@ public final class BotStore {
     }
 
     static let leadChoiceHost = "2.33.0"
-
-    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.41.0
-    /// (it refuses `markUnread`), "Mark as read".
-    public func offersMarkUnread(_ bot: Bot) -> Bool {
-        bot.unread == 0 && !bot.keptUnread
-            && hostVersion.map { !AppVersion.isBelow($0.version, Self.markUnreadHost) } ?? false
-    }
-
-    static let markUnreadHost = "2.41.0"
 
     /// From host 2.39.0 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
     public var supportsQueueActions: Bool {

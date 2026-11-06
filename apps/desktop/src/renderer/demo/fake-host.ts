@@ -192,16 +192,18 @@ export class FakeHost {
       }
       case 'markUnread': {
         const bot = this.bots.get(str('botId'))
-        if (bot && bot.unread === 0) {
+        if (!bot) throw fail('That bot was deleted.')
+        if (bot.unread === 0) {
           bot.unread = 1
           bot.keptUnread = true
           this.emitBot(bot)
         }
-        return { bot }
+        return { bot: this.botJSON(bot) }
       }
       case 'markRead': {
         const bot = this.bots.get(str('botId'))
-        if (bot && (bot.unread > 0 || bot.keptUnread)) {
+        // `automatic` is the chat being on screen: one marked unread waits for the user.
+        if (bot && (bot.unread > 0 || bot.keptUnread) && !(b.automatic && bot.keptUnread)) {
           bot.unread = 0
           bot.keptUnread = false
           this.emitBot(bot)

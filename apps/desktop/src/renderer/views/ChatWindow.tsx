@@ -302,8 +302,8 @@ function ChatSplitView() {
     { title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) },
     ...moveToSectionItems(bot, store, setNaming),
     store.offersMarkUnread(bot)
-      ? { title: 'Mark as Unread', icon: 'record.circle', action: () => store.markUnread(bot.id) }
-      : { title: 'Mark as Read', icon: 'bell.badge', action: () => store.markAllRead(bot.id) },
+      ? { title: 'Mark as Unread', icon: 'record.circle', action: () => store.reads.markUnread(bot.id) }
+      : { title: 'Mark as Read', icon: 'bell.badge', action: () => store.reads.markRead(bot.id) },
     { title: 'Edit Profile…', icon: 'square.and.pencil', action: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }) },
     { title: 'Copy conversation ID', icon: 'square.on.square', action: () => window.codync.app.copy(bot.id) },
     ...makeLeadItems(bot, store),

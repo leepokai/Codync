@@ -21,15 +21,11 @@ extension BotStore {
                 }
                 requestedSince = rev
                 windowFloors = [:]
-                openCatchUpLeft = nil
-                if openedEarly == nil { openedEarly = [] }
                 for try await event in client.events(since: requestedSince, client: "ios") {
                     guard !Task.isCancelled, !retired else { return }
-                    let endsCatchUp = countCatchUp(event)
                     setConnection(.online)
                     backoff = 1
                     apply(event)
-                    if endsCatchUp { settleCatchUp() }
                 }
             } catch is CancellationError {
                 return
@@ -91,7 +87,7 @@ extension BotStore {
         switch event {
         case let .icons(icons, revision):
             applyIcons(icons, revision: revision)
-        case let .hello(id, hostRev, newUsage, newScreen, newNetwork, _):
+        case let .hello(id, hostRev, newUsage, newScreen, newNetwork):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
@@ -107,7 +103,6 @@ extension BotStore {
             bump(rev)
         case .bot(let received):
             let bot = putHostBot(received)
-            settleUnreadHold(bot)
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()
@@ -196,24 +191,6 @@ extension BotStore {
     private func bump(_ r: Int64) {
         rev = max(rev, r)
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
-    }
-
-    /// Whether `event` is the stream's last catch-up event, counted from its `hello`.
-    func countCatchUp(_ event: HostEvent) -> Bool {
-        if case let .hello(_, _, _, _, _, catchUp) = event { openCatchUpLeft = catchUp } else if let left = openCatchUpLeft { openCatchUpLeft = left - 1 }
-        guard openCatchUpLeft == 0 else { return false }
-        openCatchUpLeft = nil
-        return true
-    }
-
-    /// Between a counted `hello` and its last replayed event: a hold set elsewhere may not have arrived yet.
-    var replayingCatchUp: Bool { (openCatchUpLeft ?? 0) > 0 }
-
-    private func settleCatchUp() {
-        settleEarlyOpens()
-        guard readsDeferred else { return }
-        readsDeferred = false
-        for botId in Set(readingViews.values) { markRead(botId) }
     }
 
     /// Per bot, the lowest synced `seq` in the mirror (optimistic entries don't count).

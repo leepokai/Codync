@@ -16,6 +16,7 @@ mod new_bot;
 mod overlay_keys;
 mod pair;
 mod queue;
+mod reads;
 mod roster;
 mod section_order;
 mod slash;
@@ -391,21 +392,7 @@ impl App {
         if self.hint.as_ref().is_some_and(|(_, until)| *until <= now) {
             self.hint = None;
         }
-        // A chat marked unread stays unread while it's watched, and is read once it's opened again.
-        let shown = self.chat_visible().then(|| self.selected.clone()).flatten();
-        let opened = shown.is_some() && shown != self.shown_chat;
-        self.shown_chat = shown;
-        if self.chat_visible()
-            && self.term_focused
-            && let Some(b) = self.bot()
-            && (b.unread > 0 || (opened && b.kept_unread))
-            && (opened || !b.kept_unread)
-        {
-            let id = b.id.clone();
-            if self.reading.insert(id.clone()) {
-                self.call("markRead", json!({"botId": id}), After::Nothing);
-            }
-        }
+        self.read_what_is_on_screen();
         if self.chat_top && self.chat_visible() {
             self.load_history();
         }

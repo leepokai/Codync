@@ -126,8 +126,7 @@ fun AppStore.connect() {
                                 refresh()
                                 backoff = 1_000
                                 reconcileMailbox(active)
-                                // Read once the stream's catch-up shows any hold set while this phone was away.
-                                readsDeferred = true
+                                acknowledgeVisible()
                                 syncPush()
                                 while (isActive) {
                                     if (state.value.mismatch != null) { awaitUpdate(active); continue }
@@ -161,25 +160,18 @@ fun AppStore.connect() {
 
 /** Drain available catch-up in bounded transactions, without delaying a lone live event. */
 private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Long): Unit = coroutineScope {
-    val catchUp = CatchUpCount()
-    catchingUp = false
-    if (openedEarly == null) openedEarly = mutableSetOf()
     val source = active.events(cursor).produceIn(this)
     try {
         while (isActive) {
             val batch = mutableListOf<MirrorEvent>()
             var next: JsonObject? = source.receiveCatching().getOrThrow()
             var resync = false
-            var caughtUp = false
             while (next != null && batch.size < 64) {
-                caughtUp = catchUp.ended(next)
-                catchingUp = catchUp.replaying
                 when (val event = decode(next)) {
                     null -> {}
                     MirrorEvent.Resync -> { resync = true; break }
                     else -> batch.add(event)
                 }
-                if (caughtUp) break
                 next = if (batch.size < 64) source.tryReceive().getOrNull() else null
             }
             withContext(Dispatchers.IO) { requireNotNull(database).apply(batch) }
@@ -187,10 +179,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveArtifacts(batch)
             receiveNetwork(batch)
             hearCalls(batch)
-            markingUnread -= keptUnreadIn(batch).toSet()
-            if (caughtUp) settleEarlyOpens()
-            if (readsDeferred && !catchingUp) { readsDeferred = false; acknowledgeVisible() }
-            else acknowledgeVisible(readAfter(batch, state.value.readingChats))
+            acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
         }
     } finally { source.cancel() }

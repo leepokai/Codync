@@ -18,6 +18,7 @@ import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
 import { hostHasSections } from '../lib/roster-sections'
+import { offersMarkUnread } from './read-marks'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
@@ -25,9 +26,6 @@ import { trNow } from '../lib/l10n.ts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
-
-/** The first host with `markUnread`. */
-const MARK_UNREAD_HOST = '2.41.0'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -164,9 +162,8 @@ export class BotMirror extends Observable {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
   }
 
-  /** The roster offers "Mark as Unread" for a chat with nothing unread; otherwise, or on an older host (it refuses `markUnread`), "Mark as Read". */
   offersMarkUnread(bot: Bot) {
-    return bot.unread <= 0 && !bot.keptUnread && this.hostVersion !== null && !isBelow(this.hostVersion.version, MARK_UNREAD_HOST)
+    return offersMarkUnread(bot, this.hostVersion?.version)
   }
 
   /** What the update notice offers while this computer is behind this app. */

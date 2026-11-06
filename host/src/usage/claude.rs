@@ -1,6 +1,9 @@
 //! Claude plan windows: the CLI's `/usage` report, the status-line hook, and
 //! the ACP adapter's rate-limit event.
 
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+
 use serde_json::Value;
 
 use super::Window;
@@ -23,20 +26,42 @@ const USAGE_ARGS: [&str; 9] = [
 /// `claude -p /usage`: Claude Code's own local usage report, no model call.
 pub(super) async fn collect() -> Option<Vec<Window>> {
     let bin = super::command::program("claude")?;
+    let home = dirs::home_dir()?;
+    let login = credentials_path(std::env::var_os("CLAUDE_CONFIG_DIR").as_deref(), &home);
+    let mut cmd = tokio::process::Command::new(bin);
+    // A `claude setup-token` token (CLAUDE_CODE_OAUTH_TOKEN) can only run models: its /usage has no plan
+    // limits. When the user has also signed in normally, ask with that login instead.
+    for var in env_to_remove(has_login(&login).await) {
+        cmd.env_remove(var);
+    }
     let out = tokio::time::timeout(
         std::time::Duration::from_mins(1),
-        tokio::process::Command::new(bin)
-            .args(USAGE_ARGS)
-            .current_dir(dirs::home_dir()?)
-            .stdin(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .output(),
+        cmd.args(USAGE_ARGS).current_dir(&home).stdin(std::process::Stdio::null()).kill_on_drop(true).output(),
     )
     .await
     .ok()?
     .ok()?;
     let windows = parse_usage_stream(&String::from_utf8_lossy(&out.stdout));
     (!windows.is_empty()).then_some(windows)
+}
+
+/// Claude Code's login file: under `CLAUDE_CONFIG_DIR` when it is set (an empty value counts as unset),
+/// else under `~/.claude`.
+fn credentials_path(config_dir: Option<&OsStr>, home: &Path) -> PathBuf {
+    match config_dir.filter(|dir| !dir.is_empty()) {
+        Some(dir) => Path::new(dir).join(".credentials.json"),
+        None => home.join(".claude").join(".credentials.json"),
+    }
+}
+
+/// A regular file at `path`; a directory of that name is not a login.
+async fn has_login(path: &Path) -> bool {
+    tokio::fs::metadata(path).await.map(|m| m.is_file()).unwrap_or(false)
+}
+
+/// Env vars the usage probe drops: the setup-token, but only when a login file exists to take over.
+fn env_to_remove(has_login: bool) -> &'static [&'static str] {
+    if has_login { &["CLAUDE_CODE_OAUTH_TOKEN"] } else { &[] }
 }
 
 /// The `usage_report` event's limits, exact instants included; a CLI without
@@ -193,5 +218,39 @@ mod tests {
             .unwrap();
         assert!((w.percent - 100.0).abs() < f64::EPSILON);
         assert!(claude_window(&json!({"status": "allowed", "rateLimitType": "five_hour"})).is_none());
+    }
+
+    #[test]
+    fn login_path_follows_claude_config_dir() {
+        let path = credentials_path(Some(OsStr::new("/srv/claude-work")), Path::new("/home/u"));
+        assert_eq!(path, PathBuf::from("/srv/claude-work/.credentials.json"));
+    }
+
+    #[test]
+    fn login_path_defaults_to_home_when_config_dir_is_unset_or_empty() {
+        let home = Path::new("/home/u");
+        let expected = PathBuf::from("/home/u/.claude/.credentials.json");
+        assert_eq!(credentials_path(None, home), expected);
+        assert_eq!(credentials_path(Some(OsStr::new("")), home), expected);
+    }
+
+    #[test]
+    fn setup_token_is_dropped_only_when_a_login_file_exists() {
+        assert_eq!(env_to_remove(true), ["CLAUDE_CODE_OAUTH_TOKEN"]);
+        assert!(env_to_remove(false).is_empty());
+    }
+
+    #[tokio::test]
+    async fn login_must_be_a_file_not_a_directory() {
+        let base = std::env::temp_dir().join(format!("codync-login-test-{}", std::process::id()));
+        let as_dir = base.join("dir/.credentials.json");
+        let as_file = base.join("file/.credentials.json");
+        std::fs::create_dir_all(&as_dir).unwrap();
+        std::fs::create_dir_all(base.join("file")).unwrap();
+        std::fs::write(&as_file, "{}").unwrap();
+        assert!(!has_login(&as_dir).await);
+        assert!(has_login(&as_file).await);
+        assert!(!has_login(&base.join("missing/.credentials.json")).await);
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

@@ -6,6 +6,7 @@ pub mod channel;
 pub mod cloud;
 mod cloud_url;
 pub mod crypto;
+pub mod discovery;
 pub mod identity;
 pub mod owner;
 pub mod pairing_requests;

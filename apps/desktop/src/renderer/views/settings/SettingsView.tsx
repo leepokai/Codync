@@ -21,7 +21,7 @@ import { UpdateButton, useUpdates } from '../UpdateButton'
 import { ComputersView } from './ComputersView'
 import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
-import { UsageLimits } from './UsageLimits'
+import { UsageSection } from './UsageLimits'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
 import { FormSheet } from '../marketplace/pieces'
@@ -267,19 +267,22 @@ function UsageLimitsList() {
   const tr = useTr()
   const app = useApp()
   const stores = app.computers.flatMap((c) => app.store(c.id) ?? [])
-  const withUsage = stores.filter((s) => s.usage.providers.length > 0)
+  const withUsage = stores.filter((s) => s.usage.providers.length > 0 || s.usage.services?.length)
   if (withUsage.length === 0) return <Text tone="secondary">{tr(`No usage information yet.`)}</Text>
   return (
     <>
-      {withUsage.flatMap((store) => [
-        stores.length > 1 ? (
-          <HStack key={`${store.computer.id}-label`} gap={6} className="settings-usage-computer">
+      {withUsage.map((store) => (
+        <UsageSection
+          key={store.computer.id}
+          title={<>
             <ComputerBadge computer={store.computer} size={16} />
             {store.hostName}
-          </HStack>
-        ) : null,
-        <UsageLimits key={store.computer.id} usage={store.usage} />,
-      ])}
+          </>}
+          usage={store.usage}
+          onShown={(id, shown) => void store.setUsageShown(id, shown).catch((e: unknown) => app.setError(errorText(e)))}
+          onOrder={(ids) => store.setUsageOrder(ids).catch((e: unknown) => app.setError(errorText(e)))}
+        />
+      ))}
     </>
   )
 }

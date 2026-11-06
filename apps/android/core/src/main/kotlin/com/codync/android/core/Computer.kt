@@ -38,6 +38,16 @@ enum class ConnectionRoute { Automatic, CloudflareFirst, DirectOnly }
 /** Phones keep at most this many direct addresses; a computer with many networks sends more, best first. */
 internal const val MAX_URLS = 16
 
+/** One computer advertised on the local network: its id and the valid ones among its comma-separated addresses. */
+data class DiscoveredComputer(val id: String, val urls: List<String>) {
+    companion object {
+        fun of(id: String?, urls: String?): DiscoveredComputer? {
+            if (id.isNullOrEmpty() || urls == null) return null
+            return directUrls(urls.split(",")).takeIf { it.isNotEmpty() }?.let { DiscoveredComputer(id, it) }
+        }
+    }
+}
+
 /** The direct addresses kept from a computer's list: valid ones, once each, the best [MAX_URLS]. */
 internal fun directUrls(urls: Iterable<String>): List<String> = urls.filter(::isDirectUrl).distinct().take(MAX_URLS)
 

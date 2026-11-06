@@ -7,7 +7,6 @@ import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModel } from '../lib/observable'
 import { prefs, usePref } from '../lib/prefs'
-import { dueStarAsk } from '../lib/star-ask'
 import { useStarAsk } from '../lib/use-star-ask'
 import { useApp } from '../store/context'
 import { useTr } from '../lib/use-language'
@@ -20,13 +19,13 @@ const copy = {
   },
   second: {
     title: 'Enjoying Codync?',
-    message: "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.",
+    message: 'If Codync saves you trips to your desk, a star on GitHub helps other people find it.',
   },
 }
 
 /**
- * Reminds once a week after the setup invitation; also covers older installations
- * that have not seen the setup invitation.
+ * Invites again at the fifth prompt after the setup invitation; also covers older
+ * installations that have not seen the setup invitation.
  * Starring ends it.
  */
 export function StarPrompt() {
@@ -34,14 +33,14 @@ export function StarPrompt() {
   const app = useApp()
   const local = useModel(app.local)
   const [onboarded] = usePref(prefs.onboardingDone)
-  const { state, answer } = useStarAsk()
-  const [closed, setClosed] = useState(false)
-  const due = dueStarAsk(state, Date.now())
-  const open = due !== null && onboarded && !closed && local?.connection.kind === 'online'
+  const { due, prompts, answer } = useStarAsk()
+  // The prompt count when this sheet last closed: the next ask waits for a later prompt, so two never follow each other.
+  const [closedAt, setClosedAt] = useState(-1)
+  const open = due !== null && onboarded && prompts > closedAt && local?.connection.kind === 'online'
 
   const finish = (starred: boolean) => {
-    if (closed || !due) return
-    setClosed(true)
+    if (!open) return
+    setClosedAt(prompts)
     answer(starred)
   }
 

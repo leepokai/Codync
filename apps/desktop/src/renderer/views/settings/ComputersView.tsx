@@ -16,7 +16,8 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
-import { devicesLoseAccess, spacedCode } from '../../lib/account-copy'
+import { devicesLoseAccess, spacedCode, withJoinRemoves } from '../../lib/account-copy'
+import { useJoinRemoves } from '../use-join-removes'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
@@ -138,9 +139,10 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       }
     })
 
-  // Turning it on asks to add a computer that would be in no account (`joinsAccountOnEnable`). Signed out, the welcome
-  // covers Settings and a build without accounts has none to join; a saved session still restoring makes the switch wait.
+  // Turning it on asks to add a computer that would be in no account (`joinsAccountOnEnable`). Signed out there's no
+  // account to add it to, and it stays in none; a saved session still restoring makes the switch wait.
   const asksAccount = cloud?.joinsAccountOnEnable === true
+  const joinRemoves = useJoinRemoves(store, askAccount)
   const setReach = (on: boolean) => {
     if (on && asksAccount && account.isSignedIn) setAskAccount(true)
     else void run(() => app.cloud.setCloud(store, on))
@@ -168,8 +170,8 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
           Remove from account
         </Button>
       ) : account.isSignedIn ? (
-        <Button kind="secondary" onClick={() => run(async () => void (await app.cloud.claim(store)))} disabled={busy || !manageable}>
-          {busy ? 'Adding…' : 'Add to account'}
+        <Button kind="secondary" onClick={() => app.cloud.requestJoin(store)} disabled={busy || !manageable}>
+          Add to account
         </Button>
       ) : null}
     </HStack>
@@ -282,7 +284,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       <Dialog
         open={askAccount}
         title={tr('Add {name} to your account first').replaceAll('{name}', () => name)}
-        message={tr('Your phone reaches {name} from anywhere through your account. Adding it also turns this on.').replaceAll('{name}', () => name)}
+        message={withJoinRemoves(tr, tr('Your phone reaches {name} from anywhere through your account. Adding it also turns this on.').replaceAll('{name}', () => name), joinRemoves)}
         actions={[
           { title: 'Add to account', action: () => void run(() => app.cloud.addFromReach(store)) },
           { title: 'Use your own relay', action: () => void run(() => app.cloud.useOwnRelay(store)) },

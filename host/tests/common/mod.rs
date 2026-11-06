@@ -40,6 +40,8 @@ pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child
             .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
             // A test host leaves the computer's agent CLIs and the user's logins alone.
             .env("CODYNC_AGENT_CHECKS", "off")
+            // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
+            .env("CODYNC_VAULT", "folder")
             .envs(env.iter().copied())
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
@@ -128,6 +130,13 @@ pub fn python_agent(script: &Path) -> String {
     } else {
         format!("{} -X utf8 -u '{}'", python(), path.replace('\'', "'\\''"))
     }
+}
+
+/// The command of a program that listens on `port` of this computer until it's stopped.
+#[allow(dead_code, reason = "only the tests of dev servers use it")]
+pub fn port_server(port: u16) -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/port_server.py");
+    format!("{} {port}", python_agent(&script))
 }
 
 /// What a client holds after the event stream's catch-up: `{"rev", "bots": [...], "entries": [...]}`,

@@ -1,22 +1,18 @@
 package com.codync.android
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,8 +25,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.LinkState
 import com.codync.android.core.UsageProvider
@@ -38,18 +37,14 @@ import com.codync.android.core.UsageReport
 import com.codync.android.core.UsageWindow
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import kotlin.math.roundToInt
 
 /**
- * Usage limits, opened from the State tab (iOS `UsageSheet` + `UsageView`): one card per
- * provider, the tightest limit as a big bar, every limit listed below. Pull down to refresh.
+ * One computer's usage, opened from the State tab (iOS `UsageSheet` + `UsageView`): its name, what its agents
+ * have used, and behind a button which agents show and in what order. Pull down to refresh.
  */
 @Composable fun UsageScreen(state: AppState?, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit,
-    trailing: @Composable () -> Unit = {}) {
+    setShown: (id: String, shown: Boolean) -> Unit, setOrder: suspend (ids: List<String>) -> Unit, trailing: @Composable () -> Unit = {}) {
     val dismiss = LocalDismissModal.current
     val report = remember(state?.usage) { state?.let { runCatching { UsageReport.decode(it.usage) }.getOrNull() } ?: UsageReport() }
     val online = state?.actualConnection is LinkState.Ready
@@ -59,77 +54,85 @@ import kotlin.math.roundToInt
         ScreenHeader(leading = { IconButton("Close", "xmark", action = dismiss) },
             title = { Text("Usage", style = Type.body.semibold, color = Palette.text) }, trailing = { trailing() })
         if (state == null) {
-            EmptyUsage("No computer yet", "Usage shows up once a computer is connected.")
+            EmptyState("chart.bar", "No computer yet", Modifier.fillMaxWidth().padding(top = 60.dp), "Usage shows up once a computer is connected.")
             return@Column
         }
-        PullToRefresh({ if (online) reload() }, Modifier.weight(1f)) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                for (provider in report.providers) key(provider.id) { ProviderCard(provider) }
-                if (report.providers.isEmpty()) EmptyUsage("No usage yet", "Your computer reads plan limits from the agents installed on it.")
+        PullToRefresh({ if (online) reload() }, Modifier.weight(1f)) { UsageSection(state, report, setShown, setOrder) }
+    }
+}
+
+@Composable private fun UsageSection(state: AppState, report: UsageReport, setShown: (id: String, shown: Boolean) -> Unit, setOrder: suspend (ids: List<String>) -> Unit) {
+    var arranging by rememberSaveable { mutableStateOf(false) }
+    val canArrange = report.services.isNotEmpty()
+    val editing = arranging && canArrange
+    val list = rememberLazyListState()
+    val reorder = rememberUsageReorder(report, list, setOrder)
+    val services = report.servicesIn(reorder.shown)
+    LazyColumn(Modifier.fillMaxSize(), list, PaddingValues(16.dp)) {
+        item(key = "heading") { UsageHeading(state, canArrange, editing) { arranging = !editing } }
+        when {
+            editing -> chooserRows(report, services, reorder, setShown)
+            report.providers.isEmpty() -> item(key = "none") {
+                Text(tr("No usage information yet."), trading().padding(start = 16.dp, top = 8.dp), style = Type.subheadline, color = Palette.secondary)
             }
+            else -> item(key = "limits") { UsageLimits(report.providers, trading()) }
         }
     }
 }
 
-@Composable private fun EmptyUsage(title: String, message: String) =
-    EmptyState("chart.bar", title, Modifier.fillMaxWidth().padding(top = 60.dp), message)
+/** The computer's name, and the one button that swaps the readings for the list of agents. */
+@Composable private fun UsageHeading(state: AppState, canArrange: Boolean, editing: Boolean, toggle: () -> Unit) {
+    // The start lines up with the mascots below, and the 44 dp target's glyph with the switches' edge.
+    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(start = 16.dp, end = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ComputerBadge(state.hello?.text("device"), 20.dp, state.computer.color)
+        Text(state.hostName, Modifier.weight(1f), style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (canArrange) IconButton(if (editing) "Done" else "Choose and arrange", if (editing) "checkmark" else "slider.horizontal.3", Modifier.size(44.dp), action = toggle)
+    }
+}
 
-@Composable private fun ProviderCard(provider: UsageProvider) {
-    var collapsed by rememberSaveable(provider.id) { mutableStateOf(false) }
-    val turn by animateFloatAsState(if (collapsed) 180f else 0f, Motion.layout(), label = "Collapse")
+@Composable private fun UsageLimits(providers: List<UsageProvider>, modifier: Modifier) {
+    Column(modifier.fillMaxWidth().clip(RoundedRectangle(20.dp)).background(Palette.surface).animateContentSize(Motion.layoutSize)) {
+        for (provider in providers) key(provider.id) { ProviderLimits(provider) }
+    }
+}
+
+@Composable private fun ProviderLimits(provider: UsageProvider) {
     val tint = provider.widgetTint()
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(20.dp)).background(Palette.surface).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(34.dp).clip(RoundedRectangle(10.dp)).background(provider.tint().copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
-                ProviderMascot(provider, 22.dp)
-            }
-            Text(provider.name, Modifier.weight(1f), style = Type.subheadline.semibold, color = Palette.text)
-            IconButton(if (collapsed) "Expand" else "Collapse", "chevron.up", Modifier.rotate(turn)) { collapsed = !collapsed }
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ProviderMascot(provider, 20.dp)
+            Text(provider.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        provider.tightest?.let { top ->
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row {
-                    Text(tr(top.title), Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
-                    Text(usedText(top.percent), style = Type.subheadline.monospacedDigit, color = Palette.text)
-                }
-                UsageTicks(top.percent ?: 0.0, tint, 15.dp)
-                val reset = top.resetsShort()
-                if (reset != null) Text(resetLine(reset), Modifier.fillMaxWidth(), style = Type.caption.monospacedDigit, color = Palette.tertiary, textAlign = TextAlign.End)
-            }
-        }
-        AnimatedVisibility(!collapsed, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
-            exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (window in provider.windows) {
-                    DetailRow(tr(window.title), reading(window))
-                    val reset = window.resetsShort()
-                    if (reset != null) DetailRow(tr("Resets"), resetLine(reset))
-                }
-                DetailRow("Source", provider.sourceLabel)
-                DetailRow("Updated", provider.updatedAt?.takeIf { it > 0 }?.let(::updatedAt) ?: "Not reported")
-            }
-        }
+        for (window in provider.windows) key(window.id) { WindowLimit(window, tint) }
     }
 }
 
-@Composable private fun reading(window: UsageWindow) = window.text?.takeIf { it.isNotBlank() } ?: usedText(window.percent)
+/** A limit's name and when it resets, how much is used, and under them the bar; or the note an agent gives instead. */
+@Composable private fun WindowLimit(window: UsageWindow, tint: Color) {
+    val note = window.text?.takeIf { it.isNotBlank() }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (note != null) {
+                Text(tr(window.title), style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(note, Modifier.weight(1f), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+            } else {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(tr(window.title), Modifier.weight(1f, fill = false), style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(window.resetsShort()?.let { resetLine(it) }.orEmpty(), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                PercentUsed(window.reportedPercent)
+            }
+        }
+        if (note == null) window.reportedPercent?.let { UsageTicks(it, tint, 5.dp) }
+    }
+}
+
+/** "33%", read out as "33% used"; a dash when the agent didn't say, never a zero. */
+@Composable private fun PercentUsed(percent: Double?) {
+    val spoken = usedText(percent)
+    Text(percent?.let { "${it.roundToInt()}%" } ?: "—", Modifier.semantics { contentDescription = spoken }, style = Type.subheadline.medium.monospacedDigit, color = Palette.text)
+}
 
 /** "62% used": the share of the cap already spent, said so (a bare percent reads as what's left). */
 @Composable private fun usedText(value: Double?) =
-    value?.takeIf { it.isFinite() }?.let { tr("{percent}% used").replace("{percent}", "${it.roundToInt()}") } ?: "—"
-
-/** "Oct 17, 2026 at 10:20 PM", as iOS formats an abbreviated date with a short time. */
-private fun updatedAt(milliseconds: Long): String {
-    val at = Instant.ofEpochMilli(milliseconds).atZone(ZoneId.systemDefault())
-    val date = at.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
-    val time = at.format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT))
-    return if (java.util.Locale.getDefault().language == "en") "$date at $time" else "$date $time"
-}
-
-@Composable private fun DetailRow(label: String, value: String) {
-    Row {
-        Text(tr(label), Modifier.weight(1f), style = Type.footnote, color = Palette.secondary)
-        Text(value, style = Type.footnote.monospacedDigit, color = Palette.text)
-    }
-}
+    value?.let { tr("{percent}% used").replace("{percent}", "${it.roundToInt()}") } ?: "—"

@@ -8,6 +8,7 @@ mod background;
 mod chat;
 mod cloud_cli;
 mod compat;
+mod dev_servers;
 mod environment;
 mod hub;
 mod icons;
@@ -489,9 +490,7 @@ async fn main() -> Result<()> {
         Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
         Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
-        Sub::Tui { url, token, port } => {
-            tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
-        }
+        Sub::Tui { url, token, port } => tui::run(url, port, token).await,
     }
 }
 

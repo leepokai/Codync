@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Coffee, DiscordLogo, GithubLogo, WechatLogo } from "@phosphor-icons/react/ssr";
 import DownloadButton from "./download-button";
-import { DISCORD, EMAIL, GITHUB, KO_FI, WECHAT } from "../links";
+import { CHINA_COMMUNITY, DISCORD, EMAIL, GITHUB, KO_FI } from "../links";
 
 const nav: [href: string, label: string][] = [
   ["/#product", "Product"],
@@ -47,9 +47,9 @@ export function SiteHeader() {
             <DiscordLogo size={20} />
           </a>
           <Link
-            href={WECHAT}
-            aria-label="WeChat community for users in China"
-            title="微信中国用户交流群"
+            href={CHINA_COMMUNITY}
+            aria-label="WeChat and Lark community for users in China"
+            title="微信 / Lark 中国用户交流群"
             className="hidden rounded-full p-2 text-neutral-400 transition hover:text-neutral-100 sm:block"
           >
             <WechatLogo size={20} />
@@ -80,7 +80,7 @@ const footerLinks: [label: string, href: string][] = [
   ["Privacy", "/privacy"],
   ["Code signing policy", "/code-signing"],
   ["Discord", DISCORD],
-  ["WeChat (China)", WECHAT],
+  ["WeChat / Lark (China)", CHINA_COMMUNITY],
   ["Ko-fi", KO_FI],
   ["Contact", `mailto:${EMAIL}`],
 ];

@@ -104,12 +104,27 @@ fun AccountStore.refreshCloud() = action("cloud") {
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
         mutableState.update { it.copy(cloudComputers = computers) }
+        learnRelay(computers)
     } catch (error: IOException) {
         if (error is CloudError && !error.isTransient) throw error
         // Runs on every launch and foreground: a dropped connection, a busy cloud or a token not ready
         // yet fixes itself on the next refresh, so only answers that stay reach the dialog (as on iOS).
         android.util.Log.i("Codync", "Cloud refresh failed: ${error.message}")
     } finally { mutableState.update { it.copy(cloudLoaded = true) } }
+}
+
+/**
+ * A computer that joined this account while this phone couldn't hear its `hello` still has the relay, or a phone away
+ * from its network could never reach it to find out (iOS `learnRelay`). Listed online, it's on the relay; a phone
+ * connected to it goes by its `hello`.
+ */
+private suspend fun AccountStore.learnRelay(listed: List<CloudComputer>) {
+    for (store in stores.value) {
+        val state = store.state.value
+        if (state.computer.cloud != null || state.connection is LinkState.Ready || listed.none { it.computerId == store.id && it.online == true }) continue
+        store.changeComputer { it.copy(cloud = BuildConfig.CLOUD_URL) }
+        store.reconnect()
+    }
 }
 
 /** A pull to refresh: the account's computers, joining a refresh already under way. */
@@ -271,7 +286,8 @@ fun AccountStore.startOver() = sessionAction {
                 cache.listFiles()?.filter { it.name.startsWith("codync-images") }?.forEach { it.deleteRecursively() }
             }
             Analytics.forgetOnboarding()
-            mutableState.update { it.copy(account = AccountState(ready = true), error = null) }
+            withoutAccountChosen = false
+            mutableState.update { it.copy(account = AccountState(ready = true), error = null, withoutAccount = false) }
             loadContext(null)
         }
     }

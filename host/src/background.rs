@@ -21,6 +21,7 @@ pub fn start(hub: &Arc<Hub>) -> JoinSet<()> {
     tokio::spawn(market::automatic_loop(hub.clone()));
     tokio::spawn(voice::refresh_loop(hub.clone()));
     tokio::spawn(crate::chat::calls::sweep_loop(hub.clone()));
+    tokio::spawn(crate::dev_servers::scan_loop(hub.clone()));
     let mut agent_checks = JoinSet::new();
     agent_checks.spawn({
         let hub = hub.clone();
@@ -31,6 +32,7 @@ pub fn start(hub: &Arc<Hub>) -> JoinSet<()> {
     tokio::spawn(update::release_watch());
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));
     tokio::spawn(relay::run(hub.clone()));
+    tokio::spawn(crate::remote::discovery::run(hub.clone()));
     #[cfg(target_os = "linux")]
     tokio::spawn(screen::supervise_linux_helper(hub.screen.clone()));
     agent_checks

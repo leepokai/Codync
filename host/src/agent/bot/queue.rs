@@ -79,7 +79,7 @@ impl Actor {
                 // The harness reads its own memory's switch when it starts: an agent that can resume its session
                 // restarts into it, one that can't starts afresh.
                 let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
-                let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
+                let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd

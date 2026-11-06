@@ -81,6 +81,18 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             }
             Event::BotCreated
         }
+        "setUsageShown" => {
+            // A successful call names one of the host's own agents.
+            p.insert("setting".into(), "usage_shown".into());
+            p.insert("agent".into(), b["id"].clone());
+            p.insert("on".into(), (b["shown"] == true).into());
+            Event::SettingChanged
+        }
+        "setUsageOrder" => {
+            p.insert("setting".into(), "usage_order".into());
+            p.insert("on".into(), true.into());
+            Event::SettingChanged
+        }
         "updateBot" => Event::BotUpdated,
         "reorderBots" => Event::BotsReordered,
         "renameSection" => {
@@ -108,6 +120,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        "devServerStop" | "devServerRestart" | "devServerRemove" | "devServerLogs" => {
+            let action = method.trim_start_matches("devServer").to_ascii_lowercase();
+            p.insert("action".into(), action.into());
+            Event::DevServerAction
+        }
         "logCall" | "endCall" => {
             p.insert("seconds".into(), b["seconds"].as_u64().unwrap_or(0).into());
             Event::VoiceCallFinished

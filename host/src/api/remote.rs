@@ -88,7 +88,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "pairingCodeOpen" => json!({"open": hub.pairing.locked().valid(str_arg(&b, "code")?)}),
         "decidePairing" => {
             let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
-            crate::remote::pairing_requests::decide(hub, str_arg(&b, "requestId")?, approve)?;
+            crate::remote::pairing_requests::decide(hub, str_arg(&b, "requestId")?, approve, b["join"].as_bool())?;
             json!({})
         }
         "decideAccessRequest" => {
@@ -127,11 +127,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (claim_id, nonce, user_id) = (str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, str_arg(&b, "userId")?);
             crate::remote::owner::sign_claim(hub, claim_id, nonce, user_id).await?
         }
-        // A phone finishing a join its pairing didn't complete (hello's `joinAccount`).
+        // The phones the desktop app's Add to account would remove, for its warning.
+        "joinWouldRemove" => {
+            json!({"names": crate::remote::owner::removed_by_joining(hub, str_arg(&b, "userId")?, "")})
+        }
+        // A paired phone bringing this computer into its account (hello's `canJoinAccount`).
         "joinAccount" => {
-            let user_id = crate::remote::owner::joinable_by(hub, caller.device_key())?
-                .ok_or_else(|| anyhow!("This computer can't join this phone's account now."))?;
-            crate::remote::owner::sign_claim(hub, str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, &user_id).await?
+            let (claim_id, nonce) = (str_arg(&b, "claimId")?, str_arg(&b, "nonce")?);
+            crate::remote::owner::join_from_phone(hub, caller.device_key(), &b["certificate"], claim_id, nonce).await?
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
@@ -158,6 +161,8 @@ async fn pairing(hub: &Arc<Hub>, short_code: bool) -> Result<Value> {
     }
     let issued = hub.pairing.locked().issue();
     hub.auth_changed();
+    // A computer in no account connects to the relay for as long as this code lives.
+    hub.cloud.relay_wake.notify_one();
     let url = crate::service::pairing_url(&crate::service::PairingQr {
         name: &crate::service::host_name(),
         computer_id: &hub.identity.computer_id(),
@@ -184,7 +189,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use crate::remote::identity::Identity;
-    use crate::store::{Device, Scope, Store};
+    use crate::store::{Device, DeviceAccount, Scope, Store};
 
     #[tokio::test]
     async fn a_device_forgets_only_itself() {
@@ -202,7 +207,7 @@ mod tests {
             lease_until: None,
             created_at: 1,
             last_seen_at: None,
-            account: None,
+            account: DeviceAccount::Unrecorded,
         };
         hub.store.put_device(&phone).unwrap();
         hub.store.put_device(&Device { key: "other".into(), ..phone.clone() }).unwrap();

@@ -33,6 +33,9 @@ pub enum App {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Reported {
+    DevServerAction {
+        action: DevServerAction,
+    },
     AppOpened {
         /// Opened by the login item (desktop).
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,6 +63,7 @@ pub enum Reported {
         provider: Option<Provider>,
     },
     SignedOut,
+    ContinuedWithoutAccount,
     StarPromptAnswered {
         ask: Ask,
         starred: bool,
@@ -95,6 +99,9 @@ pub enum Reported {
         /// Why adding the computer failed.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ClaimFailure>,
+    },
+    JoinOfferAnswered {
+        outcome: JoinOutcome,
     },
 }
 
@@ -246,6 +253,27 @@ pub enum ReachOutcome {
     Other,
 }
 
+/// How the ask to add this computer to the signed-in account ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinOutcome {
+    Added,
+    KeptOut,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// What the apps do with a dev server on their own (the host's methods report the rest).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DevServerAction {
+    Open,
+    Copy,
+    #[serde(other)]
+    Other,
+}
+
 /// Why a computer couldn't be added to the account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -346,6 +374,7 @@ mod tests {
                 Event::StarPromptAnswered,
             ),
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
+            (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
@@ -360,6 +389,11 @@ mod tests {
             ),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
+            (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
+            (
+                json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
+                Event::JoinOfferAnswered,
+            ),
             (
                 json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),
                 Event::ReachAccountAnswered,

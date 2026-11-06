@@ -1,20 +1,22 @@
-Your bots run on your computer. The iPhone app reaches that computer in one of two ways: **directly** (same Wi-Fi or local network, Tailscale, or an address you publish yourself) or through a **relay** that passes encrypted traffic between your phone and your computer when they can't see each other. By default that is the Codync relay on Cloudflare. You can point the computer at a relay you run yourself. Both routes use the same end-to-end encrypted connection, and the phone picks one on its own.
+Your bots run on your computer. The iPhone app reaches that computer in one of two ways: **directly** (same Wi-Fi or local network, Tailscale, or an address you publish yourself) or through a **relay** that passes encrypted traffic between your phone and your computer when they can't see each other. By default that is the Codync relay on Cloudflare, for a computer in your account and a phone signed in to that account. You can point the computer at a relay you run yourself. Both routes use the same end-to-end encrypted connection, and the phone picks one on its own.
 
 The desktop app and the terminal UI work differently: they talk to the host on the same computer, or to another computer over SSH. They don't use the relay.
 
 ## How the phone picks a route
 
-Each time it connects, the phone first tries the computer's direct addresses. If none answers, it connects through the relay. When your network changes or you return to the app, it tries again, so it moves back to a direct connection when one becomes available.
+Each time it connects, the phone first tries the computer's direct addresses. If none answers, it connects through the relay, if it has one. When your network changes or you return to the app, it tries again, so it moves back to a direct connection when one becomes available.
 
 | Route | When it works | What you set up |
 | --- | --- | --- |
 | Wi-Fi or local network | Phone and computer are on the same network | Nothing |
 | Tailscale | Phone and computer are both on your Tailscale network | Tailscale on both |
 | Your own URL | You run an HTTPS reverse proxy in front of the host | See "Your own HTTPS reverse proxy" below |
-| Codync relay | Anywhere with internet | Nothing (on by default) |
+| Codync relay | Anywhere with internet | The computer in your account, and the phone signed in to that account |
 | Your own relay | Anywhere with internet | **Relay address** on the computer |
 
 The host lists its Tailscale and private network addresses, plus any URL you set yourself. It never advertises a public IP address on its own.
+
+A computer in no account has no relay to tell a phone its new address, so it advertises its private network addresses on the local network. Phones nearby try them, and the connection still checks the computer's key.
 
 ## Pairing
 
@@ -26,24 +28,33 @@ Show the code on the computer:
 - **Terminal:** run `codync-host pair`. It prints the QR code in the terminal, and waits to answer when the computer asks about a phone (see below). `codync-host pair --json` prints the link instead and doesn't wait.
 - **Terminal UI:** press `^k` and choose **Pair a phone…**.
 
-Then, on the iPhone, scan it during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer), or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning, or type the short code `codync-host pair` prints, like `QRTX-4821`.
+Then, on the iPhone, scan it during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer), or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning or, signed in, type the short code `codync-host pair` prints, like `QRTX-4821`.
 
-A code works once and expires after 10 minutes. If it has expired, show a new one on the computer. Pairing works over any route, including the relay.
+A code works once and expires after 10 minutes. If it has expired, show a new one on the computer. A signed-out phone pairs only directly; a signed-in phone can also pair through the relay, if the computer joins its account.
 
-Pairing checks your account, so a phone and a computer pair only when they're in the same Codync account:
+What happens next depends on whose computer it is:
 
 - **The computer is in your account:** the phone is let in right away.
-- **The computer is in someone else's account:** the phone says whose (for example *k•••@example.com*). Move the computer to your account on that computer, or sign in to that account.
-- **The computer isn't in an account yet:** the computer asks first, for 90 seconds. The desktop app asks whether to let the phone in, and the terminal UI and `codync-host pair` ask you to answer `y`. Without any of them (`codync-host pair --json`, a script, SSH with no terminal), run `codync-host access approve <code>` with the 6 digits the phone shows. Check that the phone shows the same 6-digit code, then let it in. The computer joins your account. While its cloud is off or it uses a private relay, the phone gets in and the computer stays out of any account.
-- **The computer let the phone in but didn't join your account** (the phone couldn't reach the Codync cloud while pairing, or the computer's cloud was off or on a private relay): the next time the phone connects while the computer is on the Codync cloud, the computer joins your account on its own, as long as no phone of another account is paired with it. If it still isn't in your account after that, pair it again. A computer taken out of your account isn't brought back this way.
+- **The computer is in someone else's account:** the phone says whose (for example *k•••@example.com*). Move the computer to your account on that computer, or sign in to that account. A signed-out phone is told to sign in.
+- **The computer isn't in an account:** the computer asks first, for 90 seconds. Check that the phone shows the same 6-digit code, then answer:
+  - **Add to account:** the phone gets in and the computer joins the phone's account, so the phone reaches it from anywhere. Offered for a signed-in phone while the computer's cloud is on.
+  - **Wi-Fi or Tailscale only:** the phone gets in and the computer stays out of any account. Not offered for a phone that came through the relay, which it couldn't use afterwards.
+  - **Let in:** for a signed-out phone. It connects only over Wi-Fi or Tailscale.
+  - **Don't allow:** the phone stays out.
 
-Changing the account a computer belongs to (moving it, or **Remove from account**) takes away access from every device of the old account. A computer joining its first account keeps the phones that were already paired.
+Answer in the desktop app's dialog, in the terminal UI (`y` adds to the account or lets in, `w` is Wi-Fi or Tailscale only, `n` is don't allow), or in `codync-host pair`, which asks in the terminal. Without any of them (`codync-host pair --json`, a script, SSH with no terminal), run `codync-host access approve <code>` with the 6 digits the phone shows. Add `--phone-only` for **Wi-Fi or Tailscale only**, or use `codync-host access deny <code>`.
+
+**Adding a computer later:** on a signed-in phone connected to a computer in no account, tap **Add to account** on its card in **Manage computers**. The computer asks the same way and shows the code, in the desktop app or the terminal UI; on a server, run `codync-host access approve <code>`. If the computer doesn't answer, it stays out of the account and the phone keeps connecting over Wi-Fi or Tailscale.
+
+Changing the account a computer belongs to (moving it, or **Remove from account**) takes away access from every device of the old account. A computer joining its first account warns first, and removes phones with no account or of another account: they pair again, signed in to that account. Phones paired before version 2.36 stay.
 
 ## Signing in
 
-The iPhone, Android and desktop apps ask you to sign in with Apple, Google or GitHub before you use them. Signing in doesn't give any device access by itself. It lets your phone find the computers in your account without scanning a code:
+You can use the iPhone, Android and desktop apps without an account: choose **Continue without an account** (on the computer, **Continue on this Mac** or **this computer**). Then phones pair by scanning the computer's code, only with a computer that isn't in an account, and connect only over Wi-Fi or Tailscale. The relay, **Ask for access**, custom icons, cloud assistants and public webhook addresses need a computer in an account and a phone signed in to it.
 
-1. On the computer, sign in to the desktop app. The computer joins your account. For an SSH computer, choose **Add to account** on its card in **Settings → Computers**.
+Signing in with Apple, Google or GitHub doesn't give any device access by itself. It lets your phone find the computers in your account without scanning a code, and reach them from anywhere:
+
+1. On the computer, sign in to the desktop app and choose **Add to account** when it asks. For an SSH computer, choose **Add to account** on its card in **Settings → Computers**.
 2. On the iPhone, sign in with the same account. The first time, the first page lists your account's computers; after that, they're in **Manage computers**. Tap **Ask for access**. The phone shows a 6-digit code. (Setting up another computer, like a VPS? Tap **Pair a new computer** on that first page.)
 3. On the computer, an **Access request** opens with a code. Choose **Approve** only if it matches the code on your phone exactly. If it doesn't, choose **Deny**: someone may be trying to get in.
 
@@ -53,12 +64,11 @@ The desktop app reaches your account's other computers the same way, with no SSH
 
 Signing out of the desktop app keeps the computer in your account. If you then sign in with a different account, the app asks whether to move the computer there. Choose **Move here** and your phone, signed in to the new account, finds it under **Manage computers**. Every device of the old account loses access, phones paired with a QR code included. Moving it turns **Skip the 6-digit check** off, so new devices ask with the 6-digit code; turn it back on in **Settings → Computers** if you want. Choose **Keep it there** to leave it where it is; you can still move it later with **Remove from account** and then **Add to account**.
 
-When the computer and the desktop app's account differ, an amber notice at the bottom of the sidebar says how (in the narrow sidebar, an amber icon; point at it to read it):
+When the computer is in another account than the desktop app's, an amber notice at the bottom of the sidebar says so (in the narrow sidebar, an amber icon; point at it to read it):
 
 - **This computer is in *someone@example.com*'s account:** click it to be asked again whether to move the computer here.
-- **This computer isn't in an account: its cloud is off**, **…: it uses a private relay**, or **This computer isn't in your account** (you took it out): click it to open **Settings → Computers**, where **Add to account** puts it in yours.
 
-Signing out of a phone stops its notifications from your computers, and it keeps them: sign back in with the same account and it connects again, with no scan. To take the phone off your computers, for example before giving it away, use **Start over** on the **Settings** tab instead of signing out. Computers a phone paired before sign-in was required come along: the first sign-in moves them into the account, with no new scan.
+Signing out of a phone stops its notifications from your computers, and it keeps them: sign back in with the same account and it connects again, with no scan. To take the phone off your computers, for example before giving it away, use **Start over** on the **Settings** tab instead of signing out. Computers a phone paired without an account stay on it when it signs in: with no new scan if that account is new on the phone, or after scanning each computer's code again if the account has been on this phone before, since it has its own key there. Either way a computer joins your account only when you choose **Add to account**.
 
 ## Deleting your account
 
@@ -156,7 +166,7 @@ The SSH tunnel serves only the desktop app. To use that computer from your phone
 
 A routine can start when another service (GitHub, a monitoring tool, a script) sends it a webhook. Each webhook routine has a key and two addresses:
 
-- A **public URL** on the Codync relay. Services anywhere can reach it without you opening a port. If your computer is offline, the relay keeps deliveries for up to 72 hours and hands them over when it's back.
+- A **public URL** on the Codync relay, for a computer in your account. Services anywhere can reach it without you opening a port. If your computer is offline, the relay keeps deliveries for up to 72 hours and hands them over when it's back.
 - A **local URL** on the computer itself (`http://127.0.0.1:19222/...`).
 
 Webhook deliveries are **not** end-to-end encrypted. The relay receives them over HTTPS, can read their content, and stores the routine's key to check signatures. Your computer checks the key again before anything runs. Turning the relay off doesn't take the public URL down (see [Turning the relay off](#turning-the-relay-off)). Setting up webhook routines: [Routines](/docs/routines).

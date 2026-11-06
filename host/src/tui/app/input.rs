@@ -410,6 +410,7 @@ impl App {
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
+                    Some(Click::DevServers) => self.open_dev_servers(),
                     Some(Click::Section(name)) => {
                         self.click_section(&name);
                         self.focus = Focus::Roster;

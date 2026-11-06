@@ -8,6 +8,7 @@ import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
 import { AgentModelPicker } from './AgentModelPicker'
+import { AgentAccountPicker } from './AgentAccountPicker'
 import { useAgentModels } from './agent-models'
 import { agentChoice } from './Fallbacks'
 import { AutoTextArea, Field } from './parts'
@@ -50,6 +51,12 @@ export function AgentAndModel({ draft, onChange }: { draft: BotDraft; onChange: 
           onChange={(id) => onChange((d) => ({ ...d, backend: id, account: null, model: null, modelOptions: {} }))}
         />
       </ValueRow>
+      <AgentAccountPicker backend={draft.backend} name={backend?.name ?? draft.backend} selection={draft.account}
+        online={store.connection.kind === 'online'} contextKey={JSON.stringify([store.contextId, store.computer.id, draft.id ?? 'new'])}
+        load={() => store.agentAccounts(draft.backend)} supported={backend?.accounts !== false}
+        authenticate={() => store.authenticateAgentAccount(draft.backend)} remove={(id) => store.deleteAgentAccount(id)}
+        signOut={backend?.signOut ? () => store.signOutAgent(draft.backend) : undefined}
+        onChange={(id) => onChange((d) => (d.account === id ? d : { ...d, account: id, model: null, modelOptions: {} }))} />
       {notice ? <Text size="caption" tone="attention" className="fade-in">{tr(notice)}</Text> : null}
       <AgentModelPicker backend={draft.backend} models={models} selection={draft.model} onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setOptions} sessionNote={false} />
     </VStack>

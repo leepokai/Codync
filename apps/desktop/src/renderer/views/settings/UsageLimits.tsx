@@ -23,18 +23,22 @@ export function UsageLimits({ usage }: { usage: Usage }) {
           </HStack>
           {usageStatus(provider) ? <Text size="caption" tone="secondary">{tr(usageStatus(provider)!)}</Text> : null}
           {provider.windows.map((w) => (
-            <HStack key={w.id} gap={10} className="settings-usage-row">
-              <Text tone="text" truncate className="settings-usage-title">{tr(windowTitle(w))}</Text>
-              {w.text ? (
-                <Text tone="text" truncate className="settings-usage-note">{w.text}</Text>
-              ) : (
-                <>
-                  <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
+            <div key={w.id} className="settings-usage-row">
+              <div className="settings-usage-head">
+                <Text tone="text" truncate className="settings-usage-title">{tr(windowTitle(w))}</Text>
+                {w.text ? (
+                  <Text tone="text" truncate className="settings-usage-note">{w.text}</Text>
+                ) : (
                   <Text tone="text" tabular className="settings-usage-percent">{windowReading(w, tr)}</Text>
+                )}
+              </div>
+              {w.text ? null : (
+                <div className="settings-usage-line">
+                  <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
                   <Text tone="secondary" truncate className="settings-usage-reset">{resetLine(resetDescription(w) ?? '')}</Text>
-                </>
+                </div>
               )}
-            </HStack>
+            </div>
           ))}
         </VStack>
       ))}

@@ -24,7 +24,6 @@ interface Props {
 
 /** Account lists belong to one computer; a context change discards their pending results. */
 export function AgentAccountPicker(props: Props) {
-  if (!props.supported) return null
   return <AccountPicker key={JSON.stringify([props.contextKey, props.backend, props.online])} {...props} />
 }
 

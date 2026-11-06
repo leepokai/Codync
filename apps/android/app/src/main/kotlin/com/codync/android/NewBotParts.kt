@@ -56,7 +56,18 @@ internal fun agentNotice(backend: JsonObject?): String? = when {
         ValueRow("Agent") {
             ChoicePicker(draft.backend, agents, { if (it != draft.backend) change(draft.withAgent(it).copy(account = null)) }, label = "Agent")
         }
-        agentNotice(all.firstOrNull { it.text("id") == draft.backend })?.let { Text(tr(it), style = Type.caption, color = Palette.warning) }
+        val info = all.firstOrNull { it.text("id") == draft.backend }
+        agentNotice(info)?.let { Text(tr(it), style = Type.caption, color = Palette.warning) }
+        if (info?.get("accounts")?.jsonPrimitive?.booleanOrNull != false) {
+            AgentAccountPicker(draft.backend, info?.text("name") ?: draft.backend, draft.account, state.actualConnection is LinkState.Ready,
+                "${state.generation}/${state.computer?.id}/${draft.id}",
+                true,
+                info?.get("signOut")?.jsonPrimitive?.booleanOrNull == true,
+                { store.agentAccounts(draft.backend) }, { store.authenticateAgentAccount(draft.backend) },
+                { store.deleteAgentAccount(it) }, { store.signOutAgent(draft.backend) }) {
+                change(draft.copy(account = it, model = null, modelOptions = emptyMap()))
+            }
+        }
         key(state.generation, state.computer?.id, draft.backend) {
             AgentModelPicker(state, { backend -> store.agentModels(backend, draft.account) }, draft.backend, draft.model, draft.modelOptions, false, null,
                 { model, options -> change(draft.copy(model = model, modelOptions = options)) }, null)

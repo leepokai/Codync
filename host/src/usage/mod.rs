@@ -217,36 +217,33 @@ pub async fn refresh(hub: &Hub) {
     let backends = tokio::task::spawn_blocking(crate::agent::backends::list).await.unwrap_or_default();
     let signed_out: std::collections::HashSet<&str> =
         backends.iter().filter(|b| b["signedIn"].as_bool() == Some(false)).filter_map(|b| b["id"].as_str()).collect();
+    // Everything collected lands in one copy: clients see the whole list change at once,
+    // not provider by provider as probes finish.
+    let mut next = hub.usage.locked().clone();
     // A signed-out CLI can leave local history behind (OpenCode's database). That
     // is not a plan this account can spend, so it must not become a bar.
-    {
-        let mut usage = hub.usage.locked().clone();
-        let before = usage.providers.len();
-        usage.providers.retain(|p| !signed_out_base(&signed_out, &p.id));
-        if usage.providers.len() != before {
-            hub.set_usage(usage);
-        }
-    }
-    apply(hub, &signed_out, codex, "codex", "Codex", "codex");
-    apply(hub, &signed_out, claude, "claude", "Claude", "claude");
-    apply(hub, &signed_out, omp_windows, "omp", "oh-my-pi", "omp usage");
-    apply(hub, &signed_out, amp_windows, "amp", "Amp", "amp usage");
-    apply(hub, &signed_out, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
-    apply(hub, &signed_out, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
-    apply(hub, &signed_out, antigravity, "antigravity", "Google Antigravity", "antigravity");
-    apply(hub, &signed_out, opencode, "opencode", "OpenCode", "opencode usage");
-    apply(hub, &signed_out, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
-    apply(hub, &signed_out, joined(junie), "junie", "Junie", "JetBrains IDE");
-    apply(hub, &signed_out, cursor_windows, "cursor", "Cursor", "Cursor");
-    apply(hub, &signed_out, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
-    apply(hub, &signed_out, grok_windows, "grok", "Grok", "grok billing");
-    account_reports(hub, &signed_out).await;
-    ensure_connected(hub, &backends);
+    next.providers.retain(|p| !signed_out_base(&signed_out, &p.id));
+    apply(&mut next, &signed_out, codex, "codex", "Codex", "codex");
+    apply(&mut next, &signed_out, claude, "claude", "Claude", "claude");
+    apply(&mut next, &signed_out, omp_windows, "omp", "oh-my-pi", "omp usage");
+    apply(&mut next, &signed_out, amp_windows, "amp", "Amp", "amp usage");
+    apply(&mut next, &signed_out, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
+    apply(&mut next, &signed_out, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
+    apply(&mut next, &signed_out, antigravity, "antigravity", "Google Antigravity", "antigravity");
+    apply(&mut next, &signed_out, opencode, "opencode", "OpenCode", "opencode usage");
+    apply(&mut next, &signed_out, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
+    apply(&mut next, &signed_out, joined(junie), "junie", "Junie", "JetBrains IDE");
+    apply(&mut next, &signed_out, cursor_windows, "cursor", "Cursor", "Cursor");
+    apply(&mut next, &signed_out, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
+    apply(&mut next, &signed_out, grok_windows, "grok", "Grok", "grok billing");
+    account_reports(hub, &mut next, &signed_out).await;
+    ensure_connected(&mut next, &backends);
+    hub.set_usage(next);
     *LAST_REFRESH.locked() = Some(std::time::Instant::now());
 }
 
 /// The plan windows of each isolated account, under the agent's name and its place: "Codex 2".
-async fn account_reports(hub: &Hub, signed_out: &std::collections::HashSet<&str>) {
+async fn account_reports(hub: &Hub, usage: &mut Usage, signed_out: &std::collections::HashSet<&str>) {
     let Ok(accounts) = crate::agent::account::list(None) else { return };
     let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for account in &accounts {
@@ -269,16 +266,14 @@ async fn account_reports(hub: &Hub, signed_out: &std::collections::HashSet<&str>
         tracing::info!(account = %account.id, windows = windows.as_ref().map_or(0, Vec::len), "isolated account probed");
         if let Some(windows) = windows {
             let id = format!("{}:{}", account.backend, account.id);
-            let mut usage = hub.usage.locked().clone();
             usage.replace(&id, &name, "account", windows);
-            hub.set_usage(usage);
         }
     }
 }
 
 /// A connected agent that couldn't report is still shown, with its status, so
 /// its counters don't silently disappear from the sidebar and Settings.
-fn ensure_connected(hub: &Hub, connected: &[serde_json::Value]) {
+fn ensure_connected(usage: &mut Usage, connected: &[serde_json::Value]) {
     let mut wanted: Vec<(String, String)> = Vec::new();
     for backend in connected {
         if backend["installed"] != true || backend["signedIn"] != true {
@@ -288,7 +283,6 @@ fn ensure_connected(hub: &Hub, connected: &[serde_json::Value]) {
         let Some(name) = reported_name(id) else { continue };
         wanted.push((id.to_owned(), name.to_owned()));
     }
-    let mut usage = hub.usage.locked().clone();
     // Gemini (Antigravity) and Gemini CLI are the same Google account: when the
     // plan is already reported, a second "unavailable" row only adds noise.
     let gemini_covered = usage.providers.iter().any(|p| p.id == "antigravity" && !p.windows.is_empty());
@@ -314,7 +308,6 @@ fn ensure_connected(hub: &Hub, connected: &[serde_json::Value]) {
     }
     if changed {
         usage.providers.sort_by(|a, b| a.id.cmp(&b.id));
-        hub.set_usage(usage);
     }
 }
 
@@ -361,7 +354,7 @@ fn signed_out_base(signed_out: &std::collections::HashSet<&str>, id: &str) -> bo
 }
 
 fn apply(
-    hub: &Hub,
+    usage: &mut Usage,
     signed_out: &std::collections::HashSet<&str>,
     windows: Option<Vec<Window>>,
     id: &'static str,
@@ -372,9 +365,7 @@ fn apply(
     if signed_out_base(signed_out, id) {
         return;
     }
-    let mut usage = hub.usage.locked().clone();
     usage.replace(id, name, source, windows);
-    hub.set_usage(usage);
 }
 
 #[cfg(test)]

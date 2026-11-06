@@ -1,9 +1,10 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
+import { isChat, normalizeBot, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
+import { ReadMarks } from './read-marks'
 import type { CallCue } from '@shared/calls'
 import { trNow } from '../lib/l10n.ts'
 
@@ -48,6 +49,13 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private readingViews = new Map<string, string>()
+  readonly reads = new ReadMarks({
+    bots: () => this.bots,
+    changed: () => this.changed(),
+    put: (bot) => this.putHostBot(normalizeBot(bot)),
+    perform: (op, undo) => this.perform(op, true, undo),
+    quietly: (op) => this.withLink(op, true),
+  })
 
   // MARK: lifecycle
 
@@ -129,7 +137,7 @@ export class BotSync extends BotMirror {
       this.connection = next
       this.changed()
     }
-    if (recovering) for (const botId of new Set(this.readingViews.values())) this.markRead(botId)
+    if (recovering) for (const botId of new Set(this.readingViews.values())) this.readOnScreen(botId)
   }
 
   /** Events (catch-up since `rev`, then live) for as long as the store lives. */
@@ -421,7 +429,7 @@ export class BotSync extends BotMirror {
   setReading(token: string, botId: string, active: boolean) {
     if (active) {
       this.readingViews.set(token, botId)
-      if (this.connection.kind === 'online') this.markRead(botId)
+      if (this.connection.kind === 'online') this.readOnScreen(botId)
     } else {
       this.readingViews.delete(token)
     }
@@ -430,16 +438,18 @@ export class BotSync extends BotMirror {
   private acknowledgeVisible(botId: string, entry?: Entry) {
     if (this.connection.kind !== 'online') return
     if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
-    this.markRead(botId)
+    this.readOnScreen(botId)
   }
 
-  markRead(botId: string) {
+  /** The chat on screen is read: the host leaves one marked unread alone, and ignores it when nothing there is unread. */
+  private readOnScreen(botId: string) {
+    if (this.reads.retryOpen(botId)) return
     void (async () => {
       if (!this.live) await sleep(INITIAL_GRACE)
       const client = this.live
       if (!client) return
       try {
-        await client.call('markRead', { botId })
+        await client.call('markRead', { botId, automatic: true })
       } catch {
         // The visible scope is acknowledged again when the link recovers.
       }

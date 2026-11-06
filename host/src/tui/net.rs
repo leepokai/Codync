@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinHandle;
 
 use super::app::{After, Msg};
 use super::manage::Reply;
@@ -108,11 +109,26 @@ impl Client {
 
     /// Runs a command in the background; the reply comes back as `Msg::Reply`.
     pub fn spawn_call(&self, method: &'static str, body: Value, after: After, tx: UnboundedSender<Msg>) {
+        drop(self.spawn_call_after(None, method, body, after, tx));
+    }
+
+    /// `spawn_call` once the call `before` it is done, retries included.
+    pub fn spawn_call_after(
+        &self,
+        before: Option<JoinHandle<()>>,
+        method: &'static str,
+        body: Value,
+        after: After,
+        tx: UnboundedSender<Msg>,
+    ) -> JoinHandle<()> {
         let c = self.clone();
         tokio::spawn(async move {
+            if let Some(before) = before {
+                let _ = before.await;
+            }
             let r = c.call(method, &body).await;
             let _ = tx.send(Msg::Reply(after, r));
-        });
+        })
     }
 
     /// Uploads `files` in 384 KiB chunks (under the channel's message limit, like the apps), then sends
@@ -353,6 +369,29 @@ mod tests {
         let _ = socket.read(&mut [0; 4096]).await.unwrap();
         socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await.unwrap();
         assert_eq!(call.await.unwrap(), Ok(serde_json::json!({})));
+    }
+
+    #[tokio::test]
+    async fn a_call_after_another_goes_once_that_one_is_done() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = super::Client::new(&format!("http://{}", listener.local_addr().unwrap()), Some("t"));
+        let (done, finished) = tokio::sync::oneshot::channel::<()>();
+        let before = tokio::spawn(async move {
+            let _ = finished.await;
+        });
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let call = client.spawn_call_after(Some(before), "stop", serde_json::json!({}), super::After::Nothing, tx);
+
+        let waiting = tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept()).await;
+        assert!(waiting.is_err(), "nothing reaches the host yet");
+
+        done.send(()).unwrap();
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let _ = socket.read(&mut [0; 4096]).await.unwrap();
+        socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await.unwrap();
+        call.await.unwrap();
+        assert!(rx.try_recv().is_ok(), "the reply came back");
     }
 
     #[test]

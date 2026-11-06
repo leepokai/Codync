@@ -64,8 +64,8 @@ extension BotStore {
     /// `perform` for a caller that waits: whether the computer took it. A refusal runs `undo`, taking
     /// back what the action already showed, before it reaches the dialog.
     @discardableResult
-    private func attempt(replay: Bool = false, undo: @MainActor () -> Void = {},
-                         _ op: @MainActor (HostClient) async throws -> Void) async -> Bool {
+    func attempt(replay: Bool = false, undo: @MainActor () -> Void = {},
+                 _ op: @MainActor (HostClient) async throws -> Void) async -> Bool {
         do {
             try await withLink(replay: replay, op)
             return true
@@ -154,50 +154,6 @@ extension BotStore {
             // The card's own update follows on the events stream; hold the spinner until then.
             try? await Task.sleep(for: .seconds(2))
         }
-    }
-
-    /// Views register only while visible in an active scene. Multiple windows may
-    /// read the same conversation without unregistering each other.
-    func setReading(_ token: UUID, botId: String, active: Bool) {
-        if active {
-            readingViews[token] = botId
-            if connection == .online { markRead(botId) }
-        } else {
-            readingViews[token] = nil
-        }
-    }
-
-    func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
-        guard connection == .online else { return }
-        guard readingViews.values.contains(botId), entry?.isChat != false else { return }
-        markRead(botId)
-    }
-
-    /// The chat on screen is read; the host ignores it when nothing there is unread.
-    public func markRead(_ botId: String) {
-        // Entry events may arrive before the roster's unread count. The host is
-        // authoritative and treats a redundant scoped acknowledgement as a no-op.
-        Task {
-            // Opening a cached conversation can race the foreground reconnect.
-            // This background acknowledgement must never interrupt the conversation.
-            if live == nil {
-                try? await Task.sleep(for: Self.initialConnectionGrace)
-            }
-            guard !Task.isCancelled, isActive, let client = live else { return }
-            do {
-                try await client.markRead(botId)
-            } catch {
-                // The visible scope is acknowledged again when the link recovers.
-                log.debug("read acknowledgement deferred: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    /// The roster's "Mark as read": everything in the chat.
-    public func markAllRead(_ botId: String) {
-        guard (bots[botId]?.unread ?? 0) > 0 else { return }
-        bots[botId]?.unread = 0
-        perform(replay: true) { try await $0.markRead(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {

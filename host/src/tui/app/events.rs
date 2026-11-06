@@ -24,6 +24,7 @@ impl App {
                 }
                 if on {
                     self.error = None;
+                    self.relinked();
                     // Every reconnect: the host may have been updated (or replaced) meanwhile.
                     self.call("hello", json!({}), After::Hello);
                 }
@@ -105,7 +106,7 @@ impl App {
         outside_window(self.floors.get(bot).copied(), held, e)
     }
 
-    fn upsert_bot(&mut self, v: &Value) {
+    pub(super) fn upsert_bot(&mut self, v: &Value) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
             self.bots.remove(id);
@@ -125,7 +126,7 @@ impl App {
         let Some(new) = Bot::parse(v) else { return };
         // Marked read once per change.
         if self.bots.get(&new.id).is_none_or(|old| old.unread != new.unread) {
-            self.reading.remove(&new.id);
+            self.reads.reading.remove(&new.id);
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
@@ -181,6 +182,7 @@ impl App {
                 match after {
                     After::Hello => self.error = Some(e),
                     After::Tracked => {}
+                    After::Opened(id, mark) => self.open_failed(id, mark),
                     After::History(id) => {
                         self.history_busy.remove(&id);
                     }
@@ -215,6 +217,7 @@ impl App {
         match after {
             After::Nothing
             | After::Tracked
+            | After::Opened(..)
             | After::Answered(_)
             | After::Sheet(_)
             | After::Network(_)
@@ -241,6 +244,7 @@ impl App {
                 self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),
+            After::MarkedUnread => self.marked_unread(&v),
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");

@@ -136,9 +136,18 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::chat::lead::set(hub, str_arg(&b, "botId")?)?;
             json!({})
         }
+        // `automatic`: the chat is on screen, which isn't the user reading one marked unread.
         "markRead" => {
-            hub.mark_read(str_arg(&b, "botId")?)?;
+            let id = str_arg(&b, "botId")?;
+            if b["automatic"] == true {
+                hub.read_on_screen(id)?;
+            } else {
+                hub.mark_read(id)?;
+            }
             json!({})
+        }
+        "markUnread" => {
+            json!({"bot": hub.mark_unread(str_arg(&b, "botId")?)?})
         }
         // One chunk of a file for a later `send` (`attachments`); base64 `data` at `offset`.
         "upload" => {

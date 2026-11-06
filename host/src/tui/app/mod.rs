@@ -16,6 +16,7 @@ mod new_bot;
 mod overlay_keys;
 mod pair;
 mod queue;
+mod reads;
 mod roster;
 mod section_order;
 mod slash;
@@ -141,8 +142,7 @@ pub struct App {
     pub modes: HashMap<String, Vec<crate::agent::modes::Mode>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
-    /// Chats marked read since their bot's unread count last changed.
-    reading: HashSet<String>,
+    reads: reads::ReadMarks,
     history_busy: HashSet<String>,
     /// Permission cards whose answer is on its way, with the chosen option.
     pub answering: HashMap<String, String>,
@@ -219,7 +219,7 @@ impl App {
             fast_mode: HashSet::new(),
             modes: HashMap::new(),
             shell: None,
-            reading: HashSet::new(),
+            reads: reads::ReadMarks::default(),
             history_busy: HashSet::new(),
             answering: HashMap::new(),
             history_done: HashSet::new(),
@@ -324,7 +324,9 @@ impl App {
             || self.bots.values().any(|b| b.status == Status::Working)
     }
 
+    /// The user picks a chat, also the one already selected.
     fn select(&mut self, id: &str) {
+        self.reads.chat_opened = true;
         if self.selected.as_deref() != Some(id) {
             self.selected = Some(id.to_owned());
             self.reply = None;
@@ -379,28 +381,24 @@ impl App {
 
     /// Drops expired toasts and keeps the viewed bot marked read.
     pub fn tick(&mut self) {
-        if self.selected.is_none()
-            && let Some(id) = self.roster().first().map(|b| b.id.clone())
-        {
-            self.selected = Some(id);
-        }
+        self.select_first_bot();
         let now = Instant::now();
         self.toasts.retain(|t| t.until > now);
         if self.hint.as_ref().is_some_and(|(_, until)| *until <= now) {
             self.hint = None;
         }
-        if self.chat_visible()
-            && self.term_focused
-            && let Some(b) = self.bot()
-            && b.unread > 0
-        {
-            let id = b.id.clone();
-            if self.reading.insert(id.clone()) {
-                self.call("markRead", json!({"botId": id}), After::Nothing);
-            }
-        }
+        self.read_what_is_on_screen();
         if self.chat_top && self.chat_visible() {
             self.load_history();
+        }
+    }
+
+    /// Nothing selected: the first bot, which the user didn't pick.
+    fn select_first_bot(&mut self) {
+        if self.selected.is_none()
+            && let Some(id) = self.roster().first().map(|b| b.id.clone())
+        {
+            self.selected = Some(id);
         }
     }
 

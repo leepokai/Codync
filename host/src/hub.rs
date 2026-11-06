@@ -9,7 +9,7 @@ use crate::screen::Screen;
 use crate::service;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, Store};
 use crate::usage::Usage;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -24,6 +24,7 @@ mod lead;
 mod order;
 mod patch;
 mod reactions;
+mod reads;
 mod sections;
 mod sync;
 mod validate;
@@ -222,21 +223,6 @@ impl Hub {
         self.store.bot(id).ok().flatten().map_or_else(|| "A deleted bot".into(), |b| b.config.name)
     }
 
-    /// Marks what the user has seen as read. Nothing unread there is a no-op, so clients
-    /// may call it whenever a chat is on screen.
-    pub fn mark_read(&self, id: &str) -> Result<()> {
-        let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
-        if self.store.unread(id, row.read_rev) == 0 {
-            return Ok(());
-        }
-        let _g = self.emit_lock.locked();
-        self.store.mark_read(id)?;
-        if let Some(v) = self.bot_value(id) {
-            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
-        }
-        Ok(())
-    }
-
     #[cfg(test)]
     pub fn bot_value_for_test(&self, id: &str) -> Value {
         self.bot_value(id).unwrap_or(Value::Null)
@@ -259,8 +245,13 @@ impl Hub {
         if self.store.touch_bot(id).is_ok()
             && let Some(v) = self.bot_value(id)
         {
-            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
+            self.broadcast_bot(&v);
         }
+    }
+
+    /// Tells every client how a bot is now. Under `emit_lock`, so events leave in rev order.
+    fn broadcast_bot(&self, bot: &Value) {
+        let _ = self.events.send(json!({"type": "bot", "rev": bot["rev"], "bot": bot}));
     }
 
     pub fn set_runtime(&self, id: &str, f: impl FnOnce(&mut Runtime)) {

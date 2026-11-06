@@ -89,7 +89,7 @@ async fn the_chat_on_screen_is_marked_read() {
     app.selected = Some("b".into());
     (app.width, app.term_focused) = (Width::Wide, true);
     app.tick();
-    assert!(app.reading.contains("b"));
+    assert!(app.reads.reading.contains("b"));
 }
 
 #[tokio::test]

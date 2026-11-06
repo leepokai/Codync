@@ -150,6 +150,12 @@ public final class BotStore {
 
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
+    /// Each chat's last read mark on its way, retries included: the next waits for it.
+    @ObservationIgnored var sendingReadMarks: [String: Task<Void, Never>] = [:]
+    /// What each chat showed before the reads on their way: a second read mustn't take the first's optimistic state for it.
+    @ObservationIgnored var beforeReads: [String: Bot] = [:]
+    /// Chats whose last open never reached the host.
+    @ObservationIgnored var unsentOpens: Set<String> = []
 
     var cacheStamp: String?
 

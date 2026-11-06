@@ -187,13 +187,30 @@ export class FakeHost {
         const target = this.entries.find((e) => e.id === str('replyTo') && e.botId === chat.id && isReplyable(e))
         const replyTo = target && quoteOf(target)
         const entry = this.add({ botId: chat.id, kind: 'user', data: { text: str('text'), status: 'sent', clientNonce: str('clientNonce'), ...(replyTo ? { replyTo } : {}) } })
+        if (chat.unread > 0 || chat.keptUnread) {
+          chat.unread = 0
+          chat.keptUnread = false
+          this.emitBot(chat)
+        }
         void this.converse(chat, str('text'), replyTo?.author)
         return { entry }
       }
+      case 'markUnread': {
+        const bot = this.bots.get(str('botId'))
+        if (!bot) throw fail('That bot was deleted.')
+        if (bot.unread === 0 && this.entries.some((e) => e.botId === bot.id && e.kind !== 'user' && isChat(e))) {
+          bot.unread = 1
+          bot.keptUnread = true
+          this.emitBot(bot)
+        }
+        return { bot: this.botJSON(bot) }
+      }
       case 'markRead': {
         const bot = this.bots.get(str('botId'))
-        if (bot && bot.unread > 0) {
+        // `automatic` is the chat being on screen: one marked unread waits for the user.
+        if (bot && (bot.unread > 0 || bot.keptUnread) && !(b.automatic && bot.keptUnread)) {
           bot.unread = 0
+          bot.keptUnread = false
           this.emitBot(bot)
         }
         return {}

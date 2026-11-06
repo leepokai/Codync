@@ -16,8 +16,11 @@ fun AppStore.openBot(id: String?) {
     val leaving = id != state.value.selectedBot
     if (leaving) callWait?.cancel()
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
-    if (id != null) { opened(this); acknowledgeVisible() }
+    if (id == null) return
+    opened(this)
+    readOpened(id)
 }
+
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
 /**
@@ -52,12 +55,6 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
             else -> false
         }
     }
-}
-
-/** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
-internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
-    if (!foreground || channel?.state?.value !is LinkState.Ready) return
-    for (chat in chats) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
 }
 
 /** The entries of a host reply (`callEntries`, `botConversation`). */
@@ -124,21 +121,23 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
                 // Relay presence can lag; use the same nonce after the channel becomes ready.
             }
         }
-        val connection = ready()
-        val ids = mutableListOf<String>()
-        var completed = 0L
-        val total = send.files.sumOf { it.size }
-        for (file in send.files) {
-            val id = UUID.randomUUID().toString()
-            HostFiles(connection).upload(send.botId, id, file) { offset ->
-                val percent = if (total == 0L) 100 else ((completed + offset) * 100 / total).toInt()
-                mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
+        val result = reads.send(send.botId) {
+            val connection = ready()
+            val ids = mutableListOf<String>()
+            var completed = 0L
+            val total = send.files.sumOf { it.size }
+            for (file in send.files) {
+                val id = UUID.randomUUID().toString()
+                HostFiles(connection).upload(send.botId, id, file) { offset ->
+                    val percent = if (total == 0L) 100 else ((completed + offset) * 100 / total).toInt()
+                    mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
+                }
+                completed += file.size
+                ids.add(id)
+                withContext(Dispatchers.IO) { attachments.cache(id, file) }
             }
-            completed += file.size
-            ids.add(id)
-            withContext(Dispatchers.IO) { attachments.cache(id, file) }
+            connection.call("send", send.body(ids))
         }
-        val result = connection.call("send", send.body(ids))
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()

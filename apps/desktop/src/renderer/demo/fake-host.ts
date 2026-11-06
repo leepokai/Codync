@@ -187,6 +187,11 @@ export class FakeHost {
         const target = this.entries.find((e) => e.id === str('replyTo') && e.botId === chat.id && isReplyable(e))
         const replyTo = target && quoteOf(target)
         const entry = this.add({ botId: chat.id, kind: 'user', data: { text: str('text'), status: 'sent', clientNonce: str('clientNonce'), ...(replyTo ? { replyTo } : {}) } })
+        if (chat.unread > 0 || chat.keptUnread) {
+          chat.unread = 0
+          chat.keptUnread = false
+          this.emitBot(chat)
+        }
         void this.converse(chat, str('text'), replyTo?.author)
         return { entry }
       }

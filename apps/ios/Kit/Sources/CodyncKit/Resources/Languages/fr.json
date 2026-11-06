@@ -1777,7 +1777,6 @@
   "Pair a new computer": "Associer un nouvel ordinateur",
   "Install Codync on a VPS or another machine.": "Installez Codync sur un VPS ou une autre machine.",
   "Open the website on your computer to download Codync": "Ouvrez le site sur votre ordinateur pour télécharger Codync",
-  "Sign in there with {email} and it shows up here.": "Connectez-vous-y avec {email} et il apparaîtra ici.",
   "Copy website link": "Copier le lien du site",
   "Check the code on {name}": "Vérifiez le code sur {name}",
   "Approve on {name}": "Approuvez sur {name}",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "Vérifiez que ce téléphone et l’ordinateur sont sur le même Wi-Fi ou tous deux sur Tailscale.",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "Ce compte a déjà sa propre clé sur cet iPhone. Scannez à nouveau le code de chaque ordinateur jumelé sans compte ; vos messages sont conservés.",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "Ce compte a déjà sa propre clé sur ce téléphone. Scannez à nouveau le code de chaque ordinateur jumelé sans compte ; vos messages sont conservés.",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email} veut utiliser cet ordinateur, qui rejoint alors le compte de {email}."
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email} veut utiliser cet ordinateur, qui rejoint alors le compte de {email}.",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "Connectez-vous-y avec {email} et ajoutez-le à votre compte : il apparaîtra ici.",
+  "Scan with the Codync app or the iPhone Camera.": "Scannez avec l'app Codync ou l'appareil photo de l'iPhone."
 }

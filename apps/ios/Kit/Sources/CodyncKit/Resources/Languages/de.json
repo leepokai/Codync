@@ -1777,7 +1777,6 @@
   "Pair a new computer": "Neuen Computer koppeln",
   "Install Codync on a VPS or another machine.": "Installiere Codync auf einem VPS oder einem anderen Rechner.",
   "Open the website on your computer to download Codync": "Öffne die Website auf deinem Computer, um Codync herunterzuladen",
-  "Sign in there with {email} and it shows up here.": "Melde dich dort mit {email} an, dann erscheint er hier.",
   "Copy website link": "Website-Link kopieren",
   "Check the code on {name}": "Prüfe den Code auf {name}",
   "Approve on {name}": "Auf {name} genehmigen",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "Prüfe, ob dieses Telefon und der Computer im selben WLAN oder beide mit Tailscale verbunden sind.",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "Dieses Konto hat auf diesem iPhone bereits einen eigenen Schlüssel. Scanne den Code jedes Computers erneut, den du ohne Konto gekoppelt hast. Deine Nachrichten bleiben erhalten.",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "Dieses Konto hat auf diesem Telefon bereits einen eigenen Schlüssel. Scanne den Code jedes Computers erneut, den du ohne Konto gekoppelt hast. Deine Nachrichten bleiben erhalten.",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email} möchte diesen Computer verwenden, der dann dem Konto von {email} beitritt."
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email} möchte diesen Computer verwenden, der dann dem Konto von {email} beitritt.",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "Melde dich dort mit {email} an und füge ihn deinem Konto hinzu, dann erscheint er hier.",
+  "Scan with the Codync app or the iPhone Camera.": "Scanne mit der Codync-App oder der iPhone-Kamera."
 }

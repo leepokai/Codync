@@ -1777,7 +1777,6 @@
   "Pair a new computer": "配對一臺新電腦",
   "Install Codync on a VPS or another machine.": "在 VPS 或另一臺機器上安裝 Codync。",
   "Open the website on your computer to download Codync": "在電腦上開啟網站來下載 Codync",
-  "Sign in there with {email} and it shows up here.": "在電腦上用 {email} 登入，它就會出現在這裡。",
   "Copy website link": "複製網站連結",
   "Check the code on {name}": "核對 {name} 上顯示的碼",
   "Approve on {name}": "在 {name} 上同意",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "確認這臺手機和電腦在同一個 Wi-Fi，或都開了 Tailscale。",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "這個賬戶在這臺 iPhone 上已有自己的金鑰。請重新掃描每台未登入時配對的電腦的 QR 碼；訊息會保留。",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "這個賬戶在這支手機上已有自己的金鑰。請重新掃描每台未登入時配對的電腦的 QR 碼；訊息會保留。",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email} 想使用這台電腦，電腦隨後會加入 {email} 的賬戶。"
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email} 想使用這台電腦，電腦隨後會加入 {email} 的賬戶。",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "在那裡用 {email} 登入並將電腦加入賬戶，它就會顯示在這裡。",
+  "Scan with the Codync app or the iPhone Camera.": "用 Codync App 或 iPhone 相機掃描。"
 }

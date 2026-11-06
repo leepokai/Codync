@@ -1777,7 +1777,6 @@
   "Pair a new computer": "새 컴퓨터 페어링",
   "Install Codync on a VPS or another machine.": "VPS나 다른 컴퓨터에 Codync를 설치합니다.",
   "Open the website on your computer to download Codync": "컴퓨터에서 웹사이트를 열어 Codync를 다운로드하세요",
-  "Sign in there with {email} and it shows up here.": "그 컴퓨터에서 {email}(으)로 로그인하면 여기에 표시됩니다.",
   "Copy website link": "웹사이트 링크 복사",
   "Check the code on {name}": "{name}에서 코드 확인",
   "Approve on {name}": "{name}에서 승인",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "이 휴대폰과 컴퓨터가 같은 Wi-Fi에 있거나 둘 다 Tailscale에 연결되어 있는지 확인하세요.",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "이 계정은 이 iPhone에 자체 키가 이미 있습니다. 계정 없이 페어링한 각 컴퓨터의 코드를 다시 스캔하세요. 메시지는 유지됩니다.",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "이 계정은 이 휴대폰에 자체 키가 이미 있습니다. 계정 없이 페어링한 각 컴퓨터의 코드를 다시 스캔하세요. 메시지는 유지됩니다.",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email}이(가) 이 컴퓨터를 사용하려고 합니다. 컴퓨터는 {email} 계정에 참여합니다."
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email}이(가) 이 컴퓨터를 사용하려고 합니다. 컴퓨터는 {email} 계정에 참여합니다.",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "거기서 {email}(으)로 로그인하고 계정에 추가하면 여기에 표시됩니다.",
+  "Scan with the Codync app or the iPhone Camera.": "Codync 앱 또는 iPhone 카메라로 스캔하세요."
 }

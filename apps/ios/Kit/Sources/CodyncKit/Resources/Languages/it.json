@@ -1777,7 +1777,6 @@
   "Pair a new computer": "Associa un nuovo computer",
   "Install Codync on a VPS or another machine.": "Installa Codync su un VPS o su un'altra macchina.",
   "Open the website on your computer to download Codync": "Apri il sito sul tuo computer per scaricare Codync",
-  "Sign in there with {email} and it shows up here.": "Accedi lì con {email} e comparirà qui.",
   "Copy website link": "Copia il link del sito",
   "Check the code on {name}": "Controlla il codice su {name}",
   "Approve on {name}": "Approva su {name}",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "Controlla che questo telefono e il computer siano sullo stesso Wi-Fi o entrambi su Tailscale.",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "Questo account ha già una propria chiave su questo iPhone. Scansiona di nuovo il codice di ogni computer associato senza account; i tuoi messaggi restano.",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "Questo account ha già una propria chiave su questo telefono. Scansiona di nuovo il codice di ogni computer associato senza account; i tuoi messaggi restano.",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email} vuole usare questo computer, che poi entra nell'account di {email}."
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email} vuole usare questo computer, che poi entra nell'account di {email}.",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "Accedi lì con {email} e aggiungilo al tuo account: comparirà qui.",
+  "Scan with the Codync app or the iPhone Camera.": "Scansiona con l'app Codync o la fotocamera dell'iPhone."
 }

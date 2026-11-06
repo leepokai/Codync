@@ -140,7 +140,7 @@ private struct InstallPage: View {
                         .buttonStyle(.secondary)
                         // The same account is what lets this phone find the computer afterwards.
                         if let email = account.email {
-                            Text(L10n.tr("Sign in there with {email} and it shows up here.").replacingOccurrences(of: "{email}", with: email))
+                            Text(L10n.tr("Sign in there with {email} and add it to your account, and it shows up here.").replacingOccurrences(of: "{email}", with: email))
                                 .font(.subheadline)
                                 .foregroundStyle(Palette.secondary)
                         }

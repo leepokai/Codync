@@ -139,7 +139,7 @@ private enum class ComputerOS { Mac, Linux }
                     }
                 }
                 // The same account is what lets this phone find the computer afterwards.
-                if (email != null) Text(tr("Sign in there with {email} and it shows up here.").replace("{email}", email),
+                if (email != null) Text(tr("Sign in there with {email} and add it to your account, and it shows up here.").replace("{email}", email),
                     style = Type.subheadline, color = Palette.secondary)
             }
             SegmentedChoice(os, listOf(ComputerOS.Mac to "Mac", ComputerOS.Linux to "Linux"), choose)

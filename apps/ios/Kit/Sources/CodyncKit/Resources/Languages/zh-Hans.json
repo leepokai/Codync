@@ -1777,7 +1777,6 @@
   "Pair a new computer": "配对一台新电脑",
   "Install Codync on a VPS or another machine.": "在 VPS 或另一台机器上安装 Codync。",
   "Open the website on your computer to download Codync": "在电脑上打开网站来下载 Codync",
-  "Sign in there with {email} and it shows up here.": "在电脑上用 {email} 登录，它就会出现在这里。",
   "Copy website link": "复制网站链接",
   "Check the code on {name}": "核对 {name} 上显示的码",
   "Approve on {name}": "在 {name} 上同意",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "确认这台手机和电脑在同一个 Wi-Fi，或都开了 Tailscale。",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "这个账户在这台 iPhone 上已有自己的密钥。请重新扫描每台未登录时配对的电脑的二维码；消息会保留。",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "这个账户在这部手机上已有自己的密钥。请重新扫描每台未登录时配对的电脑的二维码；消息会保留。",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email} 想使用这台电脑，电脑随后会加入 {email} 的账户。"
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email} 想使用这台电脑，电脑随后会加入 {email} 的账户。",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "在那里用 {email} 登录并将电脑加入账户，它就会显示在这里。",
+  "Scan with the Codync app or the iPhone Camera.": "用 Codync App 或 iPhone 相机扫描。"
 }

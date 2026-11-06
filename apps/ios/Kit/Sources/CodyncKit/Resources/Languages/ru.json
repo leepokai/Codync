@@ -1777,7 +1777,6 @@
   "Pair a new computer": "Подключить новый компьютер",
   "Install Codync on a VPS or another machine.": "Установите Codync на VPS или другую машину.",
   "Open the website on your computer to download Codync": "Откройте сайт на компьютере, чтобы скачать Codync",
-  "Sign in there with {email} and it shows up here.": "Войдите там как {email}, и он появится здесь.",
   "Copy website link": "Скопировать ссылку на сайт",
   "Check the code on {name}": "Сверьте код на компьютере {name}",
   "Approve on {name}": "Подтвердите на компьютере {name}",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "Проверьте, что этот телефон и компьютер в одной сети Wi-Fi или оба подключены к Tailscale.",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "У этого аккаунта уже есть свой ключ на этом iPhone. Снова отсканируйте код каждого компьютера, сопряжённого без аккаунта; ваши сообщения сохранятся.",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "У этого аккаунта уже есть свой ключ на этом телефоне. Снова отсканируйте код каждого компьютера, сопряжённого без аккаунта; ваши сообщения сохранятся.",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email} хочет использовать этот компьютер, который затем присоединится к аккаунту {email}."
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email} хочет использовать этот компьютер, который затем присоединится к аккаунту {email}.",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "Войдите там как {email} и добавьте его в аккаунт: он появится здесь.",
+  "Scan with the Codync app or the iPhone Camera.": "Отсканируйте в приложении Codync или камерой iPhone."
 }

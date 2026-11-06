@@ -1777,7 +1777,6 @@
   "Pair a new computer": "新しいコンピューターをペアリングする",
   "Install Codync on a VPS or another machine.": "VPS や別のマシンに Codync をインストールします。",
   "Open the website on your computer to download Codync": "コンピューターでウェブサイトを開いて Codync をダウンロードする",
-  "Sign in there with {email} and it shows up here.": "そのコンピューターで {email} でサインインすると、ここに表示されます。",
   "Copy website link": "ウェブサイトのリンクをコピー",
   "Check the code on {name}": "{name} のコードを確認",
   "Approve on {name}": "{name} で承認",
@@ -1879,5 +1878,7 @@
   "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.": "この電話とコンピュータが同じ Wi-Fi 上にあるか、どちらも Tailscale に接続していることを確認してください。",
   "This account already has its own key on this iPhone. Scan the code of each computer you paired without an account again; your messages are kept.": "このアカウントはこの iPhone に独自のキーを持っています。アカウントなしでペアリングした各コンピュータのコードをもう一度スキャンしてください。メッセージは保持されます。",
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "このアカウントはこの電話に独自のキーを持っています。アカウントなしでペアリングした各コンピュータのコードをもう一度スキャンしてください。メッセージは保持されます。",
-  "{email} wants to use this computer, which then joins {email}'s account.": "{email} がこのコンピュータを使おうとしています。このコンピュータは {email} のアカウントに参加します。"
+  "{email} wants to use this computer, which then joins {email}'s account.": "{email} がこのコンピュータを使おうとしています。このコンピュータは {email} のアカウントに参加します。",
+  "Sign in there with {email} and add it to your account, and it shows up here.": "そこで {email} でサインインしてアカウントに追加すると、ここに表示されます。",
+  "Scan with the Codync app or the iPhone Camera.": "Codync アプリまたは iPhone のカメラでスキャンしてください。"
 }

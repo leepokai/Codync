@@ -1841,5 +1841,8 @@
   "Credits": "クレジット",
   "Prepaid": "プリペイド",
   "Monthly": "月間",
-  "Completions": "補完"
+  "Completions": "補完",
+  "Choose and arrange": "選択と並べ替え",
+  "Move {name}": "{name} を移動",
+  "↑↓ select · J K arrange · space toggle · esc close": "↑↓ 選択 · J K 並べ替え · space 切替 · esc 閉じる"
 }

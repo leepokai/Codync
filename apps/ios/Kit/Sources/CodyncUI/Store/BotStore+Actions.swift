@@ -403,6 +403,15 @@ extension BotStore {
         }
     }
 
+    /// The order this computer lists its agents in. A host older than this refuses the call: the error shows and the order stays.
+    public func setUsageOrder(_ ids: [String]) async {
+        do {
+            setUsage(try await ready().setUsageOrder(ids))
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     public func refreshUsage() async {
         guard !retired, let client else { return }
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }

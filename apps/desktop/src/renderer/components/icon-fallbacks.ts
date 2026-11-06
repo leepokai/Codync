@@ -161,6 +161,7 @@ const map: Record<string, IconNode> = {
   'server.rack': L.Server,
   shippingbox: L.Package,
   'sidebar.left': L.PanelLeft,
+  'line.3.horizontal': L.Menu,
   'slider.horizontal.3': L.SlidersHorizontal,
   sparkles: L.Sparkles,
   'speaker.slash.fill': L.VolumeX,

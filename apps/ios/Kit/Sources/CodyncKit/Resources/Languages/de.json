@@ -1841,5 +1841,8 @@
   "Credits": "Guthaben",
   "Prepaid": "Prepaid",
   "Monthly": "Monatlich",
-  "Completions": "Vervollständigungen"
+  "Completions": "Vervollständigungen",
+  "Choose and arrange": "Auswählen und anordnen",
+  "Move {name}": "{name} verschieben",
+  "↑↓ select · J K arrange · space toggle · esc close": "↑↓ wählen · J K ordnen · space schalten · esc schließen"
 }

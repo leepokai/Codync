@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -65,7 +64,7 @@ import com.codync.android.design.*
         // One spoken line for the whole header (the count and the badge say nothing alone): clear the parts, then describe it.
         .clearAndSetSemantics {
             heading()
-            customActions = listOf(CustomAccessibilityAction(translate("Move up")) { move(-1); true }, CustomAccessibilityAction(translate("Move down")) { move(1); true })
+            customActions = moveActions(translate, move)
             stateDescription = state
             contentDescription = spoken
         }
@@ -89,7 +88,7 @@ import com.codync.android.design.*
     val translate = translator()
     Text(tr("Bots"), modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp).contextActions(reorder = drag) { emptyList() }.semantics {
         heading()
-        customActions = listOf(CustomAccessibilityAction(translate("Move up")) { move(-1); true }, CustomAccessibilityAction(translate("Move down")) { move(1); true })
+        customActions = moveActions(translate, move)
     }.padding(vertical = 6.dp),
         style = Type.footnote.semibold, color = Palette.secondary)
 }

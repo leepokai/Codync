@@ -36,7 +36,7 @@ mod vibe;
 
 pub use claude::{ingest_claude_rate_limit, ingest_statusline};
 pub(crate) use command::strip_ansi;
-pub use services::{bots_changed, set_shown};
+pub use services::{bots_changed, set_order, set_shown};
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -118,7 +118,10 @@ impl Usage {
     /// What the apps get: without the readings of the agents the user doesn't show.
     pub fn visible(&self) -> Self {
         let hidden = |id: &str| self.services.iter().any(|service| service.id == id && !service.shown);
-        let providers = self.providers.iter().filter(|provider| !hidden(provider.id)).cloned().collect();
+        let rank = |id: &str| self.services.iter().position(|service| service.id == id).unwrap_or(usize::MAX);
+        let mut providers: Vec<Provider> =
+            self.providers.iter().filter(|provider| !hidden(provider.id)).cloned().collect();
+        providers.sort_by_key(|provider| rank(provider.id));
         Self { providers, services: self.services.clone() }
     }
 

@@ -1841,5 +1841,8 @@
   "Credits": "Créditos",
   "Prepaid": "Pré-pago",
   "Monthly": "Mensal",
-  "Completions": "Preenchimentos"
+  "Completions": "Preenchimentos",
+  "Choose and arrange": "Escolher e organizar",
+  "Move {name}": "Mover {name}",
+  "↑↓ select · J K arrange · space toggle · esc close": "↑↓ escolher · J K ordenar · space alternar · esc fechar"
 }

@@ -76,7 +76,7 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
     put(buf, inner.x, inner.bottom() - 1, inner.width, &footer, t.dim.patch(t.panel));
 }
 
-/// Which agents' limits show on this computer.
+/// Which agents' limits show on this computer, and in what order.
 pub(super) fn usage_chooser(buf: &mut Buffer, area: Rect, app: &App, row: usize) {
     let t = theme();
     let services = usage_services(app);
@@ -106,7 +106,8 @@ pub(super) fn usage_chooser(buf: &mut Buffer, area: Rect, app: &App, row: usize)
     }
     let note = tr("On by default for the agents your bots run.");
     put(buf, inner.x, inner.bottom() - 2, inner.width, note.as_ref(), t.dim.patch(t.panel));
-    put(buf, inner.x, inner.bottom() - 1, inner.width, "↑↓ move · space toggle · esc close", t.dim.patch(t.panel));
+    let keys = tr("↑↓ select · J K arrange · space toggle · esc close");
+    put(buf, inner.x, inner.bottom() - 1, inner.width, keys.as_ref(), t.dim.patch(t.panel));
 }
 
 /// One limit: its label, a bar with the percent and when it resets; or its note.

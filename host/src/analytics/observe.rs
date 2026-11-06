@@ -88,6 +88,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("on".into(), (b["shown"] == true).into());
             Event::SettingChanged
         }
+        "setUsageOrder" => {
+            p.insert("setting".into(), "usage_order".into());
+            p.insert("on".into(), true.into());
+            Event::SettingChanged
+        }
         "updateBot" => Event::BotUpdated,
         "reorderBots" => Event::BotsReordered,
         "renameSection" => {

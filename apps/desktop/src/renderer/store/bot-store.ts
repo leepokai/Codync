@@ -459,6 +459,11 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  async setUsageOrder(ids: string[]) {
+    this.usage = await (await this.ready()).call<Usage>('setUsageOrder', { ids })
+    this.changed()
+  }
+
   async refreshUsage() {
     if (this.retired || !this.client) return
     try {

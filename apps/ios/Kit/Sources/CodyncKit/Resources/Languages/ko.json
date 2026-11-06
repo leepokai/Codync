@@ -1841,5 +1841,8 @@
   "Credits": "크레딧",
   "Prepaid": "선불",
   "Monthly": "월간",
-  "Completions": "자동 완성"
+  "Completions": "자동 완성",
+  "Choose and arrange": "선택 및 정렬",
+  "Move {name}": "{name} 이동",
+  "↑↓ select · J K arrange · space toggle · esc close": "↑↓ 선택 · J K 정렬 · space 전환 · esc 닫기"
 }

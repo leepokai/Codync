@@ -46,7 +46,7 @@ The tray menu is Electron's native `Menu` (`apps/desktop/src/main/tray.ts`), the
 The menu retains host installation/restart, bot conversation/stop actions, approval review, usage limits, remote-screen permissions, open-at-login and quit. Pairing opens a separate titled window because its QR needs a persistent scanning surface. The chat window retains its own UI conventions.
 
 Usage limits appear directly in the top-level menu, grouped by provider with native section headers. Show each window's used percentage (`{percent}% used`), reset time when available, and the provider's last update; do not hide them in submenus. The account menu's
-Usage row shows no number; it opens Settings' Usage page with the same per-provider bars. Below the bars, that page and the phones' Usage screen list the computer's agents with a switch each ([which agents show](../features/usage-limits.md#which-agents-show)).
+Usage row shows no number; it opens Settings' Usage page with the same per-provider bars. That page and the phones' Usage screen show one card a computer, and a button beside its name swaps the bars for the computer's agents with a drag handle and a switch each ([which agents show](../features/usage-limits.md#which-agents-show)).
 
 ## Account menu and Settings (desktop)
 
@@ -75,7 +75,7 @@ Other custom iPhone screens use `Chrome.swift` and `Controls.swift`. The desktop
 | Toggle | `ToggleStyle.codync` |
 | Form-like content | `CardForm`, `CardSection` (a small bold heading over a filled, rounded group; rows split by inset hairlines; a row is `ValueRow` with an optional one-line `detail`, and its picker is an outlined `ChoicePicker`) |
 
-Avoid adding stock `Menu`, `Picker`, `Form`/`List` styling, switch toggles, alerts, `ProgressView` or system sheets to these flows. The iPhone bot list is a `List` with its styling removed (plain, no separators or row backgrounds), only for the system's drag-to-reorder alongside each row's context menu ([bot order](../features/computer-order.md#bot-order)). System presentation APIs inside the shared chrome implementation are implementation details, not permission to bypass the components in feature screens. Native WidgetKit/ActivityKit containers and OS authentication/permission flows remain system integrations.
+Avoid adding stock `Menu`, `Picker`, `Form`/`List` styling, switch toggles, alerts, `ProgressView` or system sheets to these flows. The iPhone bot list is a `List` with its styling removed (plain, no separators or row backgrounds), only for the system's drag-to-reorder alongside each row's context menu ([bot order](../features/computer-order.md#bot-order)). The iPhone Usage screen is a grouped `List` for the same reason, in edit mode only while arranging its agents. System presentation APIs inside the shared chrome implementation are implementation details, not permission to bypass the components in feature screens. Native WidgetKit/ActivityKit containers and OS authentication/permission flows remain system integrations.
 
 No scroll bars: scroll indicators never show (`.scrollIndicators(.never)` on the iPhone app's root, so every scroll view inherits it; hidden scrollbars in `apps/desktop/src/renderer/styles/theme.css`).
 

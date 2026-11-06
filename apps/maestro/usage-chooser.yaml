@@ -1,6 +1,6 @@
-# State > Usage limits lists the computer's agents, each with a switch: turning one on and off reaches the host, which
-# keeps the choice. The phone must already be signed in and paired with the host (a worktree's sandbox,
-# docs/guides/dev-app.md#worktree-sandboxes), and the computer must list two agents:
+# State > Usage limits keeps the agents behind one button, each with a switch and a handle: turning one on and off and
+# dragging one past another reach the host, which keeps both. The phone must already be signed in and paired with the host
+# (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), and the computer must list four agents:
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags usage \
 #     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
 appId: com.pokai.Codync.ios.dev
@@ -22,26 +22,43 @@ tags:
           appId: com.pokai.Codync.android.dev
 - tapOn: "State"
 - tapOn: "Usage limits"
-- scrollUntilVisible:
-    element: "On by default for the agents your bots run."
-    direction: DOWN
-- assertVisible: "Show usage for"
+- tapOn: "Choose and arrange"
+- assertVisible: "On by default for the agents your bots run."
 - takeScreenshot: usage-chooser
-# Below the heading: an agent with a reading has a card above, under the same name.
-- tapOn:
-    text: "${output.agent}.*"
-    below: "Show usage for"
+- tapOn: "${output.agent}.*"
 - runScript:
     file: usage-chooser.js
     env:
+      STEP: shown
       EXPECT: "true"
-- scrollUntilVisible:
-    element: "On by default for the agents your bots run."
-    direction: DOWN
-- tapOn:
-    text: "${output.agent}.*"
-    below: "Show usage for"
+- tapOn: "${output.agent}.*"
 - runScript:
     file: usage-chooser.js
     env:
+      STEP: shown
       EXPECT: "false"
+# The handle's label: the system's on iOS, ours on Android.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - swipe:
+          from:
+            text: "Reorder ${output.dragged}"
+          direction: DOWN
+          duration: 1500
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - swipe:
+          from:
+            text: "Move ${output.dragged}"
+          direction: UP
+          duration: 1500
+- runScript:
+    file: usage-chooser.js
+    env:
+      STEP: dragged
+- tapOn: "Done"
+- assertNotVisible: "On by default for the agents your bots run."

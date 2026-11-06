@@ -37,6 +37,22 @@ onFlowComplete:
 - assertVisible: "docs"
 - assertVisible: "Failed to start"
 - takeScreenshot: dev-servers-details
+# On all interfaces: the menu opens it, with Open or, when this computer has several addresses, a row for each. Those
+# leave the app, so they're only read.
+- assertVisible: ":${output.sharedPort}"
+- tapOn: "More actions for shared"
+- assertVisible: "Copy address"
+- runFlow:
+    when:
+      notVisible: "Open"
+    commands:
+      - assertVisible: ".+:${output.sharedPort}"
+- tapOn: "Stop"
+- assertVisible: "Stopped"
+- tapOn: "More actions for shared"
+- tapOn: "Remove"
+- assertNotVisible: "Remove"
+- assertNotVisible: "shared"
 # It listens only on the computer: the menu says so, and offers no way to open it.
 - tapOn: "More actions for web"
 - assertVisible: "Only reachable on the computer"
@@ -58,6 +74,9 @@ onFlowComplete:
 - assertVisible: "Stopped"
 - tapOn: "More actions for web"
 - tapOn: "Remove"
+# A menu left open hides the rows behind it from Maestro, so the gone row alone doesn't show the tap worked.
+- assertNotVisible: "Remove"
+- assertVisible: "docs"
 - assertNotVisible: "web"
 # One that failed: a tap on its row reads why.
 - tapOn: "docs"
@@ -67,4 +86,5 @@ onFlowComplete:
 - tapOn: "More actions for docs"
 - assertVisible: "Start"
 - tapOn: "Remove"
+- assertNotVisible: "Remove"
 - assertNotVisible: "Dev servers"

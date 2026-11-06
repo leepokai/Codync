@@ -195,31 +195,70 @@ private struct CodyncItemSheet<Item: Identifiable, Sheet: View>: ViewModifier {
 }
 
 /// The system sheet: its own slide, grabber and swipe down, nothing hand-built.
-private struct CodyncSheet<Sheet: View>: ViewModifier {
+@MainActor private struct CodyncSheet<Sheet: View>: ViewModifier {
     @Binding var isPresented: Bool
     let sheet: () -> Sheet
+    @State private var held = Held<() -> Sheet>()
 
     func body(content: Content) -> some View {
-        content.sheet(isPresented: $isPresented) {
-            sheet()
-                .environment(\.dismissModal, DismissModalAction { isPresented = false })
-                .presentationDragIndicator(.visible)
+        let _ = (held.value = sheet)
+        content.quietPresentation(shown: isPresented) {
+            $0.sheet(isPresented: $isPresented) {
+                HeldView { held.value?() }
+                    .environment(\.dismissModal, DismissModalAction { isPresented = false })
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
 }
 
-private struct CodyncOverlay<Layer: View>: ViewModifier {
+@MainActor private struct CodyncOverlay<Layer: View>: ViewModifier {
     @Binding var isPresented: Bool
     let layer: (_ close: @escaping () -> Void) -> Layer
+    @State private var held = Held<(_ close: @escaping () -> Void) -> Layer>()
 
     func body(content: Content) -> some View {
-        content
-            .fullScreenCover(isPresented: $isPresented) {
-                FadeLayer(close: { isPresented = false }, layer: layer)
+        let _ = (held.value = layer)
+        content.quietPresentation(shown: isPresented) {
+            $0.fullScreenCover(isPresented: $isPresented) {
+                FadeLayer(close: { isPresented = false }, layer: { close in HeldView { held.value?(close) } })
                     .presentationBackground(.clear)
             }
             .transaction(value: isPresented) { $0.disablesAnimations = true }
+        }
     }
+}
+
+extension View {
+    /// Applies a presentation modifier (`.sheet`, `.fullScreenCover`, `.photosPicker`) that runs again only when what it
+    /// presents opens or closes. Any of them running again re-sends the content of whatever is presented, which resolves
+    /// the icons of a system menu open there anew and so rebuilds it, and a press during a rebuild is lost. So they can't
+    /// run with every render of the screen behind. Directly, only for what the system draws (`.photosPicker`): content of
+    /// our own would freeze here, so it goes through `.codyncSheet` or `.codyncOverlay`, which keep it live with `Held`.
+    func quietPresentation<Presenter: View>(shown: Bool, @ViewBuilder _ presenter: @escaping (Color) -> Presenter) -> some View {
+        background { QuietPresenter(shown: shown, presenter: presenter).equatable() }
+    }
+}
+
+private struct QuietPresenter<Presenter: View>: View, Equatable {
+    let shown: Bool
+    let presenter: (Color) -> Presenter
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.shown == rhs.shown }
+
+    var body: some View { presenter(.clear) }
+}
+
+/// What's presented, as of the latest render of the screen behind it.
+@MainActor @Observable private final class Held<Value> {
+    var value: Value?
+}
+
+/// Reads `Held` in a body of its own, which is what updates when it changes.
+private struct HeldView<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
 }
 
 private struct FadeLayer<Layer: View>: View {

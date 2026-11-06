@@ -23,8 +23,12 @@ data class DevServer(
     val exitCode: Int? = null,
     val managed: Boolean = true,
 ) {
-    /** Where a phone can reach it while it runs; null when it listens only on its computer. */
-    val remoteAddress: String? get() = if (status == DevServerStatus.Running) ports.firstNotNullOfOrNull { it.remote.firstOrNull() } else null
+    /** Where a phone can reach it while it runs, best first: the first port that has any. */
+    val remoteAddresses: List<String> get() =
+        if (status == DevServerStatus.Running) ports.firstOrNull { it.remote.isNotEmpty() }?.remote.orEmpty() else emptyList()
+
+    /** The best of them; null when it listens only on its computer. */
+    val remoteAddress: String? get() = remoteAddresses.firstOrNull()
 
     /** Its row's value: its ports, or a phrase to look up. */
     val rowValue: String get() = when (status) {
@@ -38,11 +42,17 @@ data class DevServer(
     val tap: DevServerTap? get() = remoteAddress?.let(DevServerTap::Open)
         ?: DevServerTap.Logs.takeIf { managed && !(status == DevServerStatus.Running && ports.isNotEmpty()) }
 
-    /** Only what applies. A server the bot started through its shell can only be opened or stopped. */
+    /**
+     * Only what applies. A server the bot started through its shell can only be opened or stopped. A tap opens the first
+     * address, which this phone may not reach (a computer's Tailscale address, without Tailscale here), so when there are
+     * more each one is a row.
+     */
     val menuRows: List<DevServerMenuRow> get() = buildList {
         val live = status == DevServerStatus.Running || status == DevServerStatus.Starting
         if (status == DevServerStatus.Running && ports.isNotEmpty() && remoteAddress == null) add(DevServerMenuRow.OnlyOnComputer)
-        if (remoteAddress != null) { add(DevServerMenuRow.Open); add(DevServerMenuRow.CopyAddress) }
+        if (remoteAddresses.size > 1) remoteAddresses.forEach { add(DevServerMenuRow.OpenAddress(it)) }
+        else if (remoteAddress != null) add(DevServerMenuRow.Open)
+        if (remoteAddress != null) add(DevServerMenuRow.CopyAddress)
         if (managed) {
             add(DevServerMenuRow.Logs)
             if (status != DevServerStatus.Starting) add(if (live) DevServerMenuRow.Restart else DevServerMenuRow.Start)
@@ -83,7 +93,21 @@ sealed interface DevServerTap {
 }
 
 /** A line of its menu. */
-enum class DevServerMenuRow { OnlyOnComputer, Open, CopyAddress, Logs, Restart, Start, StartedByShell, Stop, Remove }
+sealed interface DevServerMenuRow {
+    data object OnlyOnComputer : DevServerMenuRow
+    data object Open : DevServerMenuRow
+    data class OpenAddress(val address: String) : DevServerMenuRow {
+        /** As the row shows it. */
+        val title: String get() = address.removePrefix("http://")
+    }
+    data object CopyAddress : DevServerMenuRow
+    data object Logs : DevServerMenuRow
+    data object Restart : DevServerMenuRow
+    data object Start : DevServerMenuRow
+    data object StartedByShell : DevServerMenuRow
+    data object Stop : DevServerMenuRow
+    data object Remove : DevServerMenuRow
+}
 
 /** What the chat's title shows of a bot's servers: nothing until one starts, or once they've all stopped. */
 sealed interface DevServerSummary {

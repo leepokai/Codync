@@ -104,14 +104,16 @@ export function AgentAccounts({ backend, onChanged }: { backend: Backend; onChan
           <Spinner size={12} />
           <Text size="subheadline" tone="secondary">Loading accounts...</Text>
         </HStack>
-      ) : accounts.map((account) => (
+      ) : accounts.map((account, index) => (
         <HStack key={account.id} gap={10}>
           <VStack grow gap={2}>
-            <Text size="body" weight="medium" tone="text">{account.name}</Text>
-            <Text size="subheadline" tone="secondary">Isolated account on {host}.</Text>
+            <Text size="body" weight="medium" tone="text">{`${backend.name} ${index + 2}`}</Text>
+            <Text size="subheadline" tone="secondary" className="selectable">
+              {account.email ? `Signed in as ${account.email} on ${host}.` : `Isolated account on ${host}.`}
+            </Text>
           </VStack>
           <IconButton
-            title={`Remove ${account.name}`}
+            title={`Remove ${backend.name} ${index + 2}`}
             icon="trash"
             disabled={busy}
             onClick={() => setConfirmRemove(account)}

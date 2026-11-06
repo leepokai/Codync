@@ -7,6 +7,8 @@ import { Text } from '../../components/Text'
 
 interface Props {
   backend: string
+  /** The agent's display name, for the account labels. */
+  name: string
   selection?: string | null
   online: boolean
   contextKey: string
@@ -26,7 +28,7 @@ export function AgentAccountPicker(props: Props) {
   return <AccountPicker key={JSON.stringify([props.contextKey, props.backend, props.online])} {...props} />
 }
 
-function AccountPicker({ backend, selection, online, load, authenticate, remove, signOut, onChange }: Props) {
+function AccountPicker({ backend, name: backendName, selection, online, load, authenticate, remove, signOut, onChange }: Props) {
   const [accounts, setAccounts] = useState<AgentAccount[]>([])
   const [loading, setLoading] = useState(online)
   const [signingIn, setSigningIn] = useState(false)
@@ -106,7 +108,10 @@ function AccountPicker({ backend, selection, online, load, authenticate, remove,
     }
   }
 
-  const options = [{ id: '', label: 'Default account' }, ...accounts.map((account) => ({ id: account.id, label: account.name }))]
+  const options = [
+    { id: '', label: 'Default account' },
+    ...accounts.map((account, index) => ({ id: account.id, label: `${backendName} ${index + 2}${account.email ? ` · ${account.email}` : ''}` })),
+  ]
   if (selection && !accounts.some((account) => account.id === selection)) {
     options.push({ id: selection, label: 'Saved account (not loaded)' })
   }

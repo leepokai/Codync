@@ -29,7 +29,7 @@ internal fun CardRows.botAccountRow(state: AppState, store: AppStore, draft: Bot
     val canSignOut = info?.get("signOut")?.jsonPrimitive?.booleanOrNull == true
     if (!supported) return
     row {
-        AgentAccountPicker(draft.backend, draft.account, state.actualConnection is LinkState.Ready,
+        AgentAccountPicker(draft.backend, info?.text("name") ?: draft.backend, draft.account, state.actualConnection is LinkState.Ready,
             "${state.generation}/${state.computer?.id}/${draft.id}",
             supported, canSignOut,
             { store.agentAccounts(draft.backend) }, { store.authenticateAgentAccount(draft.backend) },

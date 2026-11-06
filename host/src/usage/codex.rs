@@ -14,16 +14,27 @@ use super::Window;
 
 /// Plan windows from Codex, preferring the app-server's live answer.
 pub(super) async fn collect() -> Option<Vec<Window>> {
-    if let Some(windows) = app_server().await {
-        return Some(windows);
-    }
-    tokio::task::spawn_blocking(rollout).await.ok().flatten()
+    collect_with(&[]).await
 }
 
-async fn app_server() -> Option<Vec<Window>> {
+/// The same for an isolated account, launched with its profile environment.
+pub(super) async fn collect_with(env: &[(String, String)]) -> Option<Vec<Window>> {
+    if let Some(windows) = app_server(env).await {
+        return Some(windows);
+    }
+    let env = env.to_vec();
+    tokio::task::spawn_blocking(move || rollout(&env)).await.ok().flatten()
+}
+
+async fn app_server(env: &[(String, String)]) -> Option<Vec<Window>> {
     let bin = super::command::program("codex")?;
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.arg("app-server").kill_on_drop(true).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+    cmd.arg("app-server")
+        .kill_on_drop(true)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .envs(env.iter().map(|(key, value)| (key, value)));
     if let Some(home) = dirs::home_dir() {
         cmd.current_dir(home);
     }
@@ -49,6 +60,18 @@ async fn handshake(child: &mut tokio::process::Child) -> Option<Vec<Window>> {
     });
     stdin.write_all(format!("{init}\n").as_bytes()).await.ok()?;
     wait_for(&mut lines, 1).await?;
+    // An isolated profile loads its auth after initialize; a read sent into that gap is dropped.
+    // The account notification says the login is in, and a base home answers it at once too.
+    let _ = tokio::time::timeout(Duration::from_secs(4), async {
+        while let Ok(Some(line)) = lines.next_line().await {
+            let Ok(value) = serde_json::from_str::<Value>(&line) else { continue };
+            if value["method"] == "account/updated" {
+                break;
+            }
+        }
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
     let read = json!({"jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": {}});
     stdin.write_all(format!("{read}\n").as_bytes()).await.ok()?;
     let result = wait_for(&mut lines, 2).await?;
@@ -102,9 +125,13 @@ fn window_label(minutes: i64, key: &str) -> String {
     }
 }
 
-/// Blocking: reads the newest Codex rollout file.
-fn rollout() -> Option<Vec<Window>> {
-    let path = newest_rollout(&dirs::home_dir()?.join(".codex/sessions"))?;
+/// Blocking: reads the newest Codex rollout file (in the profile when `env` names one).
+fn rollout(env: &[(String, String)]) -> Option<Vec<Window>> {
+    let home = env
+        .iter()
+        .find(|(key, _)| key == "CODEX_HOME")
+        .map_or_else(|| dirs::home_dir().map(|h| h.join(".codex")), |(_, value)| Some(PathBuf::from(value)))?;
+    let path = newest_rollout(&home.join("sessions"))?;
     let text = std::fs::read_to_string(&path).ok()?;
     let line = text.lines().rev().find(|l| l.contains("\"rate_limits\""))?;
     let v: Value = serde_json::from_str(line).ok()?;

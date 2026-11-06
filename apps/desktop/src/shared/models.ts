@@ -853,6 +853,8 @@ export interface AgentAccount {
   name: string
   backend: string
   createdAt: number
+  /** The account's sign-in address, when its CLI's files name it. */
+  email?: string | null
 }
 
 export interface GroupDraft {

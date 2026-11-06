@@ -40,6 +40,7 @@ import kotlin.coroutines.coroutineContext
 /** The host owns accounts and sign-in; this control owns only its loading and selection UI. */
 @Composable internal fun AgentAccountPicker(
     backend: String,
+    name: String,
     selection: String?,
     online: Boolean,
     contextKey: String,
@@ -53,12 +54,13 @@ import kotlin.coroutines.coroutineContext
 ) {
     if (!supported) return
     key(contextKey, backend, online) {
-        AccountPicker(backend, selection, online, canSignOut, load, authenticate, remove, signOut, choose)
+        AccountPicker(backend, name, selection, online, canSignOut, load, authenticate, remove, signOut, choose)
     }
 }
 
 @Composable private fun AccountPicker(
     backend: String,
+    name: String,
     selection: String?,
     online: Boolean,
     canSignOut: Boolean,
@@ -103,7 +105,8 @@ import kotlin.coroutines.coroutineContext
     }
     val busy = loading || signingIn || removing != null || signingOut
     val selected = accounts.firstOrNull { it.id == selection }
-    val choices = listOf("" to "Default account") + accounts.map { it.id to it.name } +
+    val choices = listOf("" to "Default account") +
+        accounts.mapIndexed { index, account -> account.id to "${name} ${index + 2}" + (account.email?.let { " · $it" } ?: "") } +
         if (!selection.isNullOrEmpty() && accounts.none { it.id == selection }) listOf(selection to "Saved account (not loaded)") else emptyList()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

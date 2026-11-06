@@ -191,7 +191,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
   // An account (its own agent sign-in) belongs to one agent, so another agent starts on the default one.
   const account = (
-    <AgentAccountPicker key="account" backend={draft.backend} selection={draft.account} online={store.connection.kind === 'online'}
+    <AgentAccountPicker key="account" backend={draft.backend} name={backend?.name ?? draft.backend} selection={draft.account} online={store.connection.kind === 'online'}
       contextKey={JSON.stringify([store.contextId, store.computer.id, draft.id ?? 'new'])} load={() => store.agentAccounts(draft.backend)}
       supported={backend?.accounts !== false}
       authenticate={() => store.authenticateAgentAccount(draft.backend)}

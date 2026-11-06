@@ -19,14 +19,19 @@ const MAX_TEXT: usize = 64 * 1024;
 /// ACP adapter answers the same command for the session's signed-in account; it
 /// is tried first because the CLI can be on another account.
 pub(super) async fn collect(store: &Store) -> Option<Vec<Window>> {
-    if let Some(windows) = acp_usage(store).await {
-        return Some(windows);
-    }
-    cli_usage().await
+    collect_with(store, &[]).await
 }
 
-async fn acp_usage(store: &Store) -> Option<Vec<Window>> {
-    let Ok((acp, mut inbox, _init, _)) = auth::start_registry(store, "claude", &[]).await else {
+/// The same for an isolated account, launched with its profile environment.
+pub(super) async fn collect_with(store: &Store, env: &[(String, String)]) -> Option<Vec<Window>> {
+    if let Some(windows) = acp_usage(store, env).await {
+        return Some(windows);
+    }
+    cli_usage(env).await
+}
+
+async fn acp_usage(store: &Store, env: &[(String, String)]) -> Option<Vec<Window>> {
+    let Ok((acp, mut inbox, _init, _)) = auth::start_registry(store, "claude", env).await else {
         return None;
     };
     let result = async {
@@ -137,13 +142,14 @@ fn label_key(label: &str) -> String {
     label.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
 }
 
-async fn cli_usage() -> Option<Vec<Window>> {
+async fn cli_usage(env: &[(String, String)]) -> Option<Vec<Window>> {
     let bin = super::command::program("claude")?;
     let out = tokio::time::timeout(
         Duration::from_mins(1),
         tokio::process::Command::new(bin)
             .args(["-p", "/usage", "--output-format", "json", "--no-session-persistence"])
             .current_dir(dirs::home_dir()?)
+            .envs(env.iter().map(|(key, value)| (key, value)))
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)
             .output(),

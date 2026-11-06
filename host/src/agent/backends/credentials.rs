@@ -33,6 +33,69 @@ pub fn for_id(id: &str) -> Credential {
     }
 }
 
+/// What a profile an isolated account wrote holds: signed in, and the account when its file names
+/// it. Missing files say "unknown", not "signed out": the profile may still be signing in.
+pub fn for_profile(id: &str, profile: &Path) -> Credential {
+    match id {
+        "claude" => {
+            let Some(v) = read(&profile.join(".credentials.json")) else { return Credential::default() };
+            for key in ["claudeAiOauth", "claudeProOauth", "claudeMaxOauth"] {
+                if let Some(token) = v[key]["accessToken"].as_str().filter(|t| non_empty(t)) {
+                    let email = jwt_email(token).or_else(|| {
+                        read(&profile.join(".claude.json"))
+                            .and_then(|v| v["oauthAccount"]["emailAddress"].as_str().map(str::to_owned))
+                    });
+                    return Credential { signed_in: Some(true), email };
+                }
+            }
+            Credential::default()
+        }
+        "codex" => {
+            let Some(v) = read(&profile.join("auth.json")) else { return Credential::default() };
+            match v["auth_mode"].as_str() {
+                Some("chatgpt") => {
+                    let tokens = &v["tokens"];
+                    let jwt = tokens["id_token"]
+                        .as_str()
+                        .filter(|t| non_empty(t))
+                        .or_else(|| tokens["access_token"].as_str().filter(|t| non_empty(t)));
+                    Credential { signed_in: Some(true), email: jwt.and_then(jwt_email) }
+                }
+                Some("apikey") if v["OPENAI_API_KEY"].as_str().is_some_and(non_empty) => {
+                    Credential { signed_in: Some(true), email: None }
+                }
+                _ => Credential::default(),
+            }
+        }
+        "gemini" => {
+            let Some(v) = read(&profile.join(".gemini").join("oauth_creds.json")) else {
+                return Credential::default();
+            };
+            if v["refresh_token"].as_str().is_none_or(|t| !non_empty(t)) {
+                return Credential::default();
+            }
+            Credential { signed_in: Some(true), email: v["id_token"].as_str().and_then(jwt_email) }
+        }
+        "grok" => {
+            let Some(map) = read(&profile.join("auth.json")).and_then(|v| v.as_object().cloned()) else {
+                return Credential::default();
+            };
+            let email = map
+                .iter()
+                .find_map(|(k, v)| {
+                    if k.to_ascii_lowercase().ends_with(".email") {
+                        v.as_str().map(str::to_owned)
+                    } else {
+                        v.as_object().and_then(|o| o.get("email")).and_then(Value::as_str).map(str::to_owned)
+                    }
+                })
+                .filter(|e| non_empty(e));
+            Credential { signed_in: Some(true), email }
+        }
+        _ => Credential::default(),
+    }
+}
+
 /// Where OpenCode keeps its files: its XDG data folder, or Windows' `APPDATA`.
 fn opencode_data_dirs(home: &Path) -> Vec<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")

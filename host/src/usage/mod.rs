@@ -33,6 +33,7 @@ use crate::hub::Hub;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::timeout;
 
 const POLL_EVERY: Duration = Duration::from_mins(5);
 /// The last reading, so the counters are on screen while a fresh probe runs.
@@ -239,8 +240,40 @@ pub async fn refresh(hub: &Hub) {
     apply(hub, &signed_out, cursor_windows, "cursor", "Cursor", "Cursor");
     apply(hub, &signed_out, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
     apply(hub, &signed_out, grok_windows, "grok", "Grok", "grok billing");
+    account_reports(hub, &signed_out).await;
     ensure_connected(hub, &backends);
     *LAST_REFRESH.locked() = Some(std::time::Instant::now());
+}
+
+/// The plan windows of each isolated account, under the agent's name and its place: "Codex 2".
+async fn account_reports(hub: &Hub, signed_out: &std::collections::HashSet<&str>) {
+    let Ok(accounts) = crate::agent::account::list(None) else { return };
+    let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for account in &accounts {
+        if signed_out.contains(account.backend.as_str()) {
+            continue;
+        }
+        let Some(label) = crate::agent::backends::harness(&account.backend).map(|h| h.name) else {
+            continue;
+        };
+        let ordinal = seen.entry(account.backend.as_str()).or_insert(1);
+        *ordinal += 1;
+        let name = format!("{label} {ordinal}");
+        let Ok(env) = crate::agent::account::env(&account.id, &account.backend) else { continue };
+        tracing::info!(account = %account.id, backend = %account.backend, "probing an isolated account");
+        let windows = match account.backend.as_str() {
+            "codex" => timeout(Duration::from_secs(15), codex::collect_with(&env)).await.ok().flatten(),
+            "claude" => timeout(Duration::from_secs(45), claude::collect_with(&hub.store, &env)).await.ok().flatten(),
+            _ => None,
+        };
+        tracing::info!(account = %account.id, windows = windows.as_ref().map_or(0, Vec::len), "isolated account probed");
+        if let Some(windows) = windows {
+            let id = format!("{}:{}", account.backend, account.id);
+            let mut usage = hub.usage.locked().clone();
+            usage.replace(&id, &name, "account", windows);
+            hub.set_usage(usage);
+        }
+    }
 }
 
 /// A connected agent that couldn't report is still shown, with its status, so

@@ -22,6 +22,9 @@ pub struct AgentAccount {
     pub name: String,
     pub backend: String,
     pub created_at: i64,
+    /// The account's sign-in address, when its CLI's files name it.
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 pub fn accounts_dir() -> PathBuf {
@@ -106,7 +109,15 @@ pub fn list(backend: Option<&str>) -> Result<Vec<AgentAccount>> {
             continue;
         }
         match read_account(&root, &id, None) {
-            Ok(account) if backend.is_none_or(|b| b == account.backend) => accounts.push(account),
+            Ok(mut account) if backend.is_none_or(|b| b == account.backend) => {
+                // Accounts made before the address was kept: read it from the profile.
+                if account.email.is_none()
+                    && let Ok(path) = profile_dir(&root, &id)
+                {
+                    account.email = backends::profile_credential_state(&account.backend, &path).email;
+                }
+                accounts.push(account);
+            }
             Ok(_) => {}
             Err(error) => tracing::warn!(%id, %error, "skipping invalid or incomplete agent account"),
         }
@@ -343,11 +354,13 @@ async fn authenticate_profile(store: &Store, backend: &str, name: Option<String>
     }
     let short = &id[id.len() - 8..];
     let fallback_name = format!("{label} account ({short})");
+    let email = backends::profile_credential_state(backend, &path).email;
     let account = AgentAccount {
         id,
         name: name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).unwrap_or(fallback_name),
         backend: backend.into(),
         created_at: crate::store::now_ms(),
+        email,
     };
     write_account(&path, &account)?;
     pending.committed = true;
@@ -482,7 +495,13 @@ mod tests {
             let path = create_profile(&self.0, id).unwrap();
             write_account(
                 &path,
-                &AgentAccount { id: id.into(), name: "Test".into(), backend: "antigravity".into(), created_at: 0 },
+                &AgentAccount {
+                    id: id.into(),
+                    name: "Test".into(),
+                    backend: "antigravity".into(),
+                    created_at: 0,
+                    email: None,
+                },
             )
             .unwrap();
             path

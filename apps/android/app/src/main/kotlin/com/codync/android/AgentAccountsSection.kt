@@ -78,13 +78,14 @@ import kotlinx.coroutines.launch
                 Text("Loading accounts…", style = Type.subheadline, color = Palette.secondary)
             }
         }
-        for (account in accounts) row {
+        for ((index, account) in accounts.withIndex()) row {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(account.name, style = Type.body.medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Isolated account on $host.", style = Type.subheadline, color = Palette.secondary)
+                    Text("${backend.name} ${index + 2}", style = Type.body.medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(account.email?.let { "Signed in as $it on $host." } ?: "Isolated account on $host.",
+                        style = Type.subheadline, color = Palette.secondary)
                 }
-                IconButton("Remove ${account.name}", "trash", enabled = !busy) { confirmRemove = account }
+                IconButton("Remove ${backend.name} ${index + 2}", "trash", enabled = !busy) { confirmRemove = account }
             }
         }
         row {

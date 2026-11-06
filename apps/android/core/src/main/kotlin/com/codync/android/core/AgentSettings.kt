@@ -3,7 +3,7 @@ package com.codync.android.core
 import kotlinx.serialization.Serializable
 
 /** An isolated agent sign-in stored on the selected host. */
-@Serializable data class AgentAccount(val id: String, val name: String, val backend: String, val createdAt: Long = 0)
+@Serializable data class AgentAccount(val id: String, val name: String, val backend: String, val createdAt: Long = 0, val email: String? = null)
 
 /** A model setting (effort, fast…) and the values the agent accepts. */
 @Serializable data class ModelOption(val id: String, val name: String, val values: List<ModelOptionValue> = emptyList(), val default: String? = null, val kind: String? = null) {

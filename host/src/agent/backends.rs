@@ -21,6 +21,7 @@ mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
 pub(crate) use credentials::for_id as credential_state;
+pub(crate) use credentials::for_profile as profile_credential_state;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{
     SignInCheck, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, from_files_first, merged,

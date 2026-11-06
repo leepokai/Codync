@@ -34,16 +34,6 @@ impl Drop for Host {
     }
 }
 
-/// A device certificate as the cloud signs it (`cloud/src/certificate.ts`), with the test host's trusted key.
-fn test_certificate(device_key: &str, user_id: &str) -> Value {
-    let exp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() + 60_000;
-    let payload = json!({"v": 1, "deviceKey": device_key, "userId": user_id, "email": "kevin@example.com", "exp": exp})
-        .to_string();
-    let key = SigningKey::from_bytes(&common::TEST_CLOUD_SEED);
-    let sig = crypto::sign(&key, format!("codync/device-cert/v1\n{payload}").as_bytes());
-    json!({"payload": payload, "sig": crypto::b64(&sig)})
-}
-
 async fn start_host() -> Host {
     let home = std::env::temp_dir().join(format!("codync-e2e-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
@@ -212,7 +202,7 @@ async fn sent_messages_are_the_reply() {
         .to_owned();
     let send = |text: &str| json!({"botId": bot, "name": "send_message", "arguments": {"text": text}});
 
-    // Before its agent ever ran there's no one to talk to.
+    // Between turns there's no one to talk to.
     let idle = reqwest::Client::new()
         .post(format!("{}/api/chatCall", host.base))
         .bearer_auth(&host.token)
@@ -246,12 +236,6 @@ async fn sent_messages_are_the_reply() {
         .map(|e| e["data"]["text"].as_str().unwrap())
         .collect();
     assert_eq!(finals, ["Found it.", "Fixing the typo now."]);
-
-    // Work the agent goes on with after its turn (a background subagent) still reaches the user.
-    host.call("chatCall", send("The background check passed.")).await;
-    let late =
-        host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["text"] == "The background check passed.").await;
-    assert_eq!((&late["data"]["final"], &late["data"]["author"]), (&json!(true), &json!(bot)));
 }
 
 #[tokio::test]
@@ -373,20 +357,7 @@ async fn phone_pairs_and_chats_over_the_direct_channel() {
 
     let mut phone = Phone::connect(&host, &key, &sk, true).await;
     let code = query_param(url, "code");
-    let certificate = test_certificate(&crypto::b64(key.verifying_key().as_bytes()), "user_1");
-    phone
-        .send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Test iPhone", "platform": "ios", "certificate": certificate}}))
-        .await;
-    // A computer in no account asks first; the test answers for it.
-    let request = loop {
-        let list = host.call("pairingRequests", json!({})).await;
-        if let Some(r) = list["requests"].as_array().and_then(|r| r.first()) {
-            break r.clone();
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    };
-    assert_eq!(request["deviceName"], "Test iPhone");
-    host.call("decidePairing", json!({"requestId": request["requestId"], "approve": true})).await;
+    phone.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Test iPhone", "platform": "ios"}})).await;
     assert_eq!(phone.inner().await["ok"]["computerId"], crypto::computer_id(&sk));
     assert!(matches!(phone.recv().await, Frame::Closed(4100)));
 

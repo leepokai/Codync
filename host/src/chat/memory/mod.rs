@@ -4,8 +4,6 @@
 //! apps' read-only view, dreaming, and the one-time moves from the memory Codync kept before.
 
 mod api;
-#[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
-pub mod budget;
 mod dates;
 mod dream;
 mod file_api;
@@ -18,7 +16,7 @@ pub mod turns;
 pub use api::call;
 pub use dates::ymd;
 pub use dream::{DreamEvent, spawn_dreamer};
-pub use import::{add_facts, import_old_memory};
+pub use import::import_old_memory;
 pub use tools::{INSTRUCTIONS, call as tool_call, tools};
 
 use crate::hub::Hub;

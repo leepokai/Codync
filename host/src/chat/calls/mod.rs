@@ -395,10 +395,9 @@ async fn title(hub: &Arc<Hub>, cfg: &BotConfig, line: &Entry) -> Result<()> {
     let raw =
         crate::chat::oneshot::one_shot(hub, cfg, TITLE_PROMPT, &format!("The call, oldest first:\n\n{body}")).await?;
     let Some(name) = parse_title(&raw) else { return Ok(()) };
-    hub.edit_entry(&line.id, |entry| {
-        entry.data["text"] = name.into();
-        Ok(true)
-    })?;
+    let Some(mut e) = hub.store.entry(&line.id) else { return Ok(()) };
+    e.data["text"] = name.into();
+    hub.set_entry(&line.id, &e.data);
     Ok(())
 }
 

@@ -3,30 +3,9 @@ package com.codync.android.core
 import java.net.URI
 import java.net.URLDecoder
 import java.security.MessageDigest
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.Serializable
 
-/** A connector's sign-in page, who catches its return, and for a sign-in with a code (GitHub) the code to type there. */
-@Serializable data class ConnectorSignIn(val url: String, val callback: String, val code: String? = null)
-
-/** The answer to a sign-in code's dialog: true for Copy and open, false for Cancel. One code at a time. */
-class SignInCodeAnswer {
-    private var reply: CompletableDeferred<Boolean>? = null
-
-    /** Waits for the answer to a newly shown code; a code still waiting answers no. */
-    suspend fun ask(): Boolean {
-        reply?.complete(false)
-        return CompletableDeferred<Boolean>().also { reply = it }.await()
-    }
-
-    fun open() { reply?.complete(true) }
-
-    /** The dialog closed. Its buttons close it before they act, so the no waits for [later] to run it, after Copy and open had its turn. */
-    fun dismissed(later: (() -> Unit) -> Unit) {
-        val waiting = reply ?: return
-        later { waiting.complete(false) }
-    }
-}
+@Serializable data class ConnectorSignIn(val url: String, val callback: String)
 @Serializable data class PendingConnectorOAuth(val connectorId: String, val computerId: String,
     val stateHash: String, val expiresAt: Long, val requestId: String? = null) {
     fun validate(back: OAuthReturn, computer: String, now: Long) {

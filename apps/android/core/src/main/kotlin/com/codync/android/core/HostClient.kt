@@ -24,8 +24,8 @@ data class Bot(
     val cwd: String = "",
     val managedWorkspace: Boolean = false,
     val permission: String = "ask",
-    /** The agent mode it works in ([AgentMode]); null for the agent's default. */
     val mode: String? = null,
+    val customIcon: CustomIcon? = null,
     val model: String? = null,
     /** The model's own settings (effort, fast…): agent option id → value. */
     val modelOptions: Map<String, String> = emptyMap(),
@@ -57,10 +57,8 @@ data class Bot(
     val activity: String = "",
     val backend: String = "",
     val pinned: Boolean = false,
-    /** The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it. Placed in the roster like any bot, never hidden. */
+    /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
     val lead: Boolean = false,
-    /** The roster section the user put it in; null for none (or a host without sections). Kept while pinned or hidden. */
-    val section: String? = null,
     /** Where the user dragged it in the roster, synced by the host to every device. */
     val position: Int = 0,
     val hidden: Boolean = false,
@@ -85,10 +83,9 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
-    val customIcon: CustomIcon? = null,
 ) {
-    /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
-    val band: Int get() = if (pinned) 0 else 1
+    /** Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band. */
+    val band: Int get() = when { lead -> 0; pinned -> 1; else -> 2 }
 
     /** [agent]'s rest, unless it's over. */
     fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
@@ -119,7 +116,7 @@ object HostClient {
         val updated = computer.copy(
             name = hello.text("name")?.takeIf(String::isNotBlank) ?: computer.name,
             boxKey = hello.text("boxKey") ?: computer.boxKey,
-            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.let(::directUrls) ?: computer.urls,
+            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.filter(::isDirectUrl) ?: computer.urls,
             cloud = hello.text("cloud"),
         )
         updated.validate()

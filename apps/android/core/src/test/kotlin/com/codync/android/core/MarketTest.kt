@@ -19,11 +19,4 @@ class MarketTest {
         assertTrue(InstalledConnector("c", "Connector", kind = "remote", auth = "signedOut").needsSignIn)
         assertFalse(InstalledConnector("c", "Connector", kind = "remote", auth = "future").needsSignIn)
     }
-
-    @Test fun tokenConnectorsOfferSignInOnlyWhenTheHostSaysSo() {
-        val older = """{"id":"github","name":"GitHub","kind":"remote","keys":["Authorization"],"auth":"none"}"""
-        assertFalse(WireJson.decodeFromString<InstalledConnector>(older).canSignIn)
-        val newer = """{"id":"github","name":"GitHub","kind":"remote","keys":["Authorization"],"auth":"none","canSignIn":true}"""
-        assertTrue(WireJson.decodeFromString<InstalledConnector>(newer).canSignIn)
-    }
 }

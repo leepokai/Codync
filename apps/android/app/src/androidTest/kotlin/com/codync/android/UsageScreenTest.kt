@@ -16,7 +16,8 @@ class UsageScreenTest {
 
     @Test fun unavailableWindowsAndOldReportsNeverBecomeZeroUsage() {
         val raw = WireJson.parseToJsonElement("""{"providers":[{"id":"future","name":"Future provider","source":"future-source","updatedAt":1,"windows":[{"id":"month","label":"Monthly"}]}]}""")
-        val state = mutableStateOf(AppState(Computer("fixture", "Acceptance computer", "fixture"), loading = false, usage = raw.jsonObject,
+        val state = mutableStateOf(AppState(loading = false, setupComplete = true,
+            computers = listOf(Computer("fixture", "Acceptance computer", "fixture")), usage = raw.jsonObject,
             actualConnection = LinkState.ComputerOffline(null)))
         val refreshes = mutableListOf<Boolean>()
         var closed = false
@@ -43,11 +44,11 @@ class UsageScreenTest {
     }
 
     @Test fun usageExplainsWhenThereIsNoComputerOrNoReportYet() {
-        val state = mutableStateOf<AppState?>(null)
+        val state = mutableStateOf(AppState(loading = false))
         compose.setContent { Hosted { UsageScreen(state.value, {}, {}) } }
         compose.onNodeWithText("No computer yet").assertIsDisplayed()
         compose.onNodeWithText("Usage shows up once a computer is connected.").assertIsDisplayed()
-        compose.runOnUiThread { state.value = AppState(Computer("fixture", "Acceptance computer", "fixture"), loading = false) }
+        compose.runOnUiThread { state.value = state.value.copy(computers = listOf(Computer("fixture", "Acceptance computer", "fixture"))) }
         compose.onNodeWithText("No usage yet").assertIsDisplayed()
         compose.onNodeWithText("Your computer reads plan limits from the agents installed on it.").assertIsDisplayed()
     }

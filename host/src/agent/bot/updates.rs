@@ -1,7 +1,6 @@
 //! Agent → client: `session/update`s, permission requests and streamed text mapped onto entries.
 
 use super::fast_mode::Listing;
-use super::stall::ToolOutcome;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
@@ -40,46 +39,21 @@ impl Actor {
                 {
                     self.note_options(sid, &params["update"], Listing::Update);
                 } else if method == "session/update"
-                    && params["update"]["sessionUpdate"] == "current_mode_update"
-                    && let Some(sid) = params["sessionId"].as_str()
-                {
-                    self.note_current_mode(sid, params["update"]["currentModeId"].as_str());
-                } else if method == "session/update"
                     && params["sessionId"].as_str() == self.turn_session.as_deref()
                     && self.turn.is_some()
                 {
-                    self.watchdog.seen(&params["update"]);
-                    self.note_skill_use(&params["update"]);
                     self.on_update(&params["update"]);
-                    if let Some(reason) = self.watchdog.tripped() {
-                        tracing::warn!(bot = %self.cfg.id, "stopping a turn stuck in a tool loop");
-                        let notice = json!({"text": reason, "style": "error"});
-                        self.hub.add_entry(&self.lane, EntryKind::Notice, self.turn.unwrap_or(0), &notice);
-                        self.cancel_turn().await;
-                    } else if self.loop_guard.tripped().is_some() && !self.stop_requested {
-                        self.cancel_turn().await;
-                    }
                 }
             }
             Some(Incoming::Request { id, method, params }) => {
+                let Some(conn) = &self.conn else { return };
+                let acp = conn.acp.clone();
                 if method == "session/request_permission" && self.turn.is_some() {
                     self.on_permission(id, params).await;
                 } else {
-                    self.answer_outside_turn(id, &method, &params).await;
+                    let _ = acp.respond_error(id, -32601, &format!("{method} is not supported by Codync")).await;
                 }
             }
-        }
-    }
-
-    /// Feeds a finished tool call to the stall gate; a tripped gate is stopped by `on_incoming`.
-    fn observe_tool_end(&mut self, status: &str, title: &str, output: &str) {
-        let outcome = match status {
-            "completed" => ToolOutcome::Succeeded,
-            "failed" => ToolOutcome::Failed { title, output },
-            _ => return,
-        };
-        if let Some(reason) = self.loop_guard.observe(&outcome) {
-            tracing::warn!(bot = %self.cfg.id, %reason, "stopping a looping turn");
         }
     }
 
@@ -111,10 +85,7 @@ impl Actor {
                 merge_tool_content(&mut data, &u["content"]);
                 mark_bookkeeping(&self.cfg, self.renamed(), &mut data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &data);
-                let title = data["title"].as_str().unwrap_or("Tool").to_owned();
-                let status = data["status"].as_str().unwrap_or_default().to_owned();
-                self.observe_tool_end(&status, &title, data["output"].as_str().unwrap_or_default());
-                let working = activity(&data).to_owned();
+                let working = activity(&data, self.renamed()).to_owned();
                 if let Some(e) = self.add(EntryKind::Tool, turn, data) {
                     self.tools.insert(tool_id, e.id);
                 }
@@ -124,7 +95,6 @@ impl Actor {
                 let tool_id = u["toolCallId"].as_str().unwrap_or_default();
                 let Some(entry_id) = self.tools.get(tool_id).cloned() else { return };
                 let Some(mut e) = self.hub.store.entry(&entry_id) else { return };
-                let before = e.data["status"].as_str().unwrap_or_default().to_owned();
                 for (k, key) in [("title", "title"), ("kind", "toolKind"), ("status", "status")] {
                     if let Some(v) = u[k].as_str() {
                         e.data[key] = v.into();
@@ -136,13 +106,8 @@ impl Actor {
                 merge_tool_content(&mut e.data, &u["content"]);
                 mark_bookkeeping(&self.cfg, self.renamed(), &mut e.data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &e.data);
-                let working = (e.data["status"] == "in_progress").then(|| activity(&e.data).to_owned());
-                let status = e.data["status"].as_str().unwrap_or_default().to_owned();
-                let title = e.data["title"].as_str().unwrap_or("Tool").to_owned();
+                let working = (e.data["status"] == "in_progress").then(|| activity(&e.data, self.renamed()).to_owned());
                 self.hub.set_entry(&entry_id, &e.data);
-                if status != before {
-                    self.observe_tool_end(&status, &title, e.data["output"].as_str().unwrap_or_default());
-                }
                 if let Some(working) = working {
                     self.set_activity(&working);
                 }
@@ -187,9 +152,21 @@ impl Actor {
     }
 
     pub(super) async fn on_permission(&mut self, rpc_id: Value, params: Value) {
-        use crate::agent::approval_rules::{self, Decision};
         let options = params["options"].as_array().cloned().unwrap_or_default();
         let tool = &params["toolCall"];
+        if self.cfg.permission == Permission::Auto {
+            let pick = ["allow_once", "allow_always"]
+                .iter()
+                .find_map(|k| options.iter().find(|o| o["kind"] == *k))
+                .or_else(|| options.first());
+            if let (Some(o), Some(conn)) = (pick, &self.conn) {
+                let _ = conn
+                    .acp
+                    .respond(rpc_id, json!({"outcome": {"outcome": "selected", "optionId": o["optionId"]}}))
+                    .await;
+                return;
+            }
+        }
         let title = tool["title"]
             .as_str()
             .filter(|t| !t.is_empty())
@@ -199,37 +176,15 @@ impl Actor {
                 self.hub.store.entry(eid)?.data["title"].as_str().map(str::to_owned)
             })
             .unwrap_or_else(|| "Use a tool".into());
+        let mut detail = json!({"output": "", "diffs": []});
+        merge_tool_content(&mut detail, &tool["content"]);
         let raw = &tool["rawInput"];
         let command = raw["command"].as_str().map(str::to_owned).or_else(|| {
             raw["command"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
         });
-        let kind = tool["kind"].as_str().unwrap_or("other");
-        // The user's rules first, then the bot's general setting.
-        let rule =
-            approval_rules::decide(&self.cfg.approval_rules, kind, command.as_deref().unwrap_or(&title)).cloned();
-        let decision = rule.as_ref().map(|r| r.decision);
-        if decision == Some(Decision::Deny) {
-            let pattern = rule.as_ref().map(|r| r.pattern.as_str()).unwrap_or_default();
-            let notice = json!({"text": format!("Denied by your rule \"{pattern}\": {title}"), "style": "info"});
-            self.hub.add_entry(&self.lane, EntryKind::Notice, self.turn.unwrap_or(0), &notice);
-            if !self.pick_option(&rpc_id, &options, &["reject_once", "reject_always"], false).await
-                && let Some(conn) = &self.conn
-            {
-                let _ = conn.acp.respond(rpc_id, json!({"outcome": {"outcome": "cancelled"}})).await;
-            }
-            return;
-        }
-        let allowed =
-            decision == Some(Decision::Allow) || (decision.is_none() && self.cfg.permission == Permission::Auto);
-        // Like the bot's automatic setting always did: with no allow option, its first option.
-        if allowed && self.pick_option(&rpc_id, &options, &["allow_once", "allow_always"], true).await {
-            return;
-        }
-        let mut detail = json!({"output": "", "diffs": []});
-        merge_tool_content(&mut detail, &tool["content"]);
         let data = json!({
             "title": title,
-            "toolKind": kind,
+            "toolKind": tool["kind"].as_str().unwrap_or("other"),
             "command": command,
             "detail": detail["output"],
             "diffs": detail["diffs"],
@@ -237,24 +192,8 @@ impl Actor {
             "options": options.iter().map(|o| json!({"optionId": o["optionId"], "name": o["name"], "kind": o["kind"]})).collect::<Vec<_>>(),
             "status": "pending",
             "selected": Value::Null,
-            // The rule that asked for this card, when one did (the bot itself approves everything).
-            "rule": rule.as_ref().map(|r| r.pattern.clone()),
         });
         self.show_card(&title, data, Answer::Agent(rpc_id));
-    }
-
-    /// A permission request from work the agent goes on with after its turn ended (a background subagent): no turn
-    /// shows a card for it, so it gets what a turn would answer without asking, under the bot's Approve automatically,
-    /// for one of this bot's own sessions, unless the user stopped its last turn. Anything else is declined.
-    pub(super) async fn answer_background(&self, rpc_id: Value, params: &Value) {
-        let Some(conn) = &self.conn else { return };
-        let own = params["sessionId"].as_str().is_some_and(|sid| conn.loaded.contains_key(sid));
-        let options = params["options"].as_array().cloned().unwrap_or_default();
-        let pick = (self.cfg.permission == Permission::Auto && own && !self.stop_requested)
-            .then(|| auto_pick(&options))
-            .flatten();
-        tracing::info!(bot = %self.id(), approved = pick.is_some(), title = params["toolCall"]["title"].as_str(), "permission asked outside a turn");
-        let _ = conn.acp.respond(rpc_id, acp::permission_answer(pick)).await;
     }
 
     /// `Cmd::Approve`: Allow or Deny on a card, with what the tool will do in its details.
@@ -275,56 +214,23 @@ impl Actor {
     fn show_card(&mut self, title: &str, data: Value, answer: Answer) {
         let turn = self.turn.unwrap_or(0);
         self.close_seg();
-        let created = self.add(EntryKind::Permission, turn, data);
-        if let Some(e) = &created {
-            self.perms.insert(e.id.clone(), answer);
+        if let Some(e) = self.add(EntryKind::Permission, turn, data) {
+            self.perms.insert(e.id, answer);
         }
         self.hub.set_runtime(&self.cfg.id, |r| {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Needs approval: {title}");
         });
-        // What a phone needs to answer the card without opening it: its id and the options the card itself
-        // shows, so a button can never offer something the card doesn't.
-        let approval = created.map(|e| {
-            let options = e.data["options"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .take(3)
-                .filter_map(|o| {
-                    Some(json!({
-                        "optionId": o["optionId"].as_str()?,
-                        "name": acp::truncate(o["name"].as_str()?, 60),
-                        "kind": o["kind"].as_str().unwrap_or(""),
-                    }))
-                })
-                .collect::<Vec<_>>();
-            json!({"entryId": e.id, "options": options})
-        });
         // Tapping it opens where the card is: the group, for a room turn.
         let target = self.hub.store.bot(&self.lane.chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
-        push::notify_with(
+        push::notify(
             &self.hub,
             &target,
             Some(&self.cfg.id),
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,
-            approval,
         );
-    }
-
-    /// Answers permission request `rpc_id` with its first option of one of `kinds`, in that order
-    /// (with `any`, its first option when none fits); false when there's no such option or agent.
-    async fn pick_option(&self, rpc_id: &Value, options: &[Value], kinds: &[&str], any: bool) -> bool {
-        let pick = kinds
-            .iter()
-            .find_map(|k| options.iter().find(|o| o["kind"] == *k))
-            .or_else(|| if any { options.first() } else { None });
-        let (Some(option), Some(conn)) = (pick, &self.conn) else { return false };
-        let picked = json!({"outcome": {"outcome": "selected", "optionId": option["optionId"]}});
-        let _ = conn.acp.respond(rpc_id.clone(), picked).await;
-        true
     }
 
     /// A Codync card whose tool stopped waiting (it timed out, or its call was dropped) expires, buttons and all.
@@ -341,22 +247,16 @@ impl Actor {
     }
 
     pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
-        let Some(answer) = self.perms.remove(entry_id) else {
-            // No agent waits on it any more (its process went away): close the card, so it
-            // can't be answered as if it still mattered.
-            if let Some(mut e) = self.hub.store.entry(entry_id)
-                && e.data["status"] == "pending"
-            {
-                e.data["status"] = "cancelled".into();
-                self.hub.set_entry(entry_id, &e.data);
-            }
-            return;
-        };
+        let Some(answer) = self.perms.remove(entry_id) else { return };
         let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
         match answer {
             Answer::Agent(rpc_id) => {
+                let outcome = match &option_id {
+                    Some(o) => json!({"outcome": {"outcome": "selected", "optionId": o}}),
+                    None => json!({"outcome": {"outcome": "cancelled"}}),
+                };
                 if let Some(conn) = &self.conn {
-                    let _ = conn.acp.respond(rpc_id, acp::permission_answer(option_id.as_deref())).await;
+                    let _ = conn.acp.respond(rpc_id, outcome).await;
                 }
             }
             Answer::Codync(reply) => {
@@ -382,35 +282,20 @@ impl Actor {
     /// A `send_message`: the user's next bubble, in the turn's lane, right away. Only in the
     /// bot's own chat; a room, a bot request or a routine reads the turn's reply.
     pub(super) fn send_to_user(&mut self, text: String) -> anyhow::Result<()> {
-        let Some(turn) = self.turn else { return self.send_between_turns(&text) };
-        // A background result can't be told from this turn's own send (no session in the call): it may try again later.
+        let Some(turn) = self.turn else { anyhow::bail!("no turn is running") };
         if self.active_request.is_some() {
             anyhow::bail!(
-                "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there {LATER}"
+                "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there"
             );
         }
         if self.active_group.is_some() || self.active_routine.is_some() {
-            anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
-        }
-        if self.proactive_turn && super::proactive::is_silent(&text) {
-            return Ok(());
+            anyhow::bail!("send_message isn't available in this turn: write your answer as your reply");
         }
         self.close_seg();
         self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}))
             .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         self.sent.push(text);
         self.set_activity("Working…");
-        Ok(())
-    }
-
-    /// A `send_message` from work the agent goes on with after its turn ended (a background subagent's result): a
-    /// message in the bot's own chat, with the alert a finished turn sends, unless the user stopped its last turn.
-    fn send_between_turns(&self, text: &str) -> anyhow::Result<()> {
-        anyhow::ensure!(self.conn.is_some(), "no turn is running");
-        anyhow::ensure!(!self.stop_requested, "the user stopped you: send nothing until they write again");
-        self.add_between_turns(EntryKind::Agent, &json!({"text": text, "final": true, "author": self.cfg.id}))
-            .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
-        push::notify(&self.hub, &self.cfg, None, &self.cfg.name, text, AlertKind::Done);
         Ok(())
     }
 
@@ -471,18 +356,14 @@ impl Actor {
 
     /// Persists streamed text at most every 300 ms (or immediately with `force`).
     pub(super) fn flush(&mut self, force: bool) {
-        let internal = self.proactive_turn;
         if let Seg::Open { kind, entry_id, buf, flushed, dirty } = &mut self.seg
             && *dirty
             && (force || flushed.elapsed() >= Duration::from_millis(300))
         {
-            let mut data = match kind {
+            let data = match kind {
                 SegKind::Text => json!({"text": buf, "final": false, "author": self.cfg.id}),
                 SegKind::Thought => json!({"text": buf, "author": self.cfg.id}),
             };
-            if internal {
-                data["internal"] = true.into();
-            }
             self.hub.set_entry(entry_id, &data);
             *flushed = Instant::now();
             *dirty = false;
@@ -494,15 +375,3 @@ impl Actor {
         self.seg = Seg::None;
     }
 }
-
-/// The option Approve automatically picks for a permission request: allow once, else allow always, else its first.
-fn auto_pick(options: &[Value]) -> Option<&str> {
-    ["allow_once", "allow_always"]
-        .iter()
-        .find_map(|k| options.iter().find(|o| o["kind"] == *k))
-        .or_else(|| options.first())?["optionId"]
-        .as_str()
-}
-
-/// Told with a `send_message` refused in a room, request or routine turn, in case it came from earlier work.
-const LATER: &str = "(a result of earlier background work: send it again once this turn ends)";

@@ -20,10 +20,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import org.webrtc.AddIceObserver
 import org.webrtc.DataChannel
 import org.webrtc.AddIceObserver
 import org.webrtc.DefaultVideoDecoderFactory
@@ -74,7 +72,7 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val context: Context = store.application
+    private val context: Context = store.getApplication<android.app.Application>()
     private var session: String? = null
     private var pc: PeerConnection? = null
     private var track: VideoTrack? = null
@@ -100,14 +98,13 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     // MARK: connection
 
     fun start() {
-        recoveryAttempts = 0
         phase = Phase.Connecting
         scope.launch {
             try { connect() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Superseded) { /* Its replacement reports for itself. */ }
             catch (error: Exception) {
-                if (phase != Phase.Connecting) return@launch
+                if (phase == Phase.Closed) return@launch
                 close()
                 phase = Phase.Failed(error.message ?: "Couldn't connect to the remote screen.")
             }
@@ -145,33 +142,8 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
         }
         val factory = ScreenRtc.factory(context)
-        val events = Events(current)
-        val pc = factory.createPeerConnection(config, events) ?: throw IOException("Couldn't start the video connection.")
+        val pc = factory.createPeerConnection(config, Events(current)) ?: throw IOException("Couldn't start the video connection.")
         this.pc = pc
-        if (connection.trickle) {
-            val next = ScreenSignaling(scope, screenCandidates(active, connection.session), send = { candidate ->
-                active.call("screenCandidate", buildJsonObject {
-                    put("session", connection.session)
-                    put("candidate", WireJson.encodeToJsonElement(candidate))
-                })
-            }, apply = { candidate ->
-                addCandidate(pc, candidate)
-            }, isMediaConnected = {
-                this.pc === pc && pc.iceConnectionState() in listOf(PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED)
-            }, onFailure = { error ->
-                if (generation == current && phase != Phase.Closed) {
-                    lastError = error.message
-                    teardown()
-                    phase = Phase.Reconnecting
-                    if (recoverJob?.isActive != true) scheduleRecovery(0)
-                }
-            })
-            signaling = next
-            events.signaling = next
-            next.subscribe()
-            if (this.pc !== pc || generation != current || phase == Phase.Closed) throw Superseded()
-            next.check()
-        }
         val video = pc.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
             RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY))
         val codecs = factory.getRtpReceiverCapabilities(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO).codecs
@@ -203,7 +175,6 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
             throw error
         }
         if (generation != current || phase == Phase.Closed) throw Superseded()
-        signaling?.check()
         // Refresh both endpoints before TURN credentials expire, including an idle screen.
         renewJob = scope.launch {
             delay(connection.renewIn(System.currentTimeMillis()))
@@ -265,8 +236,6 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
         if (generation != this.generation || phase == Phase.Closed) return
         when (state) {
             PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> {
-                signaling?.mediaConnected()
-                recoveryAttempts = 0
                 connectionTimer?.cancel()
                 phase = Phase.Live
                 lastError = null
@@ -281,51 +250,32 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     private fun scheduleRecovery(delayMillis: Long) {
         recoverJob?.cancel()
         recoverJob = scope.launch {
+            var attempt = 0
             delay(delayMillis)
             while (isActive && phase == Phase.Reconnecting) {
-                if (recoveryAttempts >= 3) {
-                    val message = lastError ?: "Couldn't reconnect to the remote screen."
-                    close()
-                    phase = Phase.Failed(message)
-                    return@launch
-                }
-                // Wait for a usable signaling route before spending a negotiation attempt.
-                try { waitForScreenRoute { store.channel?.state?.value } }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (error: Exception) {
-                    if (phase != Phase.Reconnecting) return@launch
-                    close()
-                    phase = Phase.Failed(error.message ?: "Couldn't reach the computer.")
-                    return@launch
-                }
                 try {
-                    if (phase != Phase.Reconnecting) return@launch
-                    recoveryAttempts += 1
+                    // Re-evaluate the signaling route after Wi-Fi/cellular changes and fetch fresh ICE credentials.
                     connect()
                     return@launch
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Superseded) { /* A failed negotiation may have retired this peer. */ }
+                catch (_: Superseded) { return@launch }
                 catch (error: Exception) {
                     if (phase == Phase.Closed) return@launch
-                    lastError = error.message
                     Log.i("CodyncScreen", "screen reconnect failed: ${error.message}")
-                    // The host answers most errors with 400 (a restarting helper, a replaced session): only a denial or a
-                    // required update ends recovery early, and the last attempt fails at once, as on the iPhone.
-                    if ((error is HostError && error.status in screenTerminalStatuses) || recoveryAttempts >= 3) {
+                    attempt += 1
+                    if (attempt >= 3) {
                         close()
-                        phase = Phase.Failed(lastError ?: "Couldn't reconnect to the remote screen.")
+                        phase = Phase.Failed(error.message ?: "Couldn't reconnect to the remote screen.")
                         return@launch
                     }
+                    delay(minOf(attempt * 2_000L, 10_000L))
                 }
-                if (phase != Phase.Reconnecting) return@launch
-                delay(minOf(maxOf(1, recoveryAttempts) * 2_000L, 10_000L))
             }
         }
     }
 
     fun close() {
         recoverJob?.cancel()
-        recoverJob = null
         phase = Phase.Closed
         session?.let(::closeRemote)
         session = null
@@ -391,7 +341,6 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     // MARK: WebRTC callbacks (its signaling thread) → main
 
     private inner class Events(private val generation: Int) : PeerConnection.Observer {
-        @Volatile var signaling: ScreenSignaling? = null
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) { scope.launch { iceChanged(state, generation) } }
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
             if (state != PeerConnection.IceGatheringState.COMPLETE) return

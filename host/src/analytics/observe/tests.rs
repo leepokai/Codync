@@ -222,7 +222,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
     let (hub, dir) = temp_hub();
     let cfg = serde_json::from_value(json!({"id": "b1", "name": "b", "backend": "codex", "cwd": "/tmp"})).unwrap();
     hub.store.save_bot(&cfg).unwrap();
-    let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "permission": "auto"})).unwrap();
+    let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "permission": "ask"})).unwrap();
     assert_eq!(p["fields"], json!(["permission"]));
 
     let card = json!({"status": "pending", "options": [{"optionId": "o1", "name": "Allow", "kind": "allow_always"}]});
@@ -242,7 +242,6 @@ async fn store_lookups_add_fields_choice_and_platform() {
             lease_until: None,
             created_at: 0,
             last_seen_at: None,
-            account: None,
         })
         .unwrap();
     let (event, p) = observe_call(&hub, &phone, "respondPermission", &answer).unwrap();
@@ -254,21 +253,4 @@ async fn store_lookups_add_fields_choice_and_platform() {
     let (_, p) = observe_call(&hub, &stranger, "stop", &json!({"botId": "b1"})).unwrap();
     assert_eq!(p["platform"], "other");
     std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
-fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
-    let failed_call = |method: &str, b: &Value| {
-        let (event, p) = observe(&Caller::Local, method, b)?;
-        failed(event, p).map(|(e, p)| (e, Value::Object(p)))
-    };
-    assert_eq!(
-        failed_call("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
-        Some((Event::NetworkFailed, json!({"via": "invite", "client": "local", "stage": "action"})))
-    );
-    assert_eq!(
-        failed_call("networkRemove", &json!({"computer": "desk"})),
-        Some((Event::NetworkFailed, json!({"action": "remove", "client": "local", "stage": "action"})))
-    );
-    assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
 }

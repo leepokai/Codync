@@ -43,14 +43,6 @@ pub enum Reported {
         #[serde(skip_serializing_if = "Option::is_none")]
         signed_in: Option<bool>,
     },
-    /// One onboarding step shown (desktop, Android); its funnel ends in `onboarding_completed`.
-    OnboardingStepViewed {
-        step: OnboardingStep,
-    },
-    /// Onboarding left at `step`.
-    OnboardingAbandoned {
-        step: OnboardingStep,
-    },
     ComputerAccessFinished {
         /// Screen recording and control granted.
         ready: bool,
@@ -96,22 +88,9 @@ pub enum Reported {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum OnboardingStep {
-    Welcome,
-    Account,
-    ComputerAccess,
-    Pairing,
-    Ready,
-    #[serde(other)]
-    Other,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum Provider {
     Apple,
     Google,
-    Github,
     Hosted,
     #[serde(other)]
     Other,
@@ -301,7 +280,6 @@ mod tests {
                 Event::SignInFailed,
             ),
             (json!({"event": "signed_in", "app": "desktop", "provider": "google"}), Event::SignedIn),
-            (json!({"event": "signed_in", "app": "desktop", "provider": "github"}), Event::SignedIn),
             (json!({"event": "signed_out", "app": "desktop"}), Event::SignedOut),
             (
                 json!({"event": "star_prompt_answered", "app": "desktop", "ask": "second", "starred": true}),
@@ -310,11 +288,6 @@ mod tests {
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
-            (
-                json!({"event": "onboarding_step_viewed", "app": "desktop", "step": "pairing"}),
-                Event::OnboardingStepViewed,
-            ),
-            (json!({"event": "onboarding_abandoned", "app": "desktop", "step": "account"}), Event::OnboardingAbandoned),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,
                     "reconnects": 1, "stuck": "none", "failure": "none"}),

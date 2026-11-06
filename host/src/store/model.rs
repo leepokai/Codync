@@ -1,93 +1,18 @@
-//! Row and wire types: bot configs, lanes, entries and their kinds.
+﻿//! Row and wire types: bot configs, lanes, entries and their kinds.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// How a bot handles the permission requests that reach Codync (wire values `ask` / `auto`). Which ones reach it is
-/// the agent's mode (`BotConfig::mode`).
+/// How a bot handles the agent's permission requests (wire values `ask` / `auto`).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Permission {
-    /// Every request becomes an approval card on the phone. New bots start here, in the agent's Auto mode.
-    #[default]
+    /// Every request becomes an approval card on the phone.
     Ask,
-    /// Requests are approved once, automatically.
+    /// Requests are approved once, automatically. New bots start here.
+    #[default]
     Auto,
-}
-
-/// Per-category action policy (Idea 43: `allow` | `ask` | `block`).
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum RulePolicy {
-    #[default]
-    Allow,
-    Ask,
-    Block,
-}
-
-/// The 7 action classes configurable per bot (Idea 43).
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum ActionClass {
-    Files,
-    Shell,
-    Browse,
-    Browser,
-    Apps,
-    Bots,
-    Routines,
-}
-
-#[allow(dead_code)]
-pub const ACTION_CLASSES: [&str; 7] = ["files", "shell", "browse", "browser", "apps", "bots", "routines"];
-
-/// Proactive check-ins, quiet hours, daily budget, and background app permission (Ideas 41, 44).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ProactiveSettings {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_proactive_hours")]
-    pub every_hours: u32,
-    #[serde(default = "default_quiet_start")]
-    pub quiet_start: u8,
-    #[serde(default = "default_quiet_end")]
-    pub quiet_end: u8,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timezone: Option<String>,
-    #[serde(default = "default_max_per_day")]
-    pub max_per_day: u32,
-    /// Whether connected apps/MCP tools may run in background routines and proactive check-ins (Idea 44).
-    #[serde(default = "yes")]
-    pub apps_in_background: bool,
-}
-
-impl Default for ProactiveSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            every_hours: default_proactive_hours(),
-            quiet_start: default_quiet_start(),
-            quiet_end: default_quiet_end(),
-            timezone: None,
-            max_per_day: default_max_per_day(),
-            apps_in_background: true,
-        }
-    }
-}
-
-fn default_proactive_hours() -> u32 {
-    4
-}
-fn default_quiet_start() -> u8 {
-    22
-}
-fn default_quiet_end() -> u8 {
-    8
-}
-fn default_max_per_day() -> u32 {
-    3
 }
 
 /// Transcript entry kinds (the `kind` column / wire field).
@@ -141,12 +66,9 @@ pub struct BotConfig {
     pub description: String,
     #[serde(default = "default_color")]
     pub avatar_color: String,
-    /// Grok-Bot-style character shape or geometric robot head look (`BOT_AVATAR_LOOKS`).
+    /// Grok-Bot-style character shape: blob | pebble | squircle | tablet | wedge | hex | cloud | teardrop.
     #[serde(default = "default_shape")]
     pub avatar_shape: String,
-    /// Optional geometric robot avatar look (`BOT_AVATAR_LOOKS`, Idea 21).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub avatar_look: Option<String>,
     /// Empty for a group.
     #[serde(default)]
     pub backend: String,
@@ -157,20 +79,14 @@ pub struct BotConfig {
     pub cwd: String,
     #[serde(default)]
     pub permission: Permission,
-    /// The agent mode to work in (see `agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
-    /// without one keeps its own). None: the mode its sessions open in, the agent's default.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
-    /// The model's own settings (effort, fast…): ACP config option id → value.
+    /// The model's own settings (effort, fastÔÇª): ACP config option id ÔåÆ value.
     #[serde(default)]
     pub model_options: BTreeMap<String, String>,
     /// Ask the agent for its Fast mode (Claude Code, Codex): faster replies for more usage.
     #[serde(default)]
     pub fast_mode: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub account: Option<String>,
     /// Agents that carry on, in order, when the bot's own can't answer (see `agent::fallback`).
     #[serde(default)]
     pub fallbacks: Vec<Fallback>,
@@ -179,8 +95,7 @@ pub struct BotConfig {
     pub self_fallbacks: bool,
     #[serde(default)]
     pub pinned: bool,
-    /// The computer's lead bot (see `chat::lead`): first in the roster. The host makes the first; the user may pick
-    /// another (`setLead`), never a client's or a bot's `createBot` / `updateBot`.
+    /// The computer's lead bot, which the host makes (see `chat::lead`): first in the roster, never deleted or hidden.
     #[serde(default)]
     pub lead: bool,
     /// Place in the roster, lowest first (after the lead and pinned bots). All 0 until the user drags one:
@@ -203,19 +118,8 @@ pub struct BotConfig {
     /// The bot gets the built-in `computer` MCP server (see `screen`).
     #[serde(default)]
     pub computer: bool,
-    /// The user's rules for the agent's permission requests, first match wins (see `agent::approval_rules`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub approval_rules: Vec<crate::agent::approval_rules::ApprovalRule>,
-    /// Per-category action policy matrix (`files`, `shell`, `browse`, `browser`, `apps`, `bots`, `routines`, Idea 43).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub action_rules: BTreeMap<ActionClass, RulePolicy>,
-    /// Proactive check-ins, quiet hours, daily budget and background app toggle (Ideas 41, 44).
-    #[serde(default)]
-    pub proactive: ProactiveSettings,
-    #[serde(default)]
-    pub computer_permissions: crate::computer::Permissions,
-    /// The bot gets the built-in `manage` MCP server: it creates bots and changes the setup of the bots it
-    /// created (see `chat::manage`). The user turns it on; the bots such a bot creates have it too.
+    /// The bot gets the built-in `manage` MCP server: it creates bots and changes any bot's setup
+    /// (see `chat::manage`). The user turns it on; the bots such a bot creates have it too.
     #[serde(default)]
     pub manage_team: bool,
     /// Other computers in the user's network list this bot and may message it (`network::publish`).
@@ -234,7 +138,7 @@ pub struct BotConfig {
     /// project folder (see `chat::memory::shared`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shared_memory: Option<bool>,
-    /// Keeps the harness's own memory (Claude Code's auto memory…) on beside Codync's. Off unless the user turns it
+    /// Keeps the harness's own memory (Claude Code's auto memoryÔÇª) on beside Codync's. Off unless the user turns it
     /// on, and only where Codync can turn it off (see `agent::own_memory::kept`). A client sending back the bot as
     /// it got it sends `null` where there is no switch.
     #[serde(default, deserialize_with = "null_as_false")]
@@ -243,12 +147,6 @@ pub struct BotConfig {
     /// until the user renames it.
     #[serde(default)]
     pub auto_name: bool,
-    /// Designates this bot as the Chief of Staff coordinator for team incidents and escalations.
-    #[serde(default, deserialize_with = "null_as_false")]
-    pub is_chief: bool,
-    /// For a group chat, the member bot ID designated as Chief of Staff.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chief_bot_id: Option<String>,
     #[serde(default)]
     pub created_at: i64,
 }
@@ -280,13 +178,10 @@ fn null_as_false<'de, D: serde::Deserializer<'de>>(value: D) -> Result<bool, D::
     Ok(Option::<bool>::deserialize(value)?.unwrap_or(false))
 }
 
-/// The avatar colors, shapes and geometric robot looks every client offers.
+/// The avatar colors and shapes every client offers.
 pub const AVATAR_COLORS: [&str; 11] =
     ["black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray"];
 pub const AVATAR_SHAPES: [&str; 8] = ["blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop"];
-#[allow(dead_code)]
-pub const BOT_AVATAR_LOOKS: [&str; 12] =
-    ["round", "visor", "dome", "boxy", "cyclops", "ears", "scout", "owl", "pixel", "hex", "astro", "cat"];
 
 fn default_color() -> String {
     "blue".into()
@@ -300,36 +195,16 @@ pub fn run_session_key(bot_id: &str, slot: &str) -> String {
     format!("lane.session.{bot_id}@{bot_id}/{slot}")
 }
 
-/// Where entries go and a turn talks: a bot's own chat or a group's (`chat`, a bot id), or one of its side
-/// conversations (`thread`: a document's `doc:<id>` or a Slack thread's `slack-…`), kept apart from the chat.
-/// The chat itself has no threads: a message answers another with `replyTo` (`chat::replies`).
+/// Where entries go and a turn talks: a bot's own chat or a group's (`chat`, a bot id).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Lane {
     pub chat: String,
-    pub thread: Option<String>,
 }
 
 impl Lane {
     pub fn main(chat: &str) -> Self {
-        Self { chat: chat.to_owned(), thread: None }
+        Self { chat: chat.to_owned() }
     }
-
-    pub fn in_thread(chat: &str, root: &str) -> Self {
-        Self { chat: chat.to_owned(), thread: Some(root.to_owned()) }
-    }
-
-    /// The lane as one string: `chat`, or `chat/thread` for a side conversation.
-    pub fn key(&self) -> String {
-        match &self.thread {
-            Some(thread) => format!("{}/{thread}", self.chat),
-            None => self.chat.clone(),
-        }
-    }
-}
-
-/// kv key for per-bot state in one lane (`what`: `scratchpad`, …).
-pub fn lane_key(what: &str, bot_id: &str, lane: &Lane) -> String {
-    format!("lane.{what}.{bot_id}@{}", lane.key())
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -344,9 +219,6 @@ pub struct Entry {
     pub data: Value,
     pub created_at: i64,
     pub updated_at: i64,
-    /// The side conversation it's in (see `Lane::thread`); none in the chat itself.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
 }
 
 /// A message's text, or the names of its files when it has none.
@@ -386,22 +258,5 @@ mod tests {
         assert_eq!(p, Permission::Auto);
         assert_eq!(serde_json::to_string(&Permission::Ask).unwrap(), "\"ask\"");
         assert!(serde_json::from_str::<Permission>("\"yolo\"").is_err(), "unknown modes are rejected at the boundary");
-    }
-
-    #[test]
-    fn proactive_and_action_rules_deserialize_with_defaults() {
-        let cfg: BotConfig = serde_json::from_value(serde_json::json!({
-            "id": "b1",
-            "name": "Bot",
-            "actionRules": {"shell": "ask", "files": "allow"},
-            "proactive": {"enabled": true, "quietStart": 23, "quietEnd": 7, "maxPerDay": 2, "appsInBackground": false}
-        }))
-        .unwrap();
-        assert_eq!(cfg.action_rules.get(&ActionClass::Shell), Some(&RulePolicy::Ask));
-        assert!(cfg.proactive.enabled);
-        assert_eq!(cfg.proactive.quiet_start, 23);
-        assert_eq!(cfg.proactive.quiet_end, 7);
-        assert_eq!(cfg.proactive.max_per_day, 2);
-        assert!(!cfg.proactive.apps_in_background);
     }
 }

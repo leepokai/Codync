@@ -1,14 +1,11 @@
-import { useState } from 'react'
 import type { UsageProvider, UsageWindow } from '@shared/models'
-import { Icon } from '../../components/Icon'
 import { prefs, usePref } from '../../lib/prefs'
 import { usePixelRatio } from '../../lib/theme'
 import { useResetLine, useTr } from '../../lib/use-language'
 import { UsageBar } from '../usage/UsageBar'
 import { mascotDataURL } from '../usage/ProviderMascot'
-import { providerTintCSS, resetDescription, tightest, usageStatus, windowReading, windowTitle } from '../usage/usage-model'
+import { providerTintCSS, resetDescription, tightest, usedText, windowReading, windowTitle } from '../usage/usage-model'
 import type { IslandModel } from './island-model'
-import './island-usage.css'
 
 // Codync's own part of the island: the plan limits the menu bar already tracks (local usage
 // only), as a meter in the header and a Usage tab.
@@ -66,38 +63,27 @@ export function UsageView({ model }: { model: IslandModel }) {
   const usage = [...model.summary.usage].sort((a, b) => (tightest(b)?.percent ?? -1) - (tightest(a)?.percent ?? -1))
   const tr = useTr()
   const line = useResetLine()
-  const [page, setPage] = useState(0)
-  const pages = Math.max(1, Math.ceil(usage.length / 2))
-  const current = Math.min(page, pages - 1)
   if (!usage.length) {
     return (
       <div className="island-card island-empty">
         <span className="island-empty-text">
           <span className="island-title">No usage yet.</span>
-          <span className="island-subtitle">{tr('Plan limits appear when a connected agent reports them.')}</span>
+          <span className="island-subtitle">{tr('Plan limits show up here once an agent reports them.')}</span>
         </span>
       </div>
     )
   }
   return (
-    <div className="island-usage-pages">
-      {pages > 1 ? <div className="island-usage-navigation">
-        <button className="island-tab" aria-label={tr('Previous usage providers')} disabled={current === 0} onClick={() => setPage(current - 1)}><Icon name="chevron.left" size={12} /></button>
-        <span aria-live="polite">{current + 1} / {pages}</span>
-        <button className="island-tab" aria-label={tr('Next usage providers')} disabled={current === pages - 1} onClick={() => setPage(current + 1)}><Icon name="chevron.right" size={12} /></button>
-      </div> : null}
-      <div key={current} className="island-row-cards island-swap">
-      {usage.slice(current * 2, current * 2 + 2).map((provider) => (
+    <div className="island-row-cards">
+      {usage.slice(0, 2).map((provider) => (
         <div key={provider.id} className="island-card island-usage">
           <div className="island-agent">
             <Mascot provider={provider} size={20} />
-            <span className="island-agent-name truncate" title={provider.name}>{provider.name}</span>
+            <span className="island-agent-name">{provider.name}</span>
           </div>
-          {usageStatus(provider) ? <span className="island-subtitle">{tr(usageStatus(provider)!)}</span> : null}
-          <div className="island-usage-windows">
-          {provider.windows.map((w) => (
+          {provider.windows.slice(0, 3).map((w) => (
             <div key={w.id} className="island-usage-row">
-              <span className="island-usage-title" title={w.label}>{tr(windowTitle(w))}</span>
+              <span className="island-usage-title">{tr(windowTitle(w))}</span>
               {w.text ? (
                 <span className="island-usage-note">{w.text}</span>
               ) : (
@@ -109,10 +95,8 @@ export function UsageView({ model }: { model: IslandModel }) {
               )}
             </div>
           ))}
-          </div>
         </div>
       ))}
-      </div>
     </div>
   )
 }

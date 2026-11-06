@@ -2,7 +2,6 @@
 
 pub mod artifacts;
 pub mod files;
-mod icons;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -16,10 +15,9 @@ use super::app::{After, Msg};
 use super::manage::Reply;
 
 /// Methods that start an agent or download something: they can take minutes.
-const SLOW: [&str; 8] = [
+const SLOW: [&str; 7] = [
     "agentAuth",
     "agentAuthenticate",
-    "accountAuthenticate",
     "agentModels",
     "setAgentEnv",
     "installConnector",
@@ -57,13 +55,6 @@ impl Client {
     }
 
     pub async fn call(&self, method: &str, body: &Value) -> Result<Value, String> {
-        let prepared;
-        let body = if method == "setIcon" {
-            prepared = icons::prepare(body).await.map_err(|e| format!("{e:#}"))?;
-            &prepared
-        } else {
-            body
-        };
         let token = self.token().ok_or(NOT_INSTALLED)?;
         let started = std::time::Instant::now();
         let res = loop {

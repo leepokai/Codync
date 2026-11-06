@@ -22,10 +22,6 @@ pub struct Identity {
     /// The skills block the agent is told (`market::skills_brief`), so a skill renamed or redescribed counts too.
     #[serde(default)]
     pub skills_brief: String,
-    /// Whether it's the user's lead bot (`chat::lead`), a role the user moves. None in a snapshot from before it
-    /// could move (`parse` reads it from the instructions).
-    #[serde(default)]
-    pub lead: Option<bool>,
 }
 
 impl Identity {
@@ -34,16 +30,9 @@ impl Identity {
             name: cfg.name.trim().to_owned(),
             description: cfg.description.trim().to_owned(),
             skills_brief: crate::market::skills_brief(store, &cfg.skills).unwrap_or_default(),
-            lead: Some(cfg.lead),
         }
     }
 }
-
-/// The start of `lead::BRIEF` in every version of it: instructions that hold it gave the bot the lead's role.
-const LEAD_ROLE: &str = "\nLead: you are the user's lead bot";
-
-/// What a bot that led hears once it no longer does.
-const NOT_LEAD: &str = "Lead: you are no longer the user's lead bot; ignore the earlier Lead instructions.";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -59,29 +48,9 @@ pub struct Snapshot {
     /// The memory revision `system` holds (`memory::current_revision` before it was rendered).
     #[serde(default)]
     pub memory: String,
-    /// Initial instructions still owed to the first prompt, including after restart.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prelude: Option<Prelude>,
-    /// True while those opening instructions are still owed to the agent; derived from `prelude` whenever a
-    /// snapshot is built or loaded, so the two can't disagree.
-    #[serde(skip)]
+    /// True from the session's creation until a prompt that carried its instructions has reached the agent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unprompted: bool,
-}
-
-/// Which opening a session still owes the agent (see [`Snapshot::prelude`]).
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum Prelude {
-    New,
-    Fork,
-    UnpromptedFork,
-}
-
-impl Prelude {
-    /// Whether this opening is still owed: a fork's parent already carried its instructions.
-    fn owed(self) -> bool {
-        matches!(self, Self::New | Self::UnpromptedFork)
-    }
 }
 
 // A bot talks in several sessions (its chat and groups, routine runs), each with its own: snapshots
@@ -124,9 +93,7 @@ pub fn bump_epoch(store: &Store, bot_id: &str, session: &str, compaction_id: &st
 }
 
 fn load(store: &Store, bot_id: &str, session: &str) -> Option<Snapshot> {
-    let mut s: Snapshot = store.kv_get(&key(bot_id, session)).and_then(|v| serde_json::from_str(&v).ok())?;
-    s.unprompted = s.prelude.is_some_and(Prelude::owed);
-    Some(s)
+    store.kv_get(&key(bot_id, session)).and_then(|v| serde_json::from_str(&v).ok())
 }
 
 fn save(store: &Store, bot_id: &str, s: &Snapshot) -> Result<()> {
@@ -143,14 +110,13 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
     }
     let identity = Identity::of(store, cfg);
     let memory = crate::chat::memory::current_revision(store, &cfg.id);
-    let prelude = stored.as_ref().and_then(|old| old.prelude);
+    let unprompted = stored.as_ref().is_some_and(|old| old.unprompted);
     let s = Snapshot {
         session: session.to_owned(),
         epoch,
         system: render(store, cfg),
         system_identity: identity.clone(),
-        prelude,
-        unprompted: prelude.is_some_and(Prelude::owed),
+        unprompted,
         // A re-render reaches the agent only as Claude's system prompt or a re-sent profile (see `mark_announced`):
         // until then it knows the identity it last heard, so an update it missed is still announced.
         announced: stored.map_or(identity, |old| old.announced),
@@ -175,7 +141,7 @@ pub fn refresh(store: &Store, bot_id: &str, session: &str) -> Result<()> {
 /// Every session of the bot renders its instructions again on its next turn (after the move from the old memory).
 pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
     for k in store.kv_prefix(&format!("context.{bot_id}.")) {
-        match store.kv_get(&k).and_then(|v| parse(&v)) {
+        match store.kv_get(&k).and_then(|v| serde_json::from_str::<Snapshot>(&v).ok()) {
             Some(mut s) => {
                 s.system.clear();
                 save(store, bot_id, &s)?;
@@ -188,24 +154,7 @@ pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
 
 /// Records `system` (already handed to a new session), rendered at memory revision `memory`, as that session's
 /// snapshot.
-#[cfg(test)]
 pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String, memory: String) -> Result<Snapshot> {
-    adopt_with_prelude(store, cfg, session, system, memory, None)
-}
-
-/// A newly allocated session keeps its opening instructions until its first prompt is sent.
-pub fn adopt_new(store: &Store, cfg: &BotConfig, session: &str, system: String, memory: String) -> Result<Snapshot> {
-    adopt_with_prelude(store, cfg, session, system, memory, Some(Prelude::New))
-}
-
-fn adopt_with_prelude(
-    store: &Store,
-    cfg: &BotConfig,
-    session: &str,
-    system: String,
-    memory: String,
-    prelude: Option<Prelude>,
-) -> Result<Snapshot> {
     let identity = Identity::of(store, cfg);
     let s = Snapshot {
         session: session.to_owned(),
@@ -214,23 +163,18 @@ fn adopt_with_prelude(
         system_identity: identity.clone(),
         announced: identity,
         memory,
-        prelude,
-        unprompted: prelude.is_some_and(Prelude::owed),
+        unprompted: true,
     };
     save(store, &cfg.id, &s)?;
     Ok(s)
 }
 
-/// Acknowledges only the opening that was actually written, never a newer snapshot.
+/// After the first prompt of a session reached the agent: its instructions are no longer owed, unless the
+/// snapshot moved on meanwhile.
 pub fn mark_prompted(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()> {
-    let Some(mut current) = load(store, bot_id, &sent.session) else { return Ok(()) };
-    if current.epoch != sent.epoch || current.system != sent.system || current.prelude != sent.prelude {
-        return Ok(());
-    }
-    current.prelude = None;
-    current.unprompted = false;
-    save(store, bot_id, &current)
+    update_if_current(store, bot_id, sent, |current| std::mem::take(&mut current.unprompted))
 }
+
 /// The bot's instructions, rendered live.
 pub fn render(store: &Store, cfg: &BotConfig) -> String {
     let name = cfg.name.trim();
@@ -259,18 +203,13 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         crate::agent::fallback::name(&cfg.backend)
     };
     lines.push(format!(
-        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. A chat in Codync is one conversation that goes on, with no new session or clear for the user to start, so don't suggest starting over."
+        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. To start over, the user starts a New session for this chat in Codync (the chat's menu in the apps, S in the terminal UI)."
     ));
     lines.push(String::new());
     lines.push(format!("Messages: {}", crate::chat::outbox::INSTRUCTIONS));
     lines.push(String::new());
     lines.push(
         "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: ...]: carry on with the user's task from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
-            .to_owned(),
-    );
-    lines.push(String::new());
-    lines.push(
-        "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the task is about that computer's files or system rather than its bots."
             .to_owned(),
     );
     lines.push(String::new());
@@ -299,27 +238,15 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
     }
     let or_none = |s: &str, none: &str| if s.is_empty() { none.to_owned() } else { s.to_owned() };
     let skills = if identity.skills_brief.is_empty() { "Skills: none." } else { &identity.skills_brief };
-    // Its role, when it leads or its instructions or an earlier update said it did.
-    let role = if identity.lead == Some(true) {
-        crate::chat::lead::BRIEF
-    } else if snapshot.announced.lead == Some(true) || snapshot.system_identity.lead == Some(true) {
-        NOT_LEAD
-    } else {
-        ""
-    };
     let text = [
         "<agent_profile_update>".to_owned(),
         "Your agent profile changed. This full update is authoritative and supersedes the Agent profile section in your instructions and every earlier profile update in this conversation.".to_owned(),
         format!("Current name: {}", or_none(&identity.name, "(no name)")),
         format!("Current description: {}", or_none(&identity.description, "(no description)")),
         skills.to_owned(),
-        role.to_owned(),
         "Use this identity until a future conversation summary folds it into the Agent profile section.".to_owned(),
         "</agent_profile_update>".to_owned(),
     ]
-    .into_iter()
-    .filter(|line| !line.is_empty())
-    .collect::<Vec<_>>()
     .join("\n");
     Some((text, identity))
 }
@@ -367,49 +294,12 @@ mod tests {
     }
 
     #[test]
-    fn initial_instructions_survive_reload() {
-        let store = store();
-        let cfg = cfg("Worker", "Keep context");
-        let parent = adopt_new(&store, &cfg, "main", "SYSTEM".into(), "memory-v1".into()).expect("new");
-        assert_eq!(resolve(&store, &cfg, "main").expect("main").prelude, Some(Prelude::New));
-        mark_prompted(&store, &cfg.id, &parent).expect("main prompted");
-        assert_eq!(resolve(&store, &cfg, "main").expect("main").prelude, None);
-    }
-
-    #[test]
-    fn a_late_prompt_acknowledgement_does_not_clear_a_newer_opening() {
-        let store = store();
-        let cfg = cfg("Worker", "Keep context");
-        let old = adopt_new(&store, &cfg, "main", "SYSTEM v1".into(), String::new()).expect("new");
-        adopt_new(&store, &cfg, "main", "SYSTEM v2".into(), "memory-v2".into()).expect("replacement");
-        mark_prompted(&store, &cfg.id, &old).expect("late acknowledgement");
-        let current = resolve(&store, &cfg, "main").expect("current");
-        assert_eq!(current.prelude, Some(Prelude::New));
-        assert_eq!(current.memory, "memory-v2");
-        refresh(&store, &cfg.id, "main").expect("refresh");
-        assert_eq!(resolve(&store, &cfg, "main").expect("refreshed").prelude, Some(Prelude::New));
-    }
-
-    #[test]
-    fn snapshots_without_an_opening_marker_remain_compatible() {
-        let snapshot: Snapshot = serde_json::from_value(serde_json::json!({
-            "session":"legacy", "epoch":0, "system":"SYSTEM",
-            "systemIdentity":{"name":"Worker","description":"","skills":[]},
-            "announced":{"name":"Worker","description":"","skills":[]}
-        }))
-        .expect("legacy snapshot");
-        assert_eq!(snapshot.prelude, None);
-        assert_eq!(snapshot.memory, "");
-    }
-
-    #[test]
     fn instructions_say_where_bot_requests_and_their_replies_go() {
         let store = store();
         let system = render(&store, &cfg("Reporter", "Report outcomes"));
         assert!(system.contains("requests from other bots, send_message isn't available"));
         assert!(system.contains("Replies to your own message_bot requests arrive as a turn of their own"));
         assert!(system.contains("These rules apply to the current turn"));
-        assert!(system.contains("use list_bots and message_bot (ids like name@computer), not SSH"));
     }
 
     #[test]
@@ -476,41 +366,12 @@ mod tests {
     }
 
     #[test]
-    fn the_lead_role_is_announced_as_it_moves() {
-        let store = store();
-        let mut lead = cfg("Fixer", "Fix bugs");
-        lead.lead = true;
-        adopt(&store, &lead, "s1", render(&store, &lead), String::new()).expect("adopt");
-        // A snapshot from before the lead could move: the role was in its instructions alone.
-        let k = key(&lead.id, "s1");
-        let mut old: serde_json::Value = serde_json::from_str(&store.kv_get(&k).expect("saved")).expect("json");
-        for identity in ["systemIdentity", "announced"] {
-            old[identity].as_object_mut().expect("an identity").remove("lead");
-        }
-        store.kv_set(&k, &old.to_string()).expect("save");
-        let snap = resolve(&store, &lead, "s1").expect("resolve");
-        assert!(profile_update(&store, &snap, &lead).is_none(), "it heard its role in its instructions");
-
-        let mut other = lead.clone();
-        other.lead = false;
-        let (text, identity) = profile_update(&store, &snap, &other).expect("the role moved");
-        assert!(text.contains(NOT_LEAD) && !text.contains(crate::chat::lead::BRIEF), "{text}");
-        mark_announced(&store, &lead.id, &snap, identity).expect("mark");
-        let snap = resolve(&store, &other, "s1").expect("resolve");
-        assert!(profile_update(&store, &snap, &other).is_none(), "told once");
-        let (text, _) = profile_update(&store, &snap, &lead).expect("it leads again");
-        assert!(text.contains(crate::chat::lead::BRIEF), "{text}");
-    }
-
-    #[test]
     fn a_new_sessions_instructions_stay_owed_until_a_prompt_carried_them() {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
-        let first = adopt_new(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
+        let first = adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
         assert!(resolve(&store, &a, "s1").expect("resolve").unprompted, "survives a restart");
-        assert_eq!(resolve(&store, &a, "s1").expect("resolve").prelude, Some(Prelude::New));
         mark_prompted(&store, &a.id, &first).expect("mark");
         assert!(!resolve(&store, &a, "s1").expect("resolve").unprompted);
-        assert_eq!(resolve(&store, &a, "s1").expect("resolve").prelude, None);
     }
 }

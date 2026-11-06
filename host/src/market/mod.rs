@@ -18,8 +18,6 @@
 //! on this computer; listings only say which keys are set.
 
 pub mod agent_sign_in;
-pub mod bot_secrets;
-pub mod catalog;
 pub mod composio;
 pub mod logins;
 pub mod oauth;
@@ -29,28 +27,22 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
-mod discovery;
 mod install;
 mod registry;
-mod runtime_identity;
-mod secret_tools;
 mod skill_usage;
 mod skills;
 mod updates;
 
 pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
-pub use skill_usage::{
-    note_use as note_skill_use, offer_skill, retire_dormant as retire_dormant_skills, skill_touched, skills_root,
-    written_skills,
-};
+pub(crate) use skills::front_matter;
 pub use skills::{
-    MAX_WRITTEN_PER_BOT, add_custom_skill, browse_skills, expand_command, install_skill, list_skills, record_bundled,
+    add_custom_skill, browse_skills, expand_command, install_skill, list_skills, record_bundled,
     remove_skill, reserve_bundled, skill_details, skills_brief, slash_command, turn_on_installed_once,
     update_custom_skill,
 };
-pub(crate) use skills::{body as skill_body, front_matter};
 
+pub use skill_usage::skills_root;
 pub use updates::{automatic_loop, refresh_connector};
 
 use crate::LockExt;
@@ -104,12 +96,6 @@ pub struct Connector {
 }
 
 impl Connector {
-    /// What its URL may reach: one the user typed may be on their own network; one the MCP
-    /// Registry lists may not.
-    pub fn egress(&self) -> Policy {
-        if self.registry_name.is_some() { Policy::Public } else { Policy::UserChosen }
-    }
-
     /// ACP `McpServer`. Remote servers run through this host's `remote` proxy (`codync-host mcp remote`),
     /// which keeps sign-in tokens fresh and works with agents that only speak stdio.
     /// A remote server still waiting for sign-in is left out.
@@ -146,8 +132,6 @@ impl Connector {
                 Some(o) if o.signed_in() => "signedIn",
                 Some(_) => "signedOut",
             },
-            // Set up with a token before Codync could sign in to it (GitHub): it can switch.
-            "canSignIn": self.oauth.is_none() && self.url.as_deref().is_some_and(oauth::offers_sign_in),
         })
     }
 }
@@ -285,13 +269,7 @@ pub fn update_connectors<T>(
 ) -> Result<T> {
     let _guard = store.connector_lock.locked();
     let mut all = connectors(store)?;
-    let previous = all.clone();
     let result = change(&mut all)?;
-    for old in previous {
-        if !all.iter().any(|item| item.id == old.id && item.runtime_identity() == old.runtime_identity()) {
-            store.revoke_mcp_connector(None, &old.id)?;
-        }
-    }
     save_connectors(store, &all)?;
     Ok(result)
 }
@@ -329,22 +307,14 @@ async fn get_json(url: &str) -> Result<Value> {
 }
 
 async fn get_json_within(url: &str, timeout: Duration) -> Result<Value> {
-    fetch_json(Policy::Public, url, timeout).await
+    let res = crate::http().get(url).header("user-agent", UA).timeout(timeout).send().await?;
+    if !res.status().is_success() {
+        bail!("{} answered {}", url.split('/').nth(2).unwrap_or(url), res.status());
+    }
+    Ok(res.json().await?)
 }
 
-/// Largest registry or GitHub listing read.
-const MAX_JSON: usize = 8 * 1024 * 1024;
-
-/// GETs JSON from `url` under `policy`.
-async fn fetch_json(policy: Policy, url: &str, timeout: Duration) -> Result<Value> {
-    crate::egress::json(get(policy, url, timeout).await?, MAX_JSON).await
-}
-
-/// GETs `url` under `policy`, refusing answers over `max` bytes.
-async fn get_bytes(policy: Policy, url: &str, timeout: Duration, max: usize) -> Result<Vec<u8>> {
-    crate::egress::body(get(policy, url, timeout).await?, max).await
-}
-
+/// `url` through the egress policy, refusing a non-success status.
 async fn get(policy: Policy, url: &str, timeout: Duration) -> Result<reqwest::Response> {
     let res =
         crate::egress::client(policy, url).await?.get(url).header("user-agent", UA).timeout(timeout).send().await?;
@@ -352,6 +322,10 @@ async fn get(policy: Policy, url: &str, timeout: Duration) -> Result<reqwest::Re
         bail!("{} answered {}", url.split('/').nth(2).unwrap_or(url), res.status());
     }
     Ok(res)
+}
+
+async fn get_bytes(policy: Policy, url: &str, timeout: Duration, max: usize) -> Result<Vec<u8>> {
+    crate::egress::body(get(policy, url, timeout).await?, max).await
 }
 
 #[cfg(test)]
@@ -362,7 +336,7 @@ mod tests {
     fn slugs_are_safe() {
         assert_eq!(slug("GitHub MCP Server"), "github-mcp-server");
         assert_eq!(slug("../../etc/passwd"), "etc-passwd");
-        assert_eq!(slug("中文"), "item");
+        assert_eq!(slug("������"), "item");
     }
 
     #[test]
@@ -392,15 +366,9 @@ mod tests {
         let remote = c.acp(exe, 1).unwrap();
         assert_eq!(remote["args"][1], "remote", "remote servers go through the proxy");
         assert_eq!(remote["env"], only_data_dir);
-        assert_eq!(c.public()["canSignIn"], false, "only servers Codync has its own app for");
         c.oauth = Some(oauth::OAuth::default());
         assert!(c.acp(exe, 1).is_none(), "not signed in yet");
         assert_eq!(c.public()["auth"], "signedOut");
-        assert_eq!(c.public()["canSignIn"], false, "already signs in");
-        c.url = Some("https://api.githubcopilot.com/mcp/".into());
-        assert_eq!(c.public()["canSignIn"], false, "already signs in");
-        c.oauth = None;
-        assert_eq!(c.public()["canSignIn"], true, "set up with a token: can switch to signing in");
     }
 
     #[tokio::test]

@@ -2,17 +2,7 @@ import { execFile } from 'node:child_process'
 import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import type { WindowCommand } from '../shared/ipc'
 import type { VoiceKey } from '../shared/voice-shortcut'
-import {
-  hitRect,
-  hits,
-  notchOf,
-  PANEL,
-  type IslandPlacement,
-  type IslandRect,
-  type IslandScreen,
-  type IslandSummary,
-  type NotchScreen,
-} from '../shared/island'
+import { hitRect, hits, notchOf, PANEL, type IslandRect, type IslandScreen, type IslandSummary, type NotchScreen } from '../shared/island'
 import { prefs } from './host-controller'
 
 // Every NSScreen's frame, safe-area top and the menu bar on each side of the notch. JXA reaches
@@ -75,9 +65,6 @@ export class Island {
   private rect: IslandRect = { x: 0, y: 0, width: 0, height: 0 }
   private inside = false
   private timer: NodeJS.Timeout | null = null
-  /** `follow`: the display the island is on, so it only moves when the pointer crosses to another one. */
-  private placedOn = -1
-  private watch: NodeJS.Timeout | null = null
   private shaped: IslandRect = { x: 0, y: 0, width: 0, height: 0 }
   private unfocus: NodeJS.Timeout | undefined
 
@@ -93,19 +80,6 @@ export class Island {
     this.sync()
     this.deps.changed()
     return this.enabled
-  }
-
-  /** Where the island sits on this computer's screens. */
-  get placement(): IslandPlacement {
-    const saved = prefs.get('islandPlacement')
-    return saved === 'follow' || saved === 'primary' ? saved : 'automatic'
-  }
-
-  setPlacement(placement: IslandPlacement) {
-    prefs.set('islandPlacement', placement)
-    void this.place()
-    this.deps.changed()
-    return this.placement
   }
 
   register() {
@@ -126,11 +100,6 @@ export class Island {
     )
     ipcMain.on('island:openBot', (_e, ref: string) => this.deps.send({ kind: 'openBot', ref }))
     ipcMain.on('island:send', (_e, ref: string, text: string) => this.deps.send({ kind: 'sendMessage', ref, text }, false))
-    // Files dropped on the notch: the chat window reads them and sends them to that bot.
-    ipcMain.on('island:dropFiles', (_e, ref: string, paths: string[]) => {
-      if (!Array.isArray(paths) || paths.length === 0) return
-      this.deps.send({ kind: 'sendFiles', ref, paths: paths.filter((p) => typeof p === 'string').slice(0, 20) }, false)
-    })
     ipcMain.on('island:newBot', () => this.deps.send({ kind: 'newBot' }))
     ipcMain.on('island:openApp', () => this.deps.openApp())
     ipcMain.on('island:focusable', (_e, on: boolean) => this.setFocusable(on))
@@ -191,25 +160,13 @@ export class Island {
     void this.place()
     void win.loadURL(this.deps.url)
     if (!shapedWindow) this.tick()
-    // A few times a second is enough to notice the pointer on another screen.
-    this.watch = setInterval(() => this.followPointer(), 400)
-  }
-
-  /** `follow`: move the island to the screen the person is working on. */
-  private followPointer() {
-    if (!this.window || this.placement !== 'follow') return
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
-    if (display.id !== this.placedOn) void this.place()
   }
 
   private close() {
     this.setKeys(false)
     clearTimeout(this.unfocus)
     if (this.timer) clearTimeout(this.timer)
-    if (this.watch) clearInterval(this.watch)
     this.timer = null
-    this.watch = null
-    this.placedOn = -1
     this.window?.destroy()
     this.window = null
   }
@@ -251,29 +208,17 @@ export class Island {
     this.window?.webContents.send('island:voiceKey', key)
   }
 
-  /** Top center of the chosen display (see [`Island::placement`]). */
+  /** Top center of the display with the notch, else the main display. */
   private async place() {
     if (!this.window) return
     const screens = await readScreens()
     const win = this.window
     if (!win || win.isDestroyed()) return
-    const display = this.target(screens)
-    this.placedOn = display.id
+    const display = screen.getAllDisplays().find((d) => notchOf(screens, d.bounds)) ?? screen.getPrimaryDisplay()
     this.screen = { notch: notchOf(screens, display.bounds) }
     const b = display.bounds
     win.setBounds({ x: Math.round(b.x + (b.width - PANEL.width) / 2), y: b.y, ...PANEL })
     win.webContents.send('island:screen', this.screen)
-  }
-
-  private target(screens: NotchScreen[]) {
-    switch (this.placement) {
-      case 'follow':
-        return screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
-      case 'primary':
-        return screen.getPrimaryDisplay()
-      default:
-        return screen.getAllDisplays().find((d) => notchOf(screens, d.bounds)) ?? screen.getPrimaryDisplay()
-    }
   }
 
   /** Linux: the window draws and takes the mouse only over the island. */

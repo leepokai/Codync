@@ -2,6 +2,7 @@ package com.codync.android
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import kotlinx.coroutines.runBlocking
@@ -30,7 +31,7 @@ class LiveCredentialsTest {
         val site = "android-$suffix.fixture.invalid"
         val name = "Android credentials $suffix"
         try {
-            val store = compose.computerStore()
+            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
             compose.waitUntil(30_000) { !store.state.value.loading && store.state.value.actualConnection is LinkState.Ready }
             compose.runOnUiThread { store.openBot(null) }
             compose.openExtensions()
@@ -102,7 +103,7 @@ class LiveCredentialsTest {
         val route = computer.copy(urls = listOf("http://10.0.2.2:29322"), route = ConnectionRoute.DirectOnly)
         val channel = runBlocking { HostConnector.connect(route, local.identity()) }
         try {
-            val store = compose.computerStore()
+            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
             compose.waitUntil(30_000) { store.state.value.bots.any { it.id == botId } && store.state.value.entries.any { it.id == savedRequest } }
             assertTrue(store.state.value.bots.single { it.id == botId }.name.startsWith("Android credentials acceptance"))
             compose.runOnUiThread { store.openBot(botId) }

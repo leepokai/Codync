@@ -1,8 +1,8 @@
-//! Installing connectors: registry install options and inputs, pasted configs, custom
+﻿//! Installing connectors: registry install options and inputs, pasted configs, custom
 //! servers, listing and removal.
 
 use super::registry::{listing, registry_server};
-use super::{Connector, add_connector, composio, connectors, discovery, oauth, unique_id, update_connectors};
+use super::{Connector, add_connector, composio, connectors, oauth, unique_id, update_connectors};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -31,7 +31,7 @@ pub(super) fn install_options(server: &Value) -> Vec<Value> {
                             "placeholder": a["valueHint"]}))
             });
         let inputs: Vec<Value> = env.chain(args).collect();
-        out.push(json!({"id": format!("package:{i}"), "kind": kind, "label": format!("{kind} · {}", p["identifier"].as_str().unwrap_or_default()), "inputs": inputs}));
+        out.push(json!({"id": format!("package:{i}"), "kind": kind, "label": format!("{kind} ┬À {}", p["identifier"].as_str().unwrap_or_default()), "inputs": inputs}));
     }
     for (i, r) in server["remotes"].as_array().into_iter().flatten().enumerate() {
         if !matches!(r["type"].as_str(), Some("streamable-http" | "sse")) || r["url"].as_str().is_none() {
@@ -255,11 +255,10 @@ async fn install_server(
         }
         _ => bail!("unknown install option"),
     }
-    if let Some(url) = c.url.clone() {
-        crate::egress::check(c.egress(), &url).await?;
-        if discovery::required(c.egress(), &url, &c.headers).await {
-            c.oauth = Some(oauth::OAuth::default());
-        }
+    if let Some(url) = &c.url
+        && oauth::required(url, &c.headers).await
+    {
+        c.oauth = Some(oauth::OAuth::default());
     }
     add_connector(store, c)
 }
@@ -304,7 +303,7 @@ fn config_servers(v: &Value) -> Vec<(String, Value)> {
         None if v["command"].is_string() || v["url"].is_string() => {
             vec![(v["name"].as_str().unwrap_or("Custom").to_owned(), v.clone())]
         }
-        // `{"github": {"command": …}}`: the map without its wrapper.
+        // `{"github": {"command": ÔÇª}}`: the map without its wrapper.
         None => v
             .as_object()
             .into_iter()
@@ -337,9 +336,11 @@ async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
     let url =
         ["url", "serverUrl", "httpUrl"].iter().find_map(|k| b[*k].as_str()).map(str::trim).filter(|s| !s.is_empty());
     if let Some(url) = url {
-        // https anywhere; plain http only on this computer or its network.
-        crate::egress::check(c.egress(), url).await?;
-        if discovery::required(c.egress(), url, &c.headers).await {
+        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].iter().any(|p| url.starts_with(p));
+        if !url.starts_with("https://") && !local {
+            bail!("remote connectors need an https URL");
+        }
+        if oauth::required(url, &c.headers).await {
             c.oauth = Some(oauth::OAuth::default());
         }
         c.url = Some(url.to_owned());
@@ -370,20 +371,10 @@ async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
 
 /// Installed MCP servers, then the apps connected through Composio.
 pub fn list_connectors(store: &crate::store::Store) -> Result<Value> {
-    let mut items: Vec<Value> = connectors(store)?
-        .iter()
-        .map(|c| {
-            let mut pub_val = c.public();
-            if let Some(failure) = super::verify::last_failure(store, &c.id) {
-                pub_val["lastFailure"] = failure;
-            }
-            pub_val
-        })
-        .collect();
+    let mut items: Vec<Value> = connectors(store)?.iter().map(Connector::public).collect();
     items.extend(composio::connections(store)?.iter().filter(|c| c.active()).map(|c| {
-        let id = format!("{}{}", composio::PREFIX, c.toolkit);
-        let mut val = json!({
-            "id": id,
+        json!({
+            "id": format!("{}{}", composio::PREFIX, c.toolkit),
             "name": c.name,
             "description": format!("{} through Composio", c.name),
             "registryName": null,
@@ -392,17 +383,12 @@ pub fn list_connectors(store: &crate::store::Store) -> Result<Value> {
             "url": null,
             "keys": [],
             "logo": c.logo,
-        });
-        if let Some(failure) = super::verify::last_failure(store, &id) {
-            val["lastFailure"] = failure;
-        }
-        val
+        })
     }));
     Ok(json!({"items": items}))
 }
 
 pub fn remove_connector(store: &crate::store::Store, id: &str) -> Result<()> {
-    super::verify::clear_failure(store, id);
     update_connectors(store, |all| {
         all.retain(|c| c.id != id);
         Ok(())

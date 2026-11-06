@@ -1,4 +1,4 @@
-//! The `bots` table: roster rows, sessions, read marks and unread counts.
+﻿//! The `bots` table: roster rows, sessions, read marks and unread counts.
 
 use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
 use super::visibility::PUBLIC;
@@ -27,8 +27,6 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
 }
 
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
-const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
-     ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
 
 impl Store {
     pub fn bots(&self) -> Result<Vec<BotRow>> {
@@ -47,20 +45,12 @@ impl Store {
     pub fn save_bot(&self, cfg: &BotConfig) -> Result<i64> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
-        c.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
+        c.execute(
+            "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
+             ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0",
+            params![cfg.id, rev, serde_json::to_string(cfg)?],
+        )?;
         Ok(rev)
-    }
-
-    /// Saves several bots in one transaction, each with its own rev: all of them or, on an error, none.
-    pub fn save_bots(&self, cfgs: &[BotConfig]) -> Result<()> {
-        let mut c = self.db.locked();
-        let tx = c.transaction()?;
-        for cfg in cfgs {
-            let rev = next_rev(&tx)?;
-            tx.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
-        }
-        tx.commit()?;
-        Ok(())
     }
 
     pub fn touch_bot(&self, id: &str) -> Result<i64> {
@@ -74,34 +64,10 @@ impl Store {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute("UPDATE bots SET rev = ?2, deleted = 1, session_id = NULL WHERE id = ?1", params![id, rev])?;
-        c.execute("DELETE FROM kv WHERE k IN (SELECT 'read.' || id FROM entries WHERE bot_id = ?1)", [id])?;
-        c.execute("DELETE FROM slack_outbox WHERE entry_id IN (SELECT id FROM entries WHERE bot_id=?1)", [id])?;
-        c.execute("DELETE FROM slack_inbox WHERE bot_id=?1", [id])?;
-        c.execute("DELETE FROM slack_threads WHERE bot_id=?1", [id])?;
-        c.execute("DELETE FROM research_packets WHERE bot_id=?1", [id])?;
-        c.execute(
-            "DELETE FROM kv WHERE k IN (?1,?2)",
-            params![format!("turn.sources.{id}"), format!("turn.inflight.{id}")],
-        )?;
         c.execute("DELETE FROM entries WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM computer_activity WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM pending_tool_calls WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM document_reviews WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM document_creations WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM documents WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM bot_app_data WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM bot_app_links WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM bot_apps WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM open_items WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM reported_items WHERE bot_id = ?1", [id])?;
-        c.execute("DELETE FROM message_bookmarks WHERE bot_id = ?1", [id])?;
         codync_mem::store::drop_bot(&c, id)?;
         // Its dreaming bookmark, notices' revisions and the record of its moved memory.
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("memory.*{id}*")])?;
-        // Its instruction versions (`chat/instruction_history.rs`).
-        c.execute("DELETE FROM kv WHERE k = ?1", [format!("instructions.history.{id}")])?;
-        // Lane state (see `lane_key`: scratchpads, sessions, …) it owned, or that bots kept in it.
-        c.execute("DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2", [format!("lane.*.{id}@*"), format!("lane.*@{id}*")])?;
         // Its routine runs' sessions (see `run_session_key`).
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("lane.session.{id}@*")])?;
         // Its fallback chain's place and each agent's parked session (`agent::bot::fallback::park`).
@@ -184,7 +150,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::model::{BotKind, EntryKind, Lane, Permission, ProactiveSettings};
+    use crate::store::model::{BotKind, EntryKind, Lane, Permission};
     use crate::store::tests::temp_store;
 
     #[test]
@@ -198,17 +164,13 @@ mod tests {
             description: String::new(),
             avatar_color: "blue".into(),
             avatar_shape: "blob".into(),
-            avatar_look: None,
             backend: "claude".into(),
             command: None,
             cwd: "/tmp".into(),
             permission: Permission::Ask,
-            action_rules: std::collections::BTreeMap::new(),
-            proactive: ProactiveSettings::default(),
             model: None,
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
-            account: None,
             fallbacks: vec![],
             self_fallbacks: true,
             pinned: false,
@@ -220,8 +182,6 @@ mod tests {
             connectors: vec![],
             skills: vec![],
             computer: false,
-            approval_rules: vec![],
-            computer_permissions: crate::computer::Permissions::default(),
             manage_team: false,
             offered_to_network: true,
             reachable_by_assistants: true,
@@ -230,16 +190,8 @@ mod tests {
             shared_memory: None,
             harness_memory: false,
             auto_name: false,
-            is_chief: false,
-            chief_bot_id: None,
             created_at: 0,
         };
-        // Several at once: each with its own rev, in order.
-        let other = BotConfig { id: "b0".into(), ..cfg.clone() };
-        let before = s.current_rev();
-        s.save_bots(&[other.clone(), other]).unwrap();
-        assert_eq!(s.current_rev(), before + 2);
-        assert_eq!(s.bot("b0").unwrap().map(|r| r.rev), Some(before + 2));
         s.save_bot(&cfg).unwrap();
         let u = s.insert_entry(&Lane::main("b1"), EntryKind::User, 1, &serde_json::json!({"text": "hi"})).unwrap();
         let a = s

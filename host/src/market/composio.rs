@@ -14,8 +14,6 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::Duration;
-mod guarded;
-pub(crate) use guarded::{dispatch, fingerprint, installed, prepare};
 
 const API: &str = "https://backend.composio.dev/api/v3.1";
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -67,24 +65,7 @@ fn load(store: &Store) -> Result<Option<Config>> {
 }
 
 fn save(store: &Store, c: &Config) -> Result<()> {
-    if let Some(old) = load(store)? {
-        revoke_replaced(store, &old, Some(c))?;
-    }
     super::vault::write(store, SLOT, &serde_json::to_string(c)?)
-}
-
-fn revoke_replaced(store: &Store, old: &Config, next: Option<&Config>) -> Result<()> {
-    for app in &old.connections {
-        let current = old.connections.iter().find(|c| c.active() && c.toolkit == app.toolkit);
-        let replacement =
-            next.and_then(|next| next.connections.iter().find(|c| c.active() && c.toolkit == app.toolkit));
-        if next.is_none_or(|next| next.key != old.key || next.user_id != old.user_id)
-            || current.map(|c| &c.id) != replacement.map(|c| &c.id)
-        {
-            store.revoke_mcp_connector(None, &format!("{PREFIX}{}", app.toolkit))?;
-        }
-    }
-    Ok(())
 }
 
 fn config(store: &Store) -> Result<Config> {
@@ -104,8 +85,7 @@ async fn request(
     body: Option<&Value>,
 ) -> Result<Value> {
     let url = reqwest::Url::parse_with_params(&format!("{API}{path}"), query)?;
-    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(TIMEOUT).build()?;
-    let mut req = client.request(method.clone(), url).header("x-api-key", key);
+    let mut req = crate::http().request(method.clone(), url).header("x-api-key", key).timeout(TIMEOUT);
     if let Some(body) = body {
         req = req.json(body);
     }
@@ -171,9 +151,6 @@ pub async fn set_key(store: &Store, key: &str) -> Result<Value> {
     }
     if key.is_empty() {
         let _guard = store.connector_lock.lock().map_err(|_| anyhow!("connector storage is busy"))?;
-        if let Some(old) = load(store)? {
-            revoke_replaced(store, &old, None)?;
-        }
         super::vault::write(store, SLOT, "")?;
         return status(store);
     }
@@ -516,7 +493,21 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
             )
         }
         "execute" => {
-            bail!("Composio execution requires an immutable MCP approval and dispatch claim.")
+            let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
+            let t = tool(&c.key, slug).await?;
+            let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
+            let app = app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
+            let arguments = args.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
+            let v = post(
+                &c.key,
+                &format!("/tools/execute/{slug}"),
+                &json!({"user_id": c.user_id, "connected_account_id": app.id, "arguments": arguments}),
+            )
+            .await?;
+            if v["successful"] == false {
+                bail!("{}", text(&v["error"]).unwrap_or_else(|| "the tool failed".into()));
+            }
+            Ok(v["data"].clone())
         }
         other => bail!("unknown tool {other}"),
     }

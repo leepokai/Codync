@@ -65,7 +65,7 @@ impl ScheduleDraft {
                 draft.at = *at;
             }
             Trigger::Webhook => draft.kind = "webhook".into(),
-            Trigger::Event { .. } | Trigger::Watch { .. } => draft.kind = "keep".into(),
+            Trigger::Event { .. } => draft.kind = "keep".into(),
             Trigger::Cron { expression, time_zone } => {
                 draft.zone.clone_from(time_zone);
                 draft.expression.clone_from(expression);
@@ -214,19 +214,9 @@ pub fn preview(body: &Value, now: i64) -> Result<Value> {
         triggers.iter().map(|trigger| trigger.next(now)).collect::<Result<Vec<_>>>()?.into_iter().flatten().min();
     let warning = (draft.kind == "cron" && draft.calendar_style == "monthly" && draft.month_day > 28)
         .then(|| format!("Months without day {} are skipped.", draft.month_day));
-    let mut next_runs = Vec::new();
-    let mut cursor = now;
-    for _ in 0..3 {
-        if let Some(ts) = triggers.iter().filter_map(|t| t.next(cursor).ok().flatten()).min() {
-            next_runs.push(ts);
-            cursor = ts;
-        } else {
-            break;
-        }
-    }
     Ok(
         json!({"draft":draft,"triggers":triggers,"summary":triggers.iter().map(Trigger::description).collect::<Vec<_>>().join(" · "),
-        "nextRunAt":next,"nextRuns":next_runs,"warning":warning}),
+        "nextRunAt":next,"warning":warning}),
     )
 }
 

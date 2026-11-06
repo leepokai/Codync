@@ -5,40 +5,18 @@
 //! microseconds, so async callers use them directly; the one bulk read (a fresh
 //! client's catch-up) is capped per bot, and the history search runs through `spawn_blocking`.
 
-mod analytics;
-pub mod apps;
 mod bots;
-mod computer_activity;
 mod devices;
-mod documents;
 mod entries;
-pub mod flow_steps;
-pub mod flows;
-mod inflight;
-pub(crate) mod mcp_policies;
+mod visibility;
 mod memory;
 mod model;
-pub mod open_items;
-mod research;
-mod roster;
-mod saved_searches;
-pub use saved_searches::{SearchScope, search_terms};
-pub mod runtime;
 mod schema;
-mod setup;
-mod visibility;
-pub use visibility::is_internal;
-pub(crate) mod slack;
 
-pub use apps::{AppLink, AppLinkMode, BotApp};
-pub use computer_activity::{ComputerActivity, ComputerActivityResult};
 pub use devices::{Device, DeviceSource, Scope};
-pub use documents::{Document, DocumentDraft, ReviewDecision, ReviewStatus};
-pub use flow_steps::{FlowRun, FlowStep, NewStep, StepStatus};
-pub use flows::{FlowChange, FlowLink};
 pub use model::{
     AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, Entry, EntryKind, Fallback, Lane, Permission,
-    ProactiveSettings, lane_key, message_text, run_session_key,
+    message_text, run_session_key,
 };
 
 use crate::LockExt;
@@ -47,12 +25,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::sync::Mutex;
 
 pub struct Store {
-    pub(crate) icon_lock: tokio::sync::Mutex<()>,
     db: Mutex<Connection>,
     pub(crate) connector_lock: Mutex<()>,
     pub(crate) secret_key: Mutex<Option<zeroize::Zeroizing<Vec<u8>>>>,
-    /// Held by the one keyring read in flight (`market::vault::unlock`).
-    pub(crate) vault_unlock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 pub fn now_ms() -> i64 {
@@ -108,9 +83,6 @@ impl Store {
 
     pub fn current_rev(&self) -> i64 {
         self.kv_get("rev").and_then(|v| v.parse().ok()).unwrap_or(0)
-    }
-    pub fn with_connection<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
-        f(&self.db.locked())
     }
 
     /// Saves a row stamped with the next rev, in one transaction: `value` gets the rev and returns what to save.

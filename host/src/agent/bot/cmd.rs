@@ -16,10 +16,6 @@ pub enum Cmd {
         text: String,
     },
     BotRequest(crate::chat::team::BotRequest),
-    /// Cancel only the synchronous request owned by the caller that stopped waiting.
-    CancelAsk {
-        id: String,
-    },
     /// How a request this bot sent came out: a turn of its own, with any others that arrive meanwhile.
     BotReply(crate::chat::team::BotReply),
     /// A turn the host starts in the bot's own chat, with no message of the user's (the lead opening a call): its

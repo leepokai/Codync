@@ -63,17 +63,12 @@ private data class Removal(val id: String, val name: String, val skill: Boolean)
             if (connectors.isEmpty() && skills.isEmpty()) MarketEmpty("shippingbox", "Nothing installed", "Connectors and skills you add show up here.")
             if (connectors.isNotEmpty()) CardSection("Connectors") {
                 for (c in connectors) row {
-                    val subtitle = when {
-                        c.needsSignIn -> "Sign in so bots can use it"
-                        c.canSignIn -> "Sign in instead of using a saved token"
-                        else -> c.command ?: c.url ?: c.description
-                    }
-                    InstalledRow(c.name, subtitle, icon = {
+                    InstalledRow(c.name, if (c.needsSignIn) "Sign in so bots can use it" else c.command ?: c.url ?: c.description, icon = {
                         if (c.kind == "composio") AppLogo(c.logo, c.name, 32.dp) else ServiceLogo(null, c.name, c.registryName, 32.dp)
                     }, accessory = {
                         SecondaryButton("Tools & requests") { tools = c }
                         if (signingIn == c.id) Spinner()
-                        else if (c.needsSignIn || c.canSignIn) PrimaryButton("Sign in") {
+                        else if (c.needsSignIn) PrimaryButton("Sign in") {
                             signingIn = c.id
                             run { try { if (!store.signInConnector(c.id)) throw IOException("Sign-in to ${c.name} wasn't confirmed.") } finally { signingIn = null } }
                         }

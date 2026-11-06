@@ -36,6 +36,8 @@ export interface Bot {
   managedWorkspace: boolean
   /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
+  /** The agent mode it works in (Claude's Manual / Plan / Auto…): the agent's id, or `auto`. Null keeps the default. */
+  mode: string | null
   actionRules?: Partial<Record<ActionClass, RulePolicy>>
   proactive?: ProactiveSettings
   model?: string | null
@@ -117,6 +119,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
     permission: raw.permission ?? 'auto',
+    mode: raw.mode ?? null,
     actionRules: raw.actionRules ?? {},
     proactive: { ...DEFAULT_PROACTIVE_SETTINGS, ...(raw.proactive ?? {}) },
     model: raw.model ?? null,
@@ -692,6 +695,7 @@ export interface BotDraft {
   command?: string | null
   cwd: string
   permission: string
+  mode?: string | null
   actionRules?: Partial<Record<ActionClass, RulePolicy>>
   proactive?: ProactiveSettings
   model?: string | null

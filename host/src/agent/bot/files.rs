@@ -84,14 +84,13 @@ impl Actor {
             self.active_group.is_none() && self.active_request.is_none() && self.active_routine.is_none(),
             "send_file and artifact cards are only available in the bot's own chat"
         );
-        self.turn.ok_or_else(|| anyhow!("no turn is running: between turns, tell the user with send_message"))
+        self.turn.ok_or_else(|| anyhow!("no turn is running"))
     }
 
     /// A published artifact's card (`chat::artifacts`, its entry's `data`): a message of the turn, like a shared file.
     pub(super) fn post_artifact(&mut self, data: Value) -> Result<String> {
         let turn = self.can_send_file()?;
         let text = data["text"].as_str().unwrap_or_default().to_owned();
-        crate::chat::artifacts::prepare_card(&self.hub, &self.cfg.id, &data, self.proactive_turn)?;
         self.close_seg();
         let entry = self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow!("couldn't save the artifact card"))?;
         self.files.summary = Some(text);

@@ -9,14 +9,10 @@ use std::sync::Arc;
 
 /// Posts `data` (the message's text and what it carries) as the user's newest message in `cfg`'s chat and hands it
 /// on: to the bot's agent, or to a group's members.
-pub fn post(hub: &Arc<Hub>, cfg: &BotConfig, data: Value) -> Result<Entry> {
-    post_in_lane(hub, cfg, Lane::main(&cfg.id), data)
-}
-
-/// Posts into a validated side conversation, preserving its separate agent session.
-pub fn post_in_lane(hub: &Arc<Hub>, cfg: &BotConfig, lane: Lane, mut data: Value) -> Result<Entry> {
+pub fn post(hub: &Arc<Hub>, cfg: &BotConfig, mut data: Value) -> Result<Entry> {
     // A group has no agent of its own to queue behind: its message is simply sent.
     data["status"] = (if cfg.is_group() { "sent" } else { "queued" }).into();
+    let lane = Lane::main(&cfg.id);
     let turn = hub.store.max_turn(&cfg.id) + 1;
     let e = hub.add_entry(&lane, EntryKind::User, turn, &data).ok_or_else(|| anyhow!("couldn't save the message"))?;
     // Before the turn starts, so its reply lands unread.

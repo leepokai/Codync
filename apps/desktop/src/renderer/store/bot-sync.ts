@@ -33,27 +33,26 @@ function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean)
  */
 export class BotSync extends BotMirror {
   readonly artifacts = new Artifacts(() => this.changed())
-  /** The newest `routineFlow` rev heard for each bot: a flow canvas of that bot loads again when it moves. */
-  private readonly flowRevs = new Map<string, number>()
   /** The calls in this app, by id: each hands what the computer tells its voice to its engine. */
   readonly callCues = new Map<string, (cue: CallCue) => void>()
   /** The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again. */
   private readonly heardCues = new Map<string, number>()
+  /** The newest `routineFlow` rev seen for each bot, which redraws its canvas. */
+  private readonly flowRevs = new Map<string, number>()
   private finishRefresh: ((error?: Error) => void) | null = null
   private heldDrop: Connection | null = null
   private dropTimer: ReturnType<typeof setTimeout> | null = null
   private closeEvents: (() => void) | null = null
   private eventsLoop = 0
   private rewound = false
+
+  flowRev(botId: string): number {
+    return this.flowRevs.get(botId) ?? 0
+  }
   /** The `since` the current events connection asked for, and the per-bot floors snapshotted at its `hello`. */
   private requestedSince = 0
   private floors = new Map<string, number>()
   private readingViews = new Map<string, string>()
-
-  /** Moves when the host changes a bot's routine-flow canvas (a link, a step, a position). */
-  flowRev(botId: string): number {
-    return this.flowRevs.get(botId) ?? 0
-  }
 
   // MARK: lifecycle
 
@@ -232,6 +231,10 @@ export class BotSync extends BotMirror {
 
   private apply(event: HostEvent) {
     switch (event.type) {
+      case 'routineFlow':
+        for (const id of event.botIds) this.flowRevs.set(id, event.rev)
+        this.changed()
+        break
       case 'icons':
         this.applyIcons(event.icons, event.iconsRevision)
         break
@@ -264,20 +267,13 @@ export class BotSync extends BotMirror {
         // Old entries re-stamped by the host (new rev) belong to history paging, not the live window.
         if (!this.isBelowFloor(event.entry)) this.upsert(event.entry)
         this.bump(event.entry.rev)
-        if (this.entries.get(event.entry.botId)?.some((e) => e.id === event.entry.id && e.rev === event.entry.rev)) {
-          this.acknowledgeVisible(event.entry.botId, event.entry)
-        }
+        this.acknowledgeVisible(event.entry.botId, event.entry)
         break
       case 'usage':
         this.usage = event.usage
         break
       case 'artifact':
         this.artifacts.upsert(event.artifact)
-        break
-      case 'routineFlow':
-        for (const id of event.botIds) this.flowRevs.set(id, event.rev)
-        this.bump(event.rev)
-        this.changed()
         break
       case 'screen':
         this.screen = event.screen
@@ -349,7 +345,7 @@ export class BotSync extends BotMirror {
   }
 
   private isBelowFloor(e: Entry) {
-    const held = this.entries.get(e.botId)?.some((x) => x.id === e.id) ?? false
+    const held = this.allEntries(e.botId).some((x) => x.id === e.id)
     return isOutsideLoadedWindow(this.floors.get(e.botId), held, e)
   }
 

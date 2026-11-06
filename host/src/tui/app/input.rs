@@ -34,14 +34,9 @@ impl App {
 
     fn top_editor(&mut self) -> Option<&mut Editor> {
         match self.overlays.last_mut()? {
-            Overlay::RosterTools => Some(&mut self.roster_tools.query),
             Overlay::Goto(g) => Some(&mut g.query),
             Overlay::Help(e) => Some(e),
-            Overlay::NewBot(n) => match n.field {
-                NewBotField::Name => Some(&mut n.name),
-                NewBotField::Purpose => Some(&mut n.purpose),
-                _ => None,
-            },
+            Overlay::NewBot(n) => (n.field == NewBotField::Name).then_some(&mut n.name),
             Overlay::Folder(p) => Some(&mut p.query),
             Overlay::Group(g) => match g.field {
                 GroupField::Name => Some(&mut g.name),
@@ -71,10 +66,6 @@ impl App {
             return;
         }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
-        if ctrl && k.code == KeyCode::Char('f') {
-            self.overlays.push(Overlay::RosterTools);
-            return;
-        }
         if ctrl && k.code == KeyCode::Char('k') {
             if matches!(self.overlays.last(), Some(Overlay::Goto(_))) {
                 self.overlays.pop();
@@ -209,8 +200,6 @@ impl App {
             KeyCode::Char('u') => self.jump(Mark::Unread),
             KeyCode::Char('[') => self.move_bot(-1),
             KeyCode::Char(']') => self.move_bot(1),
-            KeyCode::Up if k.modifiers.contains(KeyModifiers::ALT) => self.move_section(-1),
-            KeyCode::Down if k.modifiers.contains(KeyModifiers::ALT) => self.move_section(1),
             KeyCode::Char('K') => self.reorder_bot(-1),
             KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {
@@ -223,7 +212,7 @@ impl App {
                         }
                     }
                     _ => {
-                        if let Some(id) = self.navigable_roster().get(i).map(|b| b.id.clone()) {
+                        if let Some(id) = self.stop_at(i) {
                             self.select(&id);
                         }
                     }
@@ -332,17 +321,31 @@ impl App {
                 if let Some(b) = self.bot() {
                     if matches!(b.status, Status::Working | Status::NeedsInput) {
                         let id = b.id.clone();
-                        self.stop_from_roster(&id);
+                        self.call("stop", json!({"botId": id}), After::Nothing);
+                        self.flash("Stopping…");
                     } else {
                         self.flash("Not working right now");
                     }
                 }
             }
-            KeyCode::Char('*') => self.make_lead(),
+            KeyCode::Char('S') => {
+                if self.bot().is_some_and(|b| b.group) {
+                    self.flash("A group has no session of its own");
+                } else if let Some(b) = self.bot() {
+                    let c = Confirm {
+                        title: format!("Start a new session for {}?", b.name),
+                        detail: "The agent forgets this conversation's context.".into(),
+                        note: "The transcript stays here.".into(),
+                        button: "New session",
+                        act: ConfirmAct::NewSession(b.id.clone()),
+                    };
+                    self.overlays.push(Overlay::Confirm(c));
+                }
+            }
             KeyCode::Char('x') => {
-                // An older host keeps its lead.
-                let kept = self.bot().is_some_and(|b| b.lead) && !self.lead_choice_supported();
-                if let Some(b) = self.bot().filter(|_| !kept) {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot can't be deleted");
+                } else if let Some(b) = self.bot() {
                     let (detail, note) = if b.group {
                         ("Its conversation goes away.".into(), "Its bots stay.".into())
                     } else {
@@ -363,7 +366,9 @@ impl App {
             }
             KeyCode::Char('e') => self.edit_bot(),
             KeyCode::Char('p') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot always stays on top");
+                } else if let Some(b) = self.bot() {
                     let (id, pinned) = (b.id.clone(), !b.pinned);
                     self.call("updateBot", json!({"id": id, "pinned": pinned}), After::Nothing);
                 }

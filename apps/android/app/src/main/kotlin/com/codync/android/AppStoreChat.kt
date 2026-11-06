@@ -1,5 +1,6 @@
 package com.codync.android
 
+import android.app.Application
 import java.io.IOException
 import java.util.UUID
 import com.codync.android.core.*

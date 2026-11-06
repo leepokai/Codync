@@ -134,39 +134,6 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
         let since_user = since_last_user_message(hub, lane)?;
         let mut speakers =
             if round == 0 { responders(&members, &since_user) } else { cited(&members, &since_user, &asked) };
-        if round == 0 && speakers.len() == members.len() && members.len() > 1 {
-            let candidates: Vec<crate::chat::decider::BotCandidate> = members
-                .iter()
-                .map(|m| crate::chat::decider::BotCandidate {
-                    id: m.id.clone(),
-                    name: m.name.clone(),
-                    description: m.description.clone(),
-                })
-                .collect();
-            let user_msg = since_user.first().and_then(|e| e.data["text"].as_str()).unwrap_or_default().to_owned();
-            let req = crate::chat::decider::DeciderRequest {
-                group_name: group.name.clone(),
-                recent_transcript: vec![],
-                user_message: user_msg,
-                candidates,
-            };
-            match crate::chat::decider::resolve_speaker(&req).await {
-                crate::chat::decider::RoutingDecision::SingleBot(id) => {
-                    if let Some(target) = members.iter().find(|m| m.id == id) {
-                        speakers = vec![target];
-                    }
-                }
-                crate::chat::decider::RoutingDecision::FallbackToLead => {
-                    let lead_id = group.chief_bot_id.as_deref().or_else(|| members.first().map(|m| m.id.as_str()));
-                    if let Some(id) = lead_id
-                        && let Some(target) = members.iter().find(|m| m.id == id)
-                    {
-                        speakers = vec![target];
-                    }
-                }
-                crate::chat::decider::RoutingDecision::AllMembers => {}
-            }
-        }
         // Each round starts one member later, so the same bot doesn't always speak first.
         if !speakers.is_empty() {
             let offset = round % speakers.len();

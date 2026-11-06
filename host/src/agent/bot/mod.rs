@@ -24,26 +24,15 @@ mod fast_mode;
 mod files;
 mod launch;
 mod lifecycle;
-mod outcome;
-mod proactive;
-#[cfg(test)]
-mod proactive_tests;
 mod queue;
-mod results;
 mod session;
-mod skill_use;
-mod spend;
-mod stall;
 mod tool_entry;
 mod turn;
 mod updates;
-mod watchdog;
 
 pub use cmd::Cmd;
 use cmd::Queued;
 pub(crate) use launch::{launch_commands, select_model, start_agent, system_prompt};
-pub(crate) use results::recover_results;
-pub(crate) use tool_entry::diff_summary;
 
 use crate::agent::acp::{self, Acp, Incoming};
 use crate::agent::config::FastModeSupport;
@@ -81,12 +70,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let cfg = fallback::resume_step(&hub, &base);
     // A turn the previous host process never finished (crash, update, restart), unless
     // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
-    // A side conversation's turn is marked `<started>	<side>` (see `Actor::set_inflight`).
     let interrupted = hub.store.kv_get(&inflight_key(&cfg.id)).and_then(|v| {
-        let (started, side) = v.split_once('\t').map_or((v.as_str(), None), |(at, side)| (at, Some(side)));
-        let started: i64 = started.parse().ok()?;
-        (now_ms() - started < STALE_RESUME_MS)
-            .then(|| side.map_or_else(|| Lane::main(&cfg.id), |side| Lane::in_thread(&cfg.id, side)))
+        let started: i64 = v.parse().ok()?;
+        (now_ms() - started < STALE_RESUME_MS).then(|| Lane::main(&cfg.id))
     });
     let dreamer = memory::spawn_dreamer(hub.clone(), cfg.id.clone());
     let lane = Lane::main(&cfg.id);
@@ -108,7 +94,6 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         routine_timed_out: false,
         routine_completion: None,
         session_fresh: false,
-        thread_intro: None,
         profile_resend: HashSet::new(),
         compacting: None,
         raw_prompt: false,
@@ -127,11 +112,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         active_request: None,
         reply_hops: None,
         active_prompt: false,
-        proactive_turn: false,
         prompt_call: None,
         seg: Seg::None,
         tools: HashMap::new(),
-        watchdog: watchdog::Watchdog::default(),
         plan_entry: None,
         last_text: None,
         sent: Vec::new(),
@@ -145,7 +128,6 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         restart_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
-        loop_guard: stall::LoopGuard::default(),
         relay: fallback::Relay::default(),
     };
     let task = tokio::spawn(actor.run(rx, interrupted));
@@ -195,17 +177,12 @@ pub(crate) struct Conn {
     pub(crate) adapter: Adapter,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
-    allocation_uncertain: bool,
-    pending_models: HashMap<String, Value>,
     started: Instant,
     /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
     /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
     opening: bool,
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
-    /// Each live session's modes, as the agent last listed them, and the sessions already switched to the bot's.
-    modes: HashMap<String, crate::agent::modes::Modes>,
-    mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
     /// Each session's context use and window size at its last `usage_update`.
@@ -266,15 +243,13 @@ struct Actor {
     lane: Lane,
     /// The session the current turn prompts.
     turn_session: Option<String>,
-    /// True until the first prompt of a new ACP session has been sent.
-    session_fresh: bool,
-    /// Told on the first message of a side conversation's new session: what it is (see `Actor::thread_intro`).
-    thread_intro: Option<(String, String)>,
     active_group: Option<GroupTurn>,
     active_routine: Option<String>,
     routine_deadline: Option<Instant>,
     routine_timed_out: bool,
     routine_completion: Option<RoutineCompletion>,
+    /// True until the first prompt of a new ACP session has been sent.
+    session_fresh: bool,
     /// Sessions that compacted away the `<bot-profile>` their first message carried; their next prompt carries
     /// a fresh one.
     profile_resend: HashSet<String>,
@@ -308,14 +283,10 @@ struct Actor {
     reply_hops: Option<u8>,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`).
     active_prompt: bool,
-    /// Scheduled output stays private until the turn finishes with useful news.
-    proactive_turn: bool,
     /// The call the next host-started turn opens (`Cmd::Prompt`), whose replies are that call's.
     prompt_call: Option<String>,
     seg: Seg,
     tools: HashMap<String, String>,
-    /// Watches the running turn for tool loops and silence.
-    watchdog: watchdog::Watchdog,
     plan_entry: Option<String>,
     last_text: Option<String>,
     /// Messages the bot sent the user this turn (`send_message`); none: its last text is the reply.
@@ -339,8 +310,6 @@ struct Actor {
     fast_support: FastModeSupport,
     /// When idle sessions and agents were last looked for.
     idle_checked: Instant,
-    /// Stops the running turn when it keeps failing the same tool call (see `stall`).
-    loop_guard: stall::LoopGuard,
     /// The running turn's place in the fallback chain (see `fallback`).
     relay: fallback::Relay,
 }
@@ -379,11 +348,7 @@ impl Actor {
                 Some(done) = done_rx.recv() => {
                     // Updates sent before the prompt response are already queued; apply them first.
                     while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
-                        match inc {
-                            // No agent ends a turn it waits on: a request queued here is for work after it.
-                            Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
-                            inc => self.on_incoming(Some(inc)).await,
-                        }
+                        self.on_incoming(Some(inc)).await;
                     }
                     if let Err(error) = &done && self.fall_back(error, &done_tx).await {
                         continue;
@@ -415,7 +380,6 @@ impl Actor {
                         self.cancel_deadline = None;
                         if let Some(c) = self.conn.take() { c.acp.kill().await; }
                     }
-                    self.check_stall();
                     self.release_idle().await;
                     // The idle check may have queued a compaction.
                     if self.turn.is_none() && !self.queue.is_empty() {
@@ -451,13 +415,6 @@ impl Actor {
     /// Adds an entry to the current lane, signed by this bot (a group shows who said it).
     fn add(&self, kind: EntryKind, turn: i64, mut data: Value) -> Option<Entry> {
         data["author"] = self.cfg.id.clone().into();
-        if self.proactive_turn && proactive::internal_step(kind) {
-            data["internal"] = true.into();
-        }
-        if matches!(kind, EntryKind::Agent) && data["final"] == true && self.lane.thread.is_some() {
-            // Direct messages have no later finalization step to record their origin.
-            data["routineRunId"] = json!(self.active_routine);
-        }
         if let (EntryKind::Agent, Some(call)) = (kind, &self.turn_call) {
             data["call"] = call.clone().into();
         }
@@ -472,15 +429,12 @@ impl Actor {
     /// `notice` with more fields than its text and style.
     fn notice_data(&self, data: Value) {
         let Some(turn) = self.turn else {
-            self.add_between_turns(EntryKind::Notice, &data);
+            let main = Lane::main(&self.cfg.id);
+            let turn = self.hub.store.max_turn(&self.cfg.id);
+            self.hub.add_entry(&main, EntryKind::Notice, turn, &data);
             return;
         };
         self.add(EntryKind::Notice, turn, data);
-    }
-
-    /// An entry while no turn runs: in the bot's own chat, numbered with its latest turn.
-    fn add_between_turns(&self, kind: EntryKind, data: &Value) -> Option<Entry> {
-        self.hub.add_entry(&Lane::main(&self.cfg.id), kind, self.hub.store.max_turn(&self.cfg.id), data)
     }
 }
 

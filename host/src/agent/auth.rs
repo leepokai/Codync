@@ -33,7 +33,6 @@ mod agent;
 mod models;
 pub use agent::authenticate;
 use agent::start;
-pub(crate) use agent::start_with_env;
 pub use models::models;
 pub(crate) use models::{model_config, model_ids};
 
@@ -84,7 +83,7 @@ pub struct Status {
 static CHECKED: Mutex<BTreeMap<String, Status>> = Mutex::new(BTreeMap::new());
 
 /// Where probe sessions live, away from the user's projects.
-pub(crate) fn probe_dir() -> PathBuf {
+fn probe_dir() -> PathBuf {
     crate::service::data_dir().join("probe")
 }
 
@@ -292,8 +291,6 @@ pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) ->
         };
     }
     crate::market::vault::write(store, &env_slot(backend), &serde_json::to_string(&saved)?)?;
-    // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
-    backends::clear_prompt_refused(backend);
     check(store, backend).await
 }
 

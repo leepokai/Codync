@@ -6,8 +6,7 @@ fn hub(dir: &std::path::Path) -> Arc<Hub> {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
     for (id, manage) in [("lead", true), ("dev", false)] {
         let cfg: BotConfig = serde_json::from_value(json!({"id": id, "name": id, "backend": "claude",
-            "cwd": dir.to_string_lossy(), "manageTeam": manage, "connectors": ["github"], "skills": [],
-            "permission": "auto", "mode": "plan"}))
+            "cwd": dir.to_string_lossy(), "manageTeam": manage, "connectors": ["github"], "skills": []}))
         .unwrap();
         store.save_bot(&cfg).unwrap();
     }
@@ -49,23 +48,15 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     );
     // It manages the team like the bot that made it, and asks no less.
     assert_eq!((cfg.created_by.as_deref(), cfg.permission, cfg.manage_team), (Some("lead"), Permission::Auto, true));
-    assert_eq!(cfg.mode.as_deref(), Some("plan"), "in the same mode");
-    // Another agent may not have that mode: no bot is made on it.
-    let other = json!({"name": "Reviewer", "agent": "codex"});
-    let refused = call(&hub, "lead", "create_bot", &other).await.unwrap_err().to_string();
-    assert!(refused.contains("plan mode, which Codex may not have"), "{refused}");
     // And reaches only the connectors and skills it does, not every installed one.
     assert_eq!((cfg.connectors, cfg.skills), (vec!["github".to_owned()], vec![]));
     assert_eq!(made["routines"][0]["triggerDescriptions"][0], "Every 30 minutes");
 
-    // The user's own bots stay theirs to change.
-    let refused = call(&hub, "lead", "update_bot", &json!({"botId": "dev", "instructions": "Writes code."})).await;
-    assert!(refused.is_err(), "a manager can't change a bot it didn't create");
-    call(&hub, "lead", "update_bot", &json!({"botId": id, "instructions": "Writes code.", "hidden": true}))
+    call(&hub, "lead", "update_bot", &json!({"botId": "dev", "instructions": "Writes code.", "hidden": true}))
         .await
         .unwrap();
-    let made_cfg = hub.store.bot(id).unwrap().unwrap().config;
-    assert_eq!((made_cfg.description.as_str(), made_cfg.hidden), ("Writes code.", true));
+    let dev = hub.store.bot("dev").unwrap().unwrap().config;
+    assert_eq!((dev.description.as_str(), dev.hidden), ("Writes code.", true));
     // A manager changes its own setup too.
     call(&hub, "lead", "update_bot", &json!({"botId": "lead", "name": "Boss", "model": "opus"})).await.unwrap();
     let lead = hub.store.bot("lead").unwrap().unwrap().config;
@@ -74,7 +65,7 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
         notices(&hub, "lead"),
         [
             json!("Created bot Security Analyst"),
-            json!("Updated Security Analyst: hidden, instructions"),
+            json!("Updated dev: hidden, instructions"),
             json!("Updated lead: name, model")
         ]
     );
@@ -94,10 +85,10 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     assert!(refused("lead", "create_bot", no_trigger).await.contains("triggers"));
     // Routines are checked as `save_routine` checks them, for the bot they're for.
     let lead_routine = hub.routines.save(&hub, "lead", &routine).unwrap()["routine"]["id"].clone();
-    let other = json!({"botId": id, "routines": [{"id": lead_routine, "name": "r", "instruction": "i",
+    let other = json!({"botId": "dev", "routines": [{"id": lead_routine, "name": "r", "instruction": "i",
         "triggers": [{"type": "interval", "seconds": 1800}]}]});
     assert!(refused("lead", "update_bot", other).await.contains("routine not found"));
-    let no_time = json!({"botId": id, "routines": [{"name": "r", "instruction": "i", "timeoutSeconds": 0,
+    let no_time = json!({"botId": "dev", "routines": [{"name": "r", "instruction": "i", "timeoutSeconds": 0,
         "triggers": [{"type": "interval", "seconds": 1800}]}]});
     assert!(refused("lead", "update_bot", no_time).await.contains("timeoutSeconds"));
     // A manager's own fallbacks are the user's once they turned that off, also through update_bot.
@@ -106,7 +97,7 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     assert!(refused("lead", "update_bot", own).await.contains("turned off setting your own fallbacks"));
     // Under Ask, a change too long for its card to show in full never reaches the card.
     hub.update_bot(&json!({"id": "lead", "permission": "ask"})).unwrap();
-    let long = json!({"name": "x", "agent": "claude", "instructions": "a".repeat(MAX_INSTRUCTIONS_CHARS)});
+    let long = json!({"name": "x", "instructions": "a".repeat(MAX_INSTRUCTIONS_CHARS)});
     assert!(refused("lead", "create_bot", long).await.contains("too long for its approval card"));
     assert_eq!(hub.store.bots().unwrap().len(), 3, "a refused change creates nothing");
     assert_eq!(hub.routines.list("dev")["routines"], json!([]));

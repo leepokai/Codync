@@ -2,7 +2,6 @@ import type { HostClient } from '../../client/host-client'
 import type { VoiceFailure } from '@shared/analytics'
 import type { CallCue } from '@shared/calls'
 import { Observable } from '../../lib/observable'
-import type { CallTranscript } from '../../lib/voice-transcript'
 import {
   addVoiceUsage,
   chosenModel,
@@ -14,7 +13,6 @@ import {
   mode,
   pause,
   rate,
-  captureTranscript,
   voiceInfo,
   type VoiceProvider,
 } from '../settings/voice-settings'
@@ -36,7 +34,8 @@ export const onDeviceUnavailableReason = () =>
     : `On-device speech isn't available on ${window.codync.platform === 'win32' ? 'Windows' : 'Linux'}.`
 
 export const VoiceSettings = {
-  captureTranscript: () => window.codync.platform === 'win32' && captureTranscript.get() === true,
+  /** Whether a call keeps a transcript for its line in the chat. */
+  captureTranscript: (): boolean => true,
   /** The provider picked in the call settings; null for on-device. */
   provider: (): VoiceProvider | null => {
     const value = callEngineChoice()
@@ -107,12 +106,13 @@ export abstract class VoiceEngine extends Observable {
   phase: VoicePhase = 'starting'
   failure: string | null = null
   failureKind: VoiceFailureKind | null = null
+  /** What both sides said, for the call's line in the chat; null when the user turned transcripts off. */
+  transcript: import('../../lib/voice-transcript').CallTranscript | null = null
   /** Microphone loudness, 0…1, while listening. Read every frame; not observed. */
   level = 0
   abstract readonly provider: VoiceProvider | null
   /** Keeps the call subscribed to replies while audio is active. */
   onActivityChanged: ((active: boolean) => void) | null = null
-  transcript: CallTranscript | null = null
   protected ended = false
   private mutedValue = false
 

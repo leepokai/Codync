@@ -42,7 +42,7 @@ pub(super) fn merge_tool_content(data: &mut Value, content: &Value) {
 }
 
 /// Changed-region summary: trims the common prefix/suffix and reports the middle.
-pub(crate) fn diff_summary(path: &str, old: &str, new: &str) -> Value {
+fn diff_summary(path: &str, old: &str, new: &str) -> Value {
     let a: Vec<&str> = old.lines().collect();
     let b: Vec<&str> = new.lines().collect();
     let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
@@ -68,14 +68,12 @@ pub(crate) fn diff_summary(path: &str, old: &str, new: &str) -> Value {
 }
 
 /// A call of Codync's MCP server `server` (a tool starting with `tool`), by the name the agent titles it with:
-/// Claude's and pi's `mcp__chat__send_message`, codex-acp's `mcp.chat.send_message` (older ones
-/// `chat.send_message`), the server under the name Codex or pi knows it by (`codync-chat` when the user's config
-/// has its own `chat`, which pi titles `mcp__codync_chat__…`).
+/// Claude's `mcp__chat__send_message`, codex-acp's `mcp.chat.send_message` (older ones `chat.send_message`), the
+/// server under the name Codex knows it by (`codync-chat` when the user's Codex config has its own `chat`).
 fn calls(title: &str, renamed: &Renamed, server: &str, tool: &str) -> bool {
-    let name = name_of(renamed, server);
     let codex = title.strip_prefix("mcp.").unwrap_or(title);
-    title.starts_with(&format!("mcp__{}__{tool}", name.replace('-', "_")))
-        || codex.starts_with(&format!("{name}.{tool}"))
+    title.starts_with(&format!("mcp__{server}__{tool}"))
+        || codex.starts_with(&format!("{}.{tool}", name_of(renamed, server)))
 }
 
 /// Composing the bot's message: the `chat` MCP server's `send_message`.
@@ -131,7 +129,7 @@ mod tests {
         data
     }
 
-    /// Marked for a bot whose agent's own config (Codex's, pi's) has its own `memory` server.
+    /// Marked for a Codex bot whose Codex config has its own `memory` server.
     fn marked_renamed(mut data: Value) -> Value {
         let cfg = serde_json::from_value(json!({"id": "b", "name": "Bot", "backend": "codex", "cwd": "/tmp"}))
             .expect("a bot config");
@@ -174,8 +172,6 @@ mod tests {
         assert_eq!(marked_renamed(json!({"title": "mcp.codync-memory.edit_memory"}))["bookkeeping"], true);
         assert_eq!(marked_renamed(json!({"title": "mcp.memory.create_entities"}))["bookkeeping"], false);
         assert_eq!(marked_renamed(json!({"title": "mcp.chat.send_message"}))["bookkeeping"], true);
-        assert_eq!(marked_renamed(json!({"title": "mcp__codync_memory__edit_memory"}))["bookkeeping"], true);
-        assert_eq!(marked_renamed(json!({"title": "mcp__memory__create_entities"}))["bookkeeping"], false);
     }
 
     #[test]

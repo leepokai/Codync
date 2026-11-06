@@ -77,7 +77,7 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
                 "agents": agents,
             });
             if let Some(agent) = args["agent"].as_str().filter(|a| !a.is_empty()) {
-                out["models"] = crate::agent::auth::models(&hub.store, agent, None).await?["models"].clone();
+                out["models"] = crate::agent::auth::models(&hub.store, agent).await?["models"].clone();
             }
             Ok(out)
         }

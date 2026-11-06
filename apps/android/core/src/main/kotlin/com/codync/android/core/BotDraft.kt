@@ -21,8 +21,9 @@ data class BotDraft(
     val backend: String = "claude",
     val command: String? = null,
     val cwd: String = "",
-    /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
-    val permission: String = "ask",
+    val permission: String = "auto",
+    val mode: String? = null,
+    val customIcon: CustomIcon? = null,
     val model: String? = null,
     val modelOptions: Map<String, String> = emptyMap(),
     val fastMode: Boolean? = null,
@@ -44,16 +45,12 @@ data class BotDraft(
     /** Null where the host has none, or on a new bot, so it isn't sent. */
     val offeredToNetwork: Boolean? = null,
     val reachableByAssistants: Boolean? = null,
-    /** The agent mode it works in ([AgentMode]); null, sent as null, keeps the agent's default. */
-    val mode: String? = AgentMode.AUTO,
 ) {
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
     fun toggleNotifications(): BotDraft = copy(notify = !(notify ?: true))
     /** On agent [id]: its model starts over, and it leaves the fallbacks (each agent appears once in the chain). */
-    fun withAgent(id: String): BotDraft = copy(backend = id, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id },
-        // A picked mode becomes the new agent's Auto mode (or, without one, asking).
-        mode = mode?.let { AgentMode.AUTO })
+    fun withAgent(id: String): BotDraft = copy(backend = id, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id })
     fun body(): JsonObject {
         val normalized = copy(command = command.takeIf { backend == "custom" }, account = account.takeIf { backend == "antigravity" })
         // updateBot merges a patch: null clears model, command or the connector choice, but an unset
@@ -89,7 +86,7 @@ data class BotDraft(
 
         fun from(bot: Bot): BotDraft = BotDraft(bot.id, bot.name, bot.description, bot.avatarColor, bot.avatarShape,
             bot.avatarLook, bot.actionRules, bot.proactive,
-            bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.model,
+            bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.mode, bot.customIcon, bot.model,
             bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.account,
             bot.manageTeam ?: false, bot.isChief, bot.chiefBotId, bot.computerPermissions, bot.fallbacks, bot.selfFallbacks,
             bot.offeredToNetwork, bot.reachableByAssistants)

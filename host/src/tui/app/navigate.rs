@@ -93,16 +93,6 @@ impl App {
     }
 
     pub(super) fn answer(&mut self, entry: &str, option: &str) {
-        if option == "approve"
-            && self
-                .entries
-                .values()
-                .flat_map(|items| items.values())
-                .any(|item| item.id == entry && item.data["mcpToolCallId"].is_string())
-        {
-            self.flash("Review the complete MCP arguments in the desktop or Android app before approving");
-            return;
-        }
         // One answer per card: while it is on its way, the card spins and takes no other.
         if self.answering.contains_key(entry) {
             return;
@@ -145,12 +135,7 @@ impl App {
             .into_iter()
             .filter_map(|item| match item {
                 Item::Entry(e)
-                    if e.is_message()
-                        || e.is_bot_message()
-                        || e.unfolds()
-                        || e.retries()
-                        || e.adds_fallback()
-                        || e.data["source"] == "voice_receipt" =>
+                    if e.is_message() || e.is_bot_message() || e.unfolds() || e.retries() || e.adds_fallback() =>
                 {
                     Some((e.id.clone(), e.is_message()))
                 }
@@ -230,12 +215,6 @@ impl App {
                     self.overlays.push(super::Overlay::Fields(Box::new(crate::tui::manage::handoff_fields(&e))));
                 }
             }
-            KeyCode::Char('v') if picked.as_ref().is_some_and(|e| e.data["source"] == "voice_receipt") => {
-                if let Some(e) = picked {
-                    self.overlays
-                        .push(super::Overlay::Fields(Box::new(crate::tui::manage::voice_decision_fields(&id, &e.id))));
-                }
-            }
             KeyCode::Char('K') if picked.as_ref().is_some_and(|e| e.data["handoff"]["status"] == "draft") => {
                 if let Some(e) = picked {
                     self.call("keepConversation", json!({"entryId": e.id}), After::Answered(e.id.clone()));
@@ -273,20 +252,19 @@ impl App {
     }
 
     /// Moves the selected bot one place up (-1) or down (+1) and saves the order, staying in its band
-    /// (`Bot::band`: pinned bots, the rest). Pinned bots move among all pinned bots (they
+    /// (`Bot::band`: the lead, pinned bots, the rest). Pinned bots move among all pinned bots (they
     /// show no sections), the rest only inside their section. Shown at once; the host's bot events
     /// confirm it.
     pub(super) fn reorder_bot(&mut self, d: isize) {
-        if self.roster_tools.by_project
-            || self.roster_tools.filter != super::roster_tools::Filter::All
-            || !self.roster_tools.query.text.trim().is_empty()
-        {
-            self.flash("Clear filters and use manual order before reordering");
+        let roster = self.roster();
+        let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|b| &b.id == s)) else { return };
+        let group = roster[i].roster_group();
+        // A folded section shows no order to change.
+        if group.1.is_some_and(|s| self.folded.contains(s)) {
             return;
         }
-        let roster: Vec<(String, u8)> = self.roster().iter().map(|b| (b.id.clone(), b.band())).collect();
-        let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|(id, _)| id == s)) else { return };
-        let Some(j) = i.checked_add_signed(d).filter(|&j| j < roster.len() && roster[j].1 == roster[i].1) else {
+        let Some(j) = i.checked_add_signed(d).filter(|&j| roster.get(j).is_some_and(|b| b.roster_group() == group))
+        else {
             return;
         };
         let mut ids: Vec<String> = roster.iter().map(|b| b.id.clone()).collect();
@@ -318,23 +296,23 @@ mod tests {
     #[tokio::test]
     async fn reordering_stays_inside_a_band() {
         let mut app = test_app();
-        let bots = [("p", true, false, 0), ("a", false, false, 3), ("b", false, false, 2), ("l", false, true, 0)];
+        let bots = [("l", false, true, 0), ("p", true, false, 0), ("a", false, false, 3), ("b", false, false, 2)];
         for (id, pinned, lead, last_at) in bots.into_iter().chain([("c", false, false, 1)]) {
             let bot = Bot::parse(&json!({"id": id, "pinned": pinned, "lead": lead, "lastAt": last_at}))
                 .expect("a bot with an id parses");
             app.bots.insert(id.into(), bot);
         }
         let order = |app: &super::App| app.roster().iter().map(|b| b.id.clone()).collect::<Vec<_>>();
-        assert_eq!(order(&app), ["p", "a", "b", "c", "l"], "unarranged: pinned, then recent activity");
+        assert_eq!(order(&app), ["l", "p", "a", "b", "c"], "unarranged: the lead, pinned, then recent activity");
         app.selected = Some("c".into());
         app.reorder_bot(-1);
-        assert_eq!(order(&app), ["p", "a", "c", "b", "l"]);
+        assert_eq!(order(&app), ["l", "p", "a", "c", "b"]);
         app.selected = Some("a".into());
         app.reorder_bot(-1);
-        assert_eq!(order(&app), ["p", "a", "c", "b", "l"], "an unpinned bot can't move above a pinned one");
-        app.selected = Some("l".into());
+        assert_eq!(order(&app), ["l", "p", "a", "c", "b"], "an unpinned bot can't move above a pinned one");
+        app.selected = Some("p".into());
         app.reorder_bot(-1);
-        assert_eq!(order(&app), ["p", "a", "c", "l", "b"], "the lead moves like any bot");
+        assert_eq!(order(&app), ["l", "p", "a", "c", "b"], "nor a pinned one above the lead");
     }
 
     #[tokio::test]

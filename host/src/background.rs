@@ -4,7 +4,6 @@ use crate::{agent::registry, hub::Hub, market, remote::relay, screen, update, us
 use std::sync::Arc;
 
 pub fn start(hub: &Arc<Hub>) {
-    tokio::spawn(crate::slack::run(hub.clone()));
     tokio::spawn({
         let hub = hub.clone();
         async move {
@@ -14,7 +13,6 @@ pub fn start(hub: &Arc<Hub>) {
         }
     });
     tokio::spawn(registry::refresh_loop());
-    tokio::spawn(crate::icons::cleanup_loop(hub.clone()));
     tokio::spawn(market::refresh_first_page());
     tokio::spawn(market::automatic_loop(hub.clone()));
     tokio::spawn(voice::refresh_loop(hub.clone()));
@@ -24,7 +22,6 @@ pub fn start(hub: &Arc<Hub>) {
         async move { market::agent_sign_in::refresh(&hub).await }
     });
     tokio::spawn(usage::poll(hub.clone()));
-    tokio::spawn(crate::proactive::run(hub.clone()));
     tokio::spawn(update::automatic_loop(hub.clone()));
     tokio::spawn(update::release_watch());
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));

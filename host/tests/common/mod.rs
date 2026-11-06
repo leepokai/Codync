@@ -6,19 +6,9 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// The seed of the cloud key a test host trusts for device certificates.
-pub const TEST_CLOUD_SEED: [u8; 32] = [9; 32];
-
-fn test_cloud_key() -> String {
-    use base64::Engine as _;
-    let key = ed25519_dalek::SigningKey::from_bytes(&TEST_CLOUD_SEED).verifying_key();
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes())
-}
-
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
 /// picked here is only free for a moment; when something else takes it before the host binds, the
-/// host exits and this starts it again on another one. Readiness must authenticate with this
-/// home's token: another test's public health response is not our child becoming ready.
+/// host exits and this starts it again on another one.
 pub async fn serve(home: &Path) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
@@ -31,26 +21,16 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
             .env("CODYNC_HOME", home)
             .env("CODYNC_CLOUD", "off")
-            // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
-            .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
             .spawn()
             .expect("start the host");
         while child.try_wait().expect("host state").is_none() {
-            match reqwest::get(format!("{base}/health")).await {
-                Ok(_) => last.clear(),
-                Err(e) => last = format!("{e:?}"),
+            match ready(&base, home).await {
+                Ok(()) => return (child, base),
+                Err(e) => last = e,
             }
-            if ready(&base, home).await {
-                return (child, base);
-            }
-            if Instant::now() >= deadline {
-                // A panicking startup fixture must not leave an unowned host behind.
-                let _ = child.kill();
-                let _ = child.wait();
-                panic!("{}", not_started(&log, &last));
-            }
+            assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
@@ -76,45 +56,6 @@ pub async fn ready(base: &str, home: &Path) -> Result<(), String> {
         .await
         .map_err(|e| format!("{e:?}"))?;
     res.status().is_success().then_some(()).ok_or_else(|| format!("status {}", res.status()))
-}
-
-pub async fn ready(base: &str, home: &Path) -> bool {
-    let Ok(token) = std::fs::read_to_string(home.join("token")) else { return false };
-    reqwest::Client::new()
-        .get(format!("{base}/events?since=0&client=test"))
-        .bearer_auth(token.trim())
-        .timeout(Duration::from_secs(1))
-        .send()
-        .await
-        .is_ok_and(|response| response.status().is_success())
-}
-
-#[tokio::test]
-async fn readiness_rejects_another_hosts_health_response() {
-    use axum::http::{HeaderMap, StatusCode};
-    use axum::{Router, routing::get};
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let router = Router::new().route("/health", get(|| async { StatusCode::OK })).route(
-        "/events",
-        get(|headers: HeaderMap| async move {
-            if headers.get("authorization").and_then(|v| v.to_str().ok()) == Some("Bearer listener-token") {
-                StatusCode::OK
-            } else {
-                StatusCode::UNAUTHORIZED
-            }
-        }),
-    );
-    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-    let home = std::env::temp_dir().join(format!("codync-readiness-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&home).unwrap();
-    assert!(!ready(&base, &home).await, "a foreign listener does not make a new home ready");
-    std::fs::write(home.join("token"), "different-token").unwrap();
-    assert!(!ready(&base, &home).await, "an existing token from a restart must match the listener");
-    std::fs::write(home.join("token"), "listener-token").unwrap();
-    assert!(ready(&base, &home).await);
-    server.abort();
-    std::fs::remove_dir_all(home).unwrap();
 }
 
 /// Stops a test host the way launchd does (SIGTERM), so it shuts down its own

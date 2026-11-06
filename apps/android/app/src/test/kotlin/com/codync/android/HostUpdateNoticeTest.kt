@@ -1,6 +1,5 @@
 package com.codync.android
 
-import com.codync.android.core.Computer
 import com.codync.android.core.VersionMismatch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -62,7 +61,7 @@ class HostUpdateNoticeTest {
     }
 
     @Test fun theCodyncRowComparesWithTheLatestReleaseTheComputerFound() {
-        val state = AppState(Computer("fixture", "Studio", "fixture")).copy(hello = buildJsonObject {
+        val state = AppState().copy(hello = buildJsonObject {
             put("name", "Mini"); put("version", "2.28.0"); put("latestVersion", "2.30.0"); put("canUpdate", true)
         })
         assertEquals(HostVersionLine("2.28.0", listOf("Version 2.30.0 is available."), accessory = update), state.hostVersionLine(now))

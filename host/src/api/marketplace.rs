@@ -54,11 +54,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             market::logins::remove(&hub.store, str_arg(&b, "id")?)?;
             json!({})
         }
-        "credentialBotSecrets" => market::bot_secrets::list(&hub.store)?,
-        "credentialRemoveBotSecret" => {
-            market::bot_secrets::remove(&hub.store, str_arg(&b, "id")?)?;
-            json!({})
-        }
         "credentialSetOnePassword" => {
             market::passwords::set_token(&hub.store, b["token"].as_str().unwrap_or_default()).await?
         }
@@ -75,7 +70,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             for (k, v) in &c.env {
                 env.insert(k.clone(), market::passwords::resolve(&hub.store, v).await?.into());
             }
-            json!({"command":c.command,"args":c.args,"env":env,"fingerprint":crate::mcp::policy_management::fingerprint_value(&c)?})
+            json!({"command":c.command,"args":c.args,"env":env})
         }
         "connectorCall" => {
             market::requests::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
@@ -83,16 +78,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "connectorInfo" => market::connector_info(&hub.store, str_arg(&b, "registryName")?).await?,
         "connectorRequestFinish" => market::requests::finish(hub, &b).await?,
         "connectorVerify" => market::verify::verify(&hub.store, str_arg(&b, "id")?, hub.port).await?,
-        "composioPrepareCall" | "composioDispatchCall" => {
-            if !matches!(caller, Caller::Local) {
-                bail!("This method is restricted to the local MCP proxy.");
-            }
-            if method == "composioPrepareCall" {
-                market::composio::prepare(hub, str_arg(&b, "botId")?, &b["arguments"], &b["rpcId"]).await?
-            } else {
-                market::composio::dispatch(hub, str_arg(&b, "id")?, str_arg(&b, "fingerprint")?).await?
-            }
-        }
         "composioCall" => {
             json!({"result": market::composio::call(&hub.store, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?})
         }
@@ -165,7 +150,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 market::oauth::Callback::App
             };
-            market::oauth::start(hub, str_arg(&b, "id")?, callback, b["showsCode"] == true).await?
+            market::oauth::start(&hub.store, hub.port, str_arg(&b, "id")?, callback).await?
         }
         "connectorSignInFinish" => {
             let c = market::oauth::finish(&hub.store, str_arg(&b, "state")?, b["code"].as_str(), b["error"].as_str())

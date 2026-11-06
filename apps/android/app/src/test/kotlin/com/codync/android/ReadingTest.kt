@@ -1,7 +1,6 @@
 package com.codync.android
 
 import com.codync.android.core.Bot
-import com.codync.android.core.Computer
 import com.codync.android.core.Entry
 import com.codync.android.core.MirrorEvent
 import kotlinx.serialization.json.buildJsonObject

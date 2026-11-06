@@ -22,21 +22,21 @@ data class ComposerDraft(val botId: String, val threadId: String? = null, val te
 
 /** One bounded draft book per account/computer; a draft's nonce also identifies its durable send. */
 class DraftBook(private val directory: File, computerId: String) {
-    private val file = bookFile(directory, computerId)
+    private val file: AtomicFile
+    init {
+        require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
+        file = AtomicFile(File(directory, "drafts-$computerId.json"))
+    }
 
-    @Synchronized fun read(): List<ComposerDraft> = decode().also { validate(it) }
-
-    /** A book [LocalStore.adopt] copied from account folder [from]: its attachments name this folder's copies. */
-    @Synchronized fun relocate(from: File) =
-        save(decode().map { draft -> draft.copy(files = draft.files.map { AttachmentFiles.moved(it, from, directory) }) })
-
-    private fun decode(): List<ComposerDraft> {
+    @Synchronized fun read(): List<ComposerDraft> {
         if (!file.baseFile.exists()) return emptyList()
         require(file.baseFile.length() <= MAX_BYTES) { "The saved drafts are too large." }
         // Message threads are gone (a message replies to another instead): only chats and documents' conversations keep drafts.
         val drafts = WireJson.parseToJsonElement(file.readFully().toString(Charsets.UTF_8)).jsonArray
             .filter { (it.jsonObject["threadId"] as? JsonPrimitive)?.contentOrNull?.startsWith("doc:") ?: true }
             .map { WireJson.decodeFromJsonElement<ComposerDraft>(it) }
+        validate(drafts)
+        return drafts
     }
 
     /** A crash between pending-send commit and draft removal cannot offer the same draft twice. */
@@ -65,24 +65,14 @@ class DraftBook(private val directory: File, computerId: String) {
             require(draft.botId.isNotBlank() && draft.botId.length <= 128 && (draft.threadId == null || draft.threadId.isNotBlank() && draft.threadId.length <= 128))
             require(draft.draftKey == null || draft.draftKey.length <= 256 && draft.draftKey.startsWith("${draft.botId}/artifact/"))
             require(UUID.fromString(draft.nonce).toString() == draft.nonce) { "A saved draft has an invalid message ID." }
-            require(draft.text.toByteArray().size <= TEXT_BYTES) { "Draft messages must be 64 KiB or smaller." }
+            require(draft.text.toByteArray().size <= 64 * 1024) { "Draft messages must be 64 KiB or smaller." }
             require(draft.files.size <= 20) { "Choose at most 20 files for one message." }
             for (attachment in draft.files) {
                 require(attachment.size in 0..MAX_FILE_BYTES && attachment.name.isNotBlank())
-                if (checkPaths) require(AttachmentFiles.inOutgoing(directory, attachment.path)) { "A draft attachment belongs to another account." }
+                if (checkPaths) require(File(attachment.path).canonicalFile.parentFile == outgoing) { "A draft attachment belongs to another account." }
             }
         }
     }
 
-    companion object {
-        private const val MAX_BYTES = 8 * 1024 * 1024
-        /** The most UTF-8 a draft's message holds. */
-        const val TEXT_BYTES = 64 * 1024
-        private fun bookFile(directory: File, computerId: String): AtomicFile {
-            require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
-            return AtomicFile(File(directory, "drafts-$computerId.json"))
-        }
-        /** Deletes a computer's drafts. */
-        fun delete(directory: File, computerId: String) { bookFile(directory, computerId).delete() }
-    }
+    companion object { private const val MAX_BYTES = 8 * 1024 * 1024 }
 }

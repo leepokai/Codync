@@ -1,5 +1,5 @@
 use super::*;
-use crate::remote::channel::subscriptions::send_screen_event;
+use crate::remote::channel::subscriptions::send_allowed;
 
 #[tokio::test]
 async fn screen_candidate_rpc_and_private_subscription_require_screen_scope() {
@@ -33,7 +33,7 @@ async fn queued_screen_candidates_stop_when_screen_permission_is_removed() {
     let filled = tx.send(ToDevice::Inner(json!({"filler": true}))).await;
     filled.unwrap();
     let candidate = json!({"id": 1, "ev": {"type": "candidate"}});
-    let sending = send_screen_event(&hub, &owner, &mut auth, &tx, candidate.clone());
+    let sending = send_allowed(&hub, &owner, devices::may_view_screen, &mut auth, &tx, candidate.clone());
     tokio::pin!(sending);
     assert!(futures::poll!(&mut sending).is_pending());
 
@@ -49,7 +49,7 @@ async fn queued_screen_candidates_stop_when_screen_permission_is_removed() {
 
     // Also reject a stale caller whose scope changed before its task began.
     let mut auth = hub.auth.subscribe();
-    let sent = send_screen_event(&hub, &owner, &mut auth, &tx, candidate).await;
+    let sent = send_allowed(&hub, &owner, devices::may_view_screen, &mut auth, &tx, candidate).await;
     assert!(!sent);
     assert!(rx.try_recv().is_err());
 }
@@ -64,7 +64,7 @@ async fn unrelated_permission_updates_preserve_a_backpressured_screen_candidate(
     let filled = tx.send(ToDevice::Inner(json!({"filler": true}))).await;
     filled.unwrap();
     let candidate = json!({"id": 1, "ev": {"type": "candidate"}});
-    let sending = send_screen_event(&hub, &owner, &mut auth, &tx, candidate.clone());
+    let sending = send_allowed(&hub, &owner, devices::may_view_screen, &mut auth, &tx, candidate.clone());
     tokio::pin!(sending);
     assert!(futures::poll!(&mut sending).is_pending());
     hub.auth_changed();

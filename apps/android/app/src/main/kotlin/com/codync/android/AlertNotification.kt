@@ -16,9 +16,6 @@ import androidx.core.text.buildSpannedString
 import com.codync.android.core.AlertConversation
 import com.codync.android.core.Bot
 import com.codync.android.design.characterAvatarBitmap
-import com.codync.android.design.customAvatarBitmap
-import com.codync.android.design.AvatarPalette
-import androidx.compose.ui.graphics.toArgb
 import com.codync.android.design.symbolRes
 
 /**
@@ -79,12 +76,9 @@ internal fun notificationFace(context: Context, bot: Bot, members: List<Bot>): B
     val end = start + FACE
     fun place(member: Bot, fraction: Float, x: Float, y: Float) {
         val pixels = (FACE * fraction).toInt()
-        val face = customAvatarBitmap(member.customIcon?.dataUrl, member.customIcon?.tinted == true, pixels,
-            AvatarPalette.tint(member.avatarColor).toArgb())
-            ?: characterAvatarBitmap(member.avatarShape, member.avatarColor, pixels, DARK_INK, cells = 13)
-        canvas.drawBitmap(face, x, y, null)
+        canvas.drawBitmap(characterAvatarBitmap(member.avatarShape, member.avatarColor, pixels, DARK_INK, cells = 13), x, y, null)
     }
-    if (bot.kind != "group" || bot.customIcon != null) { place(bot, 1f, start, start); return bitmap }
+    if (bot.kind != "group") { place(bot, 1f, start, start); return bitmap }
     // An alert carries at most three members' faces: the first two and the speaker.
     when (members.size) {
         0 -> ContextCompat.getDrawable(context, requireNotNull(symbolRes("person.2")))?.mutate()?.run {

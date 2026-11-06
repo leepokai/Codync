@@ -1,51 +1,22 @@
-use super::cancellation::Cancellation;
-use super::{Events, is_sse, json_replies, policy, sse_data, sse_text};
-use crate::LockExt;
-use crate::egress::Policy;
+//! A remote connector behind a local stdio MCP server, with the sign-in the host gives it.
+
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
-
-fn client() -> &'static reqwest::Client {
-    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
-        reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .expect("TLS setup failed: install the ca-certificates package")
-    });
-    &CLIENT
-}
-
-#[cfg(test)]
-mod tests;
 
 /// `codync-host mcp remote`: a stdio MCP server that forwards every message to a remote
 /// connector with the headers and fresh sign-in token the host gives it. Speaks streamable
 /// HTTP, and falls back to the older HTTP+SSE transport when the server doesn't.
 pub async fn serve_remote(connector: String, port: u16) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
-    let cancellation = Arc::new(Cancellation::default());
-    let observed = Arc::new(super::proxy_replies::ProxyReplies::new(port, token.trim(), &connector).await?);
-    let mut tasks = super::tasks::Tasks::default();
-    let mut remote = Remote {
-        port,
-        token: token.trim().to_owned(),
-        connector,
-        approval: None,
-        cancellation: cancellation.clone(),
-        request_id: Value::Null,
-        target_url: std::sync::Mutex::default(),
-    };
+    let remote = Remote { port, token: token.trim().to_owned(), connector };
     // Both transports answer through one writer: the SSE one answers from its own stream.
-    let (tx, mut rx) = mpsc::channel::<Value>(16);
-    let seen = observed.clone();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
     let writer = tokio::spawn(async move {
         let mut out = tokio::io::stdout();
         while let Some(reply) = rx.recv().await {
-            seen.observe(&reply).await;
             let mut line = serde_json::to_vec(&reply)?;
             line.push(b'\n');
             out.write_all(&line).await?;
@@ -53,87 +24,21 @@ pub async fn serve_remote(connector: String, port: u16) -> Result<()> {
         }
         anyhow::Ok(())
     });
-    let (incoming, mut inbox) = mpsc::channel(100);
-    tasks.track(&writer);
-    let immediate = tx.clone();
-    let input_cancellation = cancellation.clone();
-    let input_reader = tokio::spawn(async move {
-        let mut lines = BufReader::new(tokio::io::stdin()).lines();
-        loop {
-            match lines.next_line().await {
-                Ok(Some(line)) => {
-                    let Ok(message) = serde_json::from_str::<Value>(&line) else {
-                        continue;
-                    };
-                    input_cancellation.observe(&message);
-                    if message["method"] == "notifications/cancelled" {
-                        continue;
-                    }
-                    if message["method"] == "ping" {
-                        if let Some(id) = message.get("id")
-                            && immediate.try_send(json!({"jsonrpc":"2.0","id":id,"result":{}})).is_err()
-                        {
-                            break;
-                        }
-                        continue;
-                    }
-                    // Fail closed on overload; never block the reader ahead of cancellation.
-                    if incoming.try_send(message).is_err() {
-                        break;
-                    }
-                }
-                Ok(None) => break,
-                Err(error) => {
-                    tracing::warn!(%error, "MCP input closed");
-                    break;
-                }
-            }
-        }
-        input_cancellation.close();
-    });
-    tasks.track(&input_reader);
+    let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut session: Option<String> = None;
     // The POST endpoint of a server on the older SSE transport, and the task reading its stream.
-    let mut legacy: Option<Legacy> = None;
+    let mut legacy: Option<String> = None;
     let mut stream: Option<tokio::task::JoinHandle<()>> = None;
-    loop {
-        let msg = tokio::select! {
-            () = cancellation.wait_closed() => break,
-            msg = inbox.recv() => { let Some(msg) = msg else { break; }; msg }
-        };
-        let id = msg.get("id").cloned().unwrap_or(Value::Null);
-        remote.request_id = id.clone();
-        let msg = match policy::authorize(
-            port,
-            &remote.token,
-            &remote.connector,
-            msg,
-            &remote.cancellation,
-            &observed.fingerprint,
-        )
-        .await
-        {
-            Ok((message, approval)) => {
-                remote.approval = approval;
-                message
-            }
-            Err(error) => {
-                tx.send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32603,"message":format!("{error:#}")}}))
-                    .await?;
-                remote.cancellation.finish(&id);
-                continue;
-            }
-        };
-        observed.track(&msg, remote.approval.as_deref());
+    while let Some(line) = lines.next_line().await? {
+        let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
         let replies = match &legacy {
-            Some(l) => remote.post_legacy(l, &msg).await,
+            Some(endpoint) => remote.post_legacy(endpoint, &msg).await,
             None => match remote.forward(&msg, &mut session).await {
                 Ok(Some(replies)) => Ok(replies),
                 Ok(None) => match remote.open_legacy(tx.clone()).await {
-                    Ok((l, reader)) => {
-                        tasks.track(&reader);
-                        let replies = remote.post_legacy(&l, &msg).await;
-                        legacy = Some(l);
+                    Ok((endpoint, reader)) => {
+                        let replies = remote.post_legacy(&endpoint, &msg).await;
+                        legacy = Some(endpoint);
                         stream = Some(reader);
                         replies
                     }
@@ -142,70 +47,37 @@ pub async fn serve_remote(connector: String, port: u16) -> Result<()> {
                 Err(e) => Err(e),
             },
         };
-        if replies.is_err() && cancellation.cancelled(&Value::Null) {
-            break;
-        }
-        let replies = replies.unwrap_or_else(|e| {
-            observed.forget(&id);
-            match msg.get("id").filter(|id| !id.is_null()) {
-                // Only requests get an answer; a failed notification is dropped.
-                Some(id) => {
-                    vec![json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32603, "message": format!("{e:#}")}})]
-                }
-                None => vec![],
+        let replies = replies.unwrap_or_else(|e| match msg.get("id").filter(|id| !id.is_null()) {
+            // Only requests get an answer; a failed notification is dropped.
+            Some(id) => {
+                vec![json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32603, "message": format!("{e:#}")}})]
             }
+            None => vec![],
         });
         for reply in replies {
-            tx.send(reply).await?;
+            tx.send(reply)?;
         }
-        remote.cancellation.finish(&id);
     }
     // The agent is gone: stop reading the stream, then write what's left.
-    input_reader.abort();
-    let _ = input_reader.await;
     if let Some(reader) = stream {
         reader.abort();
         let _ = reader.await;
     }
     drop(tx);
-    match tokio::time::timeout(Duration::from_secs(35), writer).await {
-        Ok(result) => result??,
-        Err(_) => anyhow::bail!("MCP reply drain timed out; an unrecorded outcome may be unknown"),
-    }
+    writer.await??;
     Ok(())
-}
-
-/// The older transport's POST endpoint (on the connector's own origin) and what it may reach.
-struct Legacy {
-    endpoint: String,
-    policy: Policy,
 }
 
 struct Remote {
     port: u16,
     token: String,
     connector: String,
-    approval: Option<String>,
-    cancellation: Arc<Cancellation>,
-    request_id: Value,
-    target_url: std::sync::Mutex<Option<String>>,
 }
 
 impl Remote {
-    async fn check(&self) -> Result<()> {
-        if self.approval.is_some() && self.cancellation.cancelled(&self.request_id) {
-            anyhow::bail!("the agent cancelled this tool request");
-        }
-        policy::check(self.port, &self.token, self.approval.as_deref()).await?;
-        if self.approval.is_some() && self.cancellation.cancelled(&self.request_id) {
-            anyhow::bail!("the agent cancelled this tool request");
-        }
-        Ok(())
-    }
-    /// The connector's URL, headers with a fresh sign-in token (`stale` forces a refresh), and
-    /// what that URL may reach.
-    async fn target(&self, stale: bool) -> Result<(String, reqwest::header::HeaderMap, Policy)> {
-        let res = client()
+    /// The connector's URL and headers, with a fresh sign-in token (`stale` forces a refresh).
+    async fn target(&self, stale: bool) -> Result<(String, reqwest::header::HeaderMap)> {
+        let res = crate::http()
             .post(format!("http://127.0.0.1:{}/api/connectorTarget", self.port))
             .bearer_auth(&self.token)
             .json(&json!({"id": self.connector, "stale": stale}))
@@ -225,23 +97,15 @@ impl Remote {
                 reqwest::header::HeaderValue::from_str(v.as_str().unwrap_or_default())?,
             );
         }
-        let url = target["url"].as_str().ok_or_else(|| anyhow::anyhow!("connector has no URL"))?.to_owned();
-        let mut bound = self.target_url.locked();
-        if bound.as_ref().is_some_and(|previous| previous != &url) {
-            anyhow::bail!("connector URL changed; restart its MCP session before sending more requests");
-        }
-        *bound = Some(url.clone());
-        let policy = if target["public"] == true { Policy::Public } else { Policy::UserChosen };
-        Ok((url, headers, policy))
+        Ok((target["url"].as_str().unwrap_or_default().to_owned(), headers))
     }
 
     /// Sends one message over streamable HTTP; returns what the server answered (JSON, or
     /// the events of an SSE stream). None: the server doesn't speak streamable HTTP.
     async fn forward(&self, msg: &Value, session: &mut Option<String>) -> Result<Option<Vec<Value>>> {
         for stale in [false, true] {
-            let (url, headers, policy) = self.target(stale).await?;
-            let mut req = crate::egress::client(policy, &url)
-                .await?
+            let (url, headers) = self.target(stale).await?;
+            let mut req = crate::http()
                 .post(&url)
                 .headers(headers)
                 .header("accept", "application/json, text/event-stream")
@@ -250,11 +114,7 @@ impl Remote {
             if let Some(s) = session.as_deref() {
                 req = req.header("mcp-session-id", s);
             }
-            self.check().await?;
             let res = req.send().await.map_err(|e| anyhow::anyhow!("can't reach {url}: {e}"))?;
-            if msg["method"] == "tools/call" && !res.status().is_success() {
-                anyhow::bail!("tool dispatch failed ({}); it will not be retried automatically", res.status());
-            }
             if res.status() == reqwest::StatusCode::UNAUTHORIZED && !stale {
                 continue;
             }
@@ -296,11 +156,10 @@ impl Remote {
 
     /// Opens the older transport's event stream, which carries every answer from now on
     /// (sent to `tx`); returns the URL messages are posted to and the task reading the stream.
-    async fn open_legacy(&self, tx: mpsc::Sender<Value>) -> Result<(Legacy, tokio::task::JoinHandle<()>)> {
+    async fn open_legacy(&self, tx: mpsc::UnboundedSender<Value>) -> Result<(String, tokio::task::JoinHandle<()>)> {
         for stale in [false, true] {
-            let (url, headers, policy) = self.target(stale).await?;
-            let res = crate::egress::client(policy, &url)
-                .await?
+            let (url, headers) = self.target(stale).await?;
+            let res = crate::http()
                 .get(&url)
                 .headers(headers)
                 .header("accept", "text/event-stream")
@@ -319,47 +178,34 @@ impl Remote {
                     events.next().await?.ok_or_else(|| anyhow::anyhow!("{url} closed before naming its endpoint"))?;
                 if event.lines().any(|l| l.trim() == "event: endpoint" || l.trim() == "event:endpoint") {
                     let path = sse_text(&event);
-                    let base = reqwest::Url::parse(&url)?;
-                    let endpoint = base.join(path.trim())?;
-                    if endpoint.origin() != base.origin()
-                        || !endpoint.username().is_empty()
-                        || endpoint.password().is_some()
-                    {
-                        anyhow::bail!("the legacy MCP endpoint must use the connector's origin");
-                    }
-                    break endpoint.to_string();
+                    break reqwest::Url::parse(&url)?.join(path.trim())?.to_string();
                 }
             };
             let connector = self.connector.clone();
-            let closed = self.cancellation.clone();
             let reader = tokio::spawn(async move {
                 while let Ok(Some(event)) = events.next().await {
                     if let Some(v) = sse_data(&event)
-                        && tx.send(v).await.is_err()
+                        && tx.send(v).is_err()
                     {
-                        closed.close();
                         return;
                     }
                 }
                 // ponytail: the session lives on this stream, so losing it ends the proxy and the
                 // agent sees the server exit. Reconnect and re-initialize if that proves too blunt.
                 eprintln!("{connector}: the server closed its event stream");
-                closed.close();
+                std::process::exit(1);
             });
-            return Ok((Legacy { endpoint, policy }, reader));
+            return Ok((endpoint, reader));
         }
         anyhow::bail!("{} still refuses the sign-in; sign in again in Extensions", self.connector)
     }
 
     /// Posts one message on the older transport. Answers normally arrive on the stream;
     /// a server that answers in the body is heard too.
-    async fn post_legacy(&self, legacy: &Legacy, msg: &Value) -> Result<Vec<Value>> {
-        let endpoint = legacy.endpoint.as_str();
+    async fn post_legacy(&self, endpoint: &str, msg: &Value) -> Result<Vec<Value>> {
         for stale in [false, true] {
-            let (_, headers, _) = self.target(stale).await?;
-            self.check().await?;
-            let res = crate::egress::client(legacy.policy, endpoint)
-                .await?
+            let (_, headers) = self.target(stale).await?;
+            let res = crate::http()
                 .post(endpoint)
                 .headers(headers)
                 .json(msg)
@@ -367,7 +213,7 @@ impl Remote {
                 .send()
                 .await
                 .map_err(|e| anyhow::anyhow!("can't reach {endpoint}: {e}"))?;
-            if res.status() == reqwest::StatusCode::UNAUTHORIZED && !stale && msg["method"] != "tools/call" {
+            if res.status() == reqwest::StatusCode::UNAUTHORIZED && !stale {
                 continue;
             }
             if !res.status().is_success() {
@@ -377,5 +223,71 @@ impl Remote {
             return Ok(json_replies(&body).unwrap_or_default());
         }
         anyhow::bail!("{} still refuses the sign-in; sign in again in Extensions", self.connector)
+    }
+}
+
+fn is_sse(res: &reqwest::Response) -> bool {
+    res.headers().get("content-type").and_then(|v| v.to_str().ok()).is_some_and(|t| t.starts_with("text/event-stream"))
+}
+
+/// A JSON body as messages (one, or a batch); an empty body is none.
+fn json_replies(body: &[u8]) -> Result<Vec<Value>> {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return Ok(vec![]);
+    }
+    Ok(match serde_json::from_slice::<Value>(body)? {
+        Value::Array(all) => all,
+        one => vec![one],
+    })
+}
+
+/// The raw events of an SSE response, one at a time.
+struct Events {
+    res: reqwest::Response,
+    buf: String,
+}
+
+impl Events {
+    fn new(res: reqwest::Response) -> Self {
+        Self { res, buf: String::new() }
+    }
+
+    async fn next(&mut self) -> Result<Option<String>> {
+        loop {
+            if let Some(end) = self.buf.find("\n\n") {
+                return Ok(Some(self.buf.drain(..end + 2).collect()));
+            }
+            match self.res.chunk().await? {
+                Some(chunk) => self.buf.push_str(&String::from_utf8_lossy(&chunk).replace("\r\n", "\n")),
+                None => return Ok(None),
+            }
+        }
+    }
+}
+
+/// One SSE event's `data:` lines, joined.
+fn sse_text(event: &str) -> String {
+    event
+        .lines()
+        .filter_map(|l| l.strip_prefix("data:"))
+        .map(|d| d.strip_prefix(' ').unwrap_or(d))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The JSON in one SSE event's `data:` lines.
+fn sse_data(event: &str) -> Option<Value> {
+    serde_json::from_str(&sse_text(event)).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_sse_events() {
+        assert_eq!(sse_data("event: message\ndata: {\"id\":1}\n\n").unwrap()["id"], 1);
+        assert_eq!(sse_data("data:{\"a\":\ndata: 2}\n\n").unwrap()["a"], 2);
+        assert!(sse_data(": ping\n\n").is_none());
     }
 }

@@ -30,7 +30,6 @@ pub struct Bot {
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
-    pub account: Option<String>,
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): option id → value.
     pub model_options: BTreeMap<String, String>,
@@ -40,7 +39,7 @@ pub struct Bot {
     /// Why the agent refused it.
     pub fast_issue: Option<String>,
     pub pinned: bool,
-    /// The computer's lead bot (`chat::lead`), placed like any bot; `*` makes another bot the lead.
+    /// The computer's lead bot (`chat::lead`): first in the roster, never deleted or hidden.
     pub lead: bool,
     /// Where the user dragged it (see `App::roster`).
     pub position: i64,
@@ -174,7 +173,6 @@ impl Bot {
             cwd: s("cwd"),
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",
-            account: v["account"].as_str().map(str::to_owned),
             model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
             model_options: v["modelOptions"]
                 .as_object()
@@ -224,9 +222,15 @@ impl Bot {
         })
     }
 
-    /// Its band in the roster: pinned bots, then the rest. Reordering stays inside a band.
+    /// Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band.
     pub fn band(&self) -> u8 {
-        u8::from(!self.pinned)
+        if self.lead {
+            0
+        } else if self.pinned {
+            1
+        } else {
+            2
+        }
     }
 
     /// Agent `agent`'s rest, while it lasts at `now`.

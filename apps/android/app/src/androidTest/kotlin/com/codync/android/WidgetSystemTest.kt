@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
 import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.lifecycle.ViewModelProvider
 import androidx.core.view.drawToBitmap
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
@@ -38,8 +39,8 @@ class WidgetSystemTest {
         assumeTrue(Build.PRODUCT.startsWith("sdk"))
         val context = instrumentation.targetContext
         assertNull(PushPreferences.activeUser(context))
-        val accounts = accountStore(compose.activity)
-        compose.waitUntil(30_000) { !accounts.state.value.loading }
+        val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+        compose.waitUntil(30_000) { !store.state.value.loading }
         val computer = LocalStore(context).computers().single()
         requireFixtureHost(computer.id)
         val originalFile = AtomicFile(File(context.noBackupFilesDir, "widget-owner.json"))
@@ -54,8 +55,7 @@ class WidgetSystemTest {
             val owner = WidgetStore.activate(context, local.contextId)
             val usage = UsageReport(listOf(UsageProvider("claude", "Claude", listOf(UsageWindow("session", "Session", 97.0))),
                 UsageProvider("codex", "Codex", listOf(UsageWindow("daily", "Daily", 24.0)))))
-            WidgetStore.publish(context, owner, listOf(WidgetComputer(computer, (1..6).map { Bot("sample-$it", "Widget bot $it", status = if (it == 1) "needsInput" else "working") }, true)),
-                computer, usage, true)
+            WidgetStore.publish(context, owner, computer, (1..6).map { Bot("sample-$it", "Widget bot $it", status = if (it == 1) "needsInput" else "working") }, usage, true, true)
             instrumentation.runOnMainSync {
                 container = FrameLayout(compose.activity).apply { setPadding(16, 16, 16, 16) }
                 compose.activity.setContentView(container)
@@ -118,8 +118,7 @@ class WidgetSystemTest {
         assumeTrue(Build.PRODUCT.startsWith("sdk"))
         val context = instrumentation.targetContext
         assertNull(PushPreferences.activeUser(context))
-        val accounts = accountStore(compose.activity)
-        val store = compose.computerStore(accounts)
+        val store = ViewModelProvider(compose.activity)[AppStore::class.java]
         compose.waitUntil(30_000) { !store.state.value.loading && store.state.value.rosterLoaded }
         requireFixtureHost(LocalStore(context).computers().single().id)
         val started = System.currentTimeMillis()
@@ -131,8 +130,8 @@ class WidgetSystemTest {
         assertTrue(feed.bots.any { it.name == "Android chat acceptance" })
         assertTrue(feed.botsAt > System.currentTimeMillis() - 30_000)
         val link = requireNotNull(widgetIntent(context, feed, usage = true).data)
-        compose.runOnUiThread { accounts.openLink(link) }
-        compose.waitUntil(10_000) { accounts.state.value.navigationPage == LinkPage.Usage && store.state.value.selectedBot == null }
+        compose.runOnUiThread { store.openLink(link) }
+        compose.waitUntil(10_000) { store.state.value.navigationPage == LinkPage.Usage && store.state.value.selectedBot == null }
         // The usage sheet's title (it refreshes on its own and on pull).
         val refresh = hasText("Usage") and isHeading()
         compose.waitUntil(10_000) { compose.onAllNodes(refresh).fetchSemanticsNodes().size == 1 }
@@ -140,12 +139,12 @@ class WidgetSystemTest {
         compose.activityRule.scenario.recreate()
         compose.waitUntil(10_000) { compose.onAllNodes(refresh).fetchSemanticsNodes().size == 1 }
         compose.onNode(refresh).assertIsDisplayed()
-        val request = accounts.state.value.navigationRequest
+        val request = store.state.value.navigationRequest
         val foreign = Uri.Builder().scheme("codync").authority("usage").appendQueryParameter("scope", "a".repeat(64))
             .appendQueryParameter("computer", feed.computerId).build()
-        compose.runOnUiThread { accounts.openLink(foreign) }
-        compose.waitUntil(10_000) { accounts.state.value.error?.contains("Switch to the account") == true }
-        assertEquals(request, accounts.state.value.navigationRequest)
+        compose.runOnUiThread { store.openLink(foreign) }
+        compose.waitUntil(10_000) { store.state.value.error?.contains("Switch to the account") == true }
+        assertEquals(request, store.state.value.navigationRequest)
     }
 
     private fun texts(root: View): List<String> {

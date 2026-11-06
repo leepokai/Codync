@@ -200,8 +200,7 @@ import com.kyant.shapes.RoundedRectangle
             // A chat shorter than the screen never scrolls, so showing the row is the trigger.
             LaunchedEffect(Unit) { if ("history" !in state.busy) store.loadHistory() }
         }
-        // Shown while earlier messages may still load, as on the iPhone.
-        if (items.isEmpty()) item("intro") { IntroCard(bot, state) }
+        if (items.isEmpty() && !more) item("intro") { IntroCard(bot, state) }
         items(items, key = { it.id }) { item ->
             when (item) {
                 is ChatItem.Separator -> TimeSeparator(item.at)

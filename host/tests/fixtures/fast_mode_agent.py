@@ -3,14 +3,13 @@ every new process. It resumes sessions, logs session calls to calls.jsonl in its
 folder, and answers each prompt with its speed and the prompt text. With a `refuse`
 file in its folder it turns Fast mode back off during a prompt, the way Claude does
 for an account without extra usage. With a `plain` file its sessions list no config
-options at all; with a `moded` file they also list modes like Codex's, starting on Read-only."""
+options at all."""
 
 import json
 import os
 import sys
 
 fast = "off"
-mode = "read-only"
 
 
 def send(value):
@@ -23,15 +22,11 @@ def log(value):
 
 
 def options(description="Faster responses on supported models"):
-    listed = [{
+    return {"configOptions": [{
         "id": "fast", "name": "Fast mode", "description": description, "category": "model_config",
         "type": "select", "currentValue": fast,
         "options": [{"value": "on", "name": "On"}, {"value": "off", "name": "Off"}],
-    }]
-    if os.path.exists("moded"):
-        listed.append({"id": "mode", "name": "Mode", "category": "mode", "type": "select", "currentValue": mode,
-                       "options": [{"value": "read-only", "name": "Read-only"}, {"value": "agent", "name": "Auto review"}]})
-    return {"configOptions": listed}
+    }]}
 
 
 for line in sys.stdin:
@@ -48,10 +43,7 @@ for line in sys.stdin:
         send({"id": rid, "result": {"sessionId": "s1", **listed}})
     elif method == "session/set_config_option":
         log({"method": method, "configId": params["configId"], "value": params["value"]})
-        if params["configId"] == "mode":
-            mode = params["value"]
-        else:
-            fast = params["value"]
+        fast = params["value"]
         send({"id": rid, "result": options()})
     elif method == "session/prompt":
         if fast == "on" and os.path.exists("refuse"):

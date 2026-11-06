@@ -25,7 +25,8 @@ export function SlideShell({
   width?: number | string
   children: ReactNode
 }) {
-  useEscape(open, onClose)
+  const layer = useRef<HTMLElement>(null)
+  useEscape(open, onClose, layer)
 
   useEffect(() => {
     if (!open) return
@@ -44,6 +45,7 @@ export function SlideShell({
         className={`t-slide-backdrop ${open ? 'is-open' : ''}`}
       />
       <aside
+        ref={layer}
         role="dialog"
         aria-modal={open}
         aria-label={ariaLabel}

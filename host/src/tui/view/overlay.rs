@@ -35,7 +35,6 @@ pub(super) fn overlays(f: &mut Frame<'_>, app: &mut App) {
 
 pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay) {
     match top {
-        Overlay::RosterTools => super::roster_tools::roster_tools(buf, area, app),
         Overlay::Goto(g) => {
             let items = app.goto_items(g);
             goto(buf, area, app, g, &items);
@@ -63,25 +62,14 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
             let x = put(buf, inner.x, inner.y + 4, 30, &format!(" ↵ {button} "), danger) + 1;
             put(buf, x, inner.y + 4, 14, &format!(" esc {cancel} "), t.text.patch(t.btn).add_modifier(Modifier::BOLD));
         }
-        Overlay::NewBot(n) => {
-            let agent = n.backend.as_deref().map(|id| {
-                app.backends.iter().find(|b| b["id"] == id).and_then(|b| b["name"].as_str()).unwrap_or(id).to_owned()
-            });
-            new_bot_view(buf, area, n, agent.as_deref());
-        }
+        Overlay::NewBot(n) => new_bot_view(buf, area, n),
         Overlay::Folder(p) => {
             let t = theme();
             let matches = App::folder_matches(p);
             let r = centered(area, 74, 22);
-            let inner = frame_box(buf, r, t.text, t.panel, Some(("Choose workspace", t.text)));
+            let inner = frame_box(buf, r, t.text, t.panel, Some(("Folder", t.text)));
             let shown = tilde(&p.path, &app.home);
-            let no_recent = p.mode == crate::tui::app::FolderMode::Recent && !p.busy && p.recent.is_empty();
-            let path = match p.mode {
-                crate::tui::app::FolderMode::Recent if no_recent => "^B Browse other folders".to_owned(),
-                crate::tui::app::FolderMode::Recent => "Recent workspaces".to_owned(),
-                crate::tui::app::FolderMode::Path => "Enter folder path".to_owned(),
-                crate::tui::app::FolderMode::Browse => shown.clone(),
-            };
+            let path = format!("{}/", shown.trim_end_matches('/'));
             let x = put(
                 buf,
                 inner.x,
@@ -90,18 +78,12 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
                 &truncate(&path, usize::from(inner.width / 2)),
                 t.secondary.patch(t.panel),
             );
-            if !no_recent {
-                field_line(buf, Rect::new(x, inner.y, inner.right().saturating_sub(x), 1), inner.y, &p.query, "", true);
-            }
+            field_line(buf, Rect::new(x, inner.y, inner.right().saturating_sub(x), 1), inner.y, &p.query, "", true);
             let list_h = usize::from(inner.height.saturating_sub(5));
             let off = p.cursor.saturating_sub(list_h.saturating_sub(1));
             let mut y = inner.y + 2;
             if let Some(e) = &p.error {
                 put(buf, inner.x, y, inner.width, e, t.red.patch(t.panel));
-                y += 1;
-            }
-            if p.busy {
-                put(buf, inner.x, y, inner.width, "Loading…", t.dim.patch(t.panel));
                 y += 1;
             }
             for (i, d) in matches.iter().enumerate().skip(off).take(list_h) {
@@ -138,22 +120,18 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
                 inner.x,
                 inner.bottom() - 1,
                 inner.width,
-                "→ open  ← up  . use current  ^R recent  ^B browse  ^L path",
+                "→ open  ← up  . use this folder  esc back",
                 t.dim.patch(t.panel),
             );
         }
         Overlay::Form(form) => form_view(buf, area, app, form),
         Overlay::Group(g) => group_view(buf, area, app, g),
         Overlay::Usage(scroll) => usage(buf, area, app, *scroll),
-        Overlay::Pair(code) => pair(buf, area, app, code),
+        Overlay::Pair(code) => pair(buf, area, code),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
-        Overlay::Documents(sheet) => super::super::sheets::documents(buf, area, app, sheet),
-        Overlay::Computer(sheet) => super::super::sheets::computer(buf, area, sheet),
-        Overlay::McpTools(sheet) => super::super::sheets::mcp_tools(buf, area, sheet),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
-        Overlay::Flow(f) => super::super::sheets::flow(buf, area, app, f),
         Overlay::Library(l) => super::super::sheets::library(buf, area, app, l),
         Overlay::Gear(g) => super::super::sheets::gear(buf, area, app, g),
         Overlay::Market(m) => super::super::sheets::market(buf, area, app, m),

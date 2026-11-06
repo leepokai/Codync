@@ -127,7 +127,7 @@ impl App {
             ),
             Step::Installed => ("connectors", json!({}), Step::Installed),
             Step::Authorize if f.choice == 0 => {
-                ("connectorSignIn", json!({"id":c.request["connectorId"],"showsCode":true}), Step::SignIn)
+                ("connectorSignIn", json!({"id":c.request["connectorId"]}), Step::SignIn)
             }
             Step::AppStart => ("composioConnect", json!({"toolkit":c.request["toolkit"]}), Step::AppStart),
             Step::AppCheck if c.metadata["status"] == "needsFields" => (
@@ -219,21 +219,10 @@ impl App {
             Step::SignIn => {
                 c.step = Step::Authorize;
                 f.choice = 1;
-                let url = value["url"].as_str().unwrap_or_default();
-                let opened = super::manage::open_browser(url, &self.url);
-                // A sign-in with a code (GitHub): the code is what to paste on the page.
-                if let Some(code) = value["code"].as_str() {
-                    super::app::copy(code);
-                    f.note = if opened {
-                        "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels."
-                    } else {
-                        "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels."
-                    }
-                    .replace("{code}", code)
-                    .replace("{url}", url);
-                } else {
+                f.note = "Sign-in link copied. Finish in browser, then Enter checks. Ctrl+X cancels.".into();
+                if let Some(url) = value["url"].as_str() {
                     super::app::copy(url);
-                    f.note = "Sign-in link copied. Finish in browser, then Enter checks. Ctrl+X cancels.".into();
+                    super::manage::open_browser(url, &self.url);
                 }
             }
             Step::AppStart | Step::AppCheck => {
@@ -305,9 +294,6 @@ mod tests {
                 Json(match method.as_str() {
                     "connectorInfo" => json!({"name":"fixture","options":[{"id":"local","inputs":[{"name":"key","secret":true,"required":true}]}]}),
                     "installConnector" => json!({"connector":{"id":"connector","auth":"signedOut"}}),
-                    "connectorSignIn" => {
-                        json!({"url":"https://github.com/login/device","callback":"host","code":"ABCD-1234"})
-                    }
                     "composioConnect" => json!({"status":"needsFields","mode":"apiKey","fields":[{"name":"token","label":"Token","secret":true}]}),
                     "composioConnectFields" => json!({"status":"active"}),
                     _ => json!({}),
@@ -320,8 +306,7 @@ mod tests {
             axum::serve(listener, router).await.unwrap();
         });
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        // A computer elsewhere (the TUI over SSH), so no browser opens.
-        (App::new(super::super::net::Client::new(&url, Some("fixture")), tx, String::new()), rx, calls, task)
+        (App::new(super::super::net::Client::new(&url, Some("fixture")), tx, url), rx, calls, task)
     }
 
     fn open(app: &mut App, request: &Value) {
@@ -380,16 +365,12 @@ mod tests {
         reply(&mut app, &mut rx).await;
         key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         reply(&mut app, &mut rx).await;
-        // A sign-in with a code, and no browser here: the note names the code and the page.
-        let Some(Overlay::Fields(f)) = app.overlays.last() else { panic!("fields") };
-        assert!(f.note.contains("ABCD-1234") && f.note.contains("https://github.com/login/device"), "{}", f.note);
         key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         reply(&mut app, &mut rx).await;
         let calls = calls.lock().unwrap();
         let methods: Vec<_> = calls.iter().map(|c| c["method"].as_str().unwrap()).collect();
         assert_eq!(methods, ["connectorInfo", "installConnector", "connectorSignIn", "connectorRequestFinish"]);
         assert_eq!(calls[1]["body"]["inputs"]["key"], "fixture-key");
-        assert_eq!(calls[2]["body"]["showsCode"], true);
         assert_eq!(calls[3]["body"]["connectorId"], "connector");
         assert!(app.overlays.is_empty());
         server.abort();

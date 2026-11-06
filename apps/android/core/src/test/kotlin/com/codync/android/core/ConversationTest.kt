@@ -82,11 +82,6 @@ class ConversationTest {
         assertEquals(JsonNull, BotDraft.from(bot).copy(model = null).body()["model"])
     }
 
-    @Test fun `a bot decodes its roster section, and an older host's without one`() {
-        assertEquals("Work", HostClient.decode(WireJson.parseToJsonElement("""{"id":"b","name":"Scout","section":"Work"}""").jsonObject).section)
-        assertNull(HostClient.decode(WireJson.parseToJsonElement("""{"id":"b","name":"Scout"}""").jsonObject).section)
-    }
-
     @Test fun `a settings draft takes changes made elsewhere and keeps its own edits`() {
         val base = BotDraft.from(Bot("b", "Lead", model = "sonnet"))
         val fresh = base.copy(model = "opus", name = "Boss", manageTeam = true)

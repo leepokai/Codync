@@ -12,14 +12,13 @@ pub(super) enum Listing {
     Session,
     /// The answer to our own Fast mode switch.
     Switch,
-    /// A `config_option_update`, or the answer to a mode switch.
+    /// A `config_option_update`.
     Update,
 }
 
 impl Actor {
-    /// Records a session's options from an agent answer or a `config_option_update`: its modes, and Fast mode.
+    /// Records a session's options from an agent answer or a `config_option_update`.
     pub(super) fn note_options(&mut self, sid: &str, options: &Value, listing: Listing) {
-        self.note_modes(sid, options);
         if !options["configOptions"].is_array() {
             // A session without config options has no Fast mode to offer; other answers that
             // leave them out say nothing, and neither overrides what the agent listed before.
@@ -56,7 +55,7 @@ impl Actor {
         let Some(option) = self.conn.as_ref().and_then(|c| c.fast_options.get(sid)) else { return };
         let (Some(config_id), Some(value)) = (option["id"].as_str(), fast_mode_change(option, on)) else { return };
         let params = json!({"sessionId": sid, "configId": config_id, "value": value});
-        match self.request_with_timeout("session/set_config_option", params).await {
+        match self.session_request("session/set_config_option", params).await {
             Ok(answer) => self.note_options(sid, &answer, Listing::Switch),
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't set Fast mode");

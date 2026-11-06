@@ -1,6 +1,7 @@
 import { Observable, useModel } from '../../lib/observable'
 import type { BotStore } from '../../store/bot-store'
 import { market, needsSignIn, sleep, type InstalledConnector, type InstalledSkill, type MarketApp, type MarketConnector } from './market-models'
+import { signInCode } from './sign-in-code'
 
 /** What's installed on one computer, for the Marketplace and bot settings (kit BotStore's plugin state). */
 export class Plugins extends Observable {

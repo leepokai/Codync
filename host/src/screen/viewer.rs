@@ -164,26 +164,13 @@ impl Screen {
         let removed = sessions.remove(session).is_some();
         if sessions.is_empty() {
             // Nobody is watching: hand control back to the bots.
-            let mut control = self.control.locked();
-            if control.user {
-                self.snapshots.locked().invalidate();
-                control.user = false;
-            }
+            self.control.locked().user = false;
         }
         removed
     }
 
     pub fn takeover(&self, on: bool) {
-        if !on && self.entry_protected() {
-            return;
-        }
-        {
-            let mut control = self.control.locked();
-            if control.user != on {
-                self.snapshots.locked().invalidate();
-                control.user = on;
-            }
-        }
+        self.control.locked().user = on;
         self.emit();
     }
 
@@ -195,7 +182,6 @@ impl Screen {
         store.kv_set(KV_ENABLED, if on { "1" } else { "0" })?;
         *self.enabled.locked() = Some(on);
         if !on {
-            self.snapshots.locked().invalidate();
             let link = self.link.locked().clone();
             if let Some(link) = link
                 && let Err(error) = link.request("closeAll", json!({})).await

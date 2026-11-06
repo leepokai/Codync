@@ -1,13 +1,11 @@
-//! The new bot dialog: a name, what it should help with, its agent and looks. Everything else takes the host's
-//! defaults; ready-made bots are in Extensions (Bots tab).
+//! The new bot dialog: a name and looks. The agent and everything else take the host's defaults.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 
 use super::{After, App, COLORS, Editor, NewBot, NewBotField, Overlay, SHAPES, cycle};
 
-const ORDER: [NewBotField; 5] =
-    [NewBotField::Name, NewBotField::Purpose, NewBotField::Agent, NewBotField::Color, NewBotField::Shape];
+const ORDER: [NewBotField; 3] = [NewBotField::Name, NewBotField::Color, NewBotField::Shape];
 
 impl App {
     pub(super) fn new_bot(&mut self) {
@@ -16,8 +14,6 @@ impl App {
         let n = usize::try_from(crate::store::now_ms()).unwrap_or(0) % looks;
         self.overlays.push(Overlay::NewBot(NewBot {
             name: Editor::default(),
-            purpose: Editor::default(),
-            backend: None,
             color: n % COLORS.len(),
             shape: n / COLORS.len(),
             field: NewBotField::Name,
@@ -39,31 +35,12 @@ impl App {
             (KeyCode::BackTab | KeyCode::Up, f) => n.field = step(f, -1),
             (KeyCode::Left | KeyCode::Right, NewBotField::Color) => n.color = cycle(n.color, d, COLORS.len()),
             (KeyCode::Left | KeyCode::Right, NewBotField::Shape) => n.shape = cycle(n.shape, d, SHAPES.len()),
-            (KeyCode::Left | KeyCode::Right, NewBotField::Agent) => {
-                n.backend = self.next_agent(n.backend.as_deref(), d);
-            }
             (_, NewBotField::Name) => {
                 n.name.key(k);
-            }
-            (_, NewBotField::Purpose) => {
-                n.purpose.key(k);
             }
             _ => {}
         }
         Some(Overlay::NewBot(n))
-    }
-
-    /// The agents a new bot can start on: the ones that run here and the ones Codync knows.
-    pub(in crate::tui) fn new_bot_agents(&self) -> Vec<&Value> {
-        self.backends.iter().filter(|b| b["available"] == true || b["curated"] == true).collect()
-    }
-
-    /// The agent `d` steps from `current`, through "the host's pick" (`None`) and back.
-    fn next_agent(&self, current: Option<&str>, d: isize) -> Option<String> {
-        let ids: Vec<Option<&str>> =
-            std::iter::once(None).chain(self.new_bot_agents().into_iter().map(|b| b["id"].as_str())).collect();
-        let at = ids.iter().position(|id| *id == current).unwrap_or(0);
-        ids[cycle(at, d, ids.len())].map(str::to_owned)
     }
 
     fn create_bot(&mut self, n: &mut NewBot) {
@@ -77,14 +54,13 @@ impl App {
 }
 
 impl NewBot {
-    /// A personal workspace, automatic approvals, notifications on. Connectors and skills are left unset, and the
-    /// agent too unless one was picked: the host picks the agent and turns on every installed plugin.
+    /// A personal workspace, automatic approvals, notifications on. The agent, connectors and
+    /// skills are left unset: the host picks the agent and turns on every installed plugin.
     fn body(&self) -> Value {
         json!({
             "name": self.name.text.trim(),
-            "description": self.purpose.text.trim(),
-            "backend": self.backend,
             "cwd": "",
+            "permission": "auto",
             "notify": true,
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],
@@ -110,12 +86,7 @@ mod tests {
         assert!(n.name.text.is_empty(), "the host names an unnamed bot");
         assert_eq!(n.field, NewBotField::Name);
         let (color, shape) = (n.color, n.shape);
-        for k in [KeyCode::Char('R'), KeyCode::Char('e'), KeyCode::Char('x'), KeyCode::Tab, KeyCode::Char('P')] {
-            let Some(Overlay::NewBot(next)) = app.new_bot_key(n, KeyEvent::from(k)) else { panic!("stays open") };
-            n = next;
-        }
-        assert_eq!((n.field, n.purpose.text.as_str()), (NewBotField::Purpose, "P"));
-        for k in [KeyCode::Tab, KeyCode::Tab, KeyCode::Right] {
+        for k in [KeyCode::Char('R'), KeyCode::Char('e'), KeyCode::Char('x'), KeyCode::Tab, KeyCode::Right] {
             let Some(Overlay::NewBot(next)) = app.new_bot_key(n, KeyEvent::from(k)) else { panic!("stays open") };
             n = next;
         }
@@ -128,30 +99,11 @@ mod tests {
         assert_eq!((n.field, n.shape), (NewBotField::Shape, cycle(shape, -1, SHAPES.len())));
         let body = n.body();
         assert_eq!(body["name"], "Rex");
-        assert_eq!(body["description"], "P");
         assert_eq!(body["avatarShape"], SHAPES[n.shape]);
         assert!(body["backend"].is_null(), "the host picks the agent");
         assert!(body["connectors"].is_null() && body["skills"].is_null(), "the host turns every one on");
         let Some(Overlay::NewBot(n)) = app.new_bot_key(n, KeyEvent::from(KeyCode::Enter)) else { panic!("saving") };
         assert!(n.saving);
-    }
-
-    #[tokio::test]
-    async fn arrows_on_the_agent_step_through_the_agents_that_can_run() {
-        let mut app = test_app();
-        app.backends = vec![
-            json!({"id": "claude", "available": true, "curated": true}),
-            json!({"id": "goose", "available": false, "curated": false}),
-            json!({"id": "codex", "available": false, "curated": true}),
-        ];
-        assert_eq!(app.next_agent(None, 1).as_deref(), Some("claude"));
-        assert_eq!(
-            app.next_agent(Some("claude"), 1).as_deref(),
-            Some("codex"),
-            "an unknown agent that can't run is skipped"
-        );
-        assert_eq!(app.next_agent(Some("codex"), 1), None, "back to the host's pick");
-        assert_eq!(app.next_agent(None, -1).as_deref(), Some("codex"));
     }
 
     #[tokio::test]

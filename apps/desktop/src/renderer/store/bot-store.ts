@@ -64,6 +64,7 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
  */
 export class BotStore extends BotSync {
   private documentStores = new Map<string, DocumentsStore>()
+  routineDrafts = new Map<string, string>()
   documentsFor(botId: string) {
     let documents = this.documentStores.get(botId)
     if (!documents) {
@@ -545,8 +546,26 @@ export class BotStore extends BotSync {
     await (await this.ready()).call('deleteBookmark', { botId, entryId })
   }
 
+  consumeRoutineDraft(botId: string) {
+    const value = this.routineDrafts.get(botId)
+    if (value !== undefined) {
+      this.routineDrafts.delete(botId)
+      this.changed()
+    }
+    return value
+  }
+
+  setRoutineDraft(botId: string, text: string) {
+    this.routineDrafts.set(botId, text)
+    this.changed()
+  }
+
   async listDirs(path: string | null) {
     return (await this.ready()).call<DirListing>('listDirs', { path })
+  }
+
+  async selectWorkspace(path: string) {
+    return (await this.ready()).call<{ path: string }>('selectWorkspace', { path })
   }
 
   async agentAccounts(backend: string): Promise<AgentAccount[]> {

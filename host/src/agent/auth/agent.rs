@@ -17,21 +17,12 @@ use tokio::sync::mpsc;
 pub(super) type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, Cmd);
 
 pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
-    start_with_env(store, backend, &[]).await
-}
-
-/// `start` with the environment an account or a probe adds on top of the launch's own.
-pub(crate) async fn start_with_env(store: &Store, backend: &str, extra_env: &[(String, String)]) -> Result<Started> {
     let mut candidates = backends::launch_candidates(backend)?;
     // The installed CLI alone when there is one: resolving the registry build can mean a long download.
     if matches!(candidates.first(), Some(Candidate::Ready(_))) {
         candidates.truncate(1);
     }
-    let mut env = launch_env(store, backend)?;
-    for (k, v) in extra_env {
-        env.retain(|(ek, _)| ek != k);
-        env.push((k.clone(), v.clone()));
-    }
+    let env = launch_env(store, backend)?;
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
     let mut last = None;

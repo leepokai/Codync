@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::super::app::{After, App, Confirm, ConfirmAct, Editor, FIELDS, Field, Overlay};
+use super::super::app::{After, App, Confirm, ConfirmAct, Editor, FIELDS, Field, Focus, Overlay};
 use super::when::{complete_zone, parse_when, when_text};
 use super::{Page, Reply, RoutineField, RoutineForm, RoutineList, ctrl, newline, s};
 use crate::routines::local_zone;
@@ -64,6 +64,17 @@ impl App {
                 })));
                 return None;
             }
+            (KeyCode::Char('c'), _) => {
+                // Or ask the bot to set one up: start the ask in its chat.
+                let draft = self.drafts.entry(bot).or_default();
+                if !draft.text.is_empty() {
+                    draft.insert("\n");
+                }
+                draft.insert("I want a routine that ");
+                self.focus = Focus::Chat;
+                self.typing = true;
+                return None;
+            }
             (KeyCode::Enter | KeyCode::Char('e'), Some(r)) => {
                 let triggers = r["triggers"].clone();
                 let text = when_text(&triggers, &local_zone());
@@ -96,10 +107,6 @@ impl App {
                 if let Some(item) = l.items.as_mut().and_then(|v| v.get_mut(l.cursor)) {
                     item["enabled"] = on.into();
                 }
-            }
-            (KeyCode::Char('f'), Some(r)) => {
-                self.open_flow(l, &r);
-                return None;
             }
             (KeyCode::Char('r'), Some(r)) => {
                 self.sheet("runRoutine", json!({"botId": bot, "id": r["id"]}), Reply::Routines(bot.clone()));

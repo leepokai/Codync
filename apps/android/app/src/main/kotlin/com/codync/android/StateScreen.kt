@@ -53,7 +53,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import kotlinx.serialization.json.JsonObject
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -253,17 +252,13 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
     .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 
 /** The State tab's Widget page: the installed widgets and these previews share their layouts. */
-@Composable private fun WidgetGallery(app: AccountContext, usage: JsonObject?, accounts: AccountStore?, active: Boolean, keepInView: () -> Unit) {
+@Composable private fun WidgetGallery(state: AppState, store: AppStore?, active: Boolean, keepInView: () -> Unit) {
     val context = LocalContext.current
-    val resumed = rememberOnResume { runCatching { CodyncWidgets.installed(context) }.getOrNull() }
-    // "Check again" reads them now; coming back to the app reads them anew too.
-    var checkedAgain by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(resumed) { checkedAgain = null }
-    val installed = checkedAgain ?: resumed
+    val installed = rememberOnResume { runCatching { CodyncWidgets.installed(context) }.getOrNull() }
     var asked by remember { mutableIntStateOf(0) }
     val allowed = rememberOnResume { notificationsAllowed(context) } || asked > 0 && notificationsAllowed(context)
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notificationsAnswered(context, granted, PromptSource.Widgets); asked++; accounts?.syncPush()
+        notificationsAnswered(context, granted, PromptSource.Widgets); asked++; store?.syncPush()
     }
     var kind by rememberSaveable { mutableStateOf("usage") }
     var provider by rememberSaveable { mutableStateOf("claude") }
@@ -284,7 +279,7 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         SectionLabel("Get set up")
         Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.surface)) {
-            SetupRow("Connect a computer", app.computers.isNotEmpty())
+            SetupRow("Connect a computer", state.computers.isNotEmpty())
             Hairline(Modifier.padding(start = 42.dp))
             SetupRow("Add a Codync widget", installed?.let { it > 0 } == true, if (installed == null) "Unable to check" else null)
             Hairline(Modifier.padding(start = 42.dp))
@@ -296,10 +291,8 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
                     else openNotificationSettings(context)
                 }))
         }
-        if (installed == null) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Couldn't check your widgets. You can still add one using the steps below.", style = Type.caption, color = Palette.secondary)
-            SecondaryButton("Check again") { checkedAgain = runCatching { CodyncWidgets.installed(context) }.getOrNull() }
-        } else Text("Steps check themselves as you finish them.", style = Type.caption2, color = Palette.tertiary)
+        Text(if (installed == null) "Couldn't check your widgets. You can still add one below." else "Steps check themselves as you finish them.",
+            style = Type.caption2, color = Palette.tertiary)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -308,7 +301,7 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
             Text("Sample data", style = Type.caption2, color = Palette.secondary)
         }
         ChoicePicker(kind, listOf("usage" to "Provider usage", "limits" to "Usage limits", "bots" to "Bots", "team" to "Team"), { kind = it })
-        val report = remember(usage) { usage?.let { runCatching { UsageReport.decode(it) }.getOrNull() } }
+        val report = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() }
         val providers = (WidgetPreview.usage.providers + report?.providers.orEmpty()).distinctBy { it.id }
         if (kind == "usage") {
             if (providers.size <= 3) SegmentedChoice(provider, providers.map { it.id to it.name }, { provider = it })
@@ -339,7 +332,7 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
                 Text(when (kind) {
                     "usage" -> "Small shows the tightest limit. Medium shows two windows. Large adds a summary and up to four limits."
                     "limits" -> "Every provider's limits in one widget. The tightest leads; small shows two more and medium up to four."
-                    "team" -> "Four bots as characters with a dot for each one at work. Touch and hold the widget, then Edit Widget to choose who sits in each spot; empty spots show the bots that need you first."
+                    "team" -> "Four bots as characters with a dot for each one at work; the bots that need you come first."
                     else -> "See who needs you and who's still working. Large shows up to six bots."
                 }, style = Type.caption, color = Palette.secondary)
             }

@@ -3,8 +3,6 @@ package com.codync.android
 import com.codync.android.core.InstalledConnector
 import com.codync.android.core.MarketApp
 import com.codync.android.core.WireJson
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -73,17 +71,13 @@ internal suspend fun AppStore.skillDetails(id: String?, source: String?): String
 
 /**
  * Signs in to a connector and waits while the browser finishes it (the store catches the return);
- * false when the store reports a failure or ten minutes pass. Cancel on a sign-in code ends it
- * quietly: it throws [CancellationException], which callers pass on.
+ * false when the store reports a failure or ten minutes pass.
  */
 internal suspend fun AppStore.signInConnector(id: String, requestId: String? = null): Boolean {
     clearError()
-    val declined = CompletableDeferred<Unit>()
-    connectorSignIn(id, requestId, declined)
+    connectorSignIn(id, requestId)
     fun signedIn(s: AppState) = s.plugins?.connectors?.any { it.id == id && it.auth == "signedIn" } == true
-    // The code's dialog closing changes the state, so `first` sees a Cancel at once.
-    val settled = withTimeoutOrNull(600_000) { state.first { signedIn(it) || it.error != null || declined.isCompleted } } ?: return false
-    if (declined.isCompleted) throw CancellationException("The sign-in was cancelled.")
+    val settled = withTimeoutOrNull(600_000) { state.first { signedIn(it) || it.error != null } } ?: return false
     return signedIn(settled)
 }
 

@@ -90,21 +90,12 @@ pub fn platform() -> Option<&'static str> {
     })
 }
 
-/// This machine's build in a registry `distribution`.
-fn binary(distribution: &Value) -> Option<&Value> {
-    binary_for(distribution, platform()?)
-}
-
-/// Windows on ARM falls back to the x64 build, which Windows 11 runs through Prism.
-fn binary_for<'a>(distribution: &'a Value, platform: &str) -> Option<&'a Value> {
-    let prism = (platform == "windows-aarch64").then_some("windows-x86_64");
-    std::iter::once(platform).chain(prism).map(|p| &distribution["binary"][p]).find(|target| target.is_object())
-}
-
 pub fn launch_kind(agent: &Value) -> Option<Launch> {
     let d = &agent["distribution"];
     let on_path = crate::agent::backends::on_path;
-    if binary(d).is_some() {
+    if let Some(p) = platform()
+        && d["binary"][p].is_object()
+    {
         return Some(Launch::Download);
     }
     if d["npx"].is_object() && on_path("npx") {
@@ -119,7 +110,7 @@ pub fn launch_kind(agent: &Value) -> Option<Launch> {
 /// The agent runs through `npx` here (no build of its own for this platform).
 pub fn needs_node(agent: &Value) -> bool {
     let d = &agent["distribution"];
-    d["npx"].is_object() && binary(d).is_none()
+    d["npx"].is_object() && !platform().is_some_and(|p| d["binary"][p].is_object())
 }
 
 fn args_of(v: &Value) -> String {
@@ -189,7 +180,8 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
     let d = &agent["distribution"];
     match launch_kind(agent) {
         Some(Launch::Download) => {
-            let target = binary(d).ok_or_else(|| anyhow!("no download for this platform"))?;
+            let platform = platform().ok_or_else(|| anyhow!("no download for this platform"))?;
+            let target = &d["binary"][platform];
             let cmd =
                 target["cmd"].as_str().and_then(contained).ok_or_else(|| anyhow!("registry entry has a bad cmd"))?;
             let dir = install_binary(agent, target, cmd, &progress).await?;
@@ -311,11 +303,15 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
         return Ok(dir);
     }
     let url = target["archive"].as_str().ok_or_else(|| anyhow!("registry entry has no archive"))?;
+    if !url.starts_with("https://") {
+        bail!("refusing a non-HTTPS download for {id}");
+    }
     progress(&format!("Downloading {}…", agent["name"].as_str().unwrap_or(id)));
-    // The registry is untrusted: the archive (and every redirect) must be a public HTTPS host.
-    let bytes = crate::egress::get_following(crate::egress::Policy::Public, url, Duration::from_mins(10))
-        .await
-        .with_context(|| format!("downloading {id}"))?
+    let bytes = crate::http()
+        .get(url)
+        .timeout(Duration::from_mins(10))
+        .send()
+        .await?
         .error_for_status()?
         .bytes()
         .await
@@ -454,15 +450,6 @@ mod tests {
         assert_eq!(std::fs::metadata(&executable).unwrap().permissions().mode() & 0o111, 0o111);
         assert!(!archive.exists());
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn windows_on_arm_falls_back_to_the_x64_binary() {
-        let x64 = json!({"binary": {"windows-x86_64": {"cmd": "./x64.exe"}}});
-        assert_eq!(binary_for(&x64, "windows-aarch64"), Some(&x64["binary"]["windows-x86_64"]));
-        assert_eq!(binary_for(&x64, "linux-aarch64"), None);
-        let both = json!({"binary": {"windows-x86_64": {"cmd": "./x64.exe"}, "windows-aarch64": {"cmd": "./arm.exe"}}});
-        assert_eq!(binary_for(&both, "windows-aarch64"), Some(&both["binary"]["windows-aarch64"]));
     }
 
     #[test]

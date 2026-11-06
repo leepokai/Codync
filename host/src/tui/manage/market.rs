@@ -1,4 +1,4 @@
-//! The marketplace: ready-made bots and teams, agents, connectors and skills.
+//! The marketplace: agents, connectors and skills.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
@@ -24,20 +24,13 @@ impl App {
         self.call("skills", json!({}), After::Skills);
         self.sheet("marketSkills", json!({}), Reply::Skills);
         self.sheet("marketConnectors", json!({"search": ""}), Reply::Registry { search: String::new(), cursor: None });
-        self.sheet("marketApps", json!({}), Reply::Apps);
-        self.sheet("marketAgents", json!({}), Reply::MarketAgents);
-        self.sheet("botCatalog", json!({}), Reply::Catalog);
         self.overlays.push(Overlay::Market(Box::new(Market {
-            tab: Tab::Apps,
+            tab: Tab::Agents,
             query: Editor::default(),
             searched: None,
             registry: vec![],
             next: None,
-            apps: None,
-            agents: None,
             skills: None,
-            catalog: Value::Null,
-            added: vec![],
             loading: true,
             cursor: 0,
             error: None,
@@ -58,7 +51,7 @@ impl App {
     /// arrive while it stays near it (a page can have nothing to install). A page that failed is asked for
     /// again on the next move.
     pub(super) fn load_near_end(&self, m: &mut Market) {
-        if m.tab == Tab::Apps && m.cursor + AHEAD >= self.market_rows(m).len() {
+        if m.tab == Tab::Connectors && m.cursor + AHEAD >= self.market_rows(m).len() {
             self.load_more_connectors(m);
         }
     }
@@ -71,27 +64,19 @@ impl App {
             fuzzy(q, &fields)
         };
         match m.tab {
-            Tab::Bots | Tab::Teams => Self::catalog_rows(&m.catalog, m.tab, q),
             Tab::Agents => {
-                let market: Vec<Row> =
-                    m.agents.iter().flatten().filter(|a| hit(a, &["name", "title"])).map(Row::MarketAgent).collect();
                 let agents = self
                     .backends
                     .iter()
                     .filter(|b| b["available"] == true || b["installed"] == true || b["curated"] == true);
                 let node = agents.clone().any(|b| b["node"] == "missing").then_some(Row::Node);
-                market
-                    .into_iter()
-                    .chain(node)
-                    .chain(agents.filter(|b| hit(b, &["name", "id"])).map(Row::Agent))
-                    .collect()
+                node.into_iter().chain(agents.filter(|b| hit(b, &["name", "id"])).map(Row::Agent)).collect()
             }
-            Tab::Apps => {
+            Tab::Connectors => {
+                let installed: Vec<&str> = self.plugins.0.iter().filter_map(|c| c["registryName"].as_str()).collect();
                 let mut rows: Vec<Row> =
                     self.plugins.0.iter().filter(|c| hit(c, &["name", "description"])).map(Row::Installed).collect();
-                rows.extend(m.apps.iter().flatten().filter(|a| hit(a, &["name", "tagline"])).map(Row::App));
                 rows.push(Row::Custom);
-                let installed: Vec<&str> = self.plugins.0.iter().filter_map(|c| c["registryName"].as_str()).collect();
                 rows.extend(
                     m.registry
                         .iter()
@@ -119,23 +104,12 @@ impl App {
 
     /// The query no longer matches what the registry list shows: ↵ searches first.
     pub fn market_stale(m: &Market) -> bool {
-        m.tab == Tab::Apps && m.searched.as_deref().is_some_and(|s| s != m.query.text.trim())
+        m.tab == Tab::Connectors && m.searched.as_deref().is_some_and(|s| s != m.query.text.trim())
     }
 
     pub(in crate::tui) fn market_key(&mut self, mut m: Box<Market>, k: KeyEvent) -> Option<Overlay> {
         let n = self.market_rows(&m).len();
         match k.code {
-            KeyCode::Char('t') if ctrl(k) => {
-                let tools = self.market_rows(&m).get(m.cursor).and_then(|row| match row {
-                    Row::Installed(connector) => Some((s(connector, "id"), s(connector, "name"))),
-                    _ => None,
-                });
-                if let Some((id, name)) = tools {
-                    self.overlays.push(Overlay::Market(m));
-                    self.open_mcp_tools(id, name);
-                    return None;
-                }
-            }
             KeyCode::Esc => return None,
             KeyCode::Tab | KeyCode::BackTab => {
                 let i = TABS.iter().position(|(t, _)| *t == m.tab).unwrap_or(0);
@@ -205,24 +179,17 @@ impl App {
             SignIn(String),
             Custom,
             Install(Value),
-            App(Value),
-            MarketAgent(String),
             Skill(Value, bool),
-            Catalog(Value, bool),
             None,
         }
         let act = match self.market_rows(&m).get(m.cursor) {
             Some(Row::Node) => Act::Node,
             Some(Row::Agent(b)) => Act::Agent(s(b, "id")),
-            Some(Row::Installed(c)) if c["auth"] == "signedOut" || c["canSignIn"] == true => Act::SignIn(s(c, "id")),
+            Some(Row::Installed(c)) if c["auth"] == "signedOut" => Act::SignIn(s(c, "id")),
             Some(Row::Custom) => Act::Custom,
             Some(Row::Registry(c)) => Act::Install((*c).clone()),
-            Some(Row::App(a)) if !m.added.contains(&s(a, "id")) => Act::App((*a).clone()),
-            Some(Row::MarketAgent(a)) if !m.added.contains(&s(a, "id")) => Act::MarketAgent(s(a, "id")),
             Some(Row::Skill(v)) => Act::Skill((*v).clone(), true),
             Some(Row::OwnSkill(v)) => Act::Skill((*v).clone(), false),
-            Some(Row::Profile(v)) if !m.added.contains(&s(v, "id")) => Act::Catalog((*v).clone(), false),
-            Some(Row::Team(v)) if !m.added.contains(&s(v, "id")) => Act::Catalog((*v).clone(), true),
             _ => Act::None,
         };
         match act {
@@ -237,7 +204,7 @@ impl App {
             }
             Act::SignIn(id) => {
                 self.flash("Starting the sign-in…");
-                self.sheet("connectorSignIn", json!({"id": id, "showsCode": true}), Reply::SignIn);
+                self.sheet("connectorSignIn", json!({"id": id}), Reply::SignIn);
             }
             Act::Custom => {
                 self.overlays.push(Overlay::Market(m));
@@ -308,58 +275,6 @@ impl App {
                 self.open_skill(&v, catalog);
                 return None;
             }
-            Act::App(app) => {
-                let setup = s(&app, "setup");
-                let needs_values = app["fields"].as_array().is_some_and(|f| !f.is_empty());
-                if setup == "key" || (setup == "local" && needs_values) {
-                    let note = tr("Keys are saved on {name} only.").replace("{name}", &self.host);
-                    let host = self.host.clone();
-                    let mut f = Fields {
-                        title: s(&app, "name"),
-                        note: note.replace("{name}", &host),
-                        choices: vec![],
-                        choice: 0,
-                        inputs: app["fields"]
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .map(|field| Input {
-                                name: s(field, "id"),
-                                label: s(field, "label"),
-                                secret: field["url"].as_bool() != Some(true),
-                                required: field["required"].as_bool().unwrap_or(false),
-                                multiline: false,
-                                placeholder: field["placeholder"]
-                                    .as_str()
-                                    .or(field["hint"].as_str())
-                                    .unwrap_or_default()
-                                    .to_owned(),
-                                ed: Editor::with(field["placeholder"].as_str().unwrap_or_default()),
-                            })
-                            .collect(),
-                        cursor: 0,
-                        error: None,
-                        saving: false,
-                        submit: Submit::App(app),
-                    };
-                    f.cursor = 0;
-                    self.overlays.push(Overlay::Market(m));
-                    self.overlays.push(Overlay::Fields(Box::new(f)));
-                    return None;
-                }
-                let body = app_body(&app, &json!({}));
-                self.sheet("installConnector", body, Reply::FieldsSaved);
-            }
-            Act::MarketAgent(id) => {
-                let name = m
-                    .agents
-                    .as_ref()
-                    .and_then(|all| all.iter().find(|a| s(a, "id") == id))
-                    .map_or_else(|| id.clone(), |a| s(a, "name"));
-                self.flash(&tr("Adding {name}…").replace("{name}", &name));
-                self.sheet("installAgent", json!({"id": id}), Reply::CatalogAdded(id));
-            }
-            Act::Catalog(item, team) => self.add_from_catalog(&item, team),
             Act::None => {}
         }
         Some(Overlay::Market(m))
@@ -388,39 +303,6 @@ pub(super) fn connector_inputs(f: &mut Fields) {
         })
         .collect();
     f.cursor = f.cursor.min(f.offset() + f.inputs.len().saturating_sub(1));
-}
-
-/// The `installConnector` body of a marketplace app, with the values its setup collected.
-fn app_body(app: &Value, values: &Value) -> Value {
-    let mut body = json!({
-        "name": app["server"]["name"],
-        "description": app["description"],
-        "catalog": app["id"],
-        "args": app["server"]["args"],
-    });
-    if let Some(url) = app["server"]["url"].as_str() {
-        body["url"] = url.into();
-    }
-    if let Some(command) = app["server"]["command"].as_str() {
-        body["command"] = command.into();
-    }
-    let mut env = json!({});
-    let mut headers = json!({});
-    for field in app["fields"].as_array().into_iter().flatten() {
-        let typed = values[field["id"].as_str().unwrap_or_default()].as_str().unwrap_or_default();
-        if field["url"].as_bool() == Some(true) && !typed.is_empty() {
-            body["url"] = typed.into();
-        }
-        if let Some(header) = field["header"].as_str() {
-            headers[header] = typed.into();
-        }
-        if let Some(name) = field["env"].as_str() {
-            env[name] = typed.into();
-        }
-    }
-    body["env"] = env;
-    body["headers"] = headers;
-    body
 }
 
 #[cfg(test)]
@@ -458,7 +340,7 @@ mod tests {
     /// The cursor on Connectors row `row`, as arrow keys leave it.
     fn move_to(app: &mut App, row: usize) {
         let Some(Overlay::Market(mut m)) = app.overlays.pop() else { panic!("the marketplace is open") };
-        m.tab = Tab::Apps;
+        m.tab = Tab::Connectors;
         m.cursor = row;
         app.load_near_end(&mut m);
         app.overlays.push(Overlay::Market(m));
@@ -527,24 +409,5 @@ mod tests {
         app.open_agent("kimi", false);
         let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("the agent sheet is open") };
         assert!(!a.busy && !app.agent_set_up(a), "a registry agent that never ran waits for Set up");
-    }
-
-    #[tokio::test]
-    async fn a_connector_with_a_saved_token_signs_in_with_a_code() {
-        let mut app = open();
-        for (can_sign_in, starts) in [(false, false), (true, true)] {
-            app.plugins.0 = vec![json!({"id": "github", "name": "GitHub", "auth": "none", "canSignIn": can_sign_in})];
-            app.hint = None;
-            move_to(&mut app, 0);
-            let Some(Overlay::Market(m)) = app.overlays.pop() else { panic!("the marketplace is open") };
-            let m = app.market_key(m, KeyEvent::from(KeyCode::Enter)).expect("the marketplace stays open");
-            app.overlays.push(m);
-            assert_eq!(app.hint.is_some(), starts, "canSignIn {can_sign_in}: \"Starting the sign-in…\"");
-        }
-        // No browser opens from this TUI (not on the computer): the hint names the code and the page.
-        let device = "https://github.com/login/device";
-        app.on_sheet_reply(Reply::SignIn, Ok(json!({"url": device, "callback": "host", "code": "ABCD-1234"})));
-        let hint = &app.hint.as_ref().expect("the code shows").0;
-        assert!(hint.contains("ABCD-1234") && hint.contains(device), "{hint}");
     }
 }

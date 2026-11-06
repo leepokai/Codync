@@ -88,7 +88,6 @@ const bridge: CodyncBridge = {
     onVoiceKey: none,
     respond() {},
     send() {},
-    dropFiles() {},
     openBot() {},
     newBot() {},
     openApp() {},
@@ -97,13 +96,13 @@ const bridge: CodyncBridge = {
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
   artifacts: { show: async () => {}, openInBrowser: unavailable },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
+  screen: { open: async () => {}, target: async () => ({ computerId: '', name: '', url: '' }) },
   app: {
     reportError() {},
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
     pickFiles: async () => [],
-    readPaths: async () => [],
-    pathForFile: () => '',
+    pickExport: async () => null,
     readClipboardFiles: async () => [],
     setTraySummary() {},
     showWindow() {},
@@ -120,10 +119,6 @@ const bridge: CodyncBridge = {
     screenAgentState: async () => ({ available: false, needsApproval: false, registered: false }),
     setScreenAgent: unavailable,
     syncScreenAgent: async () => ({ needsApproval: false }),
-  },
-  screen: {
-    open: async () => {},
-    target: async () => null,
   },
 }
 

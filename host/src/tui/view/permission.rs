@@ -105,12 +105,7 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
     }
     out.lines.push(row(vec![]));
     // Buttons, wrapping onto more lines when narrow.
-    let mut opts = e.options();
-    if e.data["mcpToolCallId"].is_string() {
-        opts.retain(|(id, _, _)| id != "approve");
-        out.lines
-            .push(row(vec![Span::styled("Review full MCP arguments in desktop or Android to approve", t.secondary)]));
-    }
+    let opts = e.options();
     let keys = option_keys(&opts);
     let mut line: Vec<Span<'static>> = vec![];
     let mut used = 0usize;

@@ -34,7 +34,6 @@ fn well_known_dirs_for(home: &Path, data_local: Option<&Path>) -> Vec<PathBuf> {
         dirs.extend(std::env::var_os("ProgramFiles").map(|d| PathBuf::from(d).join("nodejs")));
         // oh-my-pi's binary install (%LOCALAPPDATA%\omp); a Bun install lands in ~/.bun/bin below.
         dirs.extend(data_local.map(|d| d.join("omp")));
-        dirs.extend(data_local.map(|d| d.join("Microsoft/WinGet/Links")));
         // Hermes Agent's Windows launchers, including older source installs.
         dirs.extend(data_local.map(|d| d.join("hermes").join("bin")));
         dirs.extend(data_local.map(|d| d.join("hermes").join("hermes-agent").join(".hermes").join("bin")));
@@ -52,7 +51,6 @@ fn well_known_dirs_for(home: &Path, data_local: Option<&Path>) -> Vec<PathBuf> {
         "Library/pnpm",
         ".npm-global/bin",
         ".opencode/bin",
-        ".grok/bin",
         ".deno/bin",
         "go/bin",
     ] {
@@ -175,17 +173,6 @@ mod tests {
         assert!(which("fake-harness").is_none(), "not executable yet");
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(which("fake-harness"), Some(bin));
-    }
-
-    #[test]
-    fn grok_and_winget_install_dirs_are_searched() {
-        let home = PathBuf::from("user-home");
-        let local = PathBuf::from("local-data");
-        let dirs = well_known_dirs_for(&home, Some(&local));
-        assert!(dirs.contains(&home.join(".grok/bin")));
-        if cfg!(windows) {
-            assert!(dirs.contains(&local.join("Microsoft/WinGet/Links")));
-        }
     }
 
     #[test]

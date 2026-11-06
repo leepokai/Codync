@@ -2,6 +2,7 @@ package com.codync.android
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import kotlinx.coroutines.runBlocking
@@ -20,11 +21,11 @@ class LiveMemoryTest {
         assumeTrue(botId != null)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val local = LocalStore(context)
-        val computer = local.computers().first().copy(urls = listOf("http://10.0.2.2:29322"), route = ConnectionRoute.DirectOnly)
+        val computer = local.computers().single().copy(urls = listOf("http://10.0.2.2:29322"), route = ConnectionRoute.DirectOnly)
         val channel = runBlocking { HostConnector.connect(computer, local.identity()) }
         try {
-            val memory = WireJson.decodeFromJsonElement<BotMemory>(runBlocking { channel.call("memory", body("botId" to botId)) })
-            val store = compose.computerStore()
+            val before = runBlocking { channel.call("history", body("botId" to botId)) }
+            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
             compose.waitUntil(30_000) { store.state.value.bots.any { it.id == botId } }
             val name = store.state.value.bots.single { it.id == botId }.name
             assertTrue(name.startsWith("Android memory acceptance"))

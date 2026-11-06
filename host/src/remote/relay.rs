@@ -70,9 +70,6 @@ pub async fn run(hub: Arc<Hub>) {
             if address.is_none() {
                 s.owner = None;
                 s.last_error = None;
-            } else if s.owner.is_none() {
-                // Until the cloud answers (or while it can't be reached), the account last seen.
-                s.owner = super::owner::owner(&hub.store);
             }
         });
         let restart = if let Some(address) = address {
@@ -724,7 +721,6 @@ mod tests {
                 lease_until: None,
                 created_at: now_ms(),
                 last_seen_at: None,
-                account: None,
             })
             .unwrap();
         let injected = b64(grant_key.verifying_key().as_bytes());
@@ -863,7 +859,6 @@ mod tests {
                 lease_until: Some(now_ms() + 60_000),
                 created_at: now_ms(),
                 last_seen_at: None,
-                account: None,
             })
             .unwrap();
         *fake.state.lock().unwrap() =
@@ -910,7 +905,6 @@ mod tests {
                 lease_until: Some(now_ms() + 60_000),
                 created_at: now_ms(),
                 last_seen_at: None,
-                account: None,
             })
             .unwrap();
         *fake.state.lock().unwrap() = json!({"owner": null, "grants": [], "requests": []});

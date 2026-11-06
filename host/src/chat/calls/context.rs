@@ -4,7 +4,7 @@
 use super::speech::{call_so_far, spoken};
 use super::tools::{runtime, waiting};
 use crate::hub::{BotStatus, Hub};
-use crate::store::{BotConfig, Entry, EntryKind, Lane, Permission};
+use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use crate::voice::Provider;
 use codync_mem::files::{self as mf, MAIN};
 use std::path::Path;
@@ -209,17 +209,10 @@ fn bot(hub: &Hub, cfg: &BotConfig) -> String {
     lines.push(format!("Runs on: {}{model}", crate::agent::fallback::name(&cfg.backend)));
     let project = Path::new(&cfg.cwd).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     lines.push(format!("Folder: {} (project {project})", cfg.cwd));
-    // What the bot does before it acts: the agent's mode, then what Codync does with what still asks.
-    let mode = match cfg.mode.as_deref() {
-        None => "the agent's default mode".to_owned(),
-        Some(crate::agent::modes::AUTO) => "the agent's Auto mode (it decides what's safe)".to_owned(),
-        Some(mode) => format!("the agent's {mode} mode"),
-    };
-    let rest = match cfg.permission {
-        Permission::Ask => "what it still asks about comes to the user as an approval card",
-        Permission::Auto => "Codync approves what it still asks about automatically",
-    };
-    lines.push(format!("Approvals: {mode}; {rest}"));
+    lines.push(format!(
+        "Permission mode: {}",
+        serde_json::to_value(cfg.permission).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
+    ));
     if !cfg.connectors.is_empty() {
         lines.push(format!("Connectors: {}", cfg.connectors.join(", ")));
     }
@@ -342,7 +335,7 @@ fn shared(recent: &[Entry]) -> String {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
-    use crate::store::Store;
+    use crate::store::{BotKind, Permission, Store};
     use codync_mem::files::{Author, Cause, Change};
     use serde_json::json;
 
@@ -355,13 +348,41 @@ pub(super) mod tests {
     }
 
     pub(in crate::chat::calls) fn bot(id: &str, name: &str, cwd: &str) -> BotConfig {
-        serde_json::from_value(json!({
-            "id": id, "name": name, "description": "Keeps the shop's site running",
-            "avatarColor": "blue", "avatarShape": "blob", "backend": "claude",
-            "cwd": cwd, "permission": "ask", "model": "opus",
-            "selfFallbacks": true, "connectors": ["github"], "sharedMemory": true,
-        }))
-        .unwrap()
+        BotConfig {
+            id: id.into(),
+            kind: BotKind::Agent,
+            members: vec![],
+            name: name.into(),
+            description: "Keeps the shop's site running".into(),
+            avatar_color: "blue".into(),
+            avatar_shape: "blob".into(),
+            backend: "claude".into(),
+            command: None,
+            cwd: cwd.into(),
+            permission: Permission::Ask,
+            model: Some("opus".into()),
+            model_options: std::collections::BTreeMap::new(),
+            fast_mode: false,
+            fallbacks: vec![],
+            self_fallbacks: true,
+            pinned: false,
+            position: 0,
+            hidden: false,
+            section: None,
+            notify: None,
+            connectors: vec!["github".into()],
+            skills: vec![],
+            computer: false,
+            manage_team: false,
+            offered_to_network: true,
+            reachable_by_assistants: true,
+            created_by: None,
+            shared_memory: Some(true),
+            harness_memory: false,
+            auto_name: false,
+            lead: false,
+            created_at: 0,
+        }
     }
 
     /// `MEMORY.md` straight into the store, as a scan would record it.
@@ -401,7 +422,7 @@ pub(super) mod tests {
         // Unstaged, so its porcelain line starts with a space.
         std::fs::write(repo.join("cart.ts"), "y").unwrap();
         let id = uuid::Uuid::new_v4().to_string();
-        let cfg = BotConfig { mode: Some("auto".into()), ..bot(&id, "Mika", &repo.to_string_lossy()) };
+        let cfg = bot(&id, "Mika", &repo.to_string_lossy());
         hub.store.save_bot(&cfg).unwrap();
         hub.store.save_bot(&bot(&uuid::Uuid::new_v4().to_string(), "Owen", "/tmp")).unwrap();
         remember(&hub, Some(&id), "- The shop deploys from main\n");
@@ -433,9 +454,7 @@ pub(super) mod tests {
         ] {
             assert!(gemini.contains(heading), "{heading} is there");
         }
-        let approvals = "Approvals: the agent's Auto mode (it decides what's safe); what it still asks about comes to \
-                         the user as an approval card";
-        for fact in ["Lives in Taipei", "The shop deploys from main", "zh-TW", "github", "Owen", approvals] {
+        for fact in ["Lives in Taipei", "The shop deploys from main", "zh-TW", "github", "Owen"] {
             assert!(gemini.contains(fact), "{fact} reaches the voice");
         }
         if repo_ok {

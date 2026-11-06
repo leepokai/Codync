@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -29,7 +27,6 @@ import androidx.compose.ui.platform.LocalContext
 import com.codync.android.core.BotDraft
 import com.codync.android.core.CloudComputer
 import com.codync.android.core.GroupDraft
-import com.codync.android.core.LinkState
 import com.codync.android.design.*
 
 private enum class Root { Loading, Welcome, Pairing, Tabs }
@@ -47,23 +44,19 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     var requestedTab by rememberSaveable { mutableStateOf<AppTab?>(null) }
     var requestedTabToken by rememberSaveable { mutableIntStateOf(0) }
     var access by remember { mutableStateOf<CloudComputer?>(null) }
-    var editor by remember { mutableStateOf<Editing<BotDraft>?>(null) }
-    var groupEditor by remember { mutableStateOf<Editing<GroupDraft>?>(null) }
-    var tab by rememberSaveable { mutableStateOf(AppTab.Bots) }
-    // The last link shown, and the store that counted it: requests count from 0 again in each generation and each process.
-    var handledNavigation by rememberSaveable { mutableStateOf(accounts.activityOwnerId to 0) }
-    var handledGeneration by rememberSaveable { mutableIntStateOf(app.generation) }
+    var editor by remember { mutableStateOf<BotDraft?>(null) }
+    var groupEditor by remember { mutableStateOf<GroupDraft?>(null) }
+    var handledNavigation by rememberSaveable { mutableIntStateOf(state.navigationRequest) }
+    var handledGeneration by rememberSaveable { mutableIntStateOf(state.generation) }
     fun closeAll() {
         showAccount = false; showComputers = false; showPairing = false; showMarketplace = false
         access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
-    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; handledGeneration = app.generation } }
-    // A notification, widget or link: close everything, then pick the tab as the iPhone does (usage on State, the rest over Bots)
-    // and maybe show usage, the computers or extensions.
-    LaunchedEffect(app.navigationRequest) {
-        val handled = handledNavigation.second.takeIf { handledNavigation.first == accounts.activityOwnerId } ?: 0
-        if (handled != app.navigationRequest) {
+    LaunchedEffect(state.generation) { if (handledGeneration != state.generation) { closeAll(); showUsage = false; handledGeneration = state.generation } }
+    // A notification, widget or link: close everything, then maybe show usage, the computers or extensions.
+    LaunchedEffect(state.navigationRequest) {
+        if (handledNavigation != state.navigationRequest) {
             closeAll()
             showUsage = state.navigationPage == LinkPage.Usage
             when (state.navigationPage) {
@@ -90,8 +83,7 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
         if (!state.loading && !state.setupComplete && state.cloudComputers.isNotEmpty()) store.skipSetup()
     }
     val root = when {
-        app.loading || app.account.restoring -> Root.Loading
-        required && !signedIn -> Root.Welcome
+        state.loading -> Root.Loading
         onboarding && !welcomed && !signedIn -> Root.Welcome
         onboarding -> Root.Pairing
         else -> Root.Tabs
@@ -138,70 +130,6 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
                 }
             }
         }
-        CodyncSheet(showAccount && (signedIn || (!required && app.setupComplete)) && !app.loading, { showAccount = false }) {
-            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Account))
-            AccountSwitcherView(app, accounts) { showPairing = true }
-        }
-        CodyncSheet(showComputers && !app.loading, { showComputers = false }) {
-            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))
-            ComputersView(app, states, accounts, { showPairing = true }, { access = it }, openMarketplace)
-        }
-        CodyncSheet(access, { access = null }) { AccessRequestView(app, accounts, it) }
-        CodyncSheet(showPairing && !app.loading, { showPairing = false }) {
-            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Pairing))
-            PairingView(app, accounts, inModal = true)
-        }
-        // Text another app shared: which bot's box it goes to.
-        CodyncSheet(app.sharing?.takeIf { root == Root.Tabs }, accounts::finishSharing) { text -> ShareToBot(text, states, accounts) }
-        CodyncSheet(showUsage && !app.loading, { showUsage = false }) {
-            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Usage))
-            UsageSheet(app, states, accounts)
-        }
-        // Each computer has its own Extensions; it's opened from that computer's heading or row.
-        CodyncSheet(marketplace?.takeIf { root == Root.Tabs && it in computers }, { marketplace = null }) { id ->
-            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Marketplace))
-            OnComputer(id, computers, accounts) { state, store -> key(id) { MarketplaceView(state, store) } }
-        }
-        CodyncSheet(creating?.takeIf { !app.loading }, { creating = null }) { target ->
-            OnComputer(target.computerId, computers, accounts) { state, store ->
-                // Not keyed on the computer: a new bot keeps its name and face when it moves to another.
-                key(app.contextId, app.generation) {
-                    if (target.group) NewGroupView(state, store)
-                    // A new bot can move to another computer until it's created (iOS `NewBotView`'s Computer row).
-                    else NewBotView(state, store, availableComputers(app, states).map { it.computer.id to computerChoice(it) }) {
-                        creating = NewTarget(group = false, computerId = it)
-                    }
-                }
-            }
-        }
-        // A group's editor is its details (a chat's title and the roster open it); a bot's (the roster's Edit profile) is all its settings.
-        CodyncSheet(groupEditor.takeIf { !app.loading }, { groupEditor = null }) { target ->
-            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
-            OnComputer(target.computerId, computers, accounts) { state, store ->
-                key(app.contextId, app.generation, target.computerId, target.draft.id) { GroupEditor(state, target.draft, store) }
-            }
-        }
-        CodyncSheet(editor.takeIf { !app.loading }, { editor = null }) { target ->
-            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
-            OnComputer(target.computerId, computers, accounts) { state, store ->
-                key(app.contextId, app.generation, target.computerId, target.draft.id) { BotEditor(state, target.draft, store) }
-            }
-        }
-        // The remote screen opens over the app once its sheets have slid away: any computer's request (chat header, Computers, `codync://screen`).
-        val screen = states.firstOrNull { it.screenRequest != null }
-        LaunchedEffect(screen?.computer?.id, screen?.screenRequest) { if (screen != null) { closeAll(); showUsage = false } }
-        ScreenLayer(screen, screen?.let { accounts.store(it.computer.id) })
-        // One place for every computer's errors the screen showing them doesn't handle itself (pairing, access, the new and edit sheets do).
-        val inline = root == Root.Pairing || showPairing || access != null || creating != null || editor != null || groupEditor != null
-        val error = app.error ?: states.firstNotNullOfOrNull { it.error }
-        CodyncDialog("Something went wrong", error != null && !inline, accounts::clearError, error, cancel = "OK") { emptyList() }
-        // A connector sign-in with a code (GitHub), from wherever it started: the code, before its page opens.
-        val coding = states.firstOrNull { it.signInCode != null }
-        val codeStore = coding?.let { accounts.store(it.computer.id) }
-        CodyncDialog(coding?.signInCode.orEmpty(), codeStore != null, { codeStore?.dismissSignInCode() },
-            "Paste this code on the sign-in page that opens next.") {
-            listOf(DialogAction("Copy and open") { codeStore?.openSignInCode() })
-        }
     }
     // The account sheet holds its own sign-in and computers, as the iOS sheet's NavigationStack.
     CodyncSheet(showAccount && (state.setupComplete || signedIn) && !state.loading, { showAccount = false }) {
@@ -236,14 +164,11 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     CodyncDialog("Something went wrong", state.error != null && !inline, store::clearError, state.error, cancel = "OK") { emptyList() }
 }
 
-/** The remote screen as a full-window layer that fades in and out (iOS `.codyncOverlay`); it keeps its computer while fading. */
-@Composable private fun ScreenLayer(state: AppState?, store: AppStore?) {
+/** The remote screen as a full-window layer that fades in and out (iOS `.codyncOverlay`). */
+@Composable private fun ScreenLayer(state: AppState, store: AppStore) {
     val visible = remember { MutableTransitionState(false) }
-    visible.targetState = state != null && store != null
-    var shown by remember { mutableStateOf<Pair<AppState, AppStore>?>(null) }
-    if (state != null && store != null) shown = state to store
+    visible.targetState = state.screenRequest != null
     if (!visible.currentState && !visible.targetState) return
-    val (current, owner) = shown ?: return
     Overlay {
         AnimatedVisibility(visible, enter = fadeIn(Motion.layout()), exit = fadeOut(Motion.fade())) {
             ScreenView(state, store, state.screenRequest?.watching, store::closeScreen)

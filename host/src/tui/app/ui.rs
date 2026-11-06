@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, DocumentSheet, Fields, FlowSheet, Library, Market, MemorySheet,
-    NetworkSheet, RoutineForm, RoutineList, SkillSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Gear, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
+    RoutineList, SkillSheet,
 };
 use super::{Editor, Mark};
 
@@ -52,8 +52,6 @@ pub enum Action {
     Market,
     Memory,
     Details,
-    Documents,
-    Computer,
     Library,
     RefreshAgents,
     Pair,
@@ -68,14 +66,12 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 21] = [
+pub const ACTIONS: [(&str, &str, Action); 19] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
     ("Memory of this bot…", "M", Action::Memory),
     ("Details of this bot…", "R", Action::Details),
-    ("Documents, reviews and computer activity…", "", Action::Documents),
-    ("Computer: permissions, files, terminal and activity…", "", Action::Computer),
     ("Library of this bot: artifacts and files…", "L", Action::Library),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
@@ -107,6 +103,7 @@ pub struct Goto {
 
 pub enum ConfirmAct {
     Delete(String),
+    NewSession(String),
     /// Keeps a bot's harness's own memory on beside Codync's.
     KeepHarnessMemory(String),
     DeleteRoutine(String, String),
@@ -126,20 +123,14 @@ pub struct Confirm {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NewBotField {
     Name,
-    Purpose,
-    Agent,
     Color,
     Shape,
 }
 
-/// A new bot: a name (optional: the host names it after its first conversations), what it should help with,
-/// its agent and its looks. Everything else takes the defaults and is changed afterwards in Settings.
+/// A new bot: a name (optional: the host names it after its first conversations) and its looks.
+/// Everything else takes the defaults and is changed afterwards in Settings.
 pub struct NewBot {
     pub name: Editor,
-    /// Its standing instructions.
-    pub purpose: Editor,
-    /// `None`: the host picks the agent.
-    pub backend: Option<String>,
     pub color: usize,
     pub shape: usize,
     pub field: NewBotField,
@@ -154,19 +145,7 @@ pub struct Dir {
     pub git: bool,
 }
 
-#[derive(PartialEq, Eq)]
-pub enum FolderMode {
-    Recent,
-    Browse,
-    Path,
-}
-
 pub struct FolderPicker {
-    pub request_id: String,
-    pub mode: FolderMode,
-    pub recent: Vec<Dir>,
-    pub remembers: bool,
-    pub busy: bool,
     pub path: String,
     pub parent: Option<String>,
     pub dirs: Vec<Dir>,
@@ -182,7 +161,6 @@ pub enum Field {
     Name,
     Instructions,
     Agent,
-    Account,
     Model,
     ModelOptions,
     Fast,
@@ -201,11 +179,10 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 20] = [
+pub const FIELDS: [Field; 19] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
-    Field::Account,
     Field::Model,
     Field::ModelOptions,
     Field::Fast,
@@ -236,10 +213,6 @@ pub struct Form {
     pub name: Editor,
     pub instructions: Editor,
     pub backend: String,
-    pub account: Option<String>,
-    pub account_scope: String,
-    pub accounts: Option<Vec<(String, String)>>,
-    pub account_busy: bool,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
@@ -248,9 +221,7 @@ pub struct Form {
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
     pub cwd: String,
-    /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
-    pub mode: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// `None`: the host has no Manage the team.
@@ -324,18 +295,14 @@ pub struct GroupForm {
     pub saving: bool,
 }
 
-/// The pair-a-phone sheet's code: on its way, shown (its pairing link, and the short code to type when the
-/// Codync cloud holds one), or why none came.
+/// The pair-a-phone sheet's code: on its way, shown (its pairing link), or why none came.
 pub enum PairCode {
     Loading,
-    Ready { url: String, short_code: Option<String> },
+    Ready(String),
     Failed(String),
 }
 
 pub enum Overlay {
-    Computer(Box<super::super::manage::computer::ComputerSheet>),
-    McpTools(Box<super::super::manage::mcp_tools::McpToolsSheet>),
-    RosterTools,
     Goto(Goto),
     Help(Editor),
     LeadAgent(usize),
@@ -348,11 +315,9 @@ pub enum Overlay {
     Usage(usize),
     Pair(PairCode),
     Memory(MemorySheet),
-    Documents(Box<DocumentSheet>),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
     Routines(RoutineList),
-    Flow(Box<FlowSheet>),
     Routine(Box<RoutineForm>),
     Library(Library),
     Gear(Gear),

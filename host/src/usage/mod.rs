@@ -6,9 +6,9 @@
 //! `kiro-cli /usage`, a `kimi` screen, Antigravity's language server, OpenCode's
 //! database, Vibe's session logs, and the `JetBrains` IDE quota file.
 //!
-//! Cursor's saved CLI or app login reads the dashboard service's weekly unified
-//! allowance, or the website's usage summary for legacy monthly plans. These are
-//! the only provider requests, and the token is never logged.
+//! Cursor has no local report. The host reads the token the Cursor app saved
+//! and asks `cursor.com/api/usage-summary`. That is the only provider call, and
+//! the token is never logged.
 
 mod amp;
 mod antigravity;
@@ -32,8 +32,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const POLL_EVERY: Duration = Duration::from_mins(5);
-/// The timer and several clients can ask for a reading at once: one probe owns it.
-static REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// Usage of a plan above which background work (dreaming, the lead's check-ins) waits.
 const HEADROOM_PERCENT: f64 = 75.0;
 
@@ -56,16 +54,13 @@ pub struct Usage {
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Provider {
-    pub id: String,
-    pub name: String,
+    pub id: &'static str,
+    pub name: &'static str,
     pub windows: Vec<Window>,
     /// Where the numbers came from: `claude` (CLI), `statusline`, `agent`, `sessions`,
     /// or a short phrase for the other agents.
     pub source: &'static str,
     pub updated_at: i64,
-    /// Why a provider has no windows (`unsupported`, `unavailable`), when it can't report.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<&'static str>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -100,45 +95,31 @@ impl Window {
 impl Usage {
     /// One window at a time, for Claude's status line and rate-limit events.
     /// The provider's other windows stay.
-    fn merge(&mut self, id: &str, name: &str, source: &'static str, new: Vec<Window>) {
+    fn merge(&mut self, id: &'static str, name: &'static str, source: &'static str, new: Vec<Window>) {
         let mut windows = self.providers.iter().find(|p| p.id == id).map(|p| p.windows.clone()).unwrap_or_default();
         windows.retain(|w| !new.iter().any(|n| n.id == w.id));
         windows.extend(new);
         windows.sort_by(|a, b| a.id.cmp(&b.id));
         self.providers.retain(|p| p.id != id);
-        self.providers.push(Provider {
-            id: id.into(),
-            name: name.into(),
-            windows,
-            source,
-            updated_at: crate::store::now_ms(),
-            status: None,
-        });
-        self.providers.sort_by(|a, b| a.id.cmp(&b.id));
+        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
+        self.providers.sort_by_key(|p| p.id);
     }
 
     /// A probe's full reading. Windows it no longer reports are dropped, and an
     /// empty reading removes the provider.
-    fn replace(&mut self, id: &str, name: &str, source: &'static str, new: Vec<Window>) {
+    fn replace(&mut self, id: &'static str, name: &'static str, source: &'static str, new: Vec<Window>) {
         self.providers.retain(|p| p.id != id);
         if new.is_empty() {
             return;
         }
         let mut windows = new;
         windows.sort_by(|a, b| a.id.cmp(&b.id));
-        self.providers.push(Provider {
-            id: id.into(),
-            name: name.into(),
-            windows,
-            source,
-            updated_at: crate::store::now_ms(),
-            status: None,
-        });
-        self.providers.sort_by(|a, b| a.id.cmp(&b.id));
+        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
+        self.providers.sort_by_key(|p| p.id);
     }
 }
 
-pub(super) fn merge(hub: &Hub, id: &str, name: &str, source: &'static str, windows: Vec<Window>) {
+pub(super) fn merge(hub: &Hub, id: &'static str, name: &'static str, source: &'static str, windows: Vec<Window>) {
     let mut usage = hub.usage.locked().clone();
     usage.merge(id, name, source, windows);
     hub.set_usage(usage);
@@ -152,11 +133,6 @@ pub async fn poll(hub: Arc<Hub>) {
 }
 
 pub async fn refresh(hub: &Hub) {
-    // The timer and several clients can request a refresh together. One probe owns
-    // the work; every caller still receives the most recently observed report.
-    let Ok(_refresh) = REFRESH.try_lock() else { return };
-    // Antigravity's adapters report per account; the language server below fills a base reading when they can't.
-    antigravity::refresh(hub).await;
     let (
         codex,
         claude,

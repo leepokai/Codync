@@ -15,7 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +33,6 @@ import com.codync.android.core.LinkState
 import com.codync.android.core.ScreenState
 import com.codync.android.core.hasLibrary
 import com.codync.android.design.*
-import java.io.IOException
 import kotlinx.coroutines.delay
 
 /**
@@ -63,17 +61,12 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
     var draft by rememberBotDraft(saved, state)
     var template by remember { mutableStateOf<BotDraft?>(null) }
     val online = state.actualConnection is LinkState.Ready
-    // What the last save said, on the page where it was made (iOS `saveError`); one that fails after the page closed
-    // shows over the app instead.
-    var saveError by remember(bot.id) { mutableStateOf<String?>(null) }
-    val shown = remember { mutableStateOf(true) }
-    DisposableEffect(Unit) { onDispose { shown.value = false } }
     // Saves a moment after the last change, like the desktop inspector. Keyed on the saved bot too: an edit made while
     // the previous save was still out (and so skipped) is sent once that save lands.
     LaunchedEffect(draft, online, saved) {
         if (!online || !draft.isValid || draft == saved) return@LaunchedEffect
         delay(600)
-        store.saveSettings(draft) { error -> if (shown.value) saveError = error else error?.let { store.showError(IOException(it)) } }
+        store.saveSettings(draft)
     }
     val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Apps, DetailsTab.Memory, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Settings)
     Box(Modifier.fillMaxSize().background(Palette.background)) {
@@ -85,23 +78,21 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
                 Box(Modifier.fillMaxWidth().padding(top = 20.dp)) {
                     when (tab) {
                         DetailsTab.Details -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
-                            BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often, error = saveError)
+                            BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often)
                             state.screen?.let { ComputerCard(it, draft.computer, online) { on -> draft = draft.copy(computer = on) } }
-                            RoutinesView(bot, state, store, routineId)
+                            RoutinesView(bot, state, store, routineId, leave = dismiss)
                             LaunchedEffect(Unit) { routineId = null }
                         }
                         DetailsTab.Apps -> BotAppsCard(bot.id, state, store)
                         DetailsTab.Memory -> MemoryCard(bot.id, state, store)
                         DetailsTab.Library -> LibraryView(bot, state, store, openArtifact)
-                        DetailsTab.Memory -> MemoryCard(bot.id, state, store)
-                        DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, FormPart.Rarely, error = saveError)
+                        DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, FormPart.Rarely)
                     }
                 }
             }
         }
         Row(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // The bot as it's saved, as on the iPhone.
-            CornerButton("Create template", "square.and.arrow.up") { template = saved }
+            CornerButton("Create template", "square.and.arrow.up") { template = draft }
             CornerButton("Close details", "xmark", dismiss)
         }
     }

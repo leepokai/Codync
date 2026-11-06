@@ -61,7 +61,9 @@ export const prefs = {
   hiddenComputers: pref('hiddenComputers', ''),
   computerOrder: pref<string[]>('computerOrder', []),
   collapsedComputers: pref<string[]>('collapsedComputerSections', []),
-  collapsedProjects: pref<string[]>('collapsedRosterProjects', []),
+  /** Folded roster sections, by name: on this device only. */
+  rosterSectionOrder: pref<Record<string, string[]>>('rosterSectionOrder', {}),
+  collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),

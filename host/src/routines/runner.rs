@@ -6,7 +6,6 @@ use super::{
     Arc, Context, EntryKind, Hub, Lane, LockExt, Result, Routines, Run, Status, Store, Value, bail, cancel_run,
     default_timeout, json, may_run, new_run, now_ms, retry,
 };
-use super::{Trigger, watch::Check};
 use crate::remote::push::AlertKind;
 use std::{sync::atomic::Ordering, time::Duration};
 
@@ -81,8 +80,7 @@ impl Routines {
             &prepared.lane,
             EntryKind::Notice,
             hub.store.max_turn(bot) + 1,
-            &json!({"text":format!("Routine · {name}"),"routineId":routine_id,"runId":id,"style":"info",
-                "source":"scheduled_task","scheduledMessage":{"version":1,"runId":id,"phase":"started"}}),
+            &json!({"text":format!("Routine · {name}"),"routineId":routine_id,"runId":id,"style":"info"}),
         )?;
         Ok(Some(prepared))
     }
@@ -106,7 +104,7 @@ impl Routines {
 
     pub fn complete(
         &self,
-        hub: &Arc<Hub>,
+        hub: &Hub,
         id: &str,
         status: Status,
         detail: Option<String>,
@@ -116,19 +114,11 @@ impl Routines {
         let failed = matches!(status, Status::Failed | Status::Interrupted);
         // A run that hit its time limit could hold the bot that long again.
         let safe = failed && !timed_out && !retry::acted(hub, id);
-        let (bot, withdrawn, flow) = self.change(&hub.store, |s| {
+        let (bot, withdrawn) = self.change(&hub.store, |s| {
             let i = s.runs.iter().position(|r| r.id == id).context("routine run not found")?;
             let mut withdrawn = Vec::new();
-            let mut flow = None;
             let r = &mut s.runs[i];
             if r.status.active() {
-                flow = super::flow::start_for(
-                    s.routines.iter().find(|x| x.id == r.routine_id),
-                    r,
-                    status,
-                    detail.as_deref(),
-                    text.as_deref(),
-                );
                 let now = now_ms();
                 r.status = status;
                 r.finished_at = Some(now);
@@ -142,12 +132,9 @@ impl Routines {
                     s.runs[i].event = Value::Null;
                 }
             }
-            Ok((s.runs[i].bot_id.clone(), withdrawn, flow))
+            Ok((s.runs[i].bot_id.clone(), withdrawn))
         })?;
         retry::withdraw(hub, &withdrawn);
-        if let Some(start) = flow {
-            super::flow::spawn(hub, start);
-        }
         self.release(&bot);
         Ok(())
     }
@@ -155,8 +142,6 @@ impl Routines {
     /// The bot's Stop: cancels its queued runs. A retry waiting for later isn't queued yet, so
     /// it stays (pausing or deleting the routine cancels it).
     pub fn cancel_queued(&self, store: &Store, bot: &str) -> Result<()> {
-        // What the bot's routines were handing on to other bots stops too.
-        self.flows.cancel_bot(bot);
         let now = now_ms();
         self.change(store, |s| {
             for r in s.runs.iter_mut().filter(|r| r.bot_id == bot && r.status == Status::Pending && !r.waiting(now)) {
@@ -167,10 +152,6 @@ impl Routines {
     }
 
     pub fn disable_bot(&self, store: &Store, bot: &str) -> Result<()> {
-        self.flows.cancel_bot(bot);
-        if let Err(error) = store.flow_forget_bot(bot) {
-            tracing::error!(bot, error = format!("{error:#}"), "couldn't clear a removed bot's flows");
-        }
         self.change(store, |s| {
             for r in &mut s.routines {
                 if r.bot_id == bot {
@@ -191,16 +172,6 @@ impl Routines {
         Ok(())
     }
 
-    /// Rewrites routine `id`'s instruction as `to` while it still reads `from`, the host's own words.
-    pub fn reword(&self, store: &Store, id: &str, from: &str, to: &str) -> Result<()> {
-        self.change(store, |s| {
-            if let Some(r) = s.routines.iter_mut().find(|r| r.id == id && r.instruction == from) {
-                to.clone_into(&mut r.instruction);
-            }
-            Ok(())
-        })
-    }
-
     /// Retry reporting independently of task execution: a successful run's reply is already in the chat and only
     /// alerts; a failed one leaves a notice, which alerts unless the run is tried again on its own. The entry ID
     /// deduplicates a crash after SQLite inserted the notice but before this ack.
@@ -219,8 +190,7 @@ impl Routines {
                     }
                     None => (failure, "error", Some(AlertKind::Failed)),
                 };
-                let data = json!({"text": text, "style": style, "routineId": run.routine_id, "runId": run.id, "retry": run.retryable,
-                    "source": "scheduled_task", "scheduledMessage": {"version": 1, "runId": run.id, "phase": "result"}});
+                let data = json!({"text": text, "style": style, "routineId": run.routine_id, "runId": run.id, "retry": run.retryable});
                 let id = super::result_notice_id(&run.id);
                 let (_, added) = hub.add_entry_once(&id, &Lane::main(&run.bot_id), EntryKind::Notice, 0, &data)?;
                 (text, kind, added)
@@ -247,9 +217,7 @@ impl Routines {
         self.state.locked().runs.iter().filter(|r| r.status == Status::Pending && !r.waiting(now)).cloned().collect()
     }
 
-    /// Queues the runs whose time came; returns the `watch` checks that came due instead, which
-    /// queue a run themselves only if what they watch changed.
-    fn schedule_due(&self, store: &Store, now: i64) -> Result<Vec<Check>> {
+    fn schedule_due(&self, store: &Store, now: i64) -> Result<()> {
         let due = self
             .state
             .locked()
@@ -257,33 +225,22 @@ impl Routines {
             .iter()
             .any(|r| !r.deleted && r.enabled && r.next_runs.iter().flatten().any(|at| *at <= now));
         if !due {
-            return Ok(vec![]);
+            return Ok(());
         }
         self.change(store, |s| {
-            let mut checks = vec![];
             for routine in &mut s.routines {
                 if routine.deleted || !routine.enabled {
                     continue;
                 }
                 let mut fired = false;
-                for (index, (trigger, next)) in routine.triggers.iter().zip(&mut routine.next_runs).enumerate() {
+                for (trigger, next) in routine.triggers.iter().zip(&mut routine.next_runs) {
                     if let Some(at) = *next
                         && at <= now
                     {
                         match trigger.advance(at, now) {
                             Ok(future) => {
+                                fired = true;
                                 *next = future;
-                                if let Trigger::Watch { kind, target, .. } = trigger {
-                                    checks.push(Check {
-                                        routine_id: routine.id.clone(),
-                                        bot_id: routine.bot_id.clone(),
-                                        index,
-                                        kind: *kind,
-                                        target: target.clone(),
-                                    });
-                                } else {
-                                    fired = true;
-                                }
                             }
                             Err(error) => {
                                 routine.enabled = false;
@@ -304,7 +261,7 @@ impl Routines {
                     None => s.runs.push(new_run(routine, json!({"source":"schedule"}), None)),
                 }
             }
-            Ok(checks)
+            Ok(())
         })
     }
 }
@@ -334,9 +291,7 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
         tracing::error!(%error, "routine result publication will retry");
     }
     let now = now_ms();
-    for check in hub.routines.schedule_due(&hub.store, now)? {
-        tokio::spawn(super::watch::run(hub.clone(), check));
-    }
+    hub.routines.schedule_due(&hub.store, now)?;
     for run in hub.routines.due(now) {
         if hub.routines.stopping() {
             break;
@@ -393,7 +348,7 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let routines = Routines::default();
         let mut routine = super::super::tests::routine();
-        routine.triggers = vec![Trigger::Once { at: 60_000 }];
+        routine.triggers = vec![super::super::Trigger::Once { at: 60_000 }];
         routines
             .change(&store, |s| {
                 let mut running = new_run(&routine, Value::Null, None);

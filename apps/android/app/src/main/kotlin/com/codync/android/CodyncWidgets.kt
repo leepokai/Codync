@@ -74,14 +74,11 @@ import kotlin.math.roundToInt
 // State tab's previews: Provider usage, Usage limits, Bots and Team.
 
 class ProviderWidget : CodyncWidget(WidgetKind.Provider)
-/** Claude Code's or Codex's usage, without a provider to choose (iOS `ClaudeUsageWidget`, `CodexUsageWidget`). */
-class ClaudeUsageWidget : CodyncWidget(WidgetKind.Provider, fixed = "claude")
-class CodexUsageWidget : CodyncWidget(WidgetKind.Provider, fixed = "codex")
 class UsageWidget : CodyncWidget(WidgetKind.Usage)
 class BotsWidget : CodyncWidget(WidgetKind.Bots)
 class TeamWidget : CodyncWidget(WidgetKind.Team)
 
-abstract class CodyncWidget(private val kind: WidgetKind, private val fixed: String? = null) : GlanceAppWidget() {
+abstract class CodyncWidget(private val kind: WidgetKind) : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, MEDIUM, LARGE))
     override val previewSizeMode = sizeMode
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -89,7 +86,7 @@ abstract class CodyncWidget(private val kind: WidgetKind, private val fixed: Str
         provideContent {
             val revision by WidgetStore.changes.collectAsState()
             val feed = remember(revision) { WidgetStore.feed(context) }
-            val provider = remember(revision) { fixed ?: WidgetStore.provider(context, widget) }
+            val provider = remember(revision) { WidgetStore.provider(context, widget) }
             val team = remember(revision) { WidgetStore.team(context, widget) }
             androidx.compose.runtime.key(revision) {
                 WidgetCard(feed, kind, provider, team, sample = false)
@@ -97,7 +94,7 @@ abstract class CodyncWidget(private val kind: WidgetKind, private val fixed: Str
         }
     }
     override suspend fun providePreview(context: Context, widgetCategory: Int) {
-        provideContent { WidgetCard(sampleFeed(), kind, fixed ?: "claude", emptyList(), sample = true) }
+        provideContent { WidgetCard(sampleFeed(), kind, "claude", emptyList(), sample = true) }
     }
 
     private companion object {
@@ -288,7 +285,7 @@ private const val WARNING = 0xFFF0A030.toInt()
 @Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp) {
     val red = danger.getColor(context).toArgb()
     val bitmap = remember(percent, tint, red) { ticks(percent, tint, red) }
-    Image(ImageProvider(bitmap), "${percent.roundToInt()} percent used", GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
+    Image(ImageProvider(bitmap), "${percent.roundToInt()} percent", GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
 }
 
 private fun ticks(percent: Double, tint: Int, red: Int): Bitmap {
@@ -306,14 +303,10 @@ private fun ticks(percent: Double, tint: Int, red: Int): Bitmap {
     return bitmap
 }
 
-@Composable private fun Face(context: Context, shape: String, color: String, size: Dp, highlight: Int? = null, customIcon: com.codync.android.core.CustomIcon? = null) {
+@Composable private fun Face(context: Context, shape: String, color: String, size: Dp, highlight: Int? = null) {
     val pixels = (size.value * context.resources.displayMetrics.density).toInt().coerceIn(1, 256)
     val inkColor = ink.getColor(context).toArgb()
-    val bitmap = remember(shape, color, pixels, inkColor, highlight, customIcon) {
-        com.codync.android.design.customAvatarBitmap(customIcon?.dataUrl, customIcon?.tinted == true, pixels,
-            com.codync.android.design.AvatarPalette.tint(color).toArgb())
-            ?: characterAvatarBitmap(shape, color, pixels, inkColor, highlight)
-    }
+    val bitmap = remember(shape, color, pixels, inkColor, highlight) { characterAvatarBitmap(shape, color, pixels, inkColor, highlight) }
     Image(ImageProvider(bitmap), null, GlanceModifier.size(size))
 }
 
@@ -361,7 +354,7 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
                 Spacer(GlanceModifier.defaultWeight())
                 Summary(count, label, needs > 0, GlanceModifier)
                 Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    for (bot in bots.take(3)) Face(context, bot.avatarShape, bot.avatarColor, 23.dp, customIcon = bot.customIcon)
+                    for (bot in bots.take(3)) Face(context, bot.avatarShape, bot.avatarColor, 23.dp)
                     Spacer(GlanceModifier.defaultWeight())
                     if (working > 0 && needs > 0) Text("$working working", style = style(9f, secondary))
                 }
@@ -381,9 +374,9 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
     Column(GlanceModifier.fillMaxWidth()) {
         for (bot in bots) {
             val (word, tint) = stateWord(bot)
-            val open = if (sample) GlanceModifier else GlanceModifier.clickable(actionStartActivity(widgetIntent(context, feed, bot)))
+            val open = if (sample) GlanceModifier else GlanceModifier.clickable(actionStartActivity(widgetIntent(context, feed, bot.id)))
             Row(open.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Face(context, bot.avatarShape, bot.avatarColor, 24.dp, customIcon = bot.customIcon)
+                Face(context, bot.avatarShape, bot.avatarColor, 24.dp)
                 Spacer(GlanceModifier.width(7.dp))
                 Text(bot.name, GlanceModifier.defaultWeight(), style = style(11f, ink, FontWeight.Medium), maxLines = 1)
                 Text(word, style = style(10f, tint, if (bot.status == "needsInput") FontWeight.Medium else FontWeight.Normal), maxLines = 1)
@@ -402,11 +395,11 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
             Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
                 for ((column, bot) in row.withIndex()) {
                     if (column > 0) Spacer(GlanceModifier.width(8.dp))
-                    val open = if (sample || bot == null) GlanceModifier else GlanceModifier.clickable(actionStartActivity(widgetIntent(context, feed, bot)))
+                    val open = if (sample || bot == null) GlanceModifier else GlanceModifier.clickable(actionStartActivity(widgetIntent(context, feed, bot.id)))
                     Box(open.defaultWeight().fillMaxHeight().background(tile).cornerRadius(16.dp), contentAlignment = Alignment.Center) {
                         if (bot == null) Face(context, "blob", "gray", 26.dp)
                         else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Face(context, bot.avatarShape, bot.avatarColor, 30.dp, customIcon = bot.customIcon)
+                            Face(context, bot.avatarShape, bot.avatarColor, 30.dp)
                             Text(bot.name, style = style(9f, ink, FontWeight.Medium), maxLines = 1)
                         }
                     }
@@ -416,12 +409,11 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
     }
 }
 
-/** Opens the app: on [bot]'s chat (on its computer), on the usage computer's Usage, or as it is. */
-internal fun widgetIntent(context: Context, feed: WidgetFeed, bot: WidgetBot? = null, usage: Boolean = false): Intent {
+internal fun widgetIntent(context: Context, feed: WidgetFeed, bot: String? = null, usage: Boolean = false): Intent {
     val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-    val computer = bot?.computerId?.ifEmpty { null } ?: feed.computerId ?: return intent
+    val computer = feed.computerId ?: return intent
     if (bot != null || usage) intent.data = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority(if (usage) "usage" else "bot")
-        .apply { if (bot != null) appendPath(bot.id) }.appendQueryParameter("scope", feed.scope).appendQueryParameter("computer", computer).build()
+        .apply { if (bot != null) appendPath(bot) }.appendQueryParameter("scope", feed.scope).appendQueryParameter("computer", computer).build()
     return intent
 }
 
@@ -430,8 +422,6 @@ internal fun sampleFeed(): WidgetFeed = WidgetFeed(computerId = "sample", comput
     botsAt = System.currentTimeMillis(), usage = WidgetPreview.usage, usageAt = System.currentTimeMillis())
 
 class ProviderWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = ProviderWidget() }
-class ClaudeUsageWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = ClaudeUsageWidget() }
-class CodexUsageWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = CodexUsageWidget() }
 class UsageWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = UsageWidget() }
 class BotsWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = BotsWidget() }
 class TeamWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = TeamWidget() }

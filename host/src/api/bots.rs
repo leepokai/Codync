@@ -11,9 +11,6 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
-    if let Some(answer) = crate::routines::flow::api_call(hub, method, &b)? {
-        return Ok(ControlFlow::Break(answer));
-    }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),
@@ -44,30 +41,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "memoryCall" => {
             crate::chat::memory::tool_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }
-        "listBotApps" | "createAppLink" | "revokeAppLink" | "deleteBotApp" => {
-            crate::chat::apps::api_call(hub, method, &b)?
-        }
-        "appRequest" => super::apps_bridge::request(hub, &b).await?,
-        "listOpenItems" | "dismissOpenItem" | "listBookmarks" | "saveBookmark" | "deleteBookmark" => {
-            crate::chat::open_items::api_call(hub, method, &b)?
-        }
         "chatCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            if name == "research_sources" {
-                crate::research::sources(hub, bot, str_arg(&b["arguments"], "objective")?, b["arguments"].get("urls"))
-                    .await?
-            } else if crate::documents::TOOLS.contains(&name) {
-                crate::documents::call(hub, bot, name, &b["arguments"]).await?
-            } else if crate::chat::profile::TOOLS.contains(&name) {
+            if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
-            } else if crate::chat::scratchpad::TOOLS.contains(&name) {
-                crate::chat::scratchpad::call(hub, bot, name, &b["arguments"])?
-            } else if crate::chat::teach::TOOLS.contains(&name) {
-                crate::chat::teach::call(hub, bot, name, &b["arguments"])?
-            } else if crate::chat::apps::TOOLS.contains(&name) {
-                crate::chat::apps::call(hub, bot, name, &b["arguments"])?
-            } else if crate::chat::open_items::TOOLS.contains(&name) {
-                crate::chat::open_items::call(hub, bot, name, &b["arguments"])?
             } else if name == crate::chat::skills::TOOL {
                 crate::chat::skills::call(hub, bot, &b["arguments"]).await?
             } else if crate::chat::fallbacks::TOOLS.contains(&name) {
@@ -86,20 +63,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "teamCall" => {
             crate::chat::team::call_async(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }
-        "messageResult" => {
-            let bot = str_arg(&b, "botId")?;
-            hub.store.bot(bot)?.filter(|row| !row.deleted).context("Unknown bot.")?;
-            let entry = hub
-                .store
-                .entry(str_arg(&b, "id")?)
-                .filter(|entry| {
-                    entry.bot_id == bot
-                        && entry.kind == EntryKind::User.as_str()
-                        && !crate::store::is_internal(&entry.data)
-                })
-                .context("Unknown user message.")?;
-            json!({"id":entry.id,"botId":entry.bot_id,"threadId":entry.thread_id,"status":entry.data["status"],"result":entry.data["turnResult"]})
-        }
         "manageCall" => {
             crate::chat::manage::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }
@@ -108,14 +71,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let before = b["beforeSeq"].as_i64().unwrap_or(i64::MAX);
             let limit = b["limit"].as_i64().unwrap_or(100).clamp(1, 500);
             json!({"entries": hub.store.history(bot, before, limit)?})
-        }
-        // A side conversation (a document's `doc:<id>`, a Slack thread's `slack-…`); the chat itself has none.
-        "thread" => {
-            let root = str_arg(&b, "rootId")?;
-            if !(root.starts_with("doc:") || root.starts_with("slack-")) {
-                bail!("threads are gone: replies are in the chat");
-            }
-            json!({"entries": hub.store.thread(str_arg(&b, "botId")?, root, 500)?})
         }
         // Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet.
         "botConversation" => {
@@ -129,44 +84,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??})
         }
-        // Bots from another app's export file on this computer (`import`).
-        "previewImport" => crate::import::preview(&b).await?,
-        "importBots" => crate::import::apply(hub, &b).await?,
-        "importSkill" => json!({"name": "codync-export", "text": crate::import::EXPORT_SKILL}),
         "updateBot" => {
-            // Edits through the API are the user's; only the bot's own tool says otherwise.
-            let mut b = b;
-            if let Some(patch) = b.as_object_mut() {
-                patch.remove(crate::chat::instruction_history::AUTHOR);
-            }
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.update_bot(&b)).await??})
-        }
-        // The versions of a bot's instructions, what changed between two, and going back to one.
-        "instructionHistory" => {
-            let row = hub.store.bot(str_arg(&b, "botId")?)?.context("unknown bot")?;
-            crate::chat::instruction_history::list(&hub.store, &row.config)?
-        }
-        "instructionDiff" => {
-            let version =
-                |key: &str| b[key].as_u64().and_then(|v| u32::try_from(v).ok()).context("from and to are versions");
-            json!({"diff": crate::chat::instruction_history::diff(&hub.store, str_arg(&b, "botId")?, version("from")?, version("to")?)?})
-        }
-        "restoreInstructions" => {
-            use crate::chat::instruction_history as history;
-            let bot = str_arg(&b, "botId")?.to_owned();
-            let version = b["version"].as_u64().and_then(|v| u32::try_from(v).ok()).context("version is required")?;
-            let patch = json!({"id": bot, "description": history::text(&hub.store, &bot, version)?,
-                history::REASON: format!("Restored version {version}")});
-            let hub = hub.clone();
-            let saved = tokio::task::spawn_blocking(move || {
-                let saved = hub.update_bot(&patch)?;
-                let notice = json!({"text": format!("Instructions restored to version {version}")});
-                hub.add_entry(&Lane::main(&bot), EntryKind::Notice, hub.store.max_turn(&bot), &notice);
-                anyhow::Ok(saved)
-            })
-            .await??;
-            json!({"bot": saved})
         }
         // The roster as the user dragged it, top first.
         "reorderBots" => {
@@ -187,11 +107,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
-            json!({})
-        }
-        // The user makes this bot the lead, in place of the one before.
-        "setLead" => {
-            crate::chat::lead::set(hub, str_arg(&b, "botId")?)?;
             json!({})
         }
         "markRead" => {
@@ -240,24 +155,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 return Ok(ControlFlow::Break(json!({"entry": e})));
             }
             let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-            if crate::external::is_external(&row.config) {
-                bail!("this bot runs in your terminal: reply there, or use its approval cards here");
-            }
-            // `threadId`: a document's side conversation (`doc:<id>`); the chat itself has no threads.
-            let side = match b["threadId"].as_str().filter(|t| !t.is_empty()) {
-                Some(root) => {
-                    let id = root.strip_prefix("doc:").context("threads are gone: reply to a message instead")?;
-                    hub.store.document(id)?.filter(|doc| doc.bot_id == bot).context("unknown document conversation")?;
-                    Some(root.to_owned())
-                }
-                None => None,
-            };
             // `replyTo`: the message of this chat it answers (`chat::replies`).
             let reply = match b["replyTo"].as_str().filter(|id| !id.is_empty()) {
                 Some(id) => Some(crate::chat::replies::quote(&hub.store, bot, id)?),
                 None => None,
             };
-            let lane = side.map_or_else(|| Lane::main(bot), |root| Lane::in_thread(bot, &root));
             let mut attachments = Vec::new();
             if !uploads.is_empty() {
                 let root = crate::chat::uploads::root(&row.config);
@@ -286,7 +188,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 data["call"] = crate::chat::calls::checked(call)?.into();
                 crate::chat::calls::heard(hub, bot, call, caller.device_key())?;
             }
-            json!({"entry": crate::chat::messages::post_in_lane(hub, &row.config, lane, data)?})
+            json!({"entry": crate::chat::messages::post(hub, &row.config, data)?})
         }
         // A voice call is on (its audio flows): the lead speaks first.
         "callStarted" => {
@@ -294,8 +196,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::chat::lead::call_started(hub, str_arg(&b, "botId")?, call)?;
             json!({})
         }
-        // A finished voice call, as a line in the chat ("Voice chat · 0:16").
-        "logCall" => crate::voice::receipts::log(hub, &b)?,
+        // A finished voice call from an app older than `endCall`, as a line in the chat ("Voice chat · 0:16").
+        "logCall" => {
+            let bot = str_arg(&b, "botId")?;
+            hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let seconds = b["seconds"].as_u64().unwrap_or(0);
+            let data = json!({"text": crate::chat::calls::UNTITLED, "callSeconds": seconds});
+            let e = hub.add_entry(&Lane::main(bot), EntryKind::Notice, hub.store.max_turn(bot), &data);
+            json!({"entry": e})
+        }
         // A voice call, owned by the host (`chat::calls`); only the device that starts it hears what its voice should
         // say.
         "startCall" => crate::chat::calls::start(hub, &b, caller.device_key()).await?,
@@ -321,42 +230,19 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"entry": crate::chat::calls::end(hub, str_arg(&b, "botId")?, call, seconds, &b["lines"])?})
         }
         "stop" => {
-            hub.stop_bot(str_arg(&b, "botId")?)?;
+            let bot = str_arg(&b, "botId")?;
+            match hub.store.bot(bot)? {
+                Some(row) if row.config.is_group() => hub.groups.stop(hub, bot),
+                _ => hub.send_cmd(bot, Cmd::Stop)?,
+            }
             json!({})
         }
-        "tokenBudgets" => hub.budget.status(crate::store::now_ms()),
-        "setTokenBudget" => {
-            let limit = b["limit"].as_u64();
-            hub.budget.set_limit(&hub.store, str_arg(&b, "botId")?, limit)?;
-            hub.budget.status(crate::store::now_ms())
-        }
-        "clearFailedRuns" => {
-            let cleared = hub.routines.clear_failed(&hub.store, b["botId"].as_str())?;
-            json!({"cleared": cleared})
-        }
-        "exportBot" => {
-            let row = hub.store.bot(str_arg(&b, "botId")?)?.context("unknown bot")?;
-            crate::bundle::export(&[row.config])?
-        }
-        "importBots" => crate::bundle::import(hub, &b["bundle"], str_arg(&b, "cwd")?).await?,
-        "retireDormantSkills" => {
-            let hub = hub.clone();
-            let turned_off =
-                tokio::task::spawn_blocking(move || crate::market::retire_dormant_skills(&hub, crate::store::now_ms()))
-                    .await??;
-            json!({"turnedOff": turned_off})
-        }
-        "doctor" => crate::doctor::report(hub)?,
-        "stopAll" => json!({"stopped": hub.stop_all()?}),
         "switchBack" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;
             json!({})
         }
         "newSession" => {
-            let bot = str_arg(&b, "botId")?;
-            if !hub.store.bot(bot)?.is_some_and(|r| crate::external::is_external(&r.config)) {
-                hub.send_cmd(bot, Cmd::NewSession)?;
-            }
+            hub.send_cmd(str_arg(&b, "botId")?, Cmd::NewSession)?;
             json!({})
         }
         "memory" | "memoryFile" => crate::chat::memory::call(hub, method, &b).await?,
@@ -370,30 +256,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "respondPermission" => {
             let entry_id = str_arg(&b, "entryId")?;
             let e = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
-            if e.kind != EntryKind::Permission.as_str() {
-                bail!("That isn't an approval card");
-            }
             let option_id = b["optionId"].as_str().map(str::to_owned);
-            // The card is the effect's key: the first decision is the one that happens. The same
-            // answer again (another device, a retry) gets the card back; a different one is refused.
-            match e.data["status"].as_str() {
-                Some("pending") => {}
-                Some("answered") if e.data["selected"].as_str() == option_id.as_deref() => {
-                    return Ok(ControlFlow::Break(json!({"entry": e})));
-                }
-                Some("answered") => bail!("This approval was already answered with another choice"),
-                _ => bail!("This approval is closed: its turn ended or was stopped"),
-            }
-            if e.data["mcpToolCallId"].is_string() {
-                crate::market::vault::unlock(hub.clone()).await?;
-            }
-            if crate::mcp::policy::respond(hub, entry_id, option_id.as_deref())? {
-                return Ok(ControlFlow::Break(json!({})));
-            }
-            // A terminal session's hook is waiting for this, not a bot actor.
-            if hub.external.answer(hub, entry_id, option_id.as_deref()) {
-                return Ok(ControlFlow::Break(json!({})));
-            }
             // A card in a group belongs to the bot that asked.
             let bot = e.data["author"].as_str().unwrap_or(&e.bot_id);
             hub.send_cmd(bot, Cmd::Permission { entry_id: entry_id.to_owned(), option_id })?;

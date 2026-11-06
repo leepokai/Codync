@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, Status, merge_toggles};
+use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, PairCode, Status, merge_toggles};
 
 /// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
 /// connection began: `seq` grows with insertion, so it predates the window and only arrived because
@@ -64,19 +64,16 @@ impl App {
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
-            Some("cloud") => self.cloud = v["cloud"].clone(),
-            Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
                 self.memory_moved(&v["bot"]);
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),
-            Some("routineFlow") => self.flow_changed(&v["botIds"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
-                    if !e.is_internal() && !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
+                    if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
                     }
                     self.entries.entry(bot).or_default().insert(e.seq, e);
@@ -137,7 +134,7 @@ impl App {
         }
         if new.status == Status::NeedsInput && old.status != Status::NeedsInput {
             self.toast(format!("{} needs you", new.name), true);
-        } else if old.status == Status::Working && new.status == Status::Idle && new.last_at > old.last_at {
+        } else if old.status == Status::Working && new.status == Status::Idle {
             self.toast(format!("{} is done", new.name), false);
         } else if old.status != Status::Error && new.status == Status::Error {
             self.toast(format!("{} hit an error", new.name), true);
@@ -145,17 +142,6 @@ impl App {
     }
 
     fn on_reply(&mut self, after: After, r: Result<Value, String>) {
-        if let After::RosterStopped(id) = after {
-            if let Err(error) = r {
-                self.roster_tools.stopping.remove(&id);
-                self.flash(&error);
-            }
-            return;
-        }
-        if let After::Roster(sequence, kind) = after {
-            self.roster_reply(sequence, kind, r);
-            return;
-        }
         if let After::Connection(id, step) = after {
             self.connection_reply(&id, step, r);
             return;
@@ -177,10 +163,6 @@ impl App {
         }
         if let After::Network(n) = after {
             self.network_reply(n, r);
-            return;
-        }
-        if matches!(after, After::Pairing | After::Cloud | After::PairingRequests | After::PairingDecided) {
-            self.pair_reply(&after, r);
             return;
         }
         let v = match r {
@@ -207,12 +189,15 @@ impl App {
                         }
                         _ => {}
                     },
-                    After::Dirs(id) | After::WorkspaceSelected(id) => {
-                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
-                            && p.request_id == id
-                        {
+                    After::Dirs => {
+                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
                             p.error = Some(e);
-                            p.busy = false;
+                        }
+                    }
+                    // In place of the code, which may have expired.
+                    After::Pairing => {
+                        if let Some(Overlay::Pair(code)) = self.overlays.last_mut() {
+                            *code = PairCode::Failed(e);
                         }
                     }
                     _ => self.flash(&e),
@@ -227,18 +212,13 @@ impl App {
             | After::Sheet(_)
             | After::Network(_)
             | After::Sent(_)
-            | After::Connection(_, _)
-            | After::Roster(_, _)
-            | After::RosterStopped(_) => {}
+            | After::Connection(_, _) => {}
             After::Installed => {
                 self.error = None;
                 self.flash("Host installed; connecting…");
                 self.call("hello", json!({}), After::Hello);
             }
             After::Hello => {
-                if let Some(computer) = v["computerId"].as_str() {
-                    self.load_roster_preferences(computer);
-                }
                 self.mismatch = crate::compat::check(env!("CARGO_PKG_VERSION"), crate::compat::MIN_HOST, &v);
                 v["name"].as_str().unwrap_or("computer").clone_into(&mut self.host);
                 v["version"].as_str().unwrap_or_default().clone_into(&mut self.host_version);
@@ -268,30 +248,9 @@ impl App {
                     }
                 }
             }
-            After::WorkspaceSelected(id) => {
-                if matches!(self.overlays.last(), Some(Overlay::Folder(p)) if p.request_id == id)
-                    && let Some(path) = v["path"].as_str().filter(|p| !p.is_empty())
-                {
-                    self.overlays.pop();
-                    self.folder_chosen(path.to_owned());
-                }
-            }
-            After::Dirs(id) => {
-                if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
-                    && p.request_id == id
-                {
+            After::Dirs => {
+                if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
                     v["path"].as_str().unwrap_or_default().clone_into(&mut p.path);
-                    p.busy = false;
-                    p.remembers = v["recent"].is_array();
-                    p.recent = v["recent"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|item| {
-                            let path = item["path"].as_str()?;
-                            Some(Dir { name: path.to_owned(), path: path.to_owned(), git: false })
-                        })
-                        .collect();
                     p.parent = v["parent"].as_str().map(str::to_owned);
                     p.dirs = v["dirs"]
                         .as_array()
@@ -306,6 +265,14 @@ impl App {
                     p.query.clear();
                     p.cursor = 0;
                     p.error = None;
+                }
+            }
+            After::Pairing => {
+                if let Some(Overlay::Pair(code)) = self.overlays.last_mut() {
+                    *code = match v["pairingUrl"].as_str() {
+                        Some(url) => PairCode::Ready(url.to_owned()),
+                        None => PairCode::Failed("The host sent no pairing code.".into()),
+                    };
                 }
             }
             After::Saved => {

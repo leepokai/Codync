@@ -1,7 +1,6 @@
 //! The `entries` table: the transcript of every chat.
 
 use super::model::{Entry, EntryKind, Lane};
-use super::visibility::PUBLIC;
 use super::{Store, logged, next_rev, now_ms};
 use crate::LockExt;
 use anyhow::{Result, ensure};
@@ -9,7 +8,7 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 use std::fmt::Write as _;
 
-pub(super) fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
+pub(crate) fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     let data: String = r.get(6)?;
     Ok(Entry {
         seq: r.get(0)?,
@@ -21,13 +20,10 @@ pub(super) fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         data: serde_json::from_str(&data).unwrap_or(Value::Null),
         created_at: r.get(7)?,
         updated_at: r.get(8)?,
-        thread_id: r.get(9)?,
     })
 }
 
-pub(super) const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at, thread_id";
-/// The chat itself, without its side conversations (`Lane::thread`).
-const MAIN: &str = "thread_id IS NULL";
+pub(crate) const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at";
 /// A bot still winding down after its deletion can't leave lines behind (`?2` is the chat).
 const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
 
@@ -39,10 +35,10 @@ impl Store {
         let id = uuid::Uuid::new_v4().to_string();
         let added = c.execute(
             &format!(
-                "INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at, thread_id)
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8 {LIVE_CHAT}"
+                "INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7 {LIVE_CHAT}"
             ),
-            params![id, lane.chat, rev, kind.as_str(), turn, data.to_string(), now, lane.thread],
+            params![id, lane.chat, rev, kind.as_str(), turn, data.to_string(), now],
         )?;
         ensure!(added == 1, "the chat was deleted");
         Ok(Entry {
@@ -55,7 +51,6 @@ impl Store {
             data: data.clone(),
             created_at: now,
             updated_at: now,
-            thread_id: lane.thread.clone(),
         })
     }
 
@@ -77,8 +72,8 @@ impl Store {
         }
         let rev = next_rev(&tx)?;
         let now = now_ms();
-        let added = tx.execute(&format!("INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at, thread_id) SELECT ?1, ?2, ?3, ?4, ?7, ?5, ?6, ?6, ?8 {LIVE_CHAT}"),
-            params![id, lane.chat, rev, kind.as_str(), data.to_string(), now, turn, lane.thread])?;
+        let added = tx.execute(&format!("INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at) SELECT ?1, ?2, ?3, ?4, ?7, ?5, ?6, ?6 {LIVE_CHAT}"),
+            params![id, lane.chat, rev, kind.as_str(), data.to_string(), now, turn])?;
         ensure!(added == 1, "the chat was deleted");
         let entry = tx.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?"), [id], row_entry)?;
         tx.commit()?;
@@ -125,7 +120,7 @@ impl Store {
     pub fn call_entries(&self, bot_id: &str, call: &str, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND json_extract(data, '$.call') = ?2 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND json_extract(data, '$.call') = ?2 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT ?3"
         ))?;
@@ -133,21 +128,6 @@ impl Store {
             st.query_map(params![bot_id, call, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
         rows.reverse();
         Ok(rows)
-    }
-
-    /// The host-owned call receipt, which is outside the call's user/agent conversation.
-    pub fn call_notice(&self, bot_id: &str, call: &str) -> Result<Option<Entry>> {
-        let c = self.db.locked();
-        Ok(c.query_row(
-            &format!(
-                "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'notice'
-                AND json_extract(data, '$.call') = ?2 AND json_type(data, '$.callSeconds') = 'integer'
-                ORDER BY seq DESC LIMIT 1"
-            ),
-            params![bot_id, call],
-            row_entry,
-        )
-        .optional()?)
     }
 
     pub fn max_turn(&self, bot_id: &str) -> i64 {
@@ -188,23 +168,11 @@ impl Store {
     pub fn history(&self, bot_id: &str, before_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND {MAIN} AND seq < ?2
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq < ?2
              ORDER BY seq DESC LIMIT ?3"
         ))?;
         let mut rows: Vec<Entry> =
             st.query_map(params![bot_id, before_seq, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
-        rows.reverse();
-        Ok(rows)
-    }
-
-    /// The newest `limit` entries of side conversation `root` (a document's or a Slack thread's), oldest first.
-    pub fn thread(&self, bot_id: &str, root: &str, limit: i64) -> Result<Vec<Entry>> {
-        let c = self.db.locked();
-        let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id = ?2 ORDER BY seq DESC LIMIT ?3"
-        ))?;
-        let mut rows: Vec<Entry> =
-            st.query_map(params![bot_id, root, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
         rows.reverse();
         Ok(rows)
     }
@@ -214,7 +182,7 @@ impl Store {
     pub fn file_messages(&self, bot_id: &str, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC}
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1
                AND (json_array_length(data, '$.files') > 0 OR json_array_length(data, '$.attachments') > 0)
              ORDER BY seq DESC LIMIT ?2"
         ))?;
@@ -241,15 +209,11 @@ impl Store {
     // An FTS5 trigram table once a bot's search passes a second.
     pub fn search_messages(&self, bot_id: &str, terms: &[String], from: Option<i64>, limit: i64) -> Result<Vec<Entry>> {
         let mut sql = format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND seq <= ?3 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq <= ?3 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))"
         );
         for i in 0..terms.len() {
-            let _ = write!(
-                sql,
-                " AND instr(codync_lower(CAST(COALESCE(json_extract(data, '$.text'), '') AS TEXT)), ?{}) > 0",
-                i + 4
-            );
+            let _ = write!(sql, " AND instr(lower(json_extract(data, '$.text')), ?{}) > 0", i + 4);
         }
         sql.push_str(" ORDER BY seq DESC LIMIT ?2");
         let mut args: Vec<rusqlite::types::Value> =
@@ -280,7 +244,7 @@ impl Store {
     pub fn conversation_since(&self, bot_id: &str, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND seq > ?2 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)
                 OR (kind = 'notice' AND json_extract(data, '$.transcript') IS NOT NULL))
              ORDER BY seq LIMIT ?3"
@@ -302,13 +266,12 @@ impl Store {
     pub fn messages_after(&self, lane: &Lane, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id IS ?4 AND seq > ?2 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT ?3"
         ))?;
-        let mut rows: Vec<Entry> = st
-            .query_map(params![lane.chat, after_seq, limit, lane.thread], row_entry)?
-            .collect::<rusqlite::Result<_>>()?;
+        let mut rows: Vec<Entry> =
+            st.query_map(params![lane.chat, after_seq, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
         rows.reverse();
         Ok(rows)
     }
@@ -318,10 +281,9 @@ impl Store {
         let c = self.db.locked();
         let row = c.query_row(
             &format!(
-                "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND thread_id IS ?4 AND kind = ?2 AND seq > ?3
-                 ORDER BY seq DESC LIMIT 1"
+                "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = ?2 AND seq > ?3 ORDER BY seq DESC LIMIT 1"
             ),
-            params![lane.chat, kind.as_str(), after_seq, lane.thread],
+            params![lane.chat, kind.as_str(), after_seq],
             row_entry,
         );
         logged("last entry of kind", row.optional()).flatten()
@@ -331,9 +293,9 @@ impl Store {
     pub fn last_spoke(&self, lane: &Lane, bot: &str) -> i64 {
         let c = self.db.locked();
         let n = c.query_row(
-            "SELECT COALESCE(MAX(seq), 0) FROM entries WHERE bot_id = ?1 AND thread_id IS ?3 AND kind = 'agent'
-               AND json_extract(data, '$.final') = 1 AND COALESCE(json_extract(data, '$.internal'), 0) != 1 AND json_extract(data, '$.author') = ?2",
-            params![lane.chat, bot, lane.thread],
+            "SELECT COALESCE(MAX(seq), 0) FROM entries WHERE bot_id = ?1 AND kind = 'agent'
+               AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.author') = ?2",
+            params![lane.chat, bot],
             |r| r.get(0),
         );
         logged("last spoke", n).unwrap_or(0)
@@ -346,9 +308,7 @@ impl Store {
             let c = self.db.locked();
             let mut st = c.prepare(
                 "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
-                  OR (kind = 'user' AND json_extract(data, '$.status') = 'queued'
-                      AND NOT (COALESCE(json_extract(data,'$.source'),'')='slack'
-                          AND EXISTS(SELECT 1 FROM slack_inbox s WHERE s.entry_id=entries.id AND s.state='queued')))
+                  OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
                       AND json_extract(data, '$.status') IN ('queued', 'sent'))",
             )?;

@@ -108,6 +108,13 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
             catch (_: Superseded) { /* Its replacement reports for itself. */ }
             catch (error: Exception) {
                 if (phase != Phase.Connecting) return@launch
+                if (store.state.value.computer.route == ConnectionRoute.CloudflareFirst) {
+                    // TURN may be what failed: the other way gets a try before this gives up.
+                    lastError = error.message
+                    phase = Phase.Reconnecting
+                    scheduleRecovery(0)
+                    return@launch
+                }
                 close()
                 phase = Phase.Failed(error.message ?: "Couldn't connect to the remote screen.")
             }
@@ -117,7 +124,14 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     private suspend fun connect() {
         val preparing = generation
         val active = store.ready()
-        val relay = (active.state.value as? LinkState.Ready)?.route == HostRoute.Relay
+        val computer = store.state.value.computer
+        val relay = screenAsksForTurn(
+            channelOnRelay = (active.state.value as? LinkState.Ready)?.route == HostRoute.Relay,
+            route = computer.route,
+            // A private relay has no TURN (`relayHost`), and a computer in no account gets no address.
+            hasTurn = computer.cloud != null && relayHost(computer.cloud) == null,
+            failedAttempts = recoveryAttempts,
+        )
         val connection = WireJson.decodeFromJsonElement<ScreenConnection>(active.call("screenPrepare", buildJsonObject { put("relay", relay); put("trickle", true) }))
         if (BuildConfig.DEBUG) Log.d("CodyncScreen", "screen prepared: trickle=${connection.trickle}")
         if (generation != preparing || phase == Phase.Closed) {

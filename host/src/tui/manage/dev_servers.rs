@@ -149,6 +149,8 @@ pub struct LogsView {
     /// The line under its name: the command, and how it ended if it failed.
     pub detail: String,
     pub text: Option<String>,
+    /// Why the last read failed. What an earlier one read stays in `text`.
+    pub error: Option<String>,
     pub scroll: usize,
 }
 
@@ -159,12 +161,18 @@ impl App {
     }
 
     /// The answer to `read_logs`, for the sheet still showing that server.
-    pub(super) fn dev_server_logs(&mut self, id: &str, text: String) {
+    pub(super) fn dev_server_logs(&mut self, id: &str, read: Result<String, String>) {
         for overlay in &mut self.overlays {
             if let Overlay::DevServers(sheet) = overlay
                 && let Some(logs) = sheet.logs.as_mut().filter(|logs| logs.id == id)
             {
-                logs.text = Some(text);
+                match read {
+                    Ok(text) => {
+                        logs.text = Some(text);
+                        logs.error = None;
+                    }
+                    Err(error) => logs.error = Some(error),
+                }
                 return;
             }
         }
@@ -221,7 +229,7 @@ impl App {
             Some(note) => format!("{} · {note}", server.command),
             None => server.command.clone(),
         };
-        LogsView { id: server.id.clone(), name: server.name.clone(), detail, text: None, scroll: 0 }
+        LogsView { id: server.id.clone(), name: server.name.clone(), detail, text: None, error: None, scroll: 0 }
     }
 
     /// In this computer's browser. Anywhere else (a tunnel looks the same from here) shows where it can be reached.
@@ -295,9 +303,9 @@ mod tests {
         assert!(only_here[0].starts_with("http://localhost:5173 · "), "{only_here:?}");
         // The first port listens only on the computer; the second doesn't.
         assert_eq!(with(vec![port(&[]), port(&[lan])]).reachable(), [lan]);
-        assert!(with(vec![]).reachable().is_empty());
+        assert_eq!(with(vec![]).reachable(), Vec::<String>::new());
         let stopped = DevServer { ports: vec![port(&[lan])], ..server(Status::Stopped, None) };
-        assert!(stopped.reachable().is_empty());
+        assert_eq!(stopped.reachable(), Vec::<String>::new());
     }
 
     #[test]

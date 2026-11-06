@@ -152,6 +152,21 @@ pub(super) const READERS: &[Reader] = &[
     },
 ];
 
+/// The order the user arranged the agents in, as ids.
+const ORDER_KEY: &str = "usage.order";
+
+fn arranged(store: &Store) -> Vec<String> {
+    let Some(saved) = store.kv_get(ORDER_KEY) else { return Vec::new() };
+    serde_json::from_str(&saved).unwrap_or_else(|error| {
+        tracing::warn!(error = format!("{error:#}"), "couldn't read the usage order");
+        Vec::new()
+    })
+}
+
+fn reader(id: &str) -> Result<&'static Reader> {
+    READERS.iter().find(|reader| reader.id == id).context("unknown usage service")
+}
+
 fn choice_key(id: &str) -> String {
     format!("usage.shown.{id}")
 }
@@ -216,13 +231,16 @@ fn held_readings(hub: &Hub) -> HashSet<&'static str> {
     hub.usage.locked().providers.iter().map(|provider| provider.id).collect()
 }
 
-/// Brings the chooser's list up to date and drops readings nobody wants any more.
+/// Brings the chooser's list up to date and drops readings nobody wants any more. One at a time: a sync that read the
+/// settings before a change can't land after the sync that change made.
 pub(super) fn sync(hub: &Hub) {
+    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _turn = ONE_AT_A_TIME.locked();
     let store = &hub.store;
     let used = used_agents(store);
     // The database and the disk stay outside the usage lock: a reading landing meanwhile is kept.
     let held = held_readings(hub);
-    let services: Vec<Service> = READERS
+    let mut services: Vec<Service> = READERS
         .iter()
         .filter(|reader| listed(reader, &used, store, &held))
         .map(|reader| Service {
@@ -232,6 +250,9 @@ pub(super) fn sync(hub: &Hub) {
             shown: chosen(store, reader.id).unwrap_or_else(|| used.contains(reader.id)),
         })
         .collect();
+    // Stable: an agent the order doesn't name follows the others, in the readers' order.
+    let order = arranged(store);
+    services.sort_by_key(|service| order.iter().position(|id| id == service.id).unwrap_or(usize::MAX));
     let keep: HashSet<&str> = READERS.iter().map(|reader| reader.id).filter(|id| wanted(id, &used, store)).collect();
     hub.update_usage(|usage| {
         usage.services = services;
@@ -253,9 +274,18 @@ pub fn bots_changed(hub: &Hub) {
 
 /// The user's choice for one agent.
 pub fn set_shown(hub: &Hub, id: &str, shown: bool) -> Result<()> {
-    let reader = READERS.iter().find(|reader| reader.id == id).context("unknown usage service")?;
-    hub.store.kv_set(&choice_key(reader.id), if shown { "1" } else { "0" })?;
+    hub.store.kv_set(&choice_key(reader(id)?.id), if shown { "1" } else { "0" })?;
     changed(hub);
+    Ok(())
+}
+
+/// The user's order for the agents, which every Usage screen follows.
+pub fn set_order(hub: &Hub, ids: &[String]) -> Result<()> {
+    for id in ids {
+        reader(id)?;
+    }
+    hub.store.kv_set(ORDER_KEY, &serde_json::to_string(ids)?)?;
+    sync(hub);
     Ok(())
 }
 
@@ -290,6 +320,25 @@ mod tests {
 
     fn shown(hub: &Hub, id: &str) -> Option<bool> {
         hub.usage.locked().services.iter().find(|service| service.id == id).map(|service| service.shown)
+    }
+
+    #[test]
+    fn the_users_order_leads_the_list_and_the_readings() {
+        let hub = hub();
+        hub.store.save_bot(&bot("a", "claude", Some("codex"))).unwrap();
+        hub.update_usage(|usage| usage.providers = vec![reading("claude", 1.0), reading("codex", 2.0)]);
+        sync(&hub);
+        let ids = |usage: &super::super::Usage| usage.services.iter().map(|s| s.id).take(2).collect::<Vec<_>>();
+        let providers = |usage: &super::super::Usage| usage.providers.iter().map(|p| p.id).collect::<Vec<_>>();
+        assert_eq!(ids(&hub.usage.locked().visible()), ["claude", "codex"]);
+
+        set_order(&hub, &["codex".to_owned()]).unwrap();
+        let visible = hub.usage.locked().visible();
+        assert_eq!(ids(&visible), ["codex", "claude"], "one it doesn't name follows");
+        assert_eq!(providers(&visible), ["codex", "claude"]);
+
+        assert!(set_order(&hub, &["not-an-agent".to_owned()]).is_err());
+        assert_eq!(ids(&hub.usage.locked().visible()), ["codex", "claude"], "a refused order changes nothing");
     }
 
     #[test]

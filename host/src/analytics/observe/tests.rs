@@ -1,5 +1,5 @@
 use super::*;
-use crate::store::{Device, DeviceSource, Store};
+use crate::store::{Device, DeviceAccount, DeviceSource, Store};
 use serde_json::json;
 
 fn temp_hub() -> (std::sync::Arc<Hub>, std::path::PathBuf) {
@@ -84,6 +84,10 @@ fn settings_routines_screen_and_devices() {
     );
     assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
     assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
+    assert_eq!(
+        setting("setUsageOrder", json!({"ids": ["codex", "claude"]})),
+        Some((Event::SettingChanged, json!("usage_order"), json!(true)))
+    );
 
     assert_eq!(
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
@@ -276,7 +280,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
             lease_until: None,
             created_at: 0,
             last_seen_at: None,
-            account: None,
+            account: DeviceAccount::Unrecorded,
         })
         .unwrap();
     let (event, p) = observe_call(&hub, &phone, "respondPermission", &answer).unwrap();

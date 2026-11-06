@@ -21,6 +21,7 @@ mod section_order;
 mod slash;
 mod steps;
 mod ui;
+mod usage_chooser;
 
 pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};

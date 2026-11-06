@@ -56,6 +56,28 @@ import Testing
         #expect(local.computers.isEmpty && !DeviceIdentity.exists(context: local))
     }
 
+    @Test func aUsedAccountContextTakesTheChatsOfTheComputersItGains() throws {
+        let (local, account, suite) = contexts()
+        defer { account.erase(); UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        _ = try DeviceIdentity.load(context: account)
+        account.computers = [v.computer]
+        _ = try DeviceIdentity.load(context: local)
+        var other = v.computer
+        other.id = "other"
+        local.computers = [v.computer, other]
+        func cache(_ context: SharedStore.Context, _ id: String) -> URL {
+            URL.cachesDirectory.appending(path: "codync-mirror-tests-\(context.id)-\(id).json")
+        }
+        try Data("waiting".utf8).write(to: cache(local, "other"))
+        try Data("signed out".utf8).write(to: cache(local, v.computer.id))
+        try Data("account".utf8).write(to: cache(account, v.computer.id))
+
+        #expect(account.adopt(from: local)?.keys == .rescan)
+        #expect(try Data(contentsOf: cache(account, "other")) == Data("waiting".utf8), "waiting messages aren't lost")
+        #expect(try Data(contentsOf: cache(account, v.computer.id)) == Data("account".utf8), "a computer it has keeps its chat")
+        #expect(!FileManager.default.fileExists(atPath: cache(local, "other").path()))
+    }
+
     @Test func nothingToMove() {
         let (local, account, suite) = contexts()
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

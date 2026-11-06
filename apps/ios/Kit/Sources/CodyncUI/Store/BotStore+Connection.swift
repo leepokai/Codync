@@ -21,7 +21,6 @@ extension BotStore {
         onSent = nil
         onRosterChanged = nil
         onComputerChanged = nil
-        onJoinAccount = nil
         client = nil
         selection = nil
         screenRequest = nil

@@ -1,5 +1,5 @@
-use super::detected::{Detected, agent_programs, changes, servers_in};
-use super::logs::last_lines;
+use super::detected::{Detected, agent_programs, changes, servers_in, still_in_tree};
+use super::logs::{last_lines, read_end};
 use super::platform::same_boot;
 use super::ports::{Listening, Port, sockets_of, urls_with};
 use super::scan::SETTLE_MS;
@@ -254,4 +254,20 @@ fn clients_hear_of_addresses_only_when_they_differ() {
 fn a_clients_status_from_a_newer_host_reads_as_stopped() {
     assert_eq!(serde_json::from_str::<Status>(r#""sleeping""#).expect("any text decodes"), Status::Stopped);
     assert_eq!(serde_json::from_str::<Status>(r#""failed""#).expect("a known one decodes"), Status::Failed);
+}
+
+#[test]
+fn stopping_a_detected_server_reaches_only_what_the_agent_still_holds() {
+    let tree = [process(30, 1, "python3"), process(40, 1, "node")];
+    assert_eq!(still_in_tree(&[30, 31], &tree), [30], "31 is gone, and its pid may be someone else's by now");
+    assert_eq!(still_in_tree(&[31], &[]), Vec::<u32>::new());
+}
+
+#[test]
+fn a_log_that_cant_be_read_says_so_and_a_missing_one_is_empty() {
+    let folder = std::env::temp_dir().join(format!("codync-log-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&folder).expect("a folder in a test");
+    assert_eq!(read_end(&folder.join("none.log")).expect("no file yet"), "");
+    assert!(read_end(&folder).is_err(), "a folder isn't a log");
+    std::fs::remove_dir_all(&folder).expect("cleaning up a test's folder");
 }

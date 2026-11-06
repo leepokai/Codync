@@ -14,6 +14,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case signedOut
     /// The signed-out computers moved into the account at sign-in: with this phone's keys, or to be scanned again.
     case signedOutPairingsMoved(computers: Int, keys: MovedKeys)
+    case continuedWithoutAccount
+    case computerFoundOnNetwork
+    case addToAccountAsked
+    case addToAccountCompleted
+    case addToAccountFailed(AddToAccountFailure)
     case pairingFailed(PairingFailure)
     case computerPaired(via: PairVia, computer: ComputerID)
     case accessRequested
@@ -84,6 +89,22 @@ public enum AnalyticsEvent: Equatable, Sendable {
         }
     }
 
+    public enum AddToAccountFailure: String, Sendable {
+        case declined, certificate, unreachable, other
+
+        public init(_ error: any Error) {
+            switch error {
+            case let host as HostError where host.isTransient: self = .unreachable
+            case let HostError.http(_, message) where message == "The computer stayed out of this account.": self = .declined
+            case let HostError.http(_, message) where message.hasPrefix("Couldn't confirm your Codync account"): self = .certificate
+            case let cloud as CloudError where cloud.code == "noCertificate": self = .certificate
+            case let cloud as CloudError where cloud.isTransient: self = .unreachable
+            case is URLError: self = .unreachable
+            default: self = .other
+            }
+        }
+    }
+
     public enum PairingFailure: String, Sendable {
         case notPairingLink = "not_pairing_link", outdatedHost = "outdated_host", invalid
         case expired, unauthorized, unreachable, timeout, upgradeRequired = "upgrade_required", other
@@ -100,6 +121,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
             case let host as HostError:
                 self = switch host {
                 case .upgradeRequired: .upgradeRequired
+                case .unreachableDirectly: .unreachable
                 // The host turns down a pairing code that expired or was already used, and a phone it doesn't
                 // let in: another account's, one it can't confirm, or one its user declined.
                 case let .http(403, message): message.hasPrefix("This pairing code expired") ? .expired : .unauthorized
@@ -124,6 +146,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .signedIn: "signed_in"
         case .signedOut: "signed_out"
         case .signedOutPairingsMoved: "signed_out_pairings_moved"
+        case .continuedWithoutAccount: "continued_without_account"
+        case .computerFoundOnNetwork: "computer_found_on_network"
+        case .addToAccountAsked: "add_to_account_asked"
+        case .addToAccountCompleted: "add_to_account_completed"
+        case .addToAccountFailed: "add_to_account_failed"
         case .pairingFailed: "pairing_failed"
         case .computerPaired: "computer_paired"
         case .accessRequested: "access_requested"
@@ -154,7 +181,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .onboardingCompleted(via): return ["via": .string(via.rawValue)]
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
-        case .signedOut, .accessRequested, .imagePreviewOpened: return [:]
+        case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
+             .addToAccountCompleted, .imagePreviewOpened: return [:]
+        case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .imagePreviewAction(action, from, outcome):
             var p: [String: Analytics.Value] = ["action": .string(action.rawValue), "from": .string(from.rawValue)]
             switch outcome {

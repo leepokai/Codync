@@ -213,6 +213,7 @@
     "hello": "object",
     "hello.analytics": "bool",
     "hello.boxKey": "string",
+    "hello.canJoinAccount": "bool",
     "hello.canUpdate": "bool",
     "hello.cloud": "null",
     "hello.computerId": "string",

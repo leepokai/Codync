@@ -1,13 +1,44 @@
 package com.codync.android
 
 import com.codync.android.core.Entry
+import com.codync.android.core.HostError
+import com.codync.android.core.HostRoute
+import com.codync.android.core.LinkState
 import com.codync.android.core.PendingSend
+import com.codync.android.core.SendStatus
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class QueuedMessagesTest {
+    private fun send(nonce: String, createdAt: Long = 1, status: SendStatus = SendStatus.Sending) =
+        PendingSend(nonce, "bot", "hello", createdAt, status)
+
+    @Test fun `with no relay a message that can't go waits on the phone and goes with the same nonce`() {
+        val held = afterFailure(send("n1"), null, java.io.IOException("Can't reach the computer."))
+        assertEquals(SendStatus.Waiting, held.status)
+        val pending = listOf(send("n2", 2, SendStatus.Waiting), held, send("n3", 3, SendStatus.Failed))
+        assertEquals(listOf("n1", "n2"), heldOnPhone(pending).map { it.nonce })
+        assertEquals(setOf(SendStatus.Sending), heldOnPhone(pending).map { it.status }.toSet())
+    }
+
+    @Test fun `with a relay or a refusal a message that can't go fails`() {
+        assertEquals(SendStatus.Failed, afterFailure(send("n1"), "https://api.codync.dev", java.io.IOException("Offline")).status)
+        assertEquals(SendStatus.Failed, afterFailure(send("n1"), null, HostError(403, "Turned away")).status)
+        assertEquals(SendStatus.Failed, afterFailure(send("n1"), null, IllegalStateException("Bad")).status)
+    }
+
+    @Test fun `only a computer with no relay holds text on the phone, unless it turned the phone away`() {
+        assertTrue(holdsOnPhone(null, LinkState.Failed("Unreachable")))
+        assertTrue(holdsOnPhone(null, LinkState.Connecting))
+        assertFalse(holdsOnPhone(null, LinkState.Failed("Revoked", 403)))
+        assertFalse(holdsOnPhone(null, LinkState.Ready(HostRoute.Direct)))
+        assertFalse(holdsOnPhone("https://api.codync.dev", LinkState.Failed("Unreachable")))
+    }
+
     private fun user(id: String, seq: Long, status: String = "sent", nonce: String? = null) =
         Entry(id, seq, "bot", seq, "user", 1, buildJsonObject {
             put("text", id); put("status", status)

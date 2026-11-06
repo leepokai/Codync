@@ -64,7 +64,10 @@ public enum RelayCopy {
     }
 
     /// The pairing page's line. Parsing stays here so a view only renders the sentence.
-    public static func pairing(pasted: String) -> String {
-        pairing(cloud: Pairing(string: pasted)?.computer.cloud)
+    public static func pairing(pasted: String, signedIn: Bool) -> String {
+        let cloud = Pairing(string: pasted)?.computer.cloud
+        // Signed out, only a private relay: the Codync relay is for signed-in phones.
+        guard signedIn || host(of: cloud) != nil else { return "Connects on Wi-Fi or over Tailscale. End-to-end encrypted." }
+        return pairing(cloud: cloud)
     }
 }

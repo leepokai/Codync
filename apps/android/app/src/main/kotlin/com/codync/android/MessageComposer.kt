@@ -131,8 +131,9 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     } }
     val online = state.actualConnection is LinkState.Ready
     val empty = text.text.isBlank() && files.isEmpty()
-    // Offline computers still take text when the relay can hold it; files need the computer.
-    val canSend = !empty && !importing && !queuing && (online || state.actualConnection is LinkState.ComputerOffline && files.isEmpty())
+    // Offline computers still take text: the relay holds it for them, or with no relay this phone does. Files need the computer.
+    val canHold = state.actualConnection is LinkState.ComputerOffline || holdsOnPhone(state.computer.cloud, state.actualConnection)
+    val canSend = !empty && !importing && !queuing && (online || canHold && files.isEmpty())
     val working = bot.isWorking(bot.id)
     val bare = text.text.isEmpty() && files.isEmpty()
     val trailing = when {

@@ -24,16 +24,11 @@ use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, Routine
 use super::md::truncate;
 use super::view::{
     centered, chain_line, composer_lines, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u,
-    using_line, when_future,
+    using_line, when_future, window,
 };
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap_or_default()
-}
-
-/// Rows `off..` of a list that fit `h` lines with `cursor` on screen.
-fn window(cursor: usize, h: usize) -> usize {
-    cursor.saturating_sub(h.saturating_sub(1))
 }
 
 /// A selectable row's background, highlighted when `sel`.

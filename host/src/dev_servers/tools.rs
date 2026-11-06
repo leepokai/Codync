@@ -103,8 +103,8 @@ async fn start(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     if let Some(id) = servers.same(bot, &folder, &command) {
         // A stopped one comes back, with no second card if someone allowed it; under Auto nobody did.
         if !servers.view(bot, &id)?.status.active() {
-            check_room(hub, bot)?;
             if !servers.approved(&id) {
+                check_room(hub, bot)?;
                 ask(hub, &cfg, &command, &folder).await?;
                 if on_a_card {
                     servers.note_approved(&hub.store, &id);
@@ -123,14 +123,15 @@ async fn start(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
         .map(str::to_owned)
         .or_else(|| Path::new(&folder).file_name().map(|name| name.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "dev server".to_owned());
-    let id = match create(hub, bot, name, command, folder, on_a_card).await {
-        Ok(id) => id,
-        Err(error) => {
-            report(hub, Event::DevServerStarted, "outcome", "failed");
-            return Err(error);
+    let (id, reused) = create(hub, bot, name, command, folder, on_a_card).await?;
+    if reused {
+        // A parallel start added it while this one waited on its card, and it may have ended since.
+        if on_a_card {
+            servers.note_approved(&hub.store, &id);
         }
-    };
-    answer(hub, bot, &id, false).await
+        launch(hub, &id).await?;
+    }
+    answer(hub, bot, &id, reused).await
 }
 
 /// Under Ask, waits on the approval card with the command and folder.
@@ -176,6 +177,8 @@ async fn answer(hub: &Arc<Hub>, bot: &str, id: &str, reused: bool) -> Result<Val
     report(hub, Event::DevServerStarted, "outcome", outcome);
     let mut answer = json!(view);
     answer["reused"] = reused.into();
-    answer["log"] = logs::tail(id, ANSWER_LINES).await?.into();
+    // How the start went is settled by now: a log that can't be shown mustn't turn that into a failed start.
+    let log = logs::tail(id, ANSWER_LINES).await;
+    answer["log"] = log.unwrap_or_else(|error| format!("couldn't read its log: {error:#}")).into();
     Ok(answer)
 }

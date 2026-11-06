@@ -63,7 +63,7 @@ impl App {
             }
             Reply::DevServerLogs(id) => {
                 let text = v["text"].as_str().unwrap_or_default().to_owned();
-                self.dev_server_logs(&id, text);
+                self.dev_server_logs(&id, Ok(text));
             }
             Reply::BotChat { bot, peer } => {
                 let entries = entries_of(&v);
@@ -123,11 +123,7 @@ impl App {
                     s(&v, "key")
                 );
                 super::super::app::copy(&text);
-                self.flash(if v["url"].is_string() {
-                    "Copied a curl command for the public URL (with its key)"
-                } else {
-                    "Copied a curl command (the cloud is off: this computer only)"
-                });
+                self.flash(webhook_copied(&v));
             }
             Reply::Registry { search, cursor } => self.with_market(|app, m| {
                 if !m.awaits(&search, cursor.as_deref()) {
@@ -305,10 +301,7 @@ impl App {
                 self.unfolded.retain(|id| !lines.contains(id));
                 self.flash(&e);
             }
-            Reply::DevServerLogs(id) => {
-                self.flash(&e);
-                self.dev_server_logs(id, String::new());
-            }
+            Reply::DevServerLogs(id) => self.dev_server_logs(id, Err(e)),
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {
                     if let Overlay::BotChat(c) = o
@@ -442,6 +435,29 @@ impl App {
 }
 
 /// The entries in a host reply (`callEntries`, `botConversation`).
+/// What copying a routine's curl command says about where it works.
+fn webhook_copied(v: &Value) -> &'static str {
+    if v["url"].is_string() {
+        "Copied a curl command for the public URL (with its key)"
+    } else if v["needsAccount"] == true {
+        "Copied a curl command (not in an account: this computer only)"
+    } else {
+        "Copied a curl command (the cloud is off: this computer only)"
+    }
+}
+
 fn entries_of(v: &Value) -> Vec<Entry> {
     v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_copied_webhook_says_where_it_works() {
+        assert!(webhook_copied(&json!({"url": "https://x"})).contains("public URL"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": true})).contains("not in an account"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": false})).contains("the cloud is off"));
+    }
 }

@@ -33,7 +33,7 @@ for line in sys.stdin:
     elif method == "session/prompt":
         if PORT and server is None:
             server = subprocess.Popen(
-                [sys.executable, "-m", "http.server", str(PORT), "--bind", "127.0.0.1"],
+                [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "port_server.py"), str(PORT)],
                 # On Windows a child starting on this process's stdin hangs while the loop below is reading it.
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,

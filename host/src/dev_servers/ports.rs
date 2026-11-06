@@ -67,6 +67,8 @@ pub(super) fn urls_with(sockets: &[SocketAddr], reachable: impl Fn(u16) -> Vec<S
     by_port
         .into_iter()
         .map(|(port, sockets)| {
+            // ponytail: an `IPV6_V6ONLY` socket on `[::]` counts too, though it serves none of these IPv4 addresses;
+            // the socket doesn't say. Add IPv6 addresses to `reachable` if a server like that turns up.
             let everywhere = sockets.iter().any(|s| s.ip().is_unspecified());
             let on_loopback = everywhere || sockets.iter().any(|s| s.ip().is_loopback());
             let specific: Vec<String> = sockets

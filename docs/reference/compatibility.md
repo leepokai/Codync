@@ -42,6 +42,8 @@ The iPhone and desktop apps also treat **undecodable data from a newer host** as
 that stays undecodable after the one rewind, or a `hello` whose other fields can't be decoded
 (its `version` and `minApp` are still read). From an older or equal host it's only logged.
 
+Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud` is null there, which they save, and they have no **Add to account** row. They reach it over Wi-Fi or Tailscale until the computer joins an account some other way, and `hello.joinAccount` stays `false` so they never call `joinAccount`, which takes a certificate now. It raises no floor: a computer in an account is unchanged for them.
+
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 

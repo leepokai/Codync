@@ -25,17 +25,24 @@ class AnalyticsIdentityTest {
         var events = emptyList<JsonObject>()
         instrumentation.runOnMainSync {
             Analytics.start(context)
-            dropQueue()
-            stored.edit().remove("identified").commit()
+            // The installed app's own settings, put back below.
+            val sharing = Analytics.enabled
+            val identified = stored.getStringSet("identified", null)
             val userId = Analytics.userId
-            for (user in listOf("user_1", "user_2")) {
-                Analytics.userId = { user }
-                Analytics.record("signed_in", emptyMap())
+            try {
+                dropQueue()
+                stored.edit().remove("identified").commit()
+                for (user in listOf("user_1", "user_2")) {
+                    Analytics.userId = { user }
+                    Analytics.record("signed_in", emptyMap())
+                }
+                events = Analytics.pending.toList()
+            } finally {
+                dropQueue()
+                Analytics.setEnabled(sharing)
+                Analytics.userId = userId
+                stored.edit().putStringSet("identified", identified).commit()
             }
-            events = Analytics.pending.toList()
-            dropQueue()
-            Analytics.userId = userId
-            stored.edit().remove("identified").commit()
         }
         assertEquals(
             listOf("\$identify" to "user_1", "signed_in" to "user_1", "signed_in" to "user_2"),

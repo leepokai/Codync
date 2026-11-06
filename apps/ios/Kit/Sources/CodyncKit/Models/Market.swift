@@ -18,6 +18,8 @@ public struct InstalledConnector: Codable, Hashable, Sendable, Identifiable {
     public var logo: String?
     /// Remote servers: `none`, `signedOut` (waits for sign-in; bots don't get it yet) or `signedIn`.
     public var auth: String?
+    /// Set up with a token that a sign-in can replace (GitHub); absent from older hosts.
+    public var canSignIn: Bool?
 
     public var needsSignIn: Bool { auth == "signedOut" }
 }
@@ -27,6 +29,8 @@ public struct InstalledConnector: Codable, Hashable, Sendable, Identifiable {
 public struct ConnectorSignIn: Decodable, Sendable {
     public var url: String
     public var callback: String
+    /// A sign-in with a code (GitHub): what to paste on `url`; the host waits for it.
+    public var code: String?
 }
 
 // MARK: Composio (host/src/market/composio.rs): apps connected through composio.dev
@@ -106,6 +110,47 @@ public struct MarketConnector: Codable, Hashable, Sendable, Identifiable {
         public var placeholder: String?
         public var id: String { name }
     }
+}
+
+/// Skills, connectors, rules and plugins an agent keeps for itself (`agentGear`). Codync's own skills and connectors are separate.
+public struct AgentGear: Decodable, Sendable, Equatable {
+    public var skills: [AgentGearItem]
+    public var connectors: [AgentGearItem]
+    public var rules: [AgentGearItem]
+    public var plugins: [AgentGearItem]
+
+    public init(skills: [AgentGearItem] = [], connectors: [AgentGearItem] = [], rules: [AgentGearItem] = [], plugins: [AgentGearItem] = []) {
+        self.skills = skills
+        self.connectors = connectors
+        self.rules = rules
+        self.plugins = plugins
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        skills = try c.decodeIfPresent([AgentGearItem].self, forKey: .skills) ?? []
+        connectors = try c.decodeIfPresent([AgentGearItem].self, forKey: .connectors) ?? []
+        rules = try c.decodeIfPresent([AgentGearItem].self, forKey: .rules) ?? []
+        plugins = try c.decodeIfPresent([AgentGearItem].self, forKey: .plugins) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey { case skills, connectors, rules, plugins }
+}
+
+public struct AgentGearItem: Decodable, Sendable, Equatable, Identifiable {
+    public var name: String
+    public var description: String
+    public var detail: String
+    public var id: String { name }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        detail = try c.decodeIfPresent(String.self, forKey: .detail) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, description, detail }
 }
 
 public struct InstalledSkill: Codable, Hashable, Sendable, Identifiable {
@@ -310,8 +355,10 @@ public extension HostClient {
         return res.items
     }
 
+    /// `showsCode`: this app shows the code of a sign-in with a code (GitHub).
     func connectorSignIn(_ id: String) async throws -> ConnectorSignIn {
-        try await call("connectorSignIn", ["id": id], timeout: 60)
+        struct Body: Encodable { var id: String; var showsCode = true }
+        return try await call("connectorSignIn", Body(id: id), timeout: 60)
     }
 
     @discardableResult
@@ -348,6 +395,11 @@ public extension HostClient {
 
     func composioConnection(_ id: String) async throws -> ComposioConnectionState {
         try await call("composioConnection", ["id": id], timeout: 30)
+    }
+
+    /// What `backend` already has in the user's home: skills, connectors, rules and plugins, not Codync's.
+    func agentGear(backend: String) async throws -> AgentGear {
+        try await call("agentGear", ["backend": backend])
     }
 
     func skills() async throws -> [InstalledSkill] {

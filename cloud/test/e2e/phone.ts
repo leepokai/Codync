@@ -79,7 +79,7 @@ export interface PairingInfo {
 export function parsePairing(link: string): PairingInfo {
   const u = new URL(link);
   const q = u.searchParams;
-  if (u.protocol !== "codync:" || q.get("v") !== "3") throw new Error(`not a v3 pairing link: ${link}`);
+  if (!["codync:", "codync-dev:"].includes(u.protocol) || q.get("v") !== "3") throw new Error(`not a v3 pairing link: ${link}`);
   const signKey = ref.unb64url(q.get("sk") ?? "");
   if (ref.computerId(signKey) !== q.get("id")) throw new Error("pairing link id doesn't match sk");
   return {
@@ -204,11 +204,14 @@ export class FakePhone {
     return Channel.open(Wire.connect(url), this.key, hostSignPub, { relay: false });
   }
 
-  /** §4.1 over the relay: pair on a pairing link, expect the host to close it with 4100. */
-  async pair(p: PairingInfo, name = "E2E iPhone"): Promise<Json> {
+  /**
+   * §4.1 over the relay: pair on a pairing link with the account's device `certificate` (and a `claim` to bring a
+   * computer in no account into it), expect the host to close it with 4100. A computer in no account asks first.
+   */
+  async pair(p: PairingInfo, proof: { certificate: Json; claim?: Json }, name = "E2E iPhone"): Promise<Json> {
     const wire = this.relayWire(p.cloud!, p.computerId, ref.offerId(ref.unb64url(p.code)));
     const ch = await Channel.open(wire, this.key, p.signKey, { relay: true, pair: true });
-    const ok = await ch.call("pair", { code: p.code, name, platform: "ios" });
+    const ok = await ch.call("pair", { code: p.code, name, platform: "ios", ...proof }, 60_000);
     const code = await wire.closed();
     if (code !== 4100) throw new Error(`pairing link closed with ${code}, expected 4100`);
     return ok;

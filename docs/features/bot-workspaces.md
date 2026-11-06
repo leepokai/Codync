@@ -21,3 +21,13 @@ Changing the default project in settings deliberately reconfigures the agent ses
 - Existing bots are not silently moved out of their configured project directories.
 
 Swift settings offer Personal or Choose project folder; desktop quick creation and the terminal's new-bot flow default to Personal. Directory selection is optional. Separate workspaces do not prevent conflicts when multiple bots edit the same external project; automatic Git worktrees are not implemented here.
+
+## Workspace picker
+
+The desktop, iPhone and Android picker starts with recent selections for the bot's computer. The host keeps the last 12 unique selections in SQLite (`recent_workspaces`); `selectWorkspace` validates the absolute folder path and its readability before recording it. Selection alone does not update a bot: existing settings save behavior applies. Browsing never adds history.
+
+`listDirs` includes optional `recent` and `ancestors` arrays. Clients use absence of `recent` to detect older hosts and validate selection through `listDirs`. The browser supports home expansion (`~`, `~/`, `~\\`), parent navigation, breadcrumbs, filtering within the current folder, empty states and inline errors. An empty Windows drive-list path cannot be selected. Paths belong to the current bot's host; the computer label is informational, not a host-switch action.
+
+The terminal picker uses Ctrl+R for recent workspaces, Ctrl+B to browse and Ctrl+L to enter a path. Right enters a highlighted folder, Left goes to its parent, Enter confirms the highlighted folder, and `.` uses the current folder. Selection errors keep the picker open.
+
+With no recent selections, Browse other folders is the first action below the computer context. The empty Recent section and search stay hidden until there is history; filtering existing history to zero matches keeps search visible. The terminal promotes the Ctrl+B browse shortcut when history is empty.

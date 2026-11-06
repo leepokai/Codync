@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.codync.android.core.Bot
+import com.codync.android.core.ComputerSelection
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -402,11 +403,12 @@ internal class RosterReorder {
     var offset by mutableFloatStateOf(0f)
     val heights = mutableMapOf<String, Int>()
     private val handles = mutableMapOf<String, ContextDrag>()
+    private val synced: List<String> get() = roster.map(Bot::id)
 
     fun shown(bots: List<Bot>): List<Bot> {
         val ids = order ?: return bots
         // Dropped and synced: the host's order is the one to show again.
-        if (dragged == null && ids == roster) { order = null; return bots }
+        if (dragged == null && ids == synced) { order = null; return bots }
         return ids.mapNotNull { id -> bots.firstOrNull { it.id == id } } + bots.filter { it.id !in ids }
     }
 
@@ -414,7 +416,7 @@ internal class RosterReorder {
         ContextDrag(start = { order = order ?: roster; dragged = id; offset = 0f }, move = { step -> offset += step; swap(id, haptics) }, end = {
             val dropped = order
             dragged = null; offset = 0f
-            if (dropped != null && dropped != roster) save(dropped) else order = null
+            if (dropped != null && dropped != synced) save(dropped) else order = null
         })
     }
 
@@ -432,16 +434,21 @@ internal class RosterReorder {
     }
 }
 
-/** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
+/** Roster order: pinned bots, then where the user dragged them, then most recent activity. */
 internal fun roster(bots: List<Bot>): List<Bot> = bots.filter { !it.deleted && !it.hidden }
     .sortedWith(compareBy<Bot> { it.band }.thenBy { it.position }.thenByDescending { it.lastAt })
 
-/** The roster order with a bot one place up (-1) or down (+1) within its band (`Bot.band`), or null when it can't move. */
+/**
+ * The roster order with a bot swapped with the next bot up (-1) or down (+1) that shows beside it, or null when there's none:
+ * a bot stays in its band (`Bot.band`: pinned bots, the rest); pinned bots move among all the pinned, the others
+ * among bots of their section (or of none), skipping the bots between.
+ */
 internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     val at = roster.indexOfFirst { it.id == id }
-    val neighbor = roster.getOrNull(at + offset)
-    if (at < 0 || neighbor == null || neighbor.band != roster[at].band) return null
-    return roster.map(Bot::id).toMutableList().apply { this[at] = neighbor.id; this[at + offset] = id }
+    if (at < 0) return null
+    val next = generateSequence(at + offset) { it + offset }.takeWhile { it in roster.indices }
+        .firstOrNull { roster[it].movesWith(roster[at]) } ?: return null
+    return roster.map(Bot::id).toMutableList().apply { this[at] = roster[next].id; this[next] = id }
 }
 
 @Composable private fun EmptyRoster(canCreate: Boolean, hasComputer: Boolean, create: () -> Unit, showComputers: () -> Unit) {
@@ -458,7 +465,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
 }
 
 /** The account capsule: who's signed in, opening the account sheet. */
-@Composable internal fun AccountSwitcherButton(state: AppState, open: () -> Unit) {
+@Composable internal fun AccountSwitcherButton(state: AccountContext, open: () -> Unit) {
     val (source, pressed) = rememberPress()
     val email = state.account.accounts.firstOrNull { it.userId == state.account.userId }?.email
     Row(Modifier.height(44.dp).glass(Capsule(), pressed = pressed)

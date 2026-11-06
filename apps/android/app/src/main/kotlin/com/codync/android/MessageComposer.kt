@@ -40,6 +40,7 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -107,6 +108,9 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val context = LocalContext.current
     val clips = context.getSystemService(ClipboardManager::class.java)
     val scope = rememberCoroutineScope()
+    // Dictation stops with its chat or draft (another chat, an artifact's box) and when the box goes.
+    val dictation = remember(draftKey) { Dictation(context, scope) }
+    DisposableEffect(dictation) { onDispose { dictation.stop() } }
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
         if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it, draftKey) }
     }

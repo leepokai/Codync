@@ -102,6 +102,25 @@ async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
 }
 
 #[tokio::test]
+async fn a_fallback_without_the_bots_mode_doesnt_take_the_turn() {
+    let host = Host::start().await;
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mode_agent.py");
+    let bot = json!({"name": "Moded", "backend": "custom", "command": common::python_agent(&script),
+        "connectors": [], "notify": false, "permission": "ask", "mode": "read-only"});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": bot, "fallbacks": [{"backend": "codex", "command": agent("standin")}]})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("limit"), "").unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests"})).await;
+    let failed = wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
+    let text = failed["data"]["text"].as_str().unwrap();
+    assert!(text.contains("Codex doesn't have read-only, the mode this bot works in"), "{text}");
+    let standin = host.log(&bot, "standin.jsonl");
+    assert!(!standin.iter().any(|r| r["method"] == "session/prompt"), "the fallback never works in its own mode");
+}
+
+#[tokio::test]
 async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_started_over() {
     let host = Host::start().await;
     let bot =
@@ -279,4 +298,39 @@ async fn an_error_inside_a_refusal_holds_the_message_or_says_what_it_is() {
     std::fs::write(&refusal, "").unwrap();
     host.call("send", json!({"botId": bot, "text": "Once more", "clientNonce": "n3"})).await;
     wait_for(&host, &bot, "declined notice", |e| e["data"]["text"] == "The agent declined to continue.").await;
+}
+
+#[tokio::test]
+async fn a_process_with_a_replaced_sign_in_starts_again_before_asking_to_sign_in() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Solo", "backend": "kimi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    host.reply(&bot, "Hello").await;
+    wait_for(&host, &bot, "first reply", |e| e["data"]["final"] == true).await;
+    let prompts = || host.log(&bot, "primary.jsonl").iter().filter(|r| r["method"] == "session/prompt").count();
+    let answered = |history: &Value| {
+        history["entries"].as_array().unwrap().iter().filter(|e| e["data"]["text"] == "primary answered").count()
+    };
+
+    // The running process holds a sign-in replaced since (Claude's revoked token): a new process answers, no card.
+    std::fs::write(folder.join("primary.revoked"), "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "Fix the build", "clientNonce": "n1"})).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while answered(&host.call("history", json!({"botId": bot})).await) < 2 {
+        assert!(Instant::now() < deadline, "the message wasn't answered again");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(last_prompt(&host, &bot, "primary").contains("Fix the build"));
+    assert_eq!(prompts(), 3, "the old process's try and the new one's");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(|e| e["data"]["connectionRequest"].is_object()));
+
+    // Signed out for real: the new process is refused too, and only then the card holds the message.
+    std::fs::write(folder.join("primary.signedout"), "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "Again", "clientNonce": "n2"})).await;
+    let card = wait_for(&host, &bot, "sign-in card", |e| e["data"]["connectionRequest"]["kind"] == "agent").await;
+    assert_eq!(card["data"]["connectionRequest"]["entryIds"].as_array().map(Vec::len), Some(1), "{card}");
+    assert_eq!(prompts(), 5, "tried once more on a new process, then no more");
 }

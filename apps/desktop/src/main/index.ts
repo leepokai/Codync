@@ -3,7 +3,7 @@ import { registerAppearance } from './appearance'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
-import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell } from 'electron'
+import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
@@ -179,10 +179,7 @@ function registerIPC(tray: Tray) {
   })
   ipcMain.on('app:copy', (_e, text: string) => clipboard.writeText(text))
   ipcMain.handle('app:pickFiles', async (e) => {
-    const window = BrowserWindow.fromWebContents(e.sender)
-    const result = window
-      ? await dialog.showOpenDialog(window, { properties: ['openFile', 'multiSelections'] })
-      : await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    const result = await openDialog(e, { properties: ['openFile', 'multiSelections'] })
     return result.canceled ? [] : readFiles(result.filePaths)
   })
   ipcMain.handle('app:readPaths', (_e, paths: string[]) => readFiles(Array.isArray(paths) ? paths : []))
@@ -216,6 +213,12 @@ function registerIPC(tray: Tray) {
     quitLifecycle.beginQuit()
     app.exit(0)
   })
+}
+
+/** An open panel on the window that asked (a sheet on macOS), or a free one when it has none. */
+function openDialog(e: IpcMainInvokeEvent, options: OpenDialogOptions) {
+  const window = BrowserWindow.fromWebContents(e.sender)
+  return window ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options)
 }
 
 if (yieldsToInstall()) {

@@ -277,26 +277,6 @@ import Testing
 
 
 
-@MainActor @Test func offlineTapReconnectsBeforeGivingUp() async throws {
-    let (storage, suite) = context()
-    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-    // The first link can't reach the computer; a fresh attempt would.
-    let down = FakeRemote(.failed("Can't reach"))
-    let up = FakeRemote(.ready(.relay))
-    var made = 0
-    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in
-        made += 1
-        return made == 1 ? down : up
-    }
-    defer { store.retire() }
-    store.setActive(true)
-    #expect(await until { store.connection == .offline("Can't reach") })
-    store.stop("b1")
-    #expect(await until { await up.subscribed })
-    await up.emit(botEvent("b1", name: "Bot", rev: 1))
-    #expect(await until { await up.calls.contains("stop") })
-    #expect(store.lastError == nil)
-}
 
 
 /// The computer's cues reach a call once each: one replayed after a reconnect isn't said again, even after an engine

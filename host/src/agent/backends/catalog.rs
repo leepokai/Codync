@@ -250,6 +250,17 @@ pub const HARNESSES: &[Harness] = &[
         signed_in: None,
     },
     Harness {
+        id: "dsh",
+        name: "DeepSeek Harness",
+        bins: &["dsh"],
+        local: Some("{bin} --profile acp"),
+        registry: None,
+        setup: "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and save your DeepSeek API key in `dsh web` under Settings → Models, or as DEEPSEEK_API_KEY in ~/.dsh/.env.",
+        install: Some(Install::Npm("@deepseek-ai/dsh")),
+        login: Some("{bin} web"),
+        signed_in: None,
+    },
+    Harness {
         id: "kiro",
         name: "Kiro CLI",
         bins: &["kiro-cli"],

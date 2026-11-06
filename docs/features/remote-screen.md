@@ -85,6 +85,25 @@ back to the bots, then reconnects when the app returns.
 - Each device may hold four sessions; the host allows 32 total, including pending sessions. Credential issuance is limited to 12 requests per minute per account by `TURN_LIMITER` (Cloudflare's per-location rate limiter).
 - Closing a session stops its media; issued TURN credentials remain usable until their one-hour TTL. Issuance limits and encoder limits do not constitute a hard monthly spending cap. Track Realtime egress by the credential's custom identifier.
 
+## Android incremental ICE
+
+Android advertises `trickle: true` in `screenPrepare`, then uses incremental ICE
+only when the host returns `trickle: true`. An omitted or false capability keeps
+complete-SDP negotiation for older hosts and helpers. The host/helper protocol
+is introduced in [PR #40](https://github.com/leepokai/Codync/pull/40).
+
+The Android viewer subscribes to `screenCandidates` before offering, waits for
+`ready`, and installs the answer before applying or uploading candidates. Each
+direction permits 128 candidates of at most 4096 UTF-8 bytes, followed by one
+completion. A full screen-signaling queue fails that session without blocking
+unrelated RPCs. Protocol errors remain fatal; a transport disconnect after media
+connects or both directions acknowledge completion leaves WebRTC running.
+
+Android core owns `ScreenCandidate` and `ScreenSignaling`; the app's
+`ScreenSession` connects them to native WebRTC. The iOS implementation and
+host/helper contract are covered by PR #40. Desktop, terminal UI and Watch have
+no viewer and receive no client signaling changes here.
+
 ## Cloud setup
 
 Create a separate Cloudflare Realtime TURN key for each environment. Save its key ID as `TURN_KEY_ID` and its credential-issuing API token as `TURN_KEY_API_TOKEN`, both Worker secrets. Every environment needs the `TURN_LIMITER` binding in `cloud/wrangler.toml`.

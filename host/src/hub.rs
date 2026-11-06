@@ -21,6 +21,7 @@ use tokio::sync::{broadcast, watch};
 mod documents;
 pub mod flows;
 mod order;
+mod patch;
 mod reactions;
 mod stop;
 mod sync;
@@ -105,6 +106,8 @@ pub struct Hub {
     /// change so open channels re-check their device (and the ACL is republished).
     pub auth: watch::Sender<u64>,
     pub pairing: Mutex<Pairing>,
+    /// Phones waiting for this computer to let them in and join their account.
+    pub pairing_requests: crate::remote::pairing_requests::PairingRequests,
     /// Device key -> open channels that have exchanged at least one frame.
     pub connected: Mutex<HashMap<String, usize>>,
     /// The cloud's `/v1/host/state` was applied on the current relay connection;
@@ -152,6 +155,7 @@ impl Hub {
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
             pairing: Mutex::default(),
+            pairing_requests: crate::remote::pairing_requests::PairingRequests::default(),
             connected: Mutex::default(),
             cloud_synced: AtomicBool::new(false),
             cloud: crate::remote::cloud::Cloud::default(),
@@ -222,22 +226,6 @@ impl Hub {
         self.store.bot(id).ok().flatten().map_or_else(|| "A deleted bot".into(), |b| b.config.name)
     }
 
-    /// A group is busy while one of its members works in it: that member's status and activity.
-    pub fn group_runtime(&self, group: &BotConfig) -> Runtime {
-        let busy = {
-            let runtime = self.runtime.locked();
-            group.members.iter().find_map(|m| {
-                let r = runtime.get(m)?;
-                (r.status != BotStatus::Idle && r.lane.as_ref().is_some_and(|l| l.chat == group.id))
-                    .then(|| (m.clone(), r.clone()))
-            })
-        };
-        let Some((member, mut r)) = busy else { return Runtime::default() };
-        let name = self.bot_name(&member);
-        r.activity = if r.activity.is_empty() { name } else { format!("{name}: {}", r.activity) };
-        r
-    }
-
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
         if crate::external::is_external(&cfg) {
             bail!("a terminal session is created by its terminal, not by an app");
@@ -258,6 +246,7 @@ impl Hub {
             }
         }
         crate::agent::fallback::tidy(&mut cfg);
+        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
         validate(&cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         {
@@ -326,7 +315,7 @@ impl Hub {
         }
         crate::network::publish(self);
         if !cfg.is_group() {
-            if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&row.config) {
+            if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
             // A terminal session has no actor to reconfigure: its settings are read on the next event.
@@ -395,19 +384,7 @@ impl Hub {
                 }
             }
         });
-        // A deleted bot leaves its groups; what it said there stays.
-        for row in self.store.bots()? {
-            let mut group = row.config;
-            if !row.deleted && group.is_group() && group.members.iter().any(|m| m == id) {
-                group.members.retain(|m| m != id);
-                {
-                    let _g = self.emit_lock.locked();
-                    self.store.save_bot(&group)?;
-                }
-                self.emit_bot(&group.id);
-            }
-        }
-        Ok(())
+        self.leave_groups(id)
     }
 
     /// Marks what the user has seen as read. Nothing unread there is a no-op, so clients

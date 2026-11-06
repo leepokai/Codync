@@ -65,7 +65,8 @@ class EncryptedChannel internal constructor(
     private var opener: FrameOpener? = null
     private val ids = AtomicLong()
     private val calls = ConcurrentHashMap<Long, CompletableDeferred<JsonElement>>()
-    private val streams = ConcurrentHashMap<Long, Channel<JsonObject>>()
+    private data class Subscription(val kind: String, val events: Channel<JsonObject>)
+    private val streams = ConcurrentHashMap<Long, Subscription>()
     private val mailboxCalls = ConcurrentHashMap<String, CompletableDeferred<JsonObject>>()
     private val listLock = Mutex()
     private val mailboxUpdates = MutableSharedFlow<JsonObject>(extraBufferCapacity = 256)
@@ -189,20 +190,29 @@ class EncryptedChannel internal constructor(
         require(id in 1..0xffff_ffffL) { "Invalid RPC ID" }
         when {
             "ev" in message -> {
-                val events = streams[id] ?: return
+                val subscription = streams[id] ?: return
+                val events = subscription.events
+                if (subscription.kind == "screenCandidates") {
+                    val result = events.trySend(message.getValue("ev").jsonObject)
+                    if (result.isFailure && !result.isClosed && streams.remove(id, subscription)) {
+                        events.close(ScreenProtocolException("Screen ICE candidate queue overflowed."))
+                        cancelRemote(id)
+                    }
+                    return
+                }
                 // Bounded suspension reaches the socket reader instead of dropping catch-up.
                 // A closed subscription is expected when the user leaves that screen.
                 try { events.send(message.getValue("ev").jsonObject) }
                 catch (_: kotlinx.coroutines.channels.ClosedSendChannelException) { }
                 catch (error: CancellationException) { val task = kotlinx.coroutines.currentCoroutineContext(); task.ensureActive() }
             }
-            message["end"]?.jsonPrimitive?.booleanOrNull == true -> streams.remove(id)?.close()
+            message["end"]?.jsonPrimitive?.booleanOrNull == true -> streams.remove(id)?.events?.close()
             "err" in message -> {
                 val detail = message.getValue("err").jsonObject
                 val failure = HostError(detail["status"]?.jsonPrimitive?.longOrNull?.toInt() ?: 500,
                     detail.text("message") ?: "The computer could not complete the request.")
                 calls.remove(id)?.completeExceptionally(failure)
-                streams.remove(id)?.close(failure)
+                streams.remove(id)?.events?.close(failure)
             }
             "ok" in message -> calls.remove(id)?.complete(message.getValue("ok"))
             else -> throw IOException("Invalid RPC response")
@@ -241,17 +251,17 @@ class EncryptedChannel internal constructor(
         awaitReady()
         require(!pairing)
         val id = nextId()
-        val events = Channel<JsonObject>(256)
-        streams[id] = events
+        val events = Channel<JsonObject>(if (kind == "screenCandidates") ScreenCandidate.maxCount + 2 else 256)
+        streams[id] = Subscription(kind, events)
         try {
             sendInner(buildJsonObject {
                 put("id", id); put("sub", kind); put("b", body)
             })
             for (event in events) emit(event)
         } finally {
-            streams.remove(id)
+            val subscribed = streams.remove(id) != null
             events.cancel()
-            cancelRemote(id)
+            if (subscribed) cancelRemote(id)
         }
     }
 
@@ -319,7 +329,7 @@ class EncryptedChannel internal constructor(
 
     private fun dropPending(error: Throwable) {
         calls.keys.toList().forEach { calls.remove(it)?.completeExceptionally(error) }
-        streams.keys.toList().forEach { streams.remove(it)?.close(error) }
+        streams.keys.toList().forEach { streams.remove(it)?.events?.close(error) }
     }
 
     private fun fail(error: Throwable) {

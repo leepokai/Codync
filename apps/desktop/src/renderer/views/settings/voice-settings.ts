@@ -1,3 +1,4 @@
+import { voiceEngine, voiceEngineIds } from '../../../shared/voice-engine'
 import type { HostClient } from '../../client/host-client'
 import { pref, type Pref } from '../../lib/prefs'
 
@@ -57,7 +58,7 @@ export const configured = (s: VoiceStatus, p: VoiceProvider) => s.providers.some
 export const engine = pref('callEngine', 'device')
 export const captureTranscript = pref('callTranscript', false)
 /** The same choice for dictation into the message box, picked beside its mic. */
-export const dictationEngine = pref('dictationEngine', 'device')
+export const dictationEngine = enginePref(pref('dictationEngine', 'device'))
 /** On-device reading speed (AVSpeechUtterance's scale: 0.5 is normal). */
 export const DEFAULT_RATE = 0.5
 export const rate = pref('callRate', DEFAULT_RATE)

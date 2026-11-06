@@ -6,6 +6,9 @@
 #[allow(dead_code)]
 mod common;
 
+#[path = "routines_e2e/timeout.rs"]
+mod timeout;
+
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -175,15 +178,11 @@ async fn routines_execute_pause_deduplicate_and_reject_wrong_webhook_keys() {
         .await
         .unwrap();
     assert_eq!(first["run"]["id"], second["run"]["id"]);
-    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
-    let run_sessions = || -> i64 {
-        db.query_row("SELECT COUNT(*) FROM kv WHERE k GLOB 'lane.session.*/routine-*'", [], |r| r.get(0)).unwrap()
-    };
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
             let listing = host.call("routines", json!({"botId":bot})).await;
             // A finished run's session is forgotten.
-            if listing["runs"][0]["status"] == "succeeded" && run_sessions() == 0 {
+            if listing["runs"][0]["status"] == "succeeded" && common::routine_sessions(&host.home) == 0 {
                 break;
             }
             assert_ne!(listing["runs"][0]["status"], "failed", "{listing}");

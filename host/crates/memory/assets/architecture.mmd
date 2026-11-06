@@ -1,0 +1,22 @@
+flowchart LR
+  subgraph HOST["Caller · application or host"]
+    AG["Agent tools / user edits"] --> IO["Caller · file I/O and transactions"]
+    MODEL["Caller runs the model"]
+    DISK["Markdown on disk · shared + per-bot folders"]
+    IO <-->|"read / write"| DISK
+  end
+  subgraph MEM["codync-mem · decisions and records"]
+    RULES["files + check + evidence · validate proposed changes"]
+    DB["SQLite · versions, fact authorship, forgotten facts, dream logs"]
+    OPEN["opening + index · session context and note references"]
+    DREAM["dream · prompt, audit, proposed file edits"]
+    RULES --> DB
+    DB --> OPEN
+    DB --> DREAM
+  end
+  IO <-->|"proposed content / admission result"| RULES
+  IO <-->|"call with caller-owned SQLite connection"| DB
+  OPEN --> CTX["Caller supplies context to the agent"]
+  DREAM -->|"prompt"| MODEL
+  MODEL -->|"model response for audit"| DREAM
+  DREAM -->|"approved proposals; caller applies"| IO

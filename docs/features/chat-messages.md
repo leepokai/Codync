@@ -25,6 +25,12 @@ it has no pointer tooltip or link-opening action.
   same way; see [artifacts](artifacts.md).
 - Group room turns, bot requests (`message_bot`) and routines reject `send_message` and `send_file`: their reply
   is the turn's last text, as before (`chat/group.rs`, `chat/team.rs`, `routines`).
+- Between turns, work the agent goes on with in the background (a subagent's result) can still `send_message`
+  (`send_between_turns`): a final entry in the bot's main lane, numbered with its latest turn, plus a *done* push;
+  refused when the user stopped the last turn. `send_file` and `publish_artifact` need a running turn, and say to
+  use `send_message` instead. The host can't tell a background call from the running turn's own (the `chat` MCP
+  call names no session), so one that lands during a room, request or routine turn is refused like that turn's
+  and told to send again once it ends.
 - A bot request's reply stays in the recipient's trace and the request notice; it does
   not also become a message to the user. It goes back to the requesting bot as a turn of its own in
   that bot's main chat, and that turn's reply is an ordinary message to the user.

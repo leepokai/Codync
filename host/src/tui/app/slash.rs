@@ -1,6 +1,6 @@
 //! The composer's `/` commands, listed while the draft is just `/partial`: Fast mode runs here
-//! (`updateBot`; a new session is `S`); a skill fills in `/<id> `, which the host turns into "read
-//! this skill first" (`market::expand_command`). A group offers the same, over its members.
+//! (`updateBot`); a skill fills in `/<id> `, which the host turns into "read this skill first"
+//! (`market::expand_command`). A group offers the same, over its members.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
@@ -191,7 +191,7 @@ mod tests {
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "only skills the bot has on");
         app.drafts.insert("b".into(), super::Editor::with("/new"));
-        assert!(names(&app).is_empty(), "a new session is S");
+        assert!(names(&app).is_empty(), "no command for a new session");
         app.bots.get_mut("b").expect("the bot").fast_support = "unknown".into();
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "offered until the agent says otherwise");

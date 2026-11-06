@@ -37,17 +37,13 @@ pub fn signed_in(id: &str) -> Option<bool> {
     SIGNED_IN.locked().iter().find(|(h, _)| h == id).map(|(_, ok)| *ok)
 }
 
-/// A prompt was refused because the agent asked for auth. Only an agent whose new session does
-/// not prove sign-in (`WorkBuddy`) can still report an account after that. Other agents' own
-/// checks stand, so a setup terminal or saved keys can sign them in.
+/// Agents whose prompt was refused because they asked for auth. Their own account check can still
+/// say signed in after that (`claude auth status` with a revoked token, `WorkBuddy`'s account).
 static PROMPT_REFUSED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// The latest prompt for `id` was refused for auth. Stands until a prompt succeeds or the user signs in again.
-/// An agent whose session proves sign-in is not recorded: its next check is the proof.
+/// The latest prompt for `id` was refused for auth. Stands until a prompt succeeds or a sign-in
+/// finishes in Codync (a setup terminal, the browser, saved keys).
 pub fn note_prompt_refused(id: &str) {
-    if super::workbuddy::session_proves_sign_in(id) {
-        return;
-    }
     let mut refused = PROMPT_REFUSED.locked();
     if !refused.iter().any(|known| known == id) {
         refused.push(id.to_owned());
@@ -59,11 +55,7 @@ pub fn clear_prompt_refused(id: &str) {
 }
 
 /// An account check that says signed in loses to a prompt that was just refused for auth.
-/// Other agents are unchanged: their check is what a finished terminal or saved keys report.
 pub fn apply_prompt_refusal(id: &str, probe: Option<bool>) -> Option<bool> {
-    if super::workbuddy::session_proves_sign_in(id) {
-        return probe;
-    }
     if probe == Some(true) && PROMPT_REFUSED.locked().iter().any(|known| known == id) { Some(false) } else { probe }
 }
 
@@ -82,7 +74,7 @@ pub async fn refresh_sign_in() {
     let results =
         futures::future::join_all(installed.map(|h| async move { (h.id, cli_signed_in(h, &[]).await) })).await;
     for (id, ok) in results {
-        set_signed_in(id, ok);
+        set_signed_in(id, apply_prompt_refusal(id, ok));
     }
 }
 
@@ -126,11 +118,17 @@ mod tests {
     }
 
     #[test]
-    fn another_agents_sign_in_check_is_not_held_back() {
-        let id = "qwen";
+    fn a_revoked_claude_login_is_not_signed_in() {
+        let id = "claude";
         clear_prompt_refused(id);
         note_prompt_refused(id);
-        assert_eq!(apply_prompt_refusal(id, Some(true)), Some(true), "a setup terminal or saved keys can sign it in");
+        assert_eq!(
+            apply_prompt_refusal(id, Some(true)),
+            Some(false),
+            "`claude auth status` doesn't see a revoked token"
+        );
         assert_eq!(apply_prompt_refusal(id, None), None);
+        clear_prompt_refused(id);
+        assert_eq!(apply_prompt_refusal(id, Some(true)), Some(true), "a finished sign-in counts again");
     }
 }

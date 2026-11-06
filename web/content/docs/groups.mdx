@@ -70,7 +70,7 @@ Sending a new message also ends the running exchange before the next member is a
 
 ## What each member remembers
 
-- **One session per bot.** A member answers in the group in the same session as its own chat. It remembers the group conversation when you talk to it one-on-one later, and the other way round. Starting a [new session](/docs/bots#new-session) in a bot's chat also gives it a fresh start in its groups.
+- **One session per bot.** A member answers in the group in the same session as its own chat. It remembers the group conversation when you talk to it one-on-one later, and the other way round. When a bot's chat gets a [fresh session](/docs/bots#sessions), its groups do too.
 - **What it's shown.** On each turn, a member reads the room's messages since it last spoke there, the most recent ones if there are many, plus who's in the room and what the group is for.
 - **Private chats.** Members are told not to reveal what you discussed with them one-on-one. That's only an instruction to the agent: the same session holds both conversations.
 - **Long-term memory.** In a group, a bot can add to its [memory](/docs/memory) but can't change or remove what's there. Group chats don't feed dreaming, and a bot's history search covers only its own chat.

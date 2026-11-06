@@ -58,6 +58,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "hello" => {
             let port = hub.port;
+            let icons = crate::icons::snapshot(&hub.store)?;
+            let join_account = crate::remote::owner::joinable_by(hub, caller.device_key()).unwrap_or_else(|e| {
+                tracing::warn!(error = format!("{e:#}"), "couldn't check whether this phone can finish joining");
+                None
+            });
             json!({
                 "hostId": hub.host_id,
                 "computerId": hub.identity.computer_id(),
@@ -75,9 +80,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "device": tokio::task::spawn_blocking(crate::service::device).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
                 "backends": backends::list(),
+                "icons": icons.icons,
+                "iconsRevision": icons.icons_revision,
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // This phone paired without the computer joining its account: it calls `joinAccount` to finish.
+                "joinAccount": join_account.is_some(),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
             })
@@ -95,7 +104,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "listDirs" => {
             let path = b["path"].as_str().map(std::path::PathBuf::from);
-            tokio::task::spawn_blocking(move || list_dirs(path)).await??
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || super::folders::listing(&hub.store, path)).await??
+        }
+        "selectWorkspace" => {
+            let path = str_arg(&b, "path")?.to_owned();
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || super::folders::select(&hub.store, &path)).await??
         }
         "agentSetup" => {
             let step: crate::agent::term::Step =
@@ -209,34 +224,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::screen::computer(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, args).await?
         }
         _ => return Ok(ControlFlow::Continue(b)),
-    }))
-}
-
-/// Blocking (`std::fs`): call through `spawn_blocking`.
-fn list_dirs(path: Option<std::path::PathBuf>) -> Result<Value> {
-    let dir = match path {
-        Some(p) => p,
-        None => dirs::home_dir().ok_or_else(|| anyhow!("no home directory"))?,
-    };
-    let mut dirs: Vec<Value> = std::fs::read_dir(&dir)
-        .with_context(|| format!("listing {}", dir.display()))?
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                return None;
-            }
-            let p = e.path();
-            Some(json!({"name": name, "path": p.to_string_lossy(), "isGit": p.join(".git").exists()}))
-        })
-        .collect();
-    dirs.sort_by_key(|d| d["name"].as_str().unwrap_or_default().to_lowercase());
-    Ok(json!({
-        "path": dir.to_string_lossy(),
-        "parent": dir.parent().map(|p| p.to_string_lossy().into_owned()),
-        "isGit": dir.join(".git").exists(),
-        "dirs": dirs,
     }))
 }
 

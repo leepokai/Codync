@@ -63,7 +63,7 @@ was recognized so far. The desktop island's message field has the same mic and p
 A `chevron.up` beside the composer's mic picks dictation's engine, kept on the device apart from the
 call engine (`dictationEngine`): **On device** (the above), or **OpenAI** / **Gemini** on the user's
 own key. With a provider, the mic first checks that the computer holds its key (`voiceStatus`; no key
-means an error before anything is recorded), then records; the pill (and its time) appears only once
+opens Voice chat settings before anything is recorded), then records; the pill (and its time) appears only once
 the microphone is open, so nothing said before it is lost; nothing is typed while recording. The
 pill's stop turns the pill into "Transcribing…" and the whole recording goes through
 `voiceTranscribe` with the call settings' speech-to-text model; the text lands after what's in the
@@ -78,8 +78,7 @@ on-device (its window doesn't reach the host).
 - Desktop (`views/thread/dictation.ts`, the model, tested with a stub platform; the helper,
   microphone and host wired in `dictation-platform.ts`; pieces in `dictation-pieces.ts`; menu in
   `DictationEngineMenu.tsx`): on-device speech is the speech helper, macOS only. Linux and Windows
-  show the mic too, for a provider; with **On device** picked each press says on-device speech isn't
-  available there. An unpackaged `npm run dev` can't use the helper: macOS stops it because the dev
+  show the mic too, for a provider; **On device** is hidden and old dictation selections use OpenAI. An unpackaged `npm run dev` can't use the helper: macOS stops it because the dev
   Electron has no speech usage description, so test it in a packaged build (`dist:mac:dev`), like
   calls.
 - Desktop: the speech helper serves one window at a time. When another window starts it (the
@@ -89,7 +88,12 @@ on-device (its window doesn't reach the host).
   `Thread/DictationEngineMenu.swift`, dots shared with the call bar in `LevelDots.swift`):
   `SFSpeechRecognizer` on device; with no microphone route (some simulators) the mic does nothing.
   A provider's errors (no key, no connection) show in a dialog.
-- Android has no composer mic yet.
+- Android (`Dictation.kt`, pill and engine menu in `DictationControls.kt`, dots shared with the call
+  bar): Android's on-device recognizer (Android 12+) in the call's language. Where the phone has none,
+  or it lacks the language, the phone's own recognizer listens instead, and that one may send the
+  audio to its provider (Google on most phones). A provider records through `AndroidMic`; the key
+  check, microphone and transcription sit behind `DictationService`, so `DictationTest` runs on the JVM.
+  A missing key opens Voice chat settings, with a card for a dictation-only provider.
 - The terminal UI has no microphone, so no mic.
 
 ### Voice input shortcut
@@ -97,7 +101,8 @@ on-device (its window doesn't reach the host).
 Desktop on macOS, set in **Settings → General → System** (*Voice input shortcut*: off, the right ⌘
 twice (the default) or the left ⌘ twice; `voiceShortcut` in `host-prefs.json`). From any app, a
 double tap of that key starts dictation into the [notch island](notch-island.md)'s message field
-while the island is on, else into the chat window's composer (the top bot when no chat is open).
+while the island is on, else into the chat window's composer (when no chat is open, the lead, or the top bot where
+no computer has one).
 One more tap stops it and sends what was said once the last words are in; the pill's stop leaves
 the words in the field unsent, and an error leaves nothing for the tap to send.
 Double-tapping to stop counts as that one tap, not a new start. While a call is on (any engine),
@@ -170,8 +175,8 @@ at the end, cloud minutes counted up to the switch, mute kept, a fallback notice
 to On device tries the picked cloud engine again the same way. Desktop and Android check whenever a voice
 settings view closes (desktop: the gear, Settings; Android: the gear, the computer's card in Computer
 management); on the iPhone only the gear is open during a call.
-Where on-device speech is missing (desktop on Linux or Windows), the provider standing in for On device keeps
-running while On device stays picked.
+On Windows and Linux, an old/default On device call preference first selects a configured provider
+and remembers it. The picker offers only OpenAI and Gemini.
 
 | Engine | Needs | Transport | Code |
 | --- | --- | --- | --- |
@@ -451,3 +456,7 @@ simulated: on a physical iPhone, check both engines with a real key (talk over a
 are you doing?", approve by voice, and turn Wi-Fi off for a moment mid-call: the bar shows Reconnecting, comes back
 to Listening and still says the replies; with no network at all, after three tries, the call falls back to on-device
 voice).
+
+### Missing dictation keys
+
+Desktop and iPhone dictation open Voice chat settings when the selected provider has no key, before opening the microphone. Connection failures still show an error. Keys can be edited through local or SSH-loopback connections; paired remote connections show instructions to add the key on that computer. Windows and Linux hide On device in both engine pickers; old dictation preferences use OpenAI, while calls keep their configured-provider fallback. macOS keeps its on-device option. Android does the same and always offers On device. The terminal UI has no microphone input, so this dictation change does not apply to it.

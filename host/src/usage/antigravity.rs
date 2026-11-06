@@ -412,8 +412,8 @@ fn summary(groups: &[Value]) -> Vec<Window> {
         }
     }
     [
-        ("gemini-5h", "five_hour", "5-hour"),
-        ("gemini-weekly", "seven_day", "Weekly"),
+        ("gemini-5h", "five_hour", "Gemini 5h"),
+        ("gemini-weekly", "seven_day", "Gemini 7d"),
         ("3p-5h", "claude_five_hour", "Claude 5h"),
         ("3p-weekly", "claude_seven_day", "Claude 7d"),
         ("gemini-argon-wtu-weekly", "argon", "Argon Weekly"),

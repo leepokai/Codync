@@ -63,7 +63,7 @@ impl Fixture {
 }
 
 #[tokio::test]
-async fn the_lead_is_made_once_with_its_check_in_and_stays() {
+async fn the_lead_is_made_once_with_its_check_in_and_is_the_users_to_change() {
     let f = Fixture::new();
     let lead = make(&f.hub, f.cfg(NAME)).unwrap();
     assert_eq!(id(&f.hub.store).unwrap().as_deref(), Some(lead.as_str()));
@@ -76,22 +76,43 @@ async fn the_lead_is_made_once_with_its_check_in_and_stays() {
     ensure(&f.hub).await.unwrap();
     assert_eq!(f.hub.store.bots().unwrap().iter().filter(|b| b.config.lead).count(), 1, "a computer has one lead");
 
-    assert!(f.hub.delete_bot(&lead).is_err(), "the lead can't be deleted");
     assert!(f.hub.update_bot(&json!({"id": lead, "hidden": true})).is_err(), "the lead can't be hidden");
     let other = f.hub.create_bot(f.cfg("Other")).unwrap()["id"].as_str().unwrap().to_owned();
+    f.hub.update_bot(&json!({"id": other, "hidden": true})).unwrap();
+    assert!(set(&f.hub, &other).is_err(), "nor can a hidden bot become the lead");
+    f.hub.update_bot(&json!({"id": other, "hidden": false})).unwrap();
+    let group = json!({"id": "", "kind": "group", "name": "Crew", "members": [lead, other]});
+    let group = f.hub.create_bot(serde_json::from_value(group).unwrap()).unwrap()["id"].as_str().unwrap().to_owned();
+    assert!(set(&f.hub, &group).is_err(), "nor a group");
     f.hub.update_bot(&json!({"id": other, "lead": true})).unwrap();
     f.hub.update_bot(&json!({"id": lead, "lead": false, "name": "Boss"})).unwrap();
-    assert_eq!(id(&f.hub.store).unwrap().as_deref(), Some(lead.as_str()), "only the host picks the lead");
+    assert_eq!(id(&f.hub.store).unwrap().as_deref(), Some(lead.as_str()), "an edit doesn't pick the lead");
     let asked =
         json!({"name": "X", "lead": true, "connectors": [], "skills": [], "backend": "fixture", "command": "x"});
-    assert!(!crate::agent::new_bot::with_defaults(&f.hub, asked).await.unwrap().lead, "nor does a client or a bot");
+    assert!(!crate::agent::new_bot::with_defaults(&f.hub, asked).await.unwrap().lead, "nor does a new bot");
 
-    let profile = crate::chat::context::render(&f.hub.store, &f.hub.store.bot(&lead).unwrap().unwrap().config);
-    assert!(profile.contains(BRIEF));
-    assert!(
-        !crate::chat::context::render(&f.hub.store, &f.hub.store.bot(&other).unwrap().unwrap().config).contains(BRIEF)
-    );
+    let brief = |bot: &str| {
+        crate::chat::context::render(&f.hub.store, &f.hub.store.bot(bot).unwrap().unwrap().config).contains(BRIEF)
+    };
+    assert!(brief(&lead) && !brief(&other));
+    // A check-in from before 2.33.0 says it runs as the lead.
+    let routine = f.hub.store.kv_get(CHECK_IN_KEY).unwrap();
+    let mut check_in = f.hub.routines.list(&lead)["routines"][0].clone();
+    check_in["instruction"] = CHECK_IN.replacen("user.", "user, as their lead bot.", 1).into();
+    f.hub.routines.save(&f.hub, &lead, &check_in).unwrap();
+    set(&f.hub, &other).unwrap();
+    assert_eq!(id(&f.hub.store).unwrap().as_deref(), Some(other.as_str()), "the user picks another lead");
+    assert!(brief(&other) && !brief(&lead), "the role moves with it");
+    assert_eq!(f.hub.store.bots().unwrap().iter().filter(|b| b.config.lead).count(), 1);
+    let check_in = &f.hub.routines.list(&lead)["routines"][0];
+    assert_eq!((check_in["id"].as_str(), check_in["instruction"].as_str()), (Some(routine.as_str()), Some(CHECK_IN)));
+
     f.hub.delete_bot(&other).unwrap();
+    ensure(&f.hub).await.unwrap();
+    assert_eq!(id(&f.hub.store).unwrap(), None, "a deleted lead stays deleted");
+    assert!(set(&f.hub, &other).is_err(), "a deleted bot can't lead");
+    set(&f.hub, &lead).unwrap();
+    assert_eq!(id(&f.hub.store).unwrap().as_deref(), Some(lead.as_str()), "a computer without one gets one back");
     f.shutdown().await;
 }
 

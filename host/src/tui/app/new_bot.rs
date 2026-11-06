@@ -85,7 +85,6 @@ impl NewBot {
             "description": self.purpose.text.trim(),
             "backend": self.backend,
             "cwd": "",
-            "permission": "auto",
             "notify": true,
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],

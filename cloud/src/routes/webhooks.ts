@@ -3,6 +3,7 @@
 import { Webhook } from "svix";
 import type { Env } from "../index";
 import { ApiError, audit, notify, revokeGrants, type Ctx } from "./common";
+import { deleteComputerIcons } from "./icons";
 
 export async function clerkWebhook(c: Ctx) {
   if (!c.env.CLERK_WEBHOOK_SECRET) throw new ApiError("internal", "Webhook secret not configured");
@@ -40,6 +41,8 @@ async function deleteAccount(env: Env, userId: string, now: number): Promise<voi
     now,
   );
   const owned = await env.DB.prepare("SELECT id FROM computers WHERE owner_user_id = ?").bind(userId).all<{ id: string }>();
+  // Revoke access first. R2 availability must never keep a deleted account's sockets alive.
+  // Retain computer ownership until storage cleanup succeeds so retries can find every slot.
   await env.DB.batch([
     ...stmts,
     env.DB.prepare(
@@ -51,12 +54,12 @@ async function deleteAccount(env: Env, userId: string, now: number): Promise<voi
       `UPDATE access_requests SET status = 'cancelled', decided_at = ?1
        WHERE status = 'pending' AND (user_id = ?2 OR computer_id IN (SELECT id FROM computers WHERE owner_user_id = ?2))`,
     ).bind(now, userId),
-    env.DB.prepare("UPDATE computers SET owner_user_id = NULL, claimed_at = NULL, updated_at = ? WHERE owner_user_id = ?").bind(
-      now,
-      userId,
-    ),
     audit(env, "system", "account.delete", userId, "ok", now),
   ]);
   const computers = new Set([...blocks.keys(), ...owned.results.map((r) => r.id)]);
   await Promise.all([...computers].map((id) => notify(env, id, blocks.get(id))));
+  for (const computer of owned.results) await deleteComputerIcons(env, computer.id);
+  await env.DB.prepare("UPDATE computers SET owner_user_id = NULL, claimed_at = NULL, updated_at = ? WHERE owner_user_id = ?")
+    .bind(now, userId).run();
+  await Promise.all(owned.results.map(({ id }) => notify(env, id)));
 }

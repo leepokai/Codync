@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.AppVersion
+import com.codync.android.core.LinkState
 import com.codync.android.core.VersionMismatch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.update
@@ -23,6 +24,12 @@ internal val AppState.canUpdateHost get() = hello?.get("canUpdate")?.jsonPrimiti
 
 /** A requested update still within its wait: the computer is updating. */
 internal fun HostUpdate?.updating(now: Long) = this is HostUpdate.Requested && now - at < HOST_UPDATE_WAIT_MS
+
+/**
+ * Out of reach while an update asked from here installs (iOS `BotStore.isUpdating`): the computer restarts on its own,
+ * so it reads as updating, not as a lost connection or access to ask for.
+ */
+internal val AppState.isUpdating get() = connection !is LinkState.Ready && hostUpdate.updating(System.currentTimeMillis())
 
 /** What the notice says about a computer that's behind, and whether it offers Update now. */
 internal data class HostUpdateNotice(val detail: String, val offersUpdate: Boolean)

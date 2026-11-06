@@ -39,3 +39,12 @@ object AppVersion {
 
     private fun parse(version: String): List<Int>? = version.substringBefore('-').split('.').map { it.toIntOrNull() ?: return null }
 }
+
+/** A newer release of this app to remind about (iOS `UpdateReminder.app`): the store has one, and it wasn't dismissed. */
+object UpdateReminder {
+    fun app(current: String, store: String?, dismissed: String?): String? =
+        store?.takeIf { AppVersion.isBelow(current, it) && it != dismissed }
+
+    /** A Google Play version code as its version (`major * 1_000_000 + minor * 1_000 + patch`, app/build.gradle.kts). */
+    fun versionOf(code: Long): String = "${code / 1_000_000}.${code / 1_000 % 1_000}.${code % 1_000}"
+}

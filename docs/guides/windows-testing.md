@@ -1,6 +1,6 @@
 # Windows testing
 
-Codync ships an x64 Windows app (Electron + the bundled `codync-host.exe`). Real Windows behavior is
+Codync ships x64 and ARM64 Windows apps (Electron + the matching bundled `codync-host.exe`). Real Windows behavior is
 checked in a UTM virtual machine on the Mac. Everyday end-to-end checks stay on the Mac (minimal
 e2e); use the VM for a full e2e, or when a change or a bug depends on Windows itself (paths,
 `cmd.exe`, `.cmd` shims, the service, timing). The VM slows the whole Mac down: start it for the
@@ -11,9 +11,21 @@ each test runs in its own process, so fixture hosts no longer contend on process
 locks and Windows runs them in parallel too. A test that fails and then passes on a retry is
 reported as FLAKY instead of failing the run: fix it rather than lean on the retry.
 
+Desktop release CI builds x64 on `windows-latest` and ARM64 on `windows-11-arm`, then smoke-tests
+each installed host after running the installer and checking the native app/host executable headers.
+Installers, checksums and blockmaps use `codync-windows-<arch>.exe` names.
+Both builds contribute to one `latest.yml` update feed, uploaded only after both installers;
+electron-updater selects the file matching the installed app's architecture. The pinned computer-use
+driver and UI Automation helper remain x64 and run through Prism on ARM64 Windows 11, as do
+registry agents that ship only a `windows-x86_64` build (the ARM64 host downloads that one instead).
+Windows packaging forces the supported BCJ archive filter: the bundled NSIS decoder silently skips
+executables compressed with modern 7z ARM64 filters, even when the installer reports success.
+For a manual CI check, dispatch **Release desktop** with `windows_only` enabled to build both
+Windows architectures without requiring Mac signing secrets or running Linux packaging.
+
 ## The VM
 
-- **UTM "Codync Windows"**: Windows 11 ARM64 (Codync's x64 build runs through Prism emulation),
+- **UTM "Codync Windows"**: Windows 11 ARM64 (use the ARM64 build for native checks, x64 for Prism emulation),
   8 GB / 4 cores / 64 GB NVMe, account `codync` / `codync`, signs in automatically.
 - **Start / stop** from the Mac, never through UTM's window:
   `osascript -e 'tell application "UTM" to start virtual machine named "Codync Windows"'`

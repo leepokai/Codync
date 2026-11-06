@@ -1,6 +1,7 @@
 import Foundation
 
 public enum HostEvent: Sendable {
+    case icons([String: CustomIcon], revision: Int64)
     /// The stream's first event; `network` is nil from hosts before the network view.
     case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
     case bot(Bot)
@@ -112,6 +113,9 @@ public struct HostClient: Sendable {
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
+        case "icons":
+            struct Icons: Decodable { var icons: [String: CustomIcon]; var iconsRevision: Int64? }
+            return (try? d.decode(Icons.self, from: data)).map { .icons($0.icons, revision: $0.iconsRevision ?? 0) }
         case "hello":
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
@@ -155,6 +159,12 @@ public extension HostClient {
     /// Updates a computer that's behind this app to the latest release (`Hello.canUpdate`).
     func installHostUpdate() async throws {
         let _: Empty = try await call("installHostUpdate")
+    }
+
+    /// The computer signs `claim` for the account this phone paired from (`Hello.joinAccount`), as JSON to
+    /// pass on to `CloudClient.completeClaim` as it came.
+    func joinAccount(_ claim: CloudClaim) async throws -> Data {
+        try await transport.call("joinAccount", body: try Self.encoder.encode(claim), timeout: 20)
     }
 
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
@@ -203,6 +213,12 @@ public extension HostClient {
         return res.bot
     }
 
+    /// Puts the bot in `section`, or takes it out of its own (nil, sent as null); nothing else changes.
+    func setSection(_ botId: String, to section: String?) async throws {
+        let body: [String: String?] = ["id": botId, "section": section]
+        let _: Empty = try await call("updateBot", body)
+    }
+
     func deleteBot(_ id: String) async throws {
         let _: Empty = try await call("deleteBot", ["botId": id])
     }
@@ -210,6 +226,13 @@ public extension HostClient {
     /// The roster as the user dragged it, top first.
     func reorderBots(_ ids: [String]) async throws {
         let _: Empty = try await call("reorderBots", ["ids": ids])
+    }
+
+    /// Moves every bot of the computer in section `from` to `to` (a name already in use merges the
+    /// two); nil removes the section, its bots staying without one.
+    func renameSection(from: String, to: String?) async throws {
+        let body: [String: String?] = ["from": from, "to": to]
+        let _: Empty = try await call("renameSection", body)
     }
 
     /// The chat read; a no-op when nothing there is unread.
@@ -269,6 +292,11 @@ public extension HostClient {
         return out
     }
 
+    /// The user makes this bot the lead, in place of the one before.
+    func setLead(_ botId: String) async throws {
+        let _: Empty = try await self.call("setLead", ["botId": botId])
+    }
+
     /// A call's audio is live: a lead opens it, and its opening is the call's.
     func callStarted(_ botId: String, call: String) async throws {
         let _: Empty = try await self.call("callStarted", ["botId": botId, "callId": call])
@@ -319,10 +347,6 @@ public extension HostClient {
         let _: Empty = try await call("stop", ["botId": botId])
     }
 
-    func newSession(_ botId: String) async throws {
-        let _: Empty = try await call("newSession", ["botId": botId])
-    }
-
     func respondPermission(entryId: String, optionId: String?) async throws {
         struct Body: Encodable { var entryId: String; var optionId: String? }
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
@@ -334,9 +358,19 @@ public extension HostClient {
         let _: Empty = try await call("registerDevice", Body(ticket: ticket, relay: relay, name: name, pushKey: pushKey, ctx: ctx))
     }
 
-    /// Stops this device's alerts; used when notifications are switched off in the app.
+    /// Stops this device's alerts: notifications switched off in the app, or the phone signed out.
     func unregisterDevice() async throws {
         let _: Empty = try await call("unregisterDevice")
+    }
+
+    /// Removes this device from the computer (deleting the account, starting over): its access and alerts go.
+    /// A computer older than `forgetDevice` only stops the alerts; the key is erased right after either way.
+    func forgetDevice() async throws {
+        do {
+            let _: Empty = try await call("forgetDevice")
+        } catch {
+            let _: Empty = try await call("unregisterDevice")
+        }
     }
 
     func registerActivity(botId: String, ticket: String) async throws {
@@ -345,6 +379,12 @@ public extension HostClient {
 
     func usage(refresh: Bool = false) async throws -> Usage {
         try await call("usage", ["refresh": refresh])
+    }
+
+    func selectWorkspace(_ path: String) async throws -> String {
+        struct Reply: Decodable { var path: String }
+        let reply: Reply = try await call("selectWorkspace", ["path": path])
+        return reply.path
     }
 
     func listDirs(_ path: String?) async throws -> DirListing {

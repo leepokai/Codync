@@ -40,11 +40,13 @@ pub struct Bot {
     /// Why the agent refused it.
     pub fast_issue: Option<String>,
     pub pinned: bool,
-    /// The computer's lead bot (`chat::lead`): first in the roster, never deleted or hidden.
+    /// The computer's lead bot (`chat::lead`), placed like any bot; `*` makes another bot the lead.
     pub lead: bool,
     /// Where the user dragged it (see `App::roster`).
     pub position: i64,
     pub hidden: bool,
+    /// Its roster section; `None` for none (the host trims and checks the name).
+    pub section: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// It creates bots and changes any bot's setup (`chat::manage`); `None` from a host without it.
@@ -187,6 +189,7 @@ impl Bot {
             lead: v["lead"] == true,
             position: v["position"].as_i64().unwrap_or(0),
             hidden: v["hidden"].as_bool().unwrap_or(false),
+            section: v["section"].as_str().map(str::to_owned),
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),
             manage_team: v["manageTeam"].as_bool(),
@@ -221,15 +224,9 @@ impl Bot {
         })
     }
 
-    /// Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band.
+    /// Its band in the roster: pinned bots, then the rest. Reordering stays inside a band.
     pub fn band(&self) -> u8 {
-        if self.lead {
-            0
-        } else if self.pinned {
-            1
-        } else {
-            2
-        }
+        u8::from(!self.pinned)
     }
 
     /// Agent `agent`'s rest, while it lasts at `now`.

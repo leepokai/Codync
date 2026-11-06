@@ -97,7 +97,7 @@ public struct ProviderWidgetCard: View {
     private var accessibleUsage: String {
         let windows = layout == .small ? provider.tightest.map { [$0] } ?? [] : Array(provider.limits.prefix(layout == .large ? 4 : 2))
         return windows.map { window in
-            "\(window.title), \(Int(window.percent.rounded())) percent" +
+            "\(window.title), \(Int(window.percent.rounded())) percent used" +
                 (window.resetsShort(now: date).map { ", \($0)" } ?? "")
         }.joined(separator: "; ")
     }

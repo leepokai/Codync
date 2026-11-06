@@ -35,6 +35,7 @@ public struct AgentIcon: View {
         case "qwen-code": AnyShapeStyle(Color(red: 0.38, green: 0.36, blue: 0.93))
         case "amp-acp": AnyShapeStyle(Color(red: 0.95, green: 0.31, blue: 0.25))
         case "kiro": AnyShapeStyle(Color(red: 0.56, green: 0.27, blue: 1.0))
+        case "dsh": AnyShapeStyle(Color(red: 0.30, green: 0.42, blue: 1.0))
         case "cortex-code": AnyShapeStyle(Color(red: 0.16, green: 0.71, blue: 0.91))
         case "omp": AnyShapeStyle(LinearGradient(colors: [Color(red: 0.93, green: 0.29, blue: 0.75), Color(red: 0.61, green: 0.30, blue: 1.0), Color(red: 0.35, green: 0.85, blue: 0.90)], startPoint: .topLeading, endPoint: .bottomTrailing))
         default: AnyShapeStyle(Palette.text)

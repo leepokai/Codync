@@ -10,7 +10,7 @@ mod drafts;
 mod l10n;
 mod manage;
 mod md;
-mod net;
+pub(crate) mod net;
 mod sheets;
 mod view;
 

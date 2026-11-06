@@ -47,7 +47,11 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
         put(buf, x, r.y, room, &truncate(&format!("group · {}", names.join(", ")), usize::from(room)), t.secondary);
     } else if !narrow {
-        let mode = if b.auto { "auto" } else { "ask" };
+        let mode = match b.mode.as_deref() {
+            _ if b.auto => "approve all",
+            None => "ask",
+            Some(id) => app.mode_name(&b.backend, id),
+        };
         let fast = match (b.fast_mode, b.fast_refusal().is_some()) {
             (true, true) => " · ⚡ refused",
             (true, false) => " · ⚡ fast",

@@ -26,6 +26,7 @@ import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { FileDownloads } from './file-downloads'
+import { BotSections } from './bot-sections'
 import { BotSync, sleep } from './bot-sync'
 import { DocumentsStore } from './documents-store'
 import type { VoiceTranscript } from '../lib/voice-transcript'
@@ -72,6 +73,7 @@ export class BotStore extends BotSync {
     return documents
   }
   readonly fileDownloads = new FileDownloads(() => this.changed())
+  readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
   override retire() {
     for (const documents of this.documentStores.values()) documents.retire()
@@ -359,6 +361,17 @@ export class BotStore extends BotSync {
     this.patchBot(bot, { harnessMemory })
   }
 
+  /** Makes `bot` the lead, in place of the one before; a refusal gives the star back. */
+  setLead(bot: Bot) {
+    const before = [...this.bots.values()].find((b) => b.lead)?.id
+    const show = (lead: string | undefined) => {
+      for (const [id, b] of this.bots) this.bots.set(id, { ...b, lead: id === lead })
+      this.changed()
+    }
+    show(bot.id)
+    this.perform((c) => c.call('setLead', { botId: bot.id }), true, () => show(before))
+  }
+
   setHidden(bot: Bot, hidden: boolean) {
     this.patchBot(bot, { hidden })
   }
@@ -391,8 +404,7 @@ export class BotStore extends BotSync {
     const draft: GroupDraft = { kind: 'group', name, description, members, chiefBotId }
     // (handled above)
     const res = await (await this.ready()).call<{ bot: Bot }>('createBot', draft)
-    const bot = normalizeBot(res.bot)
-    this.bots.set(bot.id, bot)
+    const bot = this.putHostBot(normalizeBot(res.bot))
     this.selection = bot.id
     this.onRosterChanged?.()
     this.changed()
@@ -401,7 +413,7 @@ export class BotStore extends BotSync {
 
   async updateGroup(draft: GroupDraft) {
     const res = await (await this.ready()).call<{ bot: Bot }>('updateBot', draft)
-    this.bots.set(res.bot.id, normalizeBot(res.bot))
+    this.putHostBot(normalizeBot(res.bot))
     this.changed()
   }
 
@@ -461,13 +473,20 @@ export class BotStore extends BotSync {
     return (await (await this.ready()).botConversation(botId, peerId)).filter((e) => !isInternalEntry(e))
   }
 
+  /** What `backend` already has in the user's home, not the Codync skills and connectors a bot passes on. */
+  async agentGear(backend: string): Promise<{ skills: AgentGearItem[]; connectors: AgentGearItem[]; rules: AgentGearItem[]; plugins: AgentGearItem[] }> {
+    const client = this.client
+    if (!client) throw new Error("Couldn't load what this agent brings.")
+    const value = await client.call<{ skills?: AgentGearItem[]; connectors?: AgentGearItem[]; rules?: AgentGearItem[]; plugins?: AgentGearItem[] }>('agentGear', { backend })
+    return { skills: value.skills ?? [], connectors: value.connectors ?? [], rules: value.rules ?? [], plugins: value.plugins ?? [] }
+  }
+
   async save(draft: BotDraft) {
     const client = await this.ready()
     const res = draft.id
       ? await client.call<{ bot: Bot }>('updateBot', { ...draft, model: draft.model ?? null, account: draft.account ?? null })
       : await client.call<{ bot: Bot }>('createBot', draft)
-    const bot = normalizeBot(res.bot)
-    this.bots.set(bot.id, bot)
+    const bot = this.putHostBot(normalizeBot(res.bot))
     this.onRosterChanged?.()
     this.changed()
     return bot
@@ -563,20 +582,6 @@ export class BotStore extends BotSync {
     this.selection = id
     this.changed()
   }
-
-  consumeRoutineDraft(botId: string) {
-    const value = this.routineDrafts.get(botId)
-    if (value !== undefined) {
-      this.routineDrafts.delete(botId)
-      this.changed()
-    }
-    return value
-  }
-
-  setRoutineDraft(botId: string, text: string) {
-    this.routineDrafts.set(botId, text)
-    this.changed()
-  }
 }
 
 /** A full editor update must explicitly clear a previous model override. */
@@ -598,3 +603,10 @@ function cacheAttachment(id: string, data: Uint8Array) {
 }
 
 export { isWorking, needsInput }
+
+/** One skill or connector an agent keeps for itself (`agentGear`). */
+export interface AgentGearItem {
+  name: string
+  description?: string
+  detail?: string
+}

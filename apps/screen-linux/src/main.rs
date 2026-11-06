@@ -208,9 +208,25 @@ impl Helper {
             return;
         }
         *last = Some(status.clone());
-        let _ = self
-            .out
-            .send(json!({"jsonrpc": "2.0", "method": "status", "params": status}));
+        // Fails only once the host link is gone; the next link starts a new Helper that sends its status first.
+        let _ = self.notify("status", status);
+    }
+
+    /// One notification to the host; fails once the host link is gone.
+    fn notify(&self, method: &str, params: Value) -> Result<()> {
+        let mut message = json!({"jsonrpc": "2.0", "method": method});
+        message["params"] = params;
+        self.out
+            .send(message)
+            .map_err(|_| anyhow!("the host link closed"))
+    }
+
+    /// Tells the host a session's state. It fails only once the host link is gone, and the host drops every session
+    /// of a helper whose link ended, so a lost notice changes nothing there.
+    fn notify_session(&self, id: &str, state: &str) {
+        if let Err(error) = self.notify("session", json!({"session": id, "state": state})) {
+            tracing::debug!(%error, session = id, state, "session notice not sent");
+        }
     }
 
     /// A session's WebRTC connection ended on its own.

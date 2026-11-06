@@ -88,7 +88,8 @@ See [architecture](../architecture/overview.md) and [file structure](../architec
 - 桌面 App（`apps/desktop/src/main/cloud.ts`）：每個帳號一把 Ed25519 device key，seed 以 Electron `safeStorage`（OS keychain）加密後存在 app 的 userData 目錄；只用於雲端 `/v1` API 的 `Codync-Sig`。
 - iOS App、Widgets、NotificationService 共用 access group `$(AppIdentifierPrefix)com.pokai.Codync`（`project.yml` 對這三個 target 加 `keychain-access-groups` entitlement；`CodyncKit` 從 Info.plist `CodyncKeychainGroup` 讀 group，缺值則不設 group）。
 - 私鑰永不離開 Keychain／process；雲端只存公鑰。
-- 帳號登出／移除帳號：刪除該 context 的 device key、computers 快取、mailbox 草稿、widget snapshot。
+- 帳號登出：先在 Clerk 登出（失敗就什麼都不變）。成功後只停通知、保留金鑰：連得到的電腦呼叫 `unregisterDevice` 刪掉 push tickets；雲端 `POST /v1/devices/sign-out`（用登出前先取的 session token）標記這台裝置已登出，帳號的其他電腦下次拉 `/v1/host/state` 時依 `signedOutDevices` 刪掉它在登出前登記的 push tickets。各自最多數秒、失敗不擋登出。該 context 的 device key、computers、草稿都留著，同一帳號登回來直接連上（`POST /v1/devices` 清掉標記）。**Start over**／刪除帳號才交還金鑰：連得到的電腦呼叫 `forgetDevice`（舊版 host 改呼叫 `unregisterDevice`），雲端 `DELETE /v1/devices/{id}`（刪除帳號由 `user.deleted` webhook 處理），再刪除 device key、computers 快取、mailbox 草稿、widget snapshot；Start over 連這支手機上登出過的帳號一起刪。刪除帳號先在 Clerk 刪除使用者，成功後才交還給電腦。
+- 有 Clerk 的 build 一律要求登入（[require sign-in](../plans/require-sign-in.md)）：`local` context 只留給沒有 Clerk 的 build，以及登入前遷移的來源。某個帳號 context 第一次使用時，若 `local` 有電腦或金鑰：該 context 在這支手機上是新的（沒有金鑰、沒有電腦）就整包搬過去，金鑰一起搬，電腦不用重新掃；已有自己的金鑰就只合併電腦清單，那些電腦會顯示需要重新配對。之後清掉 `local`（iOS `SharedStore.Context.adopt(from:)`、Android `LocalStore.adopt`）。
 
 ### 3.3 Per-(device, host) E2E 金鑰
 
@@ -105,6 +106,8 @@ See [architecture](../architecture/overview.md) and [file structure](../architec
 
 | 動作 | 效果 |
 |---|---|
+| 裝置自己離開（Start over／刪除帳號：`forgetDevice`，只能移除呼叫者自己） | 與在電腦上撤銷相同；帳號來源的 grant 一併撤銷 |
+| 裝置登出（`unregisterDevice` + `POST /v1/devices/sign-out`） | 不撤權：只刪 push tickets，裝置列與 grant 都留著 |
 | 在電腦上撤銷裝置（桌面 App／`codync-host devices revoke`） | host 刪除裝置列與其 push tickets、Live Activity tickets → 立即關閉該裝置所有 channel → 發佈新 ACL → DO 關閉其 WebSocket；帳號來源的另呼叫 `DELETE` 對應 grant（見 §8.4 `POST /v1/host/grants/{id}/revoke`） |
 | 雲端撤銷 grant／裝置／解除綁定／刪帳號 | Worker 寫 D1 → 呼叫 DO `/internal/block`（`[{dk, grantId}]`，立即關閉並封鎖）→ DO 通知 host `cloud.changed` → host 拉 `/v1/host/state` 並刪除裝置列 |
 | host 連不到雲端 | 帳號來源裝置的 lease 最長 15 分鐘後失效，host 關閉 channel；本機（QR）來源裝置不受影響 |
@@ -120,7 +123,7 @@ See [architecture](../architecture/overview.md) and [file structure](../architec
 
 ## 4. 配對與授權流程
 
-### 4.1 QR 配對（無帳號也可用）
+### 4.1 QR 配對（同一個帳號，2.36.0 起）
 
 QR／連結保留 `codync://pair` scheme，**移除 `token`**，欄位：
 
@@ -134,7 +137,7 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 | `id` | 是 | 必須等於 `computerId(sk)`，否則拒絕 |
 | `sk`, `bk` | 是 | host 公鑰 |
 | `code` | 是 | 16 random bytes，b64url；一次性、10 分鐘；host 最多同時 5 組（新的擠掉最舊的） |
-| `urls` | 否 | 直連候選（`service::addresses`）：先 `CODYNC_EXTERNAL_URL` 設的網址（`https://host` 等，只能是 host 根路徑），再 Tailscale，再 LAN（`http://ip:port`）；可為空 |
+| `urls` | 否 | 直連候選（`service::addresses`）：先 `CODYNC_EXTERNAL_URL` 設的網址（`https://host` 等，只能是 host 根路徑），再 Tailscale，再 LAN（`http://ip:port`，略過 Docker、Podman、Kubernetes、libvirt、LXD 的容器橋接介面；依 192.168、10、172.16/12 排序）；最多 16 個（手機只留前 16 個）；可為空 |
 | `cloud` | 否 | host 使用的 cloud base URL（`https://…`；DEBUG build 另允許 `http://127.0.0.1:*`／`http://localhost:*`）；缺 = host 關閉雲端 |
 | `name` | 否 | 顯示名稱 |
 
@@ -145,10 +148,16 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 2. 手機載入／建立 device key，用 §7.5 的連線策略連線，hello 帶 `"pair": true`（中繼另需 URL `pair=<offerId>`）。
 3. 握手成功（手機已用 QR 的 `sk` 驗證 host）後，第一個 request 必須是：
    ```json
-   {"id":1,"m":"pair","b":{"code":"<code>","name":"Kevin's iPhone","platform":"ios"}}
+   {"id":1,"m":"pair","b":{"code":"<code>","name":"Kevin's iPhone","platform":"ios",
+     "certificate":{"payload":"…","sig":"…"},"claim":{"claimId":"clm_…","nonce":"…"}}}
    ```
-4. host 驗 code（常數時間比較、未過期、未用過）→ 刪除該 code → 新增裝置列（`source=local`，`grant_id=NULL`，`scopes=["control","screen"]`，無 lease）→ 回 `{"id":1,"ok":{"computerId":"…","name":"…"}}` → **關閉這條 channel，close code `4100 paired`**（中繼：host 依序送 `data`（回應）→ `close {link, code:4100}` → 新 ACL（移除 offer、加入 dk）；同一條 host socket 保序，所以回應一定先到）。
+   `certificate` 是雲端簽的裝置憑證（`POST /v1/devices/certificate`，payload `{v:1, deviceKey, userId, email, exp}`，簽 `"codync/device-cert/v1\n" + payload`，host 用編譯進去的公鑰離線驗證，`host/src/remote/certificate.rs`）。`claim` 是手機先向雲端要的 claim（`POST /v1/claims`），選填。
+4. host 先驗憑證與帳號，再花掉 code（[require sign-in](../plans/require-sign-in.md#phase-2-same-account-pairing)）：沒有憑證 → `reject unsupportedVersion`；憑證不是這把 device key 的 → 403；電腦在別的帳號 → 403，訊息帶 owner 遮罩過的 email；電腦在手機的帳號 → 直接放行；電腦不在任何帳號 → 在電腦上問（loopback 的 `pairingRequests` 事件／方法、`decidePairing`，最多 2 分鐘，兩邊顯示同一組 6 位數 `sha256("codync/pair-check/v1" ‖ dk ‖ hostSignKey)`），同意後 host 簽手機的 claim，回應帶 `claim`，手機自己 `POST /v1/claims/{id}/complete`。接著驗 code（常數時間比較、未過期、未用過）→ 刪除該 code → 新增裝置列（`source=local`，`grant_id=NULL`，`account=<userId>`，`scopes=["control","screen"]`，無 lease）→ 回 `{"id":1,"ok":{"computerId":"…","name":"…","claim":{…}|null}}` → **關閉這條 channel，close code `4100 paired`**（中繼：host 依序送 `data`（回應）→ `close {link, code:4100}` → 新 ACL（移除 offer、加入 dk）；同一條 host socket 保序，所以回應一定先到）。
 5. client 收到 `4100` 立即以一般模式重連（§7.5，不帶 `pair`）。直連與中繼行為相同；DO 不需要「升級」pairing socket。
+
+**之後補完加入帳號**：手機進來了但 host 沒替它的帳號簽 claim（手機沒拿到 claim，或當時雲端關著／用 private relay）時，host 之後回給這台裝置的 `hello` 帶 `joinAccount: true`，條件是 `owner::joinable_by`：用 Codync 雲端（不是 private relay）、這次連線已拉過 state（`cloud_synced`）、電腦不在任何帳號、這台裝置記了帳號（`devices.account`）、電腦上沒有別的帳號的裝置，而且 host 從自己的帳號上次改變以來沒替這個帳號簽過 claim。手機接著 `POST /v1/claims`，呼叫 control scope 的 `joinAccount {claimId, nonce}`；host 再查一次同樣的條件，替這台裝置記的帳號簽 claim（`owner::sign_claim`，回傳內容與 `claimSign` 相同），手機再 `POST /v1/claims/{id}/complete`。
+
+`sign_claim` 簽之前把帳號記進 kv `account_claims_signed`（`owner::note_signed`，配對、`joinAccount`、桌面 App 的 Add to account 都走這裡），帳號改變時（`owner::remember` 看到 user id 不同）清掉。原因：claim 完成後、host 還沒拉到 state 前，電腦可能又被移出帳號，下一次 pull 仍是「沒有帳號」，`remember` 不會刪任何裝置；有這筆紀錄，任何一支手機都不能再用 `joinAccount` 把它加回去。代價是 host 簽過、但 `complete` 失敗的 claim 不會自動重試，重新配對即可。
 
 `Caller::Pairing` 的 channel 只接受 `pair`：第一個 inner 訊息不是 `pair`、或 `pair` 之後還有任何訊息 → 關閉 `4002 protocolError`。
 
@@ -165,6 +174,8 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
    `sig = Ed25519_host("codync/claim/v1\n" + claimId + "\n" + nonce + "\n" + userId + "\n" + computerId + "\n" + boxKey)`（UTF-8，**無結尾換行**；向量 `claim`）。Worker 以此 `boxKey` 建立或更新 `computers.box_pub`，不接受 client 另給的值。
 3. 桌面 App `POST /v1/claims/{claimId}/complete`（Clerk）帶上 host 回傳的內容。Worker 驗 Clerk、claim、簽章，原子化設定 owner。
 4. Worker 通知 DO `cloud.changed` → host 拉 state 得知 owner。
+
+手機也會讓 host 簽 claim：配對時（§4.1 第 4 步），以及配對沒加入帳號時之後的 control scope `joinAccount`（§4.1「之後補完加入帳號」）。
 
 **B. 手機取得存取權**（commit-then-reveal SAS，ZRTP／BLE numeric comparison 同型）：
 1. 手機登入後 `POST /v1/devices`（Clerk + 該 device key 的 `Codync-Sig`）。
@@ -269,7 +280,7 @@ d         = ChaCha20-Poly1305(kDir, nonce, plaintext, aad)   (密文 ‖ 16-byte
 ```
 - 每個方向各自從 `c = 0` 起算，每 frame +1；接收方要求 `c` 恰為預期值，否則關閉（close `4002 protocolError`）。這同時提供重放與重排保護。
 - 一則 inner 訊息（§6.5 的 JSON）UTF-8 編碼後切成 ≤ 256 KiB 的 chunk；接收方串接直到 flag `0x00`，再 JSON parse。
-- 重組上限：device→host 1 MiB；host→device 16 MiB。超過 → 關閉 `4013 tooLarge`。
+- 重組上限：已授權 device→host 8 MiB（含 5 MiB 自訂圖片的 base64/JSON）；僅供配對的 channel 維持 1 MiB；host→device 16 MiB。超過 → 關閉 `4013 tooLarge`。單一 WebSocket 訊息仍使用 256 KiB chunks。
 
 ### 6.4 Mailbox 封裝（device → 離線 host）
 
@@ -304,7 +315,8 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 - `id`：device 端遞增 u32，連線內唯一。
 - 每條 channel 最多 32 個進行中的 request、4 個訂閱；超過回 `err 429`。
-- `events` 訂閱的語意與 SSE 完全相同（先 subscribe、再 catch-up、`hello` 在最前、落後時送 `{"type":"resync"}`）；`client == "ios"` 時計入 `hub.ios_clients`（推播抑制）。
+- `screenCandidates` subscribes with `{"id":N,"sub":"screenCandidates","b":{"session":"<screen-session-id>"}}`. Its `ev` values are `ready`, ordered `candidate`, `complete`, or `error`; `end` closes the subscription. It requires screen scope and ownership of that screen session.
+- `events` 訂閱的語意與 SSE 完全相同（先 subscribe、再 catch-up、`hello` 在最前且 `catchUp` 為其後 catch-up 事件數、落後時送 `{"type":"resync"}`）；`client == "ios"` 時計入 `hub.ios_clients`（推播抑制）。
 - Bot 刪除標記會保留在 host 資料庫；增量同步與 `since = 0` 的全量同步都傳送它們。手機及桌面在版本更新或解碼重試時會保留快取並重設同步游標，必須收到刪除標記才能移除舊 Bot、對話與草稿；終端使用相同的事件串流。
 - 串流沒有額外的 keep-alive；存活由 WebSocket ping（§7.6）負責。
 
@@ -312,10 +324,12 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 | 類別 | 方法 | 允許的 caller |
 |---|---|---|
-| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token） |
+| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `pairingRequests`, `decidePairing`, `pairingCodeOpen`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token）；`pairingRequests` 事件也只送給 loopback |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
-| screen scope | `screenPrepare`, `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
-| control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
+| screen scope | `screenPrepare`, `screenOffer`, `screenCandidate`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
+| control scope | 其餘所有既有方法（`hello`, `joinAccount`, `history`, `createBot`, `updateBot`, `renameSection`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `forgetDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
+
+The `screenCandidates` subscription also requires `screen` scope and belongs to its device’s screen session. It carries ordered candidates and completion separately from chat events; see [remote screen](../features/remote-screen.md).
 
 v1 發出的 grant 一律 `["control","screen"]`。
 
@@ -467,7 +481,7 @@ Close code 總表：`1000` 正常、`1011` 內部錯誤／逾時、`4001 unautho
 - **登入**：Clerk 是 authorization server，Worker 只是 protected resource。未帶有效 token → `401`，`WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp", scope="profile email"`；metadata 指向 Clerk issuer（`/.well-known/oauth-authorization-server` 也代轉 Clerk 的，給舊 client）。Client 以 CIMD 註冊（DCR 關閉）。Token 必須是 Clerk 發的 OAuth access token（`at+jwt`，或 opaque 時向 Clerk 驗），`aud` 必須等於 `<origin>/mcp`；App 的 session token 不算。`ASSISTANT_LIMITER`：每帳號每分鐘 120 次。
 - **路由**：Worker 只把呼叫送到 token 帳號擁有、`active` 的 computer。`list_computers` 由 Worker 從 D1 回答；其餘工具：指定 `computer`（名稱或 id）→ 該台；未指定時帳號只有一台、或只有一台在線 → 該台；`list_bots`／`read_replies` 在多台在線時每台都問並合併成 `{computers:[{computer, …}]}`；`message_bot` 則要求指定。
 - **DO**：`POST /internal/assistant {user, tool, args}` → host 不在線 `503 {"ok":false,"code":"offline"}`；否則送 `assistant.call`，在 request 存活期間等同 `id` 的 `assistant.result`，最多 10 秒（逾時 `{"ok":false,"code":"timeout"}`，舊 host 會忽略這個訊息）。host 斷線時等待中的呼叫一律 `offline`。只在 request 存活時佔用 DO，不排隊、不存任何內容。
-- **Host**（`chat::team::assistant`）：預設關閉，`setAssistants`（loopback only：桌面 app 與 TUI 的 Cloud assistants 開關，或 `codync-host cloud --assistants on|off`）才開；`user` 必須等於 host 的 owner（`/v1/host/state`）；private relay 上不處理。`message_bot` 走一般 bot request（`Back::Assistant`），回覆留在 host 記憶體給 `read_replies`（最新 50 則，同時最多 16 則執行中，重啟即忘）。`reachableByAssistants` 關掉的 bot 不列出、不收。`list_bots` 也列同一 network 裡其他電腦提供的 bot（`reviewer@laptop`）；對它們的 `message_bot` 是一封由 `cloud-assistant@<這台>` 寄出的 codync-network 信，結果回到同一份 replies。收信的電腦自己再檢查：它的 Cloud assistants 開關、該 bot 的 `reachableByAssistants` 與 network rules。Host 在 relay session 外另起 task 回答 `assistant.call`（第一次列出時可能要等其他電腦最多 5 秒），不會卡住同一條連線上的裝置訊息。
+- **Host**（`chat::team::assistant`）：預設關閉，`setAssistants`（loopback only：桌面 app 與 TUI 的 Cloud assistants 開關，或 `codync-host cloud --assistants on|off`）才開，且電腦不在 Codync 帳號裡時拒絕打開（這條連線還沒有成功的 state pull 時回「帳號還不知道」；關永遠可以），state pull 回 `owner: null` 時自動關掉，下次加入的帳號要重新同意；`user` 必須等於 host 的 owner（`/v1/host/state`）；private relay 上不處理。`message_bot` 走一般 bot request（`Back::Assistant`），回覆留在 host 記憶體給 `read_replies`（最新 50 則，同時最多 16 則執行中，重啟即忘）。`reachableByAssistants` 關掉的 bot 不列出、不收。`list_bots` 也列同一 network 裡其他電腦提供的 bot（`reviewer@laptop`）；對它們的 `message_bot` 是一封由 `cloud-assistant@<這台>` 寄出的 codync-network 信，結果回到同一份 replies。收信的電腦自己再檢查：它的 Cloud assistants 開關（所以它也要在帳號裡）、該 bot 的 `reachableByAssistants` 與 network rules。Host 在 relay session 外另起 task 回答 `assistant.call`（第一次列出時可能要等其他電腦最多 5 秒），不會卡住同一條連線上的裝置訊息。
 - **信任邊界**：和 §7.8 一樣，雲端以 HTTPS 解開並看得到這些呼叫與回覆的明文，不是 §6 的端對端加密。因此要電腦本機同意（開關）才放行，雲端無法自行替電腦打開；App 與文件都需明講。
 
 ---
@@ -486,8 +500,11 @@ The route table below summarizes the contract. Executable schema and validation 
 **Clerk（使用者）**
 - `GET /v1/me` → `{"userId","email","createdAt"}`
 - `POST /v1/devices`（Clerk + Sig(dev)）`{"name","platform":"ios"|"macos"|"linux"|"windows"}` → `{"device":{"deviceId","deviceKey","name","platform","createdAt"}}`。以 `(owner, sign_pub)` upsert；已撤銷的同一把 key → `403 forbidden`（需換 key）。
+- `POST /v1/devices/certificate`（Clerk + Sig(dev)）→ `{"certificate":{"payload","sig"}}`：證明這把已註冊、未撤銷的 device key 屬於這個帳號，7 天有效（§4.1）。雲端沒設 `DEVICE_CERT_KEY` → `503 notConfigured`。
+- `POST /v1/host/pairing-codes`（Sig(host)）`{"link","expiresAt"}` → `{"code":"QRTX-4821","expiresAt"}`；`GET /v1/pairing-codes/{code}`（Clerk）→ `{"link"}`，只能用一次、10 分鐘。`codync-host pair` 的短代碼。
 - `GET /v1/devices` → `{"devices":[{"deviceId","deviceKey","name","platform","createdAt","lastUsedAt","revoked":bool}]}`
 - `DELETE /v1/devices/{deviceId}` → `{}`；撤銷裝置與其所有 grants（`deviceRevoked`），對相關 computers 呼叫 DO `/internal/block` + `cloud.changed`。
+- `POST /v1/devices/sign-out`（Clerk + Sig(dev)）→ `{}`：手機登出。設 `devices.signed_out_at`（migration `0006`），對帳號的每台電腦送 `cloud.changed`；不撤權。同一把 key 再 `POST /v1/devices`（登回來）就清掉。
 - `POST /v1/claims` → `{"claimId","nonce","expiresAt"}`（nonce = 16 random bytes b64url）
 - `POST /v1/claims/{claimId}/complete` `{"computerId","signKey","boxKey","name","platform","device","version","sig"}` → `{"computer":<Computer>}`。驗：`computerId == derive(signKey)`、sig（§4.2 A，輸入含 `boxKey`）、claim 有效；computer 列不存在時一併建立，`box_pub` 一律取自簽過的 `boxKey`。
 - `GET /v1/computers`（Clerk，選配 Sig(dev)）→ `{"computers":[Computer]}`，
@@ -507,9 +524,10 @@ The route table below summarizes the contract. Executable schema and validation 
   ```json
   {"owner":{"userId":"user_…","email":"a@b.c"} | null,
    "grants":[{"grantId","deviceKey","deviceName","platform","scopes":["control","screen"]}],
-   "requests":[{"requestId","deviceKey","deviceName","platform","email","commit","hostNonce"?,"deviceNonce"?,"createdAt","expiresAt"}]}
+   "requests":[{"requestId","deviceKey","deviceName","platform","email","commit","hostNonce"?,"deviceNonce"?,"createdAt","expiresAt"}],
+   "signedOutDevices":[{"deviceKey","signedOutAgo"}]}
   ```
-  grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。
+  grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。`signedOutDevices` 是電腦所屬帳號裡登出的裝置（未撤銷）與登出多久了（ms，相對時間，兩邊時鐘不同步也沒關係），host 從收到回應的時間往回推，只刪掉它們在那之前登記的 push tickets（回應慢時寧可多刪一張剛登記的，手機下次連線會再送），不動裝置列：手機登回來後送來的新 ticket 可能比清掉標記的 `POST /v1/devices` 先到，要留著。
 - `POST /v1/host/access-requests/{id}/nonce` `{"nonce"}` → `{}`（`cloud/src/routes/host.ts`；已設過 → `409`）
 - `POST /v1/host/grants/{grantId}/revoke` `{}` → `{}`（host 在本機撤銷帳號來源裝置時同步 D1，`revoked_reason='owner'`；失敗記錄並存入 `grant_revokes` 重試，本機撤銷已生效）
 - `POST /v1/host/access-requests/{id}/decision` `{"decision":"approve"|"deny"}` → `{"status","grantId"?}`（`cloud/src/routes/host.ts` 的原子更新；request 過期 → `410 requestExpired`；approve 要求 `device_nonce IS NOT NULL`，否則 `409`）
@@ -533,7 +551,7 @@ The route table below summarizes the contract. Executable schema and validation 
 
 ## 11. Apps and SSH
 
-The iOS app (ClerkKit) and the desktop app (Clerk Frontend API) sign in to the same Clerk instance. QR pairing remains usable without an account; account sign-in requires host-approved device access. The desktop app uses OpenSSH forwarding for SSH computers, not a mobile SSH gateway. See [accounts and SSH](../guides/accounts-and-ssh.md).
+The iOS app (ClerkKit) and the desktop app (Clerk Frontend API) sign in to the same Clerk instance. Every app with Clerk requires sign-in ([require sign-in](../plans/require-sign-in.md)); QR pairing still works without the cloud, and account access requires host-approved device access. The desktop app uses OpenSSH forwarding for SSH computers, not a mobile SSH gateway. See [accounts and SSH](../guides/accounts-and-ssh.md).
 
 ## 12. Verification
 
@@ -570,7 +588,7 @@ The following implemented clarifications take precedence over the original contr
 - **Mailbox 重試**：沿用同一個 `clientNonce`，但每次重新 seal。
 - **ACL**：列表中 `grant` 為 null 的已封鎖 dk 會被解除封鎖；被封鎖的 dk 仍可開 pairing socket。
 - **帳號裝置 mailbox**：第一次拉取 state 之前收到的 item 先保留、不 ack。
-- **SSH forward**：以 `lsof` 確認本機 listener 屬於我們啟動的 `ssh`。
+- **SSH forward**：確認本機 listener 屬於我們啟動的 `ssh` 子行程才送出 host token：macOS/Linux 用 `lsof` 或 `/proc`，Windows 用 `Get-NetTCPConnection`。
 - **取消 access request**：iOS SAS sheet 有取消按鈕（`DELETE /v1/access-requests/{id}`）。
 
 ## 15. Limits and risks

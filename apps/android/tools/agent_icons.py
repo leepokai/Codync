@@ -6,7 +6,7 @@ Each `apps/desktop/src/renderer/assets/agents/<registry>.svg` made only of paths
 are); logos with other shapes fall back to the terminal glyph. Also writes `AgentIcons.kt`, the
 `agentIconRes("claude-acp")` lookup.
 
-Run from apps/android: python3 tools/agent_icons.py
+Run from apps/android: python3 tools/agent_icons.py (self-check: python3 tools/agent_icons_test.py)
 """
 import pathlib
 import re
@@ -24,10 +24,33 @@ def resource(registry: str) -> str:
     return "agent_" + re.sub(r"[^a-z0-9]", "_", registry.lower())
 
 
+NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
 def compact(d: str, size: float) -> str:
-    """Rounds path numbers to what a 24dp icon can show (lint flags long paths)."""
+    """Rounds path numbers to what a 24dp icon can show (lint flags long paths).
+
+    Reads the path argument by argument: in `1.5.5` the second `.5` is its own number, and in an
+    arc (`a.3.3 0 01.4-.2`) the two flags are single digits that may touch the next number.
+    """
     places = max(1, 4 - len(str(int(size))))
-    return re.sub(r"-?\d*\.\d+", lambda m: f"{float(m.group()):.{places}f}".rstrip("0").rstrip("."), d)
+    out = []
+    for command, args in re.findall(r"([MmZzLlHhVvCcSsQqTtAa])([^MmZzLlHhVvCcSsQqTtAa]*)", d):
+        values, i = [], 0
+        while i < len(args):
+            if args[i] in " ,\t\r\n":
+                i += 1
+            elif command in "aA" and len(values) % 7 in (3, 4):
+                values.append(args[i])
+                i += 1
+            else:
+                number = NUMBER.match(args, i)
+                if number is None:
+                    raise ValueError(f"unreadable path at {command}{args[i:]}")
+                values.append(f"{float(number.group()):.{places}f}".rstrip("0").rstrip("."))
+                i = number.end()
+        out.append(command + "".join(v if n == 0 or v.startswith("-") else " " + v for n, v in enumerate(values)))
+    return "".join(out)
 
 
 def convert(svg: pathlib.Path) -> str | None:

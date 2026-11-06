@@ -39,12 +39,18 @@ import kotlin.math.sin
  * Cold launch, as iOS `LaunchSplash`: the app-icon bot pops out of the blank system splash and
  * looks around while the computer catches up, then grows a little as it fades into the app.
  */
-/** The splash over the app until the store is ready, held at least 0.7 s so the motion reads. */
-@Composable internal fun LaunchLayer(loading: Boolean) {
+/**
+ * The splash over the app until the account is open and its computers have caught up ([caughtUp]; true with none), held
+ * at least 0.7 s so the motion reads and never past 1.8 s, the cached list being behind it (iOS `LaunchSplash`).
+ */
+@Composable internal fun LaunchLayer(loading: Boolean, caughtUp: Boolean) {
     var visible by remember { mutableStateOf(true) }
     val started = remember { System.currentTimeMillis() }
-    LaunchedEffect(loading) {
-        if (!loading) { delay(maxOf(0L, 700 - (System.currentTimeMillis() - started))); visible = false }
+    LaunchedEffect(loading, caughtUp) {
+        if (loading) return@LaunchedEffect
+        delay(maxOf(0L, 700 - (System.currentTimeMillis() - started)))
+        if (!caughtUp) delay(maxOf(0L, 1_800 - (System.currentTimeMillis() - started)))
+        visible = false
     }
     AnimatedVisibility(visible, enter = EnterTransition.None,
         exit = fadeOut(tween(300)) + scaleOut(tween(300), targetScale = if (reduceMotion()) 1f else 1.15f)) { LaunchSplash() }

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { isGroup, type Bot } from '@shared/models'
-import { moveInOrder, rosterBand } from '../lib/computer-roster'
+import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
+import { sameRosterGroup } from '../lib/roster-sections'
 import { reduceMotion } from '../lib/theme'
 import { useSlide } from '../lib/slide'
 import { sameRef, refKey, type RosterItem } from '../store/app-model'
@@ -11,6 +12,7 @@ import type { useComputerRoster } from '../store/computer-roster'
 import { StoreContext, useApp } from '../store/context'
 import { BotRow } from './BotRow'
 import { ComputerHeadingLabel, ComputerRosterSection } from './ComputerRosterSection'
+import { SectionRoster } from './SectionRoster'
 import { UpdateNeededCard } from './UpdateNeededCard'
 import { RosterControls, RosterPreview } from './RosterControls'
 import { RosterStops } from '../store/roster-query'
@@ -39,10 +41,11 @@ interface Lift {
   seq: number
 }
 
-export function BotRoster({ roster, compact, onContext, openExtensions }: {
+export function BotRoster({ roster, compact, onContext, onSectionContext, openExtensions }: {
   roster: ReturnType<typeof useComputerRoster>
   compact: boolean
   onContext: (bot: Bot, store: BotStore, x: number, y: number) => void
+  onSectionContext: (section: string, store: BotStore, x: number, y: number) => void
   /** A computer's own Extensions, from its heading. */
   openExtensions: (computerId: string) => void
 }) {
@@ -151,14 +154,14 @@ export function BotRoster({ roster, compact, onContext, openExtensions }: {
     edgeScroll.current = requestAnimationFrame(scrollAtEdge)
   }
 
-  // Any row of the same computer is a target; only rows in the same band (lead, pinned, the rest) make room.
+  // Any row of the same computer is a target; only rows in the same band (lead, pinned, the rest) and, for the rest, the same section make room.
   const makeRoom = (under: Element | null) => {
     const current = drag.current
     const row = under?.closest<HTMLElement>('[data-roster-row]')
     const item = row && itemsByKey.current.get(row.dataset.rosterRow!)
     if (!current || !row || !item || current.item.ref.computerId !== item.ref.computerId) return
     // A row still sliding out of the way would be hit again where it was.
-    if (item.bot.id === current.item.bot.id || rosterBand(item.bot) !== rosterBand(current.item.bot) || row.getAnimations().length) return
+    if (item.bot.id === current.item.bot.id || !sameRosterGroup(item.bot, current.item.bot) || row.getAnimations().length) return
     setBotDrag({ ...current, ids: moveInOrder(current.ids, current.item.bot.id, item.bot.id) })
   }
 

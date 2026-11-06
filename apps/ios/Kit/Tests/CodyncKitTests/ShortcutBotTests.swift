@@ -55,4 +55,8 @@ import Testing
     #expect(ShortcutBotQuery.lead(in: storage)?.name == "Zed", "unarranged: the first computer saved")
     storage.computerOrder = ComputerOrder(ids: ["removed", mini.id, laptop.id])
     #expect(ShortcutBotQuery.lead(in: storage)?.name == "Codync", "the user's order, past a removed computer")
+    storage.shortcutLeadComputer = laptop.id
+    #expect(ShortcutBotQuery.lead(in: storage)?.name == "Zed", "the computer chosen in Settings")
+    storage.bots = [ada, BotSnapshot(computerId: mini.id, bot: try bot("l2", "Codync", lead: true))]
+    #expect(ShortcutBotQuery.lead(in: storage)?.name == "Codync", "its lead deleted: the first computer with one")
 }

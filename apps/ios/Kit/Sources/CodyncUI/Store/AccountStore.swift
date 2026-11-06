@@ -1,6 +1,7 @@
 import CodyncKit
 import Foundation
 import Observation
+import UIKit
 import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Account")
@@ -34,6 +35,8 @@ public final class AccountStore {
     /// The actual request approved most recently, distinct from a previously paired computer.
     public private(set) var approvedAccess: [ComputerID: String] = [:]
     public var lastError: String?
+    /// While pairing: the code the computer shows if it asks whether to let this phone in.
+    public private(set) var pairingCheck: String?
     public var selection: BotReference? {
         didSet {
             guard !retired else { return }
@@ -60,6 +63,10 @@ public final class AccountStore {
     private var cloudListVersion = 0
     /// Access requests still waiting for their code, joined by a second ask.
     private var asks: [ComputerID: Task<AccessTicket, any Error>] = [:]
+    /// The account's word for this device's key, kept in memory for this context.
+    private var certificate: DeviceCertificate?
+    /// Computers joining this account (`joinAccount`).
+    private var joining: Set<ComputerID> = []
     private var isActive = true
     private var retired = false
 
@@ -97,15 +104,76 @@ public final class AccountStore {
 
     // MARK: computers
 
-    /// QR pairing (§4.1); the computer is saved in this context and connected.
+    /// QR pairing (§4.1) with this account's certificate: a computer in another account turns the phone away,
+    /// one in none asks its user, then joins this account. The computer is saved in this context and connected.
     public func pair(_ pairing: Pairing, deviceName: String, platform: String) async throws -> Computer {
         let identity = try DeviceIdentity.load(context: storage)
-        var computer = try await HostConnector.pair(pairing, identity: identity, deviceName: deviceName, platform: platform)
+        guard let cloud else { throw Self.noCertificate }
+        let certificate = try await pairingCertificate(cloud, deviceName: deviceName, platform: platform)
+        // Without a claim the computer still pairs; it joins the account on a later connection (`Hello.joinAccount`).
+        let claim: CloudClaim?
+        do { claim = try await cloud.createClaim() } catch {
+            log.info("pairing without a claim: \(error.localizedDescription, privacy: .public)")
+            claim = nil
+        }
+        pairingCheck = pairing.checkCode(for: identity)
+        defer { pairingCheck = nil }
+        let paired = try await HostConnector.pair(pairing, identity: identity, deviceName: deviceName, platform: platform,
+                                                  certificate: certificate, claim: claim)
         guard !retired else { throw CancellationError() }
+        var computer = paired.computer
         if let previous = saved.first(where: { $0.id == computer.id }) { computer.keepDevicePicks(from: previous) }
         save(computer)
         open(computer)
+        if let claim, let signed = paired.claim {
+            joinAccount(computer.id) { _ in (claim, signed) }
+        }
         return computer
+    }
+
+    public static let noCertificate = CloudError(status: 0, code: "noCertificate",
+                                          message: "Connect to the internet to pair, so Codync can confirm your account.")
+
+    /// This device's certificate: the one held while more than a day is left, else a new one, registering
+    /// the device again if the cloud doesn't know it. Offline, one that is still valid will do.
+    func pairingCertificate(_ cloud: CloudClient, deviceName: String, platform: String) async throws -> DeviceCertificate {
+        if let certificate, certificate.isFresh() { return certificate }
+        do {
+            let fresh: DeviceCertificate
+            do {
+                fresh = try await cloud.deviceCertificate()
+            } catch let error as CloudError where error.status == 403 {
+                try await cloud.registerDevice(name: deviceName, platform: platform)
+                fresh = try await cloud.deviceCertificate()
+            }
+            certificate = fresh
+            return fresh
+        } catch let error as CloudError where !error.isTransient {
+            throw error
+        } catch {
+            if let certificate, certificate.isValid() { return certificate }
+            log.info("no device certificate: \(error.localizedDescription, privacy: .public)")
+            throw Self.noCertificate
+        }
+    }
+
+    /// The computer signs this account's claim (`sign`: while letting this phone in, or later through
+    /// `joinAccount` when its `hello` asks), and the phone, which holds the account's session, completes it.
+    /// One at a time per computer; the computer decides whether a join that failed here is asked for again.
+    private func joinAccount(_ id: ComputerID, sign: @escaping @MainActor (CloudClient) async throws -> (CloudClaim, Data)) {
+        guard let cloud, !retired, joining.insert(id).inserted else { return }
+        Task {
+            defer { joining.remove(id) }
+            do {
+                let (claim, signed) = try await sign(cloud)
+                try await cloud.completeClaim(claimId: claim.claimId, claim: signed)
+            } catch {
+                log.error("paired computer didn't join the account: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            guard !retired else { return }
+            await refreshCloud()
+        }
     }
 
     public func forget(_ id: ComputerID) {
@@ -154,6 +222,9 @@ public final class AccountStore {
         cloudListVersion += 1
         let version = cloudListVersion
         do {
+            // Every refresh, as on Android: signing back in clears the account's signed-out mark, or its computers
+            // drop this iPhone's push tickets again on their next state pull.
+            try await cloud.registerDevice(name: UIDevice.current.name, platform: "ios")
             let list = try await cloud.computers()
             guard !retired, version == cloudListVersion else { return }
             if list != cloudComputers { Motion.animate { cloudComputers = list } }
@@ -370,6 +441,12 @@ public final class AccountStore {
         }
         store.onComputerChanged = { [weak self] computer in self?.computerChanged(computer) }
         store.onRosterChanged = { [weak self] in self?.rosterChanged() }
+        store.onJoinAccount = { [weak self] client in
+            self?.joinAccount(id) { cloud in
+                let claim = try await cloud.createClaim()
+                return (claim, try await client.joinAccount(claim))
+            }
+        }
         stores[id] = store
         if isActive { store.setActive(true) }
     }

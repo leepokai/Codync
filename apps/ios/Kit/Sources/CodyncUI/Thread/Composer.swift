@@ -250,6 +250,7 @@ struct Composer: View {
             }
         }
         .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.listening || dictation.transcribing)
+        .codyncSheet(isPresented: $dictation.needsKey) { VoiceChatSettingsView() }
         .codyncDialog("Couldn't dictate", isPresented: Binding(get: { dictation.failure != nil }, set: { if !$0 { dictation.failure = nil } }),
                       message: dictation.failure, cancel: "OK") { [] }
     }
@@ -285,13 +286,6 @@ struct Composer: View {
             model.setComposerDraft(value, for: draftKey)
             // Starting a command: list the computer's skills again.
             if value == "/" { Task { await model.refreshPlugins() } }
-        }
-        .onChange(of: model.routineDrafts[botId]) { _, value in
-            // A request for a routine belongs in the chat.
-            guard let value, artifact == nil else { return }
-            draft = draft.isEmpty ? value : draft + "\n" + value
-            model.routineDrafts.removeValue(forKey: botId)
-            focused = true
         }
     }
 

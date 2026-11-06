@@ -1,9 +1,11 @@
 // Cross-track integration test (spec §12.1): the real codync-host against `wrangler dev`, driven by a
 // fake phone. Run with `npm run e2e` after `cargo build` in host/ (or set CODYNC_HOST_BIN).
 //
-// Steps: local D1 + wrangler dev with a test Clerk key → host with CODYNC_CLOUD_URL → QR pairing over the
-// relay → chat through the relay → mailbox while the host is down → account claim + SAS access request →
-// cloud revocation → injected grant ignored → direct /channel and loopback-only bearer token.
+// Steps: local D1 + wrangler dev with a test Clerk key and device certificate key → host with CODYNC_CLOUD_URL
+// trusting that key → QR pairing over the relay with a certified phone, which the computer (in no account) lets in
+// → chat through the relay → mailbox while the host is down → account claim + SAS access request → another
+// account's phone turned away → cloud revocation → injected grant ignored → direct /channel and loopback-only
+// bearer token.
 
 import { type ChildProcess, execFile, spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
@@ -13,6 +15,7 @@ import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ref from "../ref.ts";
+import { exerciseIcons } from "./icons.ts";
 import { Channel, FakePhone, parsePairing, waitFor, type Json, type PairingInfo, type Wire } from "./phone.ts";
 
 const CLOUD_DIR = fileURLToPath(new URL("../..", import.meta.url));
@@ -77,6 +80,14 @@ function d1(sql: string): Promise<Json[]> {
   );
 }
 
+// ---- device certificates ----
+
+// The cloud signs device certificates with the private half (DEVICE_CERT_KEY); the host checks them with the public
+// half (CODYNC_DEVICE_CERT_KEY), as a self-hosted cloud's hosts do.
+const certKey = generateKeyPairSync("ed25519");
+const certJwk = JSON.stringify(certKey.privateKey.export({ format: "jwk" }));
+const certPub = certKey.publicKey.export({ format: "jwk" }).x!;
+
 // ---- Clerk test tokens ----
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -114,7 +125,11 @@ let host: ChildProcess | undefined;
 async function startHost() {
   hostPort ||= await freePort();
   // 0.0.0.0 so step 7 can prove a non-loopback bearer token is refused.
-  host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], { CODYNC_HOME: home, CODYNC_CLOUD_URL: CLOUD });
+  host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], {
+    CODYNC_HOME: home,
+    CODYNC_CLOUD_URL: CLOUD,
+    CODYNC_DEVICE_CERT_KEY: certPub,
+  });
   await waitFor("host /health", () => fetch(`http://127.0.0.1:${hostPort}/health`).then((r) => r.ok || undefined).catch(() => undefined), 30_000);
 }
 
@@ -128,6 +143,14 @@ async function loopback(method: string, body: unknown = {}): Promise<Json> {
   const v = await res.json();
   if (!res.ok) throw new Error(`${method} → ${res.status} ${JSON.stringify(v)}`);
   return v;
+}
+
+/** A phone signed in to `token`'s account: registered with it, and the cloud's certificate for its key. */
+async function certify(phone: FakePhone, token: string): Promise<Json> {
+  check((await cloud("POST", "/v1/devices", { token, key: phone.key, body: { name: "E2E iPhone", platform: "ios" } })).status === 200, "phone registered with its account");
+  const r = await cloud("POST", "/v1/devices/certificate", { token, key: phone.key });
+  check(r.status === 200, "the cloud certified the phone's key");
+  return r.body.certificate;
 }
 
 /** The relay refused the upgrade (the socket never opened). */
@@ -148,7 +171,10 @@ async function main() {
     env: { ...process.env, CI: "1" },
   });
   if (migrate.status !== 0) throw new Error(`migrations failed: ${migrate.stderr}`);
-  run(WRANGLER, ["dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(CLOUD_PORT), "--persist-to", persist, "--var", `CLERK_JWT_KEY:${jwtKey}`]);
+  run(WRANGLER, [
+    "dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(CLOUD_PORT), "--persist-to", persist,
+    "--var", `CLERK_JWT_KEY:${jwtKey}`, "--var", `DEVICE_CERT_KEY:${certJwk}`,
+  ]);
   await waitFor("cloud /v1/health", () => fetch(`${CLOUD}/v1/health`).then((r) => r.ok || undefined).catch(() => undefined), 60_000);
 
   step("2–3. host registers and comes online");
@@ -160,18 +186,40 @@ async function main() {
   await waitFor("DO presence online", () => computerOnline(computerId), 20_000);
   check(true, "D1 row exists and the DO marked it online");
 
-  step("4. QR pairing over the relay, then chat");
+  step("4. QR pairing over the relay (the computer, in no account, asks first), then chat");
+  const userId = "user_e2e";
+  const token = await clerkToken(userId);
   const pairing: PairingInfo = parsePairing((await loopback("pairing")).pairingUrl);
   check(pairing.computerId === computerId && pairing.cloud === CLOUD, "pairing link names this computer and cloud");
   const phone = new FakePhone();
-  const paired = await phone.pair(pairing);
-  check(paired.computerId === computerId, "pair answered, link closed with 4100");
+  // No claim: the computer stays out of the account until step 6 claims it.
+  const pairs = phone.pair(pairing, { certificate: await certify(phone, token) });
+  const ask = await waitFor("the computer asks", async () => (await loopback("pairingRequests")).requests[0]);
+  check(ask.email === `${userId}@example.com` && ask.code === ref.pairCheck(phone.key.pub, pairing.signKey), `it shows the phone's account and code (${ask.code})`);
+  await loopback("decidePairing", { requestId: ask.requestId, approve: true });
+  const paired = await pairs;
+  check(paired.computerId === computerId && paired.claim === null, "pair answered, link closed with 4100");
   // 6c: the normal reconnect is not a pairing socket, so it isn't capped at 16 messages.
   let ch = await phone.relay(CLOUD, computerId, pairing.signKey);
   const hello = await ch.call("hello", {});
   check(hello.computerId === computerId && hello.boxKey === ref.b64url(pairing.boxKey), "inner hello returns computerId and boxKey");
-  for (let i = 0; i < 20; i++) await ch.call("sync", { since: 0 });
+  for (let i = 0; i < 20; i++) await ch.call("hello", {});
   check(true, "more than 16 messages on the regular link");
+
+  if (process.env.CODYNC_E2E_ICONS_ONLY === "1") {
+    // The phone's own account: joining another one would turn the phone away.
+    const claim = await cloud("POST", "/v1/claims", { token });
+    const signed = await loopback("claimSign", { claimId: claim.body.claimId, nonce: claim.body.nonce, userId });
+    check((await cloud("POST", `/v1/claims/${claim.body.claimId}/complete`, { token, body: signed })).status === 200, "icon test computer claimed");
+    await waitFor("icon host sees its owner", async () => (await loopback("cloudStatus")).owner?.userId === userId || undefined);
+    const target = `bot:${(await ch.call("createBot", { name: "Icons", backend: "custom", command: "true", cwd: tmp })).bot.id}`;
+    const png = await exerciseIcons((method, body) => ch.call(method, body, 60_000), target);
+    check(await ch.call("setIcon", { target: "agent:claude", remove: true }).then(() => false, () => true), "agents have no custom icons");
+    await stop(host!);
+    await startHost();
+    check((await loopback("hello")).icons[target].dataUrl === png, "icon remains cached after host restart");
+    return;
+  }
 
   const bot = (await ch.call("createBot", { name: "Tester", backend: "custom", command: `python3 '${FAKE_AGENT}'`, cwd: tmp, permission: "ask" })).bot.id;
   ch.subscribe("events", { since: 0, client: "ios" });
@@ -245,14 +293,18 @@ async function main() {
   check(run2.event?.event === "pull_request.opened" && run2.event?.repo === "o/r", "delivered once the host is back, as a GitHub event");
   ch = await Channel.open(ch.wire, phone.key, pairing.signKey, { relay: true });
 
-  step("6. account: claim, access request with SAS, revocation");
-  const userId = "user_e2e";
-  const token = await clerkToken(userId);
+  step("6. account: claim, access request with SAS, another account's phone, revocation");
   const claim = await cloud("POST", "/v1/claims", { token });
   const signed = await loopback("claimSign", { claimId: claim.body.claimId, nonce: claim.body.nonce, userId });
   const done = await cloud("POST", `/v1/claims/${claim.body.claimId}/complete`, { token, body: signed });
   check(done.status === 200 && done.body.computer.computerId === computerId, "computer claimed");
   await waitFor("host sees its owner", async () => (await loopback("cloudStatus")).owner?.userId === userId || undefined);
+  check((await loopback("devices")).devices.some((d: Json) => d.key === phone.dk), "the phone paired before the claim keeps its access");
+
+  const stranger = new FakePhone();
+  const strangerPairing = parsePairing((await loopback("pairing")).pairingUrl);
+  const turnedAway = await stranger.pair(strangerPairing, { certificate: await certify(stranger, await clerkToken("someone_else")) }).catch((e: Error) => e);
+  check(turnedAway instanceof Error && turnedAway.message.includes("u•••@example.com's account"), "a phone of another account is turned away, the owner masked");
 
   const phone2 = new FakePhone();
   check((await cloud("POST", "/v1/devices", { token, key: phone2.key, body: { name: "Phone 2", platform: "ios" } })).status === 200, "phone 2 registered");
@@ -280,6 +332,8 @@ async function main() {
   const ch2 = await phone2.relay(CLOUD, computerId, ref.unb64url(listed.signKey));
   check((await ch2.call("hello", {})).computerId === computerId, "phone 2 connected through the relay");
 
+  const cachedIcon = await exerciseIcons((method, body) => ch2.call(method, body, 60_000), `bot:${bot}`);
+
   const started = Date.now();
   await cloud("DELETE", `/v1/computers/${computerId}/grants/${approved.grantId}`, { token });
   const code = await ch2.wire.closed(5000);
@@ -289,6 +343,7 @@ async function main() {
   await startHost();
   await waitFor("host back online", () => computerOnline(computerId), 20_000);
   check(await refused(phone2.relayWire(CLOUD, computerId)), "still refused after the host reconnects");
+  check((await loopback("hello")).icons[`bot:${bot}`].dataUrl === cachedIcon, "icon survives a real host restart in its local cache");
 
   step("6b. a grant injected into D1 is ignored by the host");
   const phone3 = new FakePhone();

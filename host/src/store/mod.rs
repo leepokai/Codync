@@ -47,9 +47,12 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::sync::Mutex;
 
 pub struct Store {
+    pub(crate) icon_lock: tokio::sync::Mutex<()>,
     db: Mutex<Connection>,
     pub(crate) connector_lock: Mutex<()>,
     pub(crate) secret_key: Mutex<Option<zeroize::Zeroizing<Vec<u8>>>>,
+    /// Held by the one keyring read in flight (`market::vault::unlock`).
+    pub(crate) vault_unlock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 pub fn now_ms() -> i64 {

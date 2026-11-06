@@ -18,6 +18,7 @@ import {
 export type BotStatus = 'idle' | 'working' | 'needsInput' | 'error'
 
 export interface Bot {
+  customIcon?: import('./custom-icons').CustomIcon
   id: string
   /** `agent`, or `group`: several bots and the user in one chat. */
   kind: string
@@ -33,7 +34,7 @@ export interface Bot {
   cwd: string
   /** Host-allocated personal workspace rather than a user-selected project. */
   managedWorkspace: boolean
-  /** `ask` or `auto`. */
+  /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
   actionRules?: Partial<Record<ActionClass, RulePolicy>>
   proactive?: ProactiveSettings
@@ -56,10 +57,12 @@ export interface Bot {
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
   resting: Resting[]
   pinned: boolean
-  /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
+  /** The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it. Placed in the roster like any bot, never hidden. */
   lead: boolean
   /** Where the user dragged it, lowest first within its band (`rosterBand`); ties sort by recent activity. */
   position: number
+  /** The roster section the user put it in (`Work`, `Personal`); none when absent. */
+  section?: string
   hidden: boolean
   notify?: boolean | null
   connectors: string[]
@@ -129,6 +132,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,
+    // A cleared section (null, or an empty name) reads as none.
+    section: raw.section || undefined,
     hidden: raw.hidden ?? false,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],
@@ -539,6 +544,8 @@ export function normalizeScreen(raw: Partial<ScreenState> | undefined | null): S
 }
 
 export interface Hello {
+  iconsRevision?: number
+  icons?: import('./custom-icons').CustomIcons
   hostId: string
   name: string
   version: string
@@ -574,7 +581,11 @@ export interface DirItem {
   isGit: boolean
 }
 
+export interface RecentWorkspace { path: string; usedAt: number }
+
 export interface DirListing {
+  recent?: RecentWorkspace[]
+  ancestors?: DirItem[]
   path: string
   parent?: string | null
   isGit: boolean
@@ -591,6 +602,18 @@ export interface AccessRequest {
   /** The SAS; nil until the phone revealed its nonce (Approve stays disabled). */
   code?: string | null
   createdAt?: number | null
+  expiresAt?: number | null
+}
+
+/** A signed-in phone that scanned a computer in no account, waiting to be let in (loopback `pairingRequests`). */
+export interface PairingRequest {
+  requestId: string
+  deviceName: string
+  platform?: string | null
+  /** The phone's account, which the computer joins. */
+  email?: string | null
+  /** The 6 digits the phone shows too. */
+  code: string
   expiresAt?: number | null
 }
 
@@ -630,6 +653,8 @@ export interface CloudStatus {
   relay?: 'codync' | 'private' | null
   /** The user's cloud assistant may message this computer's bots (`setAssistants`). */
   assistants?: boolean | null
+  /** In no account while it could join one: a signed-in phone that pairs asks to bring it into its account. Absent from older hosts. */
+  canJoinAccount?: boolean | null
 }
 
 export interface ClaimSignature {
@@ -676,6 +701,8 @@ export interface BotDraft {
   fallbacks?: Fallback[]
   selfFallbacks?: boolean
   pinned?: boolean
+  /** A name puts the bot in that roster section, null takes it out; left out, the host keeps it. */
+  section?: string | null
   hidden?: boolean
   notify?: boolean | null
   connectors?: string[]

@@ -11,6 +11,7 @@ pub mod devices;
 mod documents;
 mod events;
 mod files;
+mod folders;
 mod host;
 mod http;
 mod marketplace;

@@ -1,6 +1,7 @@
 """ACP agent for the fallback chain test, run as `relay_agent.py <name>`. While `<name>.limit` exists in its folder,
 every prompt edits a file and then fails the way Claude's adapter reports a usage limit; otherwise it answers
-"<name> answered". While `<name>.signedout` exists, every prompt fails asking to sign in (ACP's -32000). While
+"<name> answered". While `<name>.signedout` exists, every prompt fails asking to sign in (ACP's -32000); while
+`<name>.revoked` exists, only a process started before it does (it holds the sign-in that file replaced). While
 `<name>.refusal` exists, every prompt answers `refusal` with the file's text as `_meta["codebuddy.ai/errorMessage"]`, the
 way CodeBuddy's CLI reports an error (an empty file: a plain refusal). Sessions load (`<name>-s<n>`) unless
 `<name>.noload` exists; every request goes to `<name>.jsonl` in its folder."""
@@ -8,7 +9,9 @@ way CodeBuddy's CLI reports an error (an empty file: a plain refusal). Sessions 
 import json
 import os
 import sys
+import time
 
+STARTED = time.time()
 NAME = sys.argv[1]
 LIMIT = {
     "code": -32603,
@@ -45,7 +48,8 @@ for line in sys.stdin:
         send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
         sid = params["sessionId"]
-        if os.path.exists(f"{NAME}.signedout"):
+        revoked = os.path.exists(f"{NAME}.revoked") and os.path.getmtime(f"{NAME}.revoked") > STARTED
+        if os.path.exists(f"{NAME}.signedout") or revoked:
             send({"id": message["id"], "error": {"code": -32000, "message": "Authentication required"}})
         elif os.path.exists(f"{NAME}.refusal"):
             with open(f"{NAME}.refusal", encoding="utf-8") as f:

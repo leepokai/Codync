@@ -124,6 +124,7 @@ impl Actor {
                 conn.fast_options.remove(sid);
                 conn.pending_models.remove(sid);
                 conn.usage.remove(sid);
+                conn.renamed.remove(sid);
                 self.applied_system.remove(sid);
             }
             Err(error) => {

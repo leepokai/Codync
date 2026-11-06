@@ -3,6 +3,6 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp" android:viewportWidth="40" android:viewportHeight="40">
     <group android:translateX="0" android:translateY="0">
-        <path android:pathData="M28,34.67h6.67v5.33h-8.38l-3.62-3.62v-8.38h5.33v6.67ZM40,26.29l-3.62-3.62h-8.38v5.33h6.67v6.67h5.33v-8.38ZM17.33,22.67h-5.33v5.33h5.33v-5.33ZM0,36.38l3.62,3.62h13.71v-5.33H5.33v-12H0v13.71ZM33.96,12V3.62L30.34-0h-7.67v5.33h5.96v6.67h-5.96v5.33h17.33v-5.33h-6.04ZM5.33,0H0v17.33h5.33v-6h6.67v6h5.33v-6l-5.33-5.33h-6.67V0ZM17.33,0h-5.33v6h5.33V0Z" android:fillColor="#FF000000"/>
+        <path android:pathData="M28 34.67h6.67v5.33h-8.38l-3.62-3.62v-8.38h5.33v6.67ZM40 26.29l-3.62-3.62h-8.38v5.33h6.67v6.67h5.33v-8.38ZM17.33 22.67h-5.33v5.33h5.33v-5.33ZM0 36.38l3.62 3.62h13.71v-5.33H5.33v-12H0v13.71ZM33.96 12V3.62L30.34-0h-7.67v5.33h5.96v6.67h-5.96v5.33h17.33v-5.33h-6.04ZM5.33 0H0v17.33h5.33v-6h6.67v6h5.33v-6l-5.33-5.33h-6.67V0ZM17.33 0h-5.33v6h5.33V0Z" android:fillColor="#FF000000"/>
     </group>
 </vector>

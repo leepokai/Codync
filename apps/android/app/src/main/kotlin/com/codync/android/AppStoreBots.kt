@@ -7,9 +7,21 @@ import kotlinx.serialization.json.*
 
 // Bots and groups, their routines, usage, and the host queries the screens make.
 
-fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), key: String = method, onSuccess: () -> Unit = {}) = action(key) {
-    val active = ready()
-    val response = active.call(method, body)
+/** [onFailure] runs when the computer didn't take it (unreachable or refused, before the error shows) or it never went (still loading, or [key] under way). */
+fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), key: String = method, onFailure: () -> Unit = {},
+    onSuccess: () -> Unit = {}) {
+    val started = action(key) {
+        val response = try { ready().call(method, body) }
+            catch (error: CancellationException) { throw error }
+            catch (error: Exception) { onFailure(); throw error }
+        receiveReply(response)
+        onSuccess()
+    }
+    if (!started) onFailure()
+}
+
+/** Takes in the bot or entry a command's reply carries, then shows it. */
+private suspend fun AppStore.receiveReply(response: JsonElement) {
     response.jsonObject["bot"]?.let { value ->
         withContext(Dispatchers.IO) { requireNotNull(database).receive(HostClient.decode(value.jsonObject)) }
     }
@@ -17,8 +29,36 @@ fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), 
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(Entry.decode(value.jsonObject))) }
     }
     refresh()
-    onSuccess()
 }
+
+/** Moves a bot into the roster section [section], or out of any (null). */
+fun AppStore.setSection(botId: String, section: String?) = moveSections(listOf(botId), section, "updateBot", sectionUpdate(botId, section))
+
+/**
+ * Moves every bot of the section [from] into [to] (merging into a section of that name), or out of any (null: removes the section);
+ * [onRefused] when the computer doesn't take it.
+ */
+fun AppStore.renameSection(from: String, to: String?, onRefused: () -> Unit) =
+    moveSections(state.value.bots.filter { it.section == from }.map(Bot::id), to, "renameSection", sectionRename(from, to), onRefused)
+
+/**
+ * Shows bots [ids] in [section] at once, then sends [method] (iOS `BotStore.show`): each move shows over the mirror until it's
+ * answered, so a refused one leaves the bot where the computer has it, or where a later move put it.
+ */
+private fun AppStore.moveSections(ids: List<String>, section: String?, method: String, body: JsonObject, onRefused: () -> Unit = {}) {
+    val moves = ids.map { SectionMove(it, section) }
+    pendingSectionMoves += moves
+    showSectionMoves()
+    // A key of its own: a later move of the same bot goes while this one is answered.
+    command(method, body, "section:" + java.util.UUID.randomUUID(), onFailure = {
+        pendingSectionMoves.removeAll(moves)
+        // The bots and the caller's folds go back in one update.
+        showSectionMoves()
+        onRefused()
+    }) { pendingSectionMoves.removeAll(moves) }
+}
+
+private fun AppStore.showSectionMoves() = mutableState.update { it.copy(bots = withMoves(mirrorBots, pendingSectionMoves)) }
 
 fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     val active = ready()
@@ -26,12 +66,19 @@ fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     val bot = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
-    openBot(bot.id)
+    // A new bot or group opens its chat; an edit stays where it was made (iOS `BotEditorView.save`).
+    if (draft.id == null) openBot(bot.id)
     onSaved()
 }
 
-/** A saved bot's settings from its details, saved as they're edited: the chat stays where it is. */
-fun AppStore.saveSettings(draft: BotDraft) = command("updateBot", draft.body(), "settings:" + draft.id)
+/** A saved bot's settings from its details, saved as they're edited; [done] gets the error, or null once it took. */
+fun AppStore.saveSettings(draft: BotDraft, done: (String?) -> Unit) = action("settings:" + draft.id) {
+    try {
+        receiveReply(ready().call("updateBot", draft.body()))
+        done(null)
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (error: Exception) { done(error.message ?: "Couldn't save the changes.") }
+}
 
 fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor") {
     val payload = draft.body(state.value.bots)
@@ -40,7 +87,8 @@ fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor"
     val bot = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
-    openBot(bot.id)
+    // A new bot or group opens its chat; an edit stays where it was made (iOS `BotEditorView.save`).
+    if (draft.id == null) openBot(bot.id)
     onSaved()
 }
 
@@ -141,6 +189,11 @@ fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
         CodyncWidgets.update(getApplication())
     }
 }
+suspend fun AppStore.selectWorkspace(path: String): String {
+    return hostQuery("selectWorkspace", body("path" to path)).jsonObject["path"]?.jsonPrimitive?.content
+        ?: error("Missing selected folder")
+}
+
 suspend fun AppStore.listDirs(path: String?): DirListing {
     val response = hostQuery("listDirs", body("path" to path))
     return WireJson.decodeFromJsonElement(response)

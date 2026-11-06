@@ -4,14 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// How a bot handles the agent's permission requests (wire values `ask` / `auto`).
+/// How a bot handles the permission requests that reach Codync (wire values `ask` / `auto`). Which ones reach it is
+/// the agent's mode (`BotConfig::mode`).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Permission {
-    /// Every request becomes an approval card on the phone.
-    Ask,
-    /// Requests are approved once, automatically. New bots start here.
+    /// Every request becomes an approval card on the phone. New bots start here, in the agent's Auto mode.
     #[default]
+    Ask,
+    /// Requests are approved once, automatically.
     Auto,
 }
 
@@ -156,6 +157,10 @@ pub struct BotConfig {
     pub cwd: String,
     #[serde(default)]
     pub permission: Permission,
+    /// The agent mode to work in (see `agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
+    /// without one keeps its own). None: the mode its sessions open in, the agent's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): ACP config option id → value.
@@ -174,7 +179,8 @@ pub struct BotConfig {
     pub self_fallbacks: bool,
     #[serde(default)]
     pub pinned: bool,
-    /// The computer's lead bot, which the host makes (see `chat::lead`): first in the roster, never deleted or hidden.
+    /// The computer's lead bot (see `chat::lead`): first in the roster. The host makes the first; the user may pick
+    /// another (`setLead`), never a client's or a bot's `createBot` / `updateBot`.
     #[serde(default)]
     pub lead: bool,
     /// Place in the roster, lowest first (after the lead and pinned bots). All 0 until the user drags one:
@@ -183,6 +189,9 @@ pub struct BotConfig {
     pub position: i64,
     #[serde(default)]
     pub hidden: bool,
+    /// The roster section it shows in; none when unset. Trimmed and checked (`hub::sections`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     #[serde(default)]
     pub notify: Option<bool>,
     /// Connector ids (MCP servers) handed to the agent; see `market`.

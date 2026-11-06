@@ -111,6 +111,7 @@ pub enum OnboardingStep {
 pub enum Provider {
     Apple,
     Google,
+    Github,
     Hosted,
     #[serde(other)]
     Other,
@@ -300,6 +301,7 @@ mod tests {
                 Event::SignInFailed,
             ),
             (json!({"event": "signed_in", "app": "desktop", "provider": "google"}), Event::SignedIn),
+            (json!({"event": "signed_in", "app": "desktop", "provider": "github"}), Event::SignedIn),
             (json!({"event": "signed_out", "app": "desktop"}), Event::SignedOut),
             (
                 json!({"event": "star_prompt_answered", "app": "desktop", "ask": "second", "starred": true}),

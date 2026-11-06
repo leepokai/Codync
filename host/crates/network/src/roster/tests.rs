@@ -218,3 +218,25 @@ fn two_admins_naming_a_laptop_at_once_still_get_distinct_names() {
     a.sign(&desk, 7, Change::Admit { id: new.public(), name: "laptop".into() }).unwrap();
     assert_eq!(a.name(&new.public()), "laptop");
 }
+
+#[test]
+fn removal_tied_with_another_admission_keeps_the_surviving_name() {
+    let (desk, server, laptop, other) = (key(), key(), key(), key());
+    let (mut a, _) = Roster::create(&desk, "desk".into(), addr(&desk), 1);
+    a.sign(&desk, 2, Change::Admit { id: server.public(), name: "server".into() }).unwrap();
+    a.sign(&desk, 3, Change::Promote { id: server.public() }).unwrap();
+    let mut b = a.clone();
+    a.sign(&desk, 4, Change::Admit { id: laptop.public(), name: "laptop".into() }).unwrap();
+    b.sign(&server, 5, Change::Admit { id: other.public(), name: "Laptop".into() }).unwrap();
+    a.merge(&b);
+    assert_eq!(a.name(&other.public()), "Laptop-2");
+
+    // Separate signers can produce an admission and removal in the same millisecond.
+    b.merge(&a);
+    b.sign(&desk, 5, Change::Remove { id: laptop.public(), cascade: false }).unwrap();
+    a.merge(&b);
+    b.merge(&a);
+    assert_eq!(a.members(), b.members());
+    assert_eq!(a.name(&other.public()), "Laptop-2");
+    assert_eq!(a.find("laptop-2"), Some(other.public()));
+}

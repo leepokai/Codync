@@ -25,6 +25,9 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - Chat: images show as pictures (tap for full size), other files as cards. Other devices fetch a
   sent file with `readUpload {botId, uploadId, offset}` (384 KiB chunks) and cache it; the sender
   caches its own copy at upload.
+- Desktop opens an image in a large panel that fits the window; a large image shrinks to fit
+  below the header without cropping, even when the window is resized, and a small one keeps its
+  own size. Sent and bot-shared images use the same viewer.
 - Terminal UI: dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
   an empty draft removes the last one); sent files show as `▤ name size` lines. It uploads with the
   same `upload` chunks.

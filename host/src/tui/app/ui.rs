@@ -107,7 +107,6 @@ pub struct Goto {
 
 pub enum ConfirmAct {
     Delete(String),
-    NewSession(String),
     /// Keeps a bot's harness's own memory on beside Codync's.
     KeepHarnessMemory(String),
     DeleteRoutine(String, String),
@@ -155,7 +154,19 @@ pub struct Dir {
     pub git: bool,
 }
 
+#[derive(PartialEq, Eq)]
+pub enum FolderMode {
+    Recent,
+    Browse,
+    Path,
+}
+
 pub struct FolderPicker {
+    pub request_id: String,
+    pub mode: FolderMode,
+    pub recent: Vec<Dir>,
+    pub remembers: bool,
+    pub busy: bool,
     pub path: String,
     pub parent: Option<String>,
     pub dirs: Vec<Dir>,
@@ -237,7 +248,9 @@ pub struct Form {
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
     pub cwd: String,
+    /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
+    pub mode: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// `None`: the host has no Manage the team.
@@ -311,10 +324,11 @@ pub struct GroupForm {
     pub saving: bool,
 }
 
-/// The pair-a-phone sheet's code: on its way, shown (its pairing link), or why none came.
+/// The pair-a-phone sheet's code: on its way, shown (its pairing link, and the short code to type when the
+/// Codync cloud holds one), or why none came.
 pub enum PairCode {
     Loading,
-    Ready(String),
+    Ready { url: String, short_code: Option<String> },
     Failed(String),
 }
 
@@ -341,6 +355,7 @@ pub enum Overlay {
     Flow(Box<FlowSheet>),
     Routine(Box<RoutineForm>),
     Library(Library),
+    Gear(Gear),
     Market(Box<Market>),
     Agent(AgentSetup),
     Fields(Box<Fields>),
@@ -369,6 +384,8 @@ pub enum Click {
     Steps,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
+    /// A section's label (its name): folds or unfolds it, like `z`.
+    Section(String),
 }
 
 #[derive(Default)]

@@ -1,118 +1,160 @@
 import CodyncKit
 import SwiftUI
 
-/// Browses folders on the host, drilling down in place.
 struct FolderPicker: View {
     let start: String?
     let onPick: (String) -> Void
-    /// The folders opened so far; the last one is shown.
-    @State private var stack: [String?]
-    @State private var forward = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(start: String?, onPick: @escaping (String) -> Void) {
-        self.start = start
-        self.onPick = onPick
-        _stack = State(initialValue: [start])
-    }
-
-    var body: some View {
-        let current = stack.last ?? nil
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                if stack.count > 1 {
-                    BackButton { go(forward: false) { stack.removeLast() } }
-                        .padding(.leading, 12)
-                        .transition(.opacity)
-                }
-                ModalHeader(current.map { ($0 as NSString).lastPathComponent } ?? "Folders")
-            }
-            ZStack {
-                FolderLevel(path: current, onPick: onPick) { path in go(forward: true) { stack.append(path) } }
-                    .id(stack.count)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: forward ? .trailing : .leading),
-                        removal: .move(edge: forward ? .leading : .trailing)
-                    ).combined(with: .opacity))
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-            .clipped()
-        }
-        .background(Palette.background)
-    }
-
-    /// Sets the slide direction first, so the leaving level takes it too, then moves.
-    private func go(forward: Bool, _ change: @escaping () -> Void) {
-        self.forward = forward
-        Task { @MainActor in
-            withAnimation(Motion.reduced(Motion.layout, reduceMotion), change)
-        }
-    }
-}
-
-/// One folder's subfolders.
-private struct FolderLevel: View {
-    let path: String?
-    let onPick: (String) -> Void
-    let open: (String) -> Void
     @Environment(BotStore.self) private var model
-    @State private var listing: DirListing?
-    @State private var error: String?
-    @State private var filter = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var state = WorkspacePickerState()
+    @State private var path: String?
+    @State private var request = 0
+    @State private var pathOpen = false
+    @State private var pathInput = ""
+
+    private var noRecent: Bool { state.mode == .recent && !state.busy && (state.listing?.recent ?? []).isEmpty }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
-                SearchField(text: $filter)
-                if let listing {
-                    CardSection(footer: listing.path) {
-                        Button {
-                            onPick(listing.path)
-                        } label: {
-                            Label("Use “\((listing.path as NSString).lastPathComponent)”", systemImage: "checkmark.circle.fill")
-                                .font(.headline)
-                                .foregroundStyle(Palette.accent)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(PressScale())
+        VStack(spacing: 0) {
+            ModalHeader("Choose workspace")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Your bot will work in this folder.").font(.subheadline).foregroundStyle(Palette.secondary)
+                    HStack(spacing: 10) {
+                        Image(systemName: "desktopcomputer")
+                        Text(model.hello?.name ?? "Computer").lineLimit(1)
+                        Spacer()
+                        Text(model.connection == .online ? "Connected" : "Disconnected")
+                            .font(.caption).foregroundStyle(Palette.secondary)
+                    }.padding(12).background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+                    if noRecent { browseButton }
+                    if state.mode == .browse { navigation }
+                    if pathOpen {
+                        HStack {
+                            TextField("Paste an absolute path", text: $pathInput)
+                                .textFieldStyle(.plain).plainTextInput().onSubmit { openPath() }
+                            Button(action: openPath) { Image(systemName: "arrow.right") }
+                                .disabled(pathInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .accessibilityLabel("Go to folder")
+                        }.padding(12).background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
-                    let dirs = listing.dirs.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
-                    if !dirs.isEmpty {
-                        CardSection {
-                            ForEach(dirs) { dir in
-                                Button {
-                                    open(dir.path)
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: dir.isGit ? "arrow.triangle.branch" : "folder")
-                                            .foregroundStyle(dir.isGit ? Palette.accent : Palette.secondary)
-                                            .frame(width: 20)
-                                        Text(dir.name).foregroundStyle(Palette.text).lineLimit(1)
-                                        Spacer(minLength: 8)
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption2.weight(.semibold))
-                                            .foregroundStyle(Palette.tertiary)
-                                    }
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(PressScale())
-                            }
-                        }
+                    if !noRecent {
+                        SearchField(state.mode == .recent ? "Search recent workspaces" : "Filter this folder", text: $state.filter)
+                        Text(state.mode == .recent ? "Recent workspaces" : "Folders")
+                            .font(.caption).foregroundStyle(Palette.secondary)
+                        if state.busy { Spinner(size: 20).frame(maxWidth: .infinity).padding(24) }
+                        else if state.mode == .recent { recentRows }
+                        else { directoryRows }
                     }
-                } else if let error {
-                    Text(L10n.tr(error)).foregroundStyle(Palette.danger)
-                } else {
-                    Spinner(size: 20).frame(maxWidth: .infinity)
+                    if let error = state.error { Text(error).font(.subheadline).foregroundStyle(Palette.danger) }
+                    if state.mode == .recent && !noRecent { browseButton }
+                }.padding(.horizontal, 20).padding(.bottom, 20)
+                    .disabled(state.saving)
+            }.scrollDismissesKeyboard(.interactively)
+            footer
+        }
+        .background(Palette.background)
+        .task(id: request) { await state.load(path, model: model) }
+        .onChange(of: model.connection) { _, _ in request += 1 }
+    }
+
+    private var browseButton: some View {
+        Button { open(start) } label: {
+            HStack {
+                Image(systemName: "folder")
+                Text("Browse other folders")
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption)
+            }.padding(.vertical, 12)
+        }.buttonStyle(PressScale())
+    }
+
+    private var navigation: some View {
+        HStack(spacing: 8) {
+            Button {
+                animate { state.mode = .recent; state.selected = ""; state.filter = ""; path = nil; pathOpen = false; request += 1 }
+            } label: { Image(systemName: "chevron.left").frame(width: 32, height: 36) }
+                .accessibilityLabel("Recent workspaces")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if let ancestors = state.listing?.ancestors {
+                        ForEach(ancestors) { item in
+                            Button(item.name) { open(item.path) }.font(.caption)
+                            if item.id != ancestors.last?.id { Text("/").foregroundStyle(Palette.tertiary) }
+                        }
+                    } else { Text(state.listing?.path ?? "Folders").font(.caption) }
                 }
             }
-            .font(.body)
-            .padding(20)
-        }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Palette.background)
-        .task {
-            do { listing = try await model.listDirs(path) } catch { self.error = error.localizedDescription }
+            Button { if let parent = state.listing?.parent { open(parent) } } label: {
+                Image(systemName: "arrow.up").frame(width: 32, height: 36)
+            }.disabled(state.listing?.parent == nil || state.busy).accessibilityLabel("Parent folder")
+            Button { animate { pathInput = state.listing?.path ?? ""; pathOpen.toggle() } } label: {
+                Image(systemName: "pencil").frame(width: 32, height: 36)
+            }.accessibilityLabel("Enter folder path")
+        }.buttonStyle(PressScale())
+    }
+
+    private var recentRows: some View {
+        let recent = (state.listing?.recent ?? []).filter { state.filter.isEmpty || $0.path.localizedCaseInsensitiveContains(state.filter) }
+        return VStack(spacing: 4) {
+            ForEach(recent) { item in
+                Button { animate { state.selected = item.path } } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "folder").foregroundStyle(Palette.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.path.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? item.path)
+                                .lineLimit(1)
+                            Text(item.path).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.middle)
+                        }
+                        Spacer(minLength: 4)
+                        if state.selected == item.path { Image(systemName: "checkmark").font(.caption) }
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(state.selected == item.path ? Palette.surface : .clear, in: RoundedRectangle(cornerRadius: 12))
+                }.buttonStyle(PressScale()).accessibilityAddTraits(state.selected == item.path ? .isSelected : [])
+            }
+            if recent.isEmpty { empty(state.filter.isEmpty ? "Choose a folder to see it here next time." : "No matching folders.") }
         }
     }
+
+    private var directoryRows: some View {
+        let dirs = (state.listing?.dirs ?? []).filter { state.filter.isEmpty || $0.name.localizedCaseInsensitiveContains(state.filter) }
+        return VStack(spacing: 0) {
+            ForEach(dirs) { dir in
+                Button { open(dir.path) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: dir.isGit ? "arrow.triangle.branch" : "folder").foregroundStyle(Palette.secondary)
+                        Text(dir.name).lineLimit(1)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Palette.tertiary)
+                    }.padding(.vertical, 13).contentShape(Rectangle())
+                }.buttonStyle(PressScale())
+            }
+            if state.listing != nil && dirs.isEmpty { empty(state.filter.isEmpty ? "No subfolders. You can use this folder." : "No matching folders.") }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(state.mode == .recent ? "Selected folder" : "Current folder").font(.caption2).foregroundStyle(Palette.secondary)
+                Text(state.selected.isEmpty ? "Choose a folder" : state.selected).font(.caption).lineLimit(1).truncationMode(.middle)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                Task { if let chosen = await state.confirm(model: model) { onPick(chosen) } }
+            } label: {
+                if state.saving { Spinner(size: 16) } else { Text("Use this folder").font(.subheadline) }
+            }.buttonStyle(.primary)
+                .disabled(state.selected.isEmpty || state.busy || state.saving || model.connection != .online)
+        }.padding(20).background(Palette.surface)
+    }
+
+    private func empty(_ text: String) -> some View {
+        Text(L10n.tr(text)).font(.subheadline).foregroundStyle(Palette.secondary).frame(maxWidth: .infinity).padding(.vertical, 24)
+    }
+    private func animate(_ action: () -> Void) { withAnimation(Motion.reduced(Motion.layout, reduceMotion), action) }
+    private func open(_ next: String?) {
+        animate { state.mode = .browse; state.selected = ""; state.filter = ""; pathOpen = false; path = next; request += 1 }
+    }
+    private func openPath() { let next = pathInput.trimmingCharacters(in: .whitespacesAndNewlines); if !next.isEmpty { open(next) } }
 }

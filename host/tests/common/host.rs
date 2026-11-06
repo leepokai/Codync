@@ -14,8 +14,9 @@ pub struct Host {
     child: Child,
     /// The host's `CODYNC_HOME`.
     pub home: PathBuf,
-    base: String,
-    token: String,
+    /// `http://127.0.0.1:<port>`.
+    pub base: String,
+    pub token: String,
 }
 
 impl Drop for Host {

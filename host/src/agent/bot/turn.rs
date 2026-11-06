@@ -202,6 +202,7 @@ impl Actor {
         let session = self.turn_session.clone();
         self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
         if let Some(sid) = session {
+            self.sync_mode(&sid).await?;
             self.sync_fast_mode(&sid).await;
         }
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
@@ -237,11 +238,10 @@ impl Actor {
         if fresh {
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
-        if let Some(conn) = self.conn.as_mut() {
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
+        // Requests that came in before this turn: a permission gets the answer it would have had a moment ago.
+        while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
+            if let Incoming::Request { id, method, params } = inc {
+                self.answer_outside_turn(id, &method, &params).await;
             }
         }
         let raw = std::mem::take(&mut self.raw_prompt);
@@ -339,13 +339,17 @@ impl Actor {
                 awaiting_sign_in = self.invite_sign_in(e);
                 if !awaiting_sign_in {
                     let detail = tail.map(|t| format!("\n\n{}", acp::truncate(&t, 1200))).unwrap_or_default();
-                    self.failure_notice(e, &format!("The agent failed: {e}{detail}"));
+                    self.failure_notice(e, &format!("The agent failed: {e}{detail}"), "error");
                 }
             }
-            (_, "cancelled") | (Err(_), _) => self.notice("Stopped.", NoticeStyle::Info),
-            (_, "max_tokens") => self.notice("The agent hit its output limit.", NoticeStyle::Info),
-            (_, "max_turn_requests") => self.notice("The agent hit its step limit for this turn.", NoticeStyle::Info),
-            (_, "refusal") => self.notice("The agent declined to continue.", NoticeStyle::Info),
+            // A stopped turn says so even when its agent still ended it normally: its reply is withheld above.
+            (_, "cancelled") | (Err(_), _) => self.stop_notice("Stopped.", "cancelled"),
+            (Ok(_), _) if self.stop_requested => self.stop_notice("Stopped.", "cancelled"),
+            (_, "max_tokens") => self.stop_notice("The agent hit its output limit.", "max_tokens"),
+            (_, "max_turn_requests") => {
+                self.stop_notice("The agent hit its step limit for this turn.", "max_turn_requests");
+            }
+            (_, "refusal") => self.stop_notice("The agent declined to continue.", "refusal"),
             (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg.backend),
             _ => {}
         }
@@ -474,17 +478,26 @@ impl Actor {
 }
 
 impl Actor {
+    /// Says why the running turn ended early; `stopReason` tells scripts (`codync-host send`) without the words.
+    fn stop_notice(&self, text: &str, reason: &str) {
+        self.notice_data(json!({"text": text, "style": NoticeStyle::Info, "stopReason": reason}));
+    }
+
     /// Ends what an attempt left open: file shares, the last text, unanswered permission cards (they can't be
     /// answered after the turn) and tool calls the agent never closed out (they'd spin forever in the trace).
     pub(super) fn close_attempt(&mut self, failed: bool) {
         self.files.cancel();
         self.flush(true);
         self.seg = Seg::None;
-        let ids: Vec<String> = self.perms.drain().map(|(k, _)| k).collect();
-        for id in ids {
+        let client = self.conn.as_ref().map(|c| c.acp.clone());
+        for (id, answer) in self.perms.drain() {
             if let Some(mut e) = self.hub.store.entry(&id) {
                 e.data["status"] = "expired".into();
                 self.hub.set_entry(&id, &e.data);
+            }
+            // The agent would wait on a card no one can answer any more.
+            if let (super::updates::Answer::Agent(rpc_id), Some(client)) = (answer, client.clone()) {
+                tokio::spawn(async move { client.respond(rpc_id, acp::permission_answer(None)).await });
             }
         }
         for entry_id in self.tools.values() {

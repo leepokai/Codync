@@ -7,10 +7,11 @@
 **The open-source Grok Bot alternative.**<br>
 Bring your own agent and subscription — Claude Code, Codex, Gemini CLI, Cursor and 40+ more — as teammates you can message from your phone.
 
-[Website](https://www.codync.dev) · [Docs](https://www.codync.dev/docs) · [Compare](https://www.codync.dev/compare) · [Launch film](https://youtu.be/QAhyZWpV70U)
+[Website](https://www.codync.dev) · [Docs](https://www.codync.dev/docs) · [Compare](https://www.codync.dev/compare) · [Launch film](https://youtu.be/QAhyZWpV70U) · [X @trycodync](https://x.com/trycodync)
 
-[![Star Codync on GitHub](https://img.shields.io/github/stars/leepokai/Codync?style=social&label=Star)](https://github.com/leepokai/Codync/stargazers)<br>
-<sub>Free, open source, no paid tier. A ⭐ is how others find it.</sub>
+[![Star Codync on GitHub](https://img.shields.io/github/stars/leepokai/Codync?style=social&label=Star)](https://github.com/leepokai/Codync/stargazers)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/leepokai)<br>
+<sub>Free, open source, no paid tier. A ⭐ is how others find it; a ☕ keeps it going.</sub>
 
 [![Download for macOS](https://img.shields.io/badge/Download-macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg)
 [![Download for Windows](https://img.shields.io/badge/Download-Windows_x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe)
@@ -22,6 +23,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/KBAX3Qznxh)
+[![WeChat China](https://img.shields.io/badge/WeChat-China_community-07C160?logo=wechat&logoColor=white)](#community)
 [![Release](https://img.shields.io/github/v/release/leepokai/Codync?color=black)](https://github.com/leepokai/Codync/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 <br>
@@ -41,6 +43,9 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 
 </div>
 
+> [!WARNING]
+> **Official account:** `@trycodync` is my only official account. Beware of impersonators and scams.
+
 Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, Pi, OpenCode, Grok Build, Gemini, Copilot, Hermes Agent and ~40 more — into persistent *bots* you delegate to from your iPhone, Mac, Windows PC, Linux desktop or any terminal, the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
 
 > Why bots? On a phone, "find the right working session, then pick an environment" is too slow. With bots you already know who to hand the intent to: open the chat, type, done.
@@ -55,7 +60,7 @@ Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, 
 - **One app per kind of device.** Native SwiftUI on the iPhone, one desktop app for Mac, Windows and Linux (Electron), and a terminal UI for SSH.
 - **A Grok Bot, Muse and Dots alternative.** Persistent named bots, group chats, quote replies, bots asking each other for help, approval cards, per-bot memory, remote screen, voice calls and "needs you / done" notifications — the same features, without being tied to one model or one subscription.
 - **Reach your computer from anywhere, free.** The hosted Cloudflare relay is included at no cost: no Tailscale, no VPN, no port forwarding. Traffic is end-to-end encrypted between your phone and your computer, so the relay only forwards ciphertext. Same Wi-Fi or Tailscale? The phone connects directly instead.
-- **Every computer, one app.** Sign in and your iPhone lists every computer on your account (Mac, Windows PC, Linux desktop, server or cloud VM); open Computers and tap **Ask for access**, confirm a 6-digit code on that computer, and its bots show up next to the others. A new bot can live on any of them, and the Mac app reaches your SSH machines too. Each computer approves each device itself, so an account alone never unlocks a computer.
+- **Every computer, one app.** Sign in and your iPhone lists every computer on your account (Mac, Windows PC, Linux desktop, server or cloud VM); open Computers and tap **Ask for access**, confirm a 6-digit code on that computer, and its bots show up next to the others. A new bot can live on any of them, and the desktop app on Mac, Windows and Linux reaches your SSH machines too. Each computer approves each device itself, so an account alone never unlocks a computer.
 - **Remote screen.** See and control your computer from the iPhone over WebRTC (hardware H.264), and let bots use the screen themselves through the built-in `computer` tool.
 - **Voice calls.** Talk to a bot hands-free from the iPhone and hear its replies read aloud.
 - **Private push.** Notification text is sealed to your phone's key, so the push relay never sees what your bots said.
@@ -90,7 +95,7 @@ Host notifications → APNs worker (relay/) → iPhone
 - **The chat only shows what matters**: your messages, each turn's final reply, approval cards and notices. Every tool call, diff, plan and thought is one tap away in *Full conversation*. While a bot works, its row shows what it's doing right now.
 - **Agents are detected automatically**: the host hydrates PATH from your login shell (plus Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), finds every harness you have installed, and prefers its native ACP mode. Anything else in the official [ACP registry](https://agentclientprotocol.com/registry) can be picked too — Codync fetches it on first use (npx, uvx or a checksummed binary).
 - **codync-host** (Rust, macOS, Windows and Linux) runs on your computer. It speaks the [Agent Client Protocol](https://agentclientprotocol.com) to each agent, keeps transcripts in SQLite, and serves the phone. Every change carries a global `rev`, so the phone reconnects with `since: rev` and never misses anything.
-- **Usage limits** come from the agents installed on your computer. Claude uses `claude -p /usage` (a local command, no model call) plus Claude Code's status line, and Codex uses `~/.codex/sessions`. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read from their own command, database or IDE file. Cursor asks cursor.com with the sign-in it saved locally. The phone, widgets and menu bar see the resulting limits.
+- **Usage limits** come from the agents installed on your computer. Claude uses `claude -p /usage` (a local command, no model call) plus Claude Code's status line, and the signed-in Codex CLI reports current account limits without a model call. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read from their own command, database or IDE file. Cursor asks cursor.com with the sign-in it saved locally. The phone, widgets and menu bar see the resulting limits.
 - **Push** goes through a tiny relay that holds the APNs key. The phone trades its device token for an encrypted ticket; the host only ever holds tickets.
 
 UI patterns (roster, character avatars, approval cards, trace sheet, "needs you / done" notifications) follow Grok Bot.
@@ -164,7 +169,7 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 | `codync-host serve [--port 19222]` | run in the foreground |
 | `codync-host statusline [-- <your command>]` | Claude Code status line command (wraps yours) |
 | `codync-host reset-token` | rotate the local loopback bearer token |
-| `codync-host cloud [--assistants on\|off]` | cloud enablement, URL and status; whether ChatGPT, Claude and other connected assistants may message this computer's bots |
+| `codync-host cloud [--assistants on\|off] [--leave]` | cloud enablement, URL and status; whether ChatGPT, Claude and other connected assistants may message this computer's bots; `--leave` takes this computer out of its account |
 | `codync-host network` | codync-network, your computers' network: create, invite, join, status, promote, remove, recover |
 | `codync-host devices` | list/revoke authorized remote devices |
 | `codync-host access` | review device access requests |
@@ -195,7 +200,7 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 
 **Where does my data go?** Bots, chats and memory stay on your computer. The phone reaches it directly on the same network, or through an end-to-end encrypted relay that can't read your messages.
 
-**Do I need an account?** No. Pair your phone by scanning a QR code. Signing in with Apple or Google is optional.
+**Do I need an account?** Yes, a free one: the apps ask you to sign in with Apple, Google or GitHub. An account alone never unlocks a computer: you still pair by scanning a QR code, or approve a 6-digit code on the computer.
 
 **Which computers can run it?** A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host.
 
@@ -237,16 +242,28 @@ For release-by-release changes, see [GitHub Releases](https://github.com/leepoka
 
 Clients and the host each name the oldest version of the other they still work with (`minApp` in the host's `hello`, `minHost` in each client), so an app can meet an older or newer host. Details: [compatibility](docs/reference/compatibility.md).
 
+## Community
+
+| Discord | WeChat · China community |
+| --- | --- |
+| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | A community for Codync users in China to share tips, ask questions and give feedback. Scan with regular WeChat; WeCom is not required. |
+| | <img src="web/public/wechat-group.png" width="200" alt="QR code to join the Codync WeChat community for users in China"> |
+| | [Download the QR code](web/public/wechat-group.png) · [WeChat community page](https://www.codync.dev/wechat) |
+
 ## Contact
 
 - Email: [kevin@codync.dev](mailto:kevin@codync.dev)
-- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues) or [Discord](https://discord.gg/KBAX3Qznxh)
+- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [WeChat (China)](#community)
 - Security issues: report privately as described in [SECURITY.md](SECURITY.md) (GitHub private reporting or email)
 - Community rules: [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## Credits
 
 The desktop notch island's design is inspired by the work of [@novra.design](https://www.instagram.com/novra.design/).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org), for the Windows releases once SignPath Foundation accepts the project (earlier releases are unsigned). What is signed and who approves it: [code signing policy](https://www.codync.dev/code-signing).
 
 ## License
 

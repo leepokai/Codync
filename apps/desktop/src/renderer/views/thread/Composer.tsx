@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import { groupFastMode } from '@shared/fast-mode'
 import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
 import { isGroup, isWorkingIn, quoteOf, type Bot, type Entry } from '@shared/models'
+import type { PickedFile } from '@shared/ipc'
 import { BotAvatar } from '../../components/Avatar'
 import { DropdownMenu } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { IconButton } from '../../components/Controls'
 import { RecordingPill } from '../../components/RecordingPill'
-import { usePresence } from '../../components/Overlay'
+import { Sheet, usePresence } from '../../components/Overlay'
+import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
@@ -15,6 +17,7 @@ import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/bot-store'
 import { pluginsFor } from '../marketplace/plugins'
+import { pastedFiles, readPicked } from './composer-files'
 import { composerEnter } from './composer-keyboard'
 import { CommandMenu, useCommandMenu } from './CommandMenu'
 import { ComposerAttachment } from './ComposerAttachment'
@@ -64,7 +67,8 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(draftKey))
   const setDraft = (text: string) => drafts.set(draftKey, text)
   const [files, setFiles] = useState<OutgoingFile[]>([])
-  const dictation = useDictation((change) => drafts.set(draftKey, change(drafts.get(draftKey))))
+  const [voiceSettings, setVoiceSettings] = useState(false)
+  const dictation = useDictation((change) => drafts.set(draftKey, change(drafts.get(draftKey))), () => setVoiceSettings(true))
   const field = useRef<HTMLTextAreaElement>(null)
   const measure = useRef<HTMLDivElement>(null)
   const composing = useRef(false)
@@ -169,7 +173,7 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
   }
   const menu = useCommandMenu(draft, commands, run)
 
-  const append = (incoming: { name: string; data: Uint8Array }[]) => {
+  const append = (incoming: PickedFile[]) => {
     if (!canAttach) return
     const accepted: OutgoingFile[] = []
     for (const f of incoming) {
@@ -248,7 +252,7 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
         onDrop={(e) => {
           if (!canAttach) return
           e.preventDefault()
-          void Promise.all([...e.dataTransfer.files].map(async (f) => ({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) }))).then(append)
+          void readPicked([...e.dataTransfer.files]).then(append)
         }}
       >
         <div className="composer-surface">
@@ -325,10 +329,7 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
                   if (!canAttach) return
                   if (!hasFiles || (types.includes('text/plain') && !e.clipboardData.files.length)) return
                   e.preventDefault()
-                  void window.codync.app.readClipboardFiles().then((picked) => {
-                    if (picked.length) return append(picked)
-                    return Promise.all([...e.clipboardData.files].map(async (f) => ({ name: f.name || `pasted-${Date.now()}.png`, data: new Uint8Array(await f.arrayBuffer()) }))).then(append)
-                  })
+                  void pastedFiles(window.codync.app.readClipboardFiles, [...e.clipboardData.files]).then(append)
                 }}
               />
             </div>
@@ -369,6 +370,9 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
           </div>
         </div>
       </div>
+      <Sheet open={voiceSettings} onClose={() => setVoiceSettings(false)}>
+        <VoiceChatSettingsView />
+      </Sheet>
     </VStack>
   )
 }

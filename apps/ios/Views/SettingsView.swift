@@ -2,8 +2,8 @@ import CodyncKit
 import CodyncUI
 import SwiftUI
 
-/// The Settings tab: what belongs to this iPhone alone (appearance, language, notification permission,
-/// analytics, Start over). Each computer's own settings (voice chat, push, connection, hidden bots) are in
+/// The Settings tab: what belongs to this iPhone alone (appearance, language, the lead shortcuts call,
+/// notification permission, analytics, Start over). Each computer's own settings (voice chat, push, connection, hidden bots) are in
 /// Computer management (`ComputersView`).
 struct SettingsView: View {
     @Environment(AppStore.self) private var app
@@ -26,6 +26,8 @@ struct SettingsView: View {
             LanguageSettings()
 
             ThinkingDetailsSettings()
+
+            ShortcutLeadSettings()
 
             CardSection("Notifications", footer: "Get a result summary, a request for input, or a failure notice. Notification previews follow your iOS settings.") {
                 notificationsRow

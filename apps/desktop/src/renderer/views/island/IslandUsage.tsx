@@ -41,11 +41,12 @@ export function UsageMeter({ model }: { model: IslandModel }) {
   const title = tr(windowTitle(window))
   const reset = resetDescription(window)
   const spoken = reset ? line(reset) : ''
+  const used = usedText(window.percent, tr)
   return (
     <button
       className="island-meter"
-      title={`${provider.name} · ${title} · ${Math.round(window.percent)}%${spoken ? ` · ${spoken}` : ''}`}
-      aria-label={`Usage: ${provider.name} ${title} ${Math.round(window.percent)} percent`}
+      title={`${provider.name} · ${title} · ${used}${spoken ? ` · ${spoken}` : ''}`}
+      aria-label={`${tr('Usage')}: ${provider.name} ${title} ${used}`}
       onClick={() => model.setTab('usage')}
     >
       <Mascot provider={provider} size={15} />
@@ -102,7 +103,7 @@ export function UsageView({ model }: { model: IslandModel }) {
               ) : (
                 <>
                   <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
-                  <span className="island-usage-value">{windowReading(w)}</span>
+                  <span className="island-usage-value">{windowReading(w, tr)}</span>
                   <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
                 </>
               )}

@@ -6,7 +6,8 @@ every device; *Share usage analytics* in Settings turns it off. It exists to spo
 lives in `web/app/privacy/page.tsx`: keep it true. The info button beside the switch (terminal
 UI: *About usage analytics…*) shows the same promise in the app, in one text per client
 (desktop `views/settings/AnalyticsSheet.tsx`, `CodyncUI/AnalyticsSheet.swift`, Android
-`AnalyticsSheet.kt`, `host/src/tui/view/analytics.rs`): change all four with the policy.
+`AnalyticsSheet.kt`, `host/src/tui/view/analytics.rs`), and the Windows installer sums it up
+(`apps/desktop/resources/installer.nsh`): change all five with the policy.
 
 ## Rules
 
@@ -17,7 +18,17 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
 - **Setting per device.** The computer's owner decides for that computer (host kv
   `analytics_enabled`, on unless `0`); each iPhone decides for itself (`UserDefaults`
   `analyticsEnabled`, on unless `false`; each Android phone in its `codync-analytics` preferences). Turning it off drops anything still queued. A
-  device that said no to the earlier opt-in question stays off.
+  device that said no to the earlier opt-in question stays off. `codync-host analytics on|off`
+  sets the computer's choice from the command line: through the running host, or saved for its
+  next start.
+- **The Windows installer asks.** An install run by hand (not an update, not a silent `/S` one)
+  shows what is shared, links the privacy policy and asks before anything is sent
+  (`resources/installer.nsh`): *No* runs `codync-host analytics off`; *Yes* leaves the setting
+  as it is (on for a new computer), so the first launch can still report `host_setup_failed`.
+  Known gap: a reinstall answered *No* over an app that last saw analytics on can still report
+  one `host_setup_failed` if the host never starts (the app's `host-prefs.json` copy is stale).
+  Open source code signing (SignPath) requires this for a signed installer; the Mac and Linux
+  packages have no install step that could ask.
 - **Identity.** Every device gets a person profile. Signed in to a Codync account: the Clerk
   user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
   The first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events join

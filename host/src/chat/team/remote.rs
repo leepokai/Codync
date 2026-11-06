@@ -10,6 +10,7 @@ use super::{
 use crate::LockExt;
 use crate::agent::acp::truncate;
 use crate::agent::bot::Cmd;
+use crate::analytics::NetworkStage;
 use crate::hub::Hub;
 use crate::network::Target;
 use crate::store::{BotConfig, EntryKind, Lane};
@@ -66,6 +67,7 @@ pub async fn listen(hub: Arc<Hub>, network: String, mut inbox: mpsc::Receiver<Me
     while let Some(m) = inbox.recv().await {
         if let Err(error) = take(&hub, &network, &m) {
             tracing::warn!(error = format!("{error:#}"), "couldn't take a letter from another computer");
+            crate::analytics::network_failed(&hub, NetworkStage::Receive);
         }
     }
 }
@@ -152,6 +154,7 @@ async fn send(hub: &Arc<Hub>, node: &Node, source: &BotConfig, to: &Target, lett
         }
         Err(error) => {
             hub.waiting.take(&id);
+            crate::analytics::network_failed(hub, NetworkStage::Send);
             finish_entry(hub, &entry, RequestStatus::Failed, &format!("{error:#}"), None);
             return Err(error);
         }
@@ -187,6 +190,7 @@ pub(super) fn ask_for_replies(
             Ok(Sent::Queued) => {}
             Err(error) => {
                 hub.waiting.take(&request);
+                crate::analytics::network_failed(&hub, NetworkStage::Send);
                 hub.assistant.answered(&request, Err(format!("{error:#}")));
             }
         }
@@ -236,20 +240,20 @@ fn note(hub: &Hub, network: &str, target: &BotConfig, m: &Message) {
 }
 
 /// The outcome of a request from another computer goes back to the agent that sent it.
-pub(super) fn answer(hub: &Hub, to: &Return, outcome: &std::result::Result<String, String>, hops: u8) {
+pub(super) fn answer(hub: &Arc<Hub>, to: &Return, outcome: &std::result::Result<String, String>, hops: u8) {
     match outcome {
         Ok(reply) => send_back(hub, to, reply.clone(), RequestStatus::Completed, hops),
         Err(detail) => send_back(hub, to, format!("Couldn't finish: {detail}"), RequestStatus::Failed, hops),
     }
 }
 
-pub(super) fn cancelled(hub: &Hub, to: &Return, hops: u8) {
+pub(super) fn cancelled(hub: &Arc<Hub>, to: &Return, hops: u8) {
     send_back(hub, to, STOPPED.to_owned(), RequestStatus::Cancelled, hops);
 }
 
-fn send_back(hub: &Hub, to: &Return, mut body: String, status: RequestStatus, hops: u8) {
+fn send_back(hub: &Arc<Hub>, to: &Return, mut body: String, status: RequestStatus, hops: u8) {
     let Ok(slot) = hub.network.slot(Some(&to.network)) else { return };
-    let node = slot.node;
+    let (node, hub) = (slot.node, hub.clone());
     if body.trim().is_empty() {
         body = "(no reply)".into();
     }
@@ -260,6 +264,7 @@ fn send_back(hub: &Hub, to: &Return, mut body: String, status: RequestStatus, ho
     tokio::spawn(async move {
         if let Err(error) = node.send(letter).await {
             tracing::warn!(error = format!("{error:#}"), "couldn't send a reply to another computer");
+            crate::analytics::network_failed(&hub, NetworkStage::Reply);
         }
     });
 }

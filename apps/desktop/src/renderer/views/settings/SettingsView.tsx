@@ -36,7 +36,7 @@ const thisComputer = isMac ? 'This Mac' : 'This computer'
 const pages: { id: SettingsPage; title: string; label?: string; group: string; icon: string }[] = [
   { id: 'general', title: 'General', group: 'Personal', icon: 'gearshape' },
   { id: 'computers', title: 'Computers & devices', label: 'Computers', group: thisComputer, icon: 'desktopcomputer' },
-  { id: 'network', title: 'Network', group: thisComputer, icon: 'point.3.connected.trianglepath.dotted' },
+  { id: 'network', title: 'Network', group: thisComputer, icon: 'codync.network' },
   { id: 'access', title: 'Computer access', group: thisComputer, icon: 'hand.raised' },
   { id: 'voice', title: 'Voice chat', group: 'Personal', icon: 'waveform' },
   { id: 'usage', title: 'Usage', group: 'Personal', icon: 'gauge.with.dots.needle.33percent' },
@@ -171,6 +171,9 @@ function GeneralSettings() {
               </Button>
               <Button kind="secondary" onClick={() => void account.signIn('google')} disabled={account.isBusy}>
                 Google
+              </Button>
+              <Button kind="secondary" onClick={() => void account.signIn('github')} disabled={account.isBusy}>
+                GitHub
               </Button>
             </>
           )}

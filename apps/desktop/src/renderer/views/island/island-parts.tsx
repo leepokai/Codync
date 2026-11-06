@@ -39,7 +39,7 @@ function glowOf(badge: Badge, color: string) {
 
 /** The bot in the big slot: its character, a glow in its state's color and a badge. */
 export function BigCharacter({ bot, size, mood, badge, onOpen }: {
-  bot: Pick<IslandBot, 'shape' | 'color'>
+  bot: Pick<IslandBot, 'shape' | 'color' | 'customIcon'>
   size: number
   mood: Mood
   badge: Badge
@@ -49,7 +49,7 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
   const inner = (
     <>
       {glow ? <span aria-hidden className="island-glow" style={{ background: `radial-gradient(circle, ${withAlpha(glow, 0.36)}, ${withAlpha(glow, 0)} 68%)` }} /> : null}
-      <CharacterAvatar shape={bot.shape} color={bot.color} size={size} mood={mood} dark />
+      <CharacterAvatar customIcon={bot.customIcon} shape={bot.shape} color={bot.color} size={size} mood={mood} dark />
       <StateBadge badge={badge} />
     </>
   )
@@ -112,7 +112,7 @@ export function MiniColumn({ bots, onOpen }: { bots: IslandBot[]; onOpen: (ref: 
     <div ref={column} className="island-minis">
       {bots.map((b) => (
         <button key={b.ref} data-flip={b.ref} className={`island-mini ${arrivals.has(b.ref) ? 'island-swap' : ''}`} title={b.name} aria-label={`Open ${b.name}`} onClick={() => onOpen(b.ref)}>
-          <CharacterAvatar shape={b.shape} color={b.color} size={18} mood={moodOf(b)} dark />
+          <CharacterAvatar customIcon={b.customIcon} shape={b.shape} color={b.color} size={18} mood={moodOf(b)} dark />
           <StatusDot bot={b} />
         </button>
       ))}

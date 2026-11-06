@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
     /** When the bot last did something, to break ties for the Bots tile. */
     val lastAt: Long = 0, val avatarLook: String? = null)
 
+/** Every computer's bots (the Bots and Team widgets) and one computer's usage: the last active one (iOS `lastComputerId`). */
 @Serializable data class WidgetFeed(val scope: String = "local", val computerId: String? = null,
     val computerName: String = "", val bots: List<WidgetBot> = emptyList(), val botsAt: Long = 0,
     val usage: UsageReport = UsageReport(), val usageAt: Long = 0)
@@ -92,10 +93,13 @@ fun usageLimits(report: UsageReport): List<ProviderLimit> {
 fun mostUrgentBot(bots: List<WidgetBot>): WidgetBot? = bots.filter { it.status == "needsInput" || it.status == "working" }
     .minWithOrNull(compareBy<WidgetBot> { if (it.status == "needsInput") 0 else 1 }.thenByDescending { it.lastAt })
 
-/** The Team widget's four spots: the picked bots first (a deleted pick falls back), then the feed's order (who needs you). */
+/**
+ * The Team widget's four spots: the picked bots first (a deleted pick falls back), then the feed's order (who needs you).
+ * A pick saved before several computers is a bare bot ID: the first bot with that ID.
+ */
 fun teamSlots(bots: List<WidgetBot>, picks: List<String?>): List<WidgetBot?> {
-    val picked = List(4) { i -> picks.getOrNull(i)?.let { id -> bots.firstOrNull { it.id == id } } }
-    val queue = ArrayDeque(bots.filter { bot -> picked.none { it?.id == bot.id } })
+    val picked = List(4) { i -> picks.getOrNull(i)?.let { key -> bots.firstOrNull { it.key == key } ?: bots.firstOrNull { '/' !in key && it.id == key } } }
+    val queue = ArrayDeque(bots.filter { bot -> picked.none { it?.key == bot.key } })
     return picked.map { it ?: queue.removeFirstOrNull() }
 }
 

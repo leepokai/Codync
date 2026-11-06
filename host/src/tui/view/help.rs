@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 69] = [
+const HELP: [(&str, &str, &str); 73] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -56,14 +56,18 @@ const HELP: [(&str, &str, &str); 69] = [
     ("BOTS", "m", "new group chat"),
     ("BOTS", "e", "settings, or edit a group"),
     ("BOTS", "I", "About the lead agent"),
+    ("BOTS", "*", "Make lead agent"),
     ("BOTS", "p", "pin / unpin"),
+    ("BOTS", "alt ↑ ↓", "move section up / down"),
     ("BOTS", "J K", "move bot down / up"),
-    ("BOTS", "S", "new session"),
+    ("BOTS", "w", "move to section"),
+    ("BOTS", "W", "rename / remove section"),
+    ("BOTS", "z", "fold / unfold section"),
     ("BOTS", "M", "memory"),
     ("BOTS", "R", "details: routines, computer"),
     ("BOTS", "B", "details: switch back to the bot's own agent"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),
-    ("BOTS", "⇧← ⇧→", "between details, library, memory, settings"),
+    ("BOTS", "⇧← ⇧→", "between details, library, memory and settings"),
     ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
     ("VIEW", "t", "trace pane"),
@@ -75,7 +79,7 @@ const HELP: [(&str, &str, &str); 69] = [
     ("VIEW", "N", "network: your other computers"),
     ("VIEW", "^k share", "share usage analytics on / off"),
     ("VIEW", "^k about", "what usage analytics include"),
-    ("VIEW", "language", "app language: follow system or choose one of eight languages"),
+    ("VIEW", "language", "app language: follow system or choose a language"),
     ("VIEW", "esc", "close / go back"),
     ("VIEW", "q", "quit; bots keep going"),
     ("MOUSE", "click", "open, press a button"),

@@ -9,6 +9,7 @@ Codync/
 ├── host/                      # Rust daemon and terminal client
 │   ├── src/
 │   │   ├── main.rs            # CLI entry, shared helpers (LockExt, http)
+│   │   ├── *_cli.rs           # Subcommands with their own module: cloud, network, send (+ send_cli/: event feed, --wait)
 │   │   ├── hub.rs, store/     # Shared state + event fan-out / SQLite persistence (schema, model, bots, entries, devices)
 │   │   ├── service/           # Data dir, launchd/systemd/Windows install, keep-awake
 │   │   ├── usage/, mcp.rs     # usage/: plan limits from each agent; mcp.rs: built-in stdio MCP servers; mcp/remote.rs: remote connector proxy
@@ -18,7 +19,7 @@ Codync/
 │   │   ├── chat/              # Groups, bot-to-bot requests, prompt snapshots, memory, a bot's profile, instruction versions, scratchpad, skills, team management
 │   │   ├── remote/            # Identity, wire crypto, E2E channel, cloud, relay socket, push
 │   │   ├── market/            # Marketplace (registry.rs, install.rs, skills.rs), Composio, MCP OAuth
-│   │   └── tui/               # Terminal client (app/: state and input; view/: drawing; manage/ + sheets.rs: settings; connections.rs: secure connection requests)
+│   │   └── tui/               # Terminal client (app/: state and input, the bot form in forms.rs + approvals.rs, the group form in group_form.rs; view/: drawing; manage/ + sheets.rs: settings; connections.rs: secure connection requests)
 │   └── tests/                 # Host integration tests and scripted ACP agents
 ├── apps/
 │   ├── project.yml            # XcodeGen source of truth for every Apple target
@@ -51,7 +52,7 @@ Codync/
 │   ├── android/               # Android phone app (Kotlin, Compose), ported from the iPhone app; WhatsNew.md (Google Play notes)
 │   │   ├── core/              # JVM models, crypto, pairing, encrypted channel, host and cloud clients
 │   │   ├── design/            # Codync's components: palette, type, motion, glass, sheets, menus, dialogs, controls, symbols
-│   │   ├── app/               # Screens, the store (AppStore), notifications, Live updates, Glance widgets
+│   │   ├── app/               # Screens, the stores (AccountStore, one AppStore per computer), notifications, Live updates, Glance widgets
 │   │   └── tools/             # symbols.py (SF Symbol stand-ins), launcher_icon.py, agent_icons.py
 │   ├── screen-macos/          # macOS screen helper (Xcode Screen target)
 │   ├── screen-macos-tests/    # Swift package for helper socket lifecycle regressions
@@ -88,10 +89,10 @@ Codync/
 
 | Responsibility | Source entry points |
 |---|---|
-| CLI and background service | `host/src/main.rs`, `service/` |
+| CLI and background service | `host/src/main.rs`, `service/`; subcommands `cloud_cli.rs`, `network_cli.rs`, `send_cli.rs` (+ `send_cli/events.rs`, `wait.rs`) |
 | API, caller permissions, event ordering | `host/src/api/`, `hub.rs` |
 | SQLite transcript, bots, lanes and sessions | `host/src/store/` (`entries.rs`, `bots.rs`, `model.rs`, `devices.rs`, `schema.rs`) |
-| Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `turn.rs`, `updates.rs`), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_windows.rs` on Windows) |
+| Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `turn.rs`, `updates.rs`; `codex_names.rs` / `pi_tools.rs` how Codex and pi get Codync's MCP servers), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_windows.rs` on Windows) |
 | Compaction timing and rollover | `host/src/agent/bot/compaction.rs`, the handoff card in `host/src/chat/handoff.rs`; the rules in `codync-mem`'s `compaction.rs` |
 | Group room turns / bot-to-bot requests | `host/src/chat/group.rs` / `team.rs` |
 | A bot's own name and instructions, their versions, its scratchpad, skills it writes | `host/src/chat/profile.rs`, `instruction_history.rs`, `scratchpad.rs`, `skills.rs` (`save_skill`), `teach.rs` (`recorded_steps`) |
@@ -115,7 +116,7 @@ Codync/
 | Swift transport and cloud API | `apps/ios/Kit/Sources/CodyncKit/Client/` |
 | Account aggregation / one host mirror | `apps/ios/Kit/Sources/CodyncUI/Store/AccountStore.swift` / `BotStore.swift` (+ `BotStore+Connection`, `+Sync`, `+Sending`, `+Actions`, `+Plugins`, `+Cache`, `+Shortcuts`) |
 | iPhone chat, replies, composer and trace | `apps/ios/Kit/Sources/CodyncUI/Thread/` |
-| Reusable iPhone UI chrome | `apps/ios/Kit/Sources/CodyncUI/Chrome.swift`, `Controls.swift`, `Platform.swift` |
+| Reusable iPhone UI chrome | `apps/ios/Kit/Sources/CodyncUI/Chrome.swift`, `Controls.swift`, `MenuItem.swift` (system menus: `MenuItem`, `.contextActions`, `DropdownMenu`), `Platform.swift` |
 | iOS navigation, pairing, account, settings, computer management | `apps/ios/Views/RootView.swift`, `BotListView.swift`, `PairingView.swift`, `AccountSwitcherView.swift`, `SettingsView.swift`, `ComputersView.swift` |
 | Apple account sessions / public environment config | `apps/ios/App/AccountSession.swift`, `apps/shared/Config/` |
 | Desktop local host / SSH lifecycle | `apps/desktop/src/main/host-controller.ts`, `ssh.ts` |
@@ -143,8 +144,9 @@ Codync/
 
 | Term | Meaning |
 |---|---|
-| bot | Named agent persona; a group is also a roster entry with `kind: group` |
-| agent / backend | Coding harness and its ACP adapter |
+| bot | What the user builds and talks to: one agent combined with a profile (name, avatar, instructions), working folder, memory, skills, routines and connectors. Never call a bot an agent. A group is also a roster entry with `kind: group` |
+| agent / backend | A coding harness Codync composes into bots (Claude Code, Codex, …) and its ACP adapter |
+| `agent@computer` | A codync-network address: whoever can take a letter there, whether a bot, a bare agent session (Claude Code, Codex) or a person at a terminal |
 | chat | Main, persistent conversation with a bot or group |
 | reply | A user message answering an earlier message of its chat, with that message's quote |
 | group | Chat with several bots and the user; no agent process of its own |

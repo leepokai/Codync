@@ -23,8 +23,9 @@ export interface DictationPlatform {
   language(): string | null
   /** The provider picked beside the mic; null is on-device. */
   provider(): VoiceProvider | null
-  /** Rejects, saying what to do, unless the host holds `provider`'s key. */
-  checkKey(provider: VoiceProvider): Promise<void>
+  /** Whether the host holds the provider key. Network failures still reject. */
+  checkKey(provider: VoiceProvider): Promise<boolean>
+  configureKey(provider: VoiceProvider): void
   /** Opens the microphone as 16 kHz PCM; resolves to what closes it. */
   microphone(out: (pcm: Int16Array, level: number) => void): Promise<() => void>
   /** One piece of a recording, as the provider's text. */
@@ -162,8 +163,13 @@ export class Dictation extends Observable {
    */
   private async record(recording: Recording, generation: number) {
     try {
-      await this.platform.checkKey(recording.provider)
+      const hasKey = await this.platform.checkKey(recording.provider)
       if (generation !== this.generation) return
+      if (!hasKey) {
+        this.end()
+        this.platform.configureKey(recording.provider)
+        return
+      }
       const stop = await this.platform.microphone((pcm, level) => {
         recording.pcm.push(pcm)
         this.level = level

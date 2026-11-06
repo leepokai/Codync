@@ -69,6 +69,8 @@ class SSHComputers {
   private connectedAt = new Map<string, number>()
   /** Host key lines waiting for the user's "Trust and connect". */
   private pendingKeys = new Map<string, string[]>()
+  /** Installed here, but the host stops at logout until the user enables linger with sudo. */
+  private needsLinger = new Set<string>()
 
   constructor(private file: string, private emit: (s: SSHState) => void) {
     try {
@@ -77,7 +79,7 @@ class SSHComputers {
   }
 
   get state(): SSHState {
-    return { profiles: this.profiles, status: Object.fromEntries(this.status), attachments: [...this.attachments.values()] }
+    return { profiles: this.profiles, status: Object.fromEntries(this.status), attachments: [...this.attachments.values()], needsLinger: [...this.needsLinger] }
   }
 
   private changed() {
@@ -117,6 +119,7 @@ class SSHComputers {
     this.profiles = this.profiles.filter((p) => p.id !== id)
     this.status.delete(id)
     this.backoff.delete(id)
+    this.needsLinger.delete(id)
     this.persist()
     this.changed()
   }
@@ -148,11 +151,35 @@ class SSHComputers {
     if (this.status.get(id)?.kind !== 'confirmHostKey' || !lines) return
     try {
       await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
-      await fs.appendFile(join(dataDir, 'ssh_known_hosts'), lines.join('\n') + '\n', { mode: 0o600 })
+      await fs.appendFile(codyncKnownHosts(dataDir), lines.join('\n') + '\n', { mode: 0o600 })
     } catch (e) {
       return this.setStatus(id, { kind: 'failed', message: `Couldn't save the host key: ${e instanceof Error ? e.message : String(e)}` })
     }
     this.pendingKeys.delete(id)
+    this.connect(id)
+  }
+
+  /**
+   * Install on a `notInstalled` card: the released host and its service over SSH, then a connection. Only
+   * the production app: there's no released development host.
+   */
+  async install(id: string) {
+    const profile = this.profiles.find((p) => p.id === id)
+    if (!profile || this.status.get(id)?.kind !== 'notInstalled' || identity.environment !== 'main') return
+    const token: Token = { cancelled: false }
+    this.tasks.set(id, token)
+    this.needsLinger.delete(id)
+    for (const step of installSteps) {
+      this.setStatus(id, { kind: 'installing', step: step.title })
+      const result = await run(SSH, installArguments(profile, step.kind, home, dataDir), undefined, step.timeout)
+      // Disconnected meanwhile; the remote step finishes on its own.
+      if (token.cancelled) return
+      if (result.status !== 0) {
+        this.tasks.delete(id)
+        return this.setStatus(id, { kind: 'notInstalled', failure: { output: installOutput(result.stdout, result.stderr) } })
+      }
+      if (needsLinger(result.stdout)) this.needsLinger.add(id)
+    }
     this.connect(id)
   }
 
@@ -205,8 +232,7 @@ class SSHComputers {
         return stop({ kind: 'failed', message: `${profile.host} goes through a jump host. Connect once with ssh in Terminal to confirm its host key, then try again.` })
       }
       this.setStatus(id, { kind: 'connecting', step: 'Reading the host key…' })
-      const scan = await run(KEYSCAN, keyscanArguments(resolved))
-      const lines = knownHostsLines(scan.stdout, name)
+      const lines = knownHostsLines(await scanHostKeys(resolved), name)
       if (lines.length === 0) return { kind: 'retry', message: `Can't reach ${resolved.hostname}:${resolved.port}.` }
       const prints = await run(KEYGEN, ['-l', '-f', '-'], lines.join('\n') + '\n')
       const fingerprints = prints.stdout.split(/\r?\n/).filter(Boolean)
@@ -389,6 +415,7 @@ export function registerSSH(getWindows: () => BrowserWindow[]) {
   ipcMain.on('ssh:connect', (_e, id: string) => ssh.connect(id))
   ipcMain.on('ssh:disconnect', (_e, id: string) => ssh.disconnect(id))
   ipcMain.on('ssh:trustHostKey', (_e, id: string) => void ssh.trustHostKey(id))
+  ipcMain.on('ssh:install', (_e, id: string) => void ssh.install(id))
   ipcMain.handle('ssh:chooseKey', async () => {
     const result = await dialog.showOpenDialog({ defaultPath: join(home, '.ssh'), properties: ['openFile', 'showHiddenFiles'] })
     return result.canceled ? null : (result.filePaths[0] ?? null)

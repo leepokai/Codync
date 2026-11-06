@@ -49,6 +49,11 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
         get() = VoiceProvider.of(read("callEngine"))
         set(value) = write("callEngine", value?.id)
 
+    /** What the message box's dictation uses: on-device speech (null) or a provider on the user's key (iOS `dictationEngine`). */
+    var dictation: VoiceProvider?
+        get() = VoiceProvider.of(read("dictationEngine"))
+        set(value) = write("dictationEngine", value?.id)
+
     fun defaults(provider: VoiceProvider): VoiceDefaults = read("callDefaults.${provider.id}")
         ?.let { runCatching { WireJson.decodeFromString(VoiceDefaults.serializer(), it) }.getOrNull() } ?: provider.defaults
     fun remember(defaults: VoiceDefaults?, provider: VoiceProvider) {

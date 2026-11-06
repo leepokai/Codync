@@ -1,7 +1,5 @@
 package com.codync.android.core
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 /** A group uses the existing bot endpoints; it never owns an agent or workspace. */

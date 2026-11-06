@@ -220,6 +220,8 @@ public enum SetupStep: String, Codable, Sendable {
 }
 
 public struct Hello: Codable, Sendable {
+    public var icons: [String: CustomIcon]?
+    public var iconsRevision: Int64?
     public var hostId: String
     public var name: String
     public var version: String
@@ -245,9 +247,19 @@ public struct Hello: Codable, Sendable {
     public var canUpdate: Bool?
     /// The latest release the computer found; nil while unknown (development builds, older hosts).
     public var latestVersion: String?
+    /// This phone paired without the computer joining its account: it calls `joinAccount` to finish (older hosts: nil).
+    public var joinAccount: Bool?
+}
+
+public struct RecentWorkspace: Codable, Sendable, Identifiable {
+    public var path: String
+    public var usedAt: Int64
+    public var id: String { path }
 }
 
 public struct DirListing: Codable, Sendable {
+    public var recent: [RecentWorkspace]?
+    public var ancestors: [DirItem]?
     public var path: String
     public var parent: String?
     public var isGit: Bool
@@ -297,6 +309,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var command: String?
     public var cwd: String
     public var permission: String
+    /// Sent as null when nil (`BotUpdate`): the agent's default.
+    public var mode: String?
     public var model: String?
     public var modelOptions: [String: String] = [:]
     public var fastMode: Bool?
@@ -321,7 +335,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
-                permission: String = "auto") {
+                permission: String = "ask", mode: String? = AgentMode.auto) {
         self.name = name
         self.description = description
         self.avatarColor = avatarColor
@@ -329,6 +343,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         self.backend = backend
         self.cwd = cwd
         self.permission = permission
+        self.mode = mode
     }
 
     public init(_ bot: Bot) {
@@ -341,6 +356,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         command = bot.command
         cwd = bot.managedWorkspace ? "" : bot.cwd
         permission = bot.permission
+        mode = bot.mode
         model = bot.model
         modelOptions = bot.modelOptions
         fastMode = bot.fastMode
@@ -367,7 +383,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
             if self[keyPath: field] == base[keyPath: field] { draft[keyPath: field] = fresh[keyPath: field] }
         }
         follow(\.name); follow(\.description); follow(\.avatarColor); follow(\.avatarShape); follow(\.backend)
-        follow(\.command); follow(\.cwd); follow(\.permission); follow(\.model); follow(\.modelOptions)
+        follow(\.command); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)

@@ -27,6 +27,8 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
 }
 
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
+const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
+     ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
 
 impl Store {
     pub fn bots(&self) -> Result<Vec<BotRow>> {
@@ -45,12 +47,20 @@ impl Store {
     pub fn save_bot(&self, cfg: &BotConfig) -> Result<i64> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
-        c.execute(
-            "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
-             ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0",
-            params![cfg.id, rev, serde_json::to_string(cfg)?],
-        )?;
+        c.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
         Ok(rev)
+    }
+
+    /// Saves several bots in one transaction, each with its own rev: all of them or, on an error, none.
+    pub fn save_bots(&self, cfgs: &[BotConfig]) -> Result<()> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        for cfg in cfgs {
+            let rev = next_rev(&tx)?;
+            tx.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn touch_bot(&self, id: &str) -> Result<i64> {
@@ -205,6 +215,7 @@ mod tests {
             lead: false,
             position: 0,
             hidden: false,
+            section: None,
             notify: None,
             connectors: vec![],
             skills: vec![],
@@ -223,6 +234,12 @@ mod tests {
             chief_bot_id: None,
             created_at: 0,
         };
+        // Several at once: each with its own rev, in order.
+        let other = BotConfig { id: "b0".into(), ..cfg.clone() };
+        let before = s.current_rev();
+        s.save_bots(&[other.clone(), other]).unwrap();
+        assert_eq!(s.current_rev(), before + 2);
+        assert_eq!(s.bot("b0").unwrap().map(|r| r.rev), Some(before + 2));
         s.save_bot(&cfg).unwrap();
         let u = s.insert_entry(&Lane::main("b1"), EntryKind::User, 1, &serde_json::json!({"text": "hi"})).unwrap();
         let a = s

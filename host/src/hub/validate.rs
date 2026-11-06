@@ -16,6 +16,7 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
     if cfg.is_group() {
         return Ok(());
     }
+    // The bot a call or shortcut that names none talks to stays in sight.
     if cfg.lead && cfg.hidden {
         bail!("the lead bot can't be hidden");
     }
@@ -28,6 +29,10 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
         && !crate::external::is_external(cfg)
     {
         bail!("unknown backend {}", cfg.backend);
+    }
+    // An id the agent listed (`agent::modes`), sent back to it as is.
+    if cfg.mode.as_deref().is_some_and(|m| m.trim().is_empty() || m.len() > 64) {
+        bail!("mode must be one of the agent's mode ids, or null for its default");
     }
     crate::agent::fallback::check(cfg)
 }

@@ -1,6 +1,6 @@
 import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { HostClient } from '../../client/host-client'
+import { LoopbackTransport, type HostClient } from '../../client/host-client'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
@@ -51,7 +51,7 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
               <ValueRow key="engine" label="Engine">
                 <ChoicePicker
                   selection={engine}
-                  options={[...(window.codync.speech.available || engine === 'device' ? [{ id: 'device', label: 'On device' }] : []), ...voice.VOICE_PROVIDERS.map((p) => ({ id: p, label: voice.voiceInfo[p].name }))]}
+                  options={voice.engineOptions()}
                   onChange={setEngine}
                 />
               </ValueRow>,
@@ -123,6 +123,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   /** Speech mode and dictation with this provider both use its speech-to-text model. */
   const transcribes = dictationOnly || speechMode || dictationEngine === provider
   const hasKey = saved === true
+  const canEditKey = store.client?.transport instanceof LoopbackTransport
   const notConnected = { ok: false, text: `Not connected to ${store.hostName}.` }
 
   const loadModels = async (client: HostClient) => {
@@ -198,6 +199,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
         else await voice.voiceSession(client, provider, model, chosenVoice)
         setResult({ ok: true, text: 'Key works' })
       } else {
+        if (!(client.transport instanceof LoopbackTransport)) return
         setSaved(voice.configured(await voice.setVoiceKey(client, provider, typed), provider))
         setKey('')
         setReplacing(false)
@@ -209,6 +211,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
 
   const remove = () =>
     run(async (client) => {
+      if (!(client.transport instanceof LoopbackTransport)) return
       setSaved(voice.configured(await voice.setVoiceKey(client, provider, ''), provider))
       setResult(null)
     })
@@ -238,11 +241,18 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
           ) : (
             <>
               <IconButton title="Test key" icon="checkmark.seal" onClick={test} />
-              <IconButton title="Replace key" icon="pencil" onClick={() => { setReplacing(true); setResult(null) }} />
-              <IconButton title="Remove key" icon="trash" onClick={remove} />
+              {canEditKey ? <>
+                <IconButton title="Replace key" icon="pencil" onClick={() => { setReplacing(true); setResult(null) }} />
+                <IconButton title="Remove key" icon="trash" onClick={remove} />
+              </> : null}
             </>
           )}
         </div>
+      ) : !canEditKey ? (
+        <VStack gap={4} className="settings-row">
+          <Text>No {info.name} key on {store.hostName}</Text>
+          <Text size="footnote" tone="secondary">Add it in Codync on {store.hostName}: Settings → Voice chat, or connect to that computer over SSH.</Text>
+        </VStack>
       ) : (
         // Paste a key; the computer checks it with the provider before keeping it.
         <VStack gap={10}>

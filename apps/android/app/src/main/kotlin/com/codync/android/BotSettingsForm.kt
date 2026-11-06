@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,6 +28,8 @@ import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 /**
  * Which settings a form shows (iOS `FormPart`): all of them (the editor), what changes often (instructions and the agent:
@@ -36,10 +39,14 @@ internal enum class FormPart { All, Often, Rarely }
 
 /** Bot settings, in sections in the Settings style (`CardSection`), with the pickers they open. */
 @Composable internal fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, part: FormPart,
-    modifier: Modifier = Modifier) {
+    modifier: Modifier = Modifier, error: String? = state.error) {
     var folders by remember { mutableStateOf(false) }
+    // The Avatar row unfolds the picker (iOS `pickingAvatar`).
+    var pickingAvatar by remember { mutableStateOf(false) }
     var viewingSkill by remember { mutableStateOf<SkillRef?>(null) }
     var addingFallback by remember { mutableStateOf(false) }
+    // Retry model list reloads Permissions too: its modes come from the same list.
+    var modelReload by remember { mutableIntStateOf(0) }
     val online = state.actualConnection is LinkState.Ready
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
@@ -54,10 +61,9 @@ internal enum class FormPart { All, Often, Rarely }
                     }
                     AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) })
                 }
-                CardSection("Profile") { nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot) }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot); computerRow(state, online)
-                    agentRows(state, store, draft, change, bot) { addingFallback = true }; placeRows(draft, change) { folders = true }
+                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }; placeRows(state, store, draft, change, modelReload) { folders = true }
                 }
                 CardSection("Activity") {
                     notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -70,17 +76,17 @@ internal enum class FormPart { All, Often, Rarely }
                 CardSection("Instructions") { instructionsRow(draft, change) }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot)
-                    agentRows(state, store, draft, change, bot) { addingFallback = true }
+                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
                     if (!online) row { OfflineNote() }
                 }
             }
             FormPart.Rarely -> {
                 CardSection("Profile") {
-                    row { AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) }) }
+                    avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
                     nameRow(draft, change); createdByRow(state, bot)
                 }
                 // The agent and its model are on the Details page; what's left is where it works.
-                CardSection("Workspace") { computerRow(state, online); placeRows(draft, change) { folders = true } }
+                CardSection("Workspace") { computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true } }
                 CardSection("Activity") { notifyRow(draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change) }
                 Plugins(state, draft, change) { viewingSkill = it }
             }
@@ -88,7 +94,7 @@ internal enum class FormPart { All, Often, Rarely }
         if (part != FormPart.Often) ForkBotSettings(state, store, draft, change)
     }
     CodyncSheet(folders, { folders = false }) {
-        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, store::listDirs) {
+        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer", store::listDirs, store::selectWorkspace) {
             change(draft.copy(cwd = it)); folders = false
         }
     }
@@ -101,6 +107,26 @@ internal enum class FormPart { All, Often, Rarely }
 @Composable private fun OfflineNote() = Text(tr("Reconnect to this computer to save settings."), style = Type.caption, color = Palette.warning)
 
 // A bot left unnamed at creation is named from its first conversations; rename it any time after.
+/** "Avatar" with the face as it is; tapping it unfolds the picker and the custom icon (iOS `BotEditorView` Profile). */
+private fun CardRows.avatarRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, picking: Boolean, toggle: () -> Unit) {
+    row {
+        val icon = draft.id?.let { state.icons["bot:$it"] }
+        Box(Modifier.fillMaxWidth().plainButton(action = toggle).semantics { contentDescription = "Edit Bot avatar" }) {
+            ValueRow("Avatar") {
+                Box(Modifier.clip(RoundedRectangle(10.dp)).background(Palette.bubbleAgent).padding(5.dp)) {
+                    CharacterAvatar(draft.avatarShape, draft.avatarColor, 28.dp, customImage = icon?.dataUrl, customTinted = icon?.tinted == true)
+                }
+            }
+        }
+    }
+    if (picking) row {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) })
+            draft.id?.let { CustomIconEditor("bot:$it", state, store) }
+        }
+    }
+}
+
 private fun CardRows.nameRow(draft: BotDraft, change: (BotDraft) -> Unit) =
     row { Field("Name") { FieldBox(draft.name, { change(draft.copy(name = it)) }, "Name") } }
 
@@ -123,13 +149,14 @@ private fun CardRows.fallbackBanner(state: AppState, store: AppStore, bot: Bot?)
 
 private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ValueRow("Computer", state.computers.firstOrNull()?.name ?: "Your computer")
+        ValueRow("Computer", state.hostName)
         if (!online) OfflineNote()
     }
 }
 
 /** The agent, its model and the fallbacks that carry on for it. */
-private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, addFallback: () -> Unit) {
+private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, modelReload: Int,
+    reloadModels: () -> Unit, addFallback: () -> Unit) {
     row {
         androidx.compose.runtime.key(state.generation, state.computer?.id, draft.backend, draft.account) {
             AgentModelPicker(state, { backend -> store.agentModels(backend, draft.account) }, draft.backend, draft.model, draft.modelOptions,
@@ -157,7 +184,8 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
 }
 
 /** Where the bot works and what it may do there without asking. */
-private fun CardRows.placeRows(draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
+private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
+    chooseFolder: () -> Unit) {
     row {
         ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
             else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
@@ -174,14 +202,7 @@ private fun CardRows.placeRows(draft: BotDraft, change: (BotDraft) -> Unit, choo
             }
         }
     }
-    row {
-        ValueRow("Permissions", detail = if (draft.permission == "auto")
-            "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."
-            else "You'll get an approval card and a notification whenever the agent asks.") {
-            ChoicePicker(draft.permission, listOf("ask" to "Ask me", "auto" to "Approve automatically"), { change(draft.copy(permission = it)) },
-                label = "Permissions")
-        }
-    }
+    row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
 }
 
 private fun CardRows.notifyRow(draft: BotDraft, change: (BotDraft) -> Unit) =

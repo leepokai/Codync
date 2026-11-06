@@ -1,6 +1,5 @@
 package com.codync.android
 
-import android.os.Build
 import java.io.IOException
 import com.codync.android.core.*
 import kotlinx.coroutines.*
@@ -11,9 +10,14 @@ import kotlinx.serialization.json.*
 // Pairing, the encrypted link to the computer and the mirror's event stream.
 
 fun AppStore.setRoute(route: ConnectionRoute) = action("route") {
-    changeComputer { it.copy(route = route) } ?: return@action
+    changeComputer { it.copy(route = route) }
     reconnect().join()
 }
+
+/** The computer's badge color, picked on this phone (an `AvatarPalette` id). */
+fun AppStore.setColor(color: String) = action("color") { changeComputer { it.copy(color = color) } }
+
+fun AppStore.clearError() { mutableState.update { it.copy(error = null) } }
 
 /**
  * Changes the shown computer's latest copy, saved and then shown, one change at a time: a switch
@@ -32,6 +36,13 @@ internal suspend fun AppStore.changeComputer(change: (Computer) -> Computer): Co
  */
 fun AppStore.reconnect(): Job = contextScope.launch { connectionJob?.cancelAndJoin(); connect() }
 
+/** The computer's current roster, asked for outright (a link to a bot this phone hasn't seen yet). */
+internal suspend fun AppStore.loadRoster() {
+    val bots = HostClient.bots(ready())
+    withContext(Dispatchers.IO) { requireNotNull(database).receive(bots) }
+    refresh()
+}
+
 /** A pull to refresh in a chat: reconnect, and hold until the link is back or has failed (the header says why). */
 suspend fun AppStore.refreshConnection() {
     reconnect().join()
@@ -41,11 +52,9 @@ suspend fun AppStore.refreshConnection() {
 fun AppStore.setForeground(active: Boolean) {
     foreground = active
     foregroundState.value = active
-    PushDelivery.foreground = transportRequired
     if (active && !state.value.loading) {
         connect()
         acknowledgeVisible()
-        refreshCloud()
     }
     if (!active) {
         pairingJob?.cancel()
@@ -96,7 +105,7 @@ fun AppStore.connect() {
             try {
                 showConnection(LinkState.Connecting)
                 val identity = withContext(Dispatchers.IO) { local.identity() }
-                val target = state.value.computers.firstOrNull { it.id == computer.id } ?: return@launch
+                val target = state.value.computer
                 val active = HostConnector.connect(target, identity)
                 connected = active
                 channel = active
@@ -111,22 +120,32 @@ fun AppStore.connect() {
                     }
                     launch {
                         active.state.collectLatest { link ->
+                            val iconEpoch = if (link is LinkState.Ready) {
+                                withContext(Dispatchers.IO) { requireNotNull(database).beginIconConnection() }
+                            } else null
                             showConnection(link)
                             if (link is LinkState.ComputerOffline) {
                                 reconcileMailbox(active)
                             }
                             if (link is LinkState.Ready) {
-                                val fromHost = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
+                                val fromHost = HostClient.hello(active, state.value.computer)
                                 val hello = active.call("hello").jsonObject
                                 // This phone's picks (color, route, push) may have changed during those calls.
                                 changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
                                 val dropped = withContext(Dispatchers.IO) {
-                                    requireNotNull(database).setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
+                                    val mirror = requireNotNull(database)
+                                    val changed = mirror.setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
                                         BuildConfig.VERSION_NAME + "/" + hello["version"]?.jsonPrimitive?.content)
+                                    mirror.applyIconReply(MirrorEvent.Icons(hello["icons"]?.let(::decodeCustomIcons).orEmpty(),
+                                        hello["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0), requireNotNull(iconEpoch))
+                                    changed
                                 }
                                 // Dropped chats page their earlier messages again.
                                 mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
                                 noteHello(hello)
+                                if (asksToJoinAccount(hello)) joinAccount { claim ->
+                                    active.call("joinAccount", claim.json).jsonObject
+                                }
                                 // The event catch-up is ordered by revision; bot revisions can
                                 // follow hundreds of historical entries. Load the current roster
                                 // without moving the event cursor before consuming that stream.
@@ -242,6 +261,9 @@ private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
     val same = it.hello?.text("version") == hello.text("version")
     it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
 }
+
+/** The computer's [hello] asks this phone to finish bringing it into the account (iOS `BotStore.refreshHello`). */
+internal fun asksToJoinAccount(hello: JsonObject): Boolean = hello["joinAccount"]?.jsonPrimitive?.booleanOrNull == true
 
 private fun AppStore.showConnection(link: LinkState) {
     mutableState.update { it.copy(actualConnection = link) }

@@ -1,3 +1,4 @@
+import { BrowserAuthentication } from './browser-authentication'
 import { app, ipcMain, shell } from 'electron'
 import { identity } from './environment'
 
@@ -6,21 +7,9 @@ import { identity } from './environment'
 
 export const SCHEMES = [identity.scheme, identity.appId]
 
-interface Pending {
-  scheme: string
-  resolve: (url: string) => void
-  reject: (error: Error) => void
-  timer: NodeJS.Timeout
-}
+const browser = new BrowserAuthentication((url) => shell.openExternal(url))
 
-let pending: Pending | null = null
-
-/** The browser never came back: another sign-in took its place, or it ran out of time. */
-export class AuthenticationEnded extends Error {
-  constructor(readonly reason: 'cancelled' | 'timeout', message: string) {
-    super(message)
-  }
-}
+export { AuthenticationEnded } from './browser-authentication'
 
 export function registerSchemes() {
   for (const scheme of SCHEMES) {
@@ -35,36 +24,14 @@ export function registerSchemes() {
 }
 
 /** A URL on one of our schemes reached the app (open-url, or a second instance's argv). */
-export function handleURL(url: string) {
-  const scheme = url.split(':')[0]?.toLowerCase()
-  if (pending && scheme === pending.scheme.toLowerCase()) {
-    clearTimeout(pending.timer)
-    pending.resolve(url)
-    pending = null
-  }
-}
+export const handleURL = (url: string) => browser.handleURL(url)
 
 export function urlFromArgv(argv: string[]) {
   return argv.find((a) => SCHEMES.some((s) => a.toLowerCase().startsWith(`${s.toLowerCase()}:`)))
 }
 
-/** Opens `url` in the browser and waits (up to 10 minutes) for the return on `scheme`. */
-export function authenticate(url: string, scheme: string): Promise<string> {
-  if (!/^https:\/\//.test(url)) return Promise.reject(new Error('Sign-in needs an https address.'))
-  pending?.reject(new AuthenticationEnded('cancelled', 'Another sign-in started.'))
-  return new Promise((resolve, reject) => {
-    pending = {
-      scheme,
-      resolve,
-      reject,
-      timer: setTimeout(() => {
-        pending = null
-        reject(new AuthenticationEnded('timeout', 'Sign-in timed out.'))
-      }, 10 * 60_000),
-    }
-    void shell.openExternal(url)
-  })
-}
+export const authenticate = (url: string, scheme: string, accept?: (url: string, isCurrent: () => boolean) => Promise<boolean>) =>
+  browser.authenticate(url, scheme, accept)
 
 export function registerAuthIPC() {
   ipcMain.handle('app:authenticate', (_e, url: string, scheme: string) => authenticate(url, scheme))

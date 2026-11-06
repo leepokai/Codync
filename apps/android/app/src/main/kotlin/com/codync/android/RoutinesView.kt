@@ -64,10 +64,9 @@ import kotlinx.coroutines.launch
 
 /**
  * A bot's routines, on its details' Details page (iOS `RoutinesView`); a row opens its editor.
- * `initialId`: open on that routine's editor (a run's notice in the chat was tapped). `leave` goes back to the chat once a
- * request to the bot is in the composer.
+ * `initialId`: open on that routine's editor (a run's notice in the chat was tapped).
  */
-@Composable fun RoutinesView(bot: Bot, state: AppState, store: AppStore, initialId: String?, leave: () -> Unit) {
+@Composable fun RoutinesView(bot: Bot, state: AppState, store: AppStore, initialId: String?) {
     val online = state.actualConnection is LinkState.Ready
     val listing = state.routines[bot.id]
     val busy = "routines:${bot.id}" in state.busy

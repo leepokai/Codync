@@ -7,7 +7,7 @@ use super::super::{l10n::tr, md};
 use super::buffer::{centered, frame_box, put, put_line};
 use super::style::theme;
 
-const DESCRIPTION: &str = "Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. Its Check in routine runs twice a day by default; you can change or pause it in Routines.";
+const DESCRIPTION: &str = "Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines.";
 
 fn lines(width: u16) -> Vec<Line<'static>> {
     md::wrap(&[Span::styled(tr(DESCRIPTION).into_owned(), theme().text)], usize::from(width), &[], &[])

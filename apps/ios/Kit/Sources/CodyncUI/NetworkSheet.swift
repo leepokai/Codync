@@ -1,6 +1,11 @@
 import CodyncKit
 import SwiftUI
 
+extension Image {
+    /// The codync-network mark (host/crates/network/assets/icon.png); SF Symbols has none.
+    public static var codyncNetwork: Image { Image("codync-network", bundle: .module) }
+}
+
 /// A computer's networks of the user's other computers, read-only: who is in each, whether each one
 /// answers and which bots it offers, who may message this computer's bots there, and whether cloud
 /// assistants may reach them.
@@ -14,7 +19,7 @@ public struct NetworkSheet: View {
         VStack(spacing: 0) {
             ModalHeader {
                 HStack(spacing: 8) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted").font(.title2).accessibilityHidden(true)
+                    Image.codyncNetwork.resizable().scaledToFit().frame(width: 26, height: 26).accessibilityHidden(true)
                     Text(L10n.tr("Network"))
                     // The network is a beta feature.
                     Text(L10n.tr("Beta"))

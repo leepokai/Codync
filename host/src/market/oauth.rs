@@ -1,5 +1,6 @@
 //! Sign-in for remote MCP connectors (MCP authorization: OAuth 2.1 + PKCE,
-//! protected resource metadata, dynamic client registration).
+//! protected resource metadata, dynamic client registration). Servers where Codync has its own
+//! app instead (GitHub) sign in with a code: see `device`.
 //!
 //! The tokens live on this computer. The sign-in page redirects to one of two places:
 //! - `http://127.0.0.1:<port>/oauth/callback`, served by this host, when the user signs
@@ -18,7 +19,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// How long a started sign-in waits for its callback.
@@ -98,25 +99,27 @@ fn text(v: &Value) -> Option<String> {
     v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
-fn update(store: &Store, id: &str, f: impl FnOnce(&mut Connector)) -> Result<Connector> {
+/// `c` is connector `id` still pointing at `url`: while a request to its server is in flight, it
+/// can be removed and another added under its id.
+fn is_at(c: &Connector, id: &str, url: Option<&str>) -> bool {
+    c.id == id && c.url.as_deref() == url
+}
+
+/// Changes connector `id` while it still points at `url`: every change here follows a request to its server.
+fn update(store: &Store, id: &str, url: Option<&str>, f: impl FnOnce(&mut Connector)) -> Result<Connector> {
     market::update_connectors(store, |all| {
-        let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| anyhow!("unknown connector"))?;
+        let c = all.iter_mut().find(|c| is_at(c, id, url)).ok_or_else(|| anyhow!("unknown connector"))?;
         f(c);
         Ok(c.clone())
     })
 }
 
-/// Starts signing in to connector `id`: the page to open.
-pub async fn start(store: &Store, port: u16, id: &str, callback: Callback) -> Result<Value> {
+/// Starts signing in to connector `id`: the page to open, and the code to type there for a device sign-in.
+/// `shows_code`: the client can show that code (older apps can't).
+pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: bool) -> Result<Value> {
+    let store = &hub.store;
     let c = market::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("unknown connector"))?;
     let url = c.url.clone().ok_or_else(|| anyhow!("{} runs on this computer; it has nothing to sign in to", c.name))?;
-    let app = app_uri(store);
-    let redirect_uri = match callback {
-        Callback::Host => loopback_uri(port),
-        Callback::App => app
-            .clone()
-            .ok_or_else(|| anyhow!("The Codync cloud is off on this computer, so sign in from the computer itself."))?,
-    };
 
     let resource = resource_metadata(c.egress(), &url).await;
     let issuer = resource["authorization_servers"][0]
@@ -126,9 +129,24 @@ pub async fn start(store: &Store, port: u16, id: &str, callback: Callback) -> Re
     let meta = server_metadata(policy, &issuer).await.with_context(|| format!("signing in to {}", c.name))?;
     let authorize = text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?;
     let token_endpoint = text(&meta["token_endpoint"]).ok_or_else(|| anyhow!("no token endpoint"))?;
+    if let Some(app) = device::app(&issuer, &url) {
+        if !shows_code {
+            bail!("Update Codync on this device to sign in to {}.", c.name);
+        }
+        return device::start(hub, &c, &meta, app, token_endpoint).await;
+    }
+
+    let app = app_uri(store);
+    let redirect_uri = match callback {
+        Callback::Host => loopback_uri(hub.port),
+        Callback::App => app
+            .clone()
+            .ok_or_else(|| anyhow!("The Codync cloud is off on this computer, so sign in from the computer itself."))?,
+    };
+    let authorize = text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?;
 
     // Register once with every redirect URI we might use; again if they changed.
-    let wanted: Vec<String> = std::iter::once(loopback_uri(port)).chain(app).collect();
+    let wanted: Vec<String> = std::iter::once(loopback_uri(hub.port)).chain(app).collect();
     let mut oauth = c.oauth.clone().unwrap_or_default();
     if oauth.client_id.is_empty() || !wanted.iter().all(|u| oauth.redirect_uris.contains(u)) {
         let register = text(&meta["registration_endpoint"]).ok_or_else(|| {
@@ -160,7 +178,7 @@ pub async fn start(store: &Store, port: u16, id: &str, callback: Callback) -> Re
     }
     oauth.token_endpoint = token_endpoint;
     let client_id = oauth.client_id.clone();
-    update(store, id, |c| c.oauth = Some(oauth))?;
+    update(store, id, Some(&url), |c| c.oauth = Some(oauth))?;
 
     let verifier = crate::remote::crypto::b64(&crate::remote::crypto::random::<32>());
     let challenge = crate::remote::crypto::b64(&crate::remote::crypto::sha256(&[verifier.as_bytes()]));
@@ -209,7 +227,7 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
     let code = code.ok_or_else(|| anyhow!("Sign-in didn't return a code"))?;
     let c = market::connectors(store)?
         .into_iter()
-        .find(|c| c.id == p.connector)
+        .find(|c| is_at(c, &p.connector, Some(&p.resource)))
         .ok_or_else(|| anyhow!("unknown connector"))?;
     let policy = sign_in_policy(&c).await;
     let oauth = c.oauth.ok_or_else(|| anyhow!("unknown connector"))?;
@@ -225,7 +243,7 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
         ],
     )
     .await?;
-    update(store, &p.connector, |c| store_tokens(c, &v))
+    update(store, &p.connector, Some(&p.resource), |c| store_tokens(c, &v))
 }
 
 /// The policy for the endpoints a connector's sign-in server names (see `egress::derived`).
@@ -242,6 +260,11 @@ async fn token_request(policy: Policy, oauth: &OAuth, form: &[(&str, &str)]) -> 
     if let Some(secret) = &oauth.client_secret {
         form.push(("client_secret", secret));
     }
+    post_form(&oauth.token_endpoint, &form).await.context("can't reach the sign-in server")
+}
+
+/// Posts `form`: the status and the JSON answer (`Null` when it isn't JSON).
+async fn post_form(url: &str, form: &[(&str, &str)]) -> Result<(reqwest::StatusCode, Value)> {
     let body = form.iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect::<Vec<_>>().join("&");
     let res = crate::egress::client(policy, &oauth.token_endpoint)
         .await?
@@ -251,8 +274,7 @@ async fn token_request(policy: Policy, oauth: &OAuth, form: &[(&str, &str)]) -> 
         .body(body)
         .timeout(TIMEOUT)
         .send()
-        .await
-        .context("can't reach the sign-in server")?;
+        .await?;
     let status = res.status();
     let v = crate::egress::json(res, MAX_METADATA).await.unwrap_or(Value::Null);
     if !status.is_success() || !v["access_token"].is_string() {
@@ -278,8 +300,8 @@ fn store_tokens(c: &mut Connector, v: &Value) {
 }
 
 /// Forgets a connector's tokens (keeps its registration).
-fn sign_out(store: &Store, id: &str) -> Result<Connector> {
-    update(store, id, |c| {
+fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
+    update(store, &c.id, c.url.as_deref(), |c| {
         if let Some(o) = &mut c.oauth {
             o.access_token.clear();
             o.refresh_token = None;
@@ -298,17 +320,17 @@ pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
         headers.insert(k.clone(), market::passwords::resolve(store, v).await?);
     }
     if let Some(o) = &c.oauth {
-        let o = fresh(store, &c, o, stale).await?;
+        let o = fresh(store, &c, &url, o, stale).await?;
         headers.insert("Authorization".into(), format!("Bearer {}", o.access_token));
     }
     // `public`: the URL came from the MCP Registry, so the proxy may not reach the local network.
     Ok(json!({"url": url, "headers": headers, "public": c.egress() == Policy::Public}))
 }
 
-async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<OAuth> {
-    let signed_out = || anyhow!("Sign in to {} in Extensions first.", c.name);
+/// `o`, or a new token when it's about to expire (or `stale`). `url`: the connector's.
+async fn fresh(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) -> Result<OAuth> {
     if !o.signed_in() {
-        return Err(signed_out());
+        return Err(signed_out(c));
     }
     let expiring = o.expires_at.is_some_and(|t| t <= now() + EARLY);
     if !stale && !expiring {
@@ -316,16 +338,21 @@ async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<O
     }
     let _one = REFRESH.lock().await;
     // Someone else may have refreshed while we waited.
-    let current = market::connectors(store)?.into_iter().find(|x| x.id == c.id).and_then(|x| x.oauth);
+    let current = market::connectors(store)?.into_iter().find(|x| is_at(x, &c.id, Some(url))).and_then(|x| x.oauth);
     if let Some(cur) = &current
         && cur.access_token != o.access_token
         && cur.signed_in()
     {
         return Ok(cur.clone());
     }
-    let Some(refresh) = o.refresh_token.clone() else {
-        sign_out(store, &c.id)?;
-        return Err(signed_out());
+    renew(store, c, url, o, stale).await
+}
+
+/// Trades the refresh token for a new access token. A server that can't answer now leaves the sign-in as is.
+async fn renew(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) -> Result<OAuth> {
+    let Some(refresh) = o.refresh_token.as_deref() else {
+        sign_out(store, c)?;
+        return Err(signed_out(c));
     };
     match token_request(sign_in_policy(c).await, o, &[("grant_type", "refresh_token"), ("refresh_token", &refresh)])
         .await
@@ -333,9 +360,51 @@ async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<O
         Ok(v) => Ok(update(store, &c.id, |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
         Err(error) => {
             tracing::warn!(connector = %c.id, error = format!("{error:#}"), "token refresh failed");
-            sign_out(store, &c.id)?;
-            Err(signed_out())
+            return retry();
         }
+    };
+    let renewal = renewal(status, &v);
+    if renewal != Renewal::Renewed {
+        tracing::warn!(connector = %c.id, %status, error = v["error"].as_str().unwrap_or_default(), "token refresh refused");
+    }
+    match renewal {
+        Renewal::Renewed => Ok(update(store, &c.id, Some(url), |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
+        Renewal::Retry => retry(),
+        Renewal::Revoked => {
+            sign_out(store, c)?;
+            Err(signed_out(c))
+        }
+        Renewal::Unregistered => {
+            unregister(store, c)?;
+            Err(signed_out(c))
+        }
+    }
+}
+
+/// What the token endpoint's answer to a refresh means (RFC 6749 §5.2).
+#[derive(Debug, PartialEq)]
+enum Renewal {
+    Renewed,
+    /// The server is down or busy, or something in front of it answered: ask again later.
+    Retry,
+    /// The server ended the sign-in.
+    Revoked,
+    /// The server no longer knows Codync's client.
+    Unregistered,
+}
+
+fn renewal(status: reqwest::StatusCode, v: &Value) -> Renewal {
+    if status.is_success() && v["access_token"].is_string() {
+        return Renewal::Renewed;
+    }
+    if status.is_server_error() || matches!(status.as_u16(), 408 | 429) {
+        return Renewal::Retry;
+    }
+    match v["error"].as_str() {
+        // Not an OAuth error (a proxy's page, say): nothing is known about the grant.
+        None | Some("temporarily_unavailable") => Renewal::Retry,
+        Some("invalid_client") => Renewal::Unregistered,
+        Some(_) => Renewal::Revoked,
     }
 }
 

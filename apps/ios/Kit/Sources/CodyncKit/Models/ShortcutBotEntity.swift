@@ -46,11 +46,13 @@ public struct ShortcutBotQuery: EntityStringQuery {
             .compactMap { entity($0, among: computers, in: storage) }
     }
 
-    /// The lead of the first computer, in the user's order, that has one: who a shortcut that names no bot talks to.
+    /// Who a shortcut that names no bot talks to: the lead of the computer chosen in Settings
+    /// (`shortcutLeadComputer`), else of the first computer, in the user's order, that has one.
     public static func lead(in storage: SharedStore.Context) -> ShortcutBotEntity? {
         let (computers, bots) = (storage.computers, storage.bots)
         let order = (storage.computerOrder ?? ComputerOrder()).orderedIDs(computers.map(\.id))
-        return order.lazy.compactMap { id in
+        let chosen = storage.shortcutLeadComputer.map { [$0] } ?? []
+        return (chosen + order).lazy.compactMap { id in
             bots.first { $0.computerId == id && $0.bot.lead }.flatMap { entity($0, among: computers, in: storage) }
         }.first
     }

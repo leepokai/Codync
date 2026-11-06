@@ -88,8 +88,11 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
-        // Rotation keeps its ViewModel/navigation; process restoration gets a fresh owner.
-        if (savedInstanceState?.getString("codync:activityOwner") != store.activityOwnerId) handle(intent)
+        // Rotation keeps its ViewModel/navigation; process restoration gets a fresh owner and the activity's first intent
+        // again, as does a return from Recents: its links open again, but a call or a share happened once.
+        val replayed = savedInstanceState != null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (savedInstanceState?.getString("codync:activityOwner") != accounts.activityOwnerId &&
+            !(replayed && intent.action in setOf(LiveShortcut.ACTION, Intent.ACTION_SEND))) handle(intent)
     }
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -104,7 +107,7 @@ class MainActivity : FragmentActivity() {
         if (requestedOrientation != target) requestedOrientation = target
     }
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("codync:activityOwner", store.activityOwnerId)
+        outState.putString("codync:activityOwner", accounts.activityOwnerId)
         super.onSaveInstanceState(outState)
     }
     override fun onNewIntent(intent: Intent) {
@@ -153,11 +156,11 @@ class MainActivity : FragmentActivity() {
             store.pair(uri.toString())
         }
         // Retain the scoped, non-secret destination for Activity/process restoration.
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) store.openLink(uri)
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; store.finishConnectorSignIn(uri) }
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; store.openScreenLink() }
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; store.openPage(LinkPage.Computers) }
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "plugins") { intent.data = null; store.openPage(LinkPage.Extensions) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) accounts.openLink(uri)
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; accounts.finishConnectorSignIn(uri) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; accounts.openScreenLink() }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; accounts.openPage(LinkPage.Computers) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "plugins") { intent.data = null; accounts.openPage(LinkPage.Extensions) }
     }
 }
 
@@ -167,11 +170,13 @@ internal object AccountImages {
     @Synchronized fun open(context: android.content.Context, id: String): ImageLoader {
         retire()
         val images = ImageLoader.Builder(context).diskCache {
-            DiskCache.Builder().directory(File(context.cacheDir, "codync-images-$id").toOkioPath()).maxSizeBytes(64L * 1024 * 1024).build()
+            DiskCache.Builder().directory(cacheDir(context, id).toOkioPath()).maxSizeBytes(64L * 1024 * 1024).build()
         }.build()
         current = images
         return images
     }
     @Synchronized fun close(images: ImageLoader) { images.shutdown(); if (current === images) current = null }
     @Synchronized fun retire() { current?.shutdown(); current = null }
+    /** Where a context's images are cached ([referenceId]: `LocalStore.referenceId`). */
+    fun cacheDir(context: android.content.Context, referenceId: String) = File(context.cacheDir, "codync-images-$referenceId")
 }

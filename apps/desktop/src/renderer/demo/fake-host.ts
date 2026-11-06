@@ -256,6 +256,16 @@ export class FakeHost {
         })
         return {}
       }
+      case 'renameSection': {
+        const to = typeof b.to === 'string' ? b.to.trim() || undefined : undefined
+        for (const bot of this.bots.values()) if (bot.section === str('from')) this.emitBot(Object.assign(bot, { section: to }))
+        return {}
+      }
+      case 'setLead': {
+        const lead = str('botId')
+        for (const bot of this.bots.values()) if (bot.lead !== (bot.id === lead)) this.emitBot(Object.assign(bot, { lead: bot.id === lead }))
+        return {}
+      }
       case 'deleteBot': {
         const id = str('botId')
         this.bots.delete(id)
@@ -273,6 +283,8 @@ export class FakeHost {
         }
       case 'routines':
         return { routines: [], runs: [] }
+      case 'agentGear':
+        return { skills: [], connectors: [], rules: [], plugins: [] }
       case 'skills':
       case 'connectors':
       case 'marketSkills':

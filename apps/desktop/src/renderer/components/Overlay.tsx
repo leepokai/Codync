@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, u
 import { createPortal } from 'react-dom'
 import { reduceMotion } from '../lib/theme'
 import { afterExit } from '../lib/exit-delay'
+import { stackModals } from '../lib/modal-stack'
 import { useTr } from '../lib/use-language'
 import { Icon } from './Icon'
 import { HStack, VStack } from './Stack'
@@ -37,18 +38,18 @@ export function usePresence(open: boolean, exitMs = 300, animateOnMount = true) 
 export const DismissContext = createContext<() => void>(() => {})
 export const useDismiss = () => useContext(DismissContext)
 
-/** Stack depth: only the top layer takes Escape. */
-const stack: number[] = []
+/** Layers in the order they opened: Escape goes to the newest one still live (not inert under the modal on top). */
+const stack: { id: number; layer: RefObject<HTMLElement | null> }[] = []
 let nextLayer = 0
-export function useEscape(active: boolean, onEscape: () => void) {
+export function useEscape(active: boolean, onEscape: () => void, layer: RefObject<HTMLElement | null>) {
   const handler = useRef(onEscape)
   handler.current = onEscape
   useEffect(() => {
     if (!active) return
     const id = ++nextLayer
-    stack.push(id)
+    stack.push({ id, layer })
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && stack[stack.length - 1] === id) {
+      if (e.key === 'Escape' && stack.findLast((entry) => !entry.layer.current?.inert)?.id === id) {
         e.preventDefault()
         e.stopPropagation()
         handler.current()
@@ -57,15 +58,34 @@ export function useEscape(active: boolean, onEscape: () => void) {
     window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('keydown', onKey, true)
-      stack.splice(stack.indexOf(id), 1)
+      stack.splice(stack.findIndex((entry) => entry.id === id), 1)
     }
-  }, [active])
+  }, [active, layer])
 }
 
 const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
 /** The open modal's title id, so its `ModalHeader` names the dialog. */
 const ModalTitleContext = createContext<string | undefined>(undefined)
+
+/** The open modals with where focus returns when each closes, and the page layers they made inert. */
+const openModals = new Map<HTMLElement, HTMLElement | null>()
+const mutedByModals = new WeakSet<HTMLElement>()
+
+/** Applies `stackModals` to the page and moves focus into the modal on top. */
+function syncModals() {
+  const layers = [...document.body.children].filter((el): el is HTMLElement => el instanceof HTMLElement)
+  const { top, mute, unmute } = stackModals(layers.map((el) => ({ el, z: Number(getComputedStyle(el).zIndex) || 0, modal: openModals.has(el), inert: el.inert, muted: mutedByModals.has(el) })))
+  for (const el of mute) {
+    el.inert = true
+    mutedByModals.add(el)
+  }
+  for (const el of unmute) {
+    el.inert = false
+    mutedByModals.delete(el)
+  }
+  if (top && !top.contains(document.activeElement)) (top.querySelector<HTMLElement>('[data-autofocus]') ?? top.querySelector<HTMLElement>('[data-modal-card]'))?.focus({ preventScroll: true })
+}
 
 /**
  * An open modal holds focus: everything behind it goes inert, focus moves in (to a
@@ -75,10 +95,8 @@ function useModalFocus(open: boolean, mounted: boolean, layer: RefObject<HTMLEle
   useEffect(() => {
     const node = layer.current
     if (!open || !node) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const muted = [...document.body.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== node && !el.inert)
-    for (const el of muted) el.inert = true
-    if (!node.contains(document.activeElement)) (node.querySelector<HTMLElement>('[data-autofocus]') ?? node.querySelector<HTMLElement>('[data-modal-card]'))?.focus({ preventScroll: true })
+    openModals.set(node, document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    syncModals()
     // Tab cycles inside the top modal instead of leaving the page.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab' || node.inert) return
@@ -95,8 +113,15 @@ function useModalFocus(open: boolean, mounted: boolean, layer: RefObject<HTMLEle
     window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('keydown', onKey, true)
-      for (const el of muted) el.inert = false
-      if (previous?.isConnected) previous.focus({ preventScroll: true })
+      const previous = openModals.get(node)
+      openModals.delete(node)
+      syncModals()
+      if (previous?.isConnected && !previous.closest('[inert]')) {
+        previous.focus({ preventScroll: true })
+        return
+      }
+      // Its opener is under a modal still open: the modal opened from this one returns there instead.
+      for (const [other, theirs] of openModals) if (theirs && node.contains(theirs)) openModals.set(other, previous ?? null)
     }
   }, [open, mounted, layer])
 }
@@ -118,7 +143,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
   const layer = useRef<HTMLDivElement>(null)
   const titleId = useId()
   if (open) last.current = children
-  useEscape(open, onClose)
+  useEscape(open, onClose, layer)
   useModalFocus(open, mounted, layer)
   if (!mounted) return null
   return createPortal(
@@ -143,21 +168,23 @@ export interface DialogAction {
 }
 
 /** A centered card over a dimmed screen with the actions and Cancel (`.codyncDialog`). */
-export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose }: {
+export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose, children }: {
   open: boolean
   title: string
   message?: string | null
   actions: DialogAction[]
   cancel?: string | null
   onClose: () => void
+  /** A field between the text and the buttons (a name to type); `data-autofocus` on it takes the focus. */
+  children?: ReactNode
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const tr = useTr()
-  const last = useRef({ title, message, actions })
+  const last = useRef({ title, message, actions, children })
   const layer = useRef<HTMLDivElement>(null)
   const id = useId()
-  if (open) last.current = { title, message, actions }
-  useEscape(open && cancel !== null, onClose)
+  if (open) last.current = { title, message, actions, children }
+  useEscape(open && cancel !== null, onClose, layer)
   useModalFocus(open, mounted, layer)
   if (!mounted) return null
   const shownContent = last.current
@@ -170,6 +197,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
           <Text as="h2" id={`${id}-title`} size="title3" weight="semibold">{shownContent.title}</Text>
           {shownContent.message ? <Text as="div" id={`${id}-message`} size="body" tone="secondary">{shownContent.message}</Text> : null}
         </div>
+        {shownContent.children}
         <div className="dialog-buttons">
           {cancel !== null ? (
             <button className="dialog-button" data-autofocus onClick={onClose}>
@@ -198,12 +226,18 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
 /** One row in a Codync menu: an action, or a choice when `selected` is set. */
 export interface MenuItem {
   title: string
+  /** Secondary context below the main label. */
+  detail?: string
   icon?: string
   /** A picture in the icon's place (an agent's logo). */
   leading?: ReactNode
   selected?: boolean
   destructive?: boolean
   divider?: boolean
+  /** The title is a name the user gave (a section): shown as typed, never translated. */
+  verbatim?: boolean
+  /** Picking it leaves the menu open, for choices made several at a time (iOS `.menuActionDismissBehavior(.disabled)`). */
+  keepsOpen?: boolean
   action: () => void
 }
 
@@ -251,7 +285,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { it
         setHighlight((h) => h < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1) : (h + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
       } else if (e.key === 'Enter' && highlight >= 0 && items[highlight]) {
         e.preventDefault()
-        dismiss()
+        if (!items[highlight]?.keepsOpen) dismiss()
         items[highlight]?.action()
       }
     }
@@ -274,10 +308,10 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { it
             className={`menu-row ${item.destructive ? 'destructive' : ''} ${highlight === i ? 'highlight' : ''}`}
             role={item.selected === undefined ? 'menuitem' : 'menuitemradio'}
             aria-checked={item.selected}
-            title={tr(item.title)}
+            title={item.verbatim ? item.title : tr(item.title)}
             onMouseEnter={() => setHighlight(i)}
             onClick={() => {
-              dismiss()
+              if (!item.keepsOpen) dismiss()
               item.action()
             }}
           >
@@ -286,7 +320,10 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { it
                 {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
               </span>
             ) : null}
-            <span className="menu-title">{tr(item.title)}</span>
+            <span className={`menu-title${item.detail ? ' with-detail' : ''}`}>
+              <span>{item.verbatim ? item.title : tr(item.title)}</span>
+              {item.detail && <span className="menu-detail">{tr(item.detail)}</span>}
+            </span>
             {item.selected !== undefined ? (
               <span className={`check-slot${item.selected ? ' on' : ''}`}>
                 <Icon name="checkmark" size={10} weight="semibold" />
@@ -337,13 +374,14 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, s
   const { mounted, shown } = usePresence(open, 120)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const frozen = useRef<MenuItem[]>([])
+  const layer = useRef<HTMLDivElement>(null)
   if (open) frozen.current = items()
   useLayoutEffect(() => {
     if (!open) return
     if (point) setRect(new DOMRect(point.x, point.y, 0, 0))
     else if (anchor?.current) setRect(anchor.current.getBoundingClientRect())
   }, [open, point, anchor])
-  useEscape(open, onClose)
+  useEscape(open, onClose, layer)
   if (!mounted || !rect) return null
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(

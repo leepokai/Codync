@@ -61,7 +61,7 @@ export type ImageSource = { file: Attachment; botId: string } | { file: SharedFi
 /** A picture full size, in a sheet. */
 export function AttachmentViewer({ source, close }: { source: ImageSource | null; close: () => void }) {
   return (
-    <Sheet open={source !== null} onClose={close} width={720} height={560}>
+    <Sheet open={source !== null} onClose={close} width={1040} height={800}>
       {source ? (
         <SheetPage>
           <ModalHeader title={source.file.name} />

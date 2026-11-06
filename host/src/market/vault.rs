@@ -7,7 +7,7 @@ use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use zeroize::Zeroizing;
 
 const PREFIX: &str = "vault:v1:";
@@ -16,39 +16,79 @@ const SERVICE: &str = match crate::environment::Environment::current() {
     crate::environment::Environment::Dev => "dev.codync.development.credentials",
 };
 
+/// How long an unlock prompt (Keychain, Secret Service) may wait for an answer.
+const PROMPT_TIMEOUT: Duration = Duration::from_mins(1);
+
+/// Loads the master key once. The keyring read can wait on an unlock prompt nobody
+/// sees (a headless Linux host), so it never holds `secret_key`, which async code
+/// locks on runtime workers. One read runs at a time and owns `vault_unlock`: callers
+/// arriving meanwhile share its outcome instead of prompting again.
 pub async fn unlock(hub: Arc<crate::hub::Hub>) -> Result<()> {
     if hub.store.secret_key.locked().is_some() {
         return Ok(());
     }
-    tokio::task::spawn_blocking(move || {
-        let store = &hub.store;
-        let mut cache = store.secret_key.locked();
-        if cache.is_some() { return Ok(()); }
-        let id = if let Some(id) = store.kv_read("vault.id")? { id } else {
-            let id = uuid::Uuid::new_v4().to_string();
-            store.kv_set("vault.id", &id)?;
-            id
-        };
-        let entry = keyring::Entry::new(SERVICE, &id).map_err(|_| unavailable())?;
-        let key = match entry.get_secret() {
-            Ok(key) => key,
-            Err(keyring::Error::NoEntry) => {
-                if store.kv_read("vault.initialized")?.is_some() {
-                    bail!("The credential key is missing. Restore this computer's keychain; encrypted credentials were preserved.");
-                }
-                let mut key = vec![0; 32];
-                getrandom::fill(&mut key).map_err(|_| anyhow!("Could not generate credential key"))?;
-                entry.set_secret(&key).map_err(|_| unavailable())?;
-                key
-            }
-            Err(_) => return Err(unavailable()),
-        };
-        if key.len() != 32 { bail!("Invalid credential key; restore this computer's keychain."); }
-        store.kv_set("vault.initialized", "true")?;
-        *cache = Some(Zeroizing::new(key));
+    // The read's own prompt is bounded too; this margin covers the D-Bus calls around it.
+    let wait = PROMPT_TIMEOUT + Duration::from_secs(5);
+    let Ok(guard) = Arc::clone(&hub.store.vault_unlock).try_lock_owned() else {
+        let _ = tokio::time::timeout(wait, hub.store.vault_unlock.lock()).await;
+        return if hub.store.secret_key.locked().is_some() { Ok(()) } else { Err(unavailable()) };
+    };
+    let read = tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        if hub.store.secret_key.locked().is_some() {
+            return Ok(());
+        }
+        let key = read_key(&hub.store)?;
+        *hub.store.secret_key.locked() = Some(key);
         Ok(())
-    }).await??;
-    Ok(())
+    });
+    tokio::time::timeout(wait, read).await.map_err(|_| unavailable())??
+}
+
+fn read_key(store: &Store) -> Result<Zeroizing<Vec<u8>>> {
+    let id = if let Some(id) = store.kv_read("vault.id")? {
+        id
+    } else {
+        let id = uuid::Uuid::new_v4().to_string();
+        store.kv_set("vault.id", &id)?;
+        id
+    };
+    #[cfg(target_os = "linux")]
+    unlock_secret_service().map_err(|_| unavailable())?;
+    let entry = keyring::Entry::new(SERVICE, &id).map_err(|_| unavailable())?;
+    let key = match entry.get_secret() {
+        Ok(key) => key,
+        Err(keyring::Error::NoEntry) => {
+            if store.kv_read("vault.initialized")?.is_some() {
+                bail!(
+                    "The credential key is missing. Restore this computer's keychain; encrypted credentials were preserved."
+                );
+            }
+            let mut key = vec![0; 32];
+            getrandom::fill(&mut key).map_err(|_| anyhow!("Could not generate credential key"))?;
+            entry.set_secret(&key).map_err(|_| unavailable())?;
+            key
+        }
+        Err(_) => return Err(unavailable()),
+    };
+    if key.len() != 32 {
+        bail!("Invalid credential key; restore this computer's keychain.");
+    }
+    store.kv_set("vault.initialized", "true")?;
+    Ok(Zeroizing::new(key))
+}
+
+/// keyring keeps its item in the default collection and prompts to unlock it with no
+/// time limit. Unlocking it first, with one, means keyring never prompts itself.
+#[cfg(target_os = "linux")]
+fn unlock_secret_service() -> Result<(), dbus_secret_service::Error> {
+    use dbus_secret_service::{EncryptionType, SecretService};
+    let service = SecretService::connect_with_max_prompt_timeout(EncryptionType::Plain, PROMPT_TIMEOUT.as_secs())?;
+    match service.get_default_collection() {
+        Ok(collection) => collection.ensure_unlocked(),
+        // No default collection: keyring reports that without prompting.
+        Err(_) => Ok(()),
+    }
 }
 
 fn unavailable() -> anyhow::Error {

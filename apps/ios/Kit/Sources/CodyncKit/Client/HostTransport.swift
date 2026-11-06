@@ -29,6 +29,23 @@ public protocol HostTransport: Sendable {
     func stream(_ request: HostStreamRequest) -> AsyncThrowingStream<Data, Error>
     /// A new stream per call: the current state first, then every change.
     func states() -> AsyncStream<LinkState>
+    /// Waits however long an outage lasts until the host can be reached again; throws once it can't be.
+    func waitForRoute() async throws
+}
+
+public extension HostTransport {
+    func waitForRoute() async throws {
+        for await state in states() {
+            try Task.checkCancellation()
+            switch state {
+            case .ready: return
+            case let .unauthorized(message): throw HostError.unauthorized(message)
+            case .connecting, .hostOffline, .failed: continue
+            }
+        }
+        try Task.checkCancellation()
+        throw HostError.unreachable
+    }
 }
 
 /// A transport to a remote computer: learns its addresses and keys, and holds messages

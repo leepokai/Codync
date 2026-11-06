@@ -25,7 +25,10 @@ export type SSHStatus =
   | { kind: 'retrying'; message: string }
   /** Needs the user (settings, the remote side, or a security problem); nothing retries. */
   | { kind: 'failed'; message: string }
-  | { kind: 'notInstalled' }
+  /** No codync-host there; `failure` is the last Install that didn't finish, with the last lines it printed. */
+  | { kind: 'notInstalled'; failure?: { output: string } }
+  /** Install runs `install.sh` and `codync-host install` over SSH, then connects. */
+  | { kind: 'installing'; step: string }
 
 /**
  * The VNC server on an SSH computer. The tunnel forwards it to a loopback port on
@@ -48,6 +51,8 @@ export interface SSHState {
   profiles: SSHProfile[]
   status: Record<string, SSHStatus>
   attachments: SSHAttachment[]
+  /** Profiles whose install couldn't keep the host running after logout (`SSH_LINGER_COMMAND`). */
+  needsLinger: string[]
 }
 
 /** A name ssh takes as a destination without it reading as an option: an alias or a hostname. */
@@ -69,7 +74,8 @@ export interface SSHConfigHosts {
   hosts: SSHConfigHost[]
 }
 
-export const SSH_INSTALL_COMMAND = 'brew install leepokai/codync/codync-host && codync-host install'
+/** Needs sudo, so Install can't run it: keeps a Linux host running while no one is logged in. */
+export const SSH_LINGER_COMMAND = 'sudo loginctl enable-linger "$USER"'
 
 export const newSSHProfile = (remotePort = 19222): SSHProfile => ({
   id: crypto.randomUUID(),
@@ -91,6 +97,8 @@ export interface SSHBridge {
   connect(id: string): void
   disconnect(id: string): void
   trustHostKey(id: string): void
+  /** Installs codync-host on a `notInstalled` computer, then connects. */
+  install(id: string): void
   /** The system file dialog; the chosen path, or null. */
   chooseKey(): Promise<string | null>
   /** The hosts in `~/.ssh/config`, read only once the user allowed it. */

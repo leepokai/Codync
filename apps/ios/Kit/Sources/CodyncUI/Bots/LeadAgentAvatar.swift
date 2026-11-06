@@ -28,7 +28,7 @@ private struct LeadAgentInfo: View {
         VStack(spacing: 0) {
             ModalHeader("Lead agent")
             ScrollView {
-                Text(L10n.tr("Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. Its Check in routine runs twice a day by default; you can change or pause it in Routines."))
+                Text(L10n.tr("Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines."))
                     .font(.body)
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)

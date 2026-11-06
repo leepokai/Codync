@@ -129,6 +129,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??})
         }
+        // Bots from another app's export file on this computer (`import`).
+        "previewImport" => crate::import::preview(&b).await?,
+        "importBots" => crate::import::apply(hub, &b).await?,
+        "importSkill" => json!({"name": "codync-export", "text": crate::import::EXPORT_SKILL}),
         "updateBot" => {
             // Edits through the API are the user's; only the bot's own tool says otherwise.
             let mut b = b;
@@ -171,8 +175,23 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             tokio::task::spawn_blocking(move || hub.reorder_bots(&ids)).await??;
             json!({})
         }
+        // Every bot in section `from` moves to `to`; `null` or an empty name removes the section.
+        "renameSection" => {
+            const TO: &str = "`to` must be a section name or null";
+            let from = str_arg(&b, "from")?.to_owned();
+            // A missing `to` is refused, not read as null: a client bug must not strip every section.
+            let to: Option<String> = serde_json::from_value(b.get("to").cloned().context(TO)?).context(TO)?;
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
+            json!({})
+        }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
+            json!({})
+        }
+        // The user makes this bot the lead, in place of the one before.
+        "setLead" => {
+            crate::chat::lead::set(hub, str_arg(&b, "botId")?)?;
             json!({})
         }
         "markRead" => {

@@ -7,6 +7,7 @@ import {
   type Computer,
   type Entry,
   type Hello,
+  type PairingRequest,
   type ScreenState,
   type Usage,
 } from '@shared/models'
@@ -15,8 +16,13 @@ import type { HostClient, HostRoute, HostTransport } from '../client/host-client
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
+import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
+import { loadIconCache, saveIconCache } from '../lib/icon-cache'
+
+/** The first host where the user picks the lead and may delete it. */
+const LEAD_CHOICE_HOST = '2.33.0'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -31,6 +37,37 @@ export type Connection =
  * read, entry merging and the on-device cache.
  */
 export class BotMirror extends Observable {
+  icons: import('@shared/custom-icons').CustomIcons = {}
+  private iconsReceived = false
+  protected iconsRevision = -1
+  iconsEpoch = 0
+
+  applyIcons(icons: import('@shared/custom-icons').CustomIcons, revision = 0) {
+    if (revision < this.iconsRevision) return
+    this.iconsRevision = revision
+    this.iconsReceived = true
+    void saveIconCache(this.cacheKey, icons).catch((error: unknown) => console.warn('Could not cache custom icons', error))
+    this.restoreIcons(icons)
+  }
+
+  private restoreIcons(icons: import('@shared/custom-icons').CustomIcons) {
+    this.icons = icons
+    for (const [id, bot] of this.bots) this.bots.set(id, this.withIcon(bot))
+    this.onRosterChanged?.()
+    this.changed()
+  }
+
+  /** Icons sync apart from bots, so no bot the host sends carries its custom icon. */
+  private withIcon(bot: Bot): Bot {
+    return { ...bot, customIcon: this.icons[`bot:${bot.id}`] }
+  }
+
+  /** Stores a bot the host sent, with its custom icon. */
+  protected putHostBot(bot: Bot): Bot {
+    const stored = this.withIcon(bot)
+    this.bots.set(stored.id, stored)
+    return stored
+  }
   computer: Computer
   connection: Connection = { kind: 'connecting' }
   hostRoute: HostRoute | null = null
@@ -44,13 +81,13 @@ export class BotMirror extends Observable {
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
+  pairingRequests: PairingRequest[] = []
   cloud: CloudStatus | null = null
   /** This computer's network; null until known, and on hosts without `networkView`. */
   network: NetworkView | null = null
   /** A new network's recovery code until the user says they saved it: the host keeps it nowhere. */
   recoveryCode: RecoveryCode | null = null
   historyComplete = new Set<string>()
-  routineDrafts = new Map<string, string>()
   readonly composerDrafts: ComposerDrafts
   lastError: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
@@ -113,6 +150,16 @@ export class BotMirror extends Observable {
     return null
   }
 
+  /** The host keeps roster sections (an older one leaves them out): the menus offer them only then. */
+  get hasRosterSections() {
+    return this.hostVersion !== null && hostHasSections(this.hostVersion.version)
+  }
+
+  /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
+  get hasLeadChoice() {
+    return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
   /** What the update notice offers while this computer is behind this app. */
   get hostUpdateOffer(): HostUpdateOffer {
     return offerHostUpdate(this.hostUpdate, this.hello?.canUpdate === true)
@@ -123,6 +170,12 @@ export class BotMirror extends Observable {
     if (!this.hello) return null
     return hostVersionLine(this.hello.version, this.hello.latestVersion, this.mismatch,
       offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os)
+  }
+
+  /** Out of reach while an update asked from here installs: the computer restarts on its own, so it
+   *  reads as updating, not as a lost connection (kit's `BotStore.isUpdating`). */
+  get isUpdating(): boolean {
+    return this.connection.kind !== 'online' && this.hostUpdateOffer.kind === 'updating'
   }
 
   /** When an update asked from here stops reading as under way; null when none was asked. */
@@ -241,6 +294,9 @@ export class BotMirror extends Observable {
   }
 
   private loadCache() {
+    void loadIconCache(this.cacheKey).then((icons) => {
+      if (!this.retired && !this.iconsReceived) this.restoreIcons(icons)
+    }).catch((error: unknown) => console.warn('Could not read cached icons', error))
     try {
       const raw = localStorage.getItem(this.cacheKey)
       if (!raw) return
@@ -269,7 +325,8 @@ export class BotMirror extends Observable {
       kept.push(...list.filter((e) => !e.id.startsWith('local-')).slice(-200))
       kept.push(...list.filter((e) => e.id.startsWith('local-') && e.data.status === 'failed'))
     }
-    const cache = { stamp: `${this.appVersion}/${this.hello?.version ?? ''}`, hostId: this.hostId, rev: this.rev, bots: [...this.bots.values()], entries: kept }
+    const bots = [...this.bots.values()].map(({ customIcon: _image, ...bot }) => bot)
+    const cache = { stamp: `${this.appVersion}/${this.hello?.version ?? ''}`, hostId: this.hostId, rev: this.rev, bots, entries: kept }
     try {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache))
     } catch {}

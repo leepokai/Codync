@@ -13,8 +13,12 @@ struct CallActivityViews {
     private var since: Date { context.state.callStartedAt ?? .now }
     private var muted: Bool { context.state.callMuted == true }
 
-    func avatar(_ size: CGFloat) -> some View {
-        ActivityAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, state: state, size: size)
+    @ViewBuilder func avatar(_ size: CGFloat) -> some View {
+        if context.attributes.currentCustomIconName != nil {
+            CustomActivityIcon(attributes: context.attributes, size: size)
+        } else {
+            ActivityAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, state: state, size: size)
+        }
     }
 
     func timer(size: CGFloat) -> some View {

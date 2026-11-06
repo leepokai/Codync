@@ -40,6 +40,7 @@ export function relativeDay(date: Date, now = new Date()) {
 
 /** One short line for a computer's connection, used next to its name. */
 export function statusText(store: BotStore) {
+  if (store.isUpdating) return 'Updating…'
   const c = store.connection
   switch (c.kind) {
     case 'online':
@@ -59,6 +60,3 @@ export function statusText(store: BotStore) {
 
 /** The live client, or null while the computer isn't connected (kit's `store.client`). */
 export const liveClient = (store: BotStore) => (store.connection.kind === 'online' ? store.client : null)
-
-/** "123 456" for a 6-digit code. */
-export const spacedCode = (code: string) => (code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code)

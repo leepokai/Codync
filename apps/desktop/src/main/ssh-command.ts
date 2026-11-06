@@ -17,7 +17,20 @@ export const remoteInfoCommand = (port: number, folder = '.codync') => {
 export const knownHostsFiles = (h: string, dir = `${h}/.codync`) => [`${h}/.ssh/known_hosts`, `${dir}/ssh_known_hosts`].map((path) => path.replaceAll('\\', '/'))
 
 /** `pkill -f` pattern for the tunnels that use `dir`'s known_hosts file: this copy's own, never another copy's. */
-export const orphanTunnelPattern = (dir: string) => `^/usr/bin/ssh -N .*${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/ssh_known_hosts`
+export const orphanTunnelPattern = (binary: string, dir: string) => `^${escapeRegExp(binary)} -N .*${escapeRegExp(codyncKnownHosts(dir))}`
+
+export interface WindowsProcess { ProcessId: number; ExecutablePath: string | null; CommandLine: string | null }
+
+/** Windows' `orphanTunnelPattern`: a native ssh tunnel carrying `dir`'s exact quoted known_hosts file. */
+export function ownsWindowsTunnel(candidate: WindowsProcess, binary: string, dir: string) {
+  const { ProcessId: pid, ExecutablePath: path, CommandLine: command } = candidate
+  if (!path || !command || !Number.isSafeInteger(pid) || pid <= 0) return false
+  if (win32.normalize(path).toLowerCase() !== win32.normalize(binary).toLowerCase()) return false
+  const marker = codyncKnownHosts(dir)
+  return /\s-N\s+-T\s/.test(command) && command.includes('UserKnownHostsFile=') &&
+    (command.includes(`\\"${marker}\\"`) || command.includes(`"${marker}"`)) &&
+    /\s-L\s+127\.0\.0\.1:\d+:127\.0\.0\.1:\d+(?:\s|$)/.test(command)
+}
 
 /** ssh's config tokenizer splits `UserKnownHostsFile` on spaces, so each path carries literal quotes. */
 export const hostKeyOptions = (h: string, dir?: string) => [
@@ -33,6 +46,23 @@ function targetOptions(p: SSHProfile) {
   return args
 }
 
+export const keyscanArguments = (r: Resolved) => ['-T', '5', '-p', String(r.port), '--', r.hostname]
+
+/**
+ * Like ssh-keyscan, but ssh itself files the key the host presents in `file` (accept-new) and stops at sign-in: no
+ * config and no sign-in method, with the algorithms the connection resolved, so the key filed is the one it will check.
+ */
+export function presentedKeyArguments(r: Resolved, file: string) {
+  const known = `"${file.replaceAll('\\', '/')}"`
+  const algorithms = [['HostKeyAlgorithms', r.hostKeyAlgorithms], ['KexAlgorithms', r.kexAlgorithms]]
+    .flatMap(([name, value]) => value ? ['-o', `${name}=${value}`] : [])
+  return [
+    '-F', 'none', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'PreferredAuthentications=none',
+    '-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${known}`, '-o', `GlobalKnownHostsFile=${known}`,
+    ...algorithms, '-p', String(r.port), '--', r.hostname,
+  ]
+}
+
 export function resolveArguments(p: SSHProfile) {
   const args = ['-G']
   if (p.port !== null) args.push('-p', String(p.port))
@@ -40,11 +70,11 @@ export function resolveArguments(p: SSHProfile) {
   return [...args, '--', p.host]
 }
 
-/** The remote command is fixed; only the validated port number goes into it. */
-export const infoArguments = (p: SSHProfile, h: string, folder = '.codync', dir = `${h}/${folder}`) => [
+/** One fixed remote command; only the validated port number goes into it. */
+const commandArguments = (p: SSHProfile, h: string, dir: string | undefined, command: string) => [
   '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no',
   ...hostKeyOptions(h, dir), ...targetOptions(p),
-  '--', p.host, remoteInfoCommand(p.remotePort, folder),
+  '--', p.host, command,
 ]
 
 export const tunnelArguments = (p: SSHProfile, localPort: number, h: string, dir?: string, vncPort?: number) => [

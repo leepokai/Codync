@@ -95,10 +95,13 @@ import kotlinx.coroutines.launch
 }
 
 /**
- * One provider: the key the computer keeps, models, voice and this month's minutes. Keys are entered
- * on the computer itself (the host takes `setVoiceKey` from loopback only).
+ * One provider: the key the computer keeps, models, voice and this month's minutes; [dictationOnly] keeps the key and
+ * the speech-to-text model. Keys are entered on the computer itself (the host takes `setVoiceKey` from loopback only).
  */
-@Composable private fun ProviderVoiceSettings(provider: VoiceProvider, speech: Boolean, state: AppState, store: AppStore, choices: VoiceChoices) {
+@Composable private fun ProviderVoiceSettings(provider: VoiceProvider, speech: Boolean, state: AppState, store: AppStore, choices: VoiceChoices,
+    dictationOnly: Boolean = false) {
+    // Speech mode and dictation with this provider both use its speech-to-text model.
+    val transcribes = dictationOnly || speech || choices.dictation == provider
     val scope = rememberCoroutineScope()
     val host = state.hostName
     /** null while the computer hasn't answered yet. */
@@ -137,7 +140,11 @@ import kotlinx.coroutines.launch
         busy = true; result = null
         scope.launch {
             try {
-                if (speech) store.voiceSpeak(provider, speechModel, voice, "OK") else store.voiceSession(provider, model, voice)
+                when {
+                    dictationOnly -> store.voiceModels(provider)
+                    speech -> store.voiceSpeak(provider, speechModel, voice, "OK")
+                    else -> store.voiceSession(provider, model, voice)
+                }
                 result = true to "Key works"
                 loadModels()
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -153,7 +160,7 @@ import kotlinx.coroutines.launch
         }
     }
 
-    CardSection(provider.title, footer = if (hasKey) null else "Add a key to choose from ${provider.title}'s models.",
+    CardSection(provider.title, footer = if (!hasKey) "Add a key to choose from ${provider.title}'s models." else if (dictationOnly) "For dictation in the message box." else null,
         modifier = Modifier.animateContentSize(Motion.layoutSize)) {
         if (saved != null || result != null) row {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -176,11 +183,12 @@ import kotlinx.coroutines.launch
                 }
             }
         }
-        if (speech) {
-            row { picker("Speech to text", transcribe, models.transcribe) { transcribe = it; choices.choose(provider, VoiceChoices.Model.Transcribe, it) } }
-            row { picker("Text to speech", speechModel, models.speech) { speechModel = it; choices.choose(provider, VoiceChoices.Model.Speech, it) } }
-        } else row { picker("Model", model, models.models) { model = it; choices.choose(provider, VoiceChoices.Model.Realtime, it) } }
-        row { picker("Voice", voice, provider.voices) { voice = it; choices.voice(provider, it) } }
-        row { ValueRow("This month", "≈ ${choices.minutes(provider)} min", Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) }
+        if (transcribes) row { picker("Speech to text", transcribe, models.transcribe) { transcribe = it; choices.choose(provider, VoiceChoices.Model.Transcribe, it) } }
+        if (!dictationOnly) {
+            if (speech) row { picker("Text to speech", speechModel, models.speech) { speechModel = it; choices.choose(provider, VoiceChoices.Model.Speech, it) } }
+            else row { picker("Model", model, models.models) { model = it; choices.choose(provider, VoiceChoices.Model.Realtime, it) } }
+            row { picker("Voice", voice, provider.voices) { voice = it; choices.voice(provider, it) } }
+            row { ValueRow("This month", "≈ ${choices.minutes(provider)} min", Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) }
+        }
     }
 }

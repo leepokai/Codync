@@ -2,6 +2,7 @@
 
 mod agent;
 mod analytics;
+mod analytics_cli;
 mod api;
 mod background;
 #[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
@@ -19,6 +20,10 @@ mod egress;
 mod environment;
 mod external;
 mod hub;
+mod icons;
+mod import;
+mod import_cli;
+mod local_api;
 mod market;
 mod mcp;
 mod network;
@@ -40,6 +45,7 @@ mod usage;
 mod voice;
 
 use agent::backends;
+use local_api::local_call;
 use remote::identity;
 
 use anyhow::{Context, Result};
@@ -116,17 +122,22 @@ enum Sub {
         #[command(subcommand)]
         action: Option<DevicesAction>,
     },
-    /// List, approve or deny account devices asking to use this computer.
+    /// List, approve or deny devices asking to use this computer: account devices, and phones pairing with a
+    /// computer in no account.
     Access {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
         #[command(subcommand)]
-        action: Option<AccessAction>,
+        action: Option<pair_cli::AccessAction>,
     },
     /// Show or change the Codync cloud (reach this computer from anywhere).
     Cloud(cloud_cli::CloudArgs),
+    /// Turn this computer's usage analytics on or off, as Settings does (the Windows installer asks with it).
+    Analytics(analytics_cli::AnalyticsArgs),
     /// Your other computers: create a network, invite them, see who is around.
     Network(network_cli::NetworkArgs),
+    /// Import bots from another app's export file (`--skill` prints the skill that writes one in Grok Bot).
+    Import(import_cli::ImportArgs),
     /// Install and start the host as a background service (launchd / systemd --user).
     Install {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -398,7 +409,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: "0.0.0.0".into() }) {
         Sub::Serve { port, bind } => serve(&bind, port).await,
-        Sub::Pair { port, json } => pair(port, json).await,
+        Sub::Pair { port, json } => pair_cli::pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
         Sub::Send(args) => {
             let code = cli::send::run(args).await;
@@ -431,6 +442,7 @@ async fn main() -> Result<()> {
         Sub::Doctor { port, json } => doctor(port, json).await,
         Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
         Sub::Cloud(args) => cloud_cli::run(args).await,
+        Sub::Analytics(args) => analytics_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
         Sub::Install { port } => {
             open_store()?;
@@ -640,7 +652,8 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     agent::acp::stopped().await;
     analytics::flush_before_exit(&hub).await;
     tracing::info!("codync-host stopped");
-    Ok(())
+    // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.
+    std::process::exit(0)
 }
 
 /// Resolves on Ctrl-C or SIGTERM.

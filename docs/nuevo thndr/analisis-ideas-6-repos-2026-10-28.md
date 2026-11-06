@@ -32,7 +32,9 @@ falta de verdad. La última parte es el trabajo pendiente ordenado.
   «no existe» significa que no lo encontré en esas rutas, no que sea imposible que exista.
 - **No probado en ejecución:** nada de lo marcado «Ya existe» lo probé corriendo, salvo lo de las
   mini-apps y los check-ins que sí se probó el 2026-10-26. Las marcas indican que el código existe.
-- Leyenda: **🟡** parcial · **❌** falta. Lo que ya existe (✅) se quitó.
+- Leyenda: **🟡** parcial · **❌** falta · **✅ hecho** solo para lo que se implementó después de este análisis
+  (con su commit). Lo que ya existía antes se quitó. En la sección 5, cada bloque y cada punto lleva su estado:
+  **Hecho**, **Parcial** o **Pendiente**.
 
 ## 3. Fichas de los repos
 
@@ -50,7 +52,7 @@ falta de verdad. La última parte es el trabajo pendiente ordenado.
 
 | Idea | Fuente | Estado en Codync | Viabilidad / esfuerzo |
 |---|---|---|---|
-| Recordatorio push a las 4 h de una aprobación sin responder y cierre a las 24 h | Coworkers | ❌ Solo hay `expire_abandoned` (cierra la tarjeta cuando el agente deja de esperar) | Alta / bajo |
+| Recordatorio push a las 4 h de una aprobación sin responder y cierre a las 24 h | Coworkers | ✅ Hecho (`host/src/agent/bot/approval_age.rs`, commit `824db910` en la rama `deska/Implementar-Motor-de-Flujos-de-Rutina-5fa5448a`, aún sin fusionar). Con pruebas; sin probar con un push real | Alta / bajo |
 | Botón «Siempre» que crea una regla persistente | Coucou (Allow / Deny / Always) | 🟡 La tarjeta ya ofrece `allow_always` cuando el agente lo da, pero Codync no lo convierte en una regla suya | Alta / bajo |
 | Editar `approvalRules` desde los clientes | Rakazo | ❌ «Ningún cliente las edita todavía» | Alta / medio |
 | Reglas por clase de acción (`actionRules`: archivos, comandos, web, navegador, apps, bots, rutinas) | Coworkers | 🟡 Se guardan (`store/model.rs`) pero nada las aplica. Decidir si se aplican o se fusionan con `approvalRules` | Alta / medio |
@@ -116,30 +118,36 @@ falta de verdad. La última parte es el trabajo pendiente ordenado.
 
 ## 5. Trabajo pendiente ordenado
 
-### Bloque A: barato y con lo que ya hay (primero)
+### Bloque A: barato y con lo que ya hay (primero) — Estado: **Parcial** (punto 5 hecho, punto 1 parcial)
 
-1. **Aprobaciones completas.** Recordatorio a las 4 h y cierre a las 24 h; «Siempre» como regla
-   guardada; pantalla para editar `approvalRules` en los cuatro clientes; decidir qué hacer con
-   `actionRules` (aplicarlas o retirarlas para no tener dos sistemas).
-2. **Modelo barato para el fondo.** Ajuste por bot para rutinas y check-ins; pasa por el
+1. **Aprobaciones completas.** — **Parcial**
+   - **Hecho:** recordatorio a las 4 h y cierre a las 24 h (host; commit `824db910`).
+   - **Pendiente:** «Siempre» como regla guardada; pantalla para editar `approvalRules` en los cuatro
+     clientes; decidir qué hacer con `actionRules` (aplicarlas o retirarlas para no tener dos sistemas).
+2. **Modelo barato para el fondo.** — **Hecho** (host, escritorio y Android; sin probar con un agente real; es un texto libre, no un selector; la TUI queda fuera). Ver `background_model`. Ajuste por bot para rutinas y check-ins; pasa por el
    presupuesto existente de `budget.rs`.
-3. **Personalidad en archivos.** `soul`, `persona`, `heartbeat` como capas de instrucciones del bot,
+3. **Personalidad en archivos.** — **Parcial** (host, escritorio y Android; commit de la rama). Son tres campos de texto que solo edita el usuario (`soul`, `persona`, `heartbeat`), no archivos en disco: así el bot no puede reescribirse a sí mismo, a diferencia de su memoria. **Pendiente:** historial de versiones como el de las instrucciones, y la TUI. `soul`, `persona`, `heartbeat` como capas de instrucciones del bot,
    editables y con historial como la memoria.
-4. **Modo demo y resumen semanal.** Dos funciones de onboarding y retención que usan datos locales.
-5. **`SETUP_PROMPT.md`** para instalar y configurar Codync con un agente.
-6. **Probar el canal de Slack** con un workspace real, antes de construir más canales sobre él.
+4. **Modo demo y resumen semanal.** — **Parcial**
+   - **Hecho:** resumen semanal («Your week»): método `weekSummary` del host (solo conteos, sin leer texto) y tarjeta en Uso de escritorio y Android.
+   - **Pendiente:** el aviso de los lunes, y el modo demo dentro de la app (hoy solo existe el demo de la web, `apps/desktop/src/renderer/demo`, que se podría reutilizar con un anfitrión falso). Dos funciones de onboarding y retención que usan datos locales.
+5. **`SETUP_PROMPT.md`** — **Hecho** (commit `9fa193aa`, raíz del repo). para instalar y configurar Codync con un agente.
+6. **Probar el canal de Slack** [Pendiente] con un workspace real, antes de construir más canales sobre él.
 
-### Bloque B: crecimiento
+### Bloque B: crecimiento — Estado: **Parcial** (punto 9 casi hecho; falta la TUI)
 
 7. **Canales nuevos** reutilizando `host/src/slack/` como plantilla: Telegram primero, luego
    Discord. Cada uno con emparejamiento por código, lista de permitidos y aprobaciones por botones.
 8. **Tarjetas de servicios** (GitHub y Vercel primero) con acciones seguras.
-9. **«Hecho» con verificación** como política por bot.
-10. **iOS:** Control Center, Spotlight y filtro de Focus (requiere Mac).
+9. **«Hecho» con verificación** como política por bot. — **Parcial**
+   - **Hecho:** host (`verify_command` por bot, `host/src/agent/bot/verify.rs`, commit `e9241012`).
+   - **Hecho también:** campo «Check before done» en los ajustes del bot de escritorio y de Android (commits de la misma rama).
+   - **Pendiente:** campo en la terminal (TUI); iOS fuera de alcance. Sin probar con un agente real.
+10. **iOS (fuera de alcance por ahora; el foco es Android y Windows):** Control Center, Spotlight y filtro de Focus (requiere Mac).
 11. **Adjuntar ventana o pantalla** al chat en escritorio.
-12. **Rutinas por nodos** y **widgets v2**, ya con prompt propio.
+12. **Rutinas por nodos** y **widgets v2**, ya con prompt propio. — **Parcial**: widgets v2 de Android **hecho** (rama `feat/android-widgets-v2`, commits `1489f4fb`, `f5497da7`, `920ea071`; falta el E2E en el teléfono). Rutinas por nodos: pendiente, en otro worktree.
 
-### Bloque C: apuestas grandes
+### Bloque C: apuestas grandes — Estado: **Pendiente** (ningún punto empezado)
 
 13. Aprendizaje automático de habilidades con revisión humana.
 14. Notas de reuniones sin bot.

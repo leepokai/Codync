@@ -196,7 +196,7 @@ class PushService : FirebaseMessagingService() {
                 NotificationDisplay.channels(context)
                 if (data["kind"] == "task") {
                     if (!PushPreferences.tasks(context)) return
-                    val watch = TaskFeed(local.directory).remote(data, botId) ?: return
+                    val watch = TaskFeed(local.directory, computerId).remote(data, botId) ?: return
                     NotificationDisplay.task(context, scope, computerId, watch)
                     return
                 }
@@ -352,7 +352,8 @@ internal object NotificationDisplay {
         val style = Notification.ProgressStyle().setStyledByProgress(true)
             .setProgressSegments(List(4) { Notification.ProgressStyle.Segment(25).setColor(tint) })
             .setProgress(filled * 25)
-        val face = com.codync.android.design.characterAvatarBitmap(watch.avatarShape, watch.avatarColor, 128, 0xFF141414.toInt())
+        val custom = notificationIcons(context, scope, computer)["bot:${watch.botId}"]
+        val face = notificationFace(watch.avatarShape, watch.avatarColor, custom)
         val open = builder(context, scope, computer, watch.botId, TASKS).build().contentIntent
         val notification = Notification.Builder(context, TASKS).setSmallIcon(R.drawable.ic_notification).setContentTitle(watch.name).setContentText(text)
             .setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(face)).setContentIntent(open).setStyle(style)
@@ -366,9 +367,10 @@ internal object NotificationDisplay {
         return notification.build()
     }
 
-    fun cancel(context: Context, id: Int) {
+    /** Notifications of one kind ([id]); with [prefix], only those whose tag starts with it (one computer's). */
+    fun cancel(context: Context, id: Int, prefix: String = "") {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.activeNotifications.filter { it.id == id }.forEach { manager.cancel(it.tag, it.id) }
+        manager.activeNotifications.filter { it.id == id && it.tag.orEmpty().startsWith(prefix) }.forEach { manager.cancel(it.tag, it.id) }
     }
 
     /** One computer's notifications (tagged `scope/computer/bot`): its task updates, or with `tasksOnly` false its alerts and conversations too. */

@@ -1,5 +1,7 @@
 package com.codync.android
 
+import com.codync.android.design.AppLanguage
+import com.codync.android.design.translate
 import java.net.URLEncoder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -18,5 +20,12 @@ class PairingCopyTest {
             "cloud" to "https://relay.example.com",
         ).entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
         assertTrue(pairingLine(link, "codync").contains("Private relay (relay.example.com)"))
+    }
+
+    @Test fun `the pairing check reads as two groups of three and fills the shared phrase`() {
+        val line = pairingCheckLine("855066")
+        assertEquals("If the computer asks, check it shows 855\u00A0066.", line)
+        val table = mapOf("If the computer asks, check it shows {code}." to "如果電腦問你，確認它顯示 {code}。")
+        assertEquals("如果電腦問你，確認它顯示 855\u00A0066。", translate(line, AppLanguage.ZhHant, systemIsChinese = false, table))
     }
 }

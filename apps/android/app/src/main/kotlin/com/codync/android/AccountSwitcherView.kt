@@ -43,11 +43,12 @@ import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
 /** Who you're signed in as, and the other accounts on this phone (iOS `AccountSwitcherView`). */
-@Composable internal fun AccountSwitcherView(state: AppState, store: AppStore, pair: () -> Unit) {
+@Composable internal fun AccountSwitcherView(state: AccountContext, store: AccountStore, pair: () -> Unit) {
     val account = state.account
     val current = account.accounts.firstOrNull { it.userId == account.userId }
     val busy = "session" in state.busy
     var confirmSignOut by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var addingAccount by remember { mutableStateOf(false) }
     LaunchedEffect(account.userId) { addingAccount = false }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
@@ -83,18 +84,25 @@ import com.kyant.shapes.RoundedRectangle
                     RowLabel("Sign out", "rectangle.portrait.and.arrow.right", Palette.danger,
                         modifier = Modifier.plainButton(enabled = !busy) { confirmSignOut = true })
                 }
+                row {
+                    RowLabel("Delete account", "trash", Palette.danger, modifier = Modifier.plainButton(enabled = !busy) { confirmDelete = true })
+                }
             }
             account.error?.let { IconLabel(it, "exclamationmark.triangle.fill", Palette.danger) }
         }
     }
     CodyncDialog("Sign out of ${current?.email ?: "this account"}?", confirmSignOut, { confirmSignOut = false },
-        "This phone forgets the account's computers. Your bots stay on them.") {
+        "This phone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.") {
         listOf(DialogAction("Sign out", destructive = true, action = store::signOut))
+    }
+    CodyncDialog("Delete your Codync account?", confirmDelete, { confirmDelete = false },
+        "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.") {
+        listOf(DialogAction("Delete account", destructive = true, action = store::deleteAccount))
     }
 }
 
 /** Every account on this phone as a face; tap one to switch, + to add another. */
-@Composable private fun Switcher(state: AppState, store: AppStore, busy: Boolean, add: () -> Unit) {
+@Composable private fun Switcher(state: AccountContext, store: AccountStore, busy: Boolean, add: () -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
         for (item in state.account.accounts) {
@@ -123,7 +131,9 @@ import com.kyant.shapes.RoundedRectangle
 }
 
 /** The account face of the roster's top bar. */
-@Composable internal fun AccountAvatar(state: AppState, size: Dp) {
+@Composable internal fun AccountAvatar(state: AccountContext, size: Dp) {
     val current = state.account.accounts.firstOrNull { it.userId == state.account.userId }
-    AccountAvatar(current?.avatar, current?.email, size)
+    if (!state.account.ready || "session" in state.busy) {
+        Box(Modifier.size(size), contentAlignment = Alignment.Center) { ThinkingOrb(size = size * 0.6f) }
+    } else AccountAvatar(current?.avatar, current?.email, size)
 }

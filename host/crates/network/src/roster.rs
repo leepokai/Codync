@@ -462,7 +462,7 @@ fn distinct_names(
     let mut held: BTreeMap<String, Option<u64>> = BTreeMap::new();
     let mut names = BTreeMap::new();
     for (at, id, name) in order {
-        let free = |n: &str| held.get(&n.to_lowercase()).is_none_or(|until| until.is_some_and(|t| t <= at));
+        let free = |n: &str| held.get(&n.to_lowercase()).is_none_or(|until| until.is_some_and(|t| t < at));
         let unique = std::iter::once(name.clone())
             // One more number than there are names: one of them is free.
             .chain((2..=held.len() + 2).map(|n| format!("{name}-{n}")))

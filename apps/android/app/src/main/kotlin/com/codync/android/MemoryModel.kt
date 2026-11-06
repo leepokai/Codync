@@ -72,4 +72,12 @@ internal class MemoryModel(private val botId: String, private val store: AppStor
             finally { busy = false }
         }
     }
+
+    /** A long-form note as it is now. */
+    suspend fun file(name: String, shared: Boolean): MemoryFileDetail? = try {
+        WireJson.decodeFromJsonElement<MemoryFileDetail>(store.hostCall("memoryFile", buildJsonObject {
+            put("botId", botId); put("file", name); put("shared", shared)
+        }))
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (failure: Exception) { error = failure.message ?: "Couldn't open the note."; null }
 }

@@ -2,6 +2,9 @@ package com.codync.android
 
 import android.net.Uri
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.codync.android.core.*

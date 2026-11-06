@@ -153,8 +153,7 @@ public final class ScreenSession {
         connectionTimer = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
             guard let self, self.generation == current, self.phase != .live else { return }
-            self.close()
-            self.phase = .failed("Couldn't connect to the remote screen. Check the computer's connection and try again.")
+            self.fail("Couldn't connect to the remote screen. Check the computer's connection and try again.")
         }
     }
 
@@ -171,7 +170,7 @@ public final class ScreenSession {
         let sdp = signaling == nil ? (pc.localDescription?.sdp ?? offer.sdp) : offer.sdp
         let answer = try await client.screenOffer(sdp: sdp, session: session, display: display?.id)
         try Task.checkCancellation()
-        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        try ensureCurrent(pc)
         session = answer.session
         try await pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer.sdp))
         guard self.pc === pc, phase != .closed else { throw CancellationError() }

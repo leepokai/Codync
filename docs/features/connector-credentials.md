@@ -20,8 +20,11 @@ its selected host.
   service user. An unavailable keyring gives an actionable error. There is no
   plaintext, kernel-keyring-only or automatic ephemeral fallback.
 
-Unlocking runs on a blocking worker. The key is cached in zeroizing memory until
-host exit. Locking the desktop keyring after unlock does not evict that cache;
+Unlocking runs on a blocking worker, one read at a time; callers that arrive
+meanwhile share its outcome. A locked Linux keyring gets one unlock prompt that
+is dismissed after a minute (nobody sees it on a headless host), and the calls
+waiting on it fail with the keyring error instead of hanging the host. The key is
+cached in zeroizing memory until host exit. Locking the desktop keyring after unlock does not evict that cache;
 stop the host to remove it. The implementation does not claim to isolate secrets
 from arbitrary code running as the same OS user.
 

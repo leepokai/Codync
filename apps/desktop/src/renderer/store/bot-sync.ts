@@ -1,6 +1,7 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@shared/models'
+import { isChat, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
+import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import type { CallCue } from '@shared/calls'
@@ -145,7 +146,7 @@ export class BotSync extends BotMirror {
     const attempt = async () => {
       if (!alive()) return
       try {
-        await this.refreshHello(client)
+        await this.refreshHello(client, loop)
         if (!alive()) return
         if (this.mismatch) {
           this.finishRefresh?.()
@@ -156,6 +157,9 @@ export class BotSync extends BotMirror {
         if (this.isLoopback) {
           try {
             this.accessRequests = (await client.call<{ requests: AccessRequest[] }>('accessRequests')).requests
+          } catch {}
+          try {
+            this.pairingRequests = (await client.call<{ requests: PairingRequest[] }>('pairingRequests')).requests
           } catch {}
           try {
             this.cloud = await client.call<CloudStatus>('cloudStatus')
@@ -201,10 +205,13 @@ export class BotSync extends BotMirror {
     this.runEvents(this.client)
   }
 
-  private async refreshHello(client: HostClient) {
+  private async refreshHello(client: HostClient, loop: number) {
+    const epoch = ++this.iconsEpoch
     const h = await client.hello()
-    if (this.retired) return
+    if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
+    this.iconsRevision = -1
     this.hello = h
+    this.applyIcons(h.icons ?? {}, h.iconsRevision)
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
     this.changed()
@@ -225,9 +232,13 @@ export class BotSync extends BotMirror {
 
   private apply(event: HostEvent) {
     switch (event.type) {
+      case 'icons':
+        this.applyIcons(event.icons, event.iconsRevision)
+        break
       case 'hello':
         if (this.hostId && this.hostId !== event.hostId) this.resetMirror()
         this.hostId = event.hostId
+        if (event.icons) this.applyIcons(event.icons)
         this.usage = event.usage
         this.screen = event.screen
         this.network = event.network
@@ -235,7 +246,7 @@ export class BotSync extends BotMirror {
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
       case 'bot':
-        this.bots.set(event.bot.id, event.bot)
+        this.putHostBot(event.bot)
         this.bump(event.bot.rev)
         this.onRosterChanged?.()
         if (event.bot.unread > 0) this.acknowledgeVisible(event.bot.id)
@@ -274,6 +285,9 @@ export class BotSync extends BotMirror {
       case 'accessRequests':
         this.accessRequests = event.requests
         break
+      case 'pairingRequests':
+        this.pairingRequests = event.requests
+        break
       case 'cloud':
         this.cloud = event.cloud
         break
@@ -308,6 +322,8 @@ export class BotSync extends BotMirror {
   }
 
   private resetMirror() {
+    this.iconsRevision = -1
+    this.applyIcons({})
     this.composerDrafts.clear()
     this.bots = new Map()
     this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-'))
@@ -406,9 +422,10 @@ export class BotSync extends BotMirror {
     }
   }
 
-  protected perform(op: (c: HostClient) => Promise<unknown>, replay = false) {
-    void this.withLink(op, replay).catch((error: unknown) => {
-      this.lastError = error instanceof Error ? error.message : String(error)
+  /** Fire and forget (resolving to whether it went through): what waiting and retrying couldn't settle reaches the dialog, after `undo` takes back what the action already showed. */
+  protected perform(op: (c: HostClient) => Promise<unknown>, replay = false, undo?: () => void): Promise<boolean> {
+    return undoOnFailure(this.withLink(op, replay), undo, (message) => {
+      this.lastError = message
       this.changed()
     })
   }

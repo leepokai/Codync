@@ -33,6 +33,8 @@ public final class CallActivity {
     init(bot: Bot, computerId: ComputerID, link: URL?, toggleMute: @escaping @MainActor () -> Void = {},
          hangUp: @escaping @MainActor () -> Void = {}) {
         attributes = BotActivityAttributes(bot: bot, computerId: computerId, link: link)
+        do { try bot.customIcon?.cacheForActivity(context: attributes.iconContext) }
+        catch { log.error("Cannot cache call icon: \(error.localizedDescription)") }
         self.toggleMute = toggleMute
         self.hangUp = hangUp
         Self.calls[bot.id] = self

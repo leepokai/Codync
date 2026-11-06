@@ -128,7 +128,7 @@ trails them (App Store review), so nudging a computer from it would only be nois
 
 ### Wire shape snapshot
 
-`wire_shape_matches_the_snapshot` (`host/tests/e2e.rs`) runs a full turn against a real host
+`wire_shape_matches_the_snapshot` (`host/tests/e2e/wire_shape.rs`) runs a full turn against a real host
 (fake agent: user message, narration, tool call with a diff, plan, permission, final reply),
 then records every field path and JSON type of `hello` and the event stream's catch-up (bot
 and entry events, entries per kind) in `host/tests/fixtures/wire-shape.json`, together with
@@ -142,7 +142,7 @@ the host's `minApp`.
 
 So a breaking change can't land by accident: it either keeps the old field or raises the
 floor. `null` fields match any type. Not covered: subtrees that depend on the machine rather
-than the code (`backends`, `screen`, `urls`, `usage`), fields the sample turn doesn't produce
+than the code (`backends`, `screen`, `urls`, `usage`, including asynchronous usage events), fields the sample turn doesn't produce
 (replies, group chats, routines and other method responses), and what the host
 accepts in requests. Changes there still follow the rule by review.
 
@@ -152,6 +152,8 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.36.0 | 2.36.0 | 2.26.0 (unchanged) | Pairing proves the phone's account with a cloud-signed device certificate; older apps send none, so the host rejects their `pair` with `unsupportedVersion`. |
+| 2.34.0 | 2.34.0 | 2.26.0 (iPhone, Android, desktop) | Custom icons are for bots only: `setIcon` rejects `agent:` targets, so older apps' agent icon editor would fail. |
 | 2.26.0 | 2.21.0 | 2.26.0 (iPhone, Android, desktop) | What a call's voice hears comes from the host as `call` events (replies, approvals, failures, progress); the apps no longer derive it from the chat, so on an older host a call would never hear the bot. |
 | 2.25.0 | 2.21.0 | 2.25.0 (iPhone, Android, desktop) | Voice calls run on the host: the apps start a call, run the voice's tools and end it through `startCall`, `callTool`, `callLines` and `endCall`, which older hosts lack (a Linux desktop or an SSH computer can run one). `logCall` stays for older apps. |
 | 2.21.0 | 2.21.0 | 2.20.1 | Memory is files the bot keeps, and the apps only read it: the edit methods (`saveMemory`, `pinMemory`, `archiveMemory`, `forgetMemory`, `clearMemory`, `undoDream`, `answerMemory`, `undoMemory`, `saveMemoryFile`, `deleteMemoryFile`, `restoreMemoryFile`) are gone, so older apps' memory buttons would fail. `memory` keeps its shape, so new apps still read an older host's memory. |

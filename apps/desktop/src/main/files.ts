@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { clipboard } from 'electron'
+import type { PickedFile } from '../shared/ipc'
 
 /** The composer's own limit (Composer.tsx): one larger file would never send. */
 const MAX_FILE_SIZE = 100 * 1024 * 1024
@@ -20,7 +21,8 @@ export async function readFiles(paths: string[]) {
   return out
 }
 
-const fileURLFormat = process.platform === 'darwin' ? 'electron application/osclipboard;format="public.file-url"' : 'text/uri-list'
+// Copied files on every platform (macOS's `public.file-url` included): `clipboard.read()` never lists the raw type.
+const fileURLFormat = 'text/uri-list'
 
 /** ⌘V with a copied file or image: the files it holds (the text field alone would paste a name). */
 export async function readClipboardFiles() {
@@ -33,7 +35,7 @@ export async function readClipboardFiles() {
     }
   }
   if (urls.length) return readFiles(urls.map((u) => fileURLToPath(u.replace(/\0+$/, ''))))
-  const out: { name: string; data: Uint8Array }[] = []
+  const out: PickedFile[] = []
   for (const item of items) {
     const image = item.types.find((t) => t === 'image/png' || t === 'image/jpeg')
     if (image && !item.types.includes('text/plain')) {

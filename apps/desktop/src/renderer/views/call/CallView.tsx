@@ -12,7 +12,7 @@ import { avatarColor } from '../../lib/theme'
 import { analytics } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
-import { voiceStatus } from '../settings/voice-settings'
+import { engine as preferredEngine, voiceStatus } from '../settings/voice-settings'
 import { stopDictation } from '../thread/dictation'
 import { CallLink } from './call-link'
 import { CallQuality } from './call-quality'
@@ -183,8 +183,9 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     if (closed.current || engineChoice.current !== picked) return
     if (configured) {
       setNotice(`${onDeviceUnavailableReason()} Using ${providerName(configured)}.`)
+      if (window.codync.platform !== 'darwin') preferredEngine.set(configured)
       begin(configured)
-      engineChoice.current = picked
+      if (window.codync.platform === 'darwin') engineChoice.current = picked
     } else {
       setBlocked(`${onDeviceUnavailableReason()} Add an OpenAI or Gemini key in call settings.`)
       // Nothing runs: the next settings close tries again, with a key added there.

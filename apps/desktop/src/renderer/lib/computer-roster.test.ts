@@ -30,12 +30,10 @@ test('each computer keeps its own bots in activity order, including duplicate bo
   assert.equal(sections[0]?.items[0]?.ref.computerId, 'a')
 })
 
-test('the lead sorts first, even above pinned bots, and no drag crosses into its band', () => {
+test('pinned bots sort first; the lead is placed like any bot', () => {
   const bot = (id: string, over: Partial<{ lead: boolean; pinned: boolean; position: number; lastAt: number }> = {}) =>
     ({ id, lead: false, pinned: false, position: 0, lastAt: 0, ...over })
   const bots = [bot('recent', { lastAt: 9 }), bot('pinned', { pinned: true, position: -5 }), bot('lead', { lead: true, position: 3 }), bot('dragged', { position: -1 })]
-  assert.deepEqual([...bots].sort(rosterOrder).map((b) => b.id), ['lead', 'pinned', 'dragged', 'recent'])
-  const bands = new Set(bots.map(rosterBand))
-  assert.equal(bands.size, 3, 'lead, pinned and the rest are separate bands: a drag stays inside its own')
-  assert.notEqual(rosterBand(bot('x', { lead: true, pinned: true })), rosterBand(bot('y', { pinned: true })))
+  assert.deepEqual([...bots].sort(rosterOrder).map((b) => b.id), ['pinned', 'dragged', 'recent', 'lead'])
+  assert.equal(rosterBand(bot('lead', { lead: true })), rosterBand(bot('other')), 'a drag moves the lead among the rest')
 })

@@ -107,6 +107,13 @@ import com.codync.android.design.*
             }
         }
         CardSection {
+            row {
+                LinkButton("Rate on Google Play") {
+                    Analytics.capture(AnalyticsEvent.ReviewLinkOpened)
+                    uri.openUri(PLAY_LISTING)
+                }
+            }
+            row { LinkButton("Report an issue") { uri.open("https://github.com/leepokai/Codync/issues", OutboundLink.Issues) } }
             row { ValueRow("App version", BuildConfig.VERSION_NAME) }
             row { LinkButton("Source code") { uri.open("https://github.com/leepokai/Codync", OutboundLink.Github) } }
         }
@@ -127,12 +134,16 @@ import com.codync.android.design.*
     }
 }
 
+/** The app's Google Play page (the production app's, which testers and the public both have). */
+internal const val PLAY_LISTING = "https://play.google.com/store/apps/details?id=com.pokai.Codync.android"
+
 /** Whether Android lets Codync show notifications at all; each computer's push switch is on its card. */
-@Composable private fun NotificationsSection() {
+@Composable internal fun NotificationsSection() {
     val context = LocalContext.current
-    var asked by remember { mutableStateOf(false) }
+    var answered by remember { mutableStateOf(false) }
+    val asked = rememberOnResume { PushPreferences.asked(context) } || answered
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notificationsAnswered(context, granted, PromptSource.Settings); asked = true
+        notificationsAnswered(context, granted, PromptSource.Settings); answered = true
     }
     val allowed = rememberOnResume { notificationsAllowed(context) } || asked && notificationsAllowed(context)
     CardSection("Notifications", "Get a result summary, a request for input, or a failure notice. Notification previews follow your Android settings.") {

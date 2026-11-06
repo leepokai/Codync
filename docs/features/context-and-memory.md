@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until *New session*, a failed resume, or an agent/command/folder change; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until a rollover (Fresh conversations), a host-side `newSession`, a failed resume, or an agent/command/folder change (the apps offer no New session); each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
@@ -18,7 +18,7 @@ its own context and compacts it itself.
 ## Instruction snapshot (`host/src/chat/context.rs`)
 
 - The bot's instructions are rendered once, in English and kept general: profile (name, description), how to
-  message the user, where the user is (Codync's apps, not the engine's own CLI; New session to start over),
+  message the user, where the user is (Codync's apps, not the engine's own CLI; one conversation that goes on, so no starting over),
   other conversations, workspace, skills, plus the memory section. How to use each tool
   lives with the tool (MCP server instructions, tool descriptions), not here. They're stored as a snapshot in `kv` under `context.<bot>`, keyed by **session + compaction
   epoch**, and don't change until one of those changes. This keeps the prompt byte-identical so the prompt
@@ -35,7 +35,7 @@ its own context and compacts it itself.
   never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k. The
   next turn re-renders the snapshot, and Claude's session is loaded again with the new system prompt. The adapter
   rebuilds its query and resumes the same conversation.
-- **Profile edits mid-session** (name, description, skills) are sent once as an `<agent_profile_update>` block
+- **Profile edits mid-session** (name, description, skills, the lead role) are sent once as an `<agent_profile_update>` block
   appended to the next message. After that turn reaches the agent, the change is recorded in
   `snapshot.announced`. The next compaction folds it into the snapshot.
 

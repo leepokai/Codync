@@ -3,7 +3,6 @@ package com.codync.android
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.core.content.FileProvider
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -26,7 +25,7 @@ class LiveDraftTest {
         assertNull(PushPreferences.activeUser(context))
         val book = DraftBook(local.directory, computer.id)
         val metadata = File(context.cacheDir, "draft-acceptance.json")
-        val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+        val store = compose.computerStore()
         compose.waitUntil(30_000) { store.state.value.bots.any { it.name == "Android chat acceptance" } }
         val bot = store.state.value.bots.single { it.name == "Android chat acceptance" }
         compose.runOnUiThread { store.openBot(bot.id) }

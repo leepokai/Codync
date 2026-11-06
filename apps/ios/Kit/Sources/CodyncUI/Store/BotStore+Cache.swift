@@ -9,6 +9,7 @@ extension BotStore {
         var rev: Int64
         var bots: [Bot]
         var entries: [Entry]
+        var icons: [String: CustomIcon]?
     }
 
     static let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
@@ -28,6 +29,7 @@ extension BotStore {
         rev = cache.rev
         bots = Dictionary(cache.bots.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         entries = Dictionary(grouping: cache.entries, by: \.botId)
+        applyIcons(cache.icons ?? [:])
     }
 
     func scheduleSave() {
@@ -47,7 +49,8 @@ extension BotStore {
             list.filter { !$0.id.hasPrefix("local-") }.suffix(200)
                 + list.filter { $0.id.hasPrefix("local-") && ["waiting", "delivering", "failed"].contains($0.data.status) }
         }
-        let cache = Cache(stamp: "\(Self.appBuild)/\(hello?.version ?? "")", hostId: hostId, rev: rev, bots: Array(bots.values), entries: kept)
+        let cachedBots = bots.values.map { bot in var bot = bot; bot.customIcon = nil; return bot }
+        let cache = Cache(stamp: "\(Self.appBuild)/\(hello?.version ?? "")", hostId: hostId, rev: rev, bots: cachedBots, entries: kept, icons: icons)
         if let data = try? JSONEncoder().encode(cache) {
             try? data.write(to: cacheURL, options: .atomic)
         }

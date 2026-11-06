@@ -89,8 +89,8 @@ export default function Computers() {
           </h2>
           <p className="mt-5 max-w-[32rem] text-lg leading-relaxed text-neutral-400">
             Add a server, a cloud VM or another desktop by its SSH alias. Its bots sit beside your own, grouped by
-            computer, and a new bot can live on any of them. It needs codync-host on that machine; the Mac and Linux
-            apps connect over SSH.
+            computer, and a new bot can live on any of them. It needs codync-host on that machine; the desktop app on Mac,
+            Windows and Linux connects over SSH.
           </p>
           <Points points={points} />
         </Reveal>

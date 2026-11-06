@@ -21,6 +21,9 @@ public enum SendProgress: Sendable {
 @MainActor
 @Observable
 public final class BotStore {
+    public internal(set) var icons: [String: CustomIcon] = [:]
+    var iconsRevision: Int64 = -1
+    var iconsEpoch: UInt64 = 0
     public enum Connection: Equatable {
         case unpaired
         case connecting
@@ -77,7 +80,6 @@ public final class BotStore {
     var composerDrafts: [String: String] = [:]
     /// What was pasted into each draft, sent along so memory never takes it as the user's own words.
     @ObservationIgnored var composerPasted: [String: [String]] = [:]
-    public var routineDrafts: [String: String] = [:]
     public let fileDownloads = FileDownloads()
     var artifacts = ArtifactCache()
     public var lastError: String?
@@ -101,6 +103,8 @@ public final class BotStore {
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
+    /// Its `hello` says this phone paired without the computer joining the account (`Hello.joinAccount`).
+    var onJoinAccount: (@MainActor (HostClient) -> Void)?
 
     public let storage: SharedStore.Context
     /// Opens a channel to the computer as it is now: its route, and the addresses and keys merged since.
@@ -109,6 +113,8 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// Section moves shown but not answered yet, oldest first.
+    @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 
     var rev: Int64 = 0
     var hostId: String?
@@ -209,6 +215,24 @@ public final class BotStore {
             return $0.lastAt > $1.lastAt
         }
     }
+
+    /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
+    public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }
+
+    /// Roster sections came with host 2.32.0: an older one drops a bot's `section` and has no
+    /// `renameSection`, so its bots offer no "Move to section". Unknown until the host answers.
+    public var supportsSections: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.sectionsHost) } ?? false
+    }
+
+    /// From host 2.33.0 the user picks the lead (`setLead`) and may delete it; an older host refuses both.
+    public var supportsLeadChoice: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.leadChoiceHost) } ?? false
+    }
+
+    static let leadChoiceHost = "2.33.0"
+
+    static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).
     public func backendName(_ id: String) -> String {

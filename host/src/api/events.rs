@@ -45,7 +45,7 @@ impl Drop for PhoneClientGuard {
 }
 
 /// Event types only this computer's own apps receive.
-const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud"];
+const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud", "pairingRequests"];
 
 #[cfg(test)]
 mod tests;
@@ -82,10 +82,10 @@ pub fn events_stream(
         "screen": hub.screen.state(),
         // Live state like the two above: a `network` event sent before this stream began is in it.
         "network": crate::network::status(hub),
+        // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
+        "catchUp": catch_up.len(),
     });
     catch_up.insert(0, hello);
-    // What the voice of a call this device holds should have heard while it was away.
-    catch_up.extend(crate::chat::calls::replay(caller.device_key()));
 
     let local = matches!(caller, Caller::Local);
     let key = caller.device_key().to_owned();

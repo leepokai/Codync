@@ -98,6 +98,16 @@ import kotlin.math.roundToInt
     }
 }
 
+/** A screen with nothing to show (iOS `EmptyState`): a large symbol, a title and, under it, an optional line. */
+@Composable fun EmptyState(symbol: String, title: String, modifier: Modifier = Modifier, message: String? = null) {
+    Column(modifier.padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)) {
+        Symbol(symbol, size = 48.dp, tint = Palette.tertiary)
+        Text(tr(title), style = Type.title3.semibold, color = Palette.text, textAlign = TextAlign.Center)
+        message?.let { Text(tr(it), style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center) }
+    }
+}
+
 /** The back button for a pushed screen. */
 @Composable fun BackButton(action: () -> Unit) = IconButton("Back", "chevron.left", action = action)
 

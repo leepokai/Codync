@@ -66,6 +66,8 @@ pub enum Reply {
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),
+    /// What an agent brings on its own (`agentGear`), for its sign-in sheet.
+    Gear(String),
     /// A routine's webhook URL and key: copied as a ready-to-run curl.
     Webhook,
     /// A bot conversation's fetched history.
@@ -92,6 +94,11 @@ pub enum Reply {
     Auth(String),
     Setup,
     FieldsSaved,
+    /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
+    SectionRenamed {
+        from: String,
+        to: Option<String>,
+    },
     SignIn,
     Models(String),
     Accounts {
@@ -218,6 +225,8 @@ pub enum SetupRow {
     Login,
     Method(Value),
     Check,
+    /// Opens the read-only lists of what this agent already brings.
+    Brings,
 }
 
 pub struct Input {
@@ -231,6 +240,7 @@ pub struct Input {
 }
 
 pub enum Submit {
+    Icon(String),
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),

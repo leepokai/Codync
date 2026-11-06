@@ -191,6 +191,16 @@ impl Routines {
         Ok(())
     }
 
+    /// Rewrites routine `id`'s instruction as `to` while it still reads `from`, the host's own words.
+    pub fn reword(&self, store: &Store, id: &str, from: &str, to: &str) -> Result<()> {
+        self.change(store, |s| {
+            if let Some(r) = s.routines.iter_mut().find(|r| r.id == id && r.instruction == from) {
+                to.clone_into(&mut r.instruction);
+            }
+            Ok(())
+        })
+    }
+
     /// Retry reporting independently of task execution: a successful run's reply is already in the chat and only
     /// alerts; a failed one leaves a notice, which alerts unless the run is tried again on its own. The entry ID
     /// deduplicates a crash after SQLite inserted the notice but before this ack.

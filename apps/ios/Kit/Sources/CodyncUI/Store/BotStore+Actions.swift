@@ -58,12 +58,21 @@ extension BotStore {
 
     /// Fire-and-forget actions; only what waiting and retrying couldn't settle reaches the dialog.
     private func perform(replay: Bool = false, _ op: @escaping @MainActor (HostClient) async throws -> Void) {
-        Task {
-            do {
-                try await withLink(replay: replay, op)
-            } catch {
-                lastError = error.localizedDescription
-            }
+        Task { await attempt(replay: replay, op) }
+    }
+
+    /// `perform` for a caller that waits: whether the computer took it. A refusal runs `undo`, taking
+    /// back what the action already showed, before it reaches the dialog.
+    @discardableResult
+    private func attempt(replay: Bool = false, undo: @MainActor () -> Void = {},
+                         _ op: @MainActor (HostClient) async throws -> Void) async -> Bool {
+        do {
+            try await withLink(replay: replay, op)
+            return true
+        } catch {
+            undo()
+            lastError = error.localizedDescription
+            return false
         }
     }
 
@@ -73,7 +82,6 @@ extension BotStore {
         guard bots[botId]?.lead == true else { return }
         perform { try await $0.callStarted(botId, call: call) }
     }
-    public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
     /// The bot's own agent again, off the fallback it runs on.
     public func switchBack(_ botId: String) { perform(replay: true) { try await $0.switchBack(botId) } }
 
@@ -172,6 +180,14 @@ extension BotStore {
         perform(replay: true) { _ = try await $0.updateBot(d) }
     }
 
+    /// Makes `bot` the lead, in place of the one before; a refusal gives the star back.
+    public func setLead(_ bot: Bot) {
+        let before = bots.values.first(where: \.lead)?.id
+        let show = { (lead: String?) in for id in self.bots.keys { self.bots[id]?.lead = id == lead } }
+        show(bot.id)
+        Task { await attempt(replay: true, undo: { show(before) }) { try await $0.setLead(bot.id) } }
+    }
+
     public func setHidden(_ bot: Bot, _ hidden: Bool) {
         var d = BotDraft(bot)
         d.hidden = hidden
@@ -250,13 +266,63 @@ extension BotStore {
         perform(replay: true) { try await $0.reorderBots(ids) }
     }
 
-    /// One place up (-1) or down (+1) among bots of the same band (VoiceOver).
+    /// One place up (-1) or down (+1) among the bots it moves with (`isRosterPeer`: its band and, below the top, its section; VoiceOver).
     public func move(_ botId: String, by offset: Int) {
-        var ids = roster.map(\.id)
-        guard let i = ids.firstIndex(of: botId), ids.indices.contains(i + offset),
-              bots[ids[i + offset]]?.band == bots[botId]?.band else { return }
-        ids.swapAt(i, i + offset)
-        reorder(ids)
+        guard let bot = bots[botId] else { return }
+        var peers = roster.filter { $0.isRosterPeer(of: bot) }.map(\.id)
+        guard let i = peers.firstIndex(of: botId), peers.indices.contains(i + offset) else { return }
+        peers.swapAt(i, i + offset)
+        drop(botId, in: peers)
+    }
+
+    /// A drop of `botId` where `order` (the rows on screen, top first) puts it among the bots it
+    /// moves with; every other bot keeps its place. Dropped among others (another section, the
+    /// pinned bots), it goes first or last of its own. Nothing moves unless `order` holds all of them.
+    public func drop(_ botId: String, in order: [String]) {
+        guard let bot = bots[botId] else { return }
+        let ids = roster.map(\.id)
+        let isPeer = { (id: String) in self.bots[id]?.isRosterPeer(of: bot) == true }
+        let placed = order.filter(isPeer)
+        guard Set(placed) == Set(ids.filter(isPeer)) else { return }
+        var next = placed.makeIterator()
+        reorder(ids.map { isPeer($0) ? next.next() ?? $0 : $0 })
+    }
+
+    // MARK: sections
+
+    /// Puts the bot in `section` (nil: out of its own), shown at once and taken back if the
+    /// computer refuses the name (it allows 40 characters, no control characters).
+    public func setSection(_ bot: Bot, to section: String?) {
+        let moves = show([bot.id], in: section)
+        Task { await send(moves) { try await $0.setSection(bot.id, to: section) } }
+    }
+
+    /// Moves every bot of this computer in section `name` to `newName` (a name already in use
+    /// merges the two); nil removes the section, its bots staying without one. Whether the
+    /// computer took it: a refusal is taken back and shown.
+    @discardableResult
+    public func renameSection(from name: String, to newName: String?) async -> Bool {
+        let moves = show(bots.values.filter { $0.section == name }.map(\.id), in: newName)
+        return await send(moves) { try await $0.renameSection(from: name, to: newName) }
+    }
+
+    /// Shows the bots `ids` in `section` before the computer confirms it (its `bot` events follow),
+    /// each move kept as pending until it's answered.
+    private func show(_ ids: [String], in section: String?) -> [SectionMove] {
+        let moves = ids.map { SectionMove(bot: $0, from: bots[$0]?.section, to: section) }
+        pendingSectionMoves += moves
+        Motion.animate { for id in ids { bots[id]?.section = section } }
+        return moves
+    }
+
+    /// Sends `op` for the `moves` shown; a refusal takes back each one nothing changed since.
+    private func send(_ moves: [SectionMove], _ op: @MainActor (HostClient) async throws -> Void) async -> Bool {
+        let ids = Set(moves.map(\.id))
+        defer { pendingSectionMoves.removeAll { ids.contains($0.id) } }
+        return await attempt(replay: true, undo: {
+            let back = RosterSection.takeBack(ids, pending: &pendingSectionMoves, sections: bots.compactMapValues(\.section))
+            Motion.animate { for (id, section) in back { bots[id]?.section = section } }
+        }, op)
     }
 
     public func delete(_ bot: Bot) {
@@ -268,15 +334,13 @@ extension BotStore {
 
     /// Creates a group chat (or opens the one these bots already share) and selects it.
     public func createGroup(name: String, description: String = "", members: [String]) async throws -> Bot {
-        let group = try await ready().createGroup(GroupDraft(name: name, description: description, members: members))
-        bots[group.id] = group
+        let group = putHostBot(try await ready().createGroup(GroupDraft(name: name, description: description, members: members)))
         selection = group.id
         return group
     }
 
     public func updateGroup(_ draft: GroupDraft) async throws {
-        let group = try await ready().updateGroup(draft)
-        bots[group.id] = group
+        putHostBot(try await ready().updateGroup(draft))
     }
 
     /// What a voice call carried, for its conversation. Never `upsert`ed, like `botConversation`.
@@ -292,9 +356,11 @@ extension BotStore {
 
     public func save(_ draft: BotDraft) async throws -> Bot {
         let client = try await ready()
-        let bot = draft.id == nil ? try await client.createBot(draft) : try await client.updateBot(draft)
-        bots[bot.id] = bot
-        return bot
+        return putHostBot(draft.id == nil ? try await client.createBot(draft) : try await client.updateBot(draft))
+    }
+
+    public func selectWorkspace(_ path: String) async throws -> String {
+        try await ready().selectWorkspace(path)
     }
 
     public func listDirs(_ path: String?) async throws -> DirListing {

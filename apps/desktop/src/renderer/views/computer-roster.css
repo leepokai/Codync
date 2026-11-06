@@ -99,6 +99,22 @@
   overflow: hidden;
 }
 
+/* A section the user made: a quieter header than a computer's, its rows folding the same way. The
+   "Bots" label over the rows in no section sits where a header's chevron starts. */
+.roster-section-toggle,
+.roster-label {
+  width: 100%;
+  margin-top: 8px;
+  padding: 5px 8px;
+  color: var(--secondary);
+  border-radius: var(--radius-s);
+  text-align: left;
+}
+
+.roster-section-toggle:hover {
+  background: var(--bubble-agent);
+}
+
 .computer-roster-empty {
   padding: 8px 10px 12px;
   color: var(--tertiary);
@@ -110,3 +126,7 @@
   padding: 4px 0;
   gap: 2px;
 }
+
+.roster-section-toggle,
+button.roster-label { cursor: grab; }
+.pointer-dragging .roster-section-toggle:hover { background: none; }

@@ -25,9 +25,8 @@
 .agent-picker-choice { gap: 6px; padding: 9px 10px; background: var(--surface); font-size: var(--text-callout); }
 .agent-picker-choice > .truncate { flex: 1; }
 .agent-picker-choice[aria-expanded="true"] { background: var(--surface); }
-.agent-picker-search { padding: 3px 8px; min-height: 36px; background: var(--surface); border-radius: var(--radius-xs); }
+.agent-picker-search { padding: 3px 8px; min-height: 36px; }
 .agent-picker-search input { width: 0; flex: 1; min-width: 0; color: var(--text); background: transparent; border: 0; font: inherit; }
-.agent-picker-search:focus-within { background: var(--bubble-agent); }
 .agent-picker-search input:focus-visible { outline: none; }
 .agent-picker-list { max-height: 196px; overflow-y: auto; overscroll-behavior: contain; }
 .agent-picker-item { width: 100%; gap: 8px; min-height: 34px; padding: 8px 10px; }

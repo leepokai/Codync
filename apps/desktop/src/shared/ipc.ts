@@ -45,6 +45,21 @@ export interface TrayImage {
 }
 
 /** What the tray menu shows; the renderer owns the stores and sends this on every change. */
+/** The SF Symbols beside the tray menu's actions. */
+export const TRAY_SYMBOLS = [
+  'macwindow',
+  'qrcode',
+  'square.on.square',
+  'arrow.down.circle',
+  'arrow.clockwise.circle',
+  'list.bullet.rectangle',
+  'person.crop.circle.badge.checkmark',
+  'display',
+  'gearshape',
+  'power',
+] as const
+export type TraySymbol = (typeof TRAY_SYMBOLS)[number]
+
 export interface TraySummary {
   status: string
   canPair: boolean
@@ -58,11 +73,15 @@ export interface TraySummary {
   } | null
   /** This computer's networks (codync-network), lines already translated; null on hosts without them. */
   networks: { title: string; computers: { label: string; dot: TrayImage | null }[] }[] | null
+  /** The Network row's codync-network mark (SF Symbols has none), drawn on every platform; a template image on macOS. */
+  networkIcon: TrayImage | null
+  /** Windows and Linux: the actions' symbols drawn by the renderer (macOS menus draw SF Symbols); null on macOS. */
+  symbols: Partial<Record<TraySymbol, TrayImage>> | null
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
   /** The menu bar is a system menu, so the main process translates its labels from this. */
-  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es'
+  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru'
 }
 
 /** Things the tray menu (or the app menu) asks the window to do. */
@@ -127,6 +146,9 @@ export type SpeechEvent =
   | { type: 'stopped' }
   | { type: 'error'; message: string }
 
+/** A dropped, pasted or picked file: its name and bytes. */
+export type PickedFile = { name: string; data: Uint8Array }
+
 export interface CodyncBridge {
   platform: 'darwin' | 'linux' | 'win32'
   appName: string
@@ -155,6 +177,8 @@ export interface CodyncBridge {
     /** Why it ended without an account; null once signed in (or while another sign-in runs). */
     signIn(provider: SignInProvider): Promise<SignInFailure | null>
     signOut(): Promise<void>
+    /** Deletes the signed-in Codync account in Clerk; false when it couldn't (nothing changed). */
+    deleteAccount(): Promise<boolean>
     /** The signed-in session's JWT for the Codync cloud. */
     token(): Promise<string>
   }
@@ -240,6 +264,8 @@ export interface CodyncBridge {
     pathForFile(file: File): string
     readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
     setTraySummary(summary: TraySummary): void
+    /** Brings the chat window forward (a phone waits for this computer to let it in). */
+    showWindow(): void
     onCommand(cb: (command: WindowCommand) => void): () => void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>

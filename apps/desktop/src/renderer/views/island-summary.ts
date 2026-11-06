@@ -49,6 +49,7 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
     ref,
     name,
     shape: bot.avatarShape,
+    customIcon: bot.customIcon,
     color: bot.avatarColor,
     status: bot.status,
     backend: store.backendName(bot.backend),
@@ -74,7 +75,7 @@ function pendingCards({ ref, bot, store }: RosterItem): IslandPermission[] {
       return {
         ref: refKey(ref),
         entryId: e.id,
-        bot: { name: author.name, shape: author.avatarShape, color: author.avatarColor, backend: store.backendName(author.backend) },
+        bot: { customIcon: author.customIcon, name: author.name, shape: author.avatarShape, color: author.avatarColor, backend: store.backendName(author.backend) },
         headline: permissionHeadline(e.data.toolKind),
         title: e.data.title ?? '',
         // The island is small: the first files and their changed lines are enough to judge a card.

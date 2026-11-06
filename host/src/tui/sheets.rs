@@ -75,8 +75,8 @@ fn name_of(app: &App, bot: &str) -> String {
     app.bots.get(bot).map_or_else(String::new, |b| b.name.clone())
 }
 
-/// A bot's pages on the top line (Details, Memory, Settings) with this one marked; returns the
-/// area under it.
+/// A bot's pages on the top line (Details, Library, Memory, Settings) with this one marked.
+/// Returns the area under it.
 pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
     let t = theme();
     let mut x = inner.x;
@@ -143,7 +143,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                 inner.x,
                 inner.y + 1,
                 inner.width,
-                &tr("No routines. c asks the bot for one; n sets one up here."),
+                &tr("No routines. n sets one up here, or ask the bot in chat."),
                 t.secondary.patch(t.panel),
             );
         }
@@ -332,6 +332,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
                 format!("Downloads {name} on {} if it needs to, then checks its sign-in.", app.host),
             ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
+            SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
         };
         let title = tr(&title);
         let detail = tr(&detail);

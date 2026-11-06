@@ -271,13 +271,7 @@ mod tests {
                 let res = json!({"jsonrpc": "2.0", "id": m["id"], "result": {"sdp": format!("answer to {}", m["params"]["sdp"].as_str().unwrap_or_default())}});
                 wr.write_all(format!("{res}\n").as_bytes()).await.unwrap();
             }
-        });
-        tokio::spawn(run_link(screen.clone(), a));
-        for _ in 0..50 {
-            if screen.status.locked().capture {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            false
         }
         let local = screen.prepare("local", IceConfig::default(), false).unwrap();
         let res = screen.offer("local", "offer", local["session"].as_str().unwrap(), None).await.unwrap();
@@ -474,3 +468,16 @@ mod tests {
         assert_eq!(fresh["trickle"], false);
     }
 }
+
+#[cfg(unix)]
+impl Screen {
+    /// Nothing from a previous helper carries over to the next one.
+    fn reset_helper_state(&self) {
+        self.sessions.locked().clear();
+        *self.status.locked() = HelperStatus::default();
+        self.control.locked().user = false;
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests;

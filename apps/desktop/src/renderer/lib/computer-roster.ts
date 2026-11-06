@@ -1,9 +1,9 @@
 import type { Bot } from '@shared/models'
 
-type Ranked = Pick<Bot, 'lead' | 'pinned' | 'position' | 'lastAt'>
+type Ranked = Pick<Bot, 'pinned' | 'position' | 'lastAt'>
 
-/** A bot's band in its computer's roster: the lead, then pinned bots, then the rest. A drag moves a bot only within its band. */
-export const rosterBand = (b: Pick<Bot, 'lead' | 'pinned'>) => (b.lead ? 0 : b.pinned ? 1 : 2)
+/** A bot's band in its computer's roster: pinned bots, then the rest. A drag moves a bot only within its band. */
+export const rosterBand = (b: Pick<Bot, 'pinned'>) => (b.pinned ? 0 : 1)
 
 /** Roster order: by band, then where the user dragged them, then most recent activity. */
 export const rosterOrder = (a: Ranked, b: Ranked) => rosterBand(a) - rosterBand(b) || a.position - b.position || b.lastAt - a.lastAt

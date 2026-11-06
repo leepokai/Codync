@@ -374,6 +374,7 @@ pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Re
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use crate::candidates::Candidate;
 
     #[tokio::test]
     async fn trickle_answer_does_not_wait_for_candidate_gathering() {

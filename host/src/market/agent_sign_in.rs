@@ -159,7 +159,6 @@ pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
         let mut data = card.data.clone();
         data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Ready)?;
         hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not complete the sign-in request"))?;
-        let Some(bot) = hub.store.bot(&card.bot_id)?.filter(|b| !b.deleted) else { continue };
         let ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
         let held = ids.iter().filter_map(Value::as_str).filter_map(|id| hub.store.entry(id));
         for mut entry in held.filter(|entry| now_ms() - entry.created_at <= MAX_AGE) {

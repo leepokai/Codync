@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import posthog from "posthog-js";
 import "posthog-js/dist/web-vitals"; // Bundled, as external loading is off below.
-import { ANDROID_TEST, APP_STORE, DISCORD, DMG, GITHUB, KO_FI, LINUX, LINUX_ARM, PRODUCT_HUNT, WINDOWS } from "./links";
+import { ANDROID_TEST, APP_STORE, DISCORD, DMG, GITHUB, KO_FI, LARK_JOIN, LARK_QR, LINUX, LINUX_ARM, PRODUCT_HUNT, WECHAT_QR, WINDOWS } from "./links";
 
 // Cookieless counts for codync.dev (docs/reference/analytics-events.md, Website). Nothing is
 // stored on the device; PostHog's server hashes the visitor per day.
@@ -19,6 +19,9 @@ const links: [prefix: string, link: string][] = [
   [`${GITHUB}/issues`, "issues"],
   [GITHUB, "github"],
   [DISCORD, "discord"],
+  [LARK_JOIN, "lark"],
+  [LARK_QR, "lark_qr"],
+  [WECHAT_QR, "wechat_qr"],
   [PRODUCT_HUNT, "product_hunt"],
   [KO_FI, "ko_fi"],
   [ANDROID_TEST, "android_test"],

@@ -23,6 +23,7 @@ pub mod catalog;
 pub mod composio;
 pub mod logins;
 pub mod oauth;
+pub mod openbot;
 pub mod passwords;
 pub mod requests;
 pub mod vault;
@@ -44,8 +45,9 @@ pub use skill_usage::{
     written_skills,
 };
 pub use skills::{
-    MAX_WRITTEN_PER_BOT, add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill,
-    skill_details, skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
+    MAX_WRITTEN_PER_BOT, add_custom_skill, browse_skills, expand_command, install_skill, list_skills, record_bundled,
+    remove_skill, reserve_bundled, skill_details, skills_brief, slash_command, turn_on_installed_once,
+    update_custom_skill,
 };
 
 pub use updates::{automatic_loop, refresh_connector};
@@ -80,6 +82,9 @@ pub struct Connector {
     /// The MCP Registry name it was installed from, if any.
     #[serde(default)]
     pub registry_name: Option<String>,
+    /// The marketplace app it was installed from (`market::openbot`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
     /// stdio servers: the command the agent spawns.
     #[serde(default)]
     pub command: Option<String>,
@@ -127,6 +132,7 @@ impl Connector {
             "name": self.name,
             "description": self.description,
             "registryName": self.registry_name,
+            "catalog": self.catalog,
             "kind": if self.command.is_some() { "local" } else { "remote" },
             "command": self.command.clone(),
             "url": self.url.as_deref().and_then(|raw| reqwest::Url::parse(raw).ok()).map(|mut url| {
@@ -363,6 +369,7 @@ mod tests {
             name: "GitHub".into(),
             description: String::new(),
             registry_name: None,
+            catalog: None,
             command: Some("npx".into()),
             args: vec!["-y".into(), "pkg@1".into()],
             env: BTreeMap::from([("TOKEN".into(), "x".into())]),

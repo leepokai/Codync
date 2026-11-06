@@ -101,3 +101,32 @@ async fn a_failed_group_insert_removes_the_coordinator_and_every_teammate() {
     assert_eq!(bots.len(), catalog::team("software-team").unwrap().profiles().unwrap().len());
     assert!(bots.iter().all(|bot| bot.deleted), "all profiles are removed when their group cannot be created");
 }
+
+#[test]
+fn a_catalog_schedule_becomes_a_cron_trigger_on_this_clock() {
+    let weekdays = routine_triggers(&serde_json::json!({"kind": "weekdays", "time": "09:05"})).unwrap();
+    assert_eq!(weekdays[0]["expression"], "5 9 * * 1-5");
+    let monthly = routine_triggers(&serde_json::json!({"kind": "monthly", "day": 3, "time": "08:00"})).unwrap();
+    assert_eq!(monthly[0]["expression"], "0 8 3 * *");
+    assert_eq!(monthly[0]["type"], "cron");
+    assert!(routine_triggers(&serde_json::json!({"kind": "hourly"})).is_err());
+}
+
+#[tokio::test]
+async fn installing_an_agent_brings_its_look_skills_and_routines() {
+    let fixture = Fixture::new();
+    let installed = install_agent(&fixture.hub, "qa-tester", Some("claude"), Some("test-model")).await.unwrap();
+    let bot = fixture.hub.store.bot(installed["bot"]["id"].as_str().unwrap()).unwrap().unwrap().config;
+    let agent = openbot::agent("qa-tester").unwrap();
+    assert_eq!(bot.name, agent.name);
+    assert_eq!(bot.description, agent.instructions);
+    assert_eq!(bot.avatar_color, agent.avatar_color);
+    assert_eq!(bot.catalog.as_deref(), Some("qa-tester"));
+    assert_eq!(bot.skills.len(), agent.skills.len());
+    for id in &bot.skills {
+        assert!(openbot::skill(id).is_some(), "{id} came from the catalog");
+    }
+    let routines = fixture.hub.routines.list(&bot.id);
+    assert_eq!(routines["routines"].as_array().unwrap().len(), agent.routines.len());
+    assert_eq!(installed_agents(&fixture.hub).unwrap(), vec!["qa-tester"]);
+}

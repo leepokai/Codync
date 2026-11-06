@@ -473,3 +473,22 @@ textarea.market-field {
   margin-right: -12px;
   opacity: 0.85;
 }
+
+/* An agent's or app's facts: a label and value a line each. */
+.market-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 0;
+  font-size: var(--text-subheadline);
+}
+.market-facts dt { color: var(--secondary); }
+.market-facts dd { margin: 0; }
+/* Numbered setup steps of an app that runs on this computer. */
+.market-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+

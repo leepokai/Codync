@@ -82,6 +82,9 @@ pub enum Reply {
     },
     Skills,
     Catalog,
+    /// The bundled marketplace apps, and agents.
+    Apps,
+    MarketAgents,
     /// A catalog bot or team (its id) was created.
     CatalogAdded(String),
     /// A skill's instructions, for the details sheet with that id.
@@ -153,18 +156,13 @@ pub struct RoutineForm {
 pub enum Tab {
     Bots,
     Teams,
+    Apps,
     Agents,
-    Connectors,
     Skills,
 }
 
-pub const TABS: [(Tab, &str); 5] = [
-    (Tab::Bots, "Bots"),
-    (Tab::Teams, "Teams"),
-    (Tab::Agents, "Agents"),
-    (Tab::Connectors, "Connectors"),
-    (Tab::Skills, "Skills"),
-];
+pub const TABS: [(Tab, &str); 5] =
+    [(Tab::Bots, "Bots"), (Tab::Teams, "Teams"), (Tab::Apps, "Apps"), (Tab::Agents, "Agents"), (Tab::Skills, "Skills")];
 
 pub struct Market {
     pub tab: Tab,
@@ -173,6 +171,9 @@ pub struct Market {
     pub searched: Option<String>,
     pub registry: Vec<Value>,
     pub next: Option<String>,
+    /// The marketplace apps, and the agents, of the bundled catalogs.
+    pub apps: Option<Vec<Value>>,
+    pub agents: Option<Vec<Value>>,
     pub skills: Option<Vec<Value>>,
     /// The host's ready-made bots and teams (`botCatalog`); empty on an older host.
     pub catalog: Value,
@@ -196,6 +197,10 @@ pub enum Row<'a> {
     Profile(&'a Value),
     /// A catalog team: a coordinator and the bots it hands work to.
     Team(&'a Value),
+    /// A marketplace app from the bundled catalog.
+    App(&'a Value),
+    /// A marketplace agent from the bundled catalog.
+    MarketAgent(&'a Value),
 }
 
 pub struct AgentSetup {
@@ -229,6 +234,8 @@ pub enum Submit {
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),
+    /// A marketplace app and the field values its setup collected.
+    App(Value),
     Import,
     /// A handoff card's text (the card's entry id).
     Handoff(String),

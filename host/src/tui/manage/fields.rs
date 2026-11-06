@@ -75,6 +75,37 @@ impl App {
                 );
             }
             Submit::Import => self.sheet("importConnectors", json!({"config": values["config"]}), Reply::FieldsSaved),
+            Submit::App(app) => {
+                let mut body = json!({
+                    "name": app["server"]["name"],
+                    "description": app["description"],
+                    "catalog": app["id"],
+                    "args": app["server"]["args"],
+                });
+                if let Some(url) = app["server"]["url"].as_str() {
+                    body["url"] = url.into();
+                }
+                if let Some(command) = app["server"]["command"].as_str() {
+                    body["command"] = command.into();
+                }
+                let mut env = json!({});
+                let mut headers = json!({});
+                for field in app["fields"].as_array().into_iter().flatten() {
+                    let typed = values[field["id"].as_str().unwrap_or_default()].as_str().unwrap_or_default();
+                    if field["url"].as_bool() == Some(true) && !typed.is_empty() {
+                        body["url"] = typed.into();
+                    }
+                    if let Some(header) = field["header"].as_str() {
+                        headers[header] = typed.into();
+                    }
+                    if let Some(name) = field["env"].as_str() {
+                        env[name] = typed.into();
+                    }
+                }
+                body["env"] = env;
+                body["headers"] = headers;
+                self.sheet("installConnector", body, Reply::FieldsSaved);
+            }
             Submit::Handoff(entry) => {
                 self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
             }

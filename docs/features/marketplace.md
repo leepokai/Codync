@@ -6,10 +6,21 @@ Under the open section, one line says where that section comes from: agents from
 
 | Capability | Implementation | Behavior |
 | --- | --- | --- |
-| Agents | `host/src/agent/backends.rs`, `host/src/agent/registry.rs`, `host/src/agent/node.rs` | Detect installed harnesses, resolve ACP registry adapters, provide Node.js for npm agents |
+| Apps | `host/src/market/openbot.rs`, `host/src/market/install.rs` | Browse the bundled app catalog (OpenBot's apps) and install one as an MCP connector with its sign-in, key or setup steps; the MCP Registry and custom connectors stay in the same Apps tab |
+| Agents | `host/src/market/openbot.rs`, `host/src/market/catalog.json` | Browse marketplace agents and ready-made bots/teams; an agent installs with its instructions, look, skills and routines (`installAgent`) |
 | Connectors | `host/src/market/mod.rs`, `registry.rs`, `install.rs` | Discover MCP servers or add one manually; install per computer; on for every bot unless a bot turns it off |
 | Connected apps | `host/src/market/composio.rs` | Expose connected Composio apps as connectors |
-| Skills | `host/src/market/skills.rs` | Instruction folders containing `SKILL.md`, stored under `~/.codync/skills/<id>`; on for every bot unless a bot turns it off |
+| Skills | `host/src/market/skills.rs`, `host/src/market/openbot/` | Instruction folders containing `SKILL.md`, stored under `~/.codync/skills/<id>`; the bundled OpenBot catalog installs offline, and anthropics/skills stays available; on for every bot unless a bot turns it off |
+
+The marketplace content under `host/src/market/openbot/` is generated from the OpenBot marketplace by
+`tools/import-openbot-catalog.mjs` and ships with the host: 27 agents, 92 skills (including the pstack
+pack) and 36 apps. Skills install from an embedded archive, so browsing works without a network; the
+attributions and licences are in `host/src/market/openbot/NOTICE.md`. Marketplace agents are bot
+profiles with a title, category, creator, version and the skills and routines they bring. Installing one
+creates the bot on the computer's defaults, turns on exactly the skills it brings and creates its
+routines (a catalog schedule becomes a cron trigger in the computer's time zone). The Apps tab groups
+apps by category, the Agents tab adds ready-made bots, coordinator teams and the agent CLIs, and the
+Skills tab adds the user's own skill, the OpenBot catalog and the Anthropic catalog.
 
 Composio Connect is featured in Connectors through the official MCP Registry
 (`io.github.ComposioHQ/composio`, `https://connect.composio.dev/mcp`). Install it
@@ -65,12 +76,9 @@ Clicking a row opens its details (instructions, or the coordinator and teammates
 The New bot screen also asks what the bot should help with (its standing instructions) and lets the user pick
 the agent and model, with the agent's state (not installed, not signed in) shown under the picker.
 
-Clients: desktop (macOS, Linux, Windows) and Android render both sections and the New bot fields; the terminal
-has Bots and Teams tabs in Extensions (↵ adds) and Purpose and Agent fields in the New bot dialog (←→ steps
-through the agents that can run; the model stays the agent's default and changes in Settings). The iPhone app
-is not updated in this change at the owner's request; it keeps the earlier New bot screen and ignores the
-catalog (additive host methods).
-
+Every client has Apps, Agents and Skills tabs with the same categories and detail pages: desktop, Android,
+the iPhone app and the terminal (which keeps Bots and Teams tabs beside them). Add in the terminal is ↵;
+the terminal shows the same fields without the canvas. Agents install as bots; apps install as connectors.
 
 ## WorkBuddy
 

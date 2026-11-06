@@ -215,6 +215,7 @@ mod tests {
             offered_to_network: true,
             reachable_by_assistants: true,
             created_by: None,
+            catalog: None,
             shared_memory: None,
             harness_memory: false,
             auto_name: false,

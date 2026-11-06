@@ -1,6 +1,6 @@
 import { Observable, useModel } from '../../lib/observable'
 import type { BotStore } from '../../store/bot-store'
-import { market, needsSignIn, sleep, type InstalledConnector, type InstalledSkill, type MarketConnector } from './market-models'
+import { market, needsSignIn, sleep, type InstalledConnector, type InstalledSkill, type MarketApp, type MarketConnector } from './market-models'
 
 /** What's installed on one computer, for the Marketplace and bot settings (kit BotStore's plugin state). */
 export class Plugins extends Observable {
@@ -58,6 +58,32 @@ export class Plugins extends Observable {
 
   async installSkill(source: string) {
     await this.after(market.installSkill(await this.store.ready(), source))
+  }
+
+  /** Adds a marketplace app as a connector with the values the user typed, and starts its sign-in. */
+  async installApp(app: MarketApp, values: Record<string, string>) {
+    const value = (id: string) => values[id]?.trim() ?? ''
+    const headers: Record<string, string> = {}
+    const env: Record<string, string> = {}
+    let url = app.server.url ?? null
+    for (const field of app.fields) {
+      const typed = value(field.id)
+      if (field.url) url = typed || url
+      else if (field.header) headers[field.header] = typed
+      else if (field.env) env[field.env] = typed
+    }
+    const connector = await this.addConnector({
+      name: app.server.name || app.name,
+      description: app.description,
+      command: app.server.command ?? null,
+      args: app.server.args,
+      url,
+      env,
+      headers,
+      catalog: app.id,
+    })
+    if (needsSignIn(connector)) await this.signIn(connector.id)
+    return connector
   }
 
   async addSkill(name: string, description: string, instructions: string) {

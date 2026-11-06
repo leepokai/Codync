@@ -27,9 +27,31 @@ import kotlinx.coroutines.launch
 // Extensions' sections (iOS `MarketplaceTabs`): the section rail, and the end of a list the registry continues.
 
 internal enum class ExtensionSection(val title: String, val icon: String, val source: String) {
-    Agents("Agents", "terminal", "Agents come from the ACP registry and install on {name}."),
-    Connectors("Connectors", "point.3.connected.trianglepath.dotted", "Connectors come from the official MCP Registry and install on {name}."),
-    Skills("Skills", "book.pages", "Skills come from Anthropic and install on {name}."),
+    Apps("Apps", "square.grid.2x2", "Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server."),
+    Agents("Agents", "terminal", "Ready-made agents come with their instructions, skills and routines. Add one to {name}."),
+    Skills("Skills", "book.pages", "Skills install on {name} and every bot can use them."),
+}
+
+/** The marketplace categories, in tab order, with their names (iOS `MarketCategories`). */
+internal object MarketCategories {
+    val ids = listOf("coding", "design", "documents", "research", "data-analytics", "productivity", "automation", "other")
+    fun label(id: String): String = when (id) {
+        "coding" -> "Coding"
+        "design" -> "Design"
+        "documents" -> "Documents"
+        "research" -> "Research"
+        "data-analytics" -> "Data & analytics"
+        "productivity" -> "Productivity"
+        "automation" -> "Automation"
+        else -> "Other"
+    }
+
+    /** Featured first, then each category, empty groups left out. */
+    fun <T> group(items: List<T>, category: (T) -> String, featured: (T) -> Boolean): List<Pair<String, List<T>>> {
+        val picked = listOf("Featured" to items.filter(featured)) +
+            ids.map { id -> label(id) to items.filter { !featured(it) && category(it) == id } }
+        return picked.filter { it.second.isNotEmpty() }
+    }
 }
 
 /** Agents, Connectors, Skills: the chosen row is filled, like a side tab. */

@@ -205,3 +205,18 @@ fun AppStore.pluginAction(method: String, payload: JsonObject, done: () -> Unit 
     refreshPlugins()
     done()
 }
+
+suspend fun AppStore.marketAgents(search: String, category: String): List<MarketAgent> {
+    val response = hostQuery("marketAgents", body("search" to search, "category" to category), 60_000)
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("items"))
+}
+
+suspend fun AppStore.marketAgent(id: String): MarketAgentDetail {
+    val response = hostQuery("marketAgent", body("id" to id), 60_000)
+    return WireJson.decodeFromJsonElement(response)
+}
+
+suspend fun AppStore.marketApps(search: String): List<MarketApp> {
+    val response = hostQuery("marketApps", body("search" to search), 60_000)
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("items"))
+}

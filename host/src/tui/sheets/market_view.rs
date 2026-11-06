@@ -18,15 +18,19 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     }
     let search = Rect::new(x + 2, inner.y, inner.right().saturating_sub(x + 2), 1);
     let placeholder = match m.tab {
-        Tab::Connectors => tr("search the MCP registry"),
+        Tab::Apps => tr("search apps and the MCP registry"),
         _ => tr("filter"),
     };
     field_line(buf, search, inner.y, &m.query, &placeholder, true);
     let source = match m.tab {
         Tab::Bots | Tab::Teams => tr("Ready-made bots and coordinator teams install on {name}."),
-        Tab::Agents => tr("Agents come from the ACP registry and install on {name}."),
-        Tab::Connectors => tr("Connectors come from the official MCP Registry and install on {name}."),
-        Tab::Skills => tr("Skills come from Anthropic and install on {name}."),
+        Tab::Apps => {
+            tr("Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server.")
+        }
+        Tab::Agents => tr(
+            "Ready-made agents come with their instructions, skills and routines. Agents come from the ACP registry.",
+        ),
+        Tab::Skills => tr("Skills install on {name} and every bot can use them."),
     };
     let source = source.replace("{name}", &app.host);
     put(buf, inner.x, inner.y + 1, inner.width, &truncate(&source, usize::from(inner.width)), t.dim.patch(t.panel));
@@ -86,6 +90,21 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
                 };
                 (if added { "V" } else { "+" }, s(v, "name").into(), s(v, "summary").into(), right)
             }
+            Row::App(v) => {
+                let added = m.added.iter().any(|id| id == s(v, "id"));
+                let setup = s(v, "setup");
+                let right = match setup {
+                    "link" => tr("sign-in").into_owned(),
+                    "key" => tr("key").into_owned(),
+                    "local" => tr("on this computer").into_owned(),
+                    _ => String::new(),
+                };
+                (if added { "V" } else { "+" }, s(v, "name").into(), s(v, "tagline").into(), right)
+            }
+            Row::MarketAgent(v) => {
+                let added = m.added.iter().any(|id| id == s(v, "id"));
+                (if added { "V" } else { "+" }, s(v, "name").into(), s(v, "title").into(), String::new())
+            }
         };
         let ok = mark == "✓";
         put(buf, inner.x, y, 2, mark, if ok { t.green } else { t.dim }.patch(base));
@@ -101,11 +120,11 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     }
     let keys = match m.tab {
         Tab::Bots | Tab::Teams => tr("tab switch · ↵ add · esc close"),
-        Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
-        Tab::Connectors => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
+        Tab::Apps => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
+        Tab::Agents => tr("tab switch · ↵ add / install / sign in · ^r refresh · esc close"),
         Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),
     };
-    let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
+    let loading = m.loading && m.tab == Tab::Apps && !rows.is_empty();
     let registry = tr("Loading the registry…");
     footer(buf, inner, m.error.as_deref().or(loading.then_some(registry.as_ref())), &keys);
 }

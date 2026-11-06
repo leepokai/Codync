@@ -142,30 +142,40 @@ async fn catalog() -> Result<Value> {
     Ok(catalog)
 }
 
-/// The anthropics/skills catalog for the Marketplace (bodies come one at a time from `skill_details`).
+/// The anthropics/skills catalog and the bundled `OpenBot` catalog for the Marketplace (bodies come one at a
+/// time from `skill_details`). GitHub is optional: its failure leaves the bundled skills browsable offline.
 pub async fn browse_skills(store: &crate::store::Store) -> Result<Value> {
-    let installed: Vec<String> = skills(store).into_iter().filter(|s| s.source == SKILLS_REPO).map(|s| s.id).collect();
-    let items: Vec<Value> = catalog()
-        .await?
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|s| {
-            let mut s = s.clone();
-            if let Some(o) = s.as_object_mut() {
-                o.remove("body");
-            }
-            s["installed"] = json!(installed.contains(&slug(s["source"].as_str().unwrap_or_default())));
-            s
-        })
-        .collect();
+    let installed: Vec<String> = skills(store).into_iter().map(|s| s.id).collect();
+    let mut items = super::openbot::browse_skills(&installed);
+    // GitHub is a second catalog and optional: a slow or missing network must not hold the bundled one.
+    let github = match tokio::time::timeout(Duration::from_secs(5), catalog()).await {
+        Ok(Ok(v)) => v,
+        _ => json!([]),
+    };
+    items.extend(github.as_array().into_iter().flatten().map(|s| {
+        let mut s = s.clone();
+        if let Some(o) = s.as_object_mut() {
+            o.remove("body");
+            o["creator"] = json!(SKILLS_REPO);
+            o["featured"] = json!(false);
+        }
+        s["installed"] = json!(
+            installed.contains(&slug(s["source"].as_str().unwrap_or_default()))
+                && skills(store).iter().any(|x| x.source == SKILLS_REPO)
+        );
+        s
+    }));
     Ok(json!({"items": items}))
 }
 
-/// A skill's instructions for its details sheet: an installed one by `id` (read from disk),
-/// a catalog one by `source`. Only names from those lists are looked up, never a path.
+/// A skill's instructions for its details sheet: an installed one by `id` (read from disk), a catalog one
+/// by `source` (bundled, or the anthropics/skills catalog). Only names from those lists are looked up,
+/// never a path.
 pub async fn skill_details(store: &crate::store::Store, b: &Value) -> Result<Value> {
     const MAX: usize = 256 * 1024;
+    if let Some(source) = b["source"].as_str().filter(|s| s.starts_with(super::openbot::SOURCE)) {
+        return super::openbot::skill_details(source);
+    }
     let mut markdown = if let Some(id) = b["id"].as_str() {
         let s = skills(store).into_iter().find(|s| s.id == id).ok_or_else(|| anyhow!("Unknown skill"))?;
         let md = tokio::fs::read_to_string(s.dir().join("SKILL.md")).await.context("reading the skill")?;
@@ -251,7 +261,7 @@ fn update_skills<T>(store: &crate::store::Store, change: impl FnOnce(&mut Vec<Sk
 fn reserve_download(store: &crate::store::Store, id: &str) -> Result<Option<Value>> {
     let _guard = SKILLS_LOCK.locked();
     match skills(store).into_iter().find(|s| s.id == id) {
-        Some(s) if s.source == SKILLS_REPO => Ok(Some(s.public())),
+        Some(s) if s.source == SKILLS_REPO || s.source.starts_with(super::openbot::SOURCE) => Ok(Some(s.public())),
         Some(s) => bail!("The skill {} written in Codync has the id {id}: remove it to add this one", s.name),
         None => {
             std::fs::create_dir_all(skills_dir().join(id))?;
@@ -260,7 +270,41 @@ fn reserve_download(store: &crate::store::Store, id: &str) -> Result<Option<Valu
     }
 }
 
+/// The bundled skill already installed as `id`, or `None` once its folder is taken.
+pub fn reserve_bundled(store: &crate::store::Store, id: &str) -> Result<Option<Skill>> {
+    let _guard = SKILLS_LOCK.locked();
+    match skills(store).into_iter().find(|s| s.id == id) {
+        Some(s) if s.source == SKILLS_REPO || s.source.starts_with(super::openbot::SOURCE) => Ok(Some(s)),
+        Some(s) => bail!("The skill {} written in Codync has the id {id}: remove it to add this one", s.name),
+        None => {
+            std::fs::create_dir_all(skills_dir().join(id))?;
+            Ok(None)
+        }
+    }
+}
+
+/// Records an installed bundled skill once its folder is written.
+pub fn record_bundled(store: &crate::store::Store, id: &str, name: &str, description: &str) -> Result<Skill> {
+    let s = Skill {
+        id: slug(id),
+        name: name.to_owned(),
+        description: description.to_owned(),
+        source: format!("{}{id}", super::openbot::SOURCE),
+        written_by: None,
+    };
+    update_skills(store, |all| {
+        if !all.iter().any(|x| x.id == s.id) {
+            all.push(s.clone());
+        }
+        Ok(())
+    })?;
+    Ok(s)
+}
+
 pub async fn install_skill(store: &crate::store::Store, source: &str) -> Result<Value> {
+    if source.starts_with(super::openbot::SOURCE) {
+        return Ok(super::openbot::install(store, source)?.public());
+    }
     let id = slug(source);
     if let Some(installed) = reserve_download(store, &id)? {
         return Ok(installed);

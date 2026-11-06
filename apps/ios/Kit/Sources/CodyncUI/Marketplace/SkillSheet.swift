@@ -18,6 +18,12 @@ struct SkillRef: Identifiable {
         (id, name, description, source, self.installed) = ("catalog/\(skill.source)", skill.name, skill.description, skill.source, installed)
     }
 
+    /// A skill an agent page brings: always a catalog source.
+    init(skill: MarketAgentSkill) {
+        (id, name, description, source, installed) =
+            ("catalog/openbot/\(skill.id)", skill.name, skill.description, "openbot/\(skill.id)", false)
+    }
+
     /// What the host's `skillDetails` looks it up by.
     var request: [String: String] { source.map { ["source": $0] } ?? ["id": id] }
 }

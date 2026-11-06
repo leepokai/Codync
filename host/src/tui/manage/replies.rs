@@ -141,6 +141,20 @@ impl App {
                     m.catalog = v;
                 }
             }
+            Reply::Apps => {
+                if let Some(Overlay::Market(m)) =
+                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
+                {
+                    m.apps = Some(v["items"].as_array().cloned().unwrap_or_default());
+                }
+            }
+            Reply::MarketAgents => {
+                if let Some(Overlay::Market(m)) =
+                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
+                {
+                    m.agents = Some(v["items"].as_array().cloned().unwrap_or_default());
+                }
+            }
             Reply::CatalogAdded(id) => {
                 if let Some(Overlay::Market(m)) =
                     self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
@@ -249,7 +263,7 @@ impl App {
         }
         match r {
             // An older host has no catalog: the Bots and Teams tabs stay empty.
-            Reply::Catalog => {}
+            Reply::Catalog | Reply::Apps | Reply::MarketAgents => {}
             Reply::Accounts { scope, .. } => {
                 if let Some(Overlay::Form(f)) = self.overlays.last_mut()
                     && f.account_scope == *scope

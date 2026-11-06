@@ -421,6 +421,17 @@ export class BotStore extends BotSync {
     return group
   }
 
+  /** Creates a marketplace agent's bot (its look, instructions, skills and routines) and opens it. */
+  async installAgent(id: string) {
+    const res = await (await this.ready()).call<{ bot: Bot }>('installAgent', { id }, 120_000)
+    const bot = normalizeBot(res.bot)
+    this.bots.set(bot.id, bot)
+    this.selection = bot.id
+    this.onRosterChanged?.()
+    this.changed()
+    return bot
+  }
+
   /** Takes one bot out of a group; an automatic "Alice, Bob" name follows the new roster. */
   removeMember(group: Bot, memberId: string) {
     const members = group.members.filter((m) => m !== memberId)

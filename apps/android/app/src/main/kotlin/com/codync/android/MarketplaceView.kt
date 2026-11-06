@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.AgentBackend
+import com.codync.android.core.MarketAgent
+import com.codync.android.core.MarketApp
 import com.codync.android.core.MarketConnector
 import com.codync.android.core.MarketSkill
 import com.codync.android.design.*
@@ -100,10 +102,14 @@ import kotlinx.coroutines.launch
         ConnectorCatalog<MarketConnector>({ it.name }) { search, cursor -> store.marketConnectors(search, cursor).let { it.items to it.nextCursor } }
     }
     var skills by remember { mutableStateOf(emptyList<MarketSkill>()) }
+    var apps by remember { mutableStateOf(emptyList<MarketApp>()) }
+    var marketAgents by remember { mutableStateOf(emptyList<MarketAgent>()) }
     var loadingSkills by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var installing by remember { mutableStateOf<MarketConnector?>(null) }
     var viewingConnector by remember { mutableStateOf<MarketConnector?>(null) }
+    var viewingApp by remember { mutableStateOf<MarketApp?>(null) }
+    var viewingAgent by remember { mutableStateOf<MarketAgent?>(null) }
     var busySkill by remember { mutableStateOf<String?>(null) }
     var addingConnector by remember { mutableStateOf(false) }
     var writingSkill by remember { mutableStateOf(false) }
@@ -111,7 +117,9 @@ import kotlinx.coroutines.launch
     var agent by remember { mutableStateOf<AgentBackend?>(null) }
     var addingNode by remember { mutableStateOf(false) }
     var showCredentials by remember { mutableStateOf(false) }
-    var section by remember { mutableStateOf(ExtensionSection.Agents) }
+    var section by remember { mutableStateOf(ExtensionSection.Apps) }
+    var appsAdded by remember { mutableStateOf(emptySet<String>()) }
+    var agentsAdded by remember { mutableStateOf(emptySet<String>()) }
     val query = search.trim()
     // Nothing loads until Extensions is on screen on a phone with a computer; a sheet is already on it.
     val canLoad = everActive && (inModal || state.computers.isNotEmpty())
@@ -133,14 +141,24 @@ import kotlinx.coroutines.launch
         catch (failure: Exception) { error = failure.message ?: "Couldn't load skills." }
         finally { loadingSkills = false }
     }
+    LaunchedEffect(canLoad, state.contextId) {
+        if (!canLoad) return@LaunchedEffect
+        try {
+            apps = store.marketApps(query)
+            marketAgents = store.marketAgents(query, "")
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { error = failure.message ?: "Couldn't load the marketplace." }
+    }
     val backends = agentBackends(state)
     val agents = backends.filter { it.available || it.installed || it.curated }.filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
     val installedSkills = state.plugins?.skills.orEmpty()
     val shownSkills = if (query.isEmpty()) skills else skills.filter { it.name.contains(query, true) || it.description.contains(query, true) }
+    val shownApps = if (query.isEmpty()) apps else apps.filter { it.name.contains(query, true) || it.tagline.contains(query, true) }
+    val shownMarketAgents = if (query.isEmpty()) marketAgents else marketAgents.filter { it.name.contains(query, true) || it.title.contains(query, true) }
     val side = if (inModal) 44.dp else 24.dp
     val inset = Modifier.padding(horizontal = side)
     val needsNode = backends.any { it.needsNode }
-    val pinned = section != ExtensionSection.Agents || needsNode
+    val pinned = section == ExtensionSection.Apps || section == ExtensionSection.Skills || (section == ExtensionSection.Agents && needsNode)
     // Each section opens at its top.
     val listState = remember(section) { LazyListState() }
     // A second tap on Extensions brings the open section back to its top.
@@ -149,61 +167,86 @@ import kotlinx.coroutines.launch
     }
     /** Ready-made bots and coordinator teams: they create bots, so they sit above every section. */
     fun LazyListScope.readyMade() {
-        if (canLoad) item { Box(Modifier.padding(bottom = 12.dp)) { CatalogSections(state, store, query, Modifier) } }
+        if (canLoad && section == ExtensionSection.Agents) item { Box(Modifier.padding(bottom = 12.dp)) { CatalogSections(state, store, query, Modifier) } }
     }
-    /** Apps through Composio under Connectors: connecting one adds it like any other connector. */
+    /** Composio apps sit under the Apps catalog: connecting one adds it like any other connector. */
     fun LazyListScope.apps() {
-        if (section == ExtensionSection.Connectors && canLoad) item {
+        if (section == ExtensionSection.Apps && canLoad) item {
             Box(Modifier.padding(top = 12.dp)) { ComposioSection(query, searchToken, state, store) }
+        }
+    }
+    /** The MCP Registry after the app catalog: every other server can be found or searched there. */
+    fun LazyListScope.registry() {
+        if (section != ExtensionSection.Apps || !canLoad) return
+        item(key = "registry:title") { MarketSection("MCP Registry") {} }
+        when {
+            connectors.loading -> item { SkeletonRows() }
+            connectors.items.items.isEmpty() && !connectors.hasMore -> item {
+                Text(if (query.isEmpty()) tr("Couldn't load connectors.") else tr("No connectors match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+            }
+            else -> {
+                val rows = connectors.items.items
+                items(rows, key = { "registry:${it.name}" }) { c ->
+                    MarketRow(c.title, c.description ?: c.name, c.installed, open = if (c.installed) null else ({ viewingConnector = c }),
+                        icon = { ServiceLogo(c.website, c.title, c.name) }) { installing = c }
+                }
+                connectors.cursor?.let { cursor -> item(key = "registry:more") { LoadMoreRow(cursor, connectors.error != null) { connectors.loadMore() } } }
+            }
         }
     }
     @Composable fun Pins() {
         if (section == ExtensionSection.Agents && needsNode) NodeNotice(state) { addingNode = true }
-        if (section == ExtensionSection.Connectors) MarketRow("Custom connector", "Any MCP server: a command or a URL", added = false, addLabel = "New",
+        if (section == ExtensionSection.Apps) MarketRow("Custom connector", "Any MCP server: a command or a URL", added = false, addLabel = "New",
             icon = { TileIcon("point.3.connected.trianglepath.dotted") }) { addingConnector = true }
         if (section == ExtensionSection.Skills) MarketRow("Your own skill", "Write instructions a bot can follow", added = false, addLabel = "New",
             icon = { TileIcon("square.and.pencil") }) { writingSkill = true }
     }
+    @Composable fun SkillEntry(s: MarketSkill, installed: List<com.codync.android.core.InstalledSkill>, busy: String?, setBusy: (String?) -> Unit) {
+        val added = s.installed || installed.any { it.id == s.source.lowercase() }
+        MarketRow(s.name, s.description, added, busy = busy == s.source,
+            open = { viewingSkill = SkillRef("catalog/${s.source}", s.name, s.description, s.source, added) }, icon = { SkillGlyph() }) {
+            setBusy(s.source)
+            scope.launch {
+                try { store.installSkill(s.source) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { error = failure.message ?: "Couldn't add ${s.name}." }
+                finally { setBusy(null) }
+            }
+        }
+    }
     /** The open section's list as lazy items, two agent tiles to a row, so a long list composes only the rows near view. */
     fun LazyListScope.lists() {
         when (section) {
-            ExtensionSection.Agents -> if (agents.isEmpty()) item {
-                Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
-            } else items(agents.chunked(2)) { row ->
-                Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for (backend in row) AgentCard(backend, Modifier.weight(1f)) { agent = backend }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
+            ExtensionSection.Apps -> when {
+                shownApps.isEmpty() -> item {
+                    Text(if (query.isEmpty()) tr("No apps yet.") else tr("No apps match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+                }
+                else -> MarketCategories.group(shownApps, { it.category }, { it.featured }).forEach { (title, group) ->
+                    item(key = "app:$title") { MarketSection(title) {} }
+                    items(group, key = { it.id }) { app ->
+                        MarketRow(app.name, app.tagline, app.installed || app.id in appsAdded,
+                            icon = { ServiceLogo(app.website, app.name, null) }, open = { viewingApp = app }) { viewingApp = app }
+                    }
                 }
             }
-            ExtensionSection.Connectors -> when {
-                connectors.loading -> item { SkeletonRows() }
-                connectors.items.items.isEmpty() && !connectors.hasMore -> item {
-                    Text(if (query.isEmpty()) tr("Couldn't load connectors.") else tr("No connectors match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+            ExtensionSection.Agents -> when {
+                shownMarketAgents.isEmpty() -> item {
+                    Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
                 }
-                else -> {
-                    val rows = connectors.items.items
-                    items(rows, key = { it.name }) { c ->
-                        MarketRow(c.title, c.description ?: c.name, c.installed, open = if (c.installed) null else ({ viewingConnector = c }),
-                            icon = { ServiceLogo(c.website, c.title, c.name) }) { installing = c }
+                else -> MarketCategories.group(shownMarketAgents, { it.category }, { it.featured }).forEach { (title, group) ->
+                    item(key = "agent:$title") { MarketSection(title) {} }
+                    items(group, key = { it.id }) { a ->
+                        MarketRow(a.name, a.title, a.installed || a.id in agentsAdded,
+                            icon = { CharacterAvatar(a.avatarShape, a.avatarColor, 46.dp) }, open = { viewingAgent = a }) { viewingAgent = a }
                     }
-                    connectors.cursor?.let { cursor -> item { LoadMoreRow(cursor, connectors.error != null) { connectors.loadMore() } } }
                 }
             }
             ExtensionSection.Skills -> if (loadingSkills) item { SkeletonRows() }
-            else if (query.isNotEmpty() && shownSkills.isEmpty()) item {
+            else if (shownSkills.isEmpty() && query.isNotEmpty()) item {
                 Text(tr("No skills match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
-            } else items(shownSkills, key = { it.source }) { s ->
-                val added = s.installed || installedSkills.any { it.id == s.source.lowercase() }
-                MarketRow(s.name, s.description, added, busy = busySkill == s.source,
-                    open = { viewingSkill = SkillRef("catalog/${s.source}", s.name, s.description, s.source, added) }, icon = { SkillGlyph() }) {
-                    busySkill = s.source
-                    scope.launch {
-                        try { store.installSkill(s.source) }
-                        catch (cancelled: CancellationException) { throw cancelled }
-                        catch (failure: Exception) { error = failure.message ?: "Couldn't add ${s.name}." }
-                        finally { busySkill = null }
-                    }
-                }
+            } else MarketCategories.group(shownSkills.filter { it.category != null }, { it.category ?: "other" }, { it.featured == true }).forEach { (title, group) ->
+                item(key = "skill:$title") { MarketSection(title) {} }
+                items(group, key = { it.source }) { s -> SkillEntry(s, installedSkills, busySkill) { busySkill = it } }
             }
         }
     }
@@ -232,8 +275,9 @@ import kotlinx.coroutines.launch
                             SourceLine()
                             Pins()
                             LazyColumn(Modifier.weight(1f), listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                readyMade()
                                 lists()
+                                readyMade()
+                                registry()
                                 apps()
                             }
                             Foot()
@@ -247,8 +291,9 @@ import kotlinx.coroutines.launch
                             }
                         }
                         if (pinned) item { Box(Modifier.padding(bottom = 12.dp)) { Pins() } }
-                        readyMade()
                         lists()
+                        readyMade()
+                        registry()
                         apps()
                         item { Foot() }
                     }
@@ -267,6 +312,14 @@ import kotlinx.coroutines.launch
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
     CodyncSheet(writingSkill, { writingSkill = false }) { NewSkillSheet(store) }
     CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store) }
+    CodyncSheet(viewingApp, { viewingApp = null }) { app ->
+        MarketAppSheet(app, state, store, app.id in appsAdded, { appsAdded = appsAdded + app.id })
+    }
+    CodyncSheet(viewingAgent, { viewingAgent = null }) { a ->
+        MarketAgentSheet(a, state, store, a.id in agentsAdded, { agentsAdded = agentsAdded + a.id }) { name, description, id ->
+            viewingSkill = SkillRef("catalog/openbot/$id", name, description, "openbot/$id", false)
+        }
+    }
     CodyncSheet(addingNode, { addingNode = false }) { SetupTerminal(null, "node", null, state, store) { addingNode = false } }
 }
 

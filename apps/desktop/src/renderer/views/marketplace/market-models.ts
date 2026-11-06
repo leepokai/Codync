@@ -107,11 +107,86 @@ export interface InstalledSkill {
 }
 
 export interface MarketSkill {
-  /** Folder name in anthropics/skills. */
+  /** A catalog id: `openbot/<id>` for the bundled catalog, a folder name in anthropics/skills otherwise. */
   source: string
   name: string
   description: string
   installed: boolean
+  category?: string
+  creator?: string
+  featured?: boolean
+  pack?: string | null
+}
+
+/** A marketplace agent: a ready-made bot with its instructions, skills and routines. */
+export interface MarketAgent {
+  id: string
+  name: string
+  title: string
+  category: string
+  creator: string
+  version: number
+  avatarColor: string
+  avatarShape: string
+  featured: boolean
+  installed: boolean
+}
+
+export interface MarketAgentSkill {
+  id: string
+  name: string
+  description: string
+  pack: boolean
+}
+
+export interface MarketAgentRoutine {
+  name: string
+  instruction: string
+  active: boolean
+  schedule: { kind: string; time?: string; weekday?: number; day?: number }
+}
+
+export interface MarketAgentDetail extends MarketAgent {
+  instructions: string
+  skills: MarketAgentSkill[]
+  routines: MarketAgentRoutine[]
+}
+
+/** A marketplace app: an MCP server with a sign-in, a key, setup steps or nothing. */
+export interface MarketApp {
+  id: string
+  name: string
+  tagline: string
+  description: string
+  category: string
+  creator: string
+  version: string
+  icon?: string | null
+  website?: string | null
+  featured: boolean
+  /** `link`, `open`, `key` or `local`. */
+  setup: string
+  server: { name: string; transport: string; url?: string | null; command?: string | null; args: string[] }
+  fields: { id: string; label: string; env?: string | null; header?: string | null; url: boolean; placeholder?: string | null; hint?: string | null; required: boolean }[]
+  steps: string[]
+  docsUrl?: string | null
+  docsLabel?: string | null
+  prompts: { id: string; text: string }[]
+  installed: boolean
+}
+
+/** The marketplace categories, in the order the tabs show them. */
+export const CATEGORIES = ['coding', 'design', 'documents', 'research', 'data-analytics', 'productivity', 'automation', 'other'] as const
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  coding: 'Coding',
+  design: 'Design',
+  documents: 'Documents',
+  research: 'Research',
+  'data-analytics': 'Data & analytics',
+  productivity: 'Productivity',
+  automation: 'Automation',
+  other: 'Other',
 }
 
 export interface ConnectionRequest {
@@ -206,7 +281,7 @@ export const market = {
   installConnector: async (c: HostClient, registryName: string, option: string, inputs: Record<string, string>) =>
     (await c.call<{ connector: InstalledConnector }>('installConnector', { registryName, option, inputs }, s(45))).connector,
   /** A connector you describe yourself: a command line with env, or an https URL with headers. */
-  addConnector: async (c: HostClient, body: { name: string; command: string | null; url: string | null; env: Record<string, string>; headers: Record<string, string> }) =>
+  addConnector: async (c: HostClient, body: { name: string; command: string | null; args?: string[]; url: string | null; env: Record<string, string>; headers: Record<string, string>; catalog?: string; description?: string }) =>
     (await c.call<{ connector: InstalledConnector }>('installConnector', body, s(45))).connector,
   /** Adds every server in a pasted MCP config (`mcpServers` / `servers` JSON, or one server's entry). */
   importConnectors: async (c: HostClient, config: string) => (await c.call<{ items: InstalledConnector[] }>('importConnectors', { config }, s(60))).items,
@@ -224,6 +299,13 @@ export const market = {
   composioConnection: (c: HostClient, id: string) => c.call<ComposioConnectionState>('composioConnection', { id }, s(30)),
   skills: async (c: HostClient) => (await c.call<{ items: InstalledSkill[] }>('skills')).items,
   marketSkills: async (c: HostClient) => (await c.call<{ items: MarketSkill[] }>('marketSkills', {}, s(60))).items,
+  /** Marketplace agents: the ones `search` and `category` keep, with whether this computer has each. */
+  marketAgents: async (c: HostClient, search = '', category = '') =>
+    (await c.call<{ items: MarketAgent[] }>('marketAgents', { search, category })).items,
+  marketAgent: (c: HostClient, id: string) => c.call<MarketAgentDetail>('marketAgent', { id }),
+  /** Adds the agent's bot with its look, instructions, skills and routines. */
+  installAgent: async (c: HostClient, id: string) => (await c.call<{ bot: { id: string } }>('installAgent', { id }, s(120))).bot,
+  marketApps: async (c: HostClient, search = '') => (await c.call<{ items: MarketApp[] }>('marketApps', { search })).items,
   installSkill: (c: HostClient, source: string) => c.call('installSkill', { source }, s(60)),
   addSkill: (c: HostClient, name: string, description: string, instructions: string) => c.call('installSkill', { name, description, instructions }),
   removeSkill: (c: HostClient, id: string) => c.call('removeSkill', { id }),
@@ -274,15 +356,13 @@ export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) =>
 
 export const replacePage = <T>(items: T[], id: (t: T) => string) => appendPage(emptyPage<T>(), items, id)
 
-export type ExtensionSection = 'bots' | 'teams' | 'agents' | 'connectors' | 'skills'
+export type ExtensionSection = 'apps' | 'agents' | 'skills'
 
 /** Each section with the line saying where its items come from. */
 export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; source: string }[] = [
-  { id: 'bots', label: 'Bots', source: 'Ready-made bots from the Codync catalog are added to {name}.' },
-  { id: 'teams', label: 'Teams', source: 'Ready-made coordinator teams bring their bots and group to {name}.' },
-  { id: 'agents', label: 'Agents', source: 'Agents come from the ACP registry and install on {name}.' },
-  { id: 'connectors', label: 'Connectors', source: 'Connectors come from the official MCP Registry and install on {name}.' },
-  { id: 'skills', label: 'Skills', source: 'Skills come from Anthropic and install on {name}.' },
+  { id: 'apps', label: 'Apps', source: 'Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server.' },
+  { id: 'agents', label: 'Agents', source: 'Ready-made agents come with their own instructions, skills and routines. Add one to {name}.' },
+  { id: 'skills', label: 'Skills', source: 'Skills install on {name} and every bot can use them.' },
 ]
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

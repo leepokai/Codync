@@ -10,19 +10,25 @@ public struct MarketplaceView: View {
     @State var search = ""
     @State var connectors = ConnectorCatalog<MarketConnector>()
     @State var skills: [MarketSkill] = []
+    @State var apps: [MarketApp] = []
+    @State var marketAgents: [MarketAgent] = []
     @State var loadingSkills = true
     @State var error: String?
     @State var installing: MarketConnector?
     @State var viewingConnector: MarketConnector?
+    @State var viewingApp: MarketApp?
+    @State var viewingAgent: MarketAgent?
     @State var busySkill: String?
     @State var addingConnector = false
     @State var writingSkill = false
     @State var viewingSkill: SkillRef?
     @State var agent: Backend?
     @State var addingNode = false
-    @State var section = ExtensionSection.agents
+    @State var section = ExtensionSection.apps
     @State var showInstalled = false
     @State var showCredentials = false
+    @State var addedApps: Set<String> = []
+    @State var addedAgents: Set<String> = []
     @Environment(\.dismissModal) private var dismiss
     @Environment(\.horizontalSizeClass) var sizeClass
 
@@ -38,6 +44,14 @@ public struct MarketplaceView: View {
 
     var shownSkills: [MarketSkill] {
         query.isEmpty ? skills : skills.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) }
+    }
+
+    var shownApps: [MarketApp] {
+        query.isEmpty ? apps : apps.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.tagline.localizedCaseInsensitiveContains(query) }
+    }
+
+    var shownMarketAgents: [MarketAgent] {
+        query.isEmpty ? marketAgents : marketAgents.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.title.localizedCaseInsensitiveContains(query) }
     }
 
     private var installedCount: Int { model.installedConnectors.count + model.installedSkills.count }
@@ -63,6 +77,19 @@ public struct MarketplaceView: View {
             loadingSkills = true
             do { skills = try await model.marketSkills() } catch { report(error) }
             if !Task.isCancelled { loadingSkills = false }
+        }
+        .task {
+            do {
+                apps = try await model.marketApps(search: query)
+                marketAgents = try await model.marketAgents()
+            } catch { report(error) }
+        }
+        .codyncSheet(item: $viewingApp) { app in
+            AppSheet(app: app, added: addedApps.contains(app.id)) { addedApps.insert(app.id) }
+        }
+        .codyncSheet(item: $viewingAgent) { a in
+            MarketAgentSheet(agent: a, added: addedAgents.contains(a.id), onAdded: { addedAgents.insert(a.id) },
+                             onSkill: { skill in viewingSkill = SkillRef(skill: skill) })
         }
         .codyncSheet(item: $installing) { item in
             InstallConnectorSheet(item: item) { Task { await loadConnectors() } }
@@ -216,27 +243,27 @@ public struct MarketplaceView: View {
 }
 
 enum ExtensionSection: String, CaseIterable, Identifiable {
-    case agents, connectors, skills
+    case apps, agents, skills
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .apps: "Apps"
         case .agents: "Agents"
-        case .connectors: "Connectors"
         case .skills: "Skills"
         }
     }
     var icon: String {
         switch self {
+        case .apps: "square.grid.2x2"
         case .agents: "terminal"
-        case .connectors: "point.3.connected.trianglepath.dotted"
         case .skills: "book.pages"
         }
     }
     var source: String {
         switch self {
-        case .agents: "Agents come from the ACP registry and install on {name}."
-        case .connectors: "Connectors come from the official MCP Registry and install on {name}."
-        case .skills: "Skills come from Anthropic and install on {name}."
+        case .apps: "Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server."
+        case .agents: "Ready-made agents come with their instructions, skills and routines. Add one to {name}."
+        case .skills: "Skills install on {name} and every bot can use them."
         }
     }
 }

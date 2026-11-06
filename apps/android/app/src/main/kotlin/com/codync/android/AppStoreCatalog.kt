@@ -30,3 +30,11 @@ private suspend fun AppStore.receiveBot(result: JsonElement) {
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
 }
+
+/** Adds a marketplace agent with its look, instructions, skills and routines. */
+fun AppStore.installAgent(id: String, onAdded: () -> Unit) = action(catalogKey(id)) {
+    val result = ready().call("installAgent", buildJsonObject { put("id", id) }, timeoutMillis = 120_000)
+    receiveBot(result)
+    refreshPlugins()
+    onAdded()
+}

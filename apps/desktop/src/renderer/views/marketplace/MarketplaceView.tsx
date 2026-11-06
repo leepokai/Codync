@@ -9,16 +9,18 @@ import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { ComputerBadge } from '../ComputerBadge'
 import { AgentSheet } from './AgentSheet'
+import { AppSheet } from './AppSheet'
 import { CatalogPanel } from './CatalogPanel'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
+import { MarketAgentSheet } from './MarketAgentSheet'
 import { SetupTerminalView } from './SetupTerminal'
 import { McpToolsSheet } from './McpToolsSheet'
 import { SkillSheet, type SkillRef } from './SkillSheet'
 import { useModel } from '../../lib/observable'
 import { ConnectorCatalog } from './connector-catalog'
-import { errorText, market, needsSignIn, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
-import { AgentsPanel, ConnectorsPanel, MarketPanel, SkillsPanel } from './MarketplacePanel'
+import { errorText, market, needsSignIn, type ExtensionSection, type MarketAgent, type MarketApp, type MarketConnector, type MarketSkill } from './market-models'
+import { AgentsPanel, AppsPanel, MarketAgentsPanel, MarketPanel, SkillsPanel } from './MarketplacePanel'
 import { AppLogo, ExtensionTabs, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
 import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
@@ -43,27 +45,35 @@ export function MarketplaceView() {
   ))
   const connectors = useModel(catalog)
   const [skills, setSkills] = useState<MarketSkill[]>([])
+  const [apps, setApps] = useState<MarketApp[]>([])
+  const [marketAgents, setMarketAgents] = useState<MarketAgent[]>([])
   const [loadingSkills, setLoadingSkills] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [installing, setInstalling] = useState<MarketConnector | null>(null)
   const [viewingConnector, setViewingConnector] = useState<MarketConnector | null>(null)
+  const [viewingApp, setViewingApp] = useState<MarketApp | null>(null)
+  const [viewingAgent, setViewingAgent] = useState<MarketAgent | null>(null)
   const [busySkill, setBusySkill] = useState<string | null>(null)
   const [addingConnector, setAddingConnector] = useState(false)
   const [writingSkill, setWritingSkill] = useState(false)
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
-  const [section, setSection] = useState<ExtensionSection>('agents')
+  const [section, setSection] = useState<ExtensionSection>('apps')
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
   // Kept above the sections so a catalog entry still shows as added when its section is left and reopened.
   const [catalogAdded, setCatalogAdded] = useState<string[]>([])
+  const [appsAdded, setAppsAdded] = useState<string[]>([])
+  const [agentsAdded, setAgentsAdded] = useState<string[]>([])
 
   const query = search.trim()
   const matches = (text: string | null | undefined) => (text ?? '').toLowerCase().includes(query.toLowerCase())
   const allAgents = (store.hello?.backends ?? []).filter((b) => b.available || b.installed === true || b.curated === true)
   const agents = query ? allAgents.filter((b) => matches(b.name)) : allAgents
   const shownSkills = query ? skills.filter((s) => matches(s.name) || matches(s.description)) : skills
+  const shownApps = query ? apps.filter((a) => matches(a.name) || matches(a.tagline)) : apps
+  const shownMarketAgents = query ? marketAgents.filter((a) => matches(a.name) || matches(a.title)) : marketAgents
   const installedCount = plugins.installedConnectors.length + plugins.installedSkills.length
   const onCatalogAdded = (id: string) => setCatalogAdded((list) => [...list, id])
 
@@ -79,6 +89,15 @@ export function MarketplaceView() {
         setError(errorText(e))
       }
       setLoadingSkills(false)
+    })()
+    void (async () => {
+      try {
+        const client = await store.ready()
+        setApps(await market.marketApps(client))
+        setMarketAgents(await market.marketAgents(client))
+      } catch (e) {
+        setError(errorText(e))
+      }
     })()
     return () => connectors.cancel()
     // Mount only, like the view's `.task`s.
@@ -165,26 +184,43 @@ export function MarketplaceView() {
         {searchField}
         <ExtensionTabs selection={section} onChange={setSection} />
         <MarketPanel section={section} hostName={store.hostName} error={error ?? connectors.error}>
-          {section === 'bots' ? (
-            <CatalogPanel kind="bots" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
-          ) : section === 'teams' ? (
-            <CatalogPanel kind="teams" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
-          ) : section === 'agents' ? (
-            <AgentsPanel
-              agents={agents}
+          {section === 'apps' ? (
+            <AppsPanel
+              apps={shownApps}
               query={query}
-              needsNode={allAgents.some((b) => b.node === 'missing')}
-              onAddNode={() => setAddingNode(true)}
-              onAgent={setAgent}
-            />
-          ) : section === 'connectors' ? (
-            <ConnectorsPanel
               catalog={connectors}
-              query={query}
+              added={appsAdded}
+              onAddApp={(a) => setViewingApp(a)}
+              onViewApp={setViewingApp}
               onAddConnector={() => setAddingConnector(true)}
-              onInstall={setInstalling}
-              onView={setViewingConnector}
+              onInstallConnector={setInstalling}
+              onViewConnector={setViewingConnector}
             />
+          ) : section === 'agents' ? (
+            <>
+              <MarketAgentsPanel
+                agents={shownMarketAgents}
+                query={query}
+                added={agentsAdded}
+                onAdd={(a) => setViewingAgent(a)}
+                onView={setViewingAgent}
+              />
+              <MarketSection title={tr('Ready-made bots')}>
+                <CatalogPanel kind="bots" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
+              </MarketSection>
+              <MarketSection title={tr('Coordinator teams')}>
+                <CatalogPanel kind="teams" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
+              </MarketSection>
+              <MarketSection title={tr('Agent CLIs')}>
+                <AgentsPanel
+                  agents={agents}
+                  query={query}
+                  needsNode={allAgents.some((b) => b.node === 'missing')}
+                  onAddNode={() => setAddingNode(true)}
+                  onAgent={setAgent}
+                />
+              </MarketSection>
+            </>
           ) : (
             <SkillsPanel
               skills={shownSkills}
@@ -214,6 +250,28 @@ export function MarketplaceView() {
       </FormSheet>
       <FormSheet open={viewingConnector !== null} onClose={() => setViewingConnector(null)}>
         {viewingConnector ? <InstallConnectorSheet key={viewingConnector.name} item={viewingConnector} addsAtOnce={false} done={() => void connectors.reload()} /> : null}
+      </FormSheet>
+      <FormSheet open={viewingApp !== null} onClose={() => setViewingApp(null)} width={560}>
+        {viewingApp ? (
+          <AppSheet
+            key={viewingApp.id}
+            app={viewingApp}
+            added={appsAdded.includes(viewingApp.id)}
+            onAdded={() => setAppsAdded((list) => [...list, viewingApp.id])}
+            onError={setError}
+          />
+        ) : null}
+      </FormSheet>
+      <FormSheet open={viewingAgent !== null} onClose={() => setViewingAgent(null)} width={560}>
+        {viewingAgent ? (
+          <MarketAgentSheet
+            key={viewingAgent.id}
+            agent={viewingAgent}
+            added={agentsAdded.includes(viewingAgent.id)}
+            onAdded={() => setAgentsAdded((list) => [...list, viewingAgent.id])}
+            onSkill={setViewingSkill}
+          />
+        ) : null}
       </FormSheet>
       <FormSheet open={addingConnector} onClose={() => setAddingConnector(false)}>
         <CustomConnectorSheet />

@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import type { Backend } from '@shared/models'
+import { CharacterAvatar } from '../../components/Avatar'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { AgentTile, NodeNotice } from './AgentSheet'
 import type { ConnectorCatalog } from './connector-catalog'
-import { EXTENSION_SECTIONS, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
-import { ItemGrid, LoadMoreRow, MarketRow, ServiceLogo, SkeletonGrid, SkillGlyph, TileIcon } from './pieces'
+import { CATEGORIES, CATEGORY_LABELS, EXTENSION_SECTIONS, type ExtensionSection, type MarketAgent, type MarketApp, type MarketConnector, type MarketSkill } from './market-models'
+import { ItemGrid, LoadMoreRow, MarketRow, MarketSection, ServiceLogo, SkeletonGrid, SkillGlyph, TileIcon } from './pieces'
 
 /** One tab of Extensions: the line saying where its items come from, the tab, and an error under it. */
 export function MarketPanel({ section, hostName, error, children }: { section: ExtensionSection; hostName: string; error: string | null; children: ReactNode }) {
@@ -21,6 +22,123 @@ export function MarketPanel({ section, hostName, error, children }: { section: E
   )
 }
 
+/** The featured items of a kind first, then each category, each in its own titled group. */
+function grouped<T extends { category: string; featured: boolean }>(items: T[]): { title: string; items: T[] }[] {
+  const featured = items.filter((i) => i.featured)
+  const groups = CATEGORIES.map((category) => ({ title: CATEGORY_LABELS[category], items: items.filter((i) => !i.featured && i.category === category) }))
+  return [{ title: 'Featured', items: featured }, ...groups].filter((g) => g.items.length > 0)
+}
+
+export function AppsPanel({ apps, query, catalog, added, onAddApp, onViewApp, onAddConnector, onInstallConnector, onViewConnector }: {
+  apps: MarketApp[]
+  query: string
+  catalog: ConnectorCatalog<MarketConnector>
+  added: string[]
+  onAddApp: (app: MarketApp) => void
+  onViewApp: (app: MarketApp) => void
+  onAddConnector: () => void
+  onInstallConnector: (connector: MarketConnector) => void
+  onViewConnector: (connector: MarketConnector) => void
+}) {
+  const tr = useTr()
+  const rows = catalog.items.items
+  return (
+    <div className="market-panel-scroll fade-in">
+      {apps.length ? (
+        grouped(apps).map((group) => (
+          <MarketSection key={group.title} title={tr(group.title)}>
+            <ItemGrid>
+              {group.items.map((app) => (
+                <MarketRow
+                  key={app.id}
+                  title={app.name}
+                  subtitle={app.tagline}
+                  added={added.includes(app.id) || app.installed}
+                  icon={<ServiceLogo website={app.website} name={app.name} />}
+                  onAdd={() => onAddApp(app)}
+                  onOpen={() => onViewApp(app)}
+                />
+              ))}
+            </ItemGrid>
+          </MarketSection>
+        ))
+      ) : query ? (
+        <Text tone="secondary">{tr('No apps match “{query}”.').replaceAll('{query}', query)}</Text>
+      ) : null}
+      <MarketSection title={tr('Custom connector')}>
+        <MarketRow
+          title={tr('Any MCP server')}
+          subtitle={tr('A command or a URL')}
+          added={false}
+          addLabel="New"
+          icon={<TileIcon name="point.3.connected.trianglepath.dotted" />}
+          onAdd={onAddConnector}
+        />
+      </MarketSection>
+      <MarketSection title={tr('MCP Registry')}>
+        {catalog.loading ? (
+          <SkeletonGrid />
+        ) : rows.length === 0 && !catalog.hasMore ? (
+          <Text tone="secondary">{query ? tr('No connectors match “{query}”.').replaceAll('{query}', query) : tr(`Couldn't load connectors.`)}</Text>
+        ) : (
+          <>
+            <ItemGrid>
+              {rows.map((c) => (
+                <MarketRow
+                  key={c.name}
+                  title={c.title}
+                  subtitle={c.description ?? c.name}
+                  added={c.installed}
+                  icon={<ServiceLogo website={c.website} name={c.title} registryName={c.name} />}
+                  onAdd={() => onInstallConnector(c)}
+                  onOpen={c.installed ? undefined : () => onViewConnector(c)}
+                />
+              ))}
+            </ItemGrid>
+            {catalog.cursor !== null ? <LoadMoreRow cursor={catalog.cursor} failed={catalog.error !== null} onLoad={() => void catalog.loadMore()} /> : null}
+          </>
+        )}
+      </MarketSection>
+    </div>
+  )
+}
+
+export function MarketAgentsPanel({ agents, query, added, onAdd, onView }: {
+  agents: MarketAgent[]
+  query: string
+  added: string[]
+  onAdd: (agent: MarketAgent) => void
+  onView: (agent: MarketAgent) => void
+}) {
+  const tr = useTr()
+  return (
+    <div className="market-panel-scroll fade-in">
+      {agents.length ? (
+        grouped(agents).map((group) => (
+          <MarketSection key={group.title} title={tr(group.title)}>
+            <ItemGrid>
+              {group.items.map((agent) => (
+                <MarketRow
+                  key={agent.id}
+                  title={agent.name}
+                  subtitle={agent.title}
+                  added={added.includes(agent.id) || agent.installed}
+                  icon={<CharacterAvatar shape={agent.avatarShape} color={agent.avatarColor} size={46} />}
+                  onAdd={() => onAdd(agent)}
+                  onOpen={() => onView(agent)}
+                />
+              ))}
+            </ItemGrid>
+          </MarketSection>
+        ))
+      ) : (
+        <Text tone="secondary">{tr('No agents match “{query}”.').replaceAll('{query}', query)}</Text>
+      )}
+    </div>
+  )
+}
+
+/** Harness agents (Claude, Codex…): the CLIs that run the bots. */
 export function AgentsPanel({ agents, query, needsNode, onAddNode, onAgent }: {
   agents: Backend[]
   query: string
@@ -45,53 +163,6 @@ export function AgentsPanel({ agents, query, needsNode, onAddNode, onAgent }: {
   )
 }
 
-export function ConnectorsPanel({ catalog, query, onAddConnector, onInstall, onView }: {
-  catalog: ConnectorCatalog<MarketConnector>
-  query: string
-  onAddConnector: () => void
-  onInstall: (connector: MarketConnector) => void
-  onView: (connector: MarketConnector) => void
-}) {
-  const tr = useTr()
-  const rows = catalog.items.items
-  return (
-    <>
-      <MarketRow
-        title={tr('Custom connector')}
-        subtitle={tr('Any MCP server: a command or a URL')}
-        added={false}
-        addLabel="New"
-        icon={<TileIcon name="point.3.connected.trianglepath.dotted" />}
-        onAdd={onAddConnector}
-      />
-      <div className="market-panel-scroll fade-in">
-        {catalog.loading ? (
-          <SkeletonGrid />
-        ) : rows.length === 0 && !catalog.hasMore ? (
-          <Text tone="secondary">{query ? tr('No connectors match “{query}”.').replaceAll('{query}', query) : tr(`Couldn't load connectors.`)}</Text>
-        ) : (
-          <>
-            <ItemGrid>
-              {rows.map((c) => (
-                <MarketRow
-                  key={c.name}
-                  title={c.title}
-                  subtitle={c.description ?? c.name}
-                  added={c.installed}
-                  icon={<ServiceLogo website={c.website} name={c.title} registryName={c.name} />}
-                  onAdd={() => onInstall(c)}
-                  onOpen={c.installed ? undefined : () => onView(c)}
-                />
-              ))}
-            </ItemGrid>
-            {catalog.cursor !== null ? <LoadMoreRow cursor={catalog.cursor} failed={catalog.error !== null} onLoad={() => void catalog.loadMore()} /> : null}
-          </>
-        )}
-      </div>
-    </>
-  )
-}
-
 export function SkillsPanel({ skills, loading, query, installedSkillIds, busySkill, onWriteSkill, onInstallSkill, onViewSkill }: {
   skills: MarketSkill[]
   loading: boolean
@@ -103,8 +174,10 @@ export function SkillsPanel({ skills, loading, query, installedSkillIds, busySki
   onViewSkill: (skill: MarketSkill) => void
 }) {
   const tr = useTr()
+  const catalogued = skills.filter((s) => s.category)
+  const other = skills.filter((s) => !s.category)
   return (
-    <>
+    <div className="market-panel-scroll fade-in">
       <MarketRow
         title={tr('Your own skill')}
         subtitle={tr('Write instructions a bot can follow')}
@@ -113,14 +186,11 @@ export function SkillsPanel({ skills, loading, query, installedSkillIds, busySki
         icon={<TileIcon name="square.and.pencil" />}
         onAdd={onWriteSkill}
       />
-      <div className="market-panel-scroll fade-in">
-        {loading ? (
-          <SkeletonGrid />
-        ) : skills.length === 0 ? (
-          query ? <Text tone="secondary">{tr('No skills match “{query}”.').replaceAll('{query}', query)}</Text> : null
-        ) : (
+      {loading ? <SkeletonGrid /> : null}
+      {catalogued.length ? grouped(catalogued as (MarketSkill & { category: string; featured: boolean })[]).map((group) => (
+        <MarketSection key={group.title} title={tr(group.title)}>
           <ItemGrid>
-            {skills.map((s) => (
+            {group.items.map((s) => (
               <MarketRow
                 key={s.source}
                 title={s.name}
@@ -133,9 +203,30 @@ export function SkillsPanel({ skills, loading, query, installedSkillIds, busySki
               />
             ))}
           </ItemGrid>
-        )}
-      </div>
-    </>
+        </MarketSection>
+      )) : null}
+      {other.length ? (
+        <MarketSection title={tr('Anthropic skills')}>
+          <ItemGrid>
+            {other.map((s) => (
+              <MarketRow
+                key={s.source}
+                title={s.name}
+                subtitle={s.description}
+                added={s.installed || installedSkillIds.includes(s.source.toLowerCase())}
+                busy={busySkill === s.source}
+                icon={<SkillGlyph />}
+                onAdd={() => onInstallSkill(s)}
+                onOpen={() => onViewSkill(s)}
+              />
+            ))}
+          </ItemGrid>
+        </MarketSection>
+      ) : null}
+      {!loading && skills.length === 0 && query ? (
+        <Text tone="secondary">{tr('No skills match “{query}”.').replaceAll('{query}', query)}</Text>
+      ) : null}
+    </div>
   )
 }
 

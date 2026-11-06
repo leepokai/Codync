@@ -1,6 +1,6 @@
 //! A dev server's output: `~/.codync/dev-servers/<id>.log`, the current run only, rotated once so it stays bounded.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::io::{ErrorKind, Read as _, Seek as _, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -98,17 +98,18 @@ fn remove(file: &std::path::Path) {
 pub async fn tail(id: &str, lines: usize) -> Result<String> {
     let (current, before) = (path(id), rotated(id));
     let text = tokio::task::spawn_blocking(move || {
-        let mut text = read_end(&current);
+        let mut text = read_end(&current)?;
         if text.lines().count() < lines {
-            text = read_end(&before) + &text;
+            text = read_end(&before)? + &text;
         }
-        text
+        anyhow::Ok(text)
     })
-    .await?;
+    .await??;
     Ok(last_lines(&crate::usage::strip_ansi(&text), lines))
 }
 
-fn read_end(path: &std::path::Path) -> String {
+/// The end of a log. A server that wrote nothing yet has no file, which isn't a failure; anything else is.
+pub(super) fn read_end(path: &std::path::Path) -> Result<String> {
     let read = || -> std::io::Result<Vec<u8>> {
         let mut file = std::fs::File::open(path)?;
         let size = file.metadata()?.len();
@@ -117,7 +118,11 @@ fn read_end(path: &std::path::Path) -> String {
         file.read_to_end(&mut bytes)?;
         Ok(bytes)
     };
-    read().map(|bytes| String::from_utf8_lossy(&bytes).into_owned()).unwrap_or_default()
+    match read() {
+        Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
+    }
 }
 
 pub(super) fn last_lines(text: &str, lines: usize) -> String {

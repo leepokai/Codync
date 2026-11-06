@@ -83,7 +83,7 @@ impl DevServers {
         })
     }
 
-    fn agents_running(&self) -> Vec<detected::RunningAgent> {
+    pub(super) fn agents_running(&self) -> Vec<detected::RunningAgent> {
         let mut agents = self.agents.locked();
         agents.retain(|_, agent| agent.acp.strong_count() > 0);
         agents

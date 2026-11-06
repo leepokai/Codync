@@ -28,8 +28,13 @@ impl Drop for Host {
 
 impl Host {
     pub async fn start() -> Self {
+        Self::start_with(&[]).await
+    }
+
+    /// [`Self::start`] with `env` on top of the test host's own. [`Self::restart`] doesn't keep it.
+    pub async fn start_with(env: &[(&str, &std::ffi::OsStr)]) -> Self {
         let home = std::env::temp_dir().join(format!("codync-memory-e2e-{}", uuid::Uuid::new_v4()));
-        let (child, base) = super::serve(&home).await;
+        let (child, base) = super::serve_with(&home, env).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
         Self { child, home, base, token }
     }

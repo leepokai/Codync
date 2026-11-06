@@ -5,6 +5,11 @@
 
 mod common;
 
+#[path = "dev_server_e2e/cards.rs"]
+mod cards;
+#[path = "dev_server_e2e/detected.rs"]
+mod detected;
+
 use common::host::Host;
 use serde_json::{Value, json};
 use std::net::{TcpListener, TcpStream};
@@ -16,9 +21,11 @@ fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
 }
 
-/// A free port below where the system hands out its own, the range a server someone opens sits in.
+/// A free port below where the system hands out its own, the range a server someone opens sits in. Looked for from
+/// somewhere random: tests run side by side and a port only stays free until its server takes it.
 fn free_low_port() -> u16 {
-    (20_000..32_000).find(|port| TcpListener::bind(("127.0.0.1", *port)).is_ok()).unwrap()
+    let from = 20_000 + u16::try_from(uuid::Uuid::new_v4().as_u128() % 10_000).unwrap();
+    (from..32_000).find(|port| TcpListener::bind(("127.0.0.1", *port)).is_ok()).unwrap()
 }
 
 fn serves(port: u16) -> bool {
@@ -381,132 +388,89 @@ async fn deleting_a_bot_ends_its_servers() {
 }
 
 #[tokio::test]
-async fn under_ask_a_start_needs_a_turn_to_ask_in() {
+async fn a_log_that_cant_be_read_fails_reading_it_not_a_start() {
     let host = Host::start().await;
-    let bot = host.bot("Builder", "ask").await;
-    let arguments = json!({"command": sleeper(300)});
-    let refused =
-        host.refused("chatCall", json!({"botId": bot, "name": "start_dev_server", "arguments": arguments})).await;
-    assert!(refused.contains("didn't allow"), "{refused}");
-    assert_eq!(servers(&host, &bot).await, Vec::<Value>::new());
-}
-
-/// What makes the fixture agent call the tool through its real chat helper, in a turn.
-fn start_through_agent(command: &str) -> String {
-    format!("CHAT start_dev_server {}", json!({"command": command, "name": "web"}))
-}
-
-async fn entry(host: &Host, bot: &str, found: impl Fn(&Value) -> bool) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(40);
-    loop {
-        let history = host.call("history", json!({"botId": bot})).await;
-        if let Some(entry) = history["entries"].as_array().unwrap().iter().find(|e| found(e)) {
-            return entry.clone();
-        }
-        assert!(Instant::now() < deadline, "{bot}: {history}");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-}
-
-/// Has the agent start `command`, answers its card with `option`, and returns the agent's reply.
-async fn through_card(host: &Host, bot: &str, command: &str, option: &str, check: impl Fn(&str)) -> String {
-    host.call("send", json!({"botId": bot, "text": start_through_agent(command)})).await;
-    let card = entry(host, bot, |e| {
-        e["kind"] == "permission" && e["data"]["status"] == "pending" && e["data"]["title"] == "Start a dev server"
-    })
-    .await;
-    check(card["data"]["detail"].as_str().unwrap());
-    host.call("respondPermission", json!({"entryId": card["id"], "optionId": option})).await;
-    let reply =
-        entry(host, bot, |e| e["kind"] == "agent" && e["data"]["final"] == true && e["turn"] == card["turn"]).await;
-    reply["data"]["text"].as_str().unwrap().to_owned()
-}
-
-async fn cards(host: &Host, bot: &str) -> usize {
-    let history = host.call("history", json!({"botId": bot})).await;
-    history["entries"].as_array().unwrap().iter().filter(|e| e["kind"] == "permission").count()
-}
-
-#[tokio::test]
-async fn under_ask_a_start_waits_for_its_card() {
-    let host = Host::start().await;
-    let bot = host.fixture_bot("Builder", "team_agent.py", "").await;
-    host.call("updateBot", json!({"id": bot, "permission": "ask"})).await;
-
-    let denied = free_port();
-    let reply = through_card(&host, &bot, &server_command(denied), "deny", |_| {}).await;
-    assert!(reply.starts_with("Refused: ") && reply.contains("didn't allow"), "{reply}");
-    assert_eq!(servers(&host, &bot).await, Vec::<Value>::new());
-    assert!(!serves(denied));
-
-    let folder = workspace(&host, &bot).await;
-    let port = free_port();
-    let command = server_command(port);
-    let reply = through_card(&host, &bot, &command, "allow", |detail| {
-        assert!(detail.contains(&command) && detail.contains(folder.to_str().unwrap()), "{detail}");
-    })
-    .await;
-    assert!(reply.starts_with("Done: "), "{reply}");
-    assert!(serves(port));
-
-    // Allowed once, so a stopped one comes back with no second card.
-    let id = servers(&host, &bot).await[0]["id"].clone();
-    stop(&host, &bot, &id, port).await;
-    let before = cards(&host, &bot).await;
-    host.reply(&bot, &start_through_agent(&command)).await;
-    assert!(serves(port));
-    assert_eq!(cards(&host, &bot).await, before);
-    stop(&host, &bot, &id, port).await;
-}
-
-#[tokio::test]
-async fn a_server_nobody_allowed_gets_its_card_once_the_bot_is_under_ask() {
-    let host = Host::start().await;
-    let bot = host.fixture_bot("Builder", "team_agent.py", "").await;
-    host.call("updateBot", json!({"id": bot, "permission": "auto"})).await;
+    let bot = host.bot("Builder", "auto").await;
     let port = free_port();
     let command = server_command(port);
     let started = start(&host, &bot, &command, "web").await;
-    stop(&host, &bot, &started["id"], port).await;
-    host.call("updateBot", json!({"id": bot, "permission": "ask"})).await;
+    let id = started["id"].as_str().unwrap();
+    // A folder where its log should be. The running server keeps writing to the file, moved aside.
+    let log = host.home.join("dev-servers").join(format!("{id}.log"));
+    std::fs::rename(&log, log.with_extension("moved")).unwrap();
+    std::fs::create_dir(&log).unwrap();
 
-    let reply = through_card(&host, &bot, &command, "deny", |_| {}).await;
-    assert!(reply.starts_with("Refused: "), "{reply}");
-    assert!(!serves(port));
+    let again = start(&host, &bot, &command, "web").await;
+    assert_eq!(again["id"], started["id"], "{again}");
+    assert_eq!(again["status"], "running", "{again}");
+    assert!(again["log"].as_str().unwrap().contains("couldn't read its log"), "{again}");
 
-    let reply = through_card(&host, &bot, &command, "allow", |_| {}).await;
-    assert!(reply.starts_with("Done: "), "{reply}");
-    assert!(serves(port));
+    let refused = host.refused("devServerLogs", json!({"botId": bot, "id": id})).await;
+    assert!(refused.contains("reading"), "{refused}");
+    let arguments = json!({"id": id});
+    let refused =
+        host.refused("chatCall", json!({"botId": bot, "name": "dev_server_logs", "arguments": arguments})).await;
+    assert!(refused.contains("reading"), "{refused}");
 
-    stop(&host, &bot, &started["id"], port).await;
-    let before = cards(&host, &bot).await;
-    host.reply(&bot, &start_through_agent(&command)).await;
-    assert_eq!(cards(&host, &bot).await, before, "now someone has allowed it");
+    std::fs::remove_dir(&log).unwrap();
+    let logs = host.call("devServerLogs", json!({"botId": bot, "id": id})).await;
+    assert_eq!(logs["text"], "", "no file is only an empty log");
     stop(&host, &bot, &started["id"], port).await;
 }
 
+/// One call for each of `bodies`, all at once.
+async fn at_once(host: &Host, method: &str, bodies: &[Value]) -> Vec<(bool, Value)> {
+    futures::future::join_all(bodies.iter().map(|body| host.post(method, body))).await
+}
+
+fn refused(answers: &[(bool, Value)]) -> Vec<&Value> {
+    answers.iter().filter(|(ok, _)| !ok).map(|(_, answer)| answer).collect()
+}
+
+fn active(list: &[Value]) -> usize {
+    list.iter().filter(|s| s["status"] == "running" || s["status"] == "starting").count()
+}
+
 #[tokio::test]
-async fn what_an_agent_leaves_running_shows_and_can_be_stopped() {
+async fn parallel_starts_make_one_server_of_one_command_and_keep_the_limit() {
     let host = Host::start().await;
-    let port = free_low_port();
-    let bot = agent_bot(&host, port).await;
-    host.reply(&bot, "run it").await;
-    let list = wait_for(&host, &bot, "the agent's server shows", |list| {
-        list.iter().any(|s| s["managed"] == false && s["ports"][0]["port"] == port)
-    })
-    .await;
-    let found = list.iter().find(|s| s["managed"] == false).unwrap();
-    assert_eq!(found["status"], "running");
-    assert!(found["id"].as_str().unwrap().starts_with("detected:"));
+    let bot = host.bot("Builder", "auto").await;
+    let body = |command: String| json!({"botId": bot, "name": "start_dev_server", "arguments": {"command": command}});
 
-    // It can't start again, so asking leaves it running.
-    let refused = host.refused("devServerRestart", json!({"botId": bot, "id": found["id"]})).await;
-    assert!(refused.contains("unknown dev server"), "{refused}");
-    assert!(serves(port));
+    let same = server_command(free_port());
+    let bodies: Vec<Value> = (0..4).map(|_| body(same.clone())).collect();
+    let answers = at_once(&host, "chatCall", &bodies).await;
+    assert!(answers.iter().all(|(ok, answer)| *ok && answer["id"] == answers[0].1["id"]), "{answers:?}");
+    assert_eq!(answers.iter().filter(|(_, answer)| answer["reused"] == false).count(), 1, "{answers:?}");
+    assert_eq!(servers(&host, &bot).await.len(), 1);
 
-    stop(&host, &bot, &found["id"], port).await;
-    wait_for(&host, &bot, "it no longer shows", <[Value]>::is_empty).await;
-    // An id that was never found stops nothing.
-    let error = host.refused("devServerStop", json!({"botId": bot, "id": "detected:1"})).await;
-    assert!(error.contains("unknown dev server"), "{error}");
+    // Four more fit.
+    let bodies: Vec<Value> = (0..7).map(|_| body(server_command(free_port()))).collect();
+    let answers = at_once(&host, "chatCall", &bodies).await;
+    let refusals = refused(&answers);
+    assert_eq!(refusals.len(), 3, "{answers:?}");
+    assert!(refusals.iter().all(|answer| answer["error"].as_str().unwrap().contains("at most 5")), "{refusals:?}");
+    assert_eq!(active(&servers(&host, &bot).await), 5);
+}
+
+#[tokio::test]
+async fn parallel_restarts_keep_the_limit() {
+    let host = Host::start().await;
+    let bot = host.bot("Builder", "auto").await;
+    let mut stopped = Vec::new();
+    for name in ["a", "b"] {
+        let port = free_port();
+        let started = start(&host, &bot, &server_command(port), name).await;
+        stop(&host, &bot, &started["id"], port).await;
+        stopped.push(json!({"botId": bot, "id": started["id"]}));
+    }
+    for n in 0..4 {
+        start(&host, &bot, &server_command(free_port()), &format!("s{n}")).await;
+    }
+
+    let answers = at_once(&host, "devServerRestart", &stopped).await;
+    let refusals = refused(&answers);
+    assert_eq!(refusals.len(), 1, "{answers:?}");
+    assert!(refusals[0]["error"].as_str().unwrap().contains("at most 5"), "{refusals:?}");
+    assert_eq!(active(&servers(&host, &bot).await), 5);
 }

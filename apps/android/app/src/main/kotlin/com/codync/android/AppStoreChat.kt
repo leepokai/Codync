@@ -115,21 +115,23 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
                 // Relay presence can lag; use the same nonce after the channel becomes ready.
             }
         }
-        val connection = ready()
-        val ids = mutableListOf<String>()
-        var completed = 0L
-        val total = send.files.sumOf { it.size }
-        for (file in send.files) {
-            val id = UUID.randomUUID().toString()
-            HostFiles(connection).upload(send.botId, id, file) { offset ->
-                val percent = if (total == 0L) 100 else ((completed + offset) * 100 / total).toInt()
-                mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
+        val result = reads.send(send.botId) {
+            val connection = ready()
+            val ids = mutableListOf<String>()
+            var completed = 0L
+            val total = send.files.sumOf { it.size }
+            for (file in send.files) {
+                val id = UUID.randomUUID().toString()
+                HostFiles(connection).upload(send.botId, id, file) { offset ->
+                    val percent = if (total == 0L) 100 else ((completed + offset) * 100 / total).toInt()
+                    mutableState.update { it.copy(uploadProgress = it.uploadProgress + (send.nonce to percent)) }
+                }
+                completed += file.size
+                ids.add(id)
+                withContext(Dispatchers.IO) { attachments.cache(id, file) }
             }
-            completed += file.size
-            ids.add(id)
-            withContext(Dispatchers.IO) { attachments.cache(id, file) }
+            connection.call("send", send.body(ids))
         }
-        val result = reads.send(send.botId) { connection.call("send", send.body(ids)) }
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()

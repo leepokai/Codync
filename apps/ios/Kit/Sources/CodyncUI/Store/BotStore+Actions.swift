@@ -403,13 +403,28 @@ extension BotStore {
         }
     }
 
-    /// The order this computer lists its agents in. A host older than this refuses the call: the error shows and the order stays.
+    /// The order this computer lists its agents in; returns once it's sent. One at a time and only the newest: the host
+    /// handles requests side by side, so two sent together could land in either order. A host older than this refuses
+    /// the call: the error shows and the order stays.
     public func setUsageOrder(_ ids: [String]) async {
-        do {
-            setUsage(try await ready().setUsageOrder(ids))
-        } catch {
-            lastError = error.localizedDescription
+        usageOrderWaiting = ids
+        let sending = usageOrderSending ?? Task { await sendUsageOrders() }
+        usageOrderSending = sending
+        await sending.value
+    }
+
+    private func sendUsageOrders() async {
+        while let ids = usageOrderWaiting {
+            usageOrderWaiting = nil
+            do {
+                setUsage(try await ready().setUsageOrder(ids))
+            } catch {
+                lastError = error.localizedDescription
+                // The row goes back to the host's order, and what waited was moved from one that didn't land.
+                usageOrderWaiting = nil
+            }
         }
+        usageOrderSending = nil
     }
 
     public func refreshUsage() async {

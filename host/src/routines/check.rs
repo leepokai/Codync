@@ -62,6 +62,8 @@ pub(super) fn replaced(s: &State, bot: &str, body: &Value, triggers: &[Trigger],
         }
         trigger.validate(now)?;
     }
+    let kept = old.as_ref().map_or(&[][..], |r| &r.triggers[..]);
+    super::chain::check_links(s, body["id"].as_str(), triggers, kept)?;
     Ok(old)
 }
 

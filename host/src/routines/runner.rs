@@ -123,11 +123,13 @@ impl Routines {
                 r.status = status;
                 r.finished_at = Some(now);
                 r.detail = detail;
-                r.result = text.filter(|t| !crate::chat::group::is_pass(t));
-                r.report_pending = r.result.is_some() || failed;
+                let reply = text.filter(|t| !crate::chat::group::is_pass(t));
+                r.report_pending = reply.is_some() || failed;
                 if failed {
                     withdrawn = retry::after_failure(s, i, safe, now);
                 }
+                super::chain::emit(s, i, reply.as_deref());
+                s.runs[i].result = reply;
                 if !s.runs[i].retryable {
                     s.runs[i].event = Value::Null;
                 }

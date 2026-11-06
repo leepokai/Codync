@@ -54,6 +54,9 @@ impl Trigger {
                 time_zone.parse::<Tz>().context("invalid IANA time zone")?;
                 self.next(now)?.context("schedule has no future occurrence")?;
             }
+            Self::Event { source, event, filters } if source == super::chain::SOURCE => {
+                super::chain::validate(event, filters)?;
+            }
             Self::Event { source, event, filters } => {
                 if !["slack", "github", "origin", "microsoftTeams", "linear", "sentry", "pagerduty", "email"]
                     .contains(&source.as_str())
@@ -119,7 +122,19 @@ impl Trigger {
                     .map_or_else(|_| expression.clone(), |cron| cron.describe().trim_end_matches('.').to_owned())
             ),
             Self::Webhook => "When a webhook fires".into(),
+            Self::Event { source, event, filters } if source == super::chain::SOURCE => {
+                super::chain::describe("another routine", event, filters)
+            }
             Self::Event { source, event, .. } => format!("{source} · {event}"),
+        }
+    }
+
+    /// Whether something outside the host delivers this trigger, so the routine needs a webhook.
+    pub fn external(&self) -> bool {
+        match self {
+            Self::Webhook => true,
+            Self::Event { source, .. } => source != super::chain::SOURCE,
+            _ => false,
         }
     }
 

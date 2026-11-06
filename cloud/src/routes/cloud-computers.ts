@@ -28,8 +28,7 @@ const view = (r: CloudMachineRow) => ({
   createdAt: r.created_at,
 });
 
-/** Payments are set aside: while they are, an allowlist of Clerk user ids decides who may have one (`*`: everyone,
- * for a local test cloud only). */
+/** An allowlist of Clerk user ids decides who may have one (`*`: everyone, for a local test cloud only). */
 const available = (c: Ctx, userId: string) => {
   const allowed = (c.env.CLOUD_COMPUTER_USERS ?? "").split(",").map((s) => s.trim());
   return !!c.env.BOAT_API_KEY && (allowed.includes(userId) || allowed.includes("*"));

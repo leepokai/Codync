@@ -76,7 +76,7 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 | `ASSISTANT_LIMITER` | rate limit binding | cloud assistant (MCP connector) requests per account, 120 per minute |
 | `PAIRING_CODE_LIMITER` | rate limit binding | short pairing codes typed per account and per IP, 10 per minute, a miss counting twice |
 | `BOAT_API_KEY` | secret, optional | Codync Cloud: scoped Boat key (`sandbox.create/read/stop/resume/delete`, `snapshot.read/write`); unset = no cloud computers |
-| `CLOUD_COMPUTER_USERS` | var, optional | comma-separated Clerk user ids allowed a cloud computer while payments are set aside |
+| `CLOUD_COMPUTER_USERS` | var, optional | comma-separated Clerk user ids allowed a cloud computer |
 | `BOAT_API_URL`, `CLOUD_AUTO_STOP_SECONDS` | var, dev/e2e only | Boat base URL; provider auto-stop (Boat's trial needs ≤ 7200) |
 | `CLOUD_HOST_ENV`, `CLOUD_HOST_BINARY_URL`, `CLOUD_MACHINE_PREFIX` | var, dev/e2e only | a cloud computer's host service environment (`CODYNC_…=value`, e.g. its cloud URL, analytics off); a host build to boot instead of the release; the machine name prefix ([cloud computer testing](../docs/guides/cloud-computer-testing.md)) |
 | `HOST_FLOOR`, `HOST_FLOOR_REASON` | var, emergencies only | cloud hosts below it update at once; self-hosted ones below it get `426 hostUpdateRequired` at registration |

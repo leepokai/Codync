@@ -100,7 +100,7 @@ Setup (once, then kept up with `dev`):
    point; [deployment procedure](environments-and-deployment.md#deployment-procedure)) before deploying Worker code
    that reads them: `/v1/computers` joins `cloud_machines`.
 2. Secrets on `--env dev`: `BOAT_API_KEY` (its own scoped key with the test key's actions, not the test key), `CLOUD_COMPUTER_USERS` (the dev
-   Clerk ids allowed while payments are set aside; a secret, the repository is public).
+   Clerk ids allowed; a secret, the repository is public).
 3. Vars in `[env.dev]`: `CLOUD_MACHINE_PREFIX = "codync-dev"`, `CLOUD_HOST_ENV = "CODYNC_CLOUD_URL=https://dev-api.codync.dev
    CODYNC_ANALYTICS_ENV=dev"` (released hosts are built for the production cloud and would report as `main`).
 4. Deploy with `npm run deploy:dev` from `dev`.

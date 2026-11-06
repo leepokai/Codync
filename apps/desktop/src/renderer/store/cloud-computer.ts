@@ -17,7 +17,7 @@ export class CloudComputerModel extends Observable {
   machine: CloudMachine | null = null
   /** The first answer came back for this account. */
   loaded = false
-  /** This account may create one (an allowlist while payments are set aside). */
+  /** This account may create one (an allowlist of user ids). */
   available = false
   busy: CloudComputerAction | null = null
   error: string | null = null

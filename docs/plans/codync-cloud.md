@@ -1,18 +1,18 @@
 # Codync Cloud
 
 Status (2026-10-31): steps 1–3 of the [build order](#build-order-on-boat) and both update paths are built on
-`feat/cloud-boat`, synced with `dev`, and passed end to end on Boat and the iPhone app; payments are set aside.
-What's left before each release: [Delivery](#delivery). Owner decisions (2026-10-24):
+`feat/cloud-boat`, synced with `dev`, and passed end to end on Boat and the iPhone app.
+What's left before each release: [Delivery](#delivery). Owner decisions:
 
-- **One Codync Cloud subscription, sold by Codync.** Codync runs the machine on its own provider
-  account; the user never sees a provider account, API key or cookie. The rest of the app stays free.
+- **Free, and users bring their own sandbox** (owner, 2026-11-06): Codync charges nothing, and users bring their own
+  sandbox and API key. How (which providers, where the key lives) isn't decided yet. Anything below that puts the
+  machine on Codync's own provider account predates this and changes with that decision.
 - **Backend: Boat (boat.dev) first** (owner, 2026-10-24): cheapest sleeping machine with the clearest terms
   (see [Boat first](#boat-first)). Asian VPSs for always-on tiers and Fly Machines stay the next adapters;
   InstaBox and Cloudflare are on hold.
 - **Signed-in users only** (owner, 2026-10-24): Codync Cloud is offered only to people signed in to a Codync account;
   the cloud computer is claimed to that account.
-- **Bring your own cloud comes later** (own VPS, own InstaBox). Running the host on a VPS already works
-  today by hand: [Linux servers](../guides/linux-servers.md).
+- **A VPS you run yourself already works today**: [Linux servers](../guides/linux-servers.md).
 
 ## What the user gets
 
@@ -21,7 +21,7 @@ laptop closed, routines fire on time, the iPhone, Android and desktop apps reach
 home. The user signs in to their own agents (Claude Code, Codex…) on it with their own subscriptions.
 
 Entry points: the welcome screen of a device with no computer ("Start a cloud computer"), and Computers
-→ add. After paying, one progress screen, then the bot list.
+→ add. One progress screen, then the bot list.
 
 ## Verified on a real InstaBox machine (2026-10-24, host 2.24.0)
 
@@ -42,7 +42,7 @@ Entry points: the welcome screen of a device with no computer ("Start a cloud co
 
 Why: a stopped Boat sandbox keeps its disk free for 14 days, so a user awake 1.7 h a day costs about
 $0.93/month on `small` (2 vCPU, 4 GB, 12 GB disk, $0.018/h; about $2.9 at 5.3 h every day), and TOS-8
-lets a product give each of its users a sandbox and charge for it without asking. Boat's own guide calls
+lets a product give each of its users a sandbox without asking. Boat's own guide calls
 this pattern "stop and resume around usage, $1 to $5 per month for a typical user".
 
 What changes against the generic design below:
@@ -61,7 +61,7 @@ What changes against the generic design below:
 ### Build order on Boat
 
 1. **Provision for a signed-in user** (no app UI yet): Worker `POST/GET/DELETE /v1/cloud-computers` (Clerk, an
-   allowlist of user IDs while payments are set aside), D1 `cloud_machines`, the Boat calls in `cloud/machines/`
+   allowlist of user IDs), D1 `cloud_machines`, the Boat calls in `cloud/machines/`
    (sans-I/O), and in the host a first-boot claim from `~/.codync/managed.json` (written by Boat's `files` before
    the sandbox is ready, deleted once used) plus `Approval::Auto`. The computer then appears in the account's
    Computers list on every app, as *Codync Cloud* with a cloud icon (`device: "cloud"`; the machine's own hostname
@@ -79,12 +79,11 @@ What changes against the generic design below:
    it is claimed, Cloud badge with provider and region, an automatic access request for the account's cloud
    computer instead of the "Ask for access" tap, a sleeping computer shown as ready ("wakes when you message")
    rather than offline, delete), user manual.
-4. **Payments and pricing.**
 
 The app UI talks to the Worker, never to a provider: the Worker lists the offers it can provision (provider,
-region, wake speed, size, price) and the apps show them as choices, so adding InstaBox or Fly to `codync-cloud`
+region, wake speed, size) and the apps show them as choices, so adding InstaBox or Fly to `codync-cloud`
 later shows up as new options (for example "Europe, wakes in seconds" on Boat beside "Asia, wakes in under a
-second" on Fly at a different price) with no app release needed for the provider itself.
+second" on Fly) with no app release needed for the provider itself.
 
 ### Updates on Boat
 
@@ -279,34 +278,29 @@ request wakes a sleeping machine by itself.
 
 ### Flows
 
-1. **Buy.** Payments are set aside for now (owner, 2026-10-24). The Worker only needs to know that an
-   account has Codync Cloud. Options looked at so far: web-only checkout (as MausBot does, App Store
-   guideline 3.1.3(f)), RevenueCat Web on our own Stripe, store purchases.
-2. **Provision** (Worker, Cloudflare Workflows, ~1 min): create the app/machine and volume in the
+1. **Provision** (Worker, Cloudflare Workflows, ~1 min): create the app/machine and volume in the
    user's region → start it with `CODYNC_MANAGED=1`, `CODYNC_APPROVAL=auto` and a one-time claim
    ticket (claim ID + nonce for this user, as a provider secret) → on first boot the host makes its
    identity, signs the claim itself and completes it with a new host-signed call → D1 `cloud_machines`
    row. No remote command execution needed, so this works the same on any provider.
-3. **Access.** The buyer's devices are signed in to the same account: the computer shows up in
+2. **Access.** The owner's devices are signed in to the same account: the computer shows up in
    Computers, the app asks for access automatically for a Codync Cloud computer, the host approves on its
    own (`Approval::Auto`, already built). No QR, no 6-digit code.
-4. **Agent sign-in.** From any device, in the agent's setup terminal (already built, runs on the host):
+3. **Agent sign-in.** From any device, in the agent's setup terminal (already built, runs on the host):
    Claude Code prints a URL and takes the code back. Agents that only sign in with a browser on the same
    computer need their device-code/terminal method: follow-up 3.
-5. **Sleep and wake.** The host owns the idle decision (no turn or routine running, no device use for
+4. **Sleep and wake.** The host owns the idle decision (no turn or routine running, no device use for
    10 minutes, awake at least 2 minutes, next routine at least 5 minutes away, as MausBot does), sends
    the relay its `wakeAt`, and goes to sleep (table above). The relay DO wakes it when a device connects,
    a mailbox item or routine webhook arrives, or `wakeAt` comes; the host reconnects (host fix 1) and the
    mailbox drains.
-6. **Lapse.** Subscription ends → sleep it at once, notify; after a 14-day grace the machine and its
-   volume are deleted (resubscribing before that keeps everything). "Delete my cloud computer" in
-   Settings does the same immediately.
+5. **Delete.** "Delete my cloud computer" in Settings deletes the machine and its volume at once.
 
 ## Changes
 
 | Part | Change |
 |---|---|
-| `cloud/` | `routes/cloud-computers.ts` (create, status, delete), one provider file (~150 lines), a provisioning workflow, `wake.ts` (`relay.ts` is past 500 lines), a host-signed claim-completion route, D1 migration (`cloud_machines`), crons for lapse/grace, rollout, backups and abuse checks |
+| `cloud/` | `routes/cloud-computers.ts` (create, status, delete), one provider file (~150 lines), a provisioning workflow, `wake.ts` (`relay.ts` is past 500 lines), a host-signed claim-completion route, D1 migration (`cloud_machines`), crons for rollout, backups and abuse checks |
 | Relay DO | accept `wakeAt` from the host; wake a sleeping Codync Cloud computer when a device opens, a mailbox item or hook arrives, an access request comes in, or `wakeAt` passes (rate limited) |
 | Host | (1) reconnect as soon as the wall clock jumps ahead of the monotonic clock (resumed VM; maybe a Mac waking too) instead of after 90 s of silence; (2) managed mode from the environment: claim ticket on first boot, auto approval, self-update off; (3) idle decision + `wakeAt` + self-sleep (Fly socket); (4) memory admission for agent processes; (5) a request carrying `X-Forwarded-For` is never loopback; (6) follow-up 1 |
 | Image | `codync-cloud` Dockerfile + release workflow (Fly), or the snapshot script (InstaBox) |
@@ -321,34 +315,16 @@ the provider operates the hardware. Say so in the product and the privacy policy
 sign-ins and transcripts live on a machine operated by Codync and its provider. Transit stays end-to-end
 encrypted; Codync doesn't read machines except to provision and delete them.
 
-## Costs and price
+## Costs
 
-### Price: three monthly plans (owner, 2026-10-25)
-
-- **Monthly subscription per machine size**, the provider named on each: small $12, mid $30, large $59 (Boat sizes
-  `small`, `default`, `large`). The plan shows the provider, the machine and the price; Codync's margin is not
-  shown (owner, 2026-10-25, replacing the earlier cost-plus breakdown).
-- Set to stay at a gross margin of 30% or more (after the machine, Codync's own ~$0.30 per user and card fees of
-  2.9% + $0.30) for users far above the measured average:
-
-  | Plan | Boat size | Price | 30% margin up to | Loses money above | Margin at 149 h (daily users' average) |
-  |---|---|---|---|---|---|
-  | small | `small` (2 vCPU, 4 GB, 12 GB), $0.018/h | **$12** | 414 h a month | 614 h | 70% |
-  | mid | `default` (4 vCPU, 8 GB, 50 GB), $0.036/h | **$30** | 542 h | never (730 h max: 7.5%) | 77% |
-  | large | `large` (8 vCPU, 16 GB, 125 GB), $0.072/h | **$59** | 542 h | never (730 h max: 7%) | 78% |
+Boat by the hour: `small` (2 vCPU, 4 GB, 12 GB) $0.018, `default` (4 vCPU, 8 GB, 50 GB) $0.036, `large` (8 vCPU, 16 GB,
+125 GB) $0.072.
 
 - **Measured usage** (PostHog, 2026-10-18..24, env main, internal and test computers excluded; hours with an agent
   turn running plus the 10 minutes before sleep, in 10-minute slots, scaled to a month): computers used 5–7 days
   of the week (64): average 149 h, median 73 h, p75 201 h, p90 358 h, max 669 h; used 3–4 days (68): average 43 h;
   used 1–2 days (349): average 9 h. Time the phone is open without a turn isn't counted, so real awake time is
   somewhat higher. Measure again once cloud computers have users.
-- Only an always-awake small computer (above ~614 h a month) costs more than it brings; a monthly awake-hours
-  limit or an earlier sleep on small covers it if it happens.
-- Early on, Boat's $20 monthly minimum (paid back as compute) is a launch cost until a few subscribers use it.
-- Payment: cards (2.9% + $0.30, more for international cards) or the App Store (15–30%); the decision is still set
-  aside. Yearly billing would cut the fixed card fee.
-- Boat's terms allow selling sandboxes to our users as part of our product, not as plain VM resale: sell "a Codync
-  Cloud computer, running on Boat", not "Boat VMs".
 
 InstaBox unit prices (2026-10-24): vCPU $0.004/h, memory $0.00225/GiB·h, disk $0.00011/GiB·h,
 egress $0.05/GB. Disk counts root + `/data` (16 + 20 GiB) whether running or paused.
@@ -381,21 +357,15 @@ only storage. MausBot Starter ($15) is this machine always on.
 
 - InstaBox Team plan: $500/month including $500 of usage, 100 machines running at once. Below ~70–100
   sleeping-when-idle users the fixed fee dominates.
-- Payment fees: depend on the payment choice, set aside for now.
-- (Earlier idea, replaced by the cost-plus price above: one plan at about $12/month.)
 
 ## Prerequisites outside the code
 
-1. **Provider confirmation.** Confirm in writing that Codync may run one machine per customer (Fly:
+1. **Provider confirmation.** Confirm in writing that Codync may run one machine per user (Fly:
    matches their per-user blueprint; InstaBox: also ask for Team pricing, a raised concurrency limit and
    a `codync` template like their `orca` and `herdr` ones).
-2. **App Store / Play.** No in-app purchase: review notes explaining that Codync Cloud is bought on
-   the web and the app is a free companion (guideline 3.1.3(f)), What's New copy. The old "Codync Pro"
-   group stays unsold.
-3. **Policies.** Terms of service for Codync Cloud (acceptable use, no mining), privacy policy update,
+2. **Policies.** Terms of service for Codync Cloud (acceptable use, no mining), privacy policy update,
    data deletion.
-4. **Abuse.** Codync answers for every machine on its account: no free trial without a store-verified
-   purchase, CPU/egress checks per machine from InstaBox metrics, suspend on sustained abuse.
+3. **Abuse.** Codync answers for every machine on its account: CPU/egress checks per machine from InstaBox metrics, suspend on sustained abuse.
 
 ## Other backends
 
@@ -448,8 +418,7 @@ public.
 | Server on loopback, Caddy the only listener; proxied requests are never the loopback owner; secrets passed over a pipe, never in the environment agents inherit | Matches our finding on InstaBox ports; adopt "a request with `X-Forwarded-For` is never loopback" in the host |
 | **Memory admission**: a new agent process waits until memory fits one more (~700 MB each, measured 361–623 MB per OpenCode thread), idle agents stop first, the newest busy one is stopped before the box freezes, and the chat says it was memory, not the provider | Required for us too: a 4 GiB box fits ~4 busy bots. Add to the host before launch |
 | Pairing: the Admin signs (HMAC with a per-machine bootstrap secret) a request that opens one single-use pairing window; only the owner's devices may connect | Our equivalent is the Worker-driven claim + `Approval::Auto`; same trust trade-off, stated the same way |
-| Health: the Admin polls a signed `health` read every 5 min: fixed codes and counts only (failed turns by cause, routines, engine sign-in state, memory, disk), never content | Worth copying for support of a paid service |
-| **Payments on the web only**: hosted checkout (Dodo Payments, a merchant of record) opened in the browser from the desktop app; the emailed link signs in; phone apps never sell | For our App Store app this is guideline 3.1.3(f) (free companion to a paid web service: no purchase and no call to action in the app; US storefront may link out). Payments are set aside for now; this is one option. Confirm 3.1.3(f) with App Review notes |
+| Health: the Admin polls a signed `health` read every 5 min: fixed codes and counts only (failed turns by cause, routines, engine sign-in state, memory, disk), never content | Worth copying for support |
 | One-time **move** of the desktop's bots to the Cloud, local copy frozen ("one home"); optional "Let my bots use this Mac" (folders, apps, home internet for sites that block data centres) | Move fits our one-computer focus (add in Beta); lending the Mac is multi-computer work, later |
 | Bundled extras through relays with scoped tokens (cloud desktops, voice, a Claude trial credit) | Not for v1; the pattern works for our voice later |
 
@@ -470,10 +439,9 @@ public.
    users too.
 1. **Prototype** (no store, internal accounts): Worker provisioning + claim + auto-approve, one test
    machine per developer, agent sign-in from the phone, Codync-driven sleep/wake with measured latency.
-2. **Beta**: payments (to be decided); lapse/grace; abuse checks; InsForge terms
-   signed.
-3. **Launch**: release with the client UI on every platform, App Review, website pricing page.
-4. **Later**: bring your own cloud (own VPS via the one-line install, own InstaBox key), more sizes.
+2. **Beta**: abuse checks; InsForge terms signed.
+3. **Launch**: release with the client UI on every platform, App Review.
+4. **Later**: more sizes.
 
 ## Delivery
 
@@ -487,9 +455,9 @@ apps show no Codync Cloud section, so shipping the code changes nothing for anyo
 2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations, a Boat key
    scoped to `sandbox.create/read/stop/resume/delete` + `snapshot.read/write`, `CLOUD_COMPUTER_USERS` = internal
    accounts); Boat's $20 plan (on since 2026-10-31); MFA on the internal accounts.
-3. **Public launch**: payments (still set aside), terms, acceptable use and privacy policy, encryption at rest,
+3. **Public launch**: terms, acceptable use and privacy policy, encryption at rest,
    memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
-   screen's "Start a cloud computer", the user manual page, App Review notes (3.1.3(f)), the pricing page.
+   screen's "Start a cloud computer", the user manual page.
 
 The cloud picks a cloud computer's version on its own (the soft and hard updates), and its owner can also update
 it to the latest release from any device, like any computer (owner, 2026-10-31): *Update* on its Codync row
@@ -498,10 +466,9 @@ release's `minApp` then gets *Update this app*.
 
 ## Acceptance (end to end)
 
-Buy on a real iPhone (sandbox purchase) → bots on the cloud computer within 2 minutes → Claude Code
+Start a cloud computer on a real iPhone → bots on the cloud computer within 2 minutes → Claude Code
 sign-in from the phone → a bot turn → push notification. Let it sleep, message it, measure time to the
-first reply. A routine fires while it sleeps. Lapse the sandbox subscription → paused, then deleted after
-grace. Same purchase reaches Android and desktop.
+first reply. A routine fires while it sleeps. The same computer reaches Android and desktop.
 
 ## Follow-ups found while testing
 

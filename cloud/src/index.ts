@@ -42,7 +42,7 @@ export interface Env {
   /** Codync Cloud: Boat API key (secret) and base URL; unset = no cloud computers. */
   BOAT_API_KEY?: string;
   BOAT_API_URL?: string;
-  /** Comma-separated Clerk user ids allowed a cloud computer while payments are set aside. */
+  /** Comma-separated Clerk user ids allowed a cloud computer. */
   CLOUD_COMPUTER_USERS?: string;
   /** Dev and test clouds (docs/guides/cloud-computer-testing.md): `CODYNC_…=value` pairs for a cloud computer's
    * host service (its cloud URL, analytics off, a short idle time); a host build to run instead of the release;

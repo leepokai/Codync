@@ -5,7 +5,7 @@ import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
-import { HStack, Spacer } from '../components/Stack'
+import { HStack, Spacer, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
@@ -18,7 +18,8 @@ import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
 import { AppRail } from './AppRail'
-import { RoutinesView } from './routines/RoutinesView'
+import { SidebarUsage } from './SidebarUsage'
+import { RoutineFlowView } from './routines/flow/RoutineFlowView'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
@@ -230,6 +231,7 @@ function ChatSplitView() {
   const [marketplace, setMarketplace] = useState<string | null>(null)
   const [marketplaceLink, setMarketplaceLink] = useState<{ section: 'apps' | 'agents' | 'skills'; id: string } | null>(null)
   const [canvasBot, setCanvasBot] = useState<string | null>(null)
+  const [canvasStore, setCanvasStore] = useState<BotStore | null>(null)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
@@ -402,7 +404,18 @@ function ChatSplitView() {
         <AppRail
           active={railActive}
           onBots={() => { setSettings(null); setMarketplace(null); setCanvasBot(null) }}
-          onCanvas={() => selectedBot && setCanvasBot(selectedBot.id)}
+          onCanvas={() => {
+            if (selectedBot && selectedStore) {
+              setCanvasBot(selectedBot.id)
+              setCanvasStore(selectedStore)
+              return
+            }
+            const first = roster.navigable[0] ?? roster.items[0]
+            if (!first) return
+            app.select(first.ref)
+            setCanvasBot(first.bot.id)
+            setCanvasStore(first.store)
+          }}
           onUsage={() => setSettings('usage')}
           onN8n={() => window.codync.n8n.open()}
           onExtensions={openMarketplace}
@@ -449,6 +462,7 @@ function ChatSplitView() {
             </div>
           ) : null}
         </div>
+        <SidebarUsage usage={app.local?.usage ?? { providers: [] }} onRefresh={() => app.local?.refreshUsage() ?? Promise.resolve()} />
         {compact ? (
           <div className="rail-actions">
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
@@ -531,9 +545,17 @@ function ChatSplitView() {
         ) : null}
       </Sheet>
       <Sheet open={canvasBot !== null} onClose={() => setCanvasBot(null)} width={Math.min(1120, windowSize.width - 40)} height={Math.min(780, windowSize.height - 40)}>
-        {canvasBot && app.store(canvasBot) ? (
-          <StoreContext.Provider value={app.store(canvasBot)!}>
-            <RoutinesView botId={canvasBot} initialId={null} onClose={() => setCanvasBot(null)} />
+        {canvasBot && canvasStore ? (
+          <StoreContext.Provider value={canvasStore}>
+            <VStack gap={14} className="routine-flow-sheet">
+              <ModalHeader
+                icon="arrow.triangle.branch"
+                title={tr('Bot canvas')}
+                subtitle={tr('Every routine that starts or passes through this bot, and where its replies go.')}
+                onClose={() => setCanvasBot(null)}
+              />
+              <RoutineFlowView botId={canvasBot} />
+            </VStack>
           </StoreContext.Provider>
         ) : null}
       </Sheet>

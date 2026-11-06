@@ -7,7 +7,7 @@ import { updateAction } from '../shared/update-action'
 import { setShowInDock, showInDock } from './dock'
 import { identity } from './environment'
 import { islandSupported, type Island } from './island'
-import { islandLabel } from '../shared/island'
+import { islandLabel, placementLabel } from '../shared/island'
 import { resolvedLanguage, translate } from '../renderer/lib/l10n'
 import { launchAtLogin, setLaunchAtLogin } from './login-item'
 
@@ -242,6 +242,21 @@ export class Tray {
       },
       ...(process.platform === 'darwin' ? [{ label: this.tr('Show in Dock'), type: 'checkbox' as const, checked: showInDock(), click: () => { setShowInDock(!showInDock()); this.rebuild() } }] : []),
       ...(islandSupported ? [{ label: this.tr(islandLabel(process.platform)), type: 'checkbox' as const, checked: island.enabled, click: () => island.setEnabled(!island.enabled) }] : []),
+      ...(islandSupported
+        ? [{
+            label: this.tr('Island position'),
+            submenu: ([
+              ['automatic', placementLabel(process.platform)],
+              ['follow', 'Follow the pointer'],
+              ['primary', 'Main display'],
+            ] as const).map(([id, label]) => ({
+              label: this.tr(label),
+              type: 'radio' as const,
+              checked: island.placement === id,
+              click: () => island.setPlacement(id),
+            })),
+          }]
+        : []),
       { type: 'separator' },
       { label: this.tr('Updates'), submenu: this.updatesMenu() },
       { type: 'separator' },

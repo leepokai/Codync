@@ -16,6 +16,53 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     Ok(ControlFlow::Break(match method {
         "hostUpdateStatus" => crate::update::status()?,
         "hostHealth" => crate::health::value(hub),
+        "setHealthThresholds" => {
+            let thresholds = crate::health::Thresholds {
+                warn: u8::try_from(b["warn"].as_u64().unwrap_or(0)).unwrap_or(0),
+                critical: u8::try_from(b["critical"].as_u64().unwrap_or(0)).unwrap_or(0),
+            };
+            hub.health.set_thresholds(&hub.store, thresholds)?;
+            crate::health::value(hub)
+        }
+        "weekSummary" => {
+            let days = b["days"].as_i64().unwrap_or(7).clamp(1, 31);
+            let since = crate::store::now_ms() - days * 24 * 60 * 60 * 1000;
+            serde_json::to_value(hub.store.week(since)?)?
+        }
+        "whatsappState" => {
+            let mut view = serde_json::to_value(hub.whatsapp.state().await)?;
+            // The bot this number feeds is a setting of the computer, not of the link's last event.
+            if let Some(bot) = hub.store.kv_get("whatsapp.bot") {
+                view["bot"] = Value::String(bot);
+            }
+            view
+        }
+        "whatsappConnect" => {
+            hub.whatsapp.start(hub);
+            json!({"ok": true})
+        }
+        "whatsappLogout" => {
+            hub.whatsapp.logout(hub).await?;
+            json!({"ok": true})
+        }
+        "whatsappSetBot" => {
+            let bot = str_arg(&b, "botId")?;
+            hub.store.kv_set("whatsapp.bot", bot)?;
+            json!({"ok": true})
+        }
+        "whatsappSend" => {
+            let body: crate::whatsapp::SendBody = serde_json::from_value(b)?;
+            hub.whatsapp
+                .send_message(
+                    &body.to,
+                    &body.text,
+                    body.path.as_deref(),
+                    body.name.as_deref(),
+                    body.mimetype.as_deref(),
+                )
+                .await?;
+            json!({"ok": true})
+        }
         "sentinelHealth" => crate::sentinel::health_json(&hub.store, b["lookbackMs"].as_i64())?,
         "checkHostUpdate" => crate::update::check()?,
         "setHostAutomaticUpdates" => {
@@ -85,6 +132,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "iconsRevision": icons.icons_revision,
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
+                "n8n": hub.n8n.state(),
                 "analytics": hub.analytics.state(),
                 // This phone paired without the computer joining its account: it calls `joinAccount` to finish.
                 "joinAccount": join_account.is_some(),
@@ -148,6 +196,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let backend = str_arg(&b, "backend")?;
             let name = b["name"].as_str().map(str::to_owned);
             json!({"account": crate::agent::account::authenticate(&hub.store, backend, name).await?})
+        }
+        "agentSignOut" => {
+            let backend = str_arg(&b, "backend")?;
+            crate::agent::account::sign_out(&hub.store, backend).await?;
+            json!({"auth": crate::agent::auth::check(&hub.store, backend).await?})
         }
         "deleteAccount" => {
             let account_id = str_arg(&b, "accountId")?;
@@ -218,6 +271,32 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "setScreenEnabled" => {
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
             hub.screen.state()
+        }
+        "n8nStatus" => hub.n8n.state(),
+        "n8nStart" => {
+            hub.n8n.enable(hub)?;
+            hub.n8n.state()
+        }
+        "n8nStop" => {
+            hub.n8n.stop(&hub.store).await;
+            hub.n8n.state()
+        }
+        "setN8nEnabled" => {
+            if b["enabled"].as_bool().context("`enabled` must be a boolean")? {
+                hub.n8n.enable(hub)?;
+            } else {
+                hub.n8n.disable(&hub.store).await?;
+            }
+            hub.n8n.state()
+        }
+        "setN8nPath" => {
+            hub.n8n.set_path(&hub.store, str_arg(&b, "path")?).await?;
+            hub.n8n.state()
+        }
+        "setN8nPort" => {
+            let port = b["port"].as_u64().context("`port` is required")?;
+            hub.n8n.set_port(&hub.store, u16::try_from(port).context("`port` must be 1024 or higher")?).await?;
+            hub.n8n.state()
         }
         "computerTools" => crate::screen::computer_tools(hub).await,
         "computerCall" => {

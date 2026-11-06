@@ -99,6 +99,15 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         }
         return crate::slack::call(hub, method, b).await;
     }
+    if crate::telegram::METHODS.contains(&method) {
+        // A paired phone may see the channels and let someone in or out; a token is only ever given on the computer.
+        if !matches!(caller, Caller::Local)
+            && !matches!(method, "telegramStatus" | "pairTelegram" | "setTelegramAllowed")
+        {
+            return Err(Forbidden.into());
+        }
+        return crate::telegram::call(hub, method, b).await;
+    }
     if matches!(method, "beginProtectedEntry" | "finishProtectedEntry") {
         return crate::screen::protected_entry::call(hub, method, b).await;
     }
@@ -143,7 +152,7 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         || (method == "computerCall" && b["name"] == "type_login")
         || method.starts_with("voice")
         || method == "setVoiceKey"
-        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv" | "accountAuthenticate" | "agentModels")
+        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv" | "accountAuthenticate" | "agentSignOut" | "agentModels")
     {
         market::vault::unlock(hub.clone()).await?;
     }

@@ -17,6 +17,7 @@ mod import;
 mod tools;
 pub mod turns;
 
+pub use agent_import::import as import_agent_memory;
 pub use api::call;
 pub use dates::ymd;
 pub use dream::{DreamEvent, spawn_dreamer};

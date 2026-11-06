@@ -14,6 +14,7 @@ import { CatalogPanel } from './CatalogPanel'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
 import { MarketAgentSheet } from './MarketAgentSheet'
+import { WhatsAppSheet } from './WhatsAppSheet'
 import { SetupTerminalView } from './SetupTerminal'
 import { McpToolsSheet } from './McpToolsSheet'
 import { SkillSheet, type SkillRef } from './SkillSheet'
@@ -53,6 +54,7 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
   const [viewingConnector, setViewingConnector] = useState<MarketConnector | null>(null)
   const [viewingApp, setViewingApp] = useState<MarketApp | null>(null)
   const [viewingAgent, setViewingAgent] = useState<MarketAgent | null>(null)
+  const [whatsapp, setWhatsApp] = useState(false)
   const [busySkill, setBusySkill] = useState<string | null>(null)
   const [addingConnector, setAddingConnector] = useState(false)
   const [writingSkill, setWritingSkill] = useState(false)
@@ -192,6 +194,16 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
         <ExtensionTabs selection={section} onChange={setSection} />
         <MarketPanel section={section} hostName={store.hostName} error={error ?? connectors.error}>
           {section === 'apps' ? (
+            <>
+            <MarketSection title={tr('On this computer')}>
+              <ItemRow
+                title="WhatsApp"
+                subtitle={tr('Link a WhatsApp number and let your bots work from it.')}
+                icon={<div className="market-tile"><Icon name="bubble.left.and.bubble.right" size={14} /></div>}
+                onOpen={() => setWhatsApp(true)}
+                trailing={<Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
+              />
+            </MarketSection>
             <AppsPanel
               apps={shownApps}
               query={query}
@@ -203,6 +215,7 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
               onInstallConnector={setInstalling}
               onViewConnector={setViewingConnector}
             />
+            </>
           ) : section === 'agents' ? (
             <>
               <MarketAgentsPanel
@@ -279,6 +292,9 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
             onSkill={setViewingSkill}
           />
         ) : null}
+      </FormSheet>
+      <FormSheet open={whatsapp} onClose={() => setWhatsApp(false)}>
+        <WhatsAppSheet />
       </FormSheet>
       <FormSheet open={addingConnector} onClose={() => setAddingConnector(false)}>
         <CustomConnectorSheet />

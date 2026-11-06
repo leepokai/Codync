@@ -5,7 +5,7 @@
 // build/native/codync-host.exe and codync-hostw.exe (runs it at sign-in), plus the computer-use
 // driver the host starts from beside itself. Linux apps use the installed host, so there's
 // nothing to do there.
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, cpSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +16,13 @@ if (!['dev', 'main'].includes(env)) throw new Error(`unknown environment ${env}`
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const host = join(root, '../../host')
 const out = join(root, 'build/native')
+
+/** The WhatsApp bridge ships beside the host; its node_modules are part of the tree. */
+const copyBridge = () =>
+    cpSync(join(host, 'whatsapp-bridge'), join(out, 'whatsapp'), {
+        recursive: true,
+        filter: (p) => !p.endsWith('test-connect.mjs'),
+    })
 // The pinned toolchain (rust-toolchain.toml) through rustup, even when another cargo (Homebrew's)
 // comes first on PATH: only rustup's has the x86_64 target.
 const tool = (name) => execFileSync('rustup', ['which', name], { cwd: host, encoding: 'utf8' }).trim()
@@ -32,10 +39,12 @@ if (process.platform === 'win32') {
   for (const exe of ['codync-host.exe', 'codync-hostw.exe']) copyFileSync(built(target, exe), join(out, env === 'dev' && exe === 'codync-hostw.exe' ? 'codync-dev-hostw.exe' : exe))
   // The pinned driver has no Windows ARM64 build; Windows 11 runs these x64 helpers through Prism.
   run(process.execPath, [join(root, '../../packaging/cua-driver/fetch.mjs'), 'windows-x86_64', out])
+  copyBridge()
 } else {
   const native = process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
   const targets = env === 'dev' ? [native] : ['aarch64-apple-darwin', 'x86_64-apple-darwin']
   for (const target of targets) build(target)
   run('lipo', ['-create', '-output', join(out, 'codync-host'), ...targets.map((t) => built(t, 'codync-host'))])
+  copyBridge()
 }
 console.log(`host: ${env}`)

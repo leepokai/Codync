@@ -19,6 +19,8 @@ import { handleURL, registerAuthIPC, registerSchemes, urlFromArgv } from './auth
 import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
+import { registerScreenViewer } from './screen-viewer'
+import { JumpList } from './jump-list'
 import { registerCloud } from './cloud'
 import { registerN8n } from './n8n'
 import { registerSSH } from './ssh'
@@ -120,6 +122,8 @@ export function send(command: WindowCommand, show = true) {
   window?.webContents.send('app:command', command)
 }
 
+const jumpList = new JumpList((command) => send(command))
+
 function menu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
@@ -188,7 +192,10 @@ function registerIPC(tray: Tray) {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   ipcMain.handle('app:clipboardFiles', () => readClipboardFiles())
-  ipcMain.on('app:traySummary', (_e, summary) => tray.update(summary))
+  ipcMain.on('app:traySummary', (_e, summary) => {
+    tray.update(summary)
+    jumpList.update(summary.bots)
+  })
   ipcMain.on('app:showWindow', () => {
     openChat()
     if (isMac) app.focus({ steal: true })
@@ -202,6 +209,7 @@ function registerIPC(tray: Tray) {
   ipcMain.handle('app:launchAtLogin', () => launchAtLogin())
   ipcMain.handle('app:setLaunchAtLogin', (_e, on: boolean) => setLaunchAtLogin(on))
   ipcMain.handle('app:resetAllData', async () => {
+    jumpList.clear()
     // Tell paired devices first: connected ones see "No access" at once, and the account drops
     // this computer instead of keeping an unreachable older copy of it.
     await host.call('unclaim', {}, 30_000).catch(() => {})
@@ -236,7 +244,10 @@ if (yieldsToInstall()) {
   app.on('second-instance', (_e, argv) => {
     const url = urlFromArgv(argv)
     if (url) handleURL(url)
-    else openChat()
+    else {
+      jumpList.request(argv)
+      openChat()
+    }
   })
   app.on('activate', () => openChat())
   app.on('window-all-closed', () => {
@@ -261,12 +272,21 @@ if (yieldsToInstall()) {
     registerSpeech()
     registerScreenIPC()
     registerCloud(account)
-    registerSSH(() => BrowserWindow.getAllWindows())
+    const screenTarget = registerSSH(() => BrowserWindow.getAllWindows())
+    registerScreenViewer(rendererURL, () => chat, screenTarget)
     registerSSHConfig()
     registerN8n(host, rendererURL, () => chat, () => send({ kind: 'openN8nSettings' }))
     // Calls use the microphone (realtime voice); nothing else asks for permissions.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())
+    // A sign-out leaves nothing of the account in the taskbar menu; signing in republishes it from the roster.
+    let signedIn: boolean | null = null
+    account.on('change', () => {
+      const now = !!account.state.user
+      if (now === signedIn) return
+      signedIn = now
+      if (!now) jumpList.clear()
+    })
     updates.register(() => BrowserWindow.getAllWindows())
     menu()
     host.on('change', () => {
@@ -280,6 +300,7 @@ if (yieldsToInstall()) {
     })
     host.start()
     openChat()
+    jumpList.request(process.argv)
     // A link that launched the app (before any window existed) opens once the renderer is up.
     const launchedWith = urlFromArgv(process.argv)
     if (launchedWith) setTimeout(() => handleURL(launchedWith), 2000)

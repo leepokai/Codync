@@ -55,6 +55,12 @@ mac:
       to: codync-host
     - from: build/native/codync-speech
       to: codync-speech
+    # The WhatsApp bridge beside the host; its node_modules come along.
+    - from: build/native/whatsapp
+      to: whatsapp
+    # extraResources skips node_modules by default: name it, so the bridge's packages ship.
+    - from: build/native/whatsapp/node_modules
+      to: whatsapp/node_modules
   extraFiles:
     # Registered with SMAppService.agent when Remote screen is turned on.
     - from: build/native/CodyncScreen.app
@@ -102,6 +108,12 @@ win:
       to: cua-driver-uia.exe
     - from: build/native/cua-driver.LICENSE
       to: cua-driver.LICENSE
+    # The WhatsApp bridge beside the host; its node_modules come along.
+    - from: build/native/whatsapp
+      to: whatsapp
+    # extraResources skips node_modules by default: name it, so the bridge's packages ship.
+    - from: build/native/whatsapp/node_modules
+      to: whatsapp/node_modules
     # The tray icon (template glyphs are for macOS).
     - from: resources/icon.png
       to: icon.png

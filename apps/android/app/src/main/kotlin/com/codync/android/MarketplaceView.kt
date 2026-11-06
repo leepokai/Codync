@@ -112,6 +112,7 @@ import kotlinx.coroutines.launch
     var viewingAgent by remember { mutableStateOf<MarketAgent?>(null) }
     var busySkill by remember { mutableStateOf<String?>(null) }
     var addingConnector by remember { mutableStateOf(false) }
+    var showWhatsApp by remember { mutableStateOf(false) }
     var writingSkill by remember { mutableStateOf(false) }
     var viewingSkill by remember { mutableStateOf<SkillRef?>(null) }
     var agent by remember { mutableStateOf<AgentBackend?>(null) }
@@ -198,6 +199,8 @@ import kotlinx.coroutines.launch
         if (section == ExtensionSection.Agents && needsNode) NodeNotice(state) { addingNode = true }
         if (section == ExtensionSection.Apps) MarketRow("Custom connector", "Any MCP server: a command or a URL", added = false, addLabel = "New",
             icon = { TileIcon("point.3.connected.trianglepath.dotted") }) { addingConnector = true }
+        if (section == ExtensionSection.Apps) MarketRow("WhatsApp", "Link a WhatsApp number and let your bots work from it.", added = false, addLabel = "Link",
+            icon = { TileIcon("bubble.left.and.bubble.right") }) { showWhatsApp = true }
         if (section == ExtensionSection.Skills) MarketRow("Your own skill", "Write instructions a bot can follow", added = false, addLabel = "New",
             icon = { TileIcon("square.and.pencil") }) { writingSkill = true }
     }
@@ -309,6 +312,7 @@ import kotlinx.coroutines.launch
     CodyncSheet(viewingConnector, { viewingConnector = null }) { InstallConnectorSheet(it, state, store, addsAtOnce = false) { submit() } }
     CodyncSheet(showCredentials, { showCredentials = false }) { CredentialsView(state, store) }
     CodyncSheet(addingConnector, { addingConnector = false }) { CustomConnectorSheet(state, store) }
+    CodyncSheet(showWhatsApp, { showWhatsApp = false }) { WhatsAppSheet(state, store) }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
     CodyncSheet(writingSkill, { writingSkill = false }) { NewSkillSheet(store) }
     CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store) }

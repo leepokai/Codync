@@ -86,6 +86,8 @@ pub struct Hub {
     pub budget: crate::budget::Budgets,
     /// Memory, CPU and disk of this computer, and the memory of the agents started here (health).
     pub health: crate::health::Monitor,
+    /// A linked `WhatsApp` number (a child process) and what to do with its messages.
+    pub whatsapp: Arc<crate::whatsapp::WhatsApp>,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
@@ -121,6 +123,8 @@ pub struct Hub {
     pub cloud_synced: AtomicBool,
     pub cloud: crate::remote::cloud::Cloud,
     pub screen: Arc<Screen>,
+    /// The n8n instance this computer runs.
+    pub n8n: Arc<crate::n8n::N8n>,
     pub computer: crate::computer::Access,
     /// Setup terminals (installs, sign-ins).
     pub terms: Arc<crate::agent::term::Terms>,
@@ -137,11 +141,14 @@ impl Hub {
     pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
+        let n8n =
+            Arc::new(crate::n8n::N8n::new(&store, events.clone(), format!("http://127.0.0.1:{port}"), token.clone()));
         Arc::new(Self {
             computer: crate::computer::Access::default(),
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
             budget: crate::budget::Budgets::load(&store),
+            whatsapp: Arc::new(crate::whatsapp::WhatsApp::default()),
             health: crate::health::Monitor::new(
                 Box::new(crate::health::System::new(service::data_dir())),
                 crate::health::Monitor::saved_thresholds(&store),
@@ -170,6 +177,7 @@ impl Hub {
             cloud_synced: AtomicBool::new(false),
             cloud: crate::remote::cloud::Cloud::default(),
             screen,
+            n8n,
             terms: Arc::default(),
             external: crate::external::External::default(),
         })
@@ -197,6 +205,12 @@ impl Hub {
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
+        // The n8n instance starts with the host when its service is on.
+        self.n8n.start(self);
+        // A number linked in an earlier run comes back without anyone opening WhatsApp.
+        if service::data_dir().join("whatsapp").join("auth").join("creds.json").is_file() {
+            self.whatsapp.start(self);
+        }
         Ok(())
     }
 
@@ -221,6 +235,7 @@ impl Hub {
         if tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks)).await.is_err() {
             tracing::warn!("some bots didn't stop within 5 s");
         }
+        self.n8n.stop(&self.store).await;
         self.keep_awake.locked().set(false);
     }
 

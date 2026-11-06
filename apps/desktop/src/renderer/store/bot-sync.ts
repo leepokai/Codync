@@ -287,6 +287,10 @@ export class BotSync extends BotMirror {
       case 'n8n':
         this.n8n = event.n8n ?? null
         break
+      case 'whatsapp':
+        this.whatsapp = event.whatsapp
+        this.changed()
+        break
       case 'accessRequests':
         this.accessRequests = event.requests
         break

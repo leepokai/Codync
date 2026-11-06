@@ -86,6 +86,16 @@ export function registerN8n(host: HostController, rendererURL: (page: string) =>
     if (window && !window.isDestroyed()) {
       window.show()
       window.focus()
+      // Still on the start page or the sign-in (the session cookie outlives only a host run):
+      // sign in again and go to the editor rather than leave it there.
+      if (editorOrigin === null) {
+        const s = await status()
+        if (s?.state === 'running' && s.url) {
+          editorOrigin = new URL(s.url).origin
+          await login(s.url, s.auth)
+          await window.loadURL(s.url)
+        }
+      }
       return
     }
     const win = createWindow()

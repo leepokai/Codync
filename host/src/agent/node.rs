@@ -70,6 +70,14 @@ pub fn state() -> Option<State> {
     Some(if root().join(".installed").exists() { State::Added } else { State::Missing })
 }
 
+/// Adds Codync's Node when the computer has none (a feature that needs Node, such as `WhatsApp`).
+pub async fn ensure(progress: &impl Fn(&str)) -> Result<()> {
+    if state().is_none() {
+        return Ok(());
+    }
+    install(progress).await
+}
+
 /// `codync-host node`: adds Codync's Node (an agent's setup step runs it in a terminal).
 pub async fn add() -> Result<()> {
     if state().is_none() {

@@ -1,6 +1,8 @@
 /* The sidebar's Usage section: a collapsible column under the roster, above the footer. */
 .sidebar-usage {
   flex: none;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--chrome-stroke);

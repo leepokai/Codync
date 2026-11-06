@@ -46,5 +46,11 @@ win:
       to: cua-driver-uia.exe
     - from: build/native/cua-driver.LICENSE
       to: cua-driver.LICENSE
+    # The WhatsApp bridge beside the host; its node_modules come along.
+    - from: build/native/whatsapp
+      to: whatsapp
+    # extraResources skips node_modules by default: name it, so the bridge's packages ship.
+    - from: build/native/whatsapp/node_modules
+      to: whatsapp/node_modules
     - from: resources/icon.png
       to: icon.png

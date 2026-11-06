@@ -17,6 +17,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?, |_| false),
+        "routineCalendar" => hub.routines.calendar(
+            str_arg(&b, "botId")?,
+            b["from"].as_i64().context("from is required")?,
+            b["to"].as_i64().context("to is required")?,
+        )?,
         "saveRoutine" => hub.routines.save(hub, str_arg(&b, "botId")?, &b)?,
         "setRoutineEnabled" => hub.routines.set_enabled(
             &hub.store,
@@ -360,6 +365,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "memory" | "memoryFile" => crate::chat::memory::call(hub, method, &b).await?,
+        "importAgentMemory" => {
+            crate::chat::memory::import_agent_memory(hub, str_arg(&b, "botId")?, &b["facts"]).await?
+        }
         "library" => crate::chat::library::list(hub, str_arg(&b, "botId")?)?,
         "readArtifact" | "renameArtifact" => crate::chat::artifacts::api(hub, method, &b).await?,
         "editHandoff" | "keepConversation" => crate::chat::handoff::call(hub, method, &b)?,

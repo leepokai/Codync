@@ -51,6 +51,7 @@ mod tui;
 mod update;
 mod usage;
 mod voice;
+mod whatsapp;
 
 use agent::backends;
 use remote::identity;

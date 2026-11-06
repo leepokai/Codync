@@ -87,6 +87,7 @@ export type HostEvent =
   | { type: 'call'; cue: CallCue }
   /** These bots' routine-flow canvases changed: load them again. */
   | { type: 'routineFlow'; rev: number; botIds: string[] }
+  | { type: 'whatsapp'; whatsapp: import('@shared/models').WhatsAppState }
   | { type: 'resync' }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
@@ -110,6 +111,7 @@ export function parseEvent(line: string): HostEvent | null {
         usage: (raw.usage as Usage) ?? { providers: [] },
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
+        n8n: normalizeN8n(raw.n8n as N8nState | undefined) ?? undefined,
         icons: raw.icons as import('@shared/custom-icons').CustomIcons | undefined,
       }
     case 'bot': {
@@ -117,6 +119,12 @@ export function parseEvent(line: string): HostEvent | null {
       if (!bot || typeof bot.id !== 'string') return { type: 'undecodable', kind: 'bot' }
       if (bot.deleted) return { type: 'botDeleted', id: bot.id, rev: bot.rev ?? 0 }
       return { type, bot: normalizeBot(bot) }
+    }
+    case 'whatsapp':
+      return { type, whatsapp: raw.whatsapp as import('@shared/models').WhatsAppState }
+    case 'n8n': {
+      const n8n = normalizeN8n(raw.n8n as N8nState | undefined)
+      return n8n ? { type, n8n } : null
     }
     case 'entryDeleted':
       return typeof raw.id === 'string' && typeof raw.rev === 'number' ? { type, id: raw.id, rev: raw.rev } : { type: 'undecodable', kind: 'entryDeleted' }

@@ -410,4 +410,9 @@ export function registerSSH(getWindows: () => BrowserWindow[]) {
   // ssh children outlive the app unless stopped.
   app.on('will-quit', () => ssh.disconnectAll())
   void ssh.connectAll()
+  return (computerId: string) => {
+    const attachment = ssh.state.attachments.find((item) => item.computer.id === computerId)
+    if (!attachment?.vncPort) return null
+    return { computerId, name: attachment.computer.name, vncPort: attachment.vncPort }
+  }
 }

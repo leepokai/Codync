@@ -535,6 +535,14 @@ export class BotStore extends BotSync {
     return { skills: value.skills ?? [], connectors: value.connectors ?? [], rules: value.rules ?? [], plugins: value.plugins ?? [] }
   }
 
+  async refreshWhatsApp() {
+    this.whatsapp = await (await this.ready()).call<import('@shared/models').WhatsAppState>('whatsappState')
+    this.changed()
+  }
+  async whatsappConnect() { return (await this.ready()).call('whatsappConnect') }
+  async whatsappLogout() { return (await this.ready()).call('whatsappLogout') }
+  async whatsappSetBot(botId: string | null) { return this.whatsapp = { ...(this.whatsapp ?? { state: 'disconnected' }), bot: botId }, await (await this.ready()).call('whatsappSetBot', { botId: botId ?? '' }), this.changed() }
+
   /** Removes one message on the computer. */
   async deleteEntry(id: string) {
     const client = await this.ready()

@@ -87,6 +87,8 @@ export class BotMirror extends Observable {
   screen: ScreenState | null = null
   /** This computer's n8n instance; null on a host that predates it. */
   n8n: N8nState | null = null
+  /** This computer's WhatsApp link; null until known. */
+  whatsapp: import('@shared/models').WhatsAppState | null = null
   accessRequests: AccessRequest[] = []
   pairingRequests: PairingRequest[] = []
   cloud: CloudStatus | null = null

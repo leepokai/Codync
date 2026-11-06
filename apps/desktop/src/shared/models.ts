@@ -703,6 +703,18 @@ export interface CloudOwner {
 /** `code`: compare the 6-digit code at the computer; `auto`: let account devices in. */
 export type AccountApproval = 'code' | 'auto'
 
+/** A linked WhatsApp number on this computer. */
+export interface WhatsAppState {
+  /** disconnected, starting, qr, connected, loggedOut or error. */
+  state: string
+  qr?: string | null
+  me?: string | null
+  name?: string | null
+  error?: string | null
+  /** The bot whose chat receives this number's messages. */
+  bot?: string | null
+}
+
 export interface CloudStatus {
   canJoinAccount?: boolean
   enabled: boolean

@@ -82,6 +82,7 @@ pub fn events_stream(
         "screen": hub.screen.state(),
         // Live state like the two above: a `network` event sent before this stream began is in it.
         "network": crate::network::status(hub),
+        "n8n": hub.n8n.state(),
         // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
         "catchUp": catch_up.len(),
     });

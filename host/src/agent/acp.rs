@@ -198,11 +198,8 @@ impl Acp {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        // Its own group, so `kill` can stop everything it started.
-        #[cfg(unix)]
-        process.process_group(0);
-        #[cfg(windows)]
-        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
+        // So `kill` can stop everything it started.
+        super::process::own_tree(&mut process);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");

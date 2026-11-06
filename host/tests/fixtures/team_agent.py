@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 output_lock = threading.Lock()
 cancel = threading.Event()
@@ -119,10 +120,19 @@ def prompt(request):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
-    if text.split("\n\n")[-1].startswith("MANAGE "):
-        tool, arguments = text.split("\n\n")[-1].split(" ", 2)[1:]
-        response = mcp_call("manage", tool, json.loads(arguments))
+    if text.split("\n\n")[-1].startswith(("MANAGE ", "CHAT ")):
+        helper, tool, arguments = text.split("\n\n")[-1].split(" ", 2)
+        response = mcp_call(helper.lower(), tool, json.loads(arguments))
         reply = ("Refused: " if response.get("isError") else "Done: ") + response["content"][0]["text"]
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
+        send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+        return
+    if text.split("\n\n")[-1].startswith("CHAT_TWICE "):
+        # Two calls at once, as an agent's parallel tool calls are.
+        _, tool, arguments = text.split("\n\n")[-1].split(" ", 2)
+        with ThreadPoolExecutor(2) as pool:
+            responses = pool.map(lambda _: mcp_call("chat", tool, json.loads(arguments)), range(2))
+            reply = " | ".join(response["content"][0]["text"] for response in responses)
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return

@@ -89,6 +89,8 @@ The host listens on port 19222 on every interface. Its API (the one apps on the 
 
 Keep port 19222 closed in your cloud firewall anyway, unless you deliberately connect over a VPN or private network. Tailscale and the relay don't need it open.
 
+The firewall is also what protects a [dev server](/docs/dev-servers) a bot runs on all interfaces: on a server with a public address, the app shows that address, and anyone can open the port unless your firewall blocks it.
+
 ## Approve and manage devices without a desktop app
 
 If the server is in your account, phones ask for access with a 6-digit code. Approve them on the server:

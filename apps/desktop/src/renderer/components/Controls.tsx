@@ -290,8 +290,8 @@ export function Disclosure({ expanded, onToggle, label, children }: { expanded: 
 }
 
 /** Keeps `children` mounted while it fades and folds away. */
-export function Reveal({ show, children }: { show: boolean; children: ReactNode }) {
-  const { mounted, shown } = usePresence(show)
+export function Reveal({ show, animateOnMount, children }: { show: boolean; animateOnMount?: boolean; children: ReactNode }) {
+  const { mounted, shown } = usePresence(show, undefined, animateOnMount)
   if (!mounted) return null
   return (
     <div className={`reveal ${shown ? 'shown' : ''}`}>

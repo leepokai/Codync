@@ -352,6 +352,17 @@ public extension HostClient {
         let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
     }
 
+    func devServer(_ action: DevServer.Action, botId: String, id: String) async throws {
+        let _: Empty = try await call(action.rawValue, ["botId": botId, "id": id])
+    }
+
+    /// The server's recent output.
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        struct Res: Decodable { var text: String }
+        let res: Res = try await call("devServerLogs", ["botId": botId, "id": id])
+        return res.text
+    }
+
     func respondPermission(entryId: String, optionId: String?) async throws {
         struct Body: Encodable { var entryId: String; var optionId: String? }
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
@@ -380,10 +391,6 @@ public extension HostClient {
 
     func registerActivity(botId: String, ticket: String) async throws {
         let _: Empty = try await call("registerActivity", ["botId": botId, "ticket": ticket])
-    }
-
-    func usage(refresh: Bool = false) async throws -> Usage {
-        try await call("usage", ["refresh": refresh])
     }
 
     func selectWorkspace(_ path: String) async throws -> String {

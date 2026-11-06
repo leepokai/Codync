@@ -84,10 +84,18 @@ fn settings_routines_screen_and_devices() {
     );
     assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
     assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
+    assert_eq!(
+        setting("setUsageOrder", json!({"ids": ["codex", "claude"]})),
+        Some((Event::SettingChanged, json!("usage_order"), json!(true)))
+    );
 
     assert_eq!(
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
         Some((Event::RoutineToggled, json!({"enabled": false, "client": "local"})))
+    );
+    assert_eq!(
+        props("devServerRestart", &json!({"botId": "b", "id": "s"})),
+        Some((Event::DevServerAction, json!({"action": "restart", "client": "local"})))
     );
     assert_eq!(props("screenTakeover", &json!({"on": true})).map(|(e, _)| e), Some(Event::ScreenTakenOver));
     assert!(props("screenTakeover", &json!({"on": false})).is_none(), "handing it back");

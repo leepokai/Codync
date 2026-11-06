@@ -135,9 +135,11 @@ impl Actor {
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
         let mut env = env.to_vec();
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
-        start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
+        let conn = start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
             tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
-        })
+        })?;
+        self.hub.dev_servers.agent_started(&self.cfg.id, &conn.acp, &self.cfg.backend, &command[0]);
+        Ok(conn)
     }
 
     /// `ensure_session` for the turn: a routine run's setup must end by its time limit, and setup cut short

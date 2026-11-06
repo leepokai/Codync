@@ -113,9 +113,10 @@ The quick reactions are 👍 ❤️ 😂 🎉 👀 ✅. Tap your reaction again 
 Type `/` at the start of a message to see the bot's commands:
 
 - `/fast`: turns [Fast mode](/docs/agents#models-and-options) on or off, when the bot's agent offers it.
+- `/servers` (terminal UI): opens the bot's [dev servers](/docs/dev-servers), while it has some.
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
 
-Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. There's no command to start a new session: Codync starts one on its own when a conversation needs it. See [Bots](/docs/bots#sessions).
+Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it. See [Bots](/docs/bots#sessions).
 
 ## Fresh conversations
 
@@ -159,11 +160,11 @@ When you send a message from the iPhone, a Live Activity for that bot appears on
 
 ## Usage limits
 
-Codync reads plan limits from the agents installed on your computer. Claude Code uses its usage report and status line. The signed-in Codex CLI reports current account limits without starting a conversation or model turn. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read the same way, from a command, a local database or an IDE file. Cursor has no usage command: Codync uses the sign-in saved by the Cursor app or CLI on this computer and asks Cursor's dashboard service for unified-plan usage, or cursor.com for a legacy-plan summary. Nothing else is sent with an agent's login. To see them:
+Codync reads plan limits on your computer, without starting a conversation or model turn. It shows the agents your bots run. The button beside the computer's name opens every agent that can report, each with a switch and a handle, so you can turn on one no bot uses, hide one, or change their order: [which agents, and how](/docs/agents#usage-limits). To see them:
 
-- **iPhone:** the **State** tab, then **Usage limits**. There's also a Usage widget.
+- **iPhone and Android:** the **State** tab, then **Usage limits**. There's also a Usage widget.
 - **Desktop:** the menu bar or tray menu, or **Usage** in the account menu at the bottom of the sidebar.
-- **Terminal UI:** press `U`.
+- **Terminal UI:** press `U`, then `s` to choose and arrange.
 
 Each limit reads as the share already used, such as **62% used**. Widgets and the small meters in the island and the terminal UI's status bar show just the number, which is also the share used.
 

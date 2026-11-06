@@ -56,6 +56,11 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
     title: "What bots can do",
     pages: [
       {
+        slug: "dev-servers",
+        title: "Dev servers",
+        description: "Let a bot keep a dev server running on your computer, see its port from any device, and stop it.",
+      },
+      {
         slug: "routines",
         title: "Routines",
         description:

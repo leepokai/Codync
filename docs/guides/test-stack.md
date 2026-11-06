@@ -4,7 +4,7 @@ How the end-to-end (e2e) checks drive the apps: Playwright for the desktop app, 
 
 ## Host tests
 
-`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`).
+`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`). `tests/common` also sets `CODYNC_VAULT=folder`, so a test's credential key stays out of the system's credential store and goes with its data; `tools/check-connectors.py` keeps a real Keychain key on purpose.
 
 Run them one at a time: never start a test binary several times in parallel, or several copies of the suite, not even to hunt a flake. Repeat it one run after another, a few times at most. On 2026-11-04 parallel repeats left about 200 `claude -p /usage` processes behind, using 55 GB on a 32 GB Mac, and froze it.
 

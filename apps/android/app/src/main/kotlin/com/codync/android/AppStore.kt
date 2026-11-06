@@ -6,6 +6,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
@@ -64,6 +65,8 @@ class AppStore internal constructor(
     /** The message sent from here last: its row in the queue scrolls into view ([QueuedMessages]). */
     internal var lastSentNonce: String? = null
     internal val actions = mutableMapOf<String, Job>()
+    /** The agents' order waiting to go to the host (`setUsageOrder`). */
+    internal val usageOrders = Channel<List<String>>(Channel.CONFLATED)
     /** The bots as the mirror last had them; the state shows them with [pendingSectionMoves] laid over (`withMoves`). */
     internal var mirrorBots: List<Bot> = emptyList()
     /** Section moves shown but not answered yet, oldest first. */

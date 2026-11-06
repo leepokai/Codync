@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use super::Window;
+use super::{Window, iso_ms};
 
 /// Whether the dashboard last named a unified plan, so a failed poll keeps its weekly reading.
 static LAST_UNIFIED: AtomicBool = AtomicBool::new(false);
@@ -83,10 +83,17 @@ fn cli_auth_path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("cursor/auth.json"))
 }
 
+fn app_db_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|dir| dir.join("Cursor/User/globalStorage/state.vscdb"))
+}
+
 fn read_token() -> Option<String> {
-    let cli_path = cli_auth_path();
-    let app_path = dirs::config_dir().map(|dir| dir.join("Cursor/User/globalStorage/state.vscdb"));
-    read_saved_token(cli_path.as_deref(), app_path.as_deref())
+    read_saved_token(cli_auth_path().as_deref(), app_db_path().as_deref())
+}
+
+/// The app or CLI left a login file here. Whether it's still valid only a reading tells.
+pub(super) fn login_saved() -> bool {
+    [cli_auth_path(), app_db_path()].into_iter().flatten().any(|path| path.is_file())
 }
 
 fn read_saved_token(cli_path: Option<&Path>, app_path: Option<&Path>) -> Option<String> {
@@ -182,10 +189,6 @@ fn spend(id: &str, label: &str, node: &Value, resets: Option<i64>) -> Option<Win
 
 fn non_negative(value: Option<f64>) -> Option<f64> {
     value.filter(|n| n.is_finite() && *n >= 0.0).map(|n| n.clamp(0.0, 100.0))
-}
-
-fn iso_ms(text: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(text).ok().map(|t| t.timestamp_millis())
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ use super::new_bot::new_bot_view;
 use super::pair::pair;
 use super::set_cursor;
 use super::style::{rgb, theme};
-use super::usage::usage;
+use super::usage::{usage, usage_chooser};
 
 pub(super) fn overlays(f: &mut Frame<'_>, app: &mut App) {
     if app.overlays.is_empty() {
@@ -139,9 +139,11 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Form(form) => form_view(buf, area, app, form),
         Overlay::Group(g) => group_view(buf, area, app, g),
         Overlay::Usage(scroll) => usage(buf, area, app, *scroll),
+        Overlay::UsageChooser { row, .. } => usage_chooser(buf, area, app, *row),
         Overlay::Pair(code) => pair(buf, area, app, code),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
+        Overlay::DevServers(sheet) => super::dev_servers::dev_servers(buf, area, app, sheet),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
         Overlay::Library(l) => super::super::sheets::library(buf, area, app, l),

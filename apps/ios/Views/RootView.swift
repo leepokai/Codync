@@ -298,6 +298,11 @@ private struct UsageSheet: View {
             }
         }
         .background(Palette.background)
+        // What failed here (a switch, a drag) shows over this sheet, not under it at the root,
+        // where the same error clears with this one.
+        .codyncDialog("Something went wrong", isPresented: Binding(
+            get: { store?.lastError != nil }, set: { if !$0 { store?.lastError = nil } }
+        ), message: store?.lastError, cancel: "OK", inPlace: true) { [] }
         .tracked(.screenViewed(.usage))
     }
 }

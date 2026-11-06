@@ -99,7 +99,30 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             if b["refresh"].as_bool().unwrap_or(false) {
                 usage::refresh(hub).await;
             }
-            serde_json::to_value(&*hub.usage.locked())?
+            serde_json::to_value(hub.usage.locked().visible())?
+        }
+        // Whether the Usage screens list this agent's limits.
+        "setUsageShown" => {
+            let id = str_arg(&b, "id")?.to_owned();
+            let shown = b["shown"].as_bool().context("shown is required")?;
+            let hub = hub.clone();
+            let usage = tokio::task::spawn_blocking(move || {
+                usage::set_shown(&hub, &id, shown)?;
+                anyhow::Ok(hub.usage.locked().visible())
+            })
+            .await??;
+            serde_json::to_value(usage)?
+        }
+        // The order the Usage screens list the agents in.
+        "setUsageOrder" => {
+            let ids: Vec<String> = serde_json::from_value(b["ids"].clone()).context("ids is required")?;
+            let hub = hub.clone();
+            let usage = tokio::task::spawn_blocking(move || {
+                usage::set_order(&hub, &ids)?;
+                anyhow::Ok(hub.usage.locked().visible())
+            })
+            .await??;
+            serde_json::to_value(usage)?
         }
         "listDirs" => {
             let path = b["path"].as_str().map(std::path::PathBuf::from);

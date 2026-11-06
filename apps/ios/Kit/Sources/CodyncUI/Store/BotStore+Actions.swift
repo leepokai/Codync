@@ -85,6 +85,17 @@ extension BotStore {
     /// The bot's own agent again, off the fallback it runs on.
     public func switchBack(_ botId: String) { perform(replay: true) { try await $0.switchBack(botId) } }
 
+    // MARK: dev servers
+
+    /// A refusal shows; the bot's next update shows the rest.
+    public func devServerAction(_ action: DevServer.Action, botId: String, id: String) {
+        perform { try await $0.devServer(action, botId: botId, id: id) }
+    }
+
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        try await withLink(replay: true) { try await $0.devServerLogs(botId: botId, id: id) }
+    }
+
     // MARK: remote screen
 
     /// Takes control from bots (they can still look) or hands it back.
@@ -381,6 +392,24 @@ extension BotStore {
 
     public func listDirs(_ path: String?) async throws -> DirListing {
         try await ready().listDirs(path)
+    }
+
+    /// Whether this computer lists one agent's limits.
+    public func setUsageShown(_ id: String, shown: Bool) async {
+        do {
+            setUsage(try await ready().setUsageShown(id, shown: shown))
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// The order this computer lists its agents in. A host older than this refuses the call: the error shows and the order stays.
+    public func setUsageOrder(_ ids: [String]) async {
+        do {
+            setUsage(try await ready().setUsageOrder(ids))
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     public func refreshUsage() async {

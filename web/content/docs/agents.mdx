@@ -6,7 +6,11 @@ If an agent's login stops working (for example, signing in somewhere else revoke
 
 ## Usage limits
 
-On desktop, open **Settings > Usage** to see the limits reported by your connected computers, including Cursor. The host refreshes usage every five minutes. Unified Cursor plans, including Super, show one **Weekly** allowance with its next reset. Older Cursor plans retain their monthly usage readings.
+On desktop, open **Settings > Usage** to see the limits reported by your connected computers. On the phones it's **State > Usage limits**, and in the terminal UI press `U`. The host refreshes usage every five minutes, and GitHub Copilot's every 30.
+
+Usage shows the agents your bots run. The button beside the computer's name opens a list of every agent that can report on that computer: use its switches to turn on one no bot uses yet or hide one you don't want to see, and drag an agent by its handle to change the order Usage lists them in. In the terminal UI, press `s` on the usage sheet to open that list, and `J` or `K` to move an agent. The choices belong to the computer: your other devices follow them. An agent that's on but has nothing to read says **No reading yet**, which usually means it's signed out.
+
+These agents can report their limits: Claude Code, Codex, Google Antigravity, Cursor, GitHub Copilot, Grok Build, Hermes Agent, Amp, Auggie, Junie, Kilo, Kimi Code, Kiro CLI, Mistral Vibe, oh-my-pi and OpenCode. Unified Cursor plans, including Super, show one **Weekly** allowance with its next reset. Older Cursor plans retain their monthly usage readings.
 
 Cursor usage works with the CLI's saved sign-in file on Linux and Windows, or the Cursor desktop app's sign-in. On macOS, a CLI login stored only in Keychain needs the desktop app signed in too; CLI file storage also works. You do not need to install the Cursor desktop app on a Linux or Windows host just to report usage.
 

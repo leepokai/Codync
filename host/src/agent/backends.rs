@@ -80,6 +80,16 @@ pub fn harness(id: &str) -> Option<&'static Harness> {
     HARNESSES.iter().find(|h| h.id == id)
 }
 
+/// The harness a bot's `backend` is: by its own id or its registry entry's.
+pub fn harness_of(backend: &str) -> Option<&'static Harness> {
+    HARNESSES.iter().find(|h| h.answers_to(backend))
+}
+
+/// `id`'s CLI is on this computer.
+pub fn installed(id: &str) -> bool {
+    harness(id).is_some_and(|h| installed_cli(h).is_some())
+}
+
 // MARK: listing + launching
 
 /// Every harness the phone can pick, installed ones first.
@@ -149,6 +159,11 @@ pub fn belongs_to_other(backend: &str, program: &str) -> bool {
         && !HARNESSES.iter().any(|h| own(h) && h.bins.contains(&name))
 }
 
+/// The CLI names `backend`'s harness goes by.
+pub fn bins(backend: &str) -> &'static [&'static str] {
+    HARNESSES.iter().find(|h| h.answers_to(backend)).map_or(&[], |h| h.bins)
+}
+
 pub fn is_known(id: &str) -> bool {
     harness(id).is_some() || registry::agent(id).is_some()
 }
@@ -172,6 +187,13 @@ pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
         ));
     }
     Ok(out)
+}
+
+/// Starting `id` would first install a new registry build, which removes the one before it.
+pub fn update_pending(id: &str) -> bool {
+    launch_candidates(id).is_ok_and(|candidates| {
+        matches!(candidates.first(), Some(registry::Candidate::Build(agent)) if registry::update_pending(agent))
+    })
 }
 
 /// The registry build that *is* the harness's CLI (same npm package), so it can

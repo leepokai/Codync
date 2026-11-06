@@ -238,8 +238,8 @@ private fun computerChoice(state: AppState): String =
             states.map { other -> MenuItem(other.computer.name, selected = other.computer.id == state.computer.id, verbatim = true) { accounts.noteActive(other.computer.id) } }
         }, label = "Computer: ${state.computer.name}") { ComputerBadge(state.hello?.text("device"), 28.dp, state.computer.color) }
     }
-    if (state == null || store == null) UsageScreen(null, {}, {}, picker)
-    else key(state.computer.id) { UsageScreen(state, store::refreshUsage, store::reloadUsage, picker) }
+    if (state == null || store == null) UsageScreen(null, {}, {}, { _, _ -> }, {}, picker)
+    else key(state.computer.id) { UsageScreen(state, store::refreshUsage, store::reloadUsage, { id, shown -> store.setUsageShown(id, shown) }, store::setUsageOrder, picker) }
 }
 
 /** The remote screen as a full-window layer that fades in and out (iOS `.codyncOverlay`); it keeps its computer while fading. */

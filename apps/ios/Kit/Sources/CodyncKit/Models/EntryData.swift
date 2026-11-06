@@ -63,6 +63,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     /// The voice call it was said in (user), answered during (agent), or that it ends (notice); the chat shows those
     /// messages only in the call's conversation.
     public var call: String?
+    /// What the user pasted rather than typed, which memory never takes as their own words: kept for a resend.
+    public var pasted: [String]?
     /// user: `voice` when a call's voice model wrote it for the user (`send_to_bot`).
     public var from: String?
     /// notice: what was said on a realtime call, oldest first.

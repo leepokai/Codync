@@ -292,8 +292,14 @@ private struct ScanPage: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                         // The usual cause: the phone has no road to the computer yet.
-                        if unreachable { Label(L10n.tr("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."),
+                        if unreachable { Label(L10n.tr(account.isSignedIn
+                                                       ? "Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."
+                                                       : "Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale."),
                               systemImage: "wifi.exclamationmark")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.secondary) }
+                        if unreachable { Label(L10n.tr("Also check that Local Network is on for Codync in iOS Settings, and that the Wi-Fi isn't a guest network."),
+                              systemImage: "lock.shield")
                             .font(.footnote)
                             .foregroundStyle(Palette.secondary) }
                     }
@@ -305,7 +311,7 @@ private struct ScanPage: View {
 
                 // How it connects is never a choice here: every paired computer gets every route.
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(L10n.tr(RelayCopy.pairing(pasted: pasted)), systemImage: "lock.fill")
+                    Label(L10n.tr(RelayCopy.pairing(pasted: pasted, signedIn: account.isSignedIn)), systemImage: "lock.fill")
                     if tailscaleOn {
                         Label(L10n.tr("Tailscale is on: Codync connects over it directly."), systemImage: "checkmark.circle.fill")
                     } else {

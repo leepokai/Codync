@@ -57,7 +57,7 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
           </Text>
           {cloud?.canJoinAccount ? (
             <Text as="div" size="caption" tone="attention" className="pairing-note">
-              {tr('Not in an account: a signed-in phone that scans this asks to bring the computer into its account.')}
+              {tr('Not in an account: phones connect only over Wi-Fi or Tailscale until a signed-in phone adds it to its account.')}
             </Text>
           ) : null}
           {cloud?.enabled !== true ? (

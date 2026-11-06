@@ -6,7 +6,7 @@
 use crate::LockExt;
 use crate::hub::Hub;
 use crate::remote::crypto::{self, b64};
-use crate::store::{Device, DeviceSource, Scope, Store, now_ms};
+use crate::store::{Device, DeviceAccount, DeviceSource, Scope, Store, now_ms};
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -63,8 +63,9 @@ pub struct CloudStatus {
     pub assistants: bool,
     /// Whose relay: on a private one there is no account, access request or relayed screen.
     pub relay: RelayKind,
-    /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs asks to bring it
-    /// into its account. Kept by [`update_status`], so every app words it the same.
+    /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs is asked about it,
+    /// and phones reach it only over Wi-Fi or Tailscale until it joins. Kept by [`update_status`], so every app words
+    /// it the same.
     pub can_join_account: bool,
     /// Turned on, the cloud would leave this computer in no account on a Codync cloud, so the desktop app asks to add
     /// it first. Known with the cloud off too, unlike the fields above; kept by [`update_status`].
@@ -122,6 +123,12 @@ pub struct Cloud {
     pub(super) account: Mutex<()>,
     /// Bumped when the cloud is turned on or off or pointed elsewhere: the relay restarts.
     pub config: watch::Sender<u64>,
+    /// Bumped when this computer's account changes: phones read the relay address again.
+    pub account_changed: watch::Sender<u64>,
+    /// Wakes a computer without its relay socket: a pairing code or a claim needs it now.
+    pub relay_wake: tokio::sync::Notify,
+    /// When the relay no longer stays up for a claim just signed (`owner::wants_relay`).
+    pub(super) join_pending_until: Mutex<i64>,
 }
 
 impl Default for Cloud {
@@ -132,6 +139,9 @@ impl Default for Cloud {
             pulling: tokio::sync::Mutex::new(()),
             account: Mutex::default(),
             config: watch::Sender::new(0),
+            account_changed: watch::Sender::new(0),
+            relay_wake: tokio::sync::Notify::new(),
+            join_pending_until: Mutex::default(),
         }
     }
 }
@@ -588,11 +598,17 @@ pub async fn decide(hub: &Hub, id: &str, approve: bool, how: Approval) -> Result
         created_at: now_ms(),
         last_seen_at: None,
         // Approved through the account the computer is in.
-        account: super::owner::owner(&hub.store).map(|o| o.user_id),
+        account: super::owner::owner(&hub.store).map_or(DeviceAccount::Unrecorded, |o| DeviceAccount::Of(o.user_id)),
     };
     hub.store.put_device(&device)?;
     tracing::info!(grant_id = grant, "account device approved");
-    crate::analytics::device_paired(hub, crate::analytics::Via::Account, &device.platform, how == Approval::Auto);
+    crate::analytics::device_paired(
+        hub,
+        crate::analytics::Via::Account,
+        &device.platform,
+        how == Approval::Auto,
+        crate::analytics::PairedAccount::Joined,
+    );
     hub.auth_changed();
     Ok(())
 }
@@ -687,7 +703,7 @@ mod tests {
             lease_until: Some(now_ms() + 1000),
             created_at: now_ms(),
             last_seen_at: None,
-            account: None,
+            account: DeviceAccount::Unrecorded,
         }
     }
 

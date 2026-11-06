@@ -141,7 +141,7 @@ Building the desktop app yourself: `cd apps/desktop && npm ci && npm run dev`.
 
 **Linux server / cloud VM** — the host runs headless on any distro (static binary, x86_64 + arm64). Setup, remote access and limitations: [Linux servers](https://www.codync.dev/docs/linux-servers) ([contributor notes](docs/guides/linux-servers.md)).
 
-**Remote access** works out of the box through the free Cloudflare relay, end-to-end encrypted; the phone switches to a direct connection on the same network or over Tailscale. Details: [Remote access](https://www.codync.dev/docs/remote-access) ([protocol](docs/reference/remote-relay.md)).
+**Remote access** is direct on the same network or over Tailscale, with no account. From anywhere else, a free Cloudflare relay, end-to-end encrypted, needs the computer and the phone in the same account. Details: [Remote access](https://www.codync.dev/docs/remote-access) ([protocol](docs/reference/remote-relay.md)).
 
 **Agents** — install and sign in to whichever you use; Codync finds them. Claude Code, Codex and Pi run through their ACP adapters (fetched by `npx`, so Node.js is needed for those).
 
@@ -199,9 +199,9 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 
 **How is it different from Grok Bot, Muse or Dots?** The same bot-based way of working (named bots, group chats, replies, approvals, memory), but open source, free, running on your own computer and with any coding agent. Side-by-side pages: [codync.dev/compare](https://www.codync.dev/compare).
 
-**Where does my data go?** Bots, chats and memory stay on your computer. The phone reaches it directly on the same network, or through an end-to-end encrypted relay that can't read your messages.
+**Where does my data go?** Bots, chats and memory stay on your computer. The phone reaches it directly on the same network or over Tailscale. With an account, it can also go through an end-to-end encrypted relay that can't read your messages.
 
-**Do I need an account?** Yes, a free one: the apps ask you to sign in with Apple, Google or GitHub. An account alone never unlocks a computer: you still pair by scanning a QR code, or approve a 6-digit code on the computer.
+**Do I need an account?** No. Without one, your phone pairs by scanning a QR code and connects over Wi-Fi or Tailscale. A free account (Apple, Google or GitHub) adds the relay, which needs the computer and the phone in the same account. An account alone never unlocks a computer: you still pair by scanning a QR code, or approve a 6-digit code on the computer.
 
 **Which computers can run it?** A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host.
 

@@ -21,3 +21,18 @@ suspend fun waitForScreenRoute(current: () -> LinkState?) {
         delay(100)
     }
 }
+
+/**
+ * Whether attempt number [failedAttempts] asks for TURN, the screen's way through Cloudflare, by the computer's
+ * Connection choice; the other way gets the next attempt when one fails (iOS `ScreenRoute`). [channelOnRelay]: chat
+ * itself reaches the computer through a relay. [hasTurn]: the computer is in an account on the Codync cloud; a computer
+ * in no account and a private relay have none.
+ */
+fun screenAsksForTurn(channelOnRelay: Boolean, route: ConnectionRoute, hasTurn: Boolean, failedAttempts: Int): Boolean {
+    val later = failedAttempts % 2 == 1
+    return when (route) {
+        ConnectionRoute.DirectOnly -> false
+        ConnectionRoute.CloudflareFirst -> if (hasTurn) !later else channelOnRelay
+        ConnectionRoute.Automatic -> channelOnRelay || (hasTurn && later)
+    }
+}

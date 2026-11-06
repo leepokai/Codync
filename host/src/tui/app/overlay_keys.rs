@@ -132,11 +132,15 @@ impl App {
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
             // A phone that scanned the code waits for this computer to let it in.
-            o @ Overlay::Pair(_) if matches!(k.code, KeyCode::Char('y' | 'n')) && !self.pairing_requests.is_empty() => {
-                self.decide_pairing(k.code == KeyCode::Char('y'));
-                Some(o)
+            o @ Overlay::Pair(_)
+                if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>
+            {
+                self.decide_pairing(k.code);
+                // Answering the last question closes a sheet opened only for it.
+                (!(matches!(o, Overlay::Pair(PairCode::QuestionOnly)) && self.pairing_requests.is_empty())).then_some(o)
             }
             // A new code: after a failure, or in place of the one shown.
+            o @ Overlay::Pair(PairCode::QuestionOnly) if k.code == KeyCode::Char('r') => Some(o),
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
                 self.request_pairing_code();
                 Some(Overlay::Pair(PairCode::Loading))

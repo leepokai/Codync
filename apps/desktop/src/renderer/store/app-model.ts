@@ -242,10 +242,10 @@ export class AppModel extends Observable {
       .filter((ask) => !this.answeredPairings.has(ask.id))
   }
 
-  decidePairing(ask: PairingAsk, approve: boolean) {
+  decidePairing(ask: PairingAsk, approve: boolean, join?: boolean) {
     this.answeredPairings.add(ask.id)
     this.changed()
-    const answer = ask.store.ready().then((client) => client.call('decidePairing', { requestId: ask.request.requestId, approve }, 30_000))
+    const answer = ask.store.ready().then((client) => client.call('decidePairing', { requestId: ask.request.requestId, approve, join }, 30_000))
     // The host may not have the answer: the question comes back.
     return undoOnFailure(answer, () => {
       this.answeredPairings.delete(ask.id)

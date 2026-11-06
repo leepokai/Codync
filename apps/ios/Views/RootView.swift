@@ -8,6 +8,8 @@ struct RootView: View {
     @Environment(AccountStore.self) private var accounts
     @Environment(AccountSession.self) private var account
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
+    /// Chose to go on without signing in (docs/plans/optional-sign-in.md); signing in or starting over ends it.
+    @AppStorage("withoutAccount") private var withoutAccount = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// First launch only: past the welcome, on to setup.
     @State private var welcomed = false
@@ -24,9 +26,12 @@ struct RootView: View {
     var body: some View {
         Group {
             if mustSignIn {
-                // Computers paired before sign-in was required wait in the signed-out context.
-                WelcomeView(signedOutComputers: accounts.computers.count) {}
-                    .transition(.opacity)
+                // Computers paired signed out wait in the signed-out context.
+                WelcomeView(signedOutComputers: accounts.computers.count) {
+                    Analytics.shared.capture(.continuedWithoutAccount)
+                    animateSetup { withoutAccount = true }
+                }
+                .transition(.opacity)
             } else if !onboardingCompleted && accounts.computers.isEmpty {
                 setup
             } else {
@@ -35,6 +40,9 @@ struct RootView: View {
         }
         .background(Palette.background)
         .reviewInvitation()
+        .onChange(of: account.isSignedIn) { _, signedIn in
+            if signedIn { withoutAccount = false }
+        }
         .onChange(of: accounts.computers.isEmpty, initial: true) { _, empty in
             // Reaching a computer (paired, or approved through the account) or explicitly skipping completes
             // setup. Keep this device-level milestone across account changes and unpairing.
@@ -65,7 +73,7 @@ struct RootView: View {
     /// First run, until a computer is reached or setup is skipped.
     @ViewBuilder
     private var setup: some View {
-        if !welcomed && !account.isSignedIn {
+        if !welcomed && !account.isSignedIn && !withoutAccount {
             WelcomeView { animateSetup { welcomed = true } }
                 .transition(.move(edge: .leading).combined(with: .opacity))
         } else if account.isSignedIn && !accounts.cloudListLoaded {
@@ -86,7 +94,12 @@ struct RootView: View {
                 } else if account.isSignedIn {
                     AccountSwitcherButton()
                 } else {
-                    BackButton { animateSetup { welcomed = false } }
+                    BackButton {
+                        animateSetup {
+                            welcomed = false
+                            withoutAccount = false
+                        }
+                    }
                 }
             }
             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -131,10 +144,10 @@ struct RootView: View {
         }
     }
 
-    /// Every build with accounts requires sign-in. While Clerk restores, the last signed-in account's context
-    /// stays on screen, so an offline launch still reaches its computers.
+    /// Signed out, a build with accounts offers signing in or going on without one. While Clerk restores, the last
+    /// signed-in account's context stays on screen, so an offline launch still reaches its computers.
     private var mustSignIn: Bool {
-        account.isConfigured && !account.isSignedIn && (account.isReady || accounts.accountId == nil)
+        account.isConfigured && !account.isSignedIn && !withoutAccount && (account.isReady || accounts.accountId == nil)
     }
 
     /// What the choice page offers: an older copy of a computer doesn't count as one more.

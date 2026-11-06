@@ -262,8 +262,8 @@ public struct Hello: Codable, Sendable {
     public var canUpdate: Bool?
     /// The latest release the computer found; nil while unknown (development builds, older hosts).
     public var latestVersion: String?
-    /// This phone paired without the computer joining its account: it calls `joinAccount` to finish (older hosts: nil).
-    public var joinAccount: Bool?
+    /// The computer could join an account: a signed-in phone may offer to add it (`HostClient.joinAccount`).
+    public var canJoinAccount: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

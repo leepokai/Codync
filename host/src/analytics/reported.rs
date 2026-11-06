@@ -63,6 +63,7 @@ pub enum Reported {
         provider: Option<Provider>,
     },
     SignedOut,
+    ContinuedWithoutAccount,
     StarPromptAnswered {
         ask: Ask,
         starred: bool,
@@ -93,6 +94,9 @@ pub enum Reported {
         /// Why adding the computer failed.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ClaimFailure>,
+    },
+    JoinOfferAnswered {
+        outcome: JoinOutcome,
     },
 }
 
@@ -233,6 +237,17 @@ pub enum ReachOutcome {
     Other,
 }
 
+/// How the ask to add this computer to the signed-in account ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinOutcome {
+    Added,
+    KeptOut,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
 /// What the apps do with a dev server on their own (the host's methods report the rest).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -353,6 +368,11 @@ mod tests {
             ),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
+            (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
+            (
+                json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
+                Event::JoinOfferAnswered,
+            ),
             (
                 json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),
                 Event::ReachAccountAnswered,

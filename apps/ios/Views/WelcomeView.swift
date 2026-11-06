@@ -2,10 +2,10 @@ import CodyncKit
 import CodyncUI
 import SwiftUI
 
-/// Before any setup, and whenever signed out: who the bots are, a glimpse of talking to one, one way forward.
-/// With accounts that way is signing in; builds without them go straight on to pairing.
+/// Before any setup, and whenever signed out: who the bots are, a glimpse of talking to one, the way forward.
+/// With accounts that's signing in, or going on without one; builds without them go straight on to pairing.
 struct WelcomeView: View {
-    /// Computers paired before sign-in was required; they move into the account at sign-in.
+    /// Computers paired signed out; this phone keeps them when it signs in.
     var signedOutComputers = 0
     let start: () -> Void
     @Environment(AccountSession.self) private var account
@@ -62,8 +62,8 @@ struct WelcomeView: View {
             VStack(spacing: 10) {
                 if signedOutComputers > 0 {
                     Text(signedOutComputers == 1
-                         ? L10n.tr("Sign in to keep using your computer. It moves into your account, so you won't need to scan again.")
-                         : L10n.tr("Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.")
+                         ? L10n.tr("Your computer stays paired. If you sign in with an account used on this phone before, scan its code again. Add to account brings it into your account.")
+                         : L10n.tr("Your {count} computers stay paired. If you sign in with an account used on this phone before, scan their codes again. Add to account brings each into your account.")
                             .replacingOccurrences(of: "{count}", with: String(signedOutComputers)))
                         .font(.footnote)
                         .foregroundStyle(Palette.secondary)
@@ -73,6 +73,18 @@ struct WelcomeView: View {
                 }
                 if account.isConfigured {
                     SignInButtons().disabled(!account.isReady)
+                    Button(action: start) {
+                        VStack(spacing: 2) {
+                            Text(L10n.tr("Continue without an account")).font(.subheadline.weight(.medium))
+                                .foregroundStyle(Palette.text)
+                            Text(L10n.tr("Only on the same Wi-Fi or Tailscale as your computer"))
+                                .font(.caption)
+                                .foregroundStyle(Palette.secondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressScale())
                 } else {
                     Button(action: start) {
                         Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)

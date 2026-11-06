@@ -5,10 +5,20 @@ mod analytics;
 mod analytics_cli;
 mod api;
 mod background;
+#[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
+mod browser;
+mod budget;
+mod bundle;
 mod chat;
+mod cli;
 mod cloud_cli;
 mod compat;
+mod computer;
+mod doctor;
+mod documents;
+mod egress;
 mod environment;
+mod external;
 mod hub;
 mod icons;
 mod import;
@@ -18,14 +28,16 @@ mod market;
 mod mcp;
 mod network;
 mod network_cli;
-mod pair_cli;
-mod prompt;
+mod proactive;
 mod remote;
+mod research;
 mod routines;
 mod screen;
-mod send_cli;
+mod secret_prompt;
+mod sentinel;
 mod service;
 mod shell;
+mod slack;
 mod store;
 mod tui;
 mod update;
@@ -159,6 +171,13 @@ enum Sub {
     /// downloaded update.
     #[command(hide = true)]
     Compat,
+    /// Check every bot's setup (folder, agent, fallbacks, group members); exits 1 if any can't run.
+    Doctor {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        #[arg(long)]
+        json: bool,
+    },
     /// Show whether the host is installed and running.
     Status {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -172,10 +191,33 @@ enum Sub {
         #[arg(last = true)]
         wrapped: Vec<String>,
     },
+    /// Relay one hook event of an agent running in a terminal (what Claude Code's hooks run).
+    Hook {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        /// The agent this hook belongs to: `gemini`, `antigravity`, `codex`, `copilot`. Empty for Claude Code.
+        #[arg(long, default_value = "")]
+        agent: String,
+        /// The event name, for agents that don't name it in the payload.
+        event: Option<String>,
+    },
+    /// Add, remove or check the hook that shows Claude Code's terminal sessions in Codync.
+    Hooks {
+        #[command(subcommand)]
+        action: Option<HooksAction>,
+    },
     /// Rotate the local API token used by this computer's own apps and helpers.
     ResetToken,
+    /// Scan the database in read-only WAL mode for recurring tool errors, retry loops and queue lag.
+    Sentinel {
+        #[arg(long)]
+        json: bool,
+        /// Lookback window in hours (default: 168 = 7 days).
+        #[arg(long, default_value_t = 168)]
+        hours: i64,
+    },
     /// Send a message to a bot, optionally waiting for its reply.
-    Send(send_cli::SendArgs),
+    Send(cli::send::Args),
     /// Message your bots from this terminal.
     Tui {
         /// Host to connect to (default: this computer). The API only answers local
@@ -212,6 +254,26 @@ enum DevicesAction {
     List,
     /// Remove a device's access; it disconnects at once.
     Revoke { key: String },
+}
+
+#[derive(Subcommand)]
+enum HooksAction {
+    /// Point Claude Code's hooks at Codync.
+    Install,
+    /// Take Codync's hooks out of Claude Code's settings.
+    Uninstall,
+    /// Whether Claude Code reports to Codync (the default).
+    Status,
+}
+
+#[derive(Subcommand)]
+enum AccessAction {
+    /// Show pending requests with the code each device shows (the default).
+    List,
+    /// Approve a request, by its id or by the 6-digit code shown on the device.
+    Approve { request: String },
+    /// Deny a request.
+    Deny { request: String },
 }
 
 #[derive(Subcommand)]
@@ -349,8 +411,13 @@ async fn main() -> Result<()> {
         Sub::Serve { port, bind } => serve(&bind, port).await,
         Sub::Pair { port, json } => pair_cli::pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
-        Sub::Send(args) => send_cli::run(args).await,
-        Sub::Import(args) => import_cli::run(args).await,
+        Sub::Send(args) => {
+            let code = cli::send::run(args).await;
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
         Sub::Devices { port, action } => match action.unwrap_or(DevicesAction::List) {
             DevicesAction::List => {
                 let v = local_call(port, "devices", json!({})).await?;
@@ -372,7 +439,8 @@ async fn main() -> Result<()> {
                 Ok(())
             }
         },
-        Sub::Access { port, action } => pair_cli::access(port, action.unwrap_or(pair_cli::AccessAction::List)).await,
+        Sub::Doctor { port, json } => doctor(port, json).await,
+        Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
         Sub::Cloud(args) => cloud_cli::run(args).await,
         Sub::Analytics(args) => analytics_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
@@ -409,7 +477,7 @@ async fn main() -> Result<()> {
             } else if status {
                 update::status()?
             } else if check {
-                update::check().await?
+                update::check()?
             } else if !worker && service::installed() {
                 tokio::task::spawn_blocking(move || update::spawn_worker(port, force)).await??;
                 update::status()?
@@ -468,6 +536,46 @@ async fn main() -> Result<()> {
         Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
         Sub::Statusline { port, wrapped } => {
             statusline(port, wrapped.join(" ")).await;
+            Ok(())
+        }
+        Sub::Hook { port, agent, event } => {
+            let code = cli::hook::run(port, agent, event).await;
+            std::process::exit(i32::from(code != std::process::ExitCode::SUCCESS));
+        }
+        Sub::Hooks { action } => {
+            match action.unwrap_or(HooksAction::Status) {
+                HooksAction::Install => cli::hook::install()?,
+                HooksAction::Uninstall => cli::hook::uninstall()?,
+                HooksAction::Status => cli::hook::status()?,
+            }
+            Ok(())
+        }
+        Sub::Sentinel { json, hours } => {
+            let db = service::data_dir().join("codync.db");
+            let lookback_ms = hours.clamp(1, 720) * 3_600_000;
+            let report = sentinel::scan_db_path(&db, lookback_ms)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else if report.issues.is_empty() {
+                println!("Sentinel: no issues found ({} entries examined).", report.entries_examined);
+            } else {
+                println!(
+                    "Sentinel: {} issues found ({} entries examined):",
+                    report.issues.len(),
+                    report.entries_examined
+                );
+                for issue in &report.issues {
+                    println!(
+                        "  [{}] {} (bot={}, count={}, wasted_turns={}) — {}",
+                        issue.signature,
+                        issue.kind.as_str(),
+                        issue.bot_id,
+                        issue.count,
+                        issue.wasted_turns,
+                        issue.title
+                    );
+                }
+            }
             Ok(())
         }
         Sub::ResetToken => {
@@ -574,6 +682,111 @@ async fn shutdown_signal() {
         () = ctrl_c => {}
         () = term => {}
     }
+}
+
+/// Calls the running host's local API (`~/.codync/token` over loopback).
+async fn doctor(port: u16, json: bool) -> Result<()> {
+    let report = local_call(port, "doctor", json!({})).await?;
+    if json {
+        println!("{report}");
+    } else {
+        for f in report["findings"].as_array().into_iter().flatten() {
+            let label = if f["severity"] == "error" { "error  " } else { "warning" };
+            println!("{label}  {}", f["message"].as_str().unwrap_or_default());
+        }
+        println!("Checked {} bots: {} with errors.", report["checked"], report["errors"]);
+    }
+    if report["errors"].as_u64().unwrap_or(0) > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+async fn local_call(port: u16, method: &str, body: serde_json::Value) -> Result<serde_json::Value> {
+    let not_running =
+        || anyhow::anyhow!("codync-host isn't running here. Start it with `codync-host install` (or `serve`).");
+    let token = std::fs::read_to_string(service::data_dir().join("token")).map_err(|_| not_running())?;
+    let res = http()
+        .post(format!("http://127.0.0.1:{port}/api/{method}"))
+        .bearer_auth(token.trim())
+        .json(&body)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .map_err(|_| not_running())?;
+    let status = res.status();
+    let v: serde_json::Value = res.json().await.context("reading the host's answer")?;
+    if !status.is_success() {
+        anyhow::bail!("{}", v["error"].as_str().unwrap_or("the host refused"));
+    }
+    Ok(v)
+}
+
+async fn pair(port: u16, as_json: bool) -> Result<()> {
+    let hello = local_call(port, "hello", json!({})).await?;
+    let p = local_call(port, "pairing", json!({})).await?;
+    if as_json {
+        println!(
+            "{}",
+            json!({
+                "name": hello["name"], "computerId": hello["computerId"], "signKey": hello["signKey"],
+                "boxKey": hello["boxKey"], "urls": p["urls"], "cloud": hello["cloud"],
+                "pairingUrl": p["pairingUrl"], "expiresAt": p["expiresAt"],
+            })
+        );
+        return Ok(());
+    }
+    let url = p["pairingUrl"].as_str().unwrap_or_default();
+    let code = qrcode::QrCode::new(url.as_bytes())?;
+    println!("{}", code.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
+    println!("Scan with the Codync iOS app within 10 minutes, or open this link on the phone:\n{url}\n");
+    if hello["cloud"].is_null()
+        && p["urls"].as_array().is_none_or(|u| {
+            !u.iter().any(|u| {
+                u.as_str().is_some_and(|u| u.contains("://100.") || u.contains(".ts.net") || u.starts_with("https://"))
+            })
+        })
+    {
+        println!(
+            "Tip: the phone reaches this computer on the same network only. Turn on the Codync cloud or Tailscale to reach it from anywhere."
+        );
+    }
+    Ok(())
+}
+
+async fn access(port: u16, action: AccessAction) -> Result<()> {
+    let list = local_call(port, "accessRequests", json!({})).await?;
+    let requests = list["requests"].as_array().cloned().unwrap_or_default();
+    let (request, approve) = match action {
+        AccessAction::List => {
+            if requests.is_empty() {
+                println!("No devices are asking for access.");
+            }
+            for r in &requests {
+                println!(
+                    "{}  {} ({}, {})  code {}",
+                    r["requestId"].as_str().unwrap_or_default(),
+                    r["deviceName"].as_str().unwrap_or_default(),
+                    r["platform"].as_str().unwrap_or_default(),
+                    r["email"].as_str().unwrap_or("no email"),
+                    r["code"].as_str().unwrap_or("(waiting for the device)"),
+                );
+            }
+            return Ok(());
+        }
+        AccessAction::Approve { request } => (request, true),
+        AccessAction::Deny { request } => (request, false),
+    };
+    // A 6-digit code picks the request showing it; it must be the only one.
+    let matching: Vec<&serde_json::Value> =
+        requests.iter().filter(|r| r["requestId"] == request.as_str() || r["code"] == request.as_str()).collect();
+    let [r] = matching.as_slice() else {
+        anyhow::bail!("No single request matches {request}. See `codync-host access list`.");
+    };
+    let id = r["requestId"].as_str().unwrap_or_default();
+    local_call(port, "decideAccessRequest", json!({"requestId": id, "approve": approve})).await?;
+    println!("{}", if approve { "Approved." } else { "Denied." });
+    Ok(())
 }
 
 /// Reads the identity and token only; never creates them (that's `serve`'s job).

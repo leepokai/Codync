@@ -50,6 +50,8 @@ impl App {
             Action::Market => self.open_market(),
             Action::Memory => self.open_memory(),
             Action::Details => self.open_routines(),
+            Action::Documents => self.open_documents(),
+            Action::Computer => self.open_computer_panel(),
             Action::Library => self.open_library(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
@@ -79,6 +81,9 @@ impl App {
         let Some(top) = self.overlays.pop() else { return };
         let depth = self.overlays.len();
         let keep = match top {
+            Overlay::Computer(sheet) => self.computer_key(sheet, k),
+            Overlay::McpTools(sheet) => self.mcp_tools_key(sheet, k),
+            Overlay::RosterTools => self.roster_tools_key(k),
             Overlay::Goto(g) => self.goto_key(g, k),
             Overlay::Help(mut e) => {
                 if k.code == KeyCode::Esc || k.code == KeyCode::Char('?') && e.text.is_empty() {
@@ -119,9 +124,11 @@ impl App {
             Overlay::Form(f) => self.form_key(f, k),
             Overlay::Group(g) => self.group_key(g, k),
             Overlay::Memory(m) => self.memory_key(m, k),
+            Overlay::Documents(sheet) => self.documents_key(sheet, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
+            Overlay::Flow(f) => self.flow_key(f, k),
             Overlay::Library(l) => self.library_key(l, k),
             Overlay::Gear(g) => Self::gear_key(g, k),
             Overlay::Market(m) => self.market_key(m, k),

@@ -1,6 +1,11 @@
 import {
   isWorking,
+  isInternalEntry,
   needsInput,
+  type AgentAccount,
+  type CreatedAppLink,
+  type AppLinkMode,
+  type BotApp,
   normalizeBot,
   type Bot,
   type BotDraft,
@@ -8,17 +13,24 @@ import {
   type Entry,
   type GroupDraft,
   type Hello,
+  type MessageBookmark,
+  type OpenItem,
   type ReplyQuote,
   type ScreenState,
+  type SentinelReport,
   type SharedFile,
   type Usage,
 } from '@shared/models'
+import type { BotCatalog } from '@shared/catalog'
 import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
 import { BotSync, sleep } from './bot-sync'
+import { DocumentsStore } from './documents-store'
+import type { VoiceTranscript } from '../lib/voice-transcript'
+import { createAppShareLink } from '../lib/app-links'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
 
@@ -35,6 +47,8 @@ export interface SendOptions {
   nonce?: string
   pasted?: string[]
   replyTo?: ReplyQuote | null
+  /** A document's side conversation (`doc:<id>`) instead of the chat. */
+  thread?: string | null
   /** The voice call it was said in. */
   call?: string | null
 }
@@ -49,14 +63,26 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
  * `rev`, then live). Port of kit's `BotStore`.
  */
 export class BotStore extends BotSync {
+  private documentStores = new Map<string, DocumentsStore>()
+  documentsFor(botId: string) {
+    let documents = this.documentStores.get(botId)
+    if (!documents) {
+      documents = new DocumentsStore(botId, () => this.ready(), JSON.stringify([this.contextId, this.computer.id]))
+      this.documentStores.set(botId, documents)
+    }
+    return documents
+  }
   readonly fileDownloads = new FileDownloads(() => this.changed())
   readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
-  override retire() { this.fileDownloads.retire(); super.retire() }
+  override retire() {
+    for (const documents of this.documentStores.values()) documents.retire()
+    this.documentStores.clear(); this.fileDownloads.retire(); super.retire()
+  }
 
   private outgoingFiles = new Map<string, OutgoingFile[]>()
 
-  send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, call = null }: SendOptions = {}) {
+  send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, thread = null, call = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
     const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
@@ -68,7 +94,7 @@ export class BotStore extends BotSync {
     }
     this.upsert({
       id: `local-${nonce}`, seq: Number.MAX_SAFE_INTEGER, botId, rev: 0, kind: 'user',
-      turn: 0, data, createdAt: Date.now(), updatedAt: 0,
+      turn: 0, data, createdAt: Date.now(), updatedAt: 0, ...(thread ? { threadId: thread } : {}),
     })
     this.changed()
     void (async () => {
@@ -86,7 +112,7 @@ export class BotStore extends BotSync {
               ids.push(id)
             }
           }
-          return client.send(botId, trimmed, nonce, ids, pasted, replyTo?.id ?? null, call)
+          return client.send(botId, trimmed, nonce, ids, pasted, replyTo?.id ?? null, thread, call)
         }, true)
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
@@ -112,13 +138,13 @@ export class BotStore extends BotSync {
     const files = (entry.data.clientNonce && this.outgoingFiles.get(entry.data.clientNonce)) || []
     const text = entry.data.text ?? ''
     if (!text && !files.length) return
-    this.entries.set(entry.botId, this.allEntries(entry.botId).filter((e) => e.id !== entry.id))
+    this.entries.set(entry.botId, (this.entries.get(entry.botId) ?? []).filter((e) => e.id !== entry.id))
     this.send(text, entry.botId, { files, nonce: entry.data.clientNonce, replyTo: entry.data.replyTo })
   }
 
   discard(entry: Entry) {
     if (entry.data.clientNonce) this.outgoingFiles.delete(entry.data.clientNonce)
-    this.entries.set(entry.botId, this.allEntries(entry.botId).filter((e) => e.id !== entry.id))
+    this.entries.set(entry.botId, (this.entries.get(entry.botId) ?? []).filter((e) => e.id !== entry.id))
     this.changed()
     this.scheduleSave()
   }
@@ -162,9 +188,32 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('stop', { botId }), true)
   }
 
+  /** Interrupts every bot on this computer that is working or waiting on the user. */
+  stopAll() {
+    this.perform((c) => c.call('stopAll', {}), true)
+  }
+
+  openMessageContext(entries: Entry[], hit: { botId: string; id: string; threadId: string | null }) {
+    this.messageContext = { ...hit, entries: entries.filter((e) => !isInternalEntry(e)) }
+    this.changed()
+  }
+
+  closeMessageContext() {
+    this.messageContext = null
+    this.changed()
+  }
+
+  newSession(botId: string) {
+    this.perform((c) => c.call('newSession', { botId }))
+  }
+
   /** Back to the bot's own agent from a fallback: now if it's idle, else from its next turn. The host posts the chat line. */
   switchBack(botId: string) {
     this.perform((c) => c.call('switchBack', { botId }), true)
+  }
+
+  logCall(botId: string, seconds: number, callId: string = crypto.randomUUID(), transcript?: VoiceTranscript) {
+    this.perform((c) => c.call('logCall', { botId, seconds, callId, ...(transcript ? { transcript } : {}) }))
   }
 
   /** A finished call's line, with the rest of its transcript; the chat then shows the call's messages behind it. */
@@ -351,8 +400,9 @@ export class BotStore extends BotSync {
   }
 
   /** Creates a group chat (or opens the one these bots already share) and selects it. */
-  async createGroup(name: string, description: string, members: string[]) {
-    const draft: GroupDraft = { kind: 'group', name, description, members }
+  async createGroup(name: string, description: string, members: string[], chiefBotId: string | null = null) {
+    const draft: GroupDraft = { kind: 'group', name, description, members, chiefBotId }
+    // (handled above)
     const res = await (await this.ready()).call<{ bot: Bot }>('createBot', draft)
     const bot = this.putHostBot(normalizeBot(res.bot))
     this.selection = bot.id
@@ -367,6 +417,33 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** The host's ready-made bots and coordinator teams. */
+  async botCatalog(): Promise<BotCatalog> {
+    return (await this.ready()).call<BotCatalog>('botCatalog', {})
+  }
+
+  /** Creates a catalog team on the host (its coordinator, its teammates and their group) and opens the group. */
+  async installTeam(id: string) {
+    const res = await (await this.ready()).call<{ bot: Bot }>('installTeam', { id }, 60_000)
+    const group = normalizeBot(res.bot)
+    this.bots.set(group.id, group)
+    this.selection = group.id
+    this.onRosterChanged?.()
+    this.changed()
+    return group
+  }
+
+  /** Creates a marketplace agent's bot (its look, instructions, skills and routines) and opens it. */
+  async installAgent(id: string) {
+    const res = await (await this.ready()).call<{ bot: Bot }>('installAgent', { id }, 120_000)
+    const bot = normalizeBot(res.bot)
+    this.bots.set(bot.id, bot)
+    this.selection = bot.id
+    this.onRosterChanged?.()
+    this.changed()
+    return bot
+  }
+
   /** Takes one bot out of a group; an automatic "Alice, Bob" name follows the new roster. */
   removeMember(group: Bot, memberId: string) {
     const members = group.members.filter((m) => m !== memberId)
@@ -374,18 +451,26 @@ export class BotStore extends BotSync {
     const name = group.name === autoName(group.members) ? autoName(members) : group.name
     this.bots.set(group.id, { ...group, name, members })
     this.changed()
-    const draft: GroupDraft = { id: group.id, kind: 'group', name, description: group.description, members, pinned: group.pinned }
+    const draft: GroupDraft = { id: group.id, kind: 'group', name, description: group.description, members, pinned: group.pinned, chiefBotId: group.chiefBotId ?? null }
     this.perform((c) => c.call('updateBot', draft), true)
+  }
+
+  async loadThread(botId: string, root: string) {
+    const client = await this.ready()
+    const entries = await client.thread(botId, root)
+    if (this.retired) return
+    for (const entry of entries) this.upsert(entry)
+    this.changed()
   }
 
   /** What a voice call carried, from the computer: the loaded chat may not reach back to it. */
   async callEntries(botId: string, call: string): Promise<Entry[]> {
-    return (await (await this.ready()).call<{ entries: Entry[] }>('callEntries', { botId, callId: call })).entries
+    return (await (await this.ready()).call<{ entries: Entry[] }>('callEntries', { botId, callId: call })).entries.filter((e) => !isInternalEntry(e))
   }
 
   /** The history between a bot and one peer. Never upserted: old notices would break `loadOlder`'s paging. */
   async botConversation(botId: string, peerId: string): Promise<Entry[]> {
-    return (await this.ready()).botConversation(botId, peerId)
+    return (await (await this.ready()).botConversation(botId, peerId)).filter((e) => !isInternalEntry(e))
   }
 
   /** What `backend` already has in the user's home, not the Codync skills and connectors a bot passes on. */
@@ -399,7 +484,7 @@ export class BotStore extends BotSync {
   async save(draft: BotDraft) {
     const client = await this.ready()
     const res = draft.id
-      ? await client.call<{ bot: Bot }>('updateBot', { ...draft, model: draft.model ?? null })
+      ? await client.call<{ bot: Bot }>('updateBot', { ...draft, model: draft.model ?? null, account: draft.account ?? null })
       : await client.call<{ bot: Bot }>('createBot', draft)
     const bot = this.putHostBot(normalizeBot(res.bot))
     this.onRosterChanged?.()
@@ -416,12 +501,62 @@ export class BotStore extends BotSync {
     } catch {}
   }
 
-  async selectWorkspace(path: string) {
-    return (await this.ready()).call<{ path: string }>('selectWorkspace', { path })
+  async sentinelHealth(): Promise<SentinelReport> {
+    return (await this.ready()).call<SentinelReport>('sentinelHealth', {})
+  }
+
+  async listBotApps(botId: string): Promise<BotApp[]> {
+    const res = await (await this.ready()).call<{ apps: BotApp[] }>('listBotApps', { botId })
+    return res.apps ?? []
+  }
+
+  async createAppLink(botId: string, slug: string, mode: AppLinkMode, label = ''): Promise<CreatedAppLink> {
+    return createAppShareLink(await this.ready(), botId, slug, mode, label)
+  }
+
+  async revokeAppLink(botId: string, slug: string, token: string): Promise<void> {
+    await (await this.ready()).call('revokeAppLink', { botId, slug, token })
+  }
+
+  async deleteBotApp(botId: string, slug: string): Promise<void> {
+    await (await this.ready()).call('deleteBotApp', { botId, slug })
+  }
+
+  async listOpenItems(botId: string): Promise<OpenItem[]> {
+    const res = await (await this.ready()).call<{ items: OpenItem[] }>('listOpenItems', { botId })
+    return res.items ?? []
+  }
+
+  async dismissOpenItem(botId: string, id: string): Promise<void> {
+    await (await this.ready()).call('dismissOpenItem', { botId, id })
+  }
+
+  async listBookmarks(botId: string): Promise<MessageBookmark[]> {
+    const res = await (await this.ready()).call<{ bookmarks: MessageBookmark[] }>('listBookmarks', { botId })
+    return res.bookmarks ?? []
+  }
+
+  async saveBookmark(botId: string, entryId: string, preview: string, note = '', author = '', threadId?: string | null): Promise<MessageBookmark> {
+    const res = await (await this.ready()).call<{ bookmark: MessageBookmark }>('saveBookmark', { botId, entryId, preview, note, author, threadId: threadId ?? null })
+    return res.bookmark
+  }
+
+  async deleteBookmark(botId: string, entryId: string): Promise<void> {
+    await (await this.ready()).call('deleteBookmark', { botId, entryId })
   }
 
   async listDirs(path: string | null) {
     return (await this.ready()).call<DirListing>('listDirs', { path })
+  }
+
+  async agentAccounts(backend: string): Promise<AgentAccount[]> {
+    const result = await (await this.ready()).call<{ accounts: AgentAccount[] }>('listAccounts', { backend })
+    return result.accounts
+  }
+
+  async authenticateAgentAccount(backend: string): Promise<AgentAccount> {
+    const result = await (await this.ready()).call<{ account: AgentAccount }>('accountAuthenticate', { backend }, 660_000)
+    return result.account
   }
 
   async refreshUsage() {
@@ -434,7 +569,7 @@ export class BotStore extends BotSync {
 
   async loadOlder(botId: string) {
     if (!this.client || this.historyComplete.has(botId)) return
-    const first = this.allEntries(botId).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
+    const first = (this.entries.get(botId) ?? []).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
     try {
       const older = await this.client.history(botId, first, 100)
       if (older.length < 100) this.historyComplete.add(botId)
@@ -453,9 +588,11 @@ export class BotStore extends BotSync {
 function updatePayload(bot: Bot): BotDraft {
   return {
     id: bot.id, name: bot.name, description: bot.description, avatarColor: bot.avatarColor, avatarShape: bot.avatarShape,
+    avatarLook: bot.avatarLook ?? null, actionRules: bot.actionRules ?? {}, proactive: bot.proactive,
     backend: bot.backend, command: bot.command ?? null, cwd: bot.managedWorkspace ? '' : bot.cwd, permission: bot.permission,
     model: bot.model ?? null, pinned: bot.pinned, hidden: bot.hidden, notify: bot.notify ?? null,
-    connectors: bot.connectors, skills: bot.skills, computer: bot.computer, fastMode: bot.fastMode,
+    connectors: bot.connectors, skills: bot.skills, computer: bot.computer, computerPermissions: bot.computerPermissions, fastMode: bot.fastMode,
+    isChief: bot.isChief, chiefBotId: bot.chiefBotId ?? null,
   }
 }
 

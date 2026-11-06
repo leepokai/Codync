@@ -66,18 +66,29 @@ data class AppState(
     val uploadProgress: Map<String, Int> = emptyMap(),
     /** Files bots shared that this phone is downloading, has downloaded or couldn't, by file ID. */
     val fileDownloads: Map<String, FileDownloadState> = emptyMap(),
+    /** A downloaded file whose share sheet waits for its conversation to be on screen again. */
+    val export: FileExport? = null,
+    /** Content shared from another app, waiting for the user to pick a bot. */
+    val incomingShare: IncomingShare? = null,
     val usage: JsonObject = JsonObject(emptyMap()),
     val hello: JsonObject? = null,
     val connection: LinkState = LinkState.Connecting,
     val actualConnection: LinkState = LinkState.Connecting,
     /** The chat open on this computer; at most one computer has one (`AccountStore.openBot`). */
     val selectedBot: String? = null,
-    /** A call to start in this bot's chat once it shows ("Talk to Codync"). */
-    val callRequest: String? = null,
+    /** A notification or widget led to a computer no longer on this phone: its empty state is open in place of a chat. */
+    val removedComputer: Boolean = false,
+    /** The document conversation (`doc:<id>`) open over the selected bot's chat. */
+    val thread: String? = null,
+    val navigationRequest: Int = 0,
+    val navigationPage: LinkPage = LinkPage.Bots,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
     val historyComplete: Set<String> = emptySet(),
     val routines: Map<String, RoutineListing> = emptyMap(),
+    /** Each bot's routine-flow canvas as last fetched, and the newest `routineFlow` rev heard for it (a canvas on screen loads again when it moves). */
+    val flows: Map<String, FlowCanvas> = emptyMap(),
+    val flowRevs: Map<String, Long> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */

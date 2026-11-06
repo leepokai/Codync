@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState, type DragEvent } from 'react'
 import { contentTop, isOpenMode, type IslandMode, type IslandTab } from '@shared/island'
 import { Icon } from '../../components/Icon'
 import { usePresence } from '../../components/Overlay'
@@ -27,14 +27,32 @@ export function IslandWindow({ model }: { model: IslandModel }) {
   if (winged) lastWings.current = mode
   const views = usePresence(open, FOLD_MS, false)
   const wings = usePresence(winged, FOLD_MS, false)
+  // Dropping files on the shape sends them to the bot in the big slot (or the one that needs you).
+  const [dropping, setDropping] = useState(false)
+  const target = model.permission?.ref ?? model.focus?.ref
+  const drop = (e: DragEvent) => {
+    e.preventDefault()
+    setDropping(false)
+    if (!target) return
+    const paths = [...e.dataTransfer.files].map((f) => window.codync.app.pathForFile(f)).filter(Boolean)
+    if (paths.length) window.codync.island.dropFiles(target, paths)
+  }
   return (
     <div
-      className={`island ${model.growing ? 'growing' : 'shrinking'} ${model.screen.notch ? '' : 'edge'}`}
+      className={`island ${model.growing ? 'growing' : 'shrinking'} ${model.screen.notch ? '' : 'edge'} ${dropping ? 'dropping' : ''}`}
       data-mode={mode}
       style={{ width: frame.width, height: frame.height }}
       role={closed ? 'button' : undefined}
       aria-label={closed ? 'Show bots' : undefined}
       onClick={closed ? () => model.openNow() : undefined}
+      onDragOver={(e) => {
+        if (!target || !e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setDropping(true)
+      }}
+      onDragLeave={() => setDropping(false)}
+      onDrop={drop}
     >
       <span className="island-ear left" />
       <span className="island-ear right" />
@@ -49,6 +67,7 @@ export function IslandWindow({ model }: { model: IslandModel }) {
             <OpenViews model={model} mode={lastOpen.current} />
           </div>
         ) : null}
+        {dropping && target ? <div className="island-drop">Drop to send to {model.focus?.name ?? 'this bot'}</div> : null}
         {open && model.closing ? <span className="island-countdown" style={{ animationDuration: `${PINNED_LEAVE_MS}ms` }} /> : null}
       </div>
     </div>

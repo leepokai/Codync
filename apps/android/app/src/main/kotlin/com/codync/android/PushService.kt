@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.RemoteInput
 import androidx.work.*
 import com.codync.android.core.*
 import com.google.firebase.messaging.FirebaseMessaging
@@ -60,6 +61,7 @@ object PushDelivery {
         gate.withLock {
             context.getSystemService(NotificationManager::class.java).cancelAll()
             AlertConversations.forget(context)
+            LauncherShortcuts.retire(context)
         }
     }
     suspend fun activate(context: Context, user: String?) {
@@ -79,18 +81,19 @@ object PushDelivery {
         syncLocked(context, local, computer, active)
     }
 
-    private suspend fun syncLocked(context: Context, local: LocalStore, computer: Computer, active: EncryptedChannel) {
+    /** `shown`: the computer the app shows, whose delegated tasks this phone follows; the others only alert. */
+    private suspend fun syncLocked(context: Context, local: LocalStore, computer: Computer, active: EncryptedChannel, shown: Boolean = true) {
         if (!BuildConfig.PUSH_CONFIGURED) return
         if (PushPreferences.retired(context) || local.contextId != (PushPreferences.activeUser(context) ?: "local")) return
         val permitted = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
-        val feed = TaskFeed(local.directory, computer.id)
-        if (!PushPreferences.tasks(context) || !permitted) {
+        val feed = TaskFeed(local.directory)
+        if (shown && (!PushPreferences.tasks(context) || !permitted)) {
             feed.all().forEach { active.call("unregisterActivity", body("botId" to it.botId)) }
             feed.clear()
         }
         if (!computer.notifications || !permitted) {
             active.call("unregisterDevice")
-            if (!permitted || !PushPreferences.tasks(context) || feed.all().none { !it.finished }) return
+            if (!shown || !permitted || !PushPreferences.tasks(context) || feed.all().none { !it.finished }) return
         }
         val token = PushPreferences.fid(context) ?: suspendCancellableCoroutine<String> { continuation ->
             FirebaseMessaging.getInstance().register().addOnSuccessListener {
@@ -109,7 +112,7 @@ object PushDelivery {
                 put("pushKey", identity.pushKey); put("ctx", local.referenceId)
             })
         }
-        if (PushPreferences.tasks(context)) for (watch in feed.all().filter { !it.finished }) {
+        if (shown && PushPreferences.tasks(context)) for (watch in feed.all().filter { !it.finished }) {
             val activity = PushRelay.ticket(BuildConfig.PUSH_RELAY_URL, token, local.referenceId, computer.id, watch.botId, watch.taskId)
             currentCoroutineContext().ensureActive()
             active.call("registerActivity", body("botId" to watch.botId, "ticket" to activity))
@@ -123,9 +126,11 @@ object PushDelivery {
         val local = LocalStore(context, PushPreferences.activeUser(context) ?: "local")
         val computers = withContext(Dispatchers.IO) { local.computers() }
         if (computers.isEmpty() || !local.hasIdentity()) return@withLock
-        // Every computer gets its turn; the first failure is reported once all were tried.
-        var failure: Exception? = null
-        for (computer in computers) {
+        // Every paired computer alerts this phone, not only the one shown. Any worth retrying retries the run
+        // (registering again is harmless); one that turned this phone away doesn't.
+        var retry: Exception? = null
+        var refused: Exception? = null
+        for ((index, computer) in computers.withIndex()) {
             var active: EncryptedChannel? = null
             try {
                 withTimeout(45_000) {
@@ -133,14 +138,13 @@ object PushDelivery {
                     val connected = HostConnector.connect(computer, identity)
                     active = connected
                     connected.state.firstReady()
-                    syncLocked(context, local, computer, connected)
+                    syncLocked(context, local, computer, connected, shown = index == 0)
                 }
-            } catch (error: Exception) {
-                if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                failure = failure ?: error
-            } finally { active?.close() }
+            } catch (cancelled: CancellationException) { if (cancelled !is TimeoutCancellationException) throw cancelled; retry = retry ?: cancelled }
+            catch (error: Exception) { if (error is HostError && error.status in listOf(403, 426)) refused = refused ?: error else retry = retry ?: error }
+            finally { active?.close() }
         }
-        failure?.let { throw it }
+        (retry ?: refused)?.let { throw it }
     }
 
     const val WORK_NAME = "codync-push-registration"
@@ -161,7 +165,7 @@ class PushRegistrationWorker(context: Context, parameters: WorkerParameters) : C
     }
 }
 
-private suspend fun kotlinx.coroutines.flow.StateFlow<LinkState>.firstReady() {
+internal suspend fun kotlinx.coroutines.flow.StateFlow<LinkState>.firstReady() {
     val result = first { it is LinkState.Ready || it is LinkState.ComputerOffline || it is LinkState.Failed }
     if (result !is LinkState.Ready) throw java.io.IOException("Computer unavailable")
 }
@@ -221,7 +225,7 @@ internal object NotificationDisplay {
         manager.createNotificationChannel(NotificationChannel(ALERTS, "Bot updates", NotificationManager.IMPORTANCE_HIGH))
         manager.createNotificationChannel(NotificationChannel(TASKS, "Delegated tasks", NotificationManager.IMPORTANCE_LOW))
     }
-    private fun open(context: Context, scope: String, computer: String, bot: String): Intent {
+    internal fun open(context: Context, scope: String, computer: String, bot: String): Intent {
         val url = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority("bot").appendPath(bot).appendQueryParameter("scope", scope).appendQueryParameter("computer", computer).build()
         return Intent(context, MainActivity::class.java).setAction(Intent.ACTION_VIEW).setData(url)
     }
@@ -241,12 +245,78 @@ internal object NotificationDisplay {
         val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty()).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
-        alert.copy(faces = alert.faces.withCustomIcons(notificationIcons(context, scope, computer))).conversation(bot)?.let { conversation ->
-            // A system that refuses the conversation still shows the plain alert.
-            try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot), alert.body, conversation) }
+        alert.conversation(bot)?.let { conversation ->
+            // A system that refuses the conversation still shows the plain alert; the message carries what happened instead of the sub text.
+            try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot), alert.body, alert.subtitle, conversation); builder.setSubText(null) }
             catch (error: Exception) { android.util.Log.w("Codync", "Alert shown without its conversation", error) }
         }
+        addAlertActions(context, builder, tag, scope, computer, bot, alert)
         try { context.getSystemService(NotificationManager::class.java).notify(tag, 1, builder.build()) } catch (_: SecurityException) { }
+    }
+
+    /**
+     * Reply in the chat, or answer the pending approval with the agent's own options, without opening the app.
+     * An approval can't be used from the lock screen; a reply never sends twice (the intent carries one nonce).
+     */
+    private fun addAlertActions(context: Context, builder: NotificationCompat.Builder, tag: String, scope: String, computer: String, bot: String, alert: PushAlert) {
+        val approval = alert.approval
+        if (approval != null) {
+            // Only a platform that can require the unlock before running an action offers the answer inline;
+            // everywhere else the tap opens the card.
+            if (Build.VERSION.SDK_INT < 31) return
+            for (option in approval.options.take(PushApproval.MAX_OPTIONS)) {
+                val path = "approve/$tag/${option.optionId}"
+                val intent = actionIntent(context, NotificationActionReceiver.ACTION_APPROVE, path, scope, computer, bot)
+                    .putExtra(NotificationActionReceiver.EXTRA_NONCE, NotificationActionPlan.freshNonce())
+                    .putExtra(NotificationActionReceiver.EXTRA_ENTRY, approval.entryId)
+                    .putExtra(NotificationActionReceiver.EXTRA_OPTION, option.optionId)
+                builder.addAction(NotificationCompat.Action.Builder(0, option.name, actionPending(context, intent, path))
+                    .setAuthenticationRequired(true).build())
+            }
+            return
+        }
+        val nonce = NotificationActionPlan.freshNonce()
+        val path = "reply/$tag/$nonce"
+        val intent = actionIntent(context, NotificationActionReceiver.ACTION_REPLY, path, scope, computer, bot)
+            .putExtra(NotificationActionReceiver.EXTRA_NONCE, nonce)
+        val reply = RemoteInput.Builder(NotificationActionReceiver.REPLY_KEY).setLabel("Reply").build()
+        builder.addAction(NotificationCompat.Action.Builder(0, "Reply", actionPending(context, intent, path))
+            .addRemoteInput(reply).setAllowGeneratedReplies(true)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY).build())
+    }
+
+    /** An explicit broadcast: no other app can answer for this alert. */
+    private fun actionIntent(context: Context, action: String, path: String, scope: String, computer: String, bot: String): Intent =
+        Intent(context, NotificationActionReceiver::class.java).setAction(action).setData(Uri.parse("codync://notification/$path"))
+            .putExtra(NotificationActionReceiver.EXTRA_SCOPE, scope)
+            .putExtra(NotificationActionReceiver.EXTRA_COMPUTER, computer)
+            .putExtra(NotificationActionReceiver.EXTRA_BOT, bot)
+
+    private fun actionPending(context: Context, intent: Intent, path: String): PendingIntent =
+        PendingIntent.getBroadcast(context, path.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    /** An alert the user answered: its notification goes at once; the action itself runs in the background. */
+    fun cancelAlert(context: Context, scope: String, computer: String, bot: String) {
+        try { context.getSystemService(NotificationManager::class.java).cancel("$scope/$computer/$bot", 1) } catch (_: SecurityException) { }
+    }
+
+    /**
+     * A reply or approval that couldn't reach the computer: what happened, and the chat it belonged to. A reply
+     * keeps its text in the private notification, so the user can read it back before trying again.
+     */
+    fun actionFailed(context: Context, scope: String, computer: String, bot: String, message: String, reply: String? = null) {
+        if (!context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) return
+        channels(context)
+        val open = PendingIntent.getActivity(context, 0, open(context, scope, computer, bot), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val generic = NotificationCompat.Builder(context, ALERTS).setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.app_name)).setContentText("An action couldn't be completed.").build()
+        val body = reply?.trim().takeUnless { it.isNullOrEmpty() } ?: message
+        val builder = NotificationCompat.Builder(context, ALERTS).setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(if (reply.isNullOrBlank()) "Couldn't complete that" else "Reply not sent").setContentText(body)
+            .setSubText(message).setStyle(NotificationCompat.BigTextStyle().bigText(body)).setContentIntent(open)
+            .setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(generic)
+        try { context.getSystemService(NotificationManager::class.java).notify("$scope/$computer/$bot/failed", 3, builder.build()) }
+        catch (_: SecurityException) { }
     }
     /**
      * A delegated task: on Android 16 a Live update (promoted ongoing notification) with its
@@ -301,5 +371,14 @@ internal object NotificationDisplay {
     fun cancel(context: Context, id: Int, prefix: String = "") {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.activeNotifications.filter { it.id == id && it.tag.orEmpty().startsWith(prefix) }.forEach { manager.cancel(it.tag, it.id) }
+    }
+
+    /** One computer's notifications (tagged `scope/computer/bot`): its task updates, or with `tasksOnly` false its alerts and conversations too. */
+    fun cancelComputer(context: Context, scope: String, computer: String, tasksOnly: Boolean) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val prefix = "$scope/$computer/"
+        manager.activeNotifications.filter { it.tag?.startsWith(prefix) == true && (it.id == 2 || !tasksOnly) }
+            .forEach { manager.cancel(it.tag, it.id) }
+        if (!tasksOnly) AlertConversations.forget(context, prefix)
     }
 }

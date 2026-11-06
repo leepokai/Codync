@@ -80,6 +80,7 @@ interface VoiceAudio {
 /** Serial audio ownership: no late recognizer/TTS callback can submit or restart a retired call. */
 class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settings: VoiceSettings,
     private val send: (String) -> Unit) : VoiceEngine {
+    override var transcript: CallReceiptTranscript? = null
     private sealed interface Event {
         data class Input(val value: VoiceInput) : Event
         data class Submit(val generation: Long, val revision: Long) : Event
@@ -146,6 +147,7 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
         val next = replies.removeFirstOrNull()
         if (next == null) { listen(); return }
         utterance++
+        transcript?.add("assistant", "queued", next)
         mutableState.update { it.copy(phase = VoicePhase.Speaking, said = next, heard = "") }
         try { audio.speak(utterance, next, state.value.settings.rate) { id, error -> post(Event.Done(id, error)) } }
         catch (unavailable: VoiceUnavailable) {
@@ -157,7 +159,10 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
     private suspend fun submit() {
         val text = state.value.heard.trim()
         stopListening()
-        if (text.isNotEmpty()) send(text)
+        if (text.isNotEmpty()) {
+            transcript?.add("user", "recognized", text)
+            send(text)
+        }
         listen() // Bot work never stops listening to the next utterance.
     }
     private suspend fun fail(message: String) {
@@ -210,6 +215,7 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
                 if (replies.isEmpty()) listen() else speakNext()
             }
             Event.Interrupt -> if (state.value.phase == VoicePhase.Speaking) {
+                transcript?.interrupted()
                 utterance++; replies.clear(); audio.stopSpeaking(); listen()
             }
         }

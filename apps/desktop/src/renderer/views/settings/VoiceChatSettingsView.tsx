@@ -12,6 +12,7 @@ import { useScreenViewed } from '../../store/analytics'
 import { errorText, liveClient } from './parts'
 import * as voice from './voice-settings'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
+import { SwitchRow } from '../bots/parts'
 import { useTr } from '../../lib/use-language'
 
 
@@ -26,6 +27,7 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
   const [engine, setEngine] = usePref(voice.engine)
   const [rate, setRate] = usePref(voice.rate)
   const [language, setLanguage] = usePref(voice.language)
+  const [captureTranscript, setCaptureTranscript] = usePref(voice.captureTranscript)
   const languages = useMemo(() => voice.languageOptions(window.codync.speech.locales()), [])
   const provider = voice.isVoiceProvider(engine) ? engine : null
   const [dictationEngine] = usePref(voice.dictationEngine)
@@ -76,6 +78,9 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
             ]}
           </CardSection>
           {provider ? <ProviderVoiceSettings key={provider} provider={provider} /> : null}
+          {window.codync.platform === 'win32' ? <CardSection title="Call receipts" footer="Applies to the next call. Text is stored with this bot on the host. Realtime transcription can add provider charges. Text may be incomplete and does not confirm playback or decisions.">
+            <SwitchRow title="Save call transcripts" on={captureTranscript} onChange={setCaptureTranscript} />
+          </CardSection> : null}
           {dictationProvider ? <ProviderVoiceSettings key={`dictation-${dictationProvider}`} provider={dictationProvider} dictationOnly /> : null}
         </CardForm>
       </div>

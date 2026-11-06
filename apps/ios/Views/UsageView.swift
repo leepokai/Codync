@@ -56,6 +56,9 @@ private struct ProviderCard: View {
                 .rotationEffect(.degrees(collapsed ? 180 : 0))
             }
 
+            if let status = provider.statusLabel {
+                Text(L10n.tr(status)).font(.caption).foregroundStyle(Palette.secondary)
+            }
             if let top = provider.tightest {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -95,6 +98,7 @@ private struct ProviderCard: View {
         case "statusline": "Claude Code status line"
         case "agent": "A running bot"
         case "sessions": "Codex sessions"
+        case "antigravity": "Antigravity quota report"
         default: provider.source
         }
     }

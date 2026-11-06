@@ -186,6 +186,8 @@ internal object VoskModels {
 
 /** Call settings on this phone: the pause, reading speed and language, and the cloud engine choices (`VoiceChoices`). */
 internal object VoicePreferences {
+    fun transcripts(context: Context): Boolean = runCatching { stored(context).getBoolean("transcripts", false) }.getOrDefault(false)
+    fun transcripts(context: Context, enabled: Boolean) { stored(context).edit { putBoolean("transcripts", enabled) } }
     private fun stored(context: Context) = context.getSharedPreferences("codync-voice", Context.MODE_PRIVATE)
     fun load(context: Context): VoiceSettings {
         val stored = stored(context)

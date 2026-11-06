@@ -21,6 +21,7 @@ import { GeminiLiveEngine } from './GeminiLiveEngine'
 import { OnDeviceEngine } from './OnDeviceEngine'
 import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
 import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoicePhase, type VoiceProvider } from './voice'
+import { CallTranscript } from '../../lib/voice-transcript'
 import './call.css'
 
 /** What the call bar says for `phase`. */
@@ -73,6 +74,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   /** The call settings the current engine was built from. */
   const engineChoice = useRef('')
   const closed = useRef(false)
+  const transcript = useRef<CallTranscript | null>(null)
   /** What carries the current engine's audio, and whether the call has been counted (once its first engine runs). */
   const engineName = useRef<VoiceCallEngine>('on_device')
   const counted = useRef(false)
@@ -143,6 +145,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       if (active) store.callCues.set(call.call, hear)
       else if (store.callCues.get(call.call) === hear) store.callCues.delete(call.call)
     }
+    next.transcript = transcript.current
     // A muted call stays muted on the engine that takes over.
     next.muted = engine.current?.muted === true
     engine.current = next
@@ -192,6 +195,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
 
   useEffect(() => {
     const startedAt = Date.now()
+    transcript.current = VoiceSettings.captureTranscript() ? new CallTranscript() : null
     window.codync.speech.setCalling(true)
     begin(VoiceSettings.provider())
     return () => {
@@ -201,7 +205,9 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       countCloudMinutes()
       onSpeaking(false)
       interrupt.current = null
-      link.current?.end(Math.floor((Date.now() - startedAt) / 1000))
+      const seconds = Math.floor((Date.now() - startedAt) / 1000)
+      const call = link.current
+      if (call) void call.end(seconds).then(() => store.logCall(botId, seconds, call.call, transcript.current?.snapshot()))
       quality.current?.report()
     }
   }, [])

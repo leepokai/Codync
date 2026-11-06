@@ -169,12 +169,14 @@ fn codex_kind(info: &Value) -> Option<String> {
 }
 
 pub struct Acp {
+    /// Owns the agent's whole process tree: dropping it kills what the agent started. First, because Rust drops
+    /// fields in order: the tree must go while its leader is still alive, before the stdin pipe closes and the
+    /// agent (and any broker it started) exits on its own.
+    child: Arc<tokio::sync::Mutex<Process>>,
     /// `None` once stopped: the closed pipe tells the agent to exit.
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     next_id: AtomicI64,
     pending: Pending,
-    /// Owns the agent's whole process tree: dropping it kills what the agent started.
-    child: Arc<tokio::sync::Mutex<Process>>,
     /// The process (and, on Unix, process group) leader.
     pid: Option<u32>,
 }
@@ -190,11 +192,15 @@ impl Acp {
         let mut process = crate::shell::exec(command).tokio();
         process
             .envs(env.iter().map(|(k, v)| (k, v)))
+            // Tells `codync-host hook` this agent is already Codync's own: a hook set for terminals must stay silent.
+            .env(crate::external::OWN_AGENT_ENV, "1")
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        super::account::isolate_process_env(&mut process, env);
+        Process::prepare(&mut process);
         // Its own group, so `kill` can stop everything it started.
         #[cfg(unix)]
         process.process_group(0);
@@ -205,7 +211,10 @@ impl Acp {
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
         let pid = child.id();
-        let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
+        let mut owned = Process::new(child)?;
+        let gone = Arc::new(tokio::sync::Notify::new());
+        owned.watch(gone.clone());
+        let child = Arc::new(tokio::sync::Mutex::new(owned));
         Process::monitor(&child);
         // Deliberately unbounded: `session/load` replays a whole history as notifications
         // *before* its response, while the bot is still awaiting that response. A bounded
@@ -232,7 +241,13 @@ impl Acp {
             let pending = pending.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
+                loop {
+                    let line = tokio::select! {
+                        line = lines.next_line() => line,
+                        // The leader is gone: its session ended, even if a stray descendant still holds the pipe.
+                        () = gone.notified() => break,
+                    };
+                    let Ok(Some(line)) = line else { break };
                     let Ok(msg) = serde_json::from_str::<Value>(&line) else {
                         tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
                         continue;
@@ -318,9 +333,14 @@ impl Acp {
         self.write(json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})).await
     }
 
-    /// Stops the agent and everything it started, without waiting for it. Closing its stdin
-    /// lets it exit by itself first: Claude Code killed during an OAuth refresh loses the new
-    /// refresh token, and the user's login with it.
+    /// Stops this agent and waits until its owned process tree has been terminated.
+    pub async fn kill_and_wait(&self) {
+        self.kill().await;
+        tokio::time::sleep(EXIT_GRACE).await;
+        self.child.lock().await.kill().await;
+    }
+
+    /// Closing stdin gives the agent time to persist OAuth refreshes before forced shutdown.
     pub async fn kill(&self) {
         let mut child = self.child.lock().await;
         if !child.begin_stop() {

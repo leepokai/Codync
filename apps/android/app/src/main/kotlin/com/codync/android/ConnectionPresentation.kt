@@ -45,6 +45,7 @@ internal fun connectionDescription(state: AppState): String {
     }
 }
 
+/** "1 connected", "Connecting…", "No access": the roster header's summary; with several computers, the one shown and its link. */
 /** Host of a private relay, or null when this is an official Codync cloud (those stay "Cloudflare"). */
 internal fun relayHost(cloud: String?): String? {
     if (cloud.isNullOrBlank()) return null
@@ -94,26 +95,27 @@ internal fun pairingLine(cloud: String?): String {
 internal fun pairingLine(pasted: String, scheme: String): String =
     pairingLine(runCatching { Pairing.parse(pasted, scheme).computer.cloud }.getOrNull())
 
-/** What the pairing page shows while it pairs: the code a computer in no account shows when it asks, as `123 456`. */
-/** The code's halves keep together on one line (a no-break space). */
-internal fun pairingCheckLine(code: String): String = "If the computer asks, check it shows ${code.take(3)}\u00A0${code.drop(3)}."
-
-/** A sentence to translate, and the counts that fill its `%d`s in order. */
-internal data class Phrase(val template: String, val counts: List<Int> = emptyList()) {
-    /** [translated] (the template in the app's language) with the counts filled in. */
-    fun filled(translated: String = template): String = counts.fold(translated) { text, count -> text.replaceFirst("%d", "$count") }
+/** "1 connected", "Connecting…", "No access": the roster header's summary of its computers. */
+internal fun connectionSummary(state: AppState): String = when {
+    state.computers.isEmpty() -> "Computers"
+    state.computers.size > 1 -> "${state.hostName} · ${connectionLabel(state)}"
+    state.connection is LinkState.Ready -> "${state.computers.size} connected"
+    state.connection is LinkState.Connecting -> "Connecting…"
+    state.connection.unauthorized -> "No access"
+    else -> "${state.computers.size} offline"
 }
 
-/** "3 connected", "1/2 connected", "Connecting…", "No access": the roster header's summary of the computers it shows (iOS `ConnectionSummary`). */
-internal fun connectionSummary(states: List<AppState>): Phrase {
-    if (states.isEmpty()) return Phrase("Computers")
-    val online = states.count { it.connection is LinkState.Ready }
-    return when {
-        online == states.size -> Phrase("%d connected", listOf(online))
-        online > 0 -> Phrase("%d/%d connected", listOf(online, states.size))
-        states.any { it.connection is LinkState.Connecting } -> Phrase("Connecting…")
-        states.all { it.connection.unauthorized } -> Phrase("No access")
-        else -> Phrase("%d offline", listOf(states.size))
+/**
+ * The computer this phone uses won't come back as it is: it turned this phone away, or it's offline
+ * while an account computer with its name that joined after it was last seen is online, the same
+ * machine under a new identity (iOS `AccountStore.isStale`). Account computers offer access recovery; only independently paired computers offer removal.
+ */
+internal val AppState.isStale: Boolean get() {
+    val computer = this.computer ?: return false
+    return when (val link = connection) {
+        is LinkState.Failed -> link.unauthorized || renamedCopyOnline(computer)
+        is LinkState.ComputerOffline -> renamedCopyOnline(computer)
+        else -> false
     }
 }
 

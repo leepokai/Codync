@@ -62,7 +62,7 @@ import kotlinx.serialization.json.put
     var network by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(app.contextId) { accounts.refreshCloud() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        PageHeader("Computer management", icon = "gearshape")
+        PageHeader("Computer management")
         // One card per computer, so each one's rows read as its own.
         PullToRefresh(accounts::refreshComputers, Modifier.weight(1f)) { CardForm {
             for (state in states) {
@@ -113,7 +113,7 @@ import kotlinx.serialization.json.put
     val forgetting = confirmForget
     CodyncDialog(tr("Remove {name}?").replace("{name}", forgetting?.computer?.name ?: "computer"), forgetting != null, { confirmForget = null },
         "Its bots and conversations stay on that computer. You can pair again any time.") {
-        listOfNotNull(forgetting?.let { target -> DialogAction("Remove", destructive = true) { accounts.removeComputer(target.computer.id) } })
+        listOf(DialogAction("Remove", destructive = true) { paired?.let { store.forgetComputer(it.id) } })
     }
     CodyncDialog("Revoke this phone's access to ${confirmRevoke?.name ?: "the computer"}?", confirmRevoke != null, { confirmRevoke = null },
         "You can ask for access again; the computer will show a new code to confirm.") {

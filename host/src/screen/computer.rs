@@ -33,6 +33,22 @@ fn backend() -> Backend {
 }
 
 impl Screen {
+    pub(super) fn check_action_epoch(&self, bot: &str, epoch: u64, args: &Value) -> Result<()> {
+        let control = self.control.locked();
+        let snapshots = self.snapshots.locked();
+        if control.user || snapshots.epoch() != epoch {
+            bail!("Computer control changed. Capture a fresh snapshot before retrying.");
+        }
+        snapshots.validate(bot, args)
+    }
+
+    pub(crate) fn forget_bot_snapshots(&self, bot: &str) {
+        let mut snapshots = self.snapshots.locked();
+        // Revocation also invalidates captures already in flight.
+        snapshots.invalidate();
+        snapshots.forget(bot);
+    }
+
     /// Whether bots may use the computer here: Windows needs nothing else; macOS and Linux run
     /// their part through Codync Screen, which runs while Remote screen is on.
     pub(super) fn computer_use(&self) -> bool {
@@ -69,11 +85,39 @@ pub async fn computer_tools(hub: &Arc<Hub>) -> Value {
     if cfg!(not(windows)) {
         tools.push(type_login_tool());
     }
+    tools.extend(crate::computer::panel::tools());
     json!({"tools": tools})
 }
 
 /// Runs one `computer` tool for `bot`: `{content, isError?}` for the agent.
-pub async fn computer(hub: &Arc<Hub>, bot: &str, name: &str, args: Value) -> Result<Value> {
+pub(super) async fn computer(hub: &Arc<Hub>, bot: &str, name: &str, args: Value) -> Result<Value> {
+    if crate::computer::panel::is_tool(name) {
+        let result = crate::computer::panel::tool(hub, bot, name, &args).await?;
+        return Ok(json!({"content":[{"type":"text","text":result.to_string()}],"isError":result["success"] == false}));
+    }
+    let mut lease = hub.computer.begin(hub, bot, crate::computer::Capability::Browser)?;
+    let guard = lease.clone();
+    tokio::select! {
+        biased;
+        () = lease.cancelled() => {
+            #[cfg(windows)]
+            {
+                hub.screen.driver.cancel().await?;
+                hub.screen.snapshots.locked().invalidate();
+            }
+            bail!("Desktop permission revoked; request cancelled. Effects already completed cannot be undone.");
+        },
+        result = computer_allowed(hub, bot, name, args, &guard) => result,
+    }
+}
+
+async fn computer_allowed(
+    hub: &Arc<Hub>,
+    bot: &str,
+    name: &str,
+    args: Value,
+    lease: &crate::computer::Lease,
+) -> Result<Value> {
     let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
     if !row.config.computer {
         bail!("Computer use is turned off for this bot.");
@@ -105,12 +149,23 @@ pub async fn computer(hub: &Arc<Hub>, bot: &str, name: &str, args: Value) -> Res
         });
     }
     if name == TYPE_LOGIN {
+        screen.snapshots.locked().validate(bot, &args)?;
         return type_login(hub, bot, backend, args).await;
     }
+    if !read_only {
+        screen.snapshots.locked().validate(bot, &args)?;
+    }
     match backend {
-        Backend::Driver => cua::call(screen, bot, name, args).await,
+        Backend::Driver => cua::call_guarded(screen, bot, name, args, Some(lease)).await,
         #[cfg(target_os = "linux")]
-        Backend::Helper => helper_tools::run(screen, name, args).await,
+        Backend::Helper => {
+            let epoch = screen.snapshots.locked().epoch();
+            let result = helper_tools::run(screen, name, args).await?;
+            if name == "screenshot" {
+                screen.snapshots.locked().record(bot, epoch, &result);
+            }
+            Ok(result)
+        }
     }
 }
 
@@ -149,6 +204,7 @@ fn type_login_tool() -> Value {
 /// checks the focused field (accessibility): which app, which web page, whether it's secure.
 /// Windows has no Codync Screen to check it yet.
 async fn type_login(hub: &Arc<Hub>, bot: &str, backend: Backend, args: Value) -> Result<Value> {
+    let epoch = hub.screen.snapshots.locked().epoch();
     if cfg!(windows) {
         bail!("type_login isn't available on Windows yet. Ask the user to sign in themselves.");
     }
@@ -175,6 +231,10 @@ async fn type_login(hub: &Arc<Hub>, bot: &str, backend: Backend, args: Value) ->
             crate::market::passwords::resolve(&hub.store, &login.password).await?
         }
     };
+    screen.check_action_epoch(bot, epoch, &json!({}))?;
+    if !hub.store.bot(bot)?.is_some_and(|row| !row.deleted && row.config.computer) {
+        bail!("Computer use is turned off for this bot.");
+    }
     match backend {
         Backend::Driver => {
             // macOS: into the checked app, in the background; Linux: the active window it checked.
@@ -212,6 +272,41 @@ mod tests {
         s.takeover(true);
         assert!(s.claim("a", false).is_err());
         assert!(s.claim("a", true).is_ok());
+    }
+
+    #[test]
+    fn handback_rejects_captures_taken_during_user_control() {
+        let (tx, _) = broadcast::channel(8);
+        let screen = Screen::new(Some(true), tx);
+        screen.takeover(true);
+        let epoch = screen.snapshots.locked().epoch();
+        screen.snapshots.locked().record("a", epoch, &json!({"structuredContent": {"snapshot_id": "during"}}));
+        screen.takeover(false);
+        assert!(screen.check_action_epoch("a", epoch, &json!({})).is_err());
+        let epoch = screen.snapshots.locked().epoch();
+        assert!(screen.check_action_epoch("a", epoch, &json!({})).is_err());
+        screen.snapshots.locked().record("a", epoch, &json!({"structuredContent": {"snapshot_id": "after"}}));
+        assert!(screen.check_action_epoch("a", epoch, &json!({"element_token": "after:0"})).is_ok());
+    }
+
+    #[tokio::test]
+    async fn invalidation_while_preparing_prevents_dispatch_even_after_another_capture() {
+        let (tx, _) = broadcast::channel(8);
+        let screen = Screen::new(Some(true), tx);
+        let prepared_epoch = screen.snapshots.locked().epoch();
+        let (ready, waiting) = tokio::sync::oneshot::channel();
+        let prepare = async {
+            waiting.await.unwrap();
+            screen.check_action_epoch("a", prepared_epoch, &json!({}))
+        };
+        let invalidate = async {
+            screen.forget_bot_snapshots("a");
+            let current_epoch = screen.snapshots.locked().epoch();
+            screen.snapshots.locked().record("a", current_epoch, &json!({"content": []}));
+            ready.send(()).unwrap();
+        };
+        let (dispatch, ()) = tokio::join!(prepare, invalidate);
+        assert!(dispatch.is_err());
     }
 
     #[test]

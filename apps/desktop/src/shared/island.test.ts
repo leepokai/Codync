@@ -10,7 +10,7 @@ const bot = (ref: string, status: BotStatus): IslandBot => ({
   ref, name: ref, shape: 'blob', color: 'blue', status, backend: 'Claude Code', folder: 'site', detail: '', steps: [], error: null,
 })
 const card = (entryId: string): IslandPermission => ({
-  ref: 'c/a', entryId, bot: { name: 'a', shape: 'blob', color: 'blue', backend: 'Claude Code' }, headline: 'Wants to run a command', title: 'ls', options: [], answering: null,
+  ref: 'c/a', entryId, bot: { name: 'a', shape: 'blob', color: 'blue', backend: 'Claude Code' }, headline: 'Wants to run a command', title: 'ls', diffs: [], options: [], answering: null,
 })
 const summary = (bots: IslandBot[], permissions: IslandPermission[] = []): IslandSummary => ({ bots, permissions, usage: [] })
 const state = (over: Partial<{ open: boolean; peek: boolean; tab: IslandTab; deferred: ReadonlySet<string>; notice: IslandNotice | null }> = {}) =>

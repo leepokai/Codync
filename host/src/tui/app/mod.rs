@@ -14,9 +14,8 @@ mod model;
 mod navigate;
 mod new_bot;
 mod overlay_keys;
-mod pair;
-mod roster;
-mod section_order;
+mod roster_preferences;
+pub mod roster_tools;
 mod slash;
 mod steps;
 mod ui;
@@ -55,6 +54,7 @@ struct PendingSend {
 
 #[allow(clippy::struct_excessive_bools, reason = "independent UI flags, not a state machine")]
 pub struct App {
+    pub roster_tools: roster_tools::RosterTools,
     pub client: Client,
     pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
@@ -158,6 +158,7 @@ pub struct App {
 impl App {
     pub fn new(client: Client, tx: UnboundedSender<Msg>, url: String) -> Self {
         Self {
+            roster_tools: roster_tools::RosterTools::default(),
             download: None,
             artifact_titles: super::manage::ArtifactTitles::default(),
             client,
@@ -232,6 +233,29 @@ impl App {
 
     // ---------- derived ----------
 
+    /// Roster order: the lead, pinned bots, then where the user put them, then most recent (same as the phone).
+    pub fn roster(&self) -> Vec<&Bot> {
+        let mut v: Vec<&Bot> = self.bots.values().filter(|b| !b.hidden && self.roster_matches(b)).collect();
+        v.sort_by(|a, b| {
+            a.band()
+                .cmp(&b.band())
+                .then(a.position.cmp(&b.position))
+                .then(b.last_at.cmp(&a.last_at))
+                .then(a.name.cmp(&b.name))
+        });
+        if self.roster_tools.by_project {
+            let mut projects: Vec<String> = vec![];
+            for bot in &v {
+                let project = roster_tools::project(bot);
+                if !projects.iter().any(|p| p == project) {
+                    projects.push(project.to_owned());
+                }
+            }
+            v.sort_by_key(|b| projects.iter().position(|p| p == roster_tools::project(b)).unwrap_or_default());
+        }
+        v
+    }
+
     pub fn bot(&self) -> Option<&Bot> {
         self.selected.as_ref().and_then(|id| self.bots.get(id))
     }
@@ -256,7 +280,7 @@ impl App {
         // What a voice call carries shows behind its line (`o`), on whichever device the call is: the host writes the
         // line when the call ends, or when its app went away. A file or an artifact the bot sent stays, to be opened.
         let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
-        v.retain(|e| e.kind == Kind::Notice || e.call().is_none() || opens(e));
+        v.retain(|e| !e.is_internal() && (e.kind == Kind::Notice || e.call().is_none() || opens(e)));
         // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v
@@ -270,7 +294,7 @@ impl App {
     /// The message the composer replies to, in the selected chat.
     pub fn replying_to(&self) -> Option<&Entry> {
         let (id, reply) = (self.selected.as_ref()?, self.reply.as_ref()?);
-        self.entries.get(id)?.values().find(|e| &e.id == reply)
+        self.entries.get(id)?.values().find(|e| &e.id == reply && !e.is_internal())
     }
 
     pub fn draft(&self) -> Editor {
@@ -328,6 +352,21 @@ impl App {
         }
     }
 
+    fn move_bot(&mut self, delta: isize) {
+        let ids: Vec<String> = self.navigable_roster().iter().map(|b| b.id.clone()).collect();
+        if ids.is_empty() {
+            return;
+        }
+        let i = self.selected.as_ref().and_then(|s| ids.iter().position(|x| x == s));
+        let n = isize::try_from(ids.len()).unwrap_or(isize::MAX);
+        let next = match i {
+            Some(i) => (isize::try_from(i).unwrap_or(0) + delta).clamp(0, n - 1),
+            None => 0,
+        };
+        let id = ids[usize::try_from(next).unwrap_or(0)].clone();
+        self.select(&id);
+    }
+
     /// Next bot (after the selected one, wrapping) whose mark matches.
     fn jump(&mut self, want: Mark) {
         // A bot busy in a group needs you there, and the group is marked too: skip the bot.
@@ -372,6 +411,7 @@ impl App {
 
     /// Drops expired toasts and keeps the viewed bot marked read.
     pub fn tick(&mut self) {
+        self.documents_tick();
         if self.selected.is_none()
             && let Some(id) = self.roster().first().map(|b| b.id.clone())
         {

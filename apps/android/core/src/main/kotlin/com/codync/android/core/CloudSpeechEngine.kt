@@ -39,7 +39,10 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
                 try {
                     for (wav in utterances) {
                         val text = speech.transcribe(wav).trim()
-                        if (!ended && text.isNotEmpty()) speech.send(text)
+                        if (!ended && text.isNotEmpty()) {
+                            transcript?.add("user", "recognized", text)
+                            speech.send(text)
+                        }
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { hop { fail(error.message ?: "Couldn't transcribe what you said.", VoiceFailureKind.Provider) } }
@@ -57,7 +60,7 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
         mutable.update { it.copy(muted = value) }
         if (value) { detector.reset(); level(0f) }
     }
-    override fun interrupt() = hop { if (phase == VoicePhase.Speaking) { stopSpeaking(); phase(VoicePhase.Listening) } }
+    override fun interrupt() = hop { if (phase == VoicePhase.Speaking) { transcript?.interrupted(); stopSpeaking(); phase(VoicePhase.Listening) } }
     override fun focus(active: Boolean) = hop {
         if (!active && this.active) { stopSpeaking(); detector.reset(); level(0f); phase(VoicePhase.Interrupted) }
         else if (active && phase == VoicePhase.Interrupted) { phase(VoicePhase.Listening); if (queue.isNotEmpty()) playQueue() }
@@ -74,6 +77,7 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
     /** Queues text in clips the provider can turn into one channel message each. */
     private fun say(text: String) {
         if (ended || phase == VoicePhase.Starting || text.isEmpty()) return
+        transcript?.add("assistant", "queued", text)
         queue.addAll(speechClips(text, provider.speechChunk))
         if (phase != VoicePhase.Interrupted) playQueue()
     }

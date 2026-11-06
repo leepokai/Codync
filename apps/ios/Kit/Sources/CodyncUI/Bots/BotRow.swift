@@ -39,6 +39,16 @@ public struct BotRow: View {
                     Spacer(minLength: 4)
                     if bot.unread > 0 { UnreadBadge(count: bot.unread) }
                 }
+                if !bot.isGroup {
+                    Text([model.backendName(bot.backend), bot.rosterProject, bot.rosterFast].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(Palette.tertiary).lineLimit(1)
+                }
+                if bot.isWorking {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(model.isOffline ? "Offline · last known activity" : bot.rosterElapsed(at: context.date))
+                            .font(.caption).foregroundStyle(Palette.secondary)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

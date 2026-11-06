@@ -1,5 +1,5 @@
-import { useRef } from 'react'
-import type { IslandBot, IslandPermission } from '@shared/island'
+import { useRef, useState } from 'react'
+import type { IslandBot, IslandDiff, IslandPermission } from '@shared/island'
 import { CharacterAvatar } from '../../components/Avatar'
 import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -136,6 +136,7 @@ export function Approval({ model, card }: { model: IslandModel; card: IslandPerm
           <div className="island-alert-text">
             <AgentRow color={card.bot.color} name={card.bot.name} subtitle={`${card.bot.backend} ${card.headline.charAt(0).toLowerCase()}${card.headline.slice(1)}`} />
             {card.title ? <div className="island-code">{card.title}</div> : null}
+            {card.diffs.length ? <DiffPeek diffs={card.diffs} /> : null}
             <div className="island-buttons">
               {options.map((o) => (
                 <Button key={o.id} kind={o.kind === 'allow_once' ? 'primary' : 'secondary'} disabled={card.answering !== null} onClick={() => model.respond(card, o.id)}>
@@ -149,6 +150,40 @@ export function Approval({ model, card }: { model: IslandModel; card: IslandPerm
         </div>
       </div>
       <MiniColumn bots={model.others(3).filter((b) => b.ref !== card.ref)} onOpen={(ref) => model.openBot(ref)} />
+    </div>
+  )
+}
+
+/**
+ * What the approved edit changes, in one line per file and the patch on demand (the island has no room for a whole
+ * diff): the counts are enough to judge it, a click shows the changed lines.
+ */
+function DiffPeek({ diffs }: { diffs: IslandDiff[] }) {
+  const [open, setOpen] = useState(false)
+  const file = (path: string) => path.split(/[\\/]/).pop() || path
+  return (
+    <div
+      className={`island-diff ${open ? 'open' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      aria-label={open ? 'Hide the changed lines' : 'Show the changed lines'}
+      onClick={() => setOpen((o) => !o)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setOpen((o) => !o)
+        }
+      }}
+    >
+      {diffs.map((d) => (
+        <div className="island-diff-file" key={d.path}>
+          <span className="island-diff-name">{file(d.path)}</span>
+          <span className="island-diff-add">+{d.added}</span>
+          <span className="island-diff-del">−{d.removed}</span>
+        </div>
+      ))}
+      {open ? <pre className="island-diff-patch">{diffs.map((d) => d.patch).join('')}</pre> : null}
     </div>
   )
 }

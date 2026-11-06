@@ -34,9 +34,14 @@ impl App {
 
     fn top_editor(&mut self) -> Option<&mut Editor> {
         match self.overlays.last_mut()? {
+            Overlay::RosterTools => Some(&mut self.roster_tools.query),
             Overlay::Goto(g) => Some(&mut g.query),
             Overlay::Help(e) => Some(e),
-            Overlay::NewBot(n) => (n.field == NewBotField::Name).then_some(&mut n.name),
+            Overlay::NewBot(n) => match n.field {
+                NewBotField::Name => Some(&mut n.name),
+                NewBotField::Purpose => Some(&mut n.purpose),
+                _ => None,
+            },
             Overlay::Folder(p) => Some(&mut p.query),
             Overlay::Group(g) => match g.field {
                 GroupField::Name => Some(&mut g.name),
@@ -66,6 +71,10 @@ impl App {
             return;
         }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        if ctrl && k.code == KeyCode::Char('f') {
+            self.overlays.push(Overlay::RosterTools);
+            return;
+        }
         if ctrl && k.code == KeyCode::Char('k') {
             if matches!(self.overlays.last(), Some(Overlay::Goto(_))) {
                 self.overlays.pop();
@@ -214,7 +223,7 @@ impl App {
                         }
                     }
                     _ => {
-                        if let Some(id) = self.stop_at(i) {
+                        if let Some(id) = self.navigable_roster().get(i).map(|b| b.id.clone()) {
                             self.select(&id);
                         }
                     }
@@ -323,8 +332,7 @@ impl App {
                 if let Some(b) = self.bot() {
                     if matches!(b.status, Status::Working | Status::NeedsInput) {
                         let id = b.id.clone();
-                        self.call("stop", json!({"botId": id}), After::Nothing);
-                        self.flash("Stopping…");
+                        self.stop_from_roster(&id);
                     } else {
                         self.flash("Not working right now");
                     }

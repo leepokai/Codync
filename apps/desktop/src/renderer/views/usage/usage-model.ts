@@ -1,5 +1,6 @@
 import type { UsageProvider, UsageWindow } from '@shared/models'
 import { isDark } from '../../lib/theme'
+export { providerRegistry, windowTitle, usageStatus } from '../../lib/usage-presentation'
 
 /** Claude keeps its orange; everyone else is ink, like the rest of the app. */
 export function providerTint(id: string) {
@@ -8,9 +9,6 @@ export function providerTint(id: string) {
 
 /** CSS color for views (follows the scheme by itself). */
 export const providerTintCSS = (id: string) => (id === 'claude' ? '#D97757' : 'var(--accent)')
-
-/** ACP registry id of the provider's agent, for its logo. */
-export const providerRegistry = (id: string) => (['claude', 'codex'].includes(id) ? `${id}-acp` : id)
 
 /** The character that stands for this provider. */
 export const mascotShape = (id: string) => (id === 'codex' ? 'hex' : 'blob')
@@ -28,13 +26,6 @@ export const usedText = (percent: number, tr: (text: string) => string) =>
 /** The used percent, or the note when this window isn't a share of a cap. */
 export function windowReading(w: UsageWindow, tr: (text: string) => string) {
   return w.text || usedText(w.percent, tr)
-}
-
-/** "Session" for the 5-hour window, "Opus" for "Weekly · Opus", else the label. */
-export function windowTitle(w: UsageWindow) {
-  if (w.label === '5-hour') return 'Session'
-  const model = w.label.split(' · ')[1]
-  return model ?? w.label
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

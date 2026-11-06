@@ -33,13 +33,18 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model, mode }
+    private enum CodingKeys: String, CodingKey { case model, account }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        if draft.model == nil { try container.encodeNil(forKey: .model) }
-        if draft.mode == nil { try container.encodeNil(forKey: .mode) }
+        if draft.model == nil {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeNil(forKey: .model)
+        }
+        if draft.account == nil {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeNil(forKey: .account)
+        }
     }
 }
 
@@ -434,8 +439,9 @@ public extension HostClient {
     }
 
     /// Starts the agent to see whether it's signed in and how it can be (first run may download it).
-    func agentModels(_ backend: String) async throws -> AgentModels {
-        try await call("agentModels", ["backend": backend], timeout: 300)
+    func agentModels(_ backend: String, account: String? = nil) async throws -> AgentModels {
+        struct Body: Encodable { let backend: String; let account: String? }
+        return try await call("agentModels", Body(backend: backend, account: account), timeout: 300)
     }
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {

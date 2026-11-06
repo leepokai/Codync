@@ -9,6 +9,7 @@
 //! per line, `{method: "call", name, args, session_id, client_kind}` → `{ok, result | error}`.
 
 use super::Screen;
+use crate::LockExt;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
@@ -22,6 +23,10 @@ static TOOLS: LazyLock<Vec<Value>> =
 const CALL_TIMEOUT: Duration = Duration::from_secs(55);
 /// Content text shorter than this is a summary; the data is then only in `structuredContent`.
 const SUMMARY_LEN: usize = 400;
+#[cfg(windows)]
+type DriverChild = crate::agent::process::Process;
+#[cfg(target_os = "linux")]
+type DriverChild = tokio::process::Child;
 
 pub(super) fn offered(name: &str) -> bool {
     TOOLS.iter().any(|t| t["name"] == name)
@@ -69,8 +74,32 @@ pub(super) async fn tools(screen: &Screen) -> Vec<Value> {
 
 /// Runs one driver tool for `bot`: `{content, isError?}` for the agent.
 pub(super) async fn call(screen: &Screen, bot: &str, name: &str, args: Value) -> Result<Value> {
+    call_guarded(screen, bot, name, args, None).await
+}
+
+pub(super) async fn call_guarded(
+    screen: &Screen,
+    bot: &str,
+    name: &str,
+    args: Value,
+    lease: Option<&crate::computer::Lease>,
+) -> Result<Value> {
+    let epoch = screen.snapshots.locked().epoch();
     let body = json!({"method": "call", "name": name, "args": args, "session_id": format!("codync-{bot}"), "client_kind": "cli"});
-    let mut result = request(&screen.driver.endpoint(screen).await?, body).await?;
+    let endpoint = screen.driver.endpoint(screen).await?;
+    let mut result = request_guarded(&endpoint, body, || {
+        if let Some(lease) = lease {
+            lease.check()?;
+        }
+        if !read_only(name) {
+            screen.check_action_epoch(bot, epoch, &args)?;
+        }
+        Ok(())
+    })
+    .await?;
+    if matches!(name, "get_window_state" | "get_desktop_state") {
+        screen.snapshots.locked().record(bot, epoch, &result);
+    }
     let mut out = json!({"content": agent_content(&mut result)});
     if result["isError"] == true {
         out["isError"] = true.into();
@@ -99,12 +128,17 @@ fn agent_content(result: &mut Value) -> Value {
 
 /// One request on the daemon's line protocol.
 async fn request(endpoint: &str, body: Value) -> Result<Value> {
+    request_guarded(endpoint, body, || Ok(())).await
+}
+
+/// Revalidate after connecting, immediately before handing a request to the transport.
+async fn request_guarded(endpoint: &str, body: Value, guard: impl FnOnce() -> Result<()>) -> Result<Value> {
     let exchange = async {
         #[cfg(unix)]
         let stream = tokio::net::UnixStream::connect(endpoint).await?;
         #[cfg(windows)]
         let stream = tokio::net::windows::named_pipe::ClientOptions::new().open(endpoint)?;
-        exchange(stream, &body).await
+        exchange_guarded(stream, &body, guard).await
     };
     let reply = tokio::time::timeout(CALL_TIMEOUT, exchange)
         .await
@@ -127,11 +161,20 @@ async fn exchange(stream: impl AsyncRead + AsyncWrite + Unpin, body: &Value) -> 
     serde_json::from_str(&reply).context("the computer-use driver sent no JSON")
 }
 
+async fn exchange_guarded(
+    stream: impl AsyncRead + AsyncWrite + Unpin,
+    body: &Value,
+    guard: impl FnOnce() -> Result<()>,
+) -> Result<Value> {
+    guard()?;
+    exchange(stream, body).await
+}
+
 /// Starts the daemon when needed and says where it listens.
 #[derive(Default)]
 pub(super) struct Driver {
     #[cfg(not(target_os = "macos"))]
-    daemon: tokio::sync::Mutex<Option<(tokio::process::Child, String)>>,
+    daemon: tokio::sync::Mutex<Option<(DriverChild, String)>>,
 }
 
 impl Driver {
@@ -145,15 +188,29 @@ impl Driver {
     #[cfg(not(target_os = "macos"))]
     async fn endpoint(&self, _screen: &Screen) -> Result<String> {
         let mut daemon = self.daemon.lock().await;
-        if let Some((child, endpoint)) = daemon.as_mut()
-            && matches!(child.try_wait(), Ok(None))
-        {
-            return Ok(endpoint.clone());
+        if let Some((child, endpoint)) = daemon.as_mut() {
+            #[cfg(windows)]
+            let running = !child.exited()?;
+            #[cfg(target_os = "linux")]
+            let running = child.try_wait()?.is_none();
+            if running {
+                return Ok(endpoint.clone());
+            }
         }
         let started = start().await?;
         let endpoint = started.1.clone();
         *daemon = Some(started);
         Ok(endpoint)
+    }
+
+    #[cfg(windows)]
+    pub(super) async fn cancel(&self) -> Result<()> {
+        let mut daemon = self.daemon.lock().await;
+        if let Some((process, _)) = daemon.as_mut() {
+            process.terminate_owned().await?;
+        }
+        *daemon = None;
+        Ok(())
     }
 }
 
@@ -190,7 +247,7 @@ fn x_display() -> Option<String> {
 /// Spawns `cua-driver serve` and waits until it listens. It exits when the host does: its stdin
 /// closes then (`CUA_DRIVER_PARENT_LIVENESS_STDIN`), crash or not.
 #[cfg(not(target_os = "macos"))]
-async fn start() -> Result<(tokio::process::Child, String)> {
+async fn start() -> Result<(DriverChild, String)> {
     let exe = executable().context("The computer-use driver isn't installed next to codync-host. Reinstall Codync.")?;
     #[cfg(windows)]
     let endpoint = endpoint_name();
@@ -218,12 +275,21 @@ async fn start() -> Result<(tokio::process::Child, String)> {
     #[cfg(windows)]
     {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.creation_flags(CREATE_NO_WINDOW | windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
     }
-    let mut child = cmd.spawn().with_context(|| format!("can't start {}", exe.display()))?;
+    let child = cmd.spawn().with_context(|| format!("can't start {}", exe.display()))?;
+    #[cfg(target_os = "linux")]
+    let mut child = child;
+    #[cfg(windows)]
+    let child = crate::agent::process::Process::new(child)?;
     for _ in 0..100 {
-        if let Some(status) = child.try_wait()? {
-            bail!("the computer-use driver exited ({status}); see cua-driver.log in Codync's data folder");
+        #[cfg(windows)]
+        if child.exited()? {
+            bail!("The computer-use driver exited; see cua-driver.log.");
+        }
+        #[cfg(target_os = "linux")]
+        if child.try_wait()?.is_some() {
+            bail!("The computer-use driver exited; see cua-driver.log.");
         }
         if request(&endpoint, json!({"method": "list", "client_kind": "cli"})).await.is_ok() {
             tracing::info!(endpoint, "computer-use driver started");
@@ -262,6 +328,25 @@ fn endpoint_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn invalidation_before_transport_dispatch_writes_no_bytes() {
+        use tokio::io::AsyncReadExt;
+        let (tx, _) = tokio::sync::broadcast::channel(8);
+        let screen = Screen::new(Some(true), tx);
+        let epoch = screen.snapshots.locked().epoch();
+        let (client, mut server) = tokio::io::duplex(256);
+        screen.takeover(true);
+        screen.takeover(false);
+        let result = exchange_guarded(client, &json!({"method": "call", "name": "click"}), || {
+            screen.check_action_epoch("a", epoch, &json!({}))
+        })
+        .await;
+        assert!(result.is_err());
+        let mut received = Vec::new();
+        server.read_to_end(&mut received).await.unwrap();
+        assert!(received.is_empty(), "refused actions must not reach the driver transport");
+    }
 
     #[test]
     fn stored_tools_say_which_only_look() {

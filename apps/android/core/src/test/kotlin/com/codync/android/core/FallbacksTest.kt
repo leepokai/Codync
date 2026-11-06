@@ -5,6 +5,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FallbacksTest {
+    @Test fun `saving another field keeps fallback changes made by the bot while the editor was open`() {
+        val base = BotDraft(id = "b", name = "Scout", fallbacks = emptyList(), selfFallbacks = true)
+        val fresh = base.copy(fallbacks = listOf(Fallback("codex")), selfFallbacks = false)
+        val saved = base.copy(description = "Review pull requests").rebased(base, fresh)
+        assertEquals(fresh.fallbacks, saved.fallbacks)
+        assertEquals(false, saved.selfFallbacks)
+        assertEquals("Review pull requests", saved.description)
+        assertEquals(listOf(Fallback("gemini")), base.copy(fallbacks = listOf(Fallback("gemini"))).rebased(base, fresh).fallbacks)
+    }
+
     @Test fun `a bot decodes its fallbacks, the step it runs on and its resting agents, and an older host's without them`() {
         val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Scout","backend":"claude",
             "fallbacks":[{"backend":"codex","model":"gpt-5.5","modelOptions":{"effort":"high"}},{"backend":"gemini","model":null}],

@@ -69,7 +69,7 @@ fn build_trace(app: &App, b: &Bot, turn: i64, width: usize, full: bool) -> Vec<L
     let mut out: Vec<Line<'static>> = vec![];
     let Some(map) = app.entries.get(&b.id) else { return out };
     let mut speaker: Option<&str> = None;
-    for e in map.values().filter(|e| e.turn == turn) {
+    for e in map.values().filter(|e| e.turn == turn && !e.is_internal()) {
         // In a group, each member's steps under its name.
         if b.group && e.kind != Kind::User {
             let author = e.data["author"].as_str();

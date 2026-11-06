@@ -16,8 +16,10 @@ import com.codync.android.design.*
 
 /** A bot's character, or a group's members. */
 @Composable internal fun BotAvatar(bot: Bot, bots: List<Bot>, size: Dp = 44.dp) {
-    if (bot.kind == "group" && bot.customIcon == null) GroupAvatar(bot.memberBots(bots).map { AvatarFace(it.avatarShape, it.avatarColor, it.status, it.customIcon?.dataUrl, it.customIcon?.tinted == true) }, size)
-    else CharacterAvatar(bot.avatarShape, bot.avatarColor, size, bot.status, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
+    val look = bot.avatarLook ?: bot.avatarShape
+    if (bot.kind == "group") GroupAvatar(bot.memberBots(bots).map { AvatarFace(it.avatarShape, it.avatarColor, it.status) }, size)
+    else if (isRobotLook(look)) RobotAvatar(look, bot.avatarColor, size, working = bot.status == "working")
+    else CharacterAvatar(bot.avatarShape, bot.avatarColor, size, bot.status)
 }
 
 /** The roster's avatar, with its status dot (iOS `AvatarWithStatus`): amber needs you, the accent dot is unread. */

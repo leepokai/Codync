@@ -20,6 +20,7 @@ def update(session, value):
 
 
 sessions = 0
+dream_sessions = set()
 for line in sys.stdin:
     request = json.loads(line)
     method = request.get("method")
@@ -32,11 +33,17 @@ for line in sys.stdin:
     elif method == "session/new":
         sessions += 1
         result = {"sessionId": f"s{sessions}"}
+        system = "".join(part.get("text", "") for part in params.get("systemPrompt", {}).get("content", []))
+        if system.startswith("You keep the memory a personal assistant bot has"):
+            dream_sessions.add(result["sessionId"])
     elif method == "session/prompt":
         session = params["sessionId"]
         # The user's words come last, after any notice the host put before them.
         text = params["prompt"][0]["text"]
-        starts = [text.rfind(verb) for verb in ("WRITE ", "DELETE ", "READ ", "SHELL ") if verb in text]
+        # A background review quotes earlier user commands as evidence. It asks for a JSON plan,
+        # never for the fixture to replay those file writes in the user's memory folder.
+        dreaming = session in dream_sessions
+        starts = [] if dreaming else [text.rfind(verb) for verb in ("WRITE ", "DELETE ", "READ ", "SHELL ") if verb in text]
         command = text[max(starts):] if starts else ""
         if command:
             head, _, body = command.partition("\n")
@@ -55,7 +62,8 @@ for line in sys.stdin:
                 call = {"title": f"{verb} {path}", "kind": kind, "locations": [{"path": path}]}
             update(session, {"sessionUpdate": "tool_call", "toolCallId": f"t{request['id']}", "status": "completed",
                              **call})
-        update(session, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "ok"}})
+        reply = json.dumps({"add": [], "remove": [], "review": [], "append": []}) if dreaming else "ok"
+        update(session, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         result = {"stopReason": "end_turn"}
     else:
         result = {}

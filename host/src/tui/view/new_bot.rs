@@ -1,4 +1,5 @@
-//! The new bot dialog: the bot's face in its color, a name, then color and shape.
+//! The new bot dialog: the bot's face in its color, a name, what it should help with, its agent, then color and
+//! shape.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -14,9 +15,10 @@ use super::style::{FACE, bot_color, face_style, theme};
 /// "Color " + "‹ " + the swatches (2 cells and a gap each) + "›".
 const LOOKS_W: usize = 6 + 2 + COLORS.len() * 3 + 1;
 
-pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
+/// `agent`: the picked agent's name; `None` while the host picks it.
+pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot, agent: Option<&str>) {
     let t = theme();
-    let r = centered(area, 56, 18);
+    let r = centered(area, 56, 22);
     let inner = frame_box(buf, r, t.text, t.panel, Some((tr("New bot").as_ref(), t.text)));
     let mid = |width: usize| inner.x + inner.width.saturating_sub(u(width)) / 2;
     for (y, row) in (inner.y + 1..).zip(FACE) {
@@ -31,9 +33,27 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     input_line(buf, field, y, &n.name, placeholder, n.field == NewBotField::Name, false);
     // ‹ › mark the row the arrows change.
     let label = |f: NewBotField| if n.field == f { t.bold } else { t.secondary }.patch(t.panel);
-    let on_color = n.field == NewBotField::Color;
     let x0 = mid(LOOKS_W);
     let y = inner.y + 11;
+    let purpose = tr("What should this bot help with?");
+    put(buf, x0, y, u(LOOKS_W), purpose.as_ref(), label(NewBotField::Purpose));
+    let field = Rect::new(x0, y + 1, u(LOOKS_W), 1);
+    input_line(
+        buf,
+        field,
+        y + 1,
+        &n.purpose,
+        "Plan trips, compare options or help with daily work.",
+        n.field == NewBotField::Purpose,
+        false,
+    );
+    let default = tr("Default");
+    let agent = agent.unwrap_or(default.as_ref());
+    let agent = if n.field == NewBotField::Agent { format!("‹ {agent} ›") } else { format!("  {agent}") };
+    let x = put(buf, x0, y + 3, 6, tr("Agent ").as_ref(), label(NewBotField::Agent));
+    put(buf, x, y + 3, u(LOOKS_W).saturating_sub(6), &agent, label(NewBotField::Agent));
+    let on_color = n.field == NewBotField::Color;
+    let y = y + 5;
     let mut x = put(buf, x0, y, 6, tr("Color ").as_ref(), label(NewBotField::Color));
     x = put(buf, x, y, 2, if on_color { "‹ " } else { "  " }, label(NewBotField::Color));
     for (ci, c) in COLORS.iter().enumerate() {
@@ -53,6 +73,9 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     let create = if n.saving { " … Saving " } else { " ↵ Create " };
     let x = put(buf, inner.x, by, 14, create, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
-    let hint = if n.field == NewBotField::Name { "tab color and shape" } else { "←→ change · tab next" };
+    let hint = match n.field {
+        NewBotField::Name | NewBotField::Purpose => "tab next",
+        _ => "←→ change · tab next",
+    };
     rput(buf, inner.right(), by, hint, t.dim.patch(t.panel));
 }

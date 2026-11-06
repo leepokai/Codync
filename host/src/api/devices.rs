@@ -37,6 +37,9 @@ const LOCAL_ONLY: &[&str] = &[
     "requestScreenPermission",
     // Analytics is the computer owner's choice; phones decide only for themselves.
     "setAnalytics",
+    "openProtectedBrowser",
+    "fillProtectedLogin",
+    "fillProtectedCode",
     "track",
     "reportError",
     // Voice keys are entered on the computer itself; phones only use them.

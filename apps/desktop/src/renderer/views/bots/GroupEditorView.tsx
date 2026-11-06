@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { isGroup, type Bot } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
-import { IconButton, Spinner } from '../../components/Controls'
+import { ChoicePicker, IconButton, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
@@ -24,6 +24,7 @@ export function GroupEditorView({ group }: { group: Bot }) {
   const [name, setName] = useState(group.name)
   const [about, setAbout] = useState(group.description)
   const [members, setMembers] = useState<string[]>(group.members)
+  const [chiefBotId, setChiefBotId] = useState<string | null>(group.chiefBotId ?? null)
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -48,7 +49,7 @@ export function GroupEditorView({ group }: { group: Bot }) {
     setSaving(true)
     setError(null)
     store
-      .updateGroup({ id: group.id, kind: 'group', name: name.trim() || defaultName, description: about.trim(), members, pinned: current?.pinned })
+      .updateGroup({ id: group.id, kind: 'group', name: name.trim() || defaultName, description: about.trim(), members, pinned: store.bots.get(group.id)?.pinned, chiefBotId })
       .then(dismiss)
       .catch((e: unknown) => setError(errorText(e)))
       .finally(() => setSaving(false))
@@ -103,6 +104,21 @@ export function GroupEditorView({ group }: { group: Bot }) {
               </button>
             ) : null}
             <Text as="div" size="caption" tone="tertiary" className="group-note">{tr(`Everyone answers in turn unless you @mention someone.`)}</Text>
+            {picked.length > 0 ? (
+              <ValueRow
+                label="Chief of Staff"
+                detail="Coordinates delegated assignments and automatically intervenes if a member stalls or fails."
+              >
+                <ChoicePicker
+                  selection={chiefBotId ?? ''}
+                  options={[
+                    { id: '', label: 'None (auto-detect Chief)' },
+                    ...picked.map((b) => ({ id: b.id, label: b.isChief ? `${b.name} ★` : b.name })),
+                  ]}
+                  onChange={(id) => setChiefBotId(id || null)}
+                />
+              </ValueRow>
+            ) : null}
           </VStack>
           {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
           {current ? (

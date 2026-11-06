@@ -85,23 +85,76 @@ impl App {
                 );
             }
             Submit::Import => self.sheet("importConnectors", json!({"config": values["config"]}), Reply::FieldsSaved),
+            Submit::App(app) => {
+                let mut body = json!({
+                    "name": app["server"]["name"],
+                    "description": app["description"],
+                    "catalog": app["id"],
+                    "args": app["server"]["args"],
+                });
+                if let Some(url) = app["server"]["url"].as_str() {
+                    body["url"] = url.into();
+                }
+                if let Some(command) = app["server"]["command"].as_str() {
+                    body["command"] = command.into();
+                }
+                let mut env = json!({});
+                let mut headers = json!({});
+                for field in app["fields"].as_array().into_iter().flatten() {
+                    let typed = values[field["id"].as_str().unwrap_or_default()].as_str().unwrap_or_default();
+                    if field["url"].as_bool() == Some(true) && !typed.is_empty() {
+                        body["url"] = typed.into();
+                    }
+                    if let Some(header) = field["header"].as_str() {
+                        headers[header] = typed.into();
+                    }
+                    if let Some(name) = field["env"].as_str() {
+                        env[name] = typed.into();
+                    }
+                }
+                body["env"] = env;
+                body["headers"] = headers;
+                self.sheet("installConnector", body, Reply::FieldsSaved);
+            }
             Submit::Handoff(entry) => {
                 self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
             }
-            Submit::Section(bot) => {
-                self.sheet("updateBot", json!({"id": bot, "section": values.get("name")}), Reply::FieldsSaved);
+            Submit::VoiceDecisions { bot, receipt } => {
+                self.sheet(
+                    "confirmVoiceDecisions",
+                    json!({"botId":bot,"receiptId":receipt,"summary":values["summary"]}),
+                    Reply::FieldsSaved,
+                );
             }
-            Submit::RenameSection(from) => {
-                self.section_order = self.shown_section_names();
-                let to = values.get("name").and_then(Value::as_str).map(str::to_owned);
-                let r = Reply::SectionRenamed { from: from.clone(), to: to.clone() };
-                self.sheet("renameSection", json!({"from": from, "to": to}), r);
+            Submit::ProtectedFill { id, code } => {
+                let mut body = json!({"id":id});
+                body[if *code { "code" } else { "loginId" }] = values["value"].clone();
+                self.sheet(if *code { "fillProtectedCode" } else { "fillProtectedLogin" }, body, Reply::FieldsSaved);
             }
             Submit::RenameArtifact { bot, artifact } => {
                 let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
                 self.sheet("renameArtifact", body, Reply::FieldsSaved);
             }
         }
+    }
+}
+
+/// Edits what a handoff card carries into the next conversation.
+pub fn protected_fill_fields(id: &str, code: bool) -> Fields {
+    Fields {
+        title:if code {"Fill one-time code"} else {"Fill saved password"}.into(),
+        note:"Local Windows only. First open the protected browser and focus its exact approved-origin input. Enter confirms filling; no automatic retry on failure.".into(),
+        choices:vec![],choice:0,inputs:vec![Input{name:"value".into(),label:if code {"One-time code"} else {"Saved login ID"}.into(),secret:code,required:true,multiline:false,placeholder:String::new(),ed:Editor::default()}],
+        cursor:0,error:None,saving:false,submit:Submit::ProtectedFill{id:id.into(),code},
+    }
+}
+pub fn voice_decision_fields(bot: &str, receipt: &str) -> Fields {
+    Fields {
+        title: "Confirm call decisions".into(),
+        note: "Write only decisions you personally confirm. Enter saves an immutable receipt; no actions execute. Shift+Enter adds a line.".into(),
+        choices: vec![], choice: 0,
+        inputs: vec![Input { name:"summary".into(),label:"Decisions".into(),secret:false,required:true,multiline:true,placeholder:String::new(),ed:Editor::default() }],
+        cursor:0,error:None,saving:false,submit:Submit::VoiceDecisions{bot:bot.into(),receipt:receipt.into()},
     }
 }
 

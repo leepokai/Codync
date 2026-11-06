@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { sshBridge } from './ssh'
 import type { CallError, CodyncBridge, HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
 
@@ -105,6 +105,7 @@ const bridge: CodyncBridge = {
     onVoiceKey: (cb) => listen('island:voiceKey', cb),
     respond: (ref, entryId, optionId) => ipcRenderer.send('island:respond', ref, entryId, optionId),
     send: (ref, text) => ipcRenderer.send('island:send', ref, text),
+    dropFiles: (ref, paths) => ipcRenderer.send('island:dropFiles', ref, paths),
     openBot: (ref) => ipcRenderer.send('island:openBot', ref),
     newBot: () => ipcRenderer.send('island:newBot'),
     openApp: () => ipcRenderer.send('island:openApp'),
@@ -135,7 +136,8 @@ const bridge: CodyncBridge = {
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
     copy: (text) => ipcRenderer.send('app:copy', text),
     pickFiles: () => ipcRenderer.invoke('app:pickFiles'),
-    pickExport: () => ipcRenderer.invoke('app:pickExport'),
+    readPaths: (paths) => ipcRenderer.invoke('app:readPaths', paths),
+    pathForFile: (file) => webUtils.getPathForFile(file),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),
     setTraySummary: (summary: TraySummary) => ipcRenderer.send('app:traySummary', summary),
     showWindow: () => ipcRenderer.send('app:showWindow'),
@@ -152,6 +154,10 @@ const bridge: CodyncBridge = {
     screenAgentState: () => ipcRenderer.invoke('screen:state'),
     setScreenAgent: (on) => ipcRenderer.invoke('screen:setAgent', on),
     syncScreenAgent: (enabled) => ipcRenderer.invoke('screen:syncAgent', enabled),
+  },
+  screen: {
+    open: (target) => ipcRenderer.invoke('screen:open', target),
+    target: (computerId) => ipcRenderer.invoke('screen:target', computerId),
   },
 }
 

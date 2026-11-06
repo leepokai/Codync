@@ -67,14 +67,15 @@ which backend the app will use.
 
 Run `codync-host pair` on the computer and scan its code or paste the resulting
 `codync://pair` link (`codync-dev://pair` for Codync Dev, which pairs only with a
-development host). Setup shows the Mac and Linux install paths, as on iOS. Pairing links
+development host). Setup shows Mac, Windows and Linux install paths, as on iOS. The desktop tray action **Pair phone…** and the QR button in Computers work with Android and iPhone; see [Windows pairing](../../docs/guides/android-windows-pairing.md). Pairing links
 and one-time codes remain in memory. Account login discovers computers; each
 host must still approve access.
 
-Pair as many computers as you like, as on the iPhone: `AccountStore` keeps one
-`AppStore` (link, mirror, drafts) per computer, and the roster shows a heading per
-computer once there are several. Accounts have separate device keys, mirrors,
-files, image caches and composer drafts.
+A phone can pair with **several computers** (by code, or approved through the account). Each keeps
+its own mirror and composer drafts; the roster shows and connects to one at a time, and its header
+switches between them. Every paired computer still notifies this phone; each one's push switch is on
+its card. Remove one in Computer management. Accounts have separate device keys, mirrors, files,
+image caches and composer drafts.
 
 Remote screen negotiates incremental ICE with hosts and helpers that advertise
 support. It exchanges offers and answers while candidates are still gathering,
@@ -86,10 +87,48 @@ The roster shows activity, previews, unread counts, groups, pin/hide actions and
 (Move to section in a bot's menu; tap a section's header to fold it on this phone, touch and hold it to rename or remove it; bots in none sit under a "Bots" label);
 touch and hold a bot, then move it, to reorder within its section (the order syncs through the host). Cached bots remain readable offline and are labeled as saved. An
 unreachable computer is distinguished from an empty online roster. Chat supports
-final replies, Markdown/code, permissions, reactions, quote replies (touch and hold a
-message, then Reply), history and Full conversation.
+final replies, Markdown/code, permissions, reactions, threads, history and Full
+conversation.
 
-Text and private attachment drafts survive process death separately for each bot. Sends retain their nonce through durable queue commit and retry.
+### Constellation roster (Android)
+
+The roster header switches between **Lista** and **Constelación** and remembers
+the choice on this device. Constellation keeps the roster's pinned/custom order:
+tap a character to open its chat, or hold it for the same profile, pin, read, hide
+and delete actions as the list. Reorder by dragging in Lista. The summary counts
+working bots and bots needing input among the visible roster.
+
+Recent activity (a 24-hour window) and unread messages increase character size
+within 48–76 dp. Unread counts saturate visually at 99+; accessibility announces
+the full count. Amber highlights needs-input bots even with animation disabled.
+The canvas scrolls rather than shrinking large rosters. Its cells reserve space
+for labels and grow vertically with the system font scale. Offscreen characters
+stop moving; Android's Remove animations setting disables continuous motion and
+placement transitions, including when the setting changes while the view is open.
+
+This is an Android-specific alternative presentation in this fork. The host
+protocol and bot actions are unchanged. iOS, desktop and terminal rosters retain
+their existing presentations; no shared feature or host logic moved to Android.
+
+Test-only fixtures provide 1–30 bots without inserting records into an account.
+On a disposable emulator, run the focused interaction/rendering checks:
+
+```powershell
+$env:ANDROID_HOME = 'C:\Android\Sdk'
+.\gradlew.bat :app:assembleDebugAndroidTest
+.\gradlew.bat :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.codync.android.ConstellationScreenTest,com.codync.android.ConstellationRenderingTest'
+```
+
+The rendering test records five seconds of window frame durations and writes
+`constellation-frames.txt` and `constellation-30.png` to the app's external files
+directory. These are emulator observations, not physical-device performance
+guarantees. A passing rendering check confirms collection, not a frame budget:
+inspect its screenshot and discard timings captured under system dialogs or an
+unresponsive System UI. Semantics assertions check roster traversal order; a manual TalkBack
+walkthrough remains a separate acceptance check.
+
+Text and private attachment drafts survive process death separately for each bot
+and thread. Sends retain their nonce through durable queue commit and retry.
 Uncertain sends require explicit retry with the same ID. Text can wait in the
 encrypted relay mailbox; files require a live computer. Files are capped at 100 MiB each and uploaded in 384 KiB chunks. Sharing
 uses a temporary copy rather than exposing the private cache.
@@ -133,10 +172,16 @@ isolated fake-agent host. Shared vectors come from
 [remote-relay-vectors.json](../../docs/reference/fixtures/remote-relay-vectors.json).
 
 `LiveChatTest` uses `liveHost=true` and a bot named `Android chat acceptance`
-running [fake_agent.py](../../host/tests/fake_agent.py). `LiveDraftTest` uses `draftPhase=prepare` and `restore` with an OS process
+running [fake_agent.py](../../host/tests/fake_agent.py). `LiveThreadTest` exercises
+replies. `LiveDraftTest` uses `draftPhase=prepare` and `restore` with an OS process
 stop between phases. File acceptance verifies a multi-chunk round trip byte for
 byte. `LiveRosterTest` offers separately opted-in read-only inspection of an
 existing connection; it is not the ordinary reset suite.
+
+`CreationNavigationTest` separately opts in with `inspectCreation=true`: it opens
+the real New bot route, checks Name/purpose/suggestions, and closes without
+creating or saving. Run only this named class when inspecting a personal phone;
+do not enable the ordinary reset suite alongside it.
 
 The emulator-only `-PcodyncReleaseTests=true` variant signs an R8 acceptance build
 with the debug key; ordinary release builds take only the upload key. Physical camera,

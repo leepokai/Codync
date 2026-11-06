@@ -45,7 +45,8 @@ mod tests {
         Session {
             pipeline: gst::Pipeline::new(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            incoming: Some(std::sync::Mutex::default()),
+            trickle: true,
+            incoming: std::sync::Mutex::default(),
         }
     }
 
@@ -57,7 +58,6 @@ mod tests {
             last_status: Mutex::new(None),
             sessions: crate::sessions::Sessions::default(),
             out,
-            rt: tokio::runtime::Handle::current(),
         });
         let original = session();
         let old_peer = original.webrtc.clone();

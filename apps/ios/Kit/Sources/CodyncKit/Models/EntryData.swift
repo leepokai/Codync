@@ -1,6 +1,8 @@
 import Foundation
 
 public struct EntryData: Codable, Hashable, Sendable {
+    /// Host-internal work: retained for revision ordering, never rendered as conversation content.
+    public var `internal`: Bool?
     public var connectionRequest: ConnectionRequest?
     /// A memory line an older host put in the chat. Memory lives in the bot's memory settings, so it isn't shown.
     public var memory: MemoryLine?

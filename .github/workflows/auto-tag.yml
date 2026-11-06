@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - "apps/Codync.xcodeproj/project.pbxproj"
+      - ".github/workflows/auto-tag.yml"
+      - "host/Cargo.toml"
+      - "apps/desktop/package.json"
 
 permissions:
   contents: write
@@ -19,10 +21,15 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.TAP_TOKEN }}
 
-      - name: Read version from pbxproj
+      - name: Read and verify host and desktop release version
         id: version
         run: |
-          VERSION=$(grep -m1 'MARKETING_VERSION' apps/Codync.xcodeproj/project.pbxproj | sed 's/.*= //;s/;//;s/ //g')
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("host/Cargo.toml", "rb"))["package"]["version"])')
+          DESKTOP_VERSION=$(node -p 'require("./apps/desktop/package.json").version')
+          if [ "$VERSION" != "$DESKTOP_VERSION" ]; then
+            echo "::error::Host ($VERSION) and desktop ($DESKTOP_VERSION) versions differ"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Detected version: $VERSION"
 

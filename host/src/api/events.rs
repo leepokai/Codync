@@ -67,16 +67,17 @@ pub fn events_stream(
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
     }
     catch_up.extend(crate::chat::artifacts::since(&hub.store, since));
-    let icons = crate::icons::snapshot(&hub.store)?;
-    catch_up.push(json!({"type": "icons", "icons": icons.icons, "iconsRevision": icons.icons_revision}));
+    catch_up.extend(crate::routines::flow::catch_up(&hub.store, since));
     catch_up.sort_by_key(|v| v["rev"].as_i64().unwrap_or(0));
-    // What the voice of a call this device holds should have heard while it was away.
-    catch_up.extend(crate::chat::calls::replay(caller.device_key()));
+    // `rev` counts every mutation, but the catch-up replays only bots and entries: the
+    // last rev it sends is where a client's initial load ends.
+    let catch_up_rev = catch_up.last().and_then(|v| v["rev"].as_i64()).unwrap_or(since);
     let hello = json!({
         "type": "hello",
         "hostId": hub.host_id,
         "computerId": hub.identity.computer_id(),
         "rev": hub.store.current_rev(),
+        "catchUpRev": catch_up_rev,
         "usage": hub.usage.locked().clone(),
         "screen": hub.screen.state(),
         // Live state like the two above: a `network` event sent before this stream began is in it.

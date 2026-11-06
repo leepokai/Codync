@@ -92,7 +92,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (stage == PickerStage.Models && chooseAgent != null) IconButton("Back", "chevron.left") { open(PickerStage.Agents) }
                     Box(Modifier.weight(1f)) { PlainTextField(query, { query = it }, prompt = if (stage == PickerStage.Agents) "Search agents" else "Search models", singleLine = true) }
-                    if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++; onReload() }
+                    if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++ }
                 }
                 val choices = (if (stage == PickerStage.Agents) agents else modelChoices).filter { it.second.contains(query, ignoreCase = true) }
                 Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {

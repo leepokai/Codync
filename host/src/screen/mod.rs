@@ -32,17 +32,23 @@
 //! (`input-fast` unordered for moves, `input` reliable): `move`, `click`, `drag`, `scroll`,
 //! `text`, `key` in display points, plus `down`/`up` for touch drags and `clipboard {text}`.
 
+mod activity;
 mod computer;
 mod cua;
 mod helper;
 #[cfg(target_os = "linux")]
 mod helper_tools;
 mod permissions;
+#[cfg(windows)]
+pub mod protected_browser;
+pub mod protected_entry;
 mod protocol;
 mod signaling;
+mod snapshots;
 mod viewer;
 
-pub use computer::{computer, computer_tools};
+pub use activity::computer;
+pub use computer::computer_tools;
 pub use helper::serve_helpers;
 #[cfg(target_os = "linux")]
 pub use helper::supervise_linux_helper;
@@ -124,6 +130,12 @@ pub struct Screen {
     link: Mutex<Option<Arc<Link>>>,
     status: Mutex<HelperStatus>,
     control: Mutex<Control>,
+    protected: Mutex<Option<protected_entry::ProtectedEntry>>,
+    #[cfg(windows)]
+    protected_browser: tokio::sync::Mutex<Option<protected_browser::Browser>>,
+    #[cfg(windows)]
+    protected_operation: tokio::sync::Mutex<()>,
+    snapshots: Mutex<snapshots::SnapshotState>,
     sessions: Mutex<HashMap<String, Viewer>>,
     driver: cua::Driver,
     #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
@@ -141,6 +153,12 @@ impl Screen {
             link: Mutex::default(),
             status: Mutex::default(),
             control: Mutex::default(),
+            protected: Mutex::default(),
+            #[cfg(windows)]
+            protected_browser: tokio::sync::Mutex::default(),
+            #[cfg(windows)]
+            protected_operation: tokio::sync::Mutex::default(),
+            snapshots: Mutex::default(),
             sessions: Mutex::default(),
             driver: cua::Driver::default(),
             next_link: AtomicU64::new(1),
@@ -178,6 +196,7 @@ impl Screen {
             "input": st.input,
             "displays": st.displays,
             "userControl": c.user,
+            "protectedEntry": self.protected_state(),
             "agentBot": c.active_agent(),
             "computerUse": self.computer_use(),
             "viewers": viewers,

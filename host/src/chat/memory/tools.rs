@@ -1,5 +1,5 @@
 //! The built-in `memory` MCP server, the same for every harness: the bot's memory files ([`super::file_tools`]),
-//! search over them, and search over its chat history.
+//! search over them, and search over its chat history (`search_history`, `read_history`, `remember_for_all_bots`).
 
 use super::dates::ymd;
 use crate::agent::acp;
@@ -20,19 +20,18 @@ pub const INSTRUCTIONS: &str = "Your memory holds what you know about the user, 
 It is Markdown files you keep yourself: MEMORY.md, one short fact about the user per line, in every session in \
 full; and notes, one topic each, for detail too long for MEMORY.md (lists, itineraries, histories), listed in your \
 instructions. When the user tells you something lasting about themselves, or asks you to remember, change or \
-forget something, change the files with edit_memory (or your own file tools, where you were given the memory \
-folders). The user reads memory in the app but can't edit it: they ask you. Project and code knowledge worth \
+forget something, change the files with edit_memory (or remember_for_all_bots for facts every bot should know). \
+The user reads memory in the app but can't edit it: they ask you. Project and code knowledge worth \
 keeping goes in a note on that project, not MEMORY.md; don't make the project's CLAUDE.md or AGENTS.md your memory \
 unless the user asks. Only in a turn the user started in your own chat can memory lose or change a line; at other \
 times you can only add. search_memory finds lines of your memory files; search_history finds what was actually \
-said in your past chats. When the user asks you to forget something, take it out of MEMORY.md and your notes, and \
-don't bring it back from your chat history either.";
+said in your past chats, and read_history reads the surrounding conversation around any message id.";
 
 pub fn tools() -> Value {
     let mut tools = json!([
         {
             "name": "search_memory",
-            "description": "Search your memory files for lines containing the query (case-insensitive). A MEMORY.md line lists the message it was learned from as source: pass it to search_history as from to read it.",
+            "description": "Search your memory files for lines containing the query (case-insensitive). A MEMORY.md line lists the message it was learned from as source: pass it to search_history as from or read_history as id to read it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"query": {"type": "string"}},
@@ -53,6 +52,30 @@ pub fn tools() -> Value {
             },
             "annotations": {"readOnlyHint": true},
         },
+        {
+            "name": "read_history",
+            "description": "Read the conversation window surrounding a specific message id (from search_history) in chronological order.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "The anchor message id from search_history."},
+                    "around": {"type": "integer", "description": "Number of messages before and after to include (default 4, max 15)."}
+                },
+                "required": ["id"]
+            },
+            "annotations": {"readOnlyHint": true},
+        },
+        {
+            "name": "remember_for_all_bots",
+            "description": "Save a lasting fact about the user into the shared MEMORY.md so all of the user's bots know it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "fact": {"type": "string", "description": "A concise single-line fact about the user."}
+                },
+                "required": ["fact"]
+            }
+        }
     ]);
     if let Some(list) = tools.as_array_mut() {
         list.extend(super::file_tools::definitions());
@@ -65,6 +88,20 @@ pub async fn call(hub: &Arc<Hub>, bot_id: &str, name: &str, args: &Value) -> Res
     match name {
         "search_memory" => search_memory(hub, &cfg, args["query"].as_str().unwrap_or_default()).await,
         "search_history" => search_history(hub, &cfg, args).await,
+        "read_history" => read_history(hub, &cfg, args).await,
+        "remember_for_all_bots" => {
+            let raw = args["fact"].as_str().unwrap_or_default().trim();
+            if raw.is_empty() {
+                bail!("fact is required");
+            }
+            let line = if raw.starts_with("- ") { raw.to_owned() } else { format!("- {raw}") };
+            let edit_args = json!({
+                "file": MAIN,
+                "shared": true,
+                "append": line,
+            });
+            super::file_tools::call(hub, &cfg, "edit_memory", &edit_args).await
+        }
         "read_memory" | "edit_memory" => super::file_tools::call(hub, &cfg, name, args).await,
         _ => bail!("unknown memory tool: {name}"),
     }
@@ -150,4 +187,34 @@ async fn search_history(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result
         })
         .collect();
     Ok(json!({"results": results, "next": next}))
+}
+
+async fn read_history(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result<Value> {
+    let id = args["id"].as_str().ok_or_else(|| anyhow!("id is required"))?.to_owned();
+    let around = usize::try_from(args["around"].as_i64().unwrap_or(4).clamp(1, 15)).unwrap_or(4);
+    let hub = hub.clone();
+    let bot = cfg.id.clone();
+    let messages = tokio::task::spawn_blocking(move || -> Result<Vec<Value>> {
+        let anchor =
+            hub.store.entry(&id).filter(|e| e.bot_id == bot).ok_or_else(|| anyhow!("no message {id} in your chat"))?;
+        let mut all = hub.store.search_messages(&bot, &[], None, 500)?;
+        all.reverse();
+        let pos = all.iter().position(|e| e.id == anchor.id).unwrap_or(0);
+        let start = pos.saturating_sub(around);
+        let end = (pos + around + 1).min(all.len());
+        Ok(all[start..end]
+            .iter()
+            .map(|e| {
+                json!({
+                    "id": e.id,
+                    "date": ymd(e.created_at),
+                    "from": if e.kind == crate::store::EntryKind::User.as_str() { "user" } else { "you" },
+                    "anchor": e.id == anchor.id,
+                    "text": acp::truncate(e.data["text"].as_str().unwrap_or_default(), SEARCH_TEXT_CHARS),
+                })
+            })
+            .collect())
+    })
+    .await??;
+    Ok(json!({"messages": messages}))
 }

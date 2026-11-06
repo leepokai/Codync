@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Size
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
@@ -22,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import com.codync.android.design.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -46,18 +48,27 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Composable fun QrViewfinder(found: (String) -> Unit, modifier: Modifier = Modifier, error: (String?) -> Unit = {}) {
     val context = LocalContext.current
     val hardware = remember { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
-    var asked by remember { mutableStateOf(false) }
+    val activity = LocalActivity.current
+    // Denied for good (Android stops asking): only Settings can turn the camera on. Denied once, or the prompt
+    // dismissed (which also reports no rationale), asks again in place: only a second refusal counts as blocked.
+    var refusals by rememberSaveable { mutableIntStateOf(0) }
+    var blocked by rememberSaveable { mutableStateOf(false) }
     var granted by remember { mutableStateOf(false) }
     val permitted = rememberOnResume { ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED } || granted
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it; asked = true }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        granted = allowed
+        if (!allowed) refusals++
+        blocked = !allowed && refusals >= 2 && activity?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) == false
+    }
     Box(modifier.background(Palette.surface), contentAlignment = Alignment.Center) {
         if (hardware && permitted) CameraPairingPreview(Modifier.fillMaxSize(), found, error)
         else Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Symbol("qrcode.viewfinder", size = 52.dp, tint = Palette.tertiary)
-            Text(if (!hardware) "Camera not available. Paste the link below." else "Allow the camera to scan the code on your computer.",
+            Text(when { !hardware -> "Camera not available. Paste the link below."; blocked -> "Camera access is off for Codync. Turn it on in Settings, or paste the link below."
+                else -> "Allow the camera to scan the code on your computer." },
                 style = Type.footnote, color = Palette.tertiary, textAlign = TextAlign.Center)
             if (hardware) {
-                if (!asked) SecondaryButton("Allow camera") { permission.launch(Manifest.permission.CAMERA) }
+                if (!blocked) SecondaryButton("Allow camera") { permission.launch(Manifest.permission.CAMERA) }
                 else SecondaryButton("Camera settings") {
                     context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
                 }

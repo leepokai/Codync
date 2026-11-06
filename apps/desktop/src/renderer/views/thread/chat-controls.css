@@ -88,7 +88,10 @@
   left: 50%;
   z-index: 5;
   transform: translateX(-50%);
-  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
   box-shadow: var(--shadow-m);
   opacity: 0;
   translate: 0 6px;
@@ -97,4 +100,17 @@
 .jump-to-latest.shown {
   opacity: 1;
   translate: none;
+}
+.jump-new-count {
+  flex: none;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--chat-button);
+  color: var(--accent);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  white-space: nowrap;
 }

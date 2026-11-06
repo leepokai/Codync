@@ -4,6 +4,11 @@ import Testing
 @testable import CodyncKit
 @testable import CodyncUI
 
+/// A scripted transport: tests set its link state and push events; it records what the store asked.
+
+
+
+
 @MainActor @Test func voiceCallSendsAndReceivesInBackgroundWithoutViewUpdates() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
@@ -237,7 +242,7 @@ import Testing
     #expect(storage.computers.first?.notifications == nil)
     #expect(account.store(for: saved.id)?.computer.notifications == nil)
 }
-
+// `setCancelResult` lives with FakeRemote in StoreTestFixtures.swift.
 
 
 

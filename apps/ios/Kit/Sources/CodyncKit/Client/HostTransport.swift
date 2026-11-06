@@ -9,11 +9,6 @@ public enum HostStreamRequest: Sendable {
     case events(since: Int64, client: String)
     case term(String)
     case screenCandidates(String)
-
-    /// Events a slow consumer may leave unread before the stream ends; `nil` keeps every one.
-    var bufferLimit: Int? {
-        if case .screenCandidates = self { ScreenCandidate.maxCount + 2 } else { nil }
-    }
 }
 
 public enum LinkState: Sendable, Equatable {

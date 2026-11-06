@@ -51,7 +51,7 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
             ? [<Text key="error" tone="danger" className="settings-appear">{devices.error}</Text>]
             : [
                 ...(devices.length === 0
-                  ? [<Text key="none" tone="secondary">{tr(`None yet. Pair an iPhone, or approve one from your account.`)}</Text>]
+                  ? [<Text key="none" tone="secondary">{tr(`None yet. Pair an Android phone or iPhone, or approve one from your account.`)}</Text>]
                   : []),
                 ...devices.map((device) => (
                   <HStack key={device.key} gap={8} className="settings-row settings-appear">

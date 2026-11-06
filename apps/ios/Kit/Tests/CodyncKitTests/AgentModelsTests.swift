@@ -2,6 +2,19 @@ import Foundation
 import Testing
 @testable import CodyncKit
 
+@Test func dedicatedAgentAccountSurvivesBotDecodingAndEditorUpdates() throws {
+    let bot = try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"b","backend":"antigravity","account":"acc_deadbeef"}"#.utf8))
+    #expect(bot.account == "acc_deadbeef")
+    var draft = BotDraft(bot)
+    let selected = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
+    #expect(selected["account"] as? String == "acc_deadbeef")
+    draft.account = nil
+    let cleared = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
+    #expect(cleared["account"] is NSNull)
+    let older = try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"older"}"#.utf8))
+    #expect(older.account == nil)
+}
+
 @Test func modelCatalogDecodesAgentNamesAndIDs() throws {
     let data = Data(#"{"models":[{"id":"opus[1m]","name":"Agent model","description":"From the agent"}],"currentModelId":"opus[1m]"}"#.utf8)
     let catalog = try JSONDecoder().decode(AgentModels.self, from: data)

@@ -10,6 +10,7 @@ import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
 import { registerHostProxy } from './host-proxy'
 import { readClipboardFiles, readFiles } from './files'
+import { JumpList } from './jump-list'
 import { Tray } from './tray'
 import { applyDockVisibility, setShowInDock, showInDock } from './dock'
 import { AccountService } from './account'
@@ -18,6 +19,7 @@ import { handleURL, registerAuthIPC, registerSchemes, urlFromArgv } from './auth
 import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
+import { registerScreenViewer } from './screen-viewer'
 import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
@@ -104,7 +106,7 @@ function openPairing() {
     height: 420,
     useContentSize: true,
     resizable: false,
-    title: 'Pair iPhone',
+    title: 'Pair phone',
     backgroundColor: background(),
     webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: true, contextIsolation: true },
   })
@@ -117,6 +119,8 @@ export function send(command: WindowCommand, show = true) {
   if (show && isMac) app.focus({ steal: true })
   window?.webContents.send('app:command', command)
 }
+
+const jumpList = new JumpList((command) => send(command))
 
 function menu() {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -178,15 +182,11 @@ function registerIPC(tray: Tray) {
     const result = await openDialog(e, { properties: ['openFile', 'multiSelections'] })
     return result.canceled ? [] : readFiles(result.filePaths)
   })
-  ipcMain.handle('app:pickExport', async (e) => {
-    const result = await openDialog(e, { defaultPath: app.getPath('downloads'), properties: ['openFile'], filters: [{ name: 'Bot export', extensions: ['zip'] }] })
-    return result.canceled ? null : (result.filePaths[0] ?? null)
-  })
+  ipcMain.handle('app:readPaths', (_e, paths: string[]) => readFiles(Array.isArray(paths) ? paths : []))
   ipcMain.handle('app:clipboardFiles', () => readClipboardFiles())
-  ipcMain.on('app:traySummary', (_e, summary) => tray.update(summary))
-  ipcMain.on('app:showWindow', () => {
-    openChat()
-    if (isMac) app.focus({ steal: true })
+  ipcMain.on('app:traySummary', (_e, summary) => {
+    tray.update(summary)
+    jumpList.update(summary.bots)
   })
   ipcMain.handle('app:showInDock', () => showInDock())
   ipcMain.handle('app:setShowInDock', (_e, on: boolean) => {
@@ -197,6 +197,7 @@ function registerIPC(tray: Tray) {
   ipcMain.handle('app:launchAtLogin', () => launchAtLogin())
   ipcMain.handle('app:setLaunchAtLogin', (_e, on: boolean) => setLaunchAtLogin(on))
   ipcMain.handle('app:resetAllData', async () => {
+    jumpList.clear()
     // Tell paired devices first: connected ones see "No access" at once, and the account drops
     // this computer instead of keeping an unreachable older copy of it.
     await host.call('unclaim', {}, 30_000).catch(() => {})
@@ -231,7 +232,10 @@ if (yieldsToInstall()) {
   app.on('second-instance', (_e, argv) => {
     const url = urlFromArgv(argv)
     if (url) handleURL(url)
-    else openChat()
+    else {
+      jumpList.request(argv)
+      openChat()
+    }
   })
   app.on('activate', () => openChat())
   app.on('window-all-closed', () => {
@@ -256,11 +260,20 @@ if (yieldsToInstall()) {
     registerSpeech()
     registerScreenIPC()
     registerCloud(account)
-    registerSSH(() => BrowserWindow.getAllWindows())
+    const screenTarget = registerSSH(() => BrowserWindow.getAllWindows())
+    registerScreenViewer(rendererURL, () => chat, screenTarget)
     registerSSHConfig()
     // Calls use the microphone (realtime voice); nothing else asks for permissions.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())
+    // A sign-out leaves nothing of the account in the taskbar menu; signing in republishes it from the roster.
+    let signedIn: boolean | null = null
+    account.on('change', () => {
+      const now = !!account.state.user
+      if (now === signedIn) return
+      signedIn = now
+      if (!now) jumpList.clear()
+    })
     updates.register(() => BrowserWindow.getAllWindows())
     menu()
     host.on('change', () => {
@@ -274,5 +287,6 @@ if (yieldsToInstall()) {
     })
     host.start()
     openChat()
+    jumpList.request(process.argv)
   })
 }

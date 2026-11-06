@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub const INSTRUCTIONS: &str = "Connect external services with search_connectors, list_connectors and request_connection. To update an installed connector's key use request_secret. To sign in to a website or app on the screen, check list_logins, ask with request_login if it's missing, then type it with the computer tool type_login. Requests appear as secure cards in the user's conversation. Never ask for passwords or keys in ordinary chat or tool arguments. After requesting, finish your turn and wait; Codync resumes you after the user completes setup.";
+pub const INSTRUCTIONS: &str = "Connect external services with search_connectors, list_connectors and request_connection. To update an installed connector's key use request_secret. To sign in to a website or app on the screen, check list_logins, ask with request_login if it's missing, then type it with the computer tool type_login. For an API key of your own, ask with request_api_key and call the service with api_request; for a secret a shell command needs, ask with request_command_variable and run it with run_with_secrets (list_secrets shows what you keep). Requests appear as secure cards in the user's conversation. Never ask for passwords or keys in ordinary chat or tool arguments. After requesting, finish your turn and wait; Codync resumes you after the user completes setup.";
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(super) enum RequestKind {
@@ -39,15 +39,48 @@ pub(super) const MAX_AGE: i64 = 24 * 60 * 60 * 1000;
 static MUTATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub fn tools() -> Value {
-    json!([
-        {"name":"search_connectors","description":"Find registry connectors by service name.","inputSchema":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}},
-        {"name":"list_connectors","description":"List installed connectors without credentials.","inputSchema":{"type":"object","properties":{}}},
-        {"name":"request_connection","description":"Invite the user to install or authorize a connector. Supply either registryName from search or connectorId from the installed list.","inputSchema":{"type":"object","properties":{"registryName":{"type":"string"},"connectorId":{"type":"string"},"reason":{"type":"string"}},"required":["reason"]}},
-        {"name":"request_app","description":"Invite the user to connect a hosted app through Composio, for example gmail or slack.","inputSchema":{"type":"object","properties":{"toolkit":{"type":"string"},"reason":{"type":"string"}},"required":["toolkit","reason"]}},
-        {"name":"list_logins","description":"List saved website and app logins (site and username; never passwords).","inputSchema":{"type":"object","properties":{}}},
-        {"name":"request_login","description":"Ask the user to save a login for a website or app, e.g. github.com. They fill it in on a secure card; you never see the password. Then use the computer tool type_login.","inputSchema":{"type":"object","properties":{"site":{"type":"string","description":"The website's domain, or the app's name."},"reason":{"type":"string"}},"required":["site","reason"]}},
-        {"name":"request_secret","description":"Ask the user to securely provide a credential for an installed connector. The value goes directly to that connector and is never returned to you.","inputSchema":{"type":"object","properties":{"connectorId":{"type":"string"},"field":{"type":"string"},"location":{"type":"string","enum":["env","header"]},"reason":{"type":"string"}},"required":["connectorId","field","location","reason"]}}
-    ])
+    let mut tools = vec![
+        json!({"name":"search_connectors","description":"Find registry connectors by service name.","inputSchema":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}),
+        json!({"name":"list_connectors","description":"List installed connectors without credentials.","inputSchema":{"type":"object","properties":{}}}),
+        json!({"name":"request_connection","description":"Invite the user to install or authorize a connector. Supply either registryName from search or connectorId from the installed list.","inputSchema":{"type":"object","properties":{"registryName":{"type":"string"},"connectorId":{"type":"string"},"reason":{"type":"string"}},"required":["reason"]}}),
+        json!({"name":"request_app","description":"Invite the user to connect a hosted app through Composio, for example gmail or slack.","inputSchema":{"type":"object","properties":{"toolkit":{"type":"string"},"reason":{"type":"string"}},"required":["toolkit","reason"]}}),
+        json!({"name":"list_logins","description":"List saved website and app logins (site and username; never passwords).","inputSchema":{"type":"object","properties":{}}}),
+        json!({"name":"request_login","description":"Ask the user to save a login for a website or app, e.g. github.com. They fill it in on a secure card; you never see the password. Then use the computer tool type_login.","inputSchema":{"type":"object","properties":{"site":{"type":"string","description":"The website's domain, or the app's name."},"reason":{"type":"string"}},"required":["site","reason"]}}),
+        json!({"name":"request_secret","description":"Ask the user to securely provide a credential for an installed connector. The value goes directly to that connector and is never returned to you.","inputSchema":{"type":"object","properties":{"connectorId":{"type":"string"},"field":{"type":"string"},"location":{"type":"string","enum":["env","header"]},"reason":{"type":"string"}},"required":["connectorId","field","location","reason"]}}),
+    ];
+    tools.extend(super::secret_tools::tools());
+    Value::Array(tools)
+}
+
+/// Posts `request` as a secure card in `bot`'s current lane, with `reason` as its text.
+fn post(hub: &Hub, bot: &str, reason: &str, request: &Value) -> Result<Value> {
+    let lane = hub.runtime(bot).lane.unwrap_or_else(|| Lane::main(bot));
+    let reason: String = reason.chars().take(400).collect();
+    let entry = hub
+        .add_entry(
+            &lane,
+            EntryKind::Notice,
+            hub.store.max_turn(bot),
+            &json!({"text":reason,"connectionRequest":request}),
+        )
+        .ok_or_else(|| anyhow!("Could not save the request"))?;
+    Ok(json!({"requestId":entry.id,"status":"waitingForUser"}))
+}
+
+/// A `secret` card asking for one of `bot`'s own secrets (`secret_tools`): `field` names it,
+/// `location` says where it goes, `botSecret` is where the host will put it.
+pub(super) fn ask_bot_secret(
+    hub: &Hub,
+    bot: &str,
+    title: &str,
+    name: &str,
+    destination: &str,
+    usage: &Value,
+    reason: &str,
+) -> Result<Value> {
+    let request = json!({"kind":RequestKind::Secret,"status":RequestStatus::Pending,"title":title,"botId":bot,
+        "field":name,"location":destination,"botSecret":usage});
+    post(hub, bot, reason, &request)
 }
 
 pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
@@ -61,25 +94,15 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             if site.is_empty() || site.len() > 200 {
                 bail!("Give the website's domain or the app's name");
             }
-            let lane = hub.runtime(bot).lane.unwrap_or_else(|| Lane::main(bot));
-            let reason: String = text(args, "reason")?.chars().take(400).collect();
-            let entry = hub
-                .add_entry(
-                    &lane,
-                    EntryKind::Notice,
-                    hub.store.max_turn(bot),
-                    &json!({"text":reason,"connectionRequest":{"kind":RequestKind::Login,"status":RequestStatus::Pending,"title":site,"site":site,"botId":bot}}),
-                )
-                .ok_or_else(|| anyhow!("Could not save login request"))?;
-            Ok(json!({"requestId":entry.id,"status":"waitingForUser"}))
+            let request =
+                json!({"kind":RequestKind::Login,"status":RequestStatus::Pending,"title":site,"site":site,"botId":bot});
+            post(hub, bot, text(args, "reason")?, &request)
         }
         "request_app" => {
             let toolkit = text(args, "toolkit")?.to_ascii_lowercase();
             if toolkit.len() > 100 || !toolkit.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-') {
                 bail!("Invalid app identifier");
             }
-            let lane = hub.runtime(bot).lane.unwrap_or_else(|| Lane::main(bot));
-            let reason: String = text(args, "reason")?.chars().take(400).collect();
             // The card shows the app's own name and logo when Composio lists it.
             let listed = super::composio::toolkits(&hub.store, &toolkit, "")
                 .await
@@ -87,10 +110,9 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
                 .and_then(|v| v["items"].as_array()?.iter().find(|t| t["slug"] == toolkit.as_str()).cloned());
             let title = listed.as_ref().and_then(|t| t["name"].as_str()).unwrap_or(&toolkit).to_owned();
             let logo = listed.as_ref().map_or(Value::Null, |t| t["logo"].clone());
-            let entry = hub.add_entry(&lane,EntryKind::Notice,hub.store.max_turn(bot),&json!({"text":reason,"connectionRequest":{
-                "kind":RequestKind::App,"status":RequestStatus::Pending,"title":title,"logo":logo,"botId":bot,"toolkit":toolkit,"connectorId":format!("{}{}",super::composio::PREFIX,toolkit)
-            }})).ok_or_else(|| anyhow!("Could not save connection request"))?;
-            Ok(json!({"requestId":entry.id,"status":"waitingForUser"}))
+            let request = json!({"kind":RequestKind::App,"status":RequestStatus::Pending,"title":title,"logo":logo,"botId":bot,
+                "toolkit":toolkit,"connectorId":format!("{}{}",super::composio::PREFIX,toolkit)});
+            post(hub, bot, text(args, "reason")?, &request)
         }
         "request_connection" | "request_secret" => {
             let installed = args["connectorId"].as_str().filter(|s| !s.is_empty());
@@ -118,27 +140,18 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
                     bail!("Invalid credential destination");
                 }
             }
-            let lane = hub.runtime(bot).lane.unwrap_or_else(|| Lane::main(bot));
             let request = json!({"kind":if secret {RequestKind::Secret} else {RequestKind::Connection}, "status":RequestStatus::Pending, "title":title,
                 "registryName":registry, "connectorId":installed, "botId":bot,
                 "field":if secret {args["field"].clone()} else {Value::Null},
                 "location":if secret {args["location"].clone()} else {Value::Null}});
-            let reason: String = text(args, "reason")?.chars().take(400).collect();
-            let entry = hub
-                .add_entry(
-                    &lane,
-                    EntryKind::Notice,
-                    hub.store.max_turn(bot),
-                    &json!({"text":reason,"connectionRequest":request}),
-                )
-                .ok_or_else(|| anyhow!("Could not save connection request"))?;
-            Ok(json!({"requestId":entry.id,"status":"waitingForUser"}))
+            post(hub, bot, text(args, "reason")?, &request)
         }
+        name if super::secret_tools::handles(name) => super::secret_tools::call(hub, bot, name, args).await,
         _ => bail!("Unknown connection tool"),
     }
 }
 
-fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
+pub(super) fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("{key} is required"))
 }
 
@@ -180,6 +193,10 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
         }
         super::agent_sign_in::agent_signed_in(hub, backend)?;
         return Ok(json!({"entry": hub.store.entry(id)}));
+    }
+    if kind == RequestKind::Secret && request["botSecret"].is_object() {
+        let note = super::secret_tools::save_from_card(hub, request, text(args, "value")?)?;
+        return complete(hub, &e, id, note);
     }
     if kind == RequestKind::Login {
         let login = super::logins::save(

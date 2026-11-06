@@ -49,4 +49,15 @@ class PairingQrTest {
         assertFails<IllegalArgumentException> { PairingQr.luminance(buffer, 3, 2, 2, 2) }
         assertFails<IllegalArgumentException> { PairingQr.luminance(buffer, Int.MAX_VALUE, Int.MAX_VALUE, 12, 1) }
     }
+
+    @Test fun `a pairing code from the other app variant explains which app to use`() {
+        val production = code()
+        val development = production.replace("codync://", "codync-dev://")
+        for ((scheme, value) in listOf("codync" to development, "codync-dev" to production)) {
+            val result = PairingQr(scheme).decode(pixels(value), 512, 512)
+            assertTrue(result is PairingScan.Invalid)
+            assertTrue((result as PairingScan.Invalid).message.contains("same Codync variant"))
+        }
+        assertEquals(PairingScan.Found(development), PairingQr("codync-dev").decode(pixels(development), 512, 512))
+    }
 }

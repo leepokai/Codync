@@ -23,7 +23,6 @@ actor FakeRemote: RemoteTransport {
     private(set) var readAttempts = 0
     private(set) var shutdownCount = 0
     private var isShutdown = false
-
     private var checkpointSinks: [UUID: AsyncStream<Checkpoint>.Continuation] = [:]
 
     func checkpoints() -> AsyncStream<Checkpoint> {
@@ -100,10 +99,6 @@ actor FakeRemote: RemoteTransport {
             // A fresh credential per provider session, so a test can tell a replaced session from the first.
             let n = calls.filter { $0 == "startCall" }.count
             return Data(#"{"instructions":"Be the relay.","tools":[],"credential":"token-\#(n)"}"#.utf8)
-        case "createBot", "updateBot":
-            // The host's reply bot, which never carries a custom icon (icons sync on their own).
-            let id = (try JSONSerialization.jsonObject(with: body) as? [String: Any])?["id"] as? String ?? "new"
-            return Data(#"{"bot":{"id":"\#(id)","name":"Saved","rev":2}}"#.utf8)
         default:
             return Data("{}".utf8)
         }
@@ -191,7 +186,6 @@ func until(_ condition: @MainActor () async -> Bool) async -> Bool {
 func botEvent(_ id: String, name: String, rev: Int) -> String {
     #"{"type":"bot","bot":{"id":"\#(id)","name":"\#(name)","rev":\#(rev),"lastAt":\#(rev)}}"#
 }
-
 
 extension FakeRemote {
     func setCancelResult(_ result: MailboxCancel) { cancelResult = result }

@@ -1,7 +1,7 @@
 {
   "name": "codync-desktop",
   "productName": "Codync",
-  "version": "2.38.0",
+  "version": "2.30.0",
   "description": "Codync for macOS, Linux and Windows: your coding agents as teammates.",
   "author": {
     "name": "leepokai",
@@ -17,7 +17,7 @@
     "build": "electron-vite build",
     "build:demo": "vite build --config vite.demo.config.ts && mv ../../web/public/demo/desktop/index.html ../../web/public/demo/desktop.html",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test --experimental-strip-types src/shared/*.test.ts src/renderer/lib/*.test.ts src/renderer/store/*.test.ts src/renderer/views/*.test.ts src/renderer/views/thread/*.test.ts src/renderer/views/routines/*.test.ts src/renderer/views/call/*.test.ts src/renderer/views/marketplace/*.test.ts",
+    "test": "node --test --experimental-strip-types src/shared/*.test.ts src/main/vnc-bridge.test.ts src/renderer/lib/*.test.ts src/renderer/views/thread/*.test.ts src/renderer/views/routines/*.test.ts src/renderer/views/call/*.test.ts src/renderer/views/marketplace/*.test.ts",
     "icons": "swift tools/export-symbols.swift",
     "dist:mac:dev": "node tools/account-config.mjs dev && node tools/native-host.mjs dev && node tools/native-screen.mjs dev && electron-vite build && CSC_NAME=\"Pokai Lee (6KFK5J2LB4)\" electron-builder --mac --config tools/dev-builder.cjs",
     "dist:mac:main": "node tools/account-config.mjs main && node tools/native-host.mjs main && node tools/native-screen.mjs main && electron-vite build && electron-builder --mac",
@@ -44,9 +44,23 @@
     "react-dom": "^19.3.0",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "@types/jsdom": "^30.0.0",
+    "@types/ws": "^8.18.2",
+    "jsdom": "^30.1.3"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "@novnc/novnc": "^1.7.0",
+    "@tiptap/core": "^3.32.0",
+    "@tiptap/extension-image": "^3.32.0",
+    "@tiptap/extension-table": "^3.32.0",
+    "@tiptap/extension-task-item": "^3.32.0",
+    "@tiptap/extension-task-list": "^3.32.0",
+    "@tiptap/markdown": "^3.32.0",
+    "@tiptap/pm": "^3.32.0",
+    "@tiptap/react": "^3.32.0",
+    "@tiptap/starter-kit": "^3.32.0",
+    "ws": "^8.22.0"
   }
 }

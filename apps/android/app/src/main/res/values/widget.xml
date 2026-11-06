@@ -4,6 +4,7 @@
     <string name="talk_shortcut">Talk to Codync</string>
     <string name="widget_loading">Codync · Open the app for the latest report</string>
     <string name="widget_bots_description">Latest bot status and unread counts</string>
+    <string name="widget_lock_summary_description">Activity counts and freshness without bot names or messages</string>
     <string name="widget_team_description">Four bots as characters, the ones that need you first</string>
     <string name="widget_provider_description">Latest limits from your selected provider</string>
     <string name="widget_claude_description">Claude Code session and weekly usage limits.</string>

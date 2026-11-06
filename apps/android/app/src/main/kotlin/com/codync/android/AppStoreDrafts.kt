@@ -14,34 +14,44 @@ import kotlinx.serialization.json.*
 
 // Composer drafts (saved as you type) and the files that go with them.
 
-fun AppStore.editDraft(botId: String, text: String) {
+fun AppStore.editDraft(botId: String, thread: String?, text: String, draftKey: String = ComposerDraft.lane(botId, thread)) {
     if (state.value.loading) return
-    val current = state.value.drafts[botId]
+    val lane = draftKey
+    val current = state.value.drafts[lane]
     if (current?.text == text || current == null && text.isEmpty()) return
-    try { updateDraft((current ?: ComposerDraft(botId)).copy(text = text)) }
+    try { updateDraft((current ?: ComposerDraft(botId, thread, draftKey = draftKey.takeUnless { it == ComposerDraft.lane(botId, thread) })).copy(text = text)) }
     catch (error: Exception) { showError(error) }
 }
 
-/** Puts [text] after what's in [botId]'s message box (text shared from another app), as much of it as the box holds. */
-fun AppStore.appendDraft(botId: String, text: String) = editDraft(botId, sharedDraft(state.value.drafts[botId]?.text.orEmpty(), text))
-
-/** [shared] after [before], cut at a character's edge to the most a draft holds (`DraftBook.TEXT_BYTES` of UTF-8). */
-internal fun sharedDraft(before: String, shared: String): String {
-    val joined = DictationText.join(before, shared)
-    val input = CharBuffer.wrap(joined)
-    // The encoder stops before the first character that doesn't fit, never inside one; a lone surrogate counts as the '?' it's saved as.
-    Charsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPLACE).encode(input, ByteBuffer.allocate(DraftBook.TEXT_BYTES), true)
-    return joined.substring(0, input.position())
+/** Quotes a whole message into the draft of the conversation it belongs to (idea 34's fallback). */
+fun AppStore.quoteMessage(entry: Entry, thread: String? = entry.threadId) {
+    val text = entry.text
+    if (text.isBlank()) return
+    val quoted = text.lineSequence().joinToString("\n") { "> $it" }
+    val lane = ComposerDraft.lane(entry.botId, thread)
+    val current = state.value.drafts[lane]?.text.orEmpty()
+    editDraft(entry.botId, thread, if (current.isEmpty()) "$quoted\n\n" else "$current\n$quoted\n\n")
 }
 
-fun AppStore.addDraftFiles(botId: String, files: List<OutgoingFile>) {
+fun AppStore.addDraftFiles(botId: String, thread: String?, files: List<OutgoingFile>, draftKey: String = ComposerDraft.lane(botId, thread)) {
     check(!state.value.loading) { "Wait for the account to finish opening before adding files." }
-    val current = state.value.drafts[botId] ?: ComposerDraft(botId)
+    val current = state.value.drafts[draftKey] ?: ComposerDraft(botId, thread, draftKey = draftKey.takeUnless { it == ComposerDraft.lane(botId, thread) })
     updateDraft(current.copy(files = current.files + files))
 }
 
-fun AppStore.removeDraftFile(botId: String, file: OutgoingFile) = action("draft-file:" + file.path) {
-    val current = state.value.drafts[botId] ?: return@action
+/** A shared text and files at once: the draft is validated before either is applied, so a failure changes nothing. */
+internal fun AppStore.addShareToDraft(botId: String, text: String, files: List<OutgoingFile>) {
+    check(!state.value.loading) { "Wait for the account to finish opening before adding the shared content." }
+    checkNotNull(draftBook) { "Connect to a computer to share this." }
+    val current = state.value.drafts[ComposerDraft.lane(botId, null)] ?: ComposerDraft(botId)
+    updateDraft(current.copy(
+        text = if (text.isBlank()) current.text else ShareIntake.merge(current.text, text),
+        files = current.files + files,
+    ))
+}
+
+fun AppStore.removeDraftFile(botId: String, thread: String?, file: OutgoingFile, draftKey: String = ComposerDraft.lane(botId, thread)) = action("draft-file:" + file.path) {
+    val current = state.value.drafts[draftKey] ?: return@action
     updateDraft(current.copy(files = current.files - file))
     draftWriter?.join()
     check(savedDrafts.values.none { draft -> draft.files.any { it.path == file.path } }) { "Couldn't save the attachment removal. Retry before leaving this chat." }
@@ -50,7 +60,7 @@ fun AppStore.removeDraftFile(botId: String, file: OutgoingFile) = action("draft-
 
 private fun AppStore.updateDraft(draft: ComposerDraft) {
     val book = draftBook ?: return
-    val drafts = if (draft.text.isEmpty() && draft.files.isEmpty()) state.value.drafts - draft.botId else state.value.drafts + (draft.botId to draft)
+    val drafts = if (draft.text.isEmpty() && draft.files.isEmpty()) state.value.drafts - draft.lane else state.value.drafts + (draft.lane to draft)
     book.validate(drafts.values, checkPaths = false)
     mutableState.update { it.copy(drafts = drafts) }
     persistDrafts()
@@ -64,7 +74,7 @@ internal fun AppStore.persistDrafts() {
             while (isActive) {
                 val saving = state.value.drafts.values.toList()
                 withContext(Dispatchers.IO) { book.save(saving) }
-                savedDrafts = saving.associateBy { it.botId }
+                savedDrafts = saving.associateBy { it.lane }
                 if (state.value.drafts.values.toList() == saving) break
             }
         } catch (error: CancellationException) { throw error }
@@ -73,21 +83,22 @@ internal fun AppStore.persistDrafts() {
     }
 }
 
-/** Sends draft `key` (the chat's, or one of its artifacts') to chat `botId`, quoting `replyTo` when there is one. */
-fun AppStore.sendDraft(key: String, botId: String, text: String, replyTo: ReplyQuote?, onQueued: () -> Unit) {
-    editDraft(key, text)
-    val draft = state.value.drafts[key] ?: return
+fun AppStore.sendDraft(botId: String, thread: String?, text: String, replyTo: ReplyQuote? = null, draftKey: String = ComposerDraft.lane(botId, thread), onQueued: () -> Unit) {
+    editDraft(botId, thread, text, draftKey)
+    val lane = draftKey
+    val draft = state.value.drafts[lane] ?: return
     if (draft.text != text) return
     if (draft.text.isBlank() && draft.files.isEmpty()) return
-    action("draft-send:$key") {
+    action("draft-send:" + lane) {
         // Persist its nonce before the pending commit. Recovery removes a draft
         // already represented by a pending or confirmed send with this nonce.
         persistDrafts()
         draftWriter?.join()
-        check(savedDrafts[key] == draft) { "Couldn't save this draft. Retry to send it." }
-        val send = PendingSend(draft.nonce, botId, draft.text.trim(), System.currentTimeMillis(), files = draft.files, replyTo = replyTo)
+        check(savedDrafts[lane] == draft) { "Couldn't save this draft. Retry to send it." }
+        val send = PendingSend(draft.nonce, botId, draft.text.trim(), System.currentTimeMillis(), files = draft.files,
+            replyTo = replyTo, threadId = thread)
         savePending(send)
-        mutableState.update { it.copy(drafts = it.drafts - key) }
+        mutableState.update { it.copy(drafts = it.drafts - lane) }
         persistDrafts()
         onQueued()
         action("send:" + send.nonce) { deliver(send) }
@@ -131,3 +142,5 @@ private suspend fun AppStore.cachedFile(id: String, size: Long, fetch: suspend (
     } }
     try { return request.await() } finally { request.cancel() }
 }
+
+fun AppStore.editDraft(botId: String, text: String) = editDraft(botId, null, text)

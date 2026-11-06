@@ -19,3 +19,29 @@
 .trace-thought {
   white-space: pre-wrap;
 }
+/* The "Full conversation" filters (idea 32): a scrollable row of pills. */
+.trace-filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 14px 12px;
+  flex: none;
+}
+.trace-filter {
+  flex: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--secondary);
+  background: var(--surface);
+}
+.trace-filter:hover {
+  background: rgba(var(--text-rgb), 0.08);
+}
+.trace-filter.on {
+  color: var(--on-accent);
+  background: var(--accent-fill);
+}

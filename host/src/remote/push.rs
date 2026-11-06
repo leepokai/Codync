@@ -106,11 +106,27 @@ fn faces(hub: &Hub, bot: &BotConfig, from: Option<&str>) -> Vec<Value> {
 
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
 pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body: &str, kind: AlertKind) {
+    notify_with(hub, bot, from, title, body, kind, None);
+}
+
+/// The same alert, carrying the pending approval a phone may answer from the notification itself
+/// (`entryId` and the agent's real options). Only the kind that waits for input uses it.
+pub fn notify_with(
+    hub: &Hub,
+    bot: &BotConfig,
+    from: Option<&str>,
+    title: &str,
+    body: &str,
+    kind: AlertKind,
+    approval: Option<Value>,
+) {
     purge_dead_tickets(hub);
     if bot.notify == Some(false) || bot.hidden || hub.phone_connected() {
         return;
     }
-    if throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
+    // A new approval replaces the alert for the same chat: throttling it would leave the older card's
+    // buttons on screen while the agent waits for the new one.
+    if approval.is_none() && throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
         return;
     }
     let Some(relay) = relay_url(hub) else { return };
@@ -131,6 +147,9 @@ pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body:
         secret["from"] = from.into();
     }
     secret["faces"] = faces(hub, bot, from).into();
+    if let Some(approval) = approval {
+        secret["approval"] = approval;
+    }
     let secret = secret.to_string();
     let computer_id = hub.identity.computer_id();
     let mut notifications = Vec::new();

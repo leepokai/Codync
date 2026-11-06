@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.InstalledConnector
+import com.codync.android.core.MarketApp
 import com.codync.android.core.WireJson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -18,13 +19,35 @@ import kotlinx.serialization.json.put
 
 /** A connector you describe yourself: a command line with env, or an https URL with headers. */
 internal suspend fun AppStore.addConnector(name: String, command: String?, url: String?, env: Map<String, String>,
-    headers: Map<String, String>): InstalledConnector {
+    headers: Map<String, String>, args: List<String> = emptyList(), catalog: String? = null,
+    description: String? = null): InstalledConnector {
     val response = hostCall("installConnector", buildJsonObject {
         put("name", name); command?.let { put("command", it) }; url?.let { put("url", it) }
+        put("args", WireJson.encodeToJsonElement(args))
+        catalog?.let { put("catalog", it) }; description?.let { put("description", it) }
         put("env", WireJson.encodeToJsonElement(env)); put("headers", WireJson.encodeToJsonElement(headers))
     }, 45_000)
     refreshPlugins()
     return WireJson.decodeFromJsonElement(response.jsonObject.getValue("connector"))
+}
+
+/** Adds a marketplace app with the values typed, then runs its browser sign-in when it wants one. */
+internal suspend fun AppStore.installApp(app: MarketApp, values: Map<String, String>): InstalledConnector {
+    val headers = mutableMapOf<String, String>()
+    val env = mutableMapOf<String, String>()
+    var url = app.server.url
+    for (field in app.fields) {
+        val typed = values[field.id]?.trim().orEmpty()
+        when {
+            field.url -> if (typed.isNotEmpty()) url = typed
+            field.header != null -> headers[field.header!!] = typed
+            field.env != null -> env[field.env!!] = typed
+        }
+    }
+    val connector = addConnector(app.server.name.ifEmpty { app.name }, app.server.command, url, env, headers,
+        args = app.server.args, catalog = app.id, description = app.description)
+    if (connector.needsSignIn) signInConnector(connector.id)
+    return connector
 }
 
 internal suspend fun AppStore.removePlugin(method: String, id: String) {
@@ -65,4 +88,4 @@ internal suspend fun AppStore.signInConnector(id: String, requestId: String? = n
 }
 
 /** The computer's own name (its hello), the one everything here installs on. */
-internal val AppState.hostName: String get() = hello?.text("name") ?: computer.name
+internal val AppState.hostName: String get() = hello?.text("name") ?: computer?.name ?: "your computer"

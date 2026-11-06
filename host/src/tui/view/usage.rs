@@ -15,15 +15,18 @@ use super::time::{DAYS, MONTHS, clock, local, month_day, now_ms};
 /// One line of the sheet's list.
 enum Line<'a> {
     Provider(&'a str),
+    /// Why a provider has no numbers: its agent is too old, or this account can't be read.
+    Status(&'a str),
     Window(&'a Value),
     Gap,
 }
 
-/// Each provider's name, its windows and a gap.
+/// Each provider's name, why it can't report, its windows and a gap.
 fn lines(providers: &[Value]) -> Vec<Line<'_>> {
     let mut lines = Vec::new();
     for p in providers {
         lines.push(Line::Provider(p["name"].as_str().unwrap_or_default()));
+        lines.extend(p["status"].as_str().map(Line::Status));
         lines.extend(p["windows"].as_array().into_iter().flatten().map(Line::Window));
         lines.push(Line::Gap);
     }
@@ -60,6 +63,14 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
         match line {
             Line::Provider(name) => {
                 put(buf, inner.x, y, inner.width, name, t.bold.patch(t.panel));
+            }
+            Line::Status(status) => {
+                let message = if *status == "unsupported" {
+                    "Update this agent to read its plan limits."
+                } else {
+                    "Plan limits are unavailable for this account."
+                };
+                put(buf, inner.x + 2, y, inner.width.saturating_sub(2), &tr(message), t.secondary.patch(t.panel));
             }
             Line::Window(win) => window(buf, inner, y, win),
             Line::Gap => {}

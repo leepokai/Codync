@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react'
-import { isGroup, type Bot } from '@shared/models'
+import { useCallback, useState, type ReactNode } from 'react'
+import { isGroup, type Bot, type BotDraft } from '@shared/models'
+import { fromProfile } from '@shared/catalog'
 import { BotAvatar, CharacterAvatar, GroupAvatar } from '../../components/Avatar'
 import { Button, ChoicePicker, Spinner } from '../../components/Controls'
 import { ModalHeader, useDismiss } from '../../components/Overlay'
@@ -9,6 +10,8 @@ import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
 import { errorText, fillDefaults, newDraft } from './drafts'
 import { AvatarPicker } from './parts'
+import { AgentAndModel, PurposeField, Suggestions } from './NewBotParts'
+import { useCatalog } from './use-catalog'
 import './bots.css'
 
 /** Which computer a new bot or group goes to; shown when more than one is online. */
@@ -19,15 +22,18 @@ export interface ComputerChoice {
 }
 
 /**
- * A new bot from its looks and an optional name (Grok Bot's "Create New Bot"); the rest starts on
- * the defaults and changes in its Settings. Unnamed, the host names it after its first conversations.
+ * A new bot from its looks, an optional name, what it should help with and its agent and model, or from a
+ * ready-made suggestion; the rest starts on the defaults and changes in its Settings. Unnamed, the host names
+ * it after its first conversations.
  */
 export function NewBotView({ computer }: { computer: ComputerChoice | null }) {
   const store = useStore()
-  const [draft, setDraft] = useState(newDraft)
+  const [draft, setDraft] = useState(() => fillDefaults(store, newDraft()))
+  const change = useCallback((update: (d: BotDraft) => BotDraft) => setDraft(update), [])
+  const { catalog } = useCatalog(store)
 
   const create = async () => {
-    const bot = await store.save(fillDefaults(store, { ...draft, name: draft.name.trim() }))
+    const bot = await store.save({ ...draft, name: draft.name.trim() })
     store.setSelection(bot.id)
   }
 
@@ -48,6 +54,11 @@ export function NewBotView({ computer }: { computer: ComputerChoice | null }) {
         onShape={(avatarShape) => setDraft((d) => ({ ...d, avatarShape }))}
         onColor={(avatarColor) => setDraft((d) => ({ ...d, avatarColor }))}
       />
+      <div className="create-fields">
+        <PurposeField value={draft.description} onChange={(description) => setDraft((d) => ({ ...d, description }))} />
+      </div>
+      <AgentAndModel draft={draft} onChange={change} />
+      <Suggestions profiles={catalog?.bots.filter((b) => b.featured) ?? []} onPick={(p) => setDraft((d) => fromProfile(d, p))} />
     </CreateLayout>
   )
 }

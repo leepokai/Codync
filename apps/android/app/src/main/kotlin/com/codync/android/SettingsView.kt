@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,17 +34,35 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.design.*
 
 /**
- * The Settings tab: what belongs to this phone alone (appearance, language, notification permission,
- * analytics, Start over; iOS `SettingsView`). Each computer's own settings (voice chat, push, connection,
- * hidden bots) are in Computer management (`ComputersView`).
+ * The Settings destination: what belongs to this phone alone (appearance, language, navigation,
+ * security, notification permission, analytics, Start over; iOS `SettingsView`). Each computer's
+ * own settings (voice chat, push, connection, hidden bots) are in Computer management
+ * (`ComputersView`), which `computers` opens.
  */
-@Composable internal fun SettingsView(state: AccountContext, computers: List<AppState>, store: AccountStore, bottomInset: Dp) {
+@Composable internal fun SettingsView(
+    state: AppState,
+    store: AppStore,
+    bottomInset: Dp = 0.dp,
+    computers: (() -> Unit)? = null,
+    active: Boolean = true,
+    reselectToken: Int = 0,
+) {
+    val context = LocalContext.current
     val uri = LocalUriHandler.current
+    val scroll = rememberScrollState()
+    LaunchedEffect(context) { NavigationPreferences.ensureLoaded(context) }
+    val navStyle by NavigationPreferences.style.collectAsState()
+    val navAutoHide by NavigationPreferences.autoHide.collectAsState()
     var confirmStartOver by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
-    CardForm(Modifier.background(Palette.background).statusBarsPadding(), PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = bottomInset)) {
+    LaunchedEffect(reselectToken) { if (reselectToken > 0) scroll.animateScrollTo(0) }
+    LaunchedEffect(active) { if (active) store.refreshCloud() }
+    CardForm(Modifier.background(Palette.background).statusBarsPadding(), PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = bottomInset), scroll) {
         Text(tr("Settings"), Modifier.semantics { heading() }, style = Type.largeTitle.bold, color = Palette.text)
-        AppearanceSettings()
+        if (computers != null) CardSection {
+            row { RowLabel("Computer management", "desktopcomputer", chevron = true, modifier = Modifier.plainButton(action = computers)) }
+        }
+        AppearanceSection()
         val appLanguage = LocalAppLanguage.current
         val setAppLanguage = LocalSetAppLanguage.current
         val systemChinese = LocalSystemChinese.current
@@ -56,7 +77,22 @@ import com.codync.android.design.*
             }
         }
         ThinkingDetailsSettings()
-        ShortcutLeadSettings(state, computers, store)
+        CardSection("Navigation", "Pick how the tab bar sits at the bottom of the screen on phones.") {
+            row {
+                ValueRow("Bar style") {
+                    ChoicePicker(
+                        navStyle,
+                        NavBarStyle.entries.map { it to it.title },
+                        { NavigationPreferences.setStyle(context, it) },
+                        label = "Bar style",
+                    )
+                }
+            }
+            row {
+                SwitchRow("Hide bar on scroll", isOn = navAutoHide, onChange = { NavigationPreferences.setAutoHide(context, it) })
+            }
+        }
+        SecuritySection()
         NotificationsSection()
         CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
             row {
@@ -91,7 +127,7 @@ import com.codync.android.design.*
             }
         }
     }
-    CodyncSheet(aboutAnalytics, { aboutAnalytics = false }) { AnalyticsSheet() }
+    CodyncSheet(aboutAnalytics, { aboutAnalytics = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { AnalyticsSheet() }
     CodyncDialog("Start over?", confirmStartOver, { confirmStartOver = false },
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {
         listOf(DialogAction("Start over", destructive = true, action = store::startOver))

@@ -32,4 +32,26 @@ class PushAlertTest {
         assertEquals(120, alert.title.length)
         assertEquals(400, alert.body.length)
     }
+
+    @Test fun `a pending approval keeps three named options and drops malformed ones`() {
+        val options = (1..5).joinToString(",") { """{"optionId":"allow-$it","name":"Allow $it","kind":"allow_once"}""" }
+        val alert = PushAlert.decode("""{"title":"Approve","body":"Run rm -rf","approval":{"entryId":"entry_1","options":[$options,
+            {"optionId":"","name":"Broken"},{"optionId":"bad option","name":"Broken"},{"optionId":"empty","name":"  "} ]}}""")
+        val approval = requireNotNull(alert.approval)
+        assertEquals("entry_1", approval.entryId)
+        assertEquals(listOf("allow-1", "allow-2", "allow-3"), approval.options.map { it.optionId })
+    }
+
+    @Test fun `an approval with nothing answerable disappears`() {
+        assertNull(PushAlert.decode("""{"title":"Approve","body":"x","approval":{"entryId":"entry_1","options":[]}}""").approval)
+        assertNull(PushAlert.decode("""{"title":"Approve","body":"x","approval":{"entryId":"","options":[{"optionId":"a","name":"A"}]}}""").approval)
+        assertNull(PushAlert.decode("""{"title":"Approve","body":"x"}""").approval)
+    }
+
+    @Test fun `approval names are bounded`() {
+        val approval = requireNotNull(PushAlert.decode(
+            """{"title":"Approve","body":"x","approval":{"entryId":"entry_1","options":[{"optionId":"a","name":"${"n".repeat(90)}"}]}}"""
+        ).approval)
+        assertEquals(60, approval.options.single().name.length)
+    }
 }

@@ -59,4 +59,11 @@ class WidgetFeedTest {
         val tie = listOf(WidgetBot("pinned", "P", "needsInput", lastAt = 1), WidgetBot("recent", "R", "needsInput", lastAt = 2))
         assertEquals("recent", mostUrgentBot(tie)?.id)
     }
+
+    @Test fun `between bots that need you equally the lead is the most recent, as on the iPhone`() {
+        val bots = listOf(WidgetBot("pinned", "P", "needsInput", lastAt = 10), WidgetBot("recent", "R", "needsInput", lastAt = 20),
+            WidgetBot("busy", "B", "working", lastAt = 30))
+        assertEquals("recent", mostUrgentBot(bots)?.id)
+        assertEquals("busy", mostUrgentBot(bots.map { it.copy(status = "working") })?.id)
+    }
 }

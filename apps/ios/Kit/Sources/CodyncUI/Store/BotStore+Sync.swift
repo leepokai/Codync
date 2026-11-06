@@ -121,8 +121,10 @@ extension BotStore {
                 break
             }
             upsert(e)
-            if let card = e.data.artifact { artifacts.announce(card) }
             bump(e.rev)
+            guard let current = entries[e.botId]?.first(where: { $0.id == e.id }),
+                  current.rev == e.rev, !current.isInternal else { break }
+            if let card = e.data.artifact { artifacts.announce(card) }
             acknowledgeVisibleConversations(e.botId, entry: e)
         case let .call(cue):
             // The computer decides what the voice hears; this device hands each cue over once.
@@ -213,6 +215,8 @@ extension BotStore {
     }
 
     func upsert(_ e: Entry) {
+        // ponytail: the iPhone has no side-conversation view yet (documents, Slack); keep them out of the chat.
+        guard e.threadId == nil else { return }
         var list = entries[e.botId] ?? []
         if let i = list.firstIndex(where: { $0.id == e.id }) {
             // A late API response mustn't undo a newer SSE update.

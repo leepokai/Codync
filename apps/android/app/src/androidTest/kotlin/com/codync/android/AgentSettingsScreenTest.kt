@@ -60,24 +60,22 @@ class AgentSettingsScreenTest {
         compose.onNodeWithText("old advertised model").assertDoesNotExist()
     }
 
-    @Test fun retryModelListAlsoFillsThePermissionsModes() {
-        val failing = AtomicBoolean(true)
-        val load: suspend (String) -> AgentModels = {
-            if (failing.get()) throw java.io.IOException("Agent not ready")
-            AgentModels(emptyList(), modes = listOf(AgentMode("auto", "Auto"), AgentMode("plan", "Plan")))
-        }
-        compose.setContent { Hosted { Column {
-            var reload by remember { mutableIntStateOf(0) }
-            AgentModelPicker(online, load, "agent", null, emptyMap(), false, null, { _, _ -> }, {}, onReload = { reload++ })
-            ApprovalRow(online, load, BotDraft(backend = "agent", mode = "plan"), {}, reload)
+    @Test fun searchKeepsDefaultAndSelectedModelReachableAndCanResetToDefault() {
+        var selected by mutableStateOf<String?>("host-model")
+        compose.setContent { Hosted { Picker(online, "agent", selected, { selected = it }) {
+            AgentModels(listOf(AgentModel("auto", "Default (recommended)"),
+                AgentModel("host-model", "Host model"), AgentModel("other", "Other model")))
         } } }
-        compose.onNodeWithText("agent · Default").performClick()
-        compose.waitUntil { compose.onAllNodesWithContentDescription("Retry model list").fetchSemanticsNodes().isNotEmpty() }
-        // Until the list loads, Permissions shows the bot's mode by its id.
-        compose.onNodeWithText("Plan").assertDoesNotExist()
-        failing.set(false)
-        compose.onNodeWithContentDescription("Retry model list").performClick()
-        compose.waitUntil { showing("Plan") }
+        compose.waitUntil { compose.onAllNodes(model).fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithContentDescription("Model: Host model").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("no-match")
+        compose.onNodeWithText("Default (recommended)").assertIsDisplayed()
+        compose.onNode(hasText("Host model") and isSelected()).assertIsDisplayed()
+        compose.onNodeWithText("Other model").assertDoesNotExist()
+        compose.onNodeWithText("Default (recommended)").performClick()
+        compose.runOnIdle { assertNull(selected) }
+        compose.onNodeWithContentDescription("Model: Default (recommended)").performClick()
+        compose.onNodeWithText("Other model").assertIsDisplayed()
     }
 
     @Test fun anOfflineModelOverrideRemainsEditableWithoutInventingAProviderList() {

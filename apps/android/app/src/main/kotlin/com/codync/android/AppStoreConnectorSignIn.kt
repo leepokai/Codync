@@ -19,7 +19,7 @@ fun AppStore.connectorSignIn(id: String, requestId: String? = null, declined: Co
     // `showsCode`: this app can show a sign-in's code (GitHub); hosts send code sign-ins only to apps that can.
     val response = hostQuery("connectorSignIn", buildJsonObject { put("id", id); put("showsCode", true) }, 60_000)
     val plan = WireJson.decodeFromJsonElement<ConnectorSignIn>(response)
-    val computer = state.value.computer
+    val computer = requireNotNull(state.value.computer)
     externalHttps(plan.url)
     plan.code?.let { code ->
         if (!askSignInCode(code, declined)) { oauthRequestId = null; return@action }
@@ -86,9 +86,12 @@ fun AccountStore.finishConnectorSignIn(uri: Uri) {
             val directory = local.directory
             val pending = withContext(Dispatchers.IO) { ConnectorOAuthBook(directory).read() }
                 ?: throw IOException("No connector sign-in is pending for this account. Start sign-in again.")
-            val store = requireNotNull(store(pending.computerId)) { "The computer that started this sign-in is no longer paired here." }
-            pending.validate(back, store.id, System.currentTimeMillis())
-            store.finishConnectorSignIn(back, pending, directory)
+            pending.validate(back, activated.computer?.id.orEmpty(), System.currentTimeMillis())
+            val response = hostQuery("connectorSignInFinish", body("state" to back.state, "code" to back.code, "error" to back.error), 60_000, generation)
+            val connector = WireJson.decodeFromJsonElement<InstalledConnector>(response.jsonObject.getValue("connector"))
+            pending.requestId?.let { finishConnectionRequest(it, connectorId = connector.id, expectedGeneration = generation) }
+            withContext(Dispatchers.IO) { ConnectorOAuthBook(directory).clear() }
+            if (state.value.generation == generation) { oauthRequestId = null; refreshPlugins(); mutableState.update { it.copy(error = null) } }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {
             mutableState.update {

@@ -33,11 +33,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
+import com.codync.android.core.LockScreenSummary
 import com.codync.android.core.ProviderLimit
 import com.codync.android.core.UsageProvider
 import com.codync.android.core.UsageReport
 import com.codync.android.core.UsageWindow
 import com.codync.android.core.WidgetBot
+import com.codync.android.core.WidgetFreshness
 import com.codync.android.core.usageLimits
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -51,7 +53,10 @@ enum class ProviderLayout { Small, Medium, Large }
 
 /** Claude keeps its orange; everyone else is ink, like the rest of the app. */
 /** ACP registry id of the provider's agent, for its logo: Claude and Codex run through ACP adapters. */
-internal val UsageProvider.registry: String get() = if (id in listOf("claude", "codex")) "$id-acp" else id
+internal val UsageProvider.registry: String get() {
+    val backend = id.substringBefore(':')
+    return if (backend in listOf("claude", "codex", "antigravity")) "$backend-acp" else backend
+}
 
 @Composable internal fun UsageProvider.tint(): Color = if (id == "claude") Color(0xFFD97757) else Palette.accent
 
@@ -62,7 +67,7 @@ internal val UsageProvider.registry: String get() = if (id in listOf("claude", "
 /** "Session" for the 5-hour window, "Opus" for "Weekly · Opus", else the label. */
 internal val UsageWindow.title: String get() = when {
     label == "5-hour" -> "Session"
-    " · " in label -> label.substringAfter(" · ")
+    label.startsWith("Weekly · ") -> label.removePrefix("Weekly · ")
     else -> label
 }
 
@@ -336,6 +341,45 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
 /** Sample bots in the gallery have translated names. A bot the user named stays as they wrote it. */
 @Composable internal fun widgetName(bot: WidgetBot): String =
     if (bot.id.startsWith("preview-")) tr(bot.name) else bot.name
+
+/**
+ * Lock screen privacy-first summary card (`plan-widget-bloqueo-android.md` Phase 2):
+ * displays working count, attention count, and data age without exposing bot names or chat text by default.
+ */
+@Composable internal fun LockScreenSummaryCard(summary: LockScreenSummary) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Codync", Modifier.weight(1f), style = Type.system(13f).semibold, color = Palette.text)
+            val badge = when (summary.freshness) {
+                WidgetFreshness.NoComputer -> "Not paired"
+                WidgetFreshness.NoData -> "No data"
+                WidgetFreshness.Stale -> "Saved · ${summary.ageMinutes ?: 0}m ago"
+                WidgetFreshness.Fresh -> summary.ageMinutes?.let { if (it == 0L) "Updated now" else "${it}m ago" } ?: ""
+            }
+            Text(badge, style = Type.system(10f).medium, color = if (summary.freshness == WidgetFreshness.Stale) Palette.warning else Palette.secondary)
+        }
+        when (summary.freshness) {
+            WidgetFreshness.NoComputer -> Text("Pair a computer in Codync to view activity.", style = Type.system(12f), color = Palette.secondary)
+            WidgetFreshness.NoData -> Text("Open Codync to refresh bot status.", style = Type.system(12f), color = Palette.secondary)
+            WidgetFreshness.Fresh, WidgetFreshness.Stale -> {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${summary.workingCount}", style = Type.system(28f).semibold.monospacedDigit, color = Palette.text)
+                        Text("Working", style = Type.system(11f).medium, color = Palette.secondary)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("${summary.attentionCount}", style = Type.system(28f).semibold.monospacedDigit,
+                            color = if (summary.attentionCount > 0) Palette.attention else Palette.text)
+                        Text("Needs attention", style = Type.system(11f).medium, color = Palette.secondary)
+                    }
+                }
+                summary.leadBotName?.let { name ->
+                    Text(name, style = Type.system(11f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
 
 /** Illustrative data only, for previews labelled as samples (the iOS gallery's). */
 internal object WidgetPreview {

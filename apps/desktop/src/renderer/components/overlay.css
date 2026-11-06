@@ -240,6 +240,19 @@
   gap: 2px;
   overflow-y: auto;
 }
+/* A pinned header (search field, reactions) stays put and only the rows scroll. */
+.menu-panel.has-header {
+  padding: 0;
+  overflow: hidden;
+}
+.menu-panel.has-header .menu-rows {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
 .menu-divider {
   height: 0.5px;
   background: rgba(var(--text-rgb), 0.1);
@@ -330,3 +343,6 @@ html[data-platform="darwin"] .modal-card,
 html[data-platform="darwin"] .dialog {
   padding-top: 28px;
 }
+
+.menu-search { flex: 0 0 auto; padding: 8px; }
+.menu-search input { width: 100%; min-width: 0; padding: 6px 8px; border: 0; border-radius: var(--radius-xs); background: var(--surface); color: var(--text); }

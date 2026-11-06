@@ -1,4 +1,5 @@
-//! Check the MCP handshake and tool discovery before reporting a connector ready.
+//! Check the MCP handshake and tool discovery before reporting a connector ready,
+//! and classify/persist connection failure diagnostics (`lastFailure`: `auth` | `unreachable` | `tool`, Idea 50).
 use crate::store::Store;
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -8,7 +9,63 @@ use tokio::{
     process::Command,
 };
 
+fn failure_key(id: &str) -> String {
+    format!("connector.failure.{id}")
+}
+
+/// Classifies an MCP connection or tool error into `"auth"`, `"unreachable"`, or `"tool"` (Idea 50).
+pub fn classify_failure(message: &str) -> &'static str {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("sign in")
+        || lower.contains("credential")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("token")
+        || lower.contains("rejected setup")
+    {
+        "auth"
+    } else if lower.contains("could not start")
+        || lower.contains("timed out")
+        || lower.contains("exited")
+        || lower.contains("unreachable")
+        || lower.contains("can't reach")
+        || lower.contains("connection refused")
+    {
+        "unreachable"
+    } else {
+        "tool"
+    }
+}
+
+pub fn record_failure(store: &Store, id: &str, message: &str) {
+    let entry = json!({
+        "kind": classify_failure(message),
+        "message": message,
+        "at": crate::store::now_ms(),
+    });
+    let _ = store.kv_set(&failure_key(id), &entry.to_string());
+}
+
+pub fn clear_failure(store: &Store, id: &str) {
+    let _ = store.kv_delete(&failure_key(id));
+}
+
+pub fn last_failure(store: &Store, id: &str) -> Option<Value> {
+    store.kv_get(&failure_key(id)).and_then(|s| serde_json::from_str(&s).ok())
+}
+
 pub async fn verify(store: &Store, id: &str, port: u16) -> Result<Value> {
+    let res = verify_inner(store, id, port).await;
+    match &res {
+        Ok(_) => clear_failure(store, id),
+        Err(e) => record_failure(store, id, &format!("{e:#}")),
+    }
+    res
+}
+
+async fn verify_inner(store: &Store, id: &str, port: u16) -> Result<Value> {
     if let Some(toolkit) = id.strip_prefix(super::composio::PREFIX) {
         let connections = super::composio::refresh(store).await?;
         if connections.iter().any(|c| c.toolkit == toolkit && c.active()) {
@@ -90,4 +147,18 @@ pub async fn verify(store: &Store, id: &str, port: u16) -> Result<Value> {
     let _ = child.kill().await;
     let _ = child.wait().await;
     result?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failure_classification_distinguishes_auth_unreachable_and_tool() {
+        assert_eq!(classify_failure("Sign in before checking this connection."), "auth");
+        assert_eq!(classify_failure("Connector rejected setup. Check its credentials and try again."), "auth");
+        assert_eq!(classify_failure("Could not start the connector."), "unreachable");
+        assert_eq!(classify_failure("Connector setup timed out."), "unreachable");
+        assert_eq!(classify_failure("Connector did not return its tools"), "tool");
+    }
 }

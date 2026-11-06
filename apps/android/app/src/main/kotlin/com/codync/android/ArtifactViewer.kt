@@ -81,7 +81,7 @@ internal data class OpenArtifact(val botId: String, val id: String, val title: S
         ScreenHeader({ IconButton("Close artifact", "xmark", action = close) }, {
             Text(title, Modifier.padding(horizontal = 56.dp).plainButton { renaming = true }, style = Type.body.semibold,
                 color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }, { IconButton("Share artifact", "square.and.arrow.up") { store.shareArtifact(bot.id, open.id, title) } })
+        }, trailing = { IconButton("Share artifact", "square.and.arrow.up") { store.shareArtifact(bot.id, open.id, title) } })
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val html = artifacts.html[open.id]?.text
             val failure = artifacts.failures[open.id]

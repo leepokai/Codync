@@ -162,12 +162,131 @@ public struct InstalledSkill: Codable, Hashable, Sendable, Identifiable {
 }
 
 public struct MarketSkill: Codable, Hashable, Sendable, Identifiable {
-    /// Folder name in anthropics/skills.
+    /// A catalog id: `openbot/<id>` for the bundled catalog, a folder name in anthropics/skills otherwise.
     public var source: String
     public var name: String
     public var description: String
     public var installed: Bool
+    public var category: String?
+    public var creator: String?
+    public var featured: Bool?
+    public var pack: String?
     public var id: String { source }
+}
+
+/// A marketplace agent: a ready-made bot with its instructions, skills and routines.
+public struct MarketAgent: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var title: String
+    public var category: String
+    public var creator: String
+    public var version: Int
+    public var avatarColor: String
+    public var avatarShape: String
+    public var featured: Bool
+    public var installed: Bool
+}
+
+public struct MarketAgentSkill: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var description: String
+    public var pack: Bool
+}
+
+public struct MarketAgentRoutine: Codable, Hashable, Sendable {
+    public var name: String
+    public var instruction: String
+    public var active: Bool
+    public var schedule: Schedule
+
+    public struct Schedule: Codable, Hashable, Sendable {
+        public var kind: String
+        public var time: String?
+        public var weekday: Int?
+        public var day: Int?
+    }
+}
+
+public struct MarketAgentDetail: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var title: String
+    public var category: String
+    public var creator: String
+    public var version: Int
+    public var avatarColor: String
+    public var avatarShape: String
+    public var featured: Bool
+    public var installed: Bool
+    public var instructions: String
+    public var skills: [MarketAgentSkill]
+    public var routines: [MarketAgentRoutine]
+}
+
+/// A marketplace app: an MCP server with a sign-in, a key, setup steps or nothing.
+public struct MarketApp: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var tagline: String
+    public var description: String
+    public var category: String
+    public var creator: String
+    public var version: String
+    public var icon: String?
+    public var website: String?
+    public var featured: Bool
+    /// `link`, `open`, `key` or `local`.
+    public var setup: String
+    public var server: Server
+    public var fields: [Field]
+    public var steps: [String]
+    public var docsUrl: String?
+    public var docsLabel: String?
+    public var prompts: [Prompt]
+    public var installed: Bool
+
+    public struct Server: Codable, Hashable, Sendable {
+        public var name: String
+        public var transport: String
+        public var url: String?
+        public var command: String?
+        public var args: [String]
+    }
+
+    public struct Field: Codable, Hashable, Sendable, Identifiable {
+        public var id: String
+        public var label: String
+        public var env: String?
+        public var header: String?
+        public var url: Bool
+        public var placeholder: String?
+        public var hint: String?
+        public var required: Bool
+    }
+
+    public struct Prompt: Codable, Hashable, Sendable, Identifiable {
+        public var id: String
+        public var text: String
+    }
+}
+
+/// The marketplace categories, in the order the tabs show them.
+public enum MarketCategories {
+    public static let ids = ["coding", "design", "documents", "research", "data-analytics", "productivity", "automation", "other"]
+    public static func label(_ id: String) -> String {
+        switch id {
+        case "coding": "Coding"
+        case "design": "Design"
+        case "documents": "Documents"
+        case "research": "Research"
+        case "data-analytics": "Data & analytics"
+        case "productivity": "Productivity"
+        case "automation": "Automation"
+        default: "Other"
+        }
+    }
 }
 
 private struct Items<T: Decodable>: Decodable { var items: [T] }
@@ -196,10 +315,38 @@ public extension HostClient {
 
     /// A connector you describe yourself: a command line with env, or an https URL with headers.
     @discardableResult
-    func addConnector(name: String, command: String?, url: String?, env: [String: String], headers: [String: String]) async throws -> InstalledConnector {
-        struct Body: Encodable { var name: String; var command: String?; var url: String?; var env: [String: String]; var headers: [String: String] }
-        let res: Installed = try await call("installConnector", Body(name: name, command: command, url: url, env: env, headers: headers), timeout: 45)
+    func addConnector(name: String, command: String?, url: String?, env: [String: String], headers: [String: String],
+                      args: [String] = [], catalog: String? = nil, description: String? = nil) async throws -> InstalledConnector {
+        struct Body: Encodable {
+            var name: String; var command: String?; var args: [String]; var url: String?
+            var env: [String: String]; var headers: [String: String]; var catalog: String?; var description: String?
+        }
+        let res: Installed = try await call("installConnector",
+            Body(name: name, command: command, args: args, url: url, env: env, headers: headers, catalog: catalog, description: description),
+            timeout: 45)
         return res.connector
+    }
+
+    /// Marketplace agents: the ones `search` and `category` keep, with whether this computer has each.
+    func marketAgents(search: String = "", category: String = "") async throws -> [MarketAgent] {
+        let res: Items<MarketAgent> = try await call("marketAgents", ["search": search, "category": category])
+        return res.items
+    }
+
+    func marketAgent(_ id: String) async throws -> MarketAgentDetail {
+        try await call("marketAgent", ["id": id])
+    }
+
+    func marketApps(search: String = "") async throws -> [MarketApp] {
+        let res: Items<MarketApp> = try await call("marketApps", ["search": search])
+        return res.items
+    }
+
+    /// Adds the agent's bot with its look, instructions, skills and routines.
+    func installAgent(_ id: String) async throws -> Bot {
+        struct Response: Decodable { var bot: Bot }
+        let res: Response = try await call("installAgent", ["id": id], timeout: 120)
+        return res.bot
     }
 
     /// Adds every server in a pasted MCP config (`mcpServers` / `servers` JSON, or one server's entry).
@@ -311,6 +458,19 @@ public struct SavedLogin: Codable, Hashable, Sendable, Identifiable {
     public var username: String
 }
 
+/// A secret a bot keeps for API calls or commands; the value stays on the computer.
+public struct BotSecret: Decodable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var botId: String
+    public var botName: String?
+    public var name: String
+    /// Where it goes, worded by the host (`https://api.example.com · bearer token`).
+    public var destination: String
+
+    /// The first host that keeps bot secrets.
+    public static let minHost = "2.20.0"
+}
+
 public struct CredentialStatus: Decodable, Sendable {
     public var provider: String
     public var onePasswordConnected: Bool
@@ -344,6 +504,15 @@ public extension HostClient {
 
     func removeLogin(_ id: String) async throws {
         let _: Empty = try await call("credentialRemoveLogin", ["id": id], timeout: 60)
+    }
+
+    func botSecrets() async throws -> [BotSecret] {
+        let res: Items<BotSecret> = try await call("credentialBotSecrets", timeout: 60)
+        return res.items
+    }
+
+    func removeBotSecret(_ id: String) async throws {
+        let _: Empty = try await call("credentialRemoveBotSecret", ["id": id], timeout: 60)
     }
 
     func credentialStatus() async throws -> CredentialStatus { try await call("credentialStatus", timeout: 60) }

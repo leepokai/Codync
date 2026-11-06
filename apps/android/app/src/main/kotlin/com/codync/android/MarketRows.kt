@@ -33,12 +33,15 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.codync.android.design.Palette
+import com.codync.android.design.Type
 import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import com.codync.android.core.AgentBackend
@@ -47,6 +50,14 @@ import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
 // The Extensions page's building blocks (iOS `MarketRows`): rows, agent cards and logos.
+
+/** A titled block of rows (the fork's ready-made bots and teams, and the Apps catalog). */
+@Composable internal fun MarketSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(tr(title), Modifier.padding(start = 4.dp).semantics { heading() }, style = Type.headline, color = Palette.text)
+        content()
+    }
+}
 
 /** One catalog item: its icon, name and line, then Add (or a check once added). */
 @Composable internal fun MarketRow(title: String, subtitle: String, added: Boolean, busy: Boolean = false, addLabel: String = "Add",

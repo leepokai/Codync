@@ -20,9 +20,9 @@ export function Field({ label, detail, children }: { label: string; detail?: str
 }
 
 /** An on/off row: title and a short note, the switch on the right. */
-export function SwitchRow({ title, detail, on, onChange }: { title: string; detail?: string | null; on: boolean; onChange: (on: boolean) => void }) {
+export function SwitchRow({ title, detail, on, onChange, disabled }: { title: string; detail?: string | null; on: boolean; onChange: (on: boolean) => void; disabled?: boolean }) {
   return (
-    <Switch on={on} onChange={onChange}>
+    <Switch on={on} onChange={onChange} disabled={disabled}>
       <RowLabel label={title} detail={detail} />
     </Switch>
   )

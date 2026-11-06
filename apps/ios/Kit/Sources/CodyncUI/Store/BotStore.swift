@@ -64,6 +64,8 @@ public final class BotStore {
     /// An update this phone asked of the computer; cleared when its version changes.
     public internal(set) var hostUpdate: HostUpdate?
     public internal(set) var bots: [String: Bot] = [:]
+    public internal(set) var rosterStopping: Set<String> = []
+    public internal(set) var rosterThreadRequest: RosterSearchHit?
     public internal(set) var entries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The computer's remote screen (`nil`: the host predates it).
@@ -250,10 +252,10 @@ public final class BotStore {
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
-    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).visibleEntries() }
 
     public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+        !historyComplete.contains(botId) && (entries[botId] ?? []).contains { $0.seq > 0 && $0.seq != Int64.max }
     }
 
     /// A group's bots that still exist.

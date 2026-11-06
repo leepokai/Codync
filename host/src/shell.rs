@@ -46,6 +46,67 @@ pub fn line(line: &str) -> Shell {
     Shell { program: "cmd.exe", args: vec!["/d".into(), "/c".into(), format!("%{LINE_VAR}%")], env }
 }
 
+/// How a command line names environment variable `NAME`.
+pub fn var_ref(name: &str) -> String {
+    if cfg!(windows) { format!("%{name}%") } else { format!("${name}") }
+}
+
+/// A batch file that [`expanding`] runs a line from; deleted when dropped.
+pub struct Script(PathBuf);
+
+impl Drop for Script {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_file(&self.0) {
+            tracing::debug!(error = %error, "couldn't delete a command's batch file");
+        }
+    }
+}
+
+/// Runs `line` so the variables of its environment expand, as in a typed line; `vars` are the
+/// extra ones the caller sets. Unix: [`line`]. Windows: `cmd` expands `%VAR%` once, when [`line`]
+/// hands it the line itself, so the line runs from a batch file instead (keep the [`Script`]
+/// until the command ends).
+#[cfg(unix)]
+#[allow(clippy::unused_async, reason = "same signature as the Windows version, which writes a file")]
+pub async fn expanding(line: &str, _vars: &[&str]) -> std::io::Result<(Shell, Option<Script>)> {
+    Ok((self::line(line), None))
+}
+
+#[cfg(windows)]
+pub async fn expanding(line: &str, vars: &[&str]) -> std::io::Result<(Shell, Option<Script>)> {
+    let defined = |name: &str| vars.iter().any(|v| v.eq_ignore_ascii_case(name)) || std::env::var_os(name).is_some();
+    let path = std::env::temp_dir().join(format!("codync-run-{}.cmd", uuid::Uuid::new_v4()));
+    tokio::fs::write(&path, format!("@echo off\r\n{}\r\n", batch_line(line, defined))).await?;
+    let shell =
+        Shell { program: "cmd.exe", args: vec!["/d".into(), "/c".into(), path.display().to_string()], env: vec![] };
+    Ok((shell, Some(Script(path))))
+}
+
+/// `line` for a batch file, meaning what it means typed: `%NAME%` (or `%NAME:…%`) of a defined
+/// variable stays, every other `%` is doubled, since a batch file reads `%1`, `%~…`, `%%` and an
+/// undefined `%X%` differently from a typed line.
+#[cfg(any(windows, test))]
+fn batch_line(line: &str, defined: impl Fn(&str) -> bool) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(i) = rest.find('%') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        let name = after.find('%').map(|j| &after[..j]);
+        if let Some(name) = name.filter(|n| !n.is_empty() && defined(n.split(':').next().unwrap_or(n))) {
+            out.push('%');
+            out.push_str(name);
+            out.push('%');
+            rest = &after[name.len() + 1..];
+        } else {
+            out.push_str("%%");
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Runs `command` in place of the shell where the shell can do that (`exec`), so
 /// signals and exit codes reach the program itself.
 pub fn exec(command: &str) -> Shell {
@@ -198,6 +259,16 @@ mod tests {
         assert_eq!(env, [("NO_BROWSER".to_owned(), "true".to_owned())]);
         assert_eq!(rest, "\"C:\\a b\\gemini.cmd\"");
         assert_eq!(split_env("claude --x=1").1, "claude --x=1");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn batch_lines_mean_what_they_mean_typed() {
+        let defined = |name: &str| name.eq_ignore_ascii_case("KEY") || name == "PATH";
+        assert_eq!(batch_line("echo %KEY% %path:~0,3%", defined), "echo %KEY% %%path:~0,3%%");
+        assert_eq!(batch_line("echo %PATH:~0,3%", defined), "echo %PATH:~0,3%");
+        assert_eq!(batch_line("curl x?q=100%25 %1 %UNSET%", defined), "curl x?q=100%%25 %%1 %%UNSET%%");
+        assert_eq!(batch_line("100%", defined), "100%%");
     }
 
     #[cfg(unix)]

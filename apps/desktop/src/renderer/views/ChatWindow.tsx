@@ -51,6 +51,7 @@ import { useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
 import './chat-window.css'
 import './sidebar-header.css'
+import { useOnboardingTelemetry } from './use-onboarding-telemetry'
 import { useTr } from '../lib/use-language'
 
 
@@ -66,6 +67,7 @@ export function ChatWindow() {
   useSSHAttachments(app)
   const ssh = useSSH()
   const showsChat = shouldShowChat(app.host.state.kind, app.computers.length, ssh.state)
+  useOnboardingTelemetry(!onboarded ? 'welcome' : accessSetup === null ? 'computer_access' : showsChat ? 'ready' : 'pairing')
   const finishAccess = (ready: boolean, onboarding: boolean) => {
     setAccessSetup(ready ? 'ready' : 'later')
     analytics.track({ event: 'computer_access_finished', ready, onboarding })
@@ -114,6 +116,17 @@ export function ChatWindow() {
           case 'sendMessage': {
             const ref = parseRef(c.ref)
             if (ref) app.store(ref.computerId)?.send(c.text, ref.botId)
+            return
+          }
+          case 'sendFiles': {
+            // Files dropped on the island: read here, then sent to that bot with no message of their own.
+            const ref = parseRef(c.ref)
+            const store = ref ? app.store(ref.computerId) : null
+            if (ref && store) {
+              void window.codync.app.readPaths(c.paths).then((files) => {
+                if (files.length) store.send('', ref.botId, { files: files.map((f) => ({ id: crypto.randomUUID(), ...f })) })
+              })
+            }
             return
           }
         }
@@ -389,18 +402,12 @@ function ChatSplitView() {
         ) : null}
         <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
           {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
-          <BotRoster roster={roster} compact={compact}
-            onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
-            onSectionContext={(section, store, x, y) => {
-              const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
-              if (items.length) setContext({ items, x, y })
-            }}
-            openExtensions={(id) => {
-              // Found it: the tip about where Extensions went has done its job.
-              prefs.extensionsMovedTipSeen.set(true)
-              setMarketplace(id)
-            }} />
-          {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
+          <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} openExtensions={(id) => {
+            // Found it: the tip about where Extensions went has done its job.
+            prefs.extensionsMovedTipSeen.set(true)
+            setMarketplace(id)
+          }} />
+          {roster.allItems.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
               {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
@@ -456,7 +463,15 @@ function ChatSplitView() {
         </div>
       ) : null}
 
-      <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />
+      <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} actions={[
+        ...(onlineStores.length ? [
+          { id: 'new-bot', title: 'New bot', icon: 'plus', run: () => { setSearching(false); create('bot') } },
+          { id: 'new-group', title: 'New group', icon: 'person.2', run: () => { setSearching(false); create('group') } },
+        ] : []),
+        { id: 'settings', title: 'Settings', icon: 'gearshape', run: () => { setSearching(false); setSettings('general') } },
+        { id: 'computers', title: 'Computers', icon: 'desktopcomputer', run: () => { setSearching(false); setSettings('computers') } },
+        { id: 'account', title: 'Account', icon: 'person.crop.circle', run: () => { setSearching(false); setShowAccount(true) } },
+      ]} />
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (
           <StoreContext.Provider value={editing.store}>

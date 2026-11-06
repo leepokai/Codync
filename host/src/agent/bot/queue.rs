@@ -1,6 +1,6 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
-use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
+use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion};
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::hub::BotStatus;
@@ -18,7 +18,16 @@ impl Actor {
                 self.tools_changed = true;
             }
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
-            Cmd::Send { lane, entry_id, text } => self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await,
+            Cmd::Send { lane, entry_id, text } => {
+                if self.hub.store.entry(&entry_id).is_some_and(|e| {
+                    e.data["source"] == "slack"
+                        && (e.data["status"] != "queued"
+                            || self.queue.iter().any(|q| matches!(q,Queued::User{entry_id:id,..} if id==&entry_id)))
+                }) {
+                    return true;
+                }
+                self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
+            }
             Cmd::Group(turn) => {
                 // The room asks again: this turn answers for any still waiting there.
                 self.queue.retain(|q| !matches!(q, Queued::Group(g) if g.lane == turn.lane));
@@ -32,6 +41,19 @@ impl Actor {
                 }
             }
             Cmd::BotRequest(request) => self.enqueue(Queued::BotRequest(request), done_tx).await,
+            Cmd::CancelAsk { id } => {
+                self.queue.retain(
+                    |q| !matches!(q, Queued::BotRequest(request) if request.expects_reply() && request.id() == id),
+                );
+                if self.active_request.as_ref().is_some_and(|request| request.expects_reply() && request.id() == id) {
+                    self.hub.team.cancel_from(&self.cfg.id);
+                    self.stop_requested = true;
+                    // An expired ask cannot keep the queue blocked even if its harness ignores cancellation.
+                    if let Some(connection) = self.conn.take() {
+                        connection.acp.kill().await;
+                    }
+                }
+            }
             Cmd::BotReply(reply) => self.enqueue(Queued::BotReply(reply), done_tx).await,
             Cmd::Prompt { text, call } => self.enqueue(Queued::Prompt { text, call }, done_tx).await,
             Cmd::SendToUser { text, reply } => {
@@ -77,7 +99,9 @@ impl Actor {
                 // restarts into it, one that can't starts afresh.
                 let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
-                let restart = cfg.backend != self.cfg.backend
+                let account_changed = cfg.account != self.cfg.account;
+                let restart = account_changed
+                    || cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
@@ -215,6 +239,9 @@ impl Actor {
                     let Some(Queued::BotRequest(mut request)) = self.queue.pop_front() else {
                         unreachable!("front is a bot request")
                     };
+                    if request.reply_closed() {
+                        continue;
+                    }
                     let ids = [request.entry_id.clone()];
                     let prompt = request.prompt.clone();
                     request.mark_started();
@@ -285,17 +312,41 @@ impl Actor {
             }
             // Messages sent while the agent worked go out together as its next turn
             // without crossing a bot request or reply or another lane: each gets its own reply.
-            let Some(Queued::User { lane, .. }) = self.queue.front() else { continue };
+            let Some(Queued::User { lane, entry_id, .. }) = self.queue.front() else { continue };
+            let proactive = self.proactive_input(entry_id);
             let lane = lane.clone();
             let mut batch = Vec::new();
-            while let Some(Queued::User { lane: l, .. }) = self.queue.front()
+            while let Some(Queued::User { lane: l, entry_id, .. }) = self.queue.front()
                 && *l == lane
+                && self.proactive_input(entry_id) == proactive
+                && (!proactive || batch.is_empty())
             {
                 if let Some(Queued::User { entry_id, text, .. }) = self.queue.pop_front() {
+                    if self.hub.store.entry(&entry_id).is_some_and(|e| e.data["source"] == "slack") {
+                        match crate::slack::claim_prompt(&self.hub, &entry_id) {
+                            Ok(true) => {}
+                            Ok(false) => {
+                                if let Some(mut entry) =
+                                    self.hub.store.entry(&entry_id).filter(|e| e.data["status"] == "queued")
+                                {
+                                    entry.data["status"] = "cancelled".into();
+                                    self.hub.set_entry(&entry_id, &entry.data);
+                                }
+                                continue;
+                            }
+                            Err(error) => {
+                                tracing::warn!(%error,"Slack prompt claim failed");
+                                continue;
+                            }
+                        }
+                    }
                     batch.push((entry_id, text));
                 }
             }
             let ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
+            if batch.is_empty() {
+                continue;
+            }
             let text = batch.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n\n");
             // A handoff waiting in the chat starts a new conversation with this message, as does one already taken
             // for a turn that couldn't start.
@@ -315,10 +366,12 @@ impl Actor {
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
         self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
-        if !self.invite_sign_in(e) {
+        let invited = self.invite_sign_in(e);
+        if !invited {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
             self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"), "start_failed");
         }
+        self.record_user_result(if invited { "waitingForSignIn" } else { "failed" }, None, "start_failed");
         // What the chain carried in (a recap, a takeover) was this turn's; the user's handoff waits for the next.
         self.relay.carried = None;
         self.turn = None;
@@ -394,6 +447,21 @@ impl Actor {
         }
     }
 
+    /// Tells the routine how its run went: a run that ran no tool and said nothing counts toward pausing it
+    /// (`routines::idle`), and one that reports work it didn't do is logged.
+    pub(super) fn note_routine_outcome(&self, text: Option<&str>) {
+        let Some(run) = &self.active_routine else { return };
+        let outcome = self.watchdog.outcome();
+        let said = text.is_some_and(|t| !t.trim().is_empty() && !crate::chat::group::is_pass(t));
+        if super::outcome::claimed_without_action(outcome, text.unwrap_or_default()) {
+            tracing::warn!(bot = %self.cfg.id, run = %run, "routine run reported finished work but ran no tool");
+        }
+        let worked = outcome != super::outcome::Outcome::Nothing || said;
+        if let Err(error) = self.hub.routines.note_outcome(&self.hub, run, worked) {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't note the routine run's outcome");
+        }
+    }
+
     pub(super) fn finish_routine(
         &mut self,
         status: crate::routines::Status,
@@ -444,6 +512,10 @@ impl Actor {
     /// Grok Bot's upgrade resume: the previous host process stopped mid-turn, so
     /// the agent is told, in the same session, to finish without redoing steps.
     pub(super) async fn resume_interrupted(&mut self, lane: Lane, done_tx: &mpsc::UnboundedSender<Done>) {
+        if let Err(error) = self.interrupt_saved_results(&lane) {
+            tracing::error!(%error,"Interrupted message identities could not be recovered; refusing automatic resume");
+            return;
+        }
         self.set_inflight(false);
         let slot = self.slot();
         if self.session_for(slot.as_deref()).is_none() {
@@ -468,8 +540,16 @@ impl Actor {
 
     /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]).
     pub(super) fn set_inflight(&self, on: bool) {
-        let value = if on { now_ms().to_string() } else { String::new() };
-        if let Err(error) = self.hub.store.kv_set(&inflight_key(&self.cfg.id), &value) {
+        // A background check-in is retried by its scheduler, never as a recovered user request.
+        let on = on && !self.proactive_turn;
+        let value = match (&self.lane.thread, on) {
+            (_, false) => String::new(),
+            (Some(root), true) => format!("{}\t{root}", now_ms()),
+            (None, true) => now_ms().to_string(),
+        };
+        let sources = (on && !self.turn_entries.is_empty())
+            .then(|| json!({"chat":self.lane.chat,"thread":self.lane.thread,"entries":self.turn_entries}));
+        if let Err(error) = self.hub.store.set_turn_marker(&self.cfg.id, &value, sources.as_ref()) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
         }
     }

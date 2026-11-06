@@ -5,6 +5,18 @@ import kotlinx.serialization.json.*
 import org.junit.Test
 
 class AgentSettingsTest {
+    @Test fun `editing preserves an isolated account and explicitly clears it for other agents`() {
+        val bot = HostClient.decode(WireJson.parseToJsonElement("""{"id":"worker","name":"Worker","backend":"antigravity","account":"isolated"}""").jsonObject)
+        val draft = BotDraft.from(bot)
+        assertEquals("isolated", draft.account)
+        assertEquals(JsonPrimitive("isolated"), draft.copy(description = "updated").body()["account"])
+        assertEquals(JsonNull, draft.copy(account = null).body()["account"])
+        assertEquals(JsonNull, draft.copy(backend = "claude").body()["account"])
+        assertNull(HostClient.decode(WireJson.parseToJsonElement("""{"id":"legacy","name":"Legacy"}""").jsonObject).account)
+        val account = WireJson.decodeFromString<AgentAccount>("""{"id":"isolated","name":"Work","backend":"antigravity","createdAt":123}""")
+        assertEquals("Work", account.name)
+    }
+
     @Test fun `agent default folds into one choice while an unknown saved model survives`() {
         val catalog = WireJson.decodeFromString<AgentModels>("""{"models":[{"id":"default-id","name":"Default (recommended)","description":"Agent choice"},{"id":"on-host","name":"Host model"}],"currentModelId":"on-host","future":true}""")
         val choices = catalog.options("removed-model")

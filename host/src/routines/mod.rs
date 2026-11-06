@@ -2,6 +2,9 @@
 mod check;
 pub use check::Checked;
 mod editor;
+mod failed;
+pub mod flow;
+mod idle;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
 pub mod hooks;
 use hooks::Refused;
@@ -10,6 +13,7 @@ pub use mcp::{INSTRUCTIONS, call, tools};
 mod retry;
 mod runner;
 mod schedule;
+mod watch;
 pub use runner::start;
 pub use schedule::{Trigger, local_zone};
 
@@ -50,6 +54,12 @@ pub struct Routine {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub last_error: Option<String>,
+    /// What each `watch` trigger last saw, by trigger position.
+    #[serde(default)]
+    pub watch: Vec<watch::WatchState>,
+    /// Finished runs in a row that ran nothing that changes anything (`idle.rs`).
+    #[serde(default)]
+    pub idle_runs: u32,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -123,6 +133,8 @@ pub struct Routines {
     stopping: std::sync::atomic::AtomicBool,
     /// Bumped whenever the webhook set the relay registers (`hooks()`) changes.
     hooks_rev: tokio::sync::watch::Sender<u64>,
+    /// The routine flows running now (`flow`).
+    flows: flow::Registry,
 }
 
 impl Default for Routines {
@@ -133,6 +145,7 @@ impl Default for Routines {
             scheduler: Mutex::default(),
             stopping: std::sync::atomic::AtomicBool::default(),
             hooks_rev: tokio::sync::watch::channel(0).0,
+            flows: flow::Registry::default(),
         }
     }
 }
@@ -235,7 +248,17 @@ impl Routines {
             .bot(bot)?
             .filter(|b| !b.deleted && !b.config.is_group())
             .context("routine requires an existing agent bot")?;
-        let Checked { name, instruction, triggers, timeout } = Checked::parse(body)?;
+        let Checked { name, instruction, mut triggers, timeout } = Checked::parse(body)?;
+        // "Keep" means the saved triggers, not the client's copy of them, which an older app
+        // may have decoded without the fields of a trigger type it doesn't know.
+        if body["schedule"]["kind"] == "keep"
+            && let Some(id) = body["id"].as_str()
+        {
+            let s = self.state.locked();
+            if let Some(saved) = s.routines.iter().find(|r| r.id == id && r.bot_id == bot && !r.deleted) {
+                triggers.clone_from(&saved.triggers);
+            }
+        }
         let now = now_ms();
         let id = body["id"].as_str().map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
         let updated = body["id"].is_string();
@@ -260,6 +283,9 @@ impl Routines {
                 } else {
                     triggers.iter().map(|t| t.next(now)).collect::<Result<_>>()?
                 },
+                // Same triggers keep what their watches saw; new ones start a fresh baseline.
+                watch: old.as_ref().filter(|o| o.triggers == triggers).map(|o| o.watch.clone()).unwrap_or_default(),
+                idle_runs: 0,
                 triggers,
                 webhook_key: old.as_ref().map_or_else(webhook_key, |r| r.webhook_key.clone()),
                 deleted: false,
@@ -290,6 +316,8 @@ impl Routines {
                 .context("routine not found")?;
             if enabled && !r.enabled {
                 r.next_runs = r.triggers.iter().map(|t| t.next(now_ms())).collect::<Result<_>>()?;
+                // A watch paused for failing checks gets its full allowance again.
+                r.watch.iter_mut().for_each(|w| w.failures = 0);
             }
             r.enabled = enabled;
             r.updated_at = now_ms();
@@ -318,6 +346,7 @@ impl Routines {
             Ok(retry::forget(s, |run| run.routine_id == id))
         })?;
         retry::withdraw(hub, &withdrawn);
+        flow::forget_routine(hub, id, bot);
         Ok(json!({"ok":true}))
     }
 
@@ -426,7 +455,7 @@ impl Routines {
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
     body[key].as_str().with_context(|| format!("{key} is required"))
 }
-fn public(r: &Routine) -> Value {
+pub(crate) fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})

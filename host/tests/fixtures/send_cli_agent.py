@@ -11,7 +11,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 lock = threading.Lock()
 permissions = {}
 prompts = {}
-finishers = set()
 sessions = 0
 
 
@@ -31,23 +30,17 @@ def turn(message):
     rid = message["id"]
     session = message["params"]["sessionId"]
     text = "\n".join(block.get("text", "") for block in message["params"]["prompt"])
-    # A quote reply's note repeats the quoted message; only the latest command is current.
+    # A thread's intro includes parent messages; only the latest command is current.
     modes = re.findall(r"CLI_MODE=([a-z_]+)", text)
     mode = modes[-1] if modes else "normal"
     event = threading.Event()
     prompts[rid] = (session, event)
-    if mode in {"hang", "finish_on_cancel"}:
-        if mode == "finish_on_cancel":
-            finishers.add(rid)
+    if mode == "hang":
         update(session, "agent_thought_chunk", "Waiting indefinitely")
         event.wait(120)
         return
     if mode == "error":
         send({"id": rid, "error": {"code": -32000, "message": "fixture failure"}})
-        prompts.pop(rid, None)
-        return
-    if mode == "silent":
-        send({"id": rid, "result": {"stopReason": "end_turn"}})
         prompts.pop(rid, None)
         return
     if mode == "hold":
@@ -96,8 +89,5 @@ for line in sys.stdin:
         for rid, (session, event) in list(prompts.items()):
             if session == message["params"]["sessionId"]:
                 prompts.pop(rid, None)
-                # Some agents finish the turn normally when asked to cancel.
-                if rid in finishers:
-                    update(session, "agent_message_chunk", "Finished anyway")
-                send({"id": rid, "result": {"stopReason": "end_turn" if rid in finishers else "cancelled"}})
+                send({"id": rid, "result": {"stopReason": "cancelled"}})
                 event.set()

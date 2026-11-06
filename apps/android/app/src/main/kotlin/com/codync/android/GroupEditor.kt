@@ -37,14 +37,15 @@ import com.codync.android.core.GroupDraft
 import com.codync.android.design.*
 
 /**
- * Change a group chat's name, what it's for and who's in it (iOS `GroupEditorView`); new groups start in [NewGroupView].
+ * Create a group chat, or change its name, what it's for and who's in it (iOS `GroupEditorView`).
  * Bots are picked like recipients: members on top, a search, and the bots not in it yet.
  */
 @Composable internal fun GroupEditor(state: AppState, initial: GroupDraft, store: AppStore) {
     val dismiss = LocalDismissModal.current
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var query by remember { mutableStateOf("") }
-    var adding by remember { mutableStateOf(false) }
+    // A new group starts in the picker; an existing one shows its members first.
+    var adding by remember { mutableStateOf(initial.id == null && initial.members.isEmpty()) }
     var confirmDelete by remember { mutableStateOf(false) }
     val saving = "editor" in state.busy
     val picked = draft.members.mapNotNull { id -> state.bots.firstOrNull { it.id == id } }
@@ -55,9 +56,9 @@ import com.codync.android.design.*
         query = ""
     }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader("Group chat") {
+        ModalHeader(if (draft.id == null) "New group chat" else "Group chat") {
             if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
-            else IconButton("Save", "checkmark", enabled = draft.members.isNotEmpty()) {
+            else IconButton(if (draft.id == null) "Create" else "Save", "checkmark", enabled = draft.members.isNotEmpty()) {
                 store.saveGroup(draft) { dismiss() }
             }
         }
@@ -87,11 +88,20 @@ import com.codync.android.design.*
                     Text("Add Member", style = Type.body, color = Palette.secondary)
                 }
                 Text("Everyone answers in turn unless you @mention someone.", Modifier.padding(top = 10.dp), style = Type.caption, color = Palette.tertiary)
+                if (picked.isNotEmpty()) {
+                    val chiefOptions = listOf("" to "None (auto-detect Chief)") + picked.map { b -> b.id to (if (b.isChief) "${b.name} ★" else b.name) }
+                    Box(Modifier.padding(top = 14.dp)) {
+                        ValueRow("Chief of Staff", detail = "Coordinates delegated assignments and automatically intervenes if a member stalls or fails.") {
+                            ChoicePicker(draft.chiefBotId.orEmpty(), chiefOptions, { draft = draft.copy(chiefBotId = it.ifEmpty { null }) }, label = "Chief of Staff")
+                        }
+                    }
+                }
             }
             AnimatedVisibility(state.error != null, enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
                 Text(state.error.orEmpty(), style = Type.footnote, color = Palette.danger)
             }
-            LinkButton("Delete group chat", color = Palette.danger) { confirmDelete = true }
+            draft.id?.let { DocumentsCard(it, state, store) }
+            if (draft.id != null) LinkButton("Delete group chat", color = Palette.danger) { confirmDelete = true }
         }
     }
     val group = state.bots.firstOrNull { it.id == draft.id }

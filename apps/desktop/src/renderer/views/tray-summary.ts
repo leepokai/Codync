@@ -183,6 +183,7 @@ export function useTraySummary(app: AppModel) {
           name: app.computers.length > 1 ? `${i.bot.name} · ${i.computer.name}` : i.bot.name,
           detail: botDetail(i.bot),
           working: isWorking(i.bot),
+          pinned: i.bot.pinned,
           avatar: avatarIcon(i.bot),
         })),
         usage: (local?.usage.providers ?? []).map((p) => ({

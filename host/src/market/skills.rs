@@ -1,6 +1,6 @@
 //! Skills: the anthropics/skills catalog, downloads, hand-written skills and the profile's skills block.
 
-use super::{SKILLS_REPO, Skill, TIMEOUT, UA, save, skills, skills_dir, slug, unique_id};
+use super::{GITHUB, SKILLS_REPO, Skill, TIMEOUT, get_bytes, save, skills, skills_dir, slug, unique_id};
 use crate::LockExt;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -8,6 +8,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 static SKILL_CATALOG: Mutex<Option<(Instant, Value)>> = Mutex::new(None);
+/// Largest skill file downloaded.
+const MAX_FILE: usize = 1_000_000;
 static SKILLS_LOCK: Mutex<()> = Mutex::new(());
 
 /// `Skill::source` of a skill written in Codync rather than downloaded.
@@ -85,14 +87,9 @@ async fn tree_entries(repo_path: &str) -> Result<Vec<TreeEntry>> {
 }
 
 async fn fetch_tree_page(url: &str) -> Result<String> {
-    let response = crate::http()
-        .get(url)
-        .header("user-agent", UA)
-        .timeout(TIMEOUT)
-        .send()
-        .await
-        .context("listing skills on GitHub")?;
-    response.text().await.context("listing skills on GitHub")
+    // The page is a listing this computer reads once per refresh; it stays inside the egress policy like the files.
+    let bytes = get_bytes(GITHUB, url, TIMEOUT, MAX_PAGE).await.context("listing skills on GitHub")?;
+    String::from_utf8(bytes).context("listing skills on GitHub")
 }
 
 /// `items` in the tree page's embedded catalog: name, path, and whether it is a directory.
@@ -134,7 +131,7 @@ async fn catalog() -> Result<Value> {
             tree_entries("skills").await?.into_iter().filter(|entry| entry.dir).map(|entry| entry.name).collect();
         let fetches = names.iter().map(|dir| async move {
             let url = format!("https://raw.githubusercontent.com/{SKILLS_REPO}/main/skills/{dir}/SKILL.md");
-            let md = crate::http().get(&url).header("user-agent", UA).timeout(TIMEOUT).send().await.ok()?.text().await.ok()?;
+            let md = String::from_utf8(get_bytes(GITHUB, &url, TIMEOUT, MAX_FILE).await.ok()?).ok()?;
             let (name, description) = front_matter(&md);
             Some(json!({"source": dir, "name": name.unwrap_or_else(|| dir.clone()), "description": description.unwrap_or_default(), "body": body(&md)}))
         });
@@ -145,30 +142,40 @@ async fn catalog() -> Result<Value> {
     Ok(catalog)
 }
 
-/// The anthropics/skills catalog for the Marketplace (bodies come one at a time from `skill_details`).
+/// The anthropics/skills catalog and the bundled `OpenBot` catalog for the Marketplace (bodies come one at a
+/// time from `skill_details`). GitHub is optional: its failure leaves the bundled skills browsable offline.
 pub async fn browse_skills(store: &crate::store::Store) -> Result<Value> {
-    let installed: Vec<String> = skills(store).into_iter().filter(|s| s.source == SKILLS_REPO).map(|s| s.id).collect();
-    let items: Vec<Value> = catalog()
-        .await?
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|s| {
-            let mut s = s.clone();
-            if let Some(o) = s.as_object_mut() {
-                o.remove("body");
-            }
-            s["installed"] = json!(installed.contains(&slug(s["source"].as_str().unwrap_or_default())));
-            s
-        })
-        .collect();
+    let installed: Vec<String> = skills(store).into_iter().map(|s| s.id).collect();
+    let mut items = super::openbot::browse_skills(&installed);
+    // GitHub is a second catalog and optional: a slow or missing network must not hold the bundled one.
+    let github = match tokio::time::timeout(Duration::from_secs(5), catalog()).await {
+        Ok(Ok(v)) => v,
+        _ => json!([]),
+    };
+    items.extend(github.as_array().into_iter().flatten().map(|s| {
+        let mut s = s.clone();
+        if let Some(o) = s.as_object_mut() {
+            o.remove("body");
+            o["creator"] = json!(SKILLS_REPO);
+            o["featured"] = json!(false);
+        }
+        s["installed"] = json!(
+            installed.contains(&slug(s["source"].as_str().unwrap_or_default()))
+                && skills(store).iter().any(|x| x.source == SKILLS_REPO)
+        );
+        s
+    }));
     Ok(json!({"items": items}))
 }
 
-/// A skill's instructions for its details sheet: an installed one by `id` (read from disk),
-/// a catalog one by `source`. Only names from those lists are looked up, never a path.
+/// A skill's instructions for its details sheet: an installed one by `id` (read from disk), a catalog one
+/// by `source` (bundled, or the anthropics/skills catalog). Only names from those lists are looked up,
+/// never a path.
 pub async fn skill_details(store: &crate::store::Store, b: &Value) -> Result<Value> {
     const MAX: usize = 256 * 1024;
+    if let Some(source) = b["source"].as_str().filter(|s| s.starts_with(super::openbot::SOURCE)) {
+        return super::openbot::skill_details(source);
+    }
     let mut markdown = if let Some(id) = b["id"].as_str() {
         let s = skills(store).into_iter().find(|s| s.id == id).ok_or_else(|| anyhow!("Unknown skill"))?;
         let md = tokio::fs::read_to_string(s.dir().join("SKILL.md")).await.context("reading the skill")?;
@@ -191,10 +198,18 @@ pub async fn skill_details(store: &crate::store::Store, b: &Value) -> Result<Val
 }
 
 const MAX_SKILL_FILE: usize = 1_000_000;
+/// Largest skills listing page read (the embedded catalog with every folder).
+const MAX_PAGE: usize = 4 * 1024 * 1024;
 
 /// One skill file, or nothing when it is over [`MAX_SKILL_FILE`]. Reading stops at the limit.
 async fn skill_file(url: &str) -> Result<Option<Vec<u8>>> {
-    let mut response = crate::http().get(url).header("user-agent", UA).timeout(TIMEOUT).send().await?;
+    // Skill files stay inside the egress policy, redirects followed under it.
+    let response = crate::egress::get_following(GITHUB, url, TIMEOUT).await?;
+    read_limited(response).await
+}
+
+/// Reads a skill file's body, stopping at [`MAX_SKILL_FILE`]: `None` when the file is larger.
+async fn read_limited(mut response: reqwest::Response) -> Result<Option<Vec<u8>>> {
     if response.content_length().is_some_and(|size| size > MAX_SKILL_FILE as u64) {
         return Ok(None);
     }
@@ -246,7 +261,7 @@ fn update_skills<T>(store: &crate::store::Store, change: impl FnOnce(&mut Vec<Sk
 fn reserve_download(store: &crate::store::Store, id: &str) -> Result<Option<Value>> {
     let _guard = SKILLS_LOCK.locked();
     match skills(store).into_iter().find(|s| s.id == id) {
-        Some(s) if s.source == SKILLS_REPO => Ok(Some(s.public())),
+        Some(s) if s.source == SKILLS_REPO || s.source.starts_with(super::openbot::SOURCE) => Ok(Some(s.public())),
         Some(s) => bail!("The skill {} written in Codync has the id {id}: remove it to add this one", s.name),
         None => {
             std::fs::create_dir_all(skills_dir().join(id))?;
@@ -255,7 +270,41 @@ fn reserve_download(store: &crate::store::Store, id: &str) -> Result<Option<Valu
     }
 }
 
+/// The bundled skill already installed as `id`, or `None` once its folder is taken.
+pub fn reserve_bundled(store: &crate::store::Store, id: &str) -> Result<Option<Skill>> {
+    let _guard = SKILLS_LOCK.locked();
+    match skills(store).into_iter().find(|s| s.id == id) {
+        Some(s) if s.source == SKILLS_REPO || s.source.starts_with(super::openbot::SOURCE) => Ok(Some(s)),
+        Some(s) => bail!("The skill {} written in Codync has the id {id}: remove it to add this one", s.name),
+        None => {
+            std::fs::create_dir_all(skills_dir().join(id))?;
+            Ok(None)
+        }
+    }
+}
+
+/// Records an installed bundled skill once its folder is written.
+pub fn record_bundled(store: &crate::store::Store, id: &str, name: &str, description: &str) -> Result<Skill> {
+    let s = Skill {
+        id: slug(id),
+        name: name.to_owned(),
+        description: description.to_owned(),
+        source: format!("{}{id}", super::openbot::SOURCE),
+        written_by: None,
+    };
+    update_skills(store, |all| {
+        if !all.iter().any(|x| x.id == s.id) {
+            all.push(s.clone());
+        }
+        Ok(())
+    })?;
+    Ok(s)
+}
+
 pub async fn install_skill(store: &crate::store::Store, source: &str) -> Result<Value> {
+    if source.starts_with(super::openbot::SOURCE) {
+        return Ok(super::openbot::install(store, source)?.public());
+    }
     let id = slug(source);
     if let Some(installed) = reserve_download(store, &id)? {
         return Ok(installed);
@@ -279,6 +328,21 @@ pub async fn install_skill(store: &crate::store::Store, source: &str) -> Result<
     })
 }
 
+/// Skills one bot may keep. Past this it rewrites one of its own or the user clears some, so a bot can't pile up
+/// instructions without end.
+pub const MAX_WRITTEN_PER_BOT: usize = 40;
+
+/// Whether `bot` can save one more skill.
+fn room_for(all: &[Skill], bot: &str) -> Result<()> {
+    let written = all.iter().filter(|s| s.written_by.as_deref() == Some(bot)).count();
+    if written >= MAX_WRITTEN_PER_BOT {
+        bail!(
+            "You've already saved {written} skills, the most a bot keeps. Rewrite one of them (pass its id) or ask the user to remove some."
+        );
+    }
+    Ok(())
+}
+
 /// A skill written in Codync (by the user, or by the bot `written_by`): a name, when to use it, and the instructions.
 pub fn add_custom_skill(
     store: &crate::store::Store,
@@ -292,6 +356,9 @@ pub fn add_custom_skill(
         bail!("`name` is required");
     }
     update_skills(store, |all| {
+        if let Some(bot) = written_by {
+            room_for(all, bot)?;
+        }
         // A folder the list doesn't have yet (a download in progress) is taken too.
         let folders = std::fs::read_dir(skills_dir()).into_iter().flatten().flatten();
         let taken: Vec<String> =
@@ -376,6 +443,7 @@ pub fn expand_command(store: &crate::store::Store, enabled: &[String], text: &st
         return None;
     }
     let s = skills(store).into_iter().find(|s| s.id == id)?;
+    super::skill_usage::note_use(store, &s.id, crate::store::now_ms());
     let note = format!(
         "[Codync: the user picked the \"{}\" skill for this message. Read {} first and follow it.]",
         s.name,
@@ -462,9 +530,11 @@ mod tests {
     #[tokio::test]
     async fn a_skill_file_over_the_limit_is_skipped_without_reading_it_all() {
         let base = file_server().await;
-        assert_eq!(skill_file(&format!("{base}/declared")).await.expect("declared"), None);
-        assert_eq!(skill_file(&format!("{base}/streamed")).await.expect("streamed"), None);
-        assert_eq!(skill_file(&format!("{base}/small")).await.expect("small").as_deref(), Some(&b"hello"[..]));
+        // The limit applies to the body the policy-approved request returns; this fixture is plain HTTP.
+        for (path, expected) in [("declared", None), ("streamed", None), ("small", Some(&b"hello"[..]))] {
+            let response = crate::http().get(format!("{base}/{path}")).send().await.unwrap();
+            assert_eq!(read_limited(response).await.expect(path).as_deref(), expected, "{path}");
+        }
     }
 
     #[test]
@@ -488,6 +558,24 @@ mod tests {
         assert_eq!(front_matter("# no front matter"), (None, None));
         let folded = "---\nname: guide\ndescription: >\n  Walks you\n  through it.\nlicense: MIT\n---\n";
         assert_eq!(front_matter(folded), (Some("guide".into()), Some("Walks you through it.".into())));
+    }
+
+    fn written(id: usize, by: Option<&str>) -> Skill {
+        serde_json::from_value(json!({"id": format!("s{id}"), "name": "S", "source": "custom", "writtenBy": by}))
+            .expect("skill")
+    }
+
+    #[test]
+    fn a_bot_keeps_a_limited_number_of_skills_of_its_own() {
+        let mut all: Vec<Skill> = (0..MAX_WRITTEN_PER_BOT - 1).map(|n| written(n, Some("a"))).collect();
+        all.extend((100..110).map(|n| written(n, Some("b"))));
+        all.extend((200..210).map(|n| written(n, None)));
+        assert!(room_for(&all, "a").is_ok(), "one below the limit still has room");
+        all.push(written(300, Some("a")));
+        let refused = room_for(&all, "a").unwrap_err().to_string();
+        assert!(refused.contains("40") && refused.contains("id"), "{refused}");
+        assert!(room_for(&all, "b").is_ok(), "other bots' and the user's skills don't count");
+        assert!(room_for(&all, "c").is_ok());
     }
 
     #[test]

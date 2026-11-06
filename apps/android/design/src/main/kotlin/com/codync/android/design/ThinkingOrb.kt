@@ -54,5 +54,17 @@ enum class ThinkingOrbState { Working, Searching, Listening, Connecting, Shaping
 /** The system's "Remove animations" setting, iOS Reduce Motion's counterpart. */
 @Composable fun reduceMotion(): Boolean {
     val context = androidx.compose.ui.platform.LocalContext.current
-    return remember { android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
+    val resolver = context.contentResolver
+    fun disabled() = android.provider.Settings.Global.getFloat(resolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    var reduced by remember(resolver) { androidx.compose.runtime.mutableStateOf(disabled()) }
+    androidx.compose.runtime.DisposableEffect(resolver) {
+        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { reduced = disabled() }
+        }
+        resolver.registerContentObserver(android.provider.Settings.Global.getUriFor(
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE), false, observer)
+        onDispose { resolver.unregisterContentObserver(observer) }
+    }
+    return reduced
 }

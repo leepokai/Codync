@@ -72,7 +72,7 @@ import kotlinx.serialization.json.jsonPrimitive
         }) {
             Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 d.text("command")?.takeIf(String::isNotEmpty)?.let { CodeBox(it) }
-                d.text("detail")?.takeIf(String::isNotEmpty)?.let { CodeBox(it.take(2000)) }
+                d.text("detail")?.takeIf(String::isNotEmpty)?.let { CodeBox(it) }
                 for (diff in diffs) DiffView(diff)
             }
         }

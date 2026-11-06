@@ -1,128 +1,360 @@
 package com.codync.android
 
-import android.content.Context
-import androidx.core.content.edit
-import com.codync.android.core.AppVersion
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
-import java.text.Collator
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import com.codync.android.design.*
+import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedRectangle
+import kotlinx.coroutines.delay
 
-/** One line of the roster as it shows: a bot, a section's header, or the "Bots" label (docs/plans/roster-sections.md). */
-internal sealed interface RosterLine {
-    val key: String
-
-    data class Row(val bot: Bot) : RosterLine {
-        override val key: String get() = bot.id
+/** Shared 1-second clock that ticks only while at least one working bot is visible. */
+@Composable internal fun rememberRosterClock(active: Boolean): Long {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1_000L)
+        }
     }
-
-    /** [count] and [unread] cover the section's unpinned bots, the ones shown under it. */
-    data class Header(val name: String, val count: Int, val unread: Int, val folded: Boolean) : RosterLine {
-        override val key: String get() = "section:$name"
-    }
-
-    /** The plain "Bots" label over the bots in no section. */
-    data object Label : RosterLine {
-        override val key: String get() = "label:bots"
-    }
+    return now
 }
 
-/**
- * The sorted [roster] as it shows: the pinned bots, then each section by name (its header, then its
- * bots in roster order unless it's [folded]), then bots without a section, under [RosterLine.Label]
- * when there are sections. A pinned bot shows only on top.
- */
-internal fun rosterLines(roster: List<Bot>, folded: Set<String>, order: List<String> = emptyList(), moving: Boolean = false): List<RosterLine> = buildList {
-    val (pinned, unpinned) = roster.partition { it.pinned }
-    val sections = unpinned.groupBy(Bot::section)
-    pinned.forEach { add(RosterLine.Row(it)) }
-    val custom = sectionNames(unpinned)
-    val names = orderedSections(custom + if (sections[null].isNullOrEmpty()) emptyList() else listOf(""), order)
-    for (name in names) {
-        if (name.isEmpty()) {
-            if (custom.isNotEmpty()) add(RosterLine.Label)
-            if (!moving) sections[null].orEmpty().forEach { add(RosterLine.Row(it)) }
-        } else {
-            val bots = sections.getValue(name)
-            val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, moving || name in folded)
-            add(header)
-            if (!header.folded) bots.forEach { add(RosterLine.Row(it)) }
+/** Search field, quick filter chips, and workspace grouping toggle for the roster. */
+@Composable internal fun RosterControlsHeader(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    filter: RosterFilter,
+    onFilterSelect: (RosterFilter) -> Unit,
+    groupByProject: Boolean,
+    onGroupByProjectChange: (Boolean) -> Unit,
+    showGroupByProject: Boolean,
+    bots: List<Bot>,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalCodyncHaptics.current
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SearchField(
+            text = query,
+            onChange = onQueryChange,
+            prompt = "Search bots, folders, or messages",
+        )
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            for (option in RosterFilter.entries) {
+                val count = when (option) {
+                    RosterFilter.All -> null
+                    else -> bots.count(option::matches).takeIf { it > 0 }
+                }
+                val label = if (count != null) "${option.label} ($count)" else option.label
+                FilterChipPill(
+                    label = label,
+                    selected = filter == option,
+                    accentDot = if (option == RosterFilter.NeedsInput && (count ?: 0) > 0) Palette.warning else null,
+                ) {
+                    if (filter != option) haptics.perform(CodyncHaptic.TabSwitch)
+                    onFilterSelect(option)
+                }
+            }
+            if (showGroupByProject) {
+                FilterChipPill(
+                    label = "By project",
+                    selected = groupByProject,
+                    icon = "folder",
+                ) {
+                    haptics.perform(CodyncHaptic.Toggle)
+                    onGroupByProjectChange(!groupByProject)
+                }
+            }
         }
     }
 }
 
-/** The sections [bots] are in, sorted the way the phone's language sorts ("İş" where Turkish puts it). */
-internal fun sectionNames(bots: List<Bot>): List<String> = bots.mapNotNull(Bot::section).distinct().sortedWith(Collator.getInstance())
-
-/** The sections a row's "Move to section" offers: hidden bots' too, though the roster leaves those out (iOS `BotStore.sections`). */
-internal fun menuSections(bots: List<Bot>): List<String> = sectionNames(bots.filterNot(Bot::deleted))
-
-/** The first host version that keeps sections (`section` on bots, `renameSection`). */
-private const val SECTIONS_HOST = "2.32.0"
-
-/** Section controls show only for a host that keeps sections; before its `hello` (offline) they stay hidden. */
-internal val AppState.supportsSections: Boolean
-    get() = hello?.text("version")?.let { !AppVersion.isBelow(it, SECTIONS_HOST) } == true
-
-/** The first host version where the user picks the lead (`setLead`) and may delete it. */
-private const val LEAD_CHOICE_HOST = "2.33.0"
-
-/** An older host refuses both, so "Make lead agent" and the lead's Delete wait for its `hello`. */
-internal val AppState.supportsLeadChoice: Boolean
-    get() = hello?.text("version")?.let { !AppVersion.isBelow(it, LEAD_CHOICE_HOST) } == true
-
-/** `updateBot`'s section patch: null goes as JSON null, which clears it (a missing key keeps it). */
-internal fun sectionUpdate(id: String, section: String?): JsonObject = buildJsonObject { put("id", id); put("section", section) }
-
-/** `renameSection`: every bot in [from] moves to [to], merging into a section of that name; null removes the section. */
-internal fun sectionRename(from: String, to: String?): JsonObject = buildJsonObject { put("from", from); put("to", to) }
-
-/** The most characters a section name may have (the host refuses more). */
-private const val SECTION_NAME_LIMIT = 40
-
-/** What a name field holds: at most [SECTION_NAME_LIMIT] characters (code points, as the host counts them), never cut inside a surrogate pair. */
-internal fun limitSectionName(input: String): String =
-    if (input.codePointCount(0, input.length) <= SECTION_NAME_LIMIT) input else input.substring(0, input.offsetByCodePoints(0, SECTION_NAME_LIMIT))
-
-/** The section a typed [input] names: trimmed, or null when nothing but whitespace or control characters was typed (the host would clear or remove). */
-internal fun sectionName(input: String): String? =
-    input.trim().takeIf { name -> name.any { !it.isWhitespace() && !it.isISOControl() } }
+@Composable private fun FilterChipPill(
+    label: String,
+    selected: Boolean,
+    icon: String? = null,
+    accentDot: Color? = null,
+    onClick: () -> Unit,
+) {
+    val fill = if (selected) Palette.accentFill else Palette.surface
+    val ink = if (selected) Palette.onAccent else Palette.secondary
+    Row(
+        Modifier.height(32.dp)
+            .clip(Capsule())
+            .background(fill)
+            .clickable(role = Role.Tab, onClick = onClick)
+            .semantics {
+                contentDescription = label
+                this.selected = selected
+            }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        if (accentDot != null && !selected) {
+            Box(Modifier.size(6.dp).clip(Capsule()).background(accentDot))
+        }
+        if (icon != null) {
+            Symbol(icon, size = 13.dp, tint = ink)
+        }
+        Text(label, style = Type.caption.medium, color = ink, maxLines = 1)
+    }
+}
 
 /**
- * This device's folded sections after it renames section [from] to [to] (null removes it): a folded [from] stays folded
- * as [to], so a merge folds the section it joins; an unfolded one changes nothing.
+ * Top attention banner for bots in `needsInput` or with pending permissions.
+ * Never approves blindly: only exposes direct Allow/Deny when a single pending `permission` entry
+ * with full context and options is loaded; otherwise opens the bot's conversation.
  */
-internal fun foldsAfterRename(folded: Set<String>, from: String, to: String?): Set<String> =
-    if (from in folded) folded - from + listOfNotNull(to) else folded
-
-/** This device's folded sections after the computer refused a rename that changed them from [before] to [set]: [before] again, unless they changed since. */
-internal fun foldsAfterRefusal(current: Set<String>, set: Set<String>, before: Set<String>): Set<String> = if (current == set) before else current
-
-/** A section change shown before the computer answered it (iOS `SectionMove`): bot [bot] into [to] (null: none). Told apart by identity. */
-internal class SectionMove(val bot: String, val to: String?)
-
-/** [bots] as they show while [pending] (oldest first) waits for the computer: each bot in the section its latest move put it in. */
-internal fun withMoves(bots: List<Bot>, pending: List<SectionMove>): List<Bot> {
-    if (pending.isEmpty()) return bots
-    val sections = pending.associate { it.bot to it.to }
-    return bots.map { bot -> if (bot.id in sections) bot.copy(section = sections[bot.id]) else bot }
+@Composable internal fun AttentionBannerSection(
+    items: List<BotAttentionItem>,
+    bots: List<Bot>,
+    store: AppStore,
+    modifier: Modifier = Modifier,
+) {
+    if (items.isEmpty()) return
+    val haptics = LocalCodyncHaptics.current
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (item in items) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedRectangle(18.dp))
+                    .background(Palette.surface)
+                    .padding(14.dp)
+                    .semantics { contentDescription = "Attention required for ${item.bot.name}" },
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().clickable(role = Role.Button) { store.openBot(item.bot.id) },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    BotAvatar(item.bot, bots, 28.dp)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(item.bot.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Box(Modifier.size(7.dp).clip(Capsule()).background(Palette.warning))
+                        }
+                        when (item) {
+                            is BotAttentionItem.DirectPermission -> {
+                                Text(item.headline, style = Type.caption.medium, color = Palette.warning, maxLines = 1)
+                            }
+                            is BotAttentionItem.OpenChatRequired -> {
+                                Text(item.summary, style = Type.caption, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
+                }
+                when (item) {
+                    is BotAttentionItem.DirectPermission -> {
+                        Text(
+                            item.title,
+                            Modifier.fillMaxWidth().clip(RoundedRectangle(10.dp)).background(Palette.background).padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = Type.caption.monospaced,
+                            color = Palette.secondary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.height(34.dp).clip(Capsule()).background(Palette.accentFill)
+                                    .clickable(enabled = !item.answering, role = Role.Button) {
+                                        haptics.perform(CodyncHaptic.PermissionAction)
+                                        store.respondToAttention(item.bot, item.entry.id, item.allowOptionId)
+                                    }
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (item.answering) Spinner(13.dp, color = Palette.onAccent)
+                                else Text(item.allowLabel, style = Type.caption.semibold, color = Palette.onAccent)
+                            }
+                            Box(
+                                Modifier.height(34.dp).clip(Capsule()).background(Palette.bubbleUser)
+                                    .clickable(enabled = !item.answering, role = Role.Button) {
+                                        haptics.perform(CodyncHaptic.PermissionAction)
+                                        store.respondToAttention(item.bot, item.entry.id, item.denyOptionId)
+                                    }
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(item.denyLabel, style = Type.caption.semibold, color = Palette.danger)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            LinkButton("Details", style = Type.caption.medium, color = Palette.secondary) {
+                                store.openBot(item.bot.id)
+                            }
+                        }
+                    }
+                    is BotAttentionItem.OpenChatRequired -> {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            SecondaryButton("Review in chat") { store.openBot(item.bot.id) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
-/** The roster's preferences: kept on this device, never synced. */
-internal fun rosterPrefs(context: Context) = context.getSharedPreferences("codync-roster", Context.MODE_PRIVATE)
-
-/** The sections folded on this device (iOS `@AppStorage("collapsedRosterSections")`). */
-internal object FoldedSections {
-    private const val KEY = "collapsedRosterSections"
-    fun load(context: Context): Set<String> = rosterPrefs(context).getStringSet(KEY, null).orEmpty().toSet()
-    fun save(context: Context, names: Set<String>) { rosterPrefs(context).edit { putStringSet(KEY, names) } }
+/** Collapsible workspace section header. */
+@Composable internal fun WorkspaceSectionHeader(
+    section: WorkspaceSection,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+) {
+    val turn by animateFloatAsState(if (collapsed) 0f else 90f, Motion.layout(), label = "SectionChevron")
+    val icon = when (section.key.kind) {
+        WorkspaceSectionKind.Project -> "folder"
+        WorkspaceSectionKind.Managed -> "sparkles"
+        WorkspaceSectionKind.Groups -> "person.2"
+        WorkspaceSectionKind.Unassigned -> "tray"
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .padding(top = 10.dp, bottom = 4.dp)
+            .clip(RoundedRectangle(12.dp))
+            .background(Palette.surface)
+            .clickable(role = Role.Button, onClick = onToggle)
+            .semantics {
+                contentDescription = "${section.title}, ${section.bots.size} bots"
+                stateDescription = if (collapsed) "Collapsed" else "Expanded"
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Symbol(icon, size = 15.dp, tint = Palette.secondary)
+        Column(Modifier.weight(1f)) {
+            Text(section.title, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!section.subtitle.isNullOrBlank()) {
+                Text(section.subtitle, style = Type.caption2, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Text("${section.bots.size}", style = Type.caption.semibold, color = Palette.secondary)
+        Symbol("chevron.right", Modifier.rotate(turn), size = 12.dp, tint = Palette.tertiary)
+    }
 }
 
-/** Computers left out of the roster (`ComputerSelection`'s list), and computers whose bots are folded away (iOS `@AppStorage`). */
-internal object RosterComputers {
-    fun hidden(context: Context): String = rosterPrefs(context).getString("hiddenComputers", "").orEmpty()
-    fun setHidden(context: Context, value: String) = rosterPrefs(context).edit { putString("hiddenComputers", value) }
-    fun folded(context: Context): Set<String> = rosterPrefs(context).getStringSet("foldedComputers", null).orEmpty().toSet()
-    fun setFolded(context: Context, ids: Set<String>) = rosterPrefs(context).edit { putStringSet("foldedComputers", ids) }
+/** Message hits section shown when searching in the roster. */
+@Composable internal fun MessageSearchHitsSection(
+    searchState: RosterSearchState,
+    bots: List<Bot>,
+    onOpenHit: (RosterMessageHit) -> Unit,
+) {
+    if (searchState.query.isBlank() || searchState.messageHits.isEmpty()) return
+    Column(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Messages (${searchState.messageHits.size})", style = Type.subheadline.semibold, color = Palette.text)
+            if (searchState.isPartialCache) {
+                Text("Cached on this phone", style = Type.caption, color = Palette.tertiary)
+            }
+        }
+        for (hit in searchState.messageHits) {
+            val bot = bots.firstOrNull { it.id == hit.botId }
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedRectangle(14.dp))
+                    .background(Palette.surface)
+                    .clickable(role = Role.Button) { onOpenHit(hit) }
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (bot != null) BotAvatar(bot, bots, 28.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(hit.botName, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (hit.threadId != null) {
+                            MetadataPill("Thread", icon = "arrowshape.turn.up.left")
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (hit.createdAt > 0) {
+                            Text(RelativeTime.day(hit.createdAt), style = Type.caption, color = Palette.tertiary)
+                        }
+                    }
+                    Text(hit.snippet, style = Type.subheadline, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/** Empty state when active filters or search query match no bots. */
+@Composable internal fun EmptyFilteredRoster(
+    query: String,
+    filter: RosterFilter,
+    isPartialCache: Boolean,
+    error: String?,
+    onClear: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Symbol(if (error != null) "exclamationmark.triangle" else "magnifyingglass", size = 28.dp, tint = Palette.tertiary)
+        Text(
+            text = when {
+                error != null -> "Search couldn't complete"
+                query.isNotBlank() -> "No matching bots or messages"
+                else -> "No bots in \"${filter.label}\""
+            },
+            style = Type.headline,
+            color = Palette.text,
+            textAlign = TextAlign.Center,
+        )
+        val detail = when {
+            error != null -> error
+            query.isNotBlank() && isPartialCache -> "Searched bot details and messages cached on this phone."
+            query.isNotBlank() -> "No bots, folders, or messages matched \"$query\"."
+            else -> "Try clearing the filter to see all bots."
+        }
+        Text(detail, style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
+        SecondaryButton("Clear filters", action = onClear)
+    }
 }

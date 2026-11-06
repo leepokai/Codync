@@ -1,3 +1,4 @@
+import { closeComputerScreen } from './screen-viewer'
 import { identity } from './environment'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, promises as fs, readFileSync } from 'node:fs'
@@ -5,17 +6,23 @@ import { createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
+import { type SSHAttachment, type SSHProfile, type SSHState, type SSHStatus } from '../shared/ssh'
 import { dataDir } from './host-controller'
-import type { SSHAttachment, SSHProfile, SSHState, SSHStatus } from '../shared/ssh'
-import { codyncKnownHosts, infoArguments, installArguments, installOutput, installSteps, keyscanArguments, knownHostsFiles, needsLinger, resolveArguments, tunnelArguments } from './ssh-command'
-import { authRefused, consistent, hostKeys, knownHostsLines, knownHostsName, parseConfig, parseInfo, usesProxy } from './ssh-parse'
-import { KEYGEN, KEYSCAN, SSH, killOrphanTunnels, lastLine, missingTools, run, scanHostKeys, sshListens } from './ssh-process'
-import { validate } from './ssh-profile'
+import { infoArguments, knownHostsFiles, resolveArguments, tunnelArguments } from './ssh-command'
+import { authRefused, consistent, hostKeys, keyscanArguments, knownHostsLines, knownHostsName, parseConfig, parseInfo, usesProxy, validate } from './ssh-profile'
+import { KEYGEN, KEYSCAN, SSH, killOrphanTunnels, lastLine, run, sshListens } from './ssh-process'
 
 // SSH computers: profiles, host key checks and one
 // OpenSSH tunnel per connected profile. Arguments are always an argv array, never a shell string.
 
 const home = homedir()
+
+/** Loopback VNC ports this app's SSH tunnels are forwarding right now. */
+const vncPorts = new Set<number>()
+
+export function isTunnelVncPort(port: number) {
+  return vncPorts.has(port)
+}
 
 // MARK: processes
 
@@ -86,7 +93,7 @@ class SSHComputers {
 
   async connectAll() {
     // Before this copy has tunnels of its own, so only leftovers from an earlier copy match.
-    if (this.tunnels.size === 0 && this.tasks.size === 0) await killOrphanTunnels(dataDir)
+    if (this.tunnels.size === 0 && this.tasks.size === 0) await killOrphanTunnels(home, dataDir)
     for (const p of this.profiles) if (!this.tasks.has(p.id) && !this.tunnels.has(p.id)) this.connect(p.id)
   }
 
@@ -208,7 +215,8 @@ class SSHComputers {
     const id = profile.id
     const stop = (status: SSHStatus): Outcome => ({ kind: 'stop', status })
     const idle = stop({ kind: 'idle' })
-    const problem = missingTools() ?? validate(profile)
+    const problem = validate(profile)
+    if (!existsSync(SSH) || !existsSync(KEYGEN) || !existsSync(KEYSCAN)) return stop({ kind: 'failed', message: process.platform === 'win32' ? 'Install OpenSSH Client in Windows Settings → Optional features, then connect again.' : 'Install OpenSSH, then connect again.' })
     if (problem) return stop({ kind: 'failed', message: problem })
     this.setStatus(id, { kind: 'connecting', step: 'Reading SSH settings…' })
     const config = await run(SSH, resolveArguments(profile))
@@ -238,8 +246,7 @@ class SSHComputers {
     if (token.cancelled) return idle
     if (result.status === 255) {
       if (authRefused(result.stderr)) return stop({ kind: 'failed', message: signInRefused(profile) })
-      // Windows reads only the one key the host presents, which needn't be the pinned key's type.
-      if (!usesProxy(resolved) && process.platform !== 'win32') {
+      if (!usesProxy(resolved)) {
         const scan = await run(KEYSCAN, keyscanArguments(resolved))
         const current = hostKeys(scan.stdout)
         // Only plain host keys can be compared: a `@cert-authority` key is never what keyscan returns.
@@ -267,9 +274,11 @@ class SSHComputers {
     let lastProblem = ''
     for (let attempt = 0; attempt < 3; attempt++) {
       const port = await freeLocalPort()
-      if (port === null) return { kind: 'retry', message: 'No free local port for the tunnel.' }
+      let vncPort = await freeLocalPort()
+      for (let retry = 0; vncPort === port && retry < 8; retry++) vncPort = await freeLocalPort()
+      if (port === null || vncPort === null || port === vncPort) return { kind: 'retry', message: 'No free local port for the tunnel.' }
       this.setStatus(id, { kind: 'connecting', step: 'Opening the tunnel…' })
-      const tunnel = this.startTunnel(profile, port)
+      const tunnel = this.startTunnel(profile, port, vncPort)
       if (!tunnel) return stop({ kind: 'failed', message: "Couldn't start ssh." })
       const { child, tail } = tunnel
       const alive = () => child.exitCode === null && child.signalCode === null
@@ -295,7 +304,7 @@ class SSHComputers {
       }
       // /health is public, so the answer alone doesn't prove it came through ssh: another
       // local user could have taken the port. Only a listener ssh owns gets the token.
-      const listens = child.pid !== undefined ? await sshListens(child.pid, port) : false
+      const listens = child.pid !== undefined && (await sshListens(child.pid, port)) && (await sshListens(child.pid, vncPort))
       // Disconnected, removed or edited meanwhile: this attempt must not register its tunnel.
       if (token.cancelled) {
         child.kill()
@@ -315,7 +324,9 @@ class SSHComputers {
         computer: { id: info.computerId, name: info.name, signKey: info.signKey, boxKey: info.boxKey ?? null },
         baseURL,
         token: info.token,
+        vncPort,
       })
+      vncPorts.add(vncPort)
       this.setStatus(id, { kind: 'connected', localPort: port })
       return { kind: 'attached' }
     }
@@ -334,12 +345,12 @@ class SSHComputers {
   }
 
   /** ssh's stderr is read as it arrives: left unread, the pipe fills and ssh blocks mid-write, freezing the tunnel. */
-  private startTunnel(profile: SSHProfile, localPort: number) {
+  private startTunnel(profile: SSHProfile, localPort: number, vncPort: number) {
     let text = ''
     let done = false
     let child: ChildProcess
     try {
-      child = spawn(SSH, tunnelArguments(profile, localPort, home, dataDir), { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
+      child = spawn(SSH, tunnelArguments(profile, localPort, home, dataDir, vncPort), { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
     } catch {
       return null
     }
@@ -377,6 +388,8 @@ class SSHComputers {
     this.tunnels.delete(id)
     child?.kill()
     this.connectedAt.delete(id)
+    const attachment = this.attachments.get(id)
+    if (attachment) { vncPorts.delete(attachment.vncPort); closeComputerScreen(attachment.computer.id) }
     if (this.attachments.delete(id)) this.changed()
   }
 
@@ -410,4 +423,8 @@ export function registerSSH(getWindows: () => BrowserWindow[]) {
   // ssh children outlive the app unless stopped.
   app.on('will-quit', () => ssh.disconnectAll())
   void ssh.connectAll()
+  return (computerId: string) => {
+    const attachment = ssh.state.attachments.find((item) => item.computer.id === computerId)
+    return attachment ? { computerId, name: attachment.computer.name, vncPort: attachment.vncPort } : null
+  }
 }

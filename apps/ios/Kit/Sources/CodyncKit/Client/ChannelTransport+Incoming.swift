@@ -153,10 +153,11 @@ extension ChannelTransport {
               let rawId = obj["id"] as? NSNumber else { return }
         let id = rawId.uint32Value
         if let ev = obj["ev"] {
-            // Only a bounded stream (`HostStreamRequest.bufferLimit`) drops: screen candidates.
             if let data = try? JSONSerialization.data(withJSONObject: ev, options: .fragmentsAllowed),
-               case .dropped = streams[id]?.yield(data) {
-                finishStream(id, throwing: ScreenError.candidateOverflow)
+               let continuation = streams[id], case .dropped = continuation.yield(data) {
+                continuation.finish(throwing: ScreenError.candidateOverflow)
+                streams[id] = nil
+                streamIds = streamIds.filter { $0.value != id }
                 do { try sendCancellation(id) } catch { link?.socket.close(code: 1000) }
             }
         } else if obj["end"] as? Bool == true {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -31,6 +31,15 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const [stage, setStage] = useState<Stage>('closed')
   const [query, setQuery] = useState('')
   const { catalog, loading, failure } = models
+
+  // A different agent starts on its own default model.
+  const lastBackend = useRef(backend)
+  useEffect(() => {
+    if (lastBackend.current === backend) return
+    lastBackend.current = backend
+    onChange(null)
+  }, [backend, onChange])
+
   const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
   const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
   const current = catalog?.models.find((m) => m.id === catalog.currentModelId)

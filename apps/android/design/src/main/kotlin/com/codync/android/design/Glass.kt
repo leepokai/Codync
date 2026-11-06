@@ -1,24 +1,25 @@
 package com.codync.android.design
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
@@ -45,11 +46,24 @@ import kotlin.math.min
 val LocalBackdrop = staticCompositionLocalOf<Backdrop> { emptyBackdrop() }
 
 /**
- * Content with glass chrome floating over it (iOS 26 bars over scroll content). `content` is
- * recorded so `chrome`'s glass can refract and blur it; chrome itself is never recorded.
+ * Content with chrome floating over it. In [SurfaceStyle.Glass], `content` is recorded so
+ * `chrome`'s glass can refract and blur it; in [SurfaceStyle.Tonal], offscreen layer
+ * recording is bypassed to avoid extra GPU passes.
  */
-@Composable fun GlassStage(modifier: Modifier = Modifier, chrome: @Composable BoxScope.() -> Unit = {},
-    content: @Composable BoxScope.() -> Unit) {
+@Composable fun GlassStage(
+    modifier: Modifier = Modifier,
+    chrome: @Composable BoxScope.() -> Unit = {},
+    content: @Composable BoxScope.() -> Unit,
+) {
+    if (LocalSurfaceStyle.current == SurfaceStyle.Tonal) {
+        Box(modifier) {
+            Box(Modifier.fillMaxSize(), content = content)
+            CompositionLocalProvider(LocalBackdrop provides emptyBackdrop()) {
+                Box(Modifier.fillMaxSize(), content = chrome)
+            }
+        }
+        return
+    }
     val ground = Palette.background
     val onDraw: ContentDrawScope.() -> Unit = remember(ground) { { drawRect(ground); drawContent() } }
     val backdrop = rememberLayerBackdrop(onDraw = onDraw)
@@ -63,14 +77,23 @@ val LocalBackdrop = staticCompositionLocalOf<Backdrop> { emptyBackdrop() }
 enum class Edge { Top, Bottom }
 
 /**
- * iOS 26's soft scroll edge under a bar: content passing beneath blurs and washes into the
- * background, strongest at the screen's edge, so the bar stays legible over it. Chrome of a
- * `GlassStage`, like the bar it sits under.
+ * Soft scroll edge under a bar: in [SurfaceStyle.Glass], content passing beneath blurs and
+ * washes into the background; in [SurfaceStyle.Tonal], uses a direct tonal gradient fade
+ * without offscreen compositing or blur shaders.
  */
 @Composable fun ScrollEdge(edge: Edge, height: Dp, modifier: Modifier = Modifier) {
-    val backdrop = LocalBackdrop.current
     val ground = Palette.background
     val top = edge == Edge.Top
+    if (LocalSurfaceStyle.current == SurfaceStyle.Tonal) {
+        val stops = if (top) {
+            arrayOf(0f to ground.copy(alpha = 0.96f), 0.7f to ground.copy(alpha = 0.68f), 1f to Color.Transparent)
+        } else {
+            arrayOf(0f to Color.Transparent, 0.3f to ground.copy(alpha = 0.68f), 1f to ground.copy(alpha = 0.96f))
+        }
+        Box(modifier.fillMaxWidth().height(height).background(Brush.verticalGradient(*stops)))
+        return
+    }
+    val backdrop = LocalBackdrop.current
     Box(modifier.fillMaxWidth().height(height)
         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithContent {
@@ -85,15 +108,49 @@ enum class Edge { Top, Bottom }
         }))
 }
 
-/** How strongly glass frosts what's behind it. */
+/** How strongly a floating surface separates from what's behind it. */
 enum class GlassStyle { Regular, Clear, Menu }
 
+/** Resolves the solid tonal fill for [SurfaceStyle.Tonal] (no border line on filled surfaces). */
+internal fun resolveTonalSurface(
+    style: GlassStyle,
+    tint: Color,
+    palette: ResolvedPalette,
+): Color = when {
+    tint.isSpecified -> tint
+    style == GlassStyle.Clear -> palette.surface.copy(alpha = if (palette.isDark) 0.78f else 0.86f)
+    style == GlassStyle.Menu -> if (palette.isOled) Color(0xFF181818) else if (palette.isDark) Color(0xFF242424) else Color(0xFFFAFAFA)
+    palette.isOled -> Color(0xFF141414)
+    palette.isDark -> Color(0xFF202020)
+    else -> Color(0xFFF2F2F2)
+}
+
 /**
- * iOS 26 Liquid Glass: blurred, refracted at the rim, lit along the edge, lifted by a soft shadow.
- * `pressed` swells it the way `.glassEffect(.regular.interactive())` does.
+ * Floating chrome surface:
+ * - [SurfaceStyle.Glass]: iOS 26 Liquid Glass (blurred, refracted at the rim, lit along the edge).
+ * - [SurfaceStyle.Tonal]: lightweight tonal surface without blur/lens shaders and
+ *   without borders on filled backgrounds, preserving hierarchy and press interaction states.
  */
-@Composable fun Modifier.glass(shape: RoundedRectangularShape = Capsule(), style: GlassStyle = GlassStyle.Regular,
-    tint: Color = Color.Unspecified, pressed: Boolean = false, shadow: Boolean = true): Modifier {
+@Composable fun Modifier.glass(
+    shape: RoundedRectangularShape = Capsule(),
+    style: GlassStyle = GlassStyle.Regular,
+    tint: Color = Color.Unspecified,
+    pressed: Boolean = false,
+    shadow: Boolean = true,
+): Modifier {
+    val swell by animateFloatAsState(if (pressed) 1.04f else 1f, Motion.layout(), label = "Surface press")
+    if (LocalSurfaceStyle.current == SurfaceStyle.Tonal) {
+        val palette = LocalPalette.current
+        val fill = resolveTonalSurface(style, tint, palette)
+        val elevation = if (!shadow) 0.dp else if (style == GlassStyle.Menu) 12.dp else 4.dp
+        return graphicsLayer {
+            scaleX = swell
+            scaleY = swell
+            shadowElevation = elevation.toPx()
+            this.shape = shape
+            clip = true
+        }.background(fill, shape)
+    }
     val backdrop = LocalBackdrop.current
     val dark = LocalDark.current
     val surface = when {
@@ -104,7 +161,6 @@ enum class GlassStyle { Regular, Clear, Menu }
         else -> Color(0xC2FFFFFF)
     }
     val blurRadius = if (style == GlassStyle.Menu) 22.dp else 4.dp
-    val swell by animateFloatAsState(if (pressed) 1.06f else 1f, Motion.layout(), label = "Glass press")
     return graphicsLayer { scaleX = swell; scaleY = swell }.drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
@@ -122,14 +178,18 @@ enum class GlassStyle { Regular, Clear, Menu }
     )
 }
 
-/** A plain frosted layer over the stage (a context menu's backdrop): blur and a tint, no rim. */
+/** A frosted layer over the stage (a context menu's backdrop); uses a tonal scrim in [SurfaceStyle.Tonal]. */
 @Composable fun Modifier.frost(radius: Dp, tint: Color): Modifier {
+    if (LocalSurfaceStyle.current == SurfaceStyle.Tonal) {
+        val dark = LocalDark.current
+        return background(if (dark) Color.Black.copy(alpha = 0.48f) else Color.Black.copy(alpha = 0.24f))
+    }
     val backdrop = LocalBackdrop.current
     return drawPlainBackdrop(backdrop, shape = { RoundedRectangle(0.dp) }, effects = { blur(radius.toPx()) },
         onDrawSurface = { drawRect(tint) })
 }
 
-/** Tracks a press for glass that swells under the finger. */
+/** Tracks a press for glass/tonal surfaces that swell under the finger. */
 @Composable fun rememberPress(): Pair<MutableInteractionSource, Boolean> {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()

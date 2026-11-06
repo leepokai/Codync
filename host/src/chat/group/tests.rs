@@ -16,6 +16,7 @@ fn said(text: &str) -> Entry {
         data: json!({"text": text}),
         created_at: 0,
         updated_at: 0,
+        thread_id: None,
     }
 }
 

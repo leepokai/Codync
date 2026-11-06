@@ -152,6 +152,7 @@ impl Actor {
         {
             // How well the prompt cache held: the first thing to look at when a turn costs more than it should.
             let usage = &answer["usage"];
+            self.count_spend(usage);
             tracing::info!(
                 bot = %self.cfg.id,
                 session = self.turn_session.as_deref().unwrap_or_default(),

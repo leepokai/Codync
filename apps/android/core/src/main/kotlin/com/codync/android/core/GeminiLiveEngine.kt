@@ -70,6 +70,7 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     }
     override fun interrupt() = hop {
         if (phase != VoicePhase.Speaking) return@hop
+        transcript?.interrupted()
         stopPlayback(); dropping = !turnDone; phase(VoicePhase.Listening)
     }
     override fun focus(active: Boolean) = hop {
@@ -161,6 +162,7 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
             flush()
         }
         message.objectAt("serverContent")?.let { content ->
+            transcript?.gemini(content)
             content.objectAt("inputTranscription")?.text("text")?.let { link.add("user", it) }
             content.objectAt("outputTranscription")?.text("text")?.let { link.add("voice", it) }
             if (content.flag("turnComplete") || content.flag("interrupted")) link.endTurn()

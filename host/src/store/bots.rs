@@ -1,6 +1,7 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
 use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
+use super::visibility::PUBLIC;
 use super::{Store, logged, next_rev};
 use crate::LockExt;
 use anyhow::Result;
@@ -73,10 +74,34 @@ impl Store {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute("UPDATE bots SET rev = ?2, deleted = 1, session_id = NULL WHERE id = ?1", params![id, rev])?;
+        c.execute("DELETE FROM kv WHERE k IN (SELECT 'read.' || id FROM entries WHERE bot_id = ?1)", [id])?;
+        c.execute("DELETE FROM slack_outbox WHERE entry_id IN (SELECT id FROM entries WHERE bot_id=?1)", [id])?;
+        c.execute("DELETE FROM slack_inbox WHERE bot_id=?1", [id])?;
+        c.execute("DELETE FROM slack_threads WHERE bot_id=?1", [id])?;
+        c.execute("DELETE FROM research_packets WHERE bot_id=?1", [id])?;
+        c.execute(
+            "DELETE FROM kv WHERE k IN (?1,?2)",
+            params![format!("turn.sources.{id}"), format!("turn.inflight.{id}")],
+        )?;
         c.execute("DELETE FROM entries WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM computer_activity WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM pending_tool_calls WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM document_reviews WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM document_creations WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM documents WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM bot_app_data WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM bot_app_links WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM bot_apps WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM open_items WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM reported_items WHERE bot_id = ?1", [id])?;
+        c.execute("DELETE FROM message_bookmarks WHERE bot_id = ?1", [id])?;
         codync_mem::store::drop_bot(&c, id)?;
         // Its dreaming bookmark, notices' revisions and the record of its moved memory.
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("memory.*{id}*")])?;
+        // Its instruction versions (`chat/instruction_history.rs`).
+        c.execute("DELETE FROM kv WHERE k = ?1", [format!("instructions.history.{id}")])?;
+        // Lane state (see `lane_key`: scratchpads, sessions, …) it owned, or that bots kept in it.
+        c.execute("DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2", [format!("lane.*.{id}@*"), format!("lane.*@{id}*")])?;
         // Its routine runs' sessions (see `run_session_key`).
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("lane.session.{id}@*")])?;
         // Its fallback chain's place and each agent's parked session (`agent::bot::fallback::park`).
@@ -114,11 +139,13 @@ impl Store {
     pub fn unread(&self, id: &str, read_rev: i64) -> i64 {
         let c = self.db.locked();
         let n = c.query_row(
-            "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND
+            &format!(
+                "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id IS NULL AND
                ((kind = 'agent' AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.call') IS NULL) OR
                 (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
                json_extract(data, '$.reactions') IS NULL AND
-               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2",
+               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2"
+            ),
             params![id, read_rev],
             |r| r.get(0),
         );
@@ -131,10 +158,12 @@ impl Store {
     pub fn last_message(&self, id: &str) -> Option<LastMessage> {
         let c = self.db.locked();
         let row = c.query_row(
-            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
+            &format!(
+                "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id IS NULL AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
                json_extract(data, '$.call') IS NULL
-             ORDER BY seq DESC LIMIT 1",
+             ORDER BY seq DESC LIMIT 1"
+            ),
             [id],
             |r| {
                 let kind: String = r.get(0)?;
@@ -155,7 +184,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::model::{BotKind, EntryKind, Lane, Permission};
+    use crate::store::model::{BotKind, EntryKind, Lane, Permission, ProactiveSettings};
     use crate::store::tests::temp_store;
 
     #[test]
@@ -169,14 +198,17 @@ mod tests {
             description: String::new(),
             avatar_color: "blue".into(),
             avatar_shape: "blob".into(),
+            avatar_look: None,
             backend: "claude".into(),
             command: None,
             cwd: "/tmp".into(),
             permission: Permission::Ask,
-            mode: None,
+            action_rules: std::collections::BTreeMap::new(),
+            proactive: ProactiveSettings::default(),
             model: None,
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
+            account: None,
             fallbacks: vec![],
             self_fallbacks: true,
             pinned: false,
@@ -188,13 +220,18 @@ mod tests {
             connectors: vec![],
             skills: vec![],
             computer: false,
+            approval_rules: vec![],
+            computer_permissions: crate::computer::Permissions::default(),
             manage_team: false,
             offered_to_network: true,
             reachable_by_assistants: true,
             created_by: None,
+            catalog: None,
             shared_memory: None,
             harness_memory: false,
             auto_name: false,
+            is_chief: false,
+            chief_bot_id: None,
             created_at: 0,
         };
         // Several at once: each with its own rev, in order.

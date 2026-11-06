@@ -17,6 +17,9 @@ data class Bot(
     val description: String = "",
     val avatarColor: String = "blue",
     val avatarShape: String = "blob",
+    val avatarLook: String? = null,
+    val actionRules: Map<String, String> = emptyMap(),
+    val proactive: ProactiveSettings? = null,
     val command: String? = null,
     val cwd: String = "",
     val managedWorkspace: Boolean = false,
@@ -35,7 +38,7 @@ data class Bot(
     val connectors: List<String> = emptyList(),
     val skills: List<String> = emptyList(),
     val computer: Boolean = false,
-    /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
+    /** The bot can create bots (which can too) and change its own setup and the bots it created (the built-in `manage` tools); null from an older host. */
     val manageTeam: Boolean? = null,
     /** The user's other computers list this bot and may message it; null from an older host. */
     val offeredToNetwork: Boolean? = null,
@@ -43,14 +46,7 @@ data class Bot(
     val reachableByAssistants: Boolean? = null,
     /** The bot that created this one; null when the user did. */
     val createdBy: String? = null,
-    /** Uses the memory all the user's bots share ("About you"); null from an older host. */
-    val sharedMemory: Boolean? = null,
-    /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
-    val harnessMemory: Boolean? = null,
-    /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
-    val harnessMemoryShared: Boolean? = null,
-    /** Moves whenever memory changes, so an open memory screen fetches it again. */
-    val memoryRev: Long? = null,
+    val computerPermissions: ComputerPermissions = ComputerPermissions(),
     val autoName: Boolean = false,
     val createdAt: Long = 0,
     val startedAt: Long? = null,
@@ -71,6 +67,16 @@ data class Bot(
     val unread: Int = 0,
     val rev: Long = 0,
     val deleted: Boolean = false,
+    /** Uses the memory all the user's bots share ("About you"). Null from an older host. */
+    val sharedMemory: Boolean? = null,
+    /** Keeps the harness's own memory (Claude Code's…) on beside Codync's. Null where it has no switch. */
+    val harnessMemory: Boolean? = null,
+    /** Moves whenever memory changes, so an open memory screen fetches it again. */
+    val memoryRev: Long? = null,
+    /** Host-owned isolated agent sign-in; independent of the app's cloud account. */
+    val account: String? = null,
+    val isChief: Boolean = false,
+    val chiefBotId: String? = null,
     /** Agents that carry on, in order, when its own can't answer (out of usage, rate limited, signed out…); null from an older host. */
     val fallbacks: List<Fallback>? = null,
     /** The bot may set its own fallbacks, for example when the user asks it to; null from an older host. */

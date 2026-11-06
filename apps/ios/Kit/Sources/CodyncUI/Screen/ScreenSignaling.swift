@@ -22,19 +22,25 @@ final class ScreenSignaling {
     private var failure: Error?
     private var mediaEstablished = false
     private var localComplete = false
-    private var remote = CandidateProgress()
+    private var remoteComplete = false
+    private var remoteCount = 0
     private var answerWaiter: CheckedContinuation<Void, Never>?
     private let localStream: AsyncThrowingStream<ScreenCandidate, Error>
 
     var isDetached: Bool { state == .detached }
-    var candidatesComplete: Bool { localComplete && remote.isComplete }
+    var candidatesComplete: Bool { localComplete && remoteComplete }
 
     typealias LocalPair = (stream: AsyncThrowingStream<ScreenCandidate, Error>, continuation: AsyncThrowingStream<ScreenCandidate, Error>.Continuation)
 
     convenience init(client: HostClient, session: String, pc: RTCPeerConnection, localPair: LocalPair, onFailure: @escaping @MainActor (Error) -> Void) {
         self.init(client: client, session: session, localPair: localPair, applyCandidate: { event in
             guard let sdp = event.candidate, let index = event.sdpMLineIndex else { throw ScreenError.invalidCandidate }
-            try await pc.add(RTCIceCandidate(sdp: sdp, sdpMLineIndex: index, sdpMid: event.sdpMid))
+            let candidate = RTCIceCandidate(sdp: sdp, sdpMLineIndex: index, sdpMid: event.sdpMid)
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                pc.add(candidate) { error in
+                    if let error { c.resume(throwing: error) } else { c.resume() }
+                }
+            }
         }, isMediaConnected: { pc.iceConnectionState == .connected || pc.iceConnectionState == .completed }, onFailure: onFailure)
     }
 
@@ -90,10 +96,13 @@ final class ScreenSignaling {
         answerWaiter = nil
         localTask = Task { [weak self, localStream, client, session] in
             do {
-                var local = CandidateProgress()
+                var complete = false
+                var count = 0
                 for try await event in localStream {
                     try Task.checkCancellation()
-                    try local.accept(event)
+                    guard !complete else { throw ScreenError.candidatesAlreadyComplete }
+                    if event.type == .complete { complete = true }
+                    else { count += 1; guard count <= ScreenCandidate.maxCount else { throw ScreenError.tooManyCandidates } }
                     try await client.screenCandidate(session: session, candidate: event)
                     try Task.checkCancellation()
                     guard let self, self.state == .active else { return }
@@ -112,8 +121,9 @@ final class ScreenSignaling {
             ready = nil
         case .error: throw ScreenError.signalingFailed(event.message ?? "Screen signaling failed.")
         case .candidate, .complete:
-            guard isReady, !remote.isComplete else { throw ScreenError.candidatesOutOfOrder }
-            try remote.accept(event)
+            guard isReady, !remoteComplete else { throw ScreenError.candidatesOutOfOrder }
+            if event.type == .complete { remoteComplete = true }
+            else { remoteCount += 1; guard remoteCount <= ScreenCandidate.maxCount else { throw ScreenError.tooManyCandidates } }
             // Suspend this consumer: its bounded transport stream buffers further events.
             if !answered { await withCheckedContinuation { answerWaiter = $0 } }
             try Task.checkCancellation()
@@ -151,7 +161,7 @@ final class ScreenSignaling {
 
     private func finishTasks() {
         deadline?.cancel()
-        ready?.resume(throwing: failure ?? CancellationError())
+        ready?.resume(throwing: CancellationError())
         ready = nil
         answerWaiter?.resume()
         answerWaiter = nil

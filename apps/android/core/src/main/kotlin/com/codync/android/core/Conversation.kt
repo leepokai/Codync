@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -27,6 +28,8 @@ data class Entry(
     val data: JsonObject = JsonObject(emptyMap()),
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
+    /** A document's side conversation (`doc:<id>`) it's in; null in the chat itself. */
+    val threadId: String? = null,
 ) {
     val text: String get() = data.text("text").orEmpty()
     val clientNonce: String? get() = data.text("clientNonce")
@@ -37,13 +40,13 @@ data class Entry(
     val artifact: ArtifactCard? get() = (data["artifact"] as? JsonObject)?.let { runCatching { WireJson.decodeFromJsonElement<ArtifactCard>(it) }.getOrNull() }
     /** Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
      *  summary keeps the same conversation going, and a kept handoff changed nothing. */
-    val isChat: Boolean get() = kind in listOf("user", "permission") ||
+    val isChat: Boolean get() = !isInternal && (kind in listOf("user", "permission") ||
         kind == "notice" && "memory" !in data && "memoryFile" !in data && "compaction" !in data &&
             (data["handoff"] as? JsonObject)?.text("status") != "kept" ||
-        kind == "agent" && data["final"]?.jsonPrimitive?.booleanOrNull == true
+        kind == "agent" && data["final"]?.jsonPrimitive?.booleanOrNull == true)
     /** A step the working indicator unfolds: thinking, narration, a tool call or a plan; never the bot's bookkeeping,
      *  nor a call the host didn't flag (one older than 2.25.0 flags none). */
-    val isWorkingStep: Boolean get() = when (kind) {
+    val isWorkingStep: Boolean get() = !isInternal && when (kind) {
         "thought" -> text.isNotBlank()
         "agent" -> data["final"]?.jsonPrimitive?.booleanOrNull != true && !isPass(text)
         "tool" -> data["bookkeeping"]?.jsonPrimitive?.booleanOrNull == false
@@ -51,7 +54,7 @@ data class Entry(
         else -> false
     }
     /** A message the user can quote in a reply: theirs, or a final reply (a group member's too). */
-    val isReplyable: Boolean get() = kind == "user" || kind == "agent" && data["final"]?.jsonPrimitive?.booleanOrNull == true
+    val isReplyable: Boolean get() = !isInternal && (kind == "user" || kind == "agent" && data["final"]?.jsonPrimitive?.booleanOrNull == true)
     /** The message this one replies to, as the computer quoted it. */
     val replyTo: ReplyQuote? get() = (data["replyTo"] as? JsonObject)?.let { runCatching { WireJson.decodeFromJsonElement<ReplyQuote>(it) }.getOrNull() }
     /** What the composer shows of the message it replies to: its text, or the names of its files. */
@@ -90,7 +93,7 @@ private data class EntryFields(
     val detail: String? = null, val output: String? = null, val author: String? = null,
     val options: List<PermissionChoice>? = null, val reactions: List<String>? = null,
     val attachments: List<Attachment>? = null, val files: List<SharedFile>? = null,
-    val callSeconds: Long? = null,
+    val callSeconds: Long? = null, val `internal`: Boolean? = null,
 )
 @Serializable private data class PermissionChoice(val optionId: String, val name: String, val kind: String)
 /** A quoted message: its entry, who wrote it (`user` or a bot id) and its text, cut short by the computer; `artifact` when it
@@ -133,6 +136,8 @@ data class PendingSend(
     val files: List<OutgoingFile> = emptyList(),
     /** The message it quotes (`send`'s `replyTo` is its id), shown on the bubble until the computer has it. */
     val replyTo: ReplyQuote? = null,
+    /** A document's side conversation (`doc:<id>`) it goes to, instead of the chat. */
+    val threadId: String? = null,
     /** The voice call it was said in (on-device or speech to text). */
     val call: String? = null,
 ) {
@@ -140,6 +145,7 @@ data class PendingSend(
     fun body(attachments: List<String> = emptyList()): JsonObject = buildJsonObject {
         put("botId", botId); put("text", text); put("clientNonce", nonce)
         replyTo?.let { put("replyTo", it.id) }
+        threadId?.let { put("threadId", it) }
         call?.let { put("call", it) }
         if (attachments.isNotEmpty()) put("attachments", JsonArray(attachments.map(::JsonPrimitive)))
     }
@@ -162,10 +168,18 @@ sealed interface MirrorEvent {
     data class Call(val cue: CallCue) : MirrorEvent
     /** The computer's network changed: live only, never a checkpoint. */
     data class Network(val view: NetworkView) : MirrorEvent
+    /** These bots' routine-flow canvases changed: load them again. Live only, never a checkpoint. */
+    data class RoutineFlow(val rev: Long, val botIds: List<String>) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
     companion object {
+        private fun routineFlow(value: JsonObject): MirrorEvent {
+            val rev = value["rev"]?.jsonPrimitive?.longOrNull ?: return Ignored
+            val bots = (value["botIds"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: return Ignored
+            return RoutineFlow(rev, bots)
+        }
+
         fun decode(value: JsonObject): MirrorEvent = when (value.text("type")) {
             "icons" -> Icons(decodeCustomIcons(value.getValue("icons")), value["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0)
             "hello" -> Hello(requireNotNull(value.text("hostId")),
@@ -181,6 +195,7 @@ sealed interface MirrorEvent {
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
+            "routineFlow" -> routineFlow(value)
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored

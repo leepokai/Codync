@@ -14,8 +14,13 @@ struct BotListView: View {
     @State private var editing: EditTarget?
     @State private var editingGroup: GroupTarget?
     @State private var confirmDelete: RosterItem?
-    /// What the section name dialog names while it's open.
-    @State private var naming: SectionNaming?
+    @State private var query = ""
+    @State private var filter = RosterFilter.all
+    @State private var showHistory = false
+    @AppStorage("rosterByProject") private var byProject = false
+    @AppStorage("collapsedRosterProjects") private var collapsedProjects = "[]"
+    /// A bot whose agent starts over with a fresh context, once confirmed.
+    @State private var confirmNewSession: RosterItem?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
     @State private var lifted: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -105,23 +110,22 @@ struct BotListView: View {
     /// The roster's rows: each shown computer's heading (with several computers), in the order
     /// they were dragged into, followed by its bots and sections unless it's folded away.
     private var lines: [RosterLine] {
-        shownStores.flatMap { store -> [RosterLine] in
+        let folded = foldedProjects
+        return shownStores.flatMap { store -> [RosterLine] in
             let id = store.computer.id
-            let rows = grouped && collapsedIDs.contains(id) ? [] : sectionLines(store)
-            return grouped ? [.computer(id, store)] + rows : rows
-        }
-    }
-
-    /// A computer's bots: pinned ones, then each section's heading with its bots (none while
-    /// folded), then the bots in no section (under the "Bots" label when there are sections).
-    private func sectionLines(_ store: BotStore) -> [RosterLine] {
-        let id = store.computer.id
-        let items = accounts.roster.filter { $0.ref.computerId == id }
-        return RosterSection.lines(items, folded: foldedSections, order: sectionOrder.saved(on: id)) { $0.bot }.map { line -> RosterLine in
-            switch line {
-            case let .header(section): .section(section, id, store)
-            case .label: .label(id)
-            case let .bot(item): .bot(item, store)
+            let heading: [RosterLine] = grouped ? [.computer(id, store)] : []
+            guard !(grouped && collapsedIDs.contains(id)) else { return heading }
+            let items = accounts.roster.filter {
+                $0.ref.computerId == id && filter.matches($0.bot, query: query)
+            }
+            guard byProject else { return heading + items.map { .bot($0, store) } }
+            let projects = Dictionary(grouping: items, by: { $0.bot.rosterProject })
+            var seen: Set<String> = []
+            let projectOrder = items.map { $0.bot.rosterProject }.filter { seen.insert($0).inserted }
+            return heading + projectOrder.flatMap { project -> [RosterLine] in
+                let key = projectKey(id, project)
+                let bots = folded.contains(key) ? [] : (projects[project] ?? []).map { RosterLine.bot($0, store) }
+                return [.project(key, project)] + bots
             }
         }
     }
@@ -136,6 +140,19 @@ struct BotListView: View {
                 // A newer app release (dismissible; everything still works). Computers update
                 // themselves, so a newer host gets no reminder here.
                 AppUpdateReminder()
+                RosterFilterControls(query: $query, filter: $filter, byProject: $byProject, showHistory: $showHistory)
+                if !roster.isEmpty && !roster.contains(where: { filter.matches($0.bot, query: query) }) {
+                    VStack {
+                        Text("No bots match these filters").foregroundStyle(Palette.secondary)
+                        Button("Clear filters") {
+                            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+                                query = ""
+                                filter = .all
+                            }
+                        }
+                        .buttonStyle(.secondary)
+                    }
+                }
                 if !grouped {
                     // One computer: its update notice leads the list.
                     ForEach(shownStores, id: \.computer.id) { updateCard($0) }
@@ -149,16 +166,11 @@ struct BotListView: View {
                 ForEach(lines) { line in
                     switch line {
                     case let .computer(_, store): computerHeading(store, roster: roster, folded: movingComputer)
-                    case let .section(section, _, store):
-                        if movingComputer { Color.clear.frame(height: 0) } else { sectionHeading(section, store: store) }
-                    case .label:
-                        if movingComputer { Color.clear.frame(height: 0) } else {
-                            RosterBotsLabel().itemProvider { lift(line) }
-                                .accessibilityActions {
-                                    Button(L10n.tr("Move up")) { moveSection(line, by: -1) }
-                                    Button(L10n.tr("Move down")) { moveSection(line, by: 1) }
-                                }
-                        }
+                    case let .project(key, title):
+                        Button { toggleProject(key) } label: {
+                            Label(title, systemImage: foldedProjects.contains(key) ? "chevron.right" : "chevron.down")
+                                .font(.caption).foregroundStyle(Palette.secondary).lineLimit(2)
+                        }.buttonStyle(.plain).padding(.vertical, 12)
                     case let .bot(item, store):
                         // A dragged heading folds every computer's bots into their headings. Each
                         // row stays, empty: taking it out would move the lifted heading's place in
@@ -172,6 +184,7 @@ struct BotListView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         }
+        .id(accounts.accountId)
         .reviewInvitation(blocked: creating != nil || editing != nil || editingGroup != nil
                           || confirmDelete != nil || lifted != nil)
         .listStyle(.plain)
@@ -203,6 +216,11 @@ struct BotListView: View {
         .refreshable {
             for computer in accounts.computers { accounts.store(for: computer.id)?.restartStream() }
             await accounts.refreshCloud()
+        }
+        .codyncSheet(isPresented: $showHistory) {
+            RosterHistoryView(stores: shownStores) { store, hit in
+                accounts.selection = BotReference(accountId: accounts.accountId, computerId: store.computer.id, botId: hit.botId)
+            }.id(accounts.accountId)
         }
         .codyncSheet(item: $creating) { target in
             if let store = accounts.store(for: target.computerId) {
@@ -258,11 +276,13 @@ struct BotListView: View {
     /// section, an order the host syncs to every device: dropped among others (another section,
     /// another computer), it goes first or last of its own. Section headings and the Bots label move as groups on this device.
     private func moveLines(from source: IndexSet, to destination: Int) {
+        guard query.isEmpty && filter == .all && !byProject else { return }
         let before = lines
         guard let from = source.first, before.indices.contains(from) else { return }
         var after = before
         after.move(fromOffsets: source, toOffset: destination)
         switch before[from] {
+        case .project: return
         case let .computer(id, _):
             let old = before.compactMap(\.computerId), new = after.compactMap(\.computerId)
             guard let to = new.firstIndex(of: id), old[to] != id else { return }
@@ -352,13 +372,25 @@ struct BotListView: View {
         .itemProvider { lift(line) }
         .accessibilityLabel(accounts.computers.count > 1 ? "\(bot.name), on \(store.hostName)" : bot.name)
         .accessibilityActions {
-            Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
-            Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
+            if query.isEmpty && filter == .all && !byProject {
+                Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
+                Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
+            }
         }
-        .contextActions {
-            var items = [MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) }]
-            // Below Pin, like the desktop; an older computer has no sections.
-            if store.supportsSections { items.append(sectionMenu(bot, store: store)) }
+        // The lead stays on top.
+        .moveDisabled(bot.lead)
+        .contextActions(preview: { RosterPreviewView(bot: bot, store: store) }) {
+            // The lead is always on top and always there: no pin, hide or delete.
+            var items = [MenuItem("Open chat", icon: "bubble.left") { accounts.selection = item.ref }]
+            if bot.isWorking {
+                items.append(MenuItem(store.rosterStopping.contains(bot.id) ? "Stopping\u{2026}" : "Stop", icon: "stop.fill", destructive: true) { store.stopFromRoster(bot) })
+            }
+            if !bot.lead {
+                items.append(MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) })
+            }
+            if !bot.isGroup {
+                items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = item })
+            }
             items += [
                 bot.isGroup
                     ? MenuItem("Edit group", icon: "person.2") { editingGroup = GroupTarget(computerId: item.ref.computerId, group: bot) }
@@ -419,5 +451,187 @@ struct BotListView: View {
         guard let store = onlineStores.first ?? availableStores.first else { return }
         creating = NewTarget(kind: .bot, computerId: store.computer.id)
     }
+
+    private var foldedProjects: Set<String> {
+        Set((try? JSONDecoder().decode([String].self, from: Data(collapsedProjects.utf8))) ?? [])
+    }
+
+    private func projectKey(_ computer: String, _ path: String) -> String {
+        String(data: (try? JSONEncoder().encode([accounts.accountId, computer, path])) ?? Data(), encoding: .utf8) ?? path
+    }
+
+    private func toggleProject(_ key: String) {
+        var folded = foldedProjects
+        if folded.remove(key) == nil { folded.insert(key) }
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+            collapsedProjects = String(data: (try? JSONEncoder().encode(folded.sorted())) ?? Data(), encoding: .utf8) ?? "[]"
+        }
+    }
 }
 
+/// The item a lifted row carries (nothing): the system lets go of it when the drag or the
+/// menu ends.
+private final class LiftItem: NSItemProvider {
+    private let ended: @Sendable () -> Void
+
+    init(ended: @escaping @Sendable () -> Void) {
+        self.ended = ended
+        super.init()
+    }
+
+    deinit { ended() }
+}
+
+/// One row the user can drag in the roster: a computer's heading or a bot.
+private enum RosterLine: Identifiable {
+    case computer(ComputerID, BotStore)
+    case bot(RosterItem, BotStore)
+    case project(String, String)
+
+    var id: String {
+        switch self {
+        case let .project(key, _): "project:\(key)"
+        case let .computer(id, _): "computer:\(id)"
+        case let .bot(item, _): "bot:\(item.ref.computerId):\(item.bot.id)"
+        }
+    }
+
+    /// The computer a heading stands for.
+    var computerId: ComputerID? {
+        if case let .computer(id, _) = self { id } else { nil }
+    }
+
+    func botId(on computerId: ComputerID) -> String? {
+        if case let .bot(item, _) = self, item.ref.computerId == computerId { item.bot.id } else { nil }
+    }
+}
+
+/// A computer's heading above its bots: badge, name and connection. Tap folds its bots away;
+/// touch and hold, then drag, moves the computer (on this device).
+private struct ComputerSection: View {
+    let store: BotStore
+    let empty: Bool
+    let collapsed: Bool
+    let toggle: () -> Void
+    let move: (ComputerID, Int) -> Void
+    /// This computer's own Extensions; nil while it can't be reached.
+    let extensions: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            heading
+            if empty && !collapsed {
+                Text(L10n.tr("No bots yet"))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 4)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 2)
+        .padding(.horizontal, -8)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits([.isHeader, .isButton])
+        .accessibilityLabel("\(store.hostName), \(store.statusText)")
+        .accessibilityValue(collapsed ? "Collapsed" : "Expanded")
+        .accessibilityHint("Double-tap to fold or expand. Touch and hold, then drag to reorder on this device.")
+        .accessibilityAction(named: collapsed ? "Expand" : "Collapse", toggle)
+        .accessibilityAction(.default) { toggle() }
+        .accessibilityActions {
+            Button(L10n.tr("Move up")) { move(store.computer.id, -1) }
+            Button(L10n.tr("Move down")) { move(store.computer.id, 1) }
+            if let extensions { Button(L10n.tr("Extensions"), action: extensions) }
+        }
+    }
+
+    private var heading: some View {
+        HStack(spacing: 6) {
+            ComputerBadge(store.computer, size: 18)
+            Text(store.hostName)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Palette.secondary)
+                .lineLimit(1)
+            // The connection sits at the trailing edge, before the heading's buttons.
+            Spacer(minLength: 8)
+            Text(L10n.tr(store.statusText))
+                .font(.footnote)
+                .foregroundStyle(store.isOffline ? Palette.warning : Palette.tertiary)
+                .lineLimit(1)
+                .contentTransition(.opacity)
+            if store.connection == .online {
+                RouteIcon(route: store.hostRoute, cloud: store.computer.cloud).font(.caption2).foregroundStyle(Palette.tertiary)
+            }
+            Image(systemName: "chevron.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Palette.tertiary)
+                .rotationEffect(.degrees(collapsed ? -90 : 0))
+                .accessibilityHidden(true)
+            if let extensions {
+                // After the chevron, as on the desktop; sized like it so the heading stays one light line.
+                Button(action: extensions) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.secondary)
+                        .frame(width: 28, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(L10n.tr("Extensions"))
+                .help(L10n.tr("Extensions"))
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct NewTarget: Identifiable {
+    enum Kind { case bot, group }
+    let id = UUID()
+    let kind: Kind
+    let computerId: ComputerID
+}
+
+private struct GroupTarget: Identifiable {
+    let id = UUID()
+    let computerId: ComputerID
+    let group: Bot
+}
+
+private struct EditTarget: Identifiable {
+    let id = UUID()
+    let computerId: ComputerID
+    let draft: BotDraft
+}
+
+private struct EmptyRoster: View {
+    let canCreate: Bool
+    let hasComputer: Bool
+    let create: () -> Void
+    let showComputers: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            CharacterAvatar(shape: "cloud", color: "green", size: 72)
+            Text(L10n.tr("No bots yet")).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(L10n.tr(hasComputer
+                 ? "Create a bot for each kind of work — a reviewer, a fixer, a docs writer — and point it at a project."
+                 : "Ask one of your account's computers for access, or pair one with its code."))
+                .font(.subheadline)
+                .foregroundStyle(Palette.secondary)
+                .multilineTextAlignment(.center)
+            if canCreate {
+                Button(L10n.tr("Create your first bot"), action: create)
+                    .buttonStyle(.primary)
+            } else if !hasComputer {
+                Button(L10n.tr("Computers"), action: showComputers)
+                    .buttonStyle(.primary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+}

@@ -82,6 +82,8 @@ export type HostEvent =
   | { type: 'network'; network: NetworkView }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
   | { type: 'call'; cue: CallCue }
+  /** These bots' routine-flow canvases changed: load them again. */
+  | { type: 'routineFlow'; rev: number; botIds: string[] }
   | { type: 'resync' }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
@@ -140,6 +142,10 @@ export function parseEvent(line: string): HostEvent | null {
       const cue = parseCallCue(raw)
       return cue ? { type, cue } : null
     }
+    case 'routineFlow': {
+      const botIds = Array.isArray(raw.botIds) ? raw.botIds.filter((id): id is string => typeof id === 'string') : null
+      return botIds && typeof raw.rev === 'number' ? { type, rev: raw.rev, botIds } : { type: 'undecodable', kind: 'routineFlow' }
+    }
     case 'resync':
       return { type }
     default:
@@ -188,15 +194,19 @@ export class HostClient {
     return (await this.call<{ entries: Entry[] }>('history', { botId, beforeSeq, limit })).entries
   }
 
+  /** A side conversation: a document's (`doc:<id>`). The chat itself has no threads. */
+  async thread(botId: string, rootId: string) {
+    return (await this.call<{ entries: Entry[] }>('thread', { botId, rootId })).entries
+  }
+
   async botConversation(botId: string, peerId: string) {
     return (await this.call<{ entries: Entry[] }>('botConversation', { botId, peerId })).entries
   }
 
   /** `pasted`: what the user pasted rather than typed, which memory never takes as their own words. `replyTo`: the
-   * chat message this one replies to. */
-  /** `call`: the voice call it was said in (on-device or speech to text). */
-  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: string | null = null, call: string | null = null) {
-    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(call ? { call } : {}) })).entry
+   * chat message this one replies to. `threadId`: a document's side conversation it goes to. */
+  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: string | null = null, threadId: string | null = null, call: string | null = null) {
+    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(threadId ? { threadId } : {}), ...(call ? { call } : {}) })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

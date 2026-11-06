@@ -191,6 +191,24 @@ async fn routines_execute_pause_deduplicate_and_reject_wrong_webhook_keys() {
     })
     .await
     .unwrap();
+    // The internal execution reply and its published result are one notification.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let history = host.call("history", json!({"botId":bot})).await;
+            if history["entries"].as_array().unwrap().iter().any(|e| e["kind"] == "agent") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let unread = |snapshot: Value| {
+        snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).unwrap()["unread"].clone()
+    };
+    assert_eq!(unread(common::snapshot(&host.base, &host.token).await), 1);
+    host.call("markRead", json!({"botId":bot})).await;
+    assert_eq!(unread(common::snapshot(&host.base, &host.token).await), 0);
     let servers: Value =
         serde_json::from_str(&std::fs::read_to_string(host.home.join("routine-bot/servers.json")).unwrap()).unwrap();
     assert!(servers.as_array().unwrap().iter().any(|s| s["name"] == "routines" || s["name"] == "codync-routines"));
@@ -389,6 +407,24 @@ async fn busy_bot_keeps_work_pending_and_honors_pause_delete_and_edit_across_res
         let text = e["text"].as_str().unwrap();
         text.contains("SHOULD_NOT_RUN") || text.contains("OLD_INSTRUCTION")
     }));
+}
+
+#[tokio::test]
+async fn a_hung_routine_times_out_and_the_next_task_still_runs() {
+    let host = Host::start().await;
+    let bot = host.stable_bot("timeout").await;
+    // Exercise a hung prompt, not cold process startup (which can exceed 2 s on Windows).
+    host.send(&bot, "WARMUP").await;
+    host.wait_event("timeout", "finished", "WARMUP").await;
+    let hung = host.save(&bot, "hung", "BLOCK[forever] IGNORE_CANCEL", json!([{"type":"webhook"}]), 2).await;
+    let next = host.save(&bot, "next", "AFTER_TIMEOUT", json!([{"type":"webhook"}]), 30).await;
+    host.call("runRoutine", json!({"botId":bot,"id":hung})).await;
+    host.wait_event("timeout", "started", "BLOCK[forever]").await;
+    host.call("runRoutine", json!({"botId":bot,"id":next})).await;
+    let failed = host.wait_status(&bot, &hung, "failed").await;
+    assert!(failed["detail"].as_str().unwrap().contains("time limit"));
+    host.wait_status(&bot, &next, "succeeded").await;
+    host.wait_event("timeout", "finished", "AFTER_TIMEOUT").await;
 }
 
 #[tokio::test]

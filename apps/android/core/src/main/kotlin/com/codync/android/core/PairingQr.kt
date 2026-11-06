@@ -23,6 +23,10 @@ class PairingQr(private val scheme: String) {
             try {
                 val result = reader.decode(BinaryBitmap(HybridBinarizer(luminance)), mapOf(DecodeHintType.TRY_HARDER to true))
                 val value = result.text
+                val otherScheme = if (scheme == "codync") "codync-dev" else "codync"
+                if (value.startsWith("$otherScheme://pair?")) {
+                    return PairingScan.Invalid("Use the same Codync variant on your phone and computer: Codync with Codync, or Codync Dev with Codync Dev.")
+                }
                 if (!value.startsWith("$scheme://pair?")) return null
                 try { Pairing.parse(value, scheme); return PairingScan.Found(value) }
                 catch (failure: IllegalArgumentException) { return PairingScan.Invalid(failure.message ?: "Show a fresh Codync pairing code on your computer.") }

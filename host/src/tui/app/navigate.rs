@@ -93,6 +93,16 @@ impl App {
     }
 
     pub(super) fn answer(&mut self, entry: &str, option: &str) {
+        if option == "approve"
+            && self
+                .entries
+                .values()
+                .flat_map(|items| items.values())
+                .any(|item| item.id == entry && item.data["mcpToolCallId"].is_string())
+        {
+            self.flash("Review the complete MCP arguments in the desktop or Android app before approving");
+            return;
+        }
         // One answer per card: while it is on its way, the card spins and takes no other.
         if self.answering.contains_key(entry) {
             return;
@@ -135,7 +145,12 @@ impl App {
             .into_iter()
             .filter_map(|item| match item {
                 Item::Entry(e)
-                    if e.is_message() || e.is_bot_message() || e.unfolds() || e.retries() || e.adds_fallback() =>
+                    if e.is_message()
+                        || e.is_bot_message()
+                        || e.unfolds()
+                        || e.retries()
+                        || e.adds_fallback()
+                        || e.data["source"] == "voice_receipt" =>
                 {
                     Some((e.id.clone(), e.is_message()))
                 }
@@ -215,6 +230,12 @@ impl App {
                     self.overlays.push(super::Overlay::Fields(Box::new(crate::tui::manage::handoff_fields(&e))));
                 }
             }
+            KeyCode::Char('v') if picked.as_ref().is_some_and(|e| e.data["source"] == "voice_receipt") => {
+                if let Some(e) = picked {
+                    self.overlays
+                        .push(super::Overlay::Fields(Box::new(crate::tui::manage::voice_decision_fields(&id, &e.id))));
+                }
+            }
             KeyCode::Char('K') if picked.as_ref().is_some_and(|e| e.data["handoff"]["status"] == "draft") => {
                 if let Some(e) = picked {
                     self.call("keepConversation", json!({"entryId": e.id}), After::Answered(e.id.clone()));
@@ -256,15 +277,16 @@ impl App {
     /// show no sections), the rest only inside their section. Shown at once; the host's bot events
     /// confirm it.
     pub(super) fn reorder_bot(&mut self, d: isize) {
-        let roster = self.roster();
-        let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|b| &b.id == s)) else { return };
-        let group = roster[i].roster_group();
-        // A folded section shows no order to change.
-        if group.1.is_some_and(|s| self.folded.contains(s)) {
+        if self.roster_tools.by_project
+            || self.roster_tools.filter != super::roster_tools::Filter::All
+            || !self.roster_tools.query.text.trim().is_empty()
+        {
+            self.flash("Clear filters and use manual order before reordering");
             return;
         }
-        let Some(j) = i.checked_add_signed(d).filter(|&j| roster.get(j).is_some_and(|b| b.roster_group() == group))
-        else {
+        let roster: Vec<(String, u8)> = self.roster().iter().map(|b| (b.id.clone(), b.band())).collect();
+        let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|(id, _)| id == s)) else { return };
+        let Some(j) = i.checked_add_signed(d).filter(|&j| j < roster.len() && roster[j].1 == roster[i].1) else {
             return;
         };
         let mut ids: Vec<String> = roster.iter().map(|b| b.id.clone()).collect();

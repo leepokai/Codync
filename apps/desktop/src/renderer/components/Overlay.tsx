@@ -274,15 +274,16 @@ export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick
 }
 
 /** The floating panel of menu rows. */
-export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number }) {
+export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number; search?: { value: string; onChange: (v: string) => void; placeholder?: string } }) {
   const tr = useTr()
   const [highlight, setHighlight] = useState(-1)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (e.isComposing) return
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length > 0) {
         e.preventDefault()
-        setHighlight((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
-      } else if (e.key === 'Enter' && highlight >= 0) {
+        setHighlight((h) => h < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1) : (h + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
+      } else if (e.key === 'Enter' && highlight >= 0 && items[highlight]) {
         e.preventDefault()
         if (!items[highlight]?.keepsOpen) dismiss()
         items[highlight]?.action()
@@ -292,7 +293,9 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
     return () => window.removeEventListener('keydown', onKey)
   }, [items, highlight, dismiss])
   return (
-    <div className="menu-panel" role="menu" style={{ maxHeight }}>
+    <div className={`menu-panel ${search ? 'has-header' : ''}`} role="menu" style={{ maxHeight }}>
+      {search ? <div className="menu-search"><input aria-label={search.placeholder ?? 'Search'} value={search.value} placeholder={search.placeholder ?? 'Search'} autoFocus onChange={(e) => { setHighlight(-1); search.onChange(e.target.value) }} /></div> : null}
+      <div className="menu-rows">
       {reactions ? (
         <div className={items.length ? 'menu-reactions' : undefined}>
           <ReactionStrip pick={reactions} dismiss={dismiss} />
@@ -329,6 +332,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
           </button>
         </div>
       ))}
+      </div>
     </div>
   )
 }
@@ -358,13 +362,14 @@ export function anchorPlacement(rect: DOMRect) {
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
+export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, search }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
   items: () => MenuItem[]
   reactions?: ReactionPick
+  search?: { value: string; onChange: (v: string) => void; placeholder?: string }
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const [rect, setRect] = useState<DOMRect | null>(null)
@@ -380,9 +385,9 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   if (!mounted || !rect) return null
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
-    <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
+    <div className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
+      <div className={`anchored-panel t-dropdown ${shown ? "is-open" : ""}`} style={{ ...style, maxWidth: width }}>
+        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} search={search} />
       </div>
     </div>,
     document.body,

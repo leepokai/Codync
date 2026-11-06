@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class UsageTest {
+    @Test fun `unsupported Antigravity accounts do not become zero usage`() {
+        val report = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[{"id":"antigravity:acc_one","name":"Antigravity · One","status":"unsupported","source":"antigravity","windows":[]},{"id":"antigravity:acc_two","name":"Antigravity · Two","status":"unavailable","windows":[]}]}"""))
+        assertEquals(2, report.providers.size)
+        assertNull(report.providers.first().tightest)
+        assertEquals("Update this agent to read its plan limits.", report.providers.first().statusLabel)
+        assertEquals("Plan limits are unavailable for this account.", report.providers.last().statusLabel)
+        assertEquals("Antigravity quota report", report.providers.first().sourceLabel)
+    }
     @Test fun `unknown providers and missing windows remain distinct from zero consumption`() {
         val report = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[{"id":"future","name":"Future agent","source":"future-source","windows":[{"id":"unknown","label":"Monthly"},{"id":"zero","label":"Daily","percent":0}]}]}"""))
         val provider = report.providers.single()

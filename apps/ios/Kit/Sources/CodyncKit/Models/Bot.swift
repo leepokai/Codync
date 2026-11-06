@@ -32,6 +32,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// or `refused` (it turned it off; `fastModeIssue` says why).
     public var fastModeSupport: String = "unknown"
     public var fastModeIssue: String?
+    /// The selected account for an agent that supports separate credentials.
+    public var account: String?
     /// Agents that carry on, in order, when the bot's own can't answer (`AgentFallback.swift`). Nil from an older host.
     public var fallbacks: [BotFallback]?
     /// The bot may set its own fallbacks. Nil from an older host.
@@ -123,6 +125,7 @@ extension Bot {
         fastMode = try c.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
         fastModeSupport = try c.decodeIfPresent(String.self, forKey: .fastModeSupport) ?? "unknown"
         fastModeIssue = try c.decodeIfPresent(String.self, forKey: .fastModeIssue)
+        account = try c.decodeIfPresent(String.self, forKey: .account)
         // A chain that doesn't decode stays unknown (nil), so saving the settings never sends an empty one.
         fallbacks = try? c.decodeIfPresent([BotFallback].self, forKey: .fallbacks)
         selfFallbacks = try? c.decodeIfPresent(Bool.self, forKey: .selfFallbacks)

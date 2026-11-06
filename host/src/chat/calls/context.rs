@@ -342,7 +342,7 @@ fn shared(recent: &[Entry]) -> String {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
-    use crate::store::{BotKind, Permission, Store};
+    use crate::store::Store;
     use codync_mem::files::{Author, Cause, Change};
     use serde_json::json;
 
@@ -355,42 +355,13 @@ pub(super) mod tests {
     }
 
     pub(in crate::chat::calls) fn bot(id: &str, name: &str, cwd: &str) -> BotConfig {
-        BotConfig {
-            id: id.into(),
-            kind: BotKind::Agent,
-            members: vec![],
-            name: name.into(),
-            description: "Keeps the shop's site running".into(),
-            avatar_color: "blue".into(),
-            avatar_shape: "blob".into(),
-            backend: "claude".into(),
-            command: None,
-            cwd: cwd.into(),
-            permission: Permission::Ask,
-            mode: None,
-            model: Some("opus".into()),
-            model_options: std::collections::BTreeMap::new(),
-            fast_mode: false,
-            fallbacks: vec![],
-            self_fallbacks: true,
-            pinned: false,
-            position: 0,
-            hidden: false,
-            section: None,
-            notify: None,
-            connectors: vec!["github".into()],
-            skills: vec![],
-            computer: false,
-            manage_team: false,
-            offered_to_network: true,
-            reachable_by_assistants: true,
-            created_by: None,
-            shared_memory: Some(true),
-            harness_memory: false,
-            auto_name: false,
-            lead: false,
-            created_at: 0,
-        }
+        serde_json::from_value(json!({
+            "id": id, "name": name, "description": "Keeps the shop's site running",
+            "avatarColor": "blue", "avatarShape": "blob", "backend": "claude",
+            "cwd": cwd, "permission": "ask", "model": "opus",
+            "selfFallbacks": true, "connectors": ["github"], "sharedMemory": true,
+        }))
+        .unwrap()
     }
 
     /// `MEMORY.md` straight into the store, as a scan would record it.

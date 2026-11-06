@@ -13,7 +13,10 @@ const QUOTE_BYTES: usize = 500;
 /// What `send` stores as `replyTo`: the message answered (`id`, in `chat`), who wrote it (`"user"` or a bot id), its
 /// text (or its files' names), and the artifact when it's an artifact card.
 pub fn quote(store: &Store, chat: &str, id: &str) -> Result<Value> {
-    let e = store.entry(id).filter(|e| e.bot_id == chat).ok_or_else(|| anyhow!("unknown message"))?;
+    let e = store
+        .entry(id)
+        .filter(|e| e.bot_id == chat && !crate::store::is_internal(&e.data))
+        .ok_or_else(|| anyhow!("unknown message"))?;
     let user = e.kind == EntryKind::User.as_str();
     ensure!(user || (e.kind == EntryKind::Agent.as_str() && e.data["final"] == true), "only messages take replies");
     let author = if user { "user" } else { e.data["author"].as_str().unwrap_or(chat) };

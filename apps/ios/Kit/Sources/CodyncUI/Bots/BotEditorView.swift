@@ -91,6 +91,14 @@ struct BotSettingsForm: View {
         .font(.body)
         .background(Palette.background)
         .task { await model.refreshPlugins() }
+        // A different agent starts on its default account and model (the picker clears its own model too).
+        .onChange(of: draft.backend) { _, _ in
+            draft.account = nil
+            draft.model = nil
+            draft.modelOptions = [:]
+        }
+        // An account's sign-in belongs to one computer.
+        .onChange(of: model.computer.id) { _, _ in draft.account = nil }
         .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
         .codyncSheet(isPresented: $pickingFolder) {
             FolderPicker(start: draft.cwd.isEmpty ? model.hello?.home : draft.cwd) {
@@ -124,8 +132,9 @@ struct BotSettingsForm: View {
         }
     }
 
-    private var modelPicker: some View {
-        AgentModelPicker(backend: draft.backend, selection: $draft.model, options: $draft.modelOptions,
+    @ViewBuilder private var modelPicker: some View {
+        AgentAccountPicker(backend: draft.backend, selection: $draft.account)
+        AgentModelPicker(backend: draft.backend, account: draft.account, selection: $draft.model, options: $draft.modelOptions,
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }
                          }), bot: bot,
@@ -352,6 +361,7 @@ extension BotDraft {
     var normalized: BotDraft {
         var d = self
         if d.backend != "custom" { d.command = nil }
+        if d.backend != "antigravity" { d.account = nil }
         return d
     }
 }

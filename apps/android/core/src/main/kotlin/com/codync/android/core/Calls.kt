@@ -129,22 +129,23 @@ val Entry.call: String? get() = data.text("call")
 
 /** Without what voice calls carry, whichever device the call is on: it shows behind the call's line, which the computer
  * writes when the call ends or its app went away. A file or an artifact the bot sent stays, to be opened. */
-fun List<Entry>.hidingCalls(): List<Entry> = filter { it.kind == "notice" || it.call == null || it.files.isNotEmpty() || it.artifact != null }
+fun List<Entry>.hidingCalls(): List<Entry> = visibleEntries().filter { it.kind == "notice" || it.call == null || it.files.isNotEmpty() || it.artifact != null }
 
 /** With a call's own entries (`callEntries`), which the chat may not hold: each entry once, the chat's copy first. */
 fun List<Entry>.withCallEntries(fetched: List<Entry>): List<Entry> {
     val held = mapTo(HashSet()) { it.id }
-    return this + fetched.filter { it.id !in held }
+    return (this + fetched.filter { it.id !in held }).visibleEntries()
 }
 
 /** A call's conversation, oldest first: what was said (the voice's transcript) and the messages it carried. */
 fun List<Entry>.callConversation(line: Entry): List<CallMessage> {
+    if (line.isInternal) return emptyList()
     val call = line.call ?: return emptyList()
     val said = (line.data["transcript"] as? JsonArray).orEmpty().mapNotNull { element ->
         val fields = element as? JsonObject ?: return@mapNotNull null
         val speaker = if (fields.text("from") == "user") CallMessage.Speaker.User else CallMessage.Speaker.Voice
         ((fields["at"] as? JsonPrimitive)?.longOrNull ?: line.createdAt) to CallMessage(speaker, fields.text("text").orEmpty())
-    } + filter { it.call == call && (it.kind == "user" || it.kind == "agent" && it.data["final"]?.jsonPrimitive?.booleanOrNull == true) }.map { e ->
+    } + filter { !it.isInternal && it.call == call && (it.kind == "user" || it.kind == "agent" && it.data["final"]?.jsonPrimitive?.booleanOrNull == true) }.map { e ->
         val speaker = when {
             e.kind == "agent" -> CallMessage.Speaker.Bot
             e.data.text("from") == "voice" -> CallMessage.Speaker.VoiceToBot

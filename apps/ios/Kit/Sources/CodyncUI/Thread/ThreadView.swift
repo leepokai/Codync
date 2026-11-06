@@ -64,6 +64,10 @@ public struct ThreadView: View {
 
     var conversation: some View {
         chrome(chat)
+            .onChange(of: model.rosterThreadRequest, initial: true) { _, request in
+                guard let request, request.botId == botId else { return }
+                model.rosterThreadRequest = nil
+            }
             .readingConversation(botId)
             .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
                            && openArtifact == nil && openCall == nil && details == nil && !editingGroup

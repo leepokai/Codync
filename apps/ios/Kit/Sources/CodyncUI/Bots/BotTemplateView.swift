@@ -13,6 +13,7 @@ struct BotTemplateView: View {
         template.id = nil
         template.pinned = nil
         template.hidden = nil
+        template.account = nil
         template.fallbacks = nil
         template.selfFallbacks = nil
         // Who reaches a bot belongs to its computer, not its setup.

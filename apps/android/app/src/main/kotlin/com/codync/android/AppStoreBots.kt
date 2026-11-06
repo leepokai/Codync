@@ -110,7 +110,7 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
     active.call("deleteBot", body("botId" to bot.id))
     mutableState.update { it.copy(selectedBot = it.selectedBot.takeUnless { id -> id == bot.id },
         // Its chat's draft and its artifacts' (`artifactDraftKey`).
-        drafts = it.drafts.filterKeys { key -> key != bot.id && !key.startsWith("${bot.id}/") }) }
+        drafts = it.drafts.filterValues { draft -> draft.botId != bot.id }) }
     persistDrafts()
     onDeleted()
 }
@@ -154,11 +154,23 @@ internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, tim
         check(state.value.generation == expectedGeneration) { "The active account changed." }
         active.call(method, payload, timeoutMillis = timeoutMillis)
     }
-    try { return request.await() } finally { request.cancel() }
+    try {
+        val response = request.await()
+        check(state.value.generation == expectedGeneration) { "The active account changed." }
+        return response
+    } finally { request.cancel() }
 }
-suspend fun AppStore.agentModels(backend: String): AgentModels {
-    val response = hostQuery("agentModels", body("backend" to backend), timeoutMillis = 300_000)
+suspend fun AppStore.agentModels(backend: String, account: String? = null): AgentModels {
+    val response = hostQuery("agentModels", body("backend" to backend, "account" to account), timeoutMillis = 300_000)
     return WireJson.decodeFromJsonElement(response)
+}
+suspend fun AppStore.agentAccounts(backend: String): List<AgentAccount> {
+    val response = hostQuery("listAccounts", body("backend" to backend))
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("accounts"))
+}
+suspend fun AppStore.authenticateAgentAccount(backend: String): AgentAccount {
+    val response = hostQuery("accountAuthenticate", body("backend" to backend), timeoutMillis = 660_000)
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("account"))
 }
 /** A forced usage read that returns when it's done, for pull to refresh. */
 suspend fun AppStore.reloadUsage() { refreshUsage(true); actions["usage"]?.join() }
@@ -170,7 +182,12 @@ fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
     UsageReport.decode(response)
     withContext(Dispatchers.IO) { requireNotNull(database).apply(MirrorEvent.Usage(response)) }
     refresh()
-    usageRead(this)
+    widgetOwner?.let { owner ->
+        val current = state.value
+        withContext(Dispatchers.IO) { WidgetStore.publish(getApplication(), owner, current.computer,
+            current.bots, UsageReport.decode(current.usage), false, true) }
+        CodyncWidgets.update(getApplication())
+    }
 }
 suspend fun AppStore.selectWorkspace(path: String): String {
     return hostQuery("selectWorkspace", body("path" to path)).jsonObject["path"]?.jsonPrimitive?.content
@@ -194,14 +211,50 @@ suspend fun AppStore.routineWebhook(botId: String, id: String, rotate: Boolean =
     return WireJson.decodeFromJsonElement(response)
 }
 
-/** Saves a dragged roster order (the host syncs it to every device). */
-internal fun AppStore.reorder(ids: List<String>) =
-    command("reorderBots", buildJsonObject { putJsonArray("ids") { ids.forEach { add(JsonPrimitive(it)) } } }, "reorder")
+suspend fun AppStore.listBotApps(botId: String): List<BotApp> {
+    val response = hostQuery("listBotApps", body("botId" to botId))
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("apps"))
+}
 
-/** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
-internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =
-    command("updateBot", buildJsonObject { put("id", bot.id); put("harnessMemory", on) }, "memory:" + bot.id)
+suspend fun AppStore.createAppLink(botId: String, slug: String, mode: String, label: String = ""): AppLinkResult {
+    val response = hostQuery("createAppLink", body("botId" to botId, "slug" to slug, "mode" to mode, "label" to label))
+    return WireJson.decodeFromJsonElement(response)
+}
 
-/** Whether the bot uses what all the user's bots share (iOS `setSharedMemory`). */
-internal fun AppStore.setSharedMemory(bot: Bot, shared: Boolean) =
-    command("updateBot", buildJsonObject { put("id", bot.id); put("sharedMemory", shared) }, "memory:" + bot.id)
+suspend fun AppStore.revokeAppLink(botId: String, slug: String, token: String) {
+    hostQuery("revokeAppLink", body("botId" to botId, "slug" to slug, "token" to token))
+}
+
+suspend fun AppStore.deleteBotApp(botId: String, slug: String) {
+    hostQuery("deleteBotApp", body("botId" to botId, "slug" to slug))
+}
+
+suspend fun AppStore.listOpenItems(botId: String): List<OpenItem> {
+    val response = hostQuery("listOpenItems", body("botId" to botId))
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("items"))
+}
+
+suspend fun AppStore.dismissOpenItem(botId: String, id: String) {
+    hostQuery("dismissOpenItem", body("botId" to botId, "id" to id))
+}
+
+suspend fun AppStore.listBookmarks(botId: String): List<MessageBookmark> {
+    val response = hostQuery("listBookmarks", body("botId" to botId))
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("bookmarks"))
+}
+
+suspend fun AppStore.saveBookmark(botId: String, entryId: String, preview: String, note: String = "", author: String = "", threadId: String? = null): MessageBookmark {
+    val response = hostQuery("saveBookmark", body("botId" to botId, "entryId" to entryId, "preview" to preview, "note" to note, "author" to author, "threadId" to threadId))
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("bookmark"))
+}
+
+suspend fun AppStore.deleteBookmark(botId: String, entryId: String) {
+    hostQuery("deleteBookmark", body("botId" to botId, "entryId" to entryId))
+}
+
+/** One request of a mini-app, run by the host: this phone cannot reach the computer's loopback server. */
+suspend fun AppStore.appRequest(address: MiniAppAddress, method: String, path: String, payload: String = ""): MiniAppAnswer =
+    WireJson.decodeFromJsonElement(hostQuery("appRequest", body(
+        "botId" to address.botId, "slug" to address.slug, "token" to address.token,
+        "method" to method, "path" to path, "body" to payload,
+    )))

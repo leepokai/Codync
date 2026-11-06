@@ -47,6 +47,8 @@ export interface IslandPermission {
   bot: Pick<IslandBot, 'name' | 'shape' | 'color' | 'backend' | 'customIcon'>
   headline: string
   title: string
+  /** The changed lines, when the tool edits a file (at most a few, the island is small). */
+  diffs: IslandDiff[]
   options: IslandOption[]
   /** The option on its way to the host. */
   answering: string | null
@@ -62,6 +64,23 @@ export interface IslandSummary {
 /** The display the island sits on: the notch's size in points, or null at a plain top edge. */
 export interface IslandScreen {
   notch: { width: number; height: number } | null
+}
+
+/**
+ * Where the island lives: the display with the notch (else the main one), the display under the pointer, or this
+ * computer's main display. `follow` moves it when the pointer crosses to another screen.
+ */
+export type IslandPlacement = 'automatic' | 'follow' | 'primary'
+
+/** The setting's menu label: a notch display on a Mac, the main display elsewhere. */
+export const placementLabel = (platform: string) => (platform === 'darwin' ? 'Notch display' : 'Main display')
+
+/** One file of an approval's diff (`data.diffs` on the card). */
+export interface IslandDiff {
+  path: string
+  added: number
+  removed: number
+  patch: string
 }
 
 /** The island's shape in its window, in points: the part that takes the mouse. */

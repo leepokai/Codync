@@ -31,6 +31,13 @@ class BotSnapshotTest {
         assertTrue(cancelled)
     }
 
+    @Test fun `a roster ends at the last rev the catch-up sends, not at revs it never replays`() = runBlocking {
+        // rev 11 went to memory and a paired device; the catch-up's last event is the bot at 8.
+        val hello = buildJsonObject { put("type", "hello"); put("rev", 11); put("catchUpRev", 8) }
+        val stream = flow { emit(hello); emit(bot("first", 2)); emit(bot("last", 8)); kotlinx.coroutines.awaitCancellation() }
+        assertEquals(listOf("first", "last"), botSnapshot(stream).map(Bot::id))
+    }
+
     @Test fun `a new empty host finishes without waiting for another event`() = runBlocking {
         assertTrue(botSnapshot(flowOf(header(0))).isEmpty())
     }

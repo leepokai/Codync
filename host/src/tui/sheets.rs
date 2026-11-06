@@ -10,11 +10,17 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::tr;
 use serde_json::Value;
 
-mod gear_view;
+mod computer;
+mod documents;
+pub use computer::draw as computer;
+mod mcp_tools;
+pub use mcp_tools::draw as mcp_tools;
+mod flow_view;
 mod library_view;
 mod market_view;
 mod memory_view;
-pub use gear_view::draw as gear;
+pub use documents::draw as documents;
+pub use flow_view::draw as flow;
 pub use library_view::draw as library;
 pub use market_view::draw as market;
 pub use memory_view::draw as memory;
@@ -176,7 +182,12 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
             }
         }
     }
-    footer(buf, inner, None, "n new · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc");
+    footer(
+        buf,
+        inner,
+        None,
+        "n new · c ask the bot · ↵ edit · space on/off · r run now · f flow · w copy webhook · W new key · x delete · esc",
+    );
 }
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {

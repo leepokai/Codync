@@ -37,6 +37,12 @@ pub enum Trigger {
         #[serde(default)]
         filters: std::collections::BTreeMap<String, String>,
     },
+    /// Runs when what `target` names changes, checked every `every_minutes` (see `watch`).
+    Watch {
+        kind: super::watch::WatchKind,
+        target: String,
+        every_minutes: i64,
+    },
 }
 
 impl Trigger {
@@ -68,6 +74,7 @@ impl Trigger {
                     bail!("invalid event filter");
                 }
             }
+            Self::Watch { kind, target, every_minutes } => super::watch::validate(*kind, target, *every_minutes)?,
             _ => {}
         }
         Ok(())
@@ -88,6 +95,11 @@ impl Trigger {
                     .with_timezone(&zone);
                 Some(Cron::from_str(expression)?.find_next_occurrence(&date, false)?.timestamp_millis())
             }
+            Self::Watch { every_minutes, .. } => Some(
+                after
+                    .checked_add(every_minutes.checked_mul(60_000).context("watch interval overflow")?)
+                    .context("schedule overflow")?,
+            ),
             Self::Webhook | Self::Event { .. } => None,
         })
     }
@@ -120,6 +132,9 @@ impl Trigger {
             ),
             Self::Webhook => "When a webhook fires".into(),
             Self::Event { source, event, .. } => format!("{source} · {event}"),
+            Self::Watch { target, every_minutes, .. } => {
+                format!("When {target} changes · checked every {every_minutes} min")
+            }
         }
     }
 

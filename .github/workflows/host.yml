@@ -55,6 +55,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    env:
+      # A repository without the update signing key (this fork) ships the archives without the signed
+      # update manifest, so hosts there update by hand.
+      SIGNS_UPDATES: ${{ secrets.HOST_UPDATE_SIGNING_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
       # rustup reads the pin from the folder it runs in (host/rust-toolchain.toml).
@@ -97,6 +101,7 @@ jobs:
           tar czf $NAME.tar.gz $NAME
           shasum -a 256 $NAME.tar.gz > $NAME.tar.gz.sha256
       - name: Sign host update manifest
+        if: env.SIGNS_UPDATES == 'true'
         env:
           HOST_UPDATE_SIGNING_KEY: ${{ secrets.HOST_UPDATE_SIGNING_KEY }}
         run: |
@@ -113,6 +118,7 @@ jobs:
             codync-host-*.tar.gz.sha256
       # The update manifest last: the release gate takes a release with all its feeds as fully uploaded.
       - uses: softprops/action-gh-release@v2
+        if: env.SIGNS_UPDATES == 'true'
         with:
           make_latest: false
           files: |

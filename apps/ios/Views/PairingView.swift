@@ -75,7 +75,7 @@ extension PairingView where Leading == EmptyView {
     init(inModal: Bool) { self.init(inModal: inModal) { EmptyView() } }
 }
 
-private enum ComputerOS: Hashable { case mac, linux }
+private enum ComputerOS: Hashable { case mac, windows, linux }
 
 // MARK: - Install
 
@@ -108,7 +108,7 @@ private struct InstallPage: View {
                             .foregroundStyle(Palette.secondary)
                     }
 
-                    SegmentedChoice(selection: $os, options: [(.mac, "Mac"), (.linux, "Linux")])
+                    SegmentedChoice(selection: $os, options: [(.mac, "Mac"), (.windows, "Windows"), (.linux, "Linux")])
 
                     VStack(alignment: .leading, spacing: 10) {
                         // Copied here, pasted on the computer (Universal Clipboard or a message to yourself).
@@ -117,13 +117,16 @@ private struct InstallPage: View {
                             CommandBlock("brew install --cask leepokai/codync/codync", records: .installCommand)
                             Hint("or download the Mac app")
                             CommandBlock("https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg", records: .installCommand)
+                        } else if os == .windows {
+                            Hint("Download the Windows app")
+                            CommandBlock("https://github.com/Thndrr00/Codync/releases/latest/download/codync-windows-x64.exe", records: .installCommand)
                         } else {
                             Hint("Run the installer")
                             CommandBlock("curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh\ncodync-host install", records: .installCommand)
                             Hint("or install with Homebrew")
                             CommandBlock("brew install leepokai/codync/codync-host\ncodync-host install", records: .installCommand)
                         }
-                        Text(L10n.tr(os == .mac
+                        Text(L10n.tr(os != .linux
                              ? "Open Codync and it sets up the host on its own."
                              : "codync-host install keeps it running in the background."))
                             .font(.subheadline)
@@ -227,11 +230,16 @@ private struct ScanPage: View {
                         .tracking(-0.5)
                         .foregroundStyle(Palette.text)
                     Text(os == .mac
-                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair iPhone.")
+                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair phone.")
+                         : os == .windows
+                         ? L10n.tr("On Windows, right-click Codync in the system tray, then choose Pair phone. You can also open Settings → Computers and click the QR code button.")
                          : L10n.tr("On your computer, run this in a terminal:"))
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
                     if os == .linux { CommandBlock("codync-host pair") }
+                    Text(L10n.tr("Use Codync on both devices, or Codync Dev on both devices. Scan with the Codync app on Android or iPhone."))
+                        .font(.footnote)
+                        .foregroundStyle(Palette.secondary)
                 }
 
                 viewfinder

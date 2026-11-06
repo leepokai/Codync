@@ -182,8 +182,9 @@ import com.codync.android.design.*
             }
         }
         Spacer(Modifier.weight(1f))
-        // An explicit rotation works even with the phone's auto-rotate off.
-        OverlayButton("Rotate", "rotate.right") { activity?.let(::rotate) }
+        // An explicit rotation works even with the phone's auto-rotate off; a large window (a foldable open,
+        // a tablet) on Android 16+ ignores app orientation, so it turns only with the device there.
+        if (!orientationIgnored()) OverlayButton("Rotate", "rotate.right") { activity?.let(::rotate) }
         if (session != null) {
             if (interactive) {
                 OverlayButton(if (keyboard) "Hide keyboard" else "Keyboard", if (keyboard) "keyboard.chevron.compact.down" else "keyboard", action = toggleKeyboard)
@@ -204,6 +205,10 @@ import com.codync.android.design.*
         }
     }
 }
+
+/** Android 16+ lets large windows (smallest width 600 dp and up) rotate freely, whatever the app asks. */
+@Composable private fun orientationIgnored(): Boolean =
+    android.os.Build.VERSION.SDK_INT >= 36 && LocalConfiguration.current.smallestScreenWidthDp >= 600
 
 /** Flip between portrait and landscape; leaving the viewer gives rotation back to the phone. */
 private fun rotate(activity: android.app.Activity) {

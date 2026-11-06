@@ -154,8 +154,7 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
         }
         "candidate" => {
             let id = p["session"].as_str().context("missing session")?;
-            let candidate = serde_json::from_value(p["candidate"].clone())?;
-            h.sessions.candidate(id, &candidate).await?;
+            h.sessions.candidate(id, &p["candidate"]).await?;
             json!({})
         }
         "screenshot" => {
@@ -236,22 +235,20 @@ impl Helper {
         let id = id.to_owned();
         self.rt.spawn(async move {
             this.sessions.close(&id).await;
-            this.notify_session(&id, "closed");
+            let _ = this.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "closed"}}));
         });
     }
 
     async fn connected(&self, id: &str, peer: &gst::Element) {
         let live = self.sessions.is_live(id, peer).await;
         if live {
-            self.notify_session(id, "connected");
+            let _ = self.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "connected"}}));
         }
     }
 
     async fn ended_peer(&self, id: &str, peer: &gst::Element) {
-        self.sessions
-            .close_peer(id, peer, || {
-                self.notify_session(id, "closed");
-            })
-            .await;
+        self.sessions.close_peer(id, peer, || {
+            let _ = self.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "closed"}}));
+        }).await;
     }
 }

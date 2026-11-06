@@ -83,8 +83,8 @@ internal fun openAppSettings(context: android.content.Context) =
                 .semantics { contentDescription = if (speaking) "Interrupt" else bot?.name.orEmpty() }) {
                 if (bot != null) BotAvatar(bot, state.bots, 34.dp)
             }
-            LevelDots(voice.level, speaking, bot?.status == "working", voice.phase.connecting, color,
-                Modifier.weight(1f).height(20.dp).semantics { contentDescription = statusText(voice, bot?.status == "working") })
+            CallLevelDots(voice.level, speaking, bot?.status == "working", voice.phase.connecting, color,
+                Modifier.weight(1f).height(20.dp).semantics { contentDescription = callStatusText(voice, bot?.status == "working") })
             // Audio leaves the phone: say where.
             voice.provider?.let { provider ->
                 Text(provider.title, Modifier.semantics { contentDescription = "Voice by ${provider.title}" },
@@ -119,7 +119,7 @@ internal fun openAppSettings(context: android.content.Context) =
     }
 }
 
-private fun statusText(voice: VoiceState, working: Boolean) = when (voice.phase) {
+internal fun callStatusText(voice: VoiceState, working: Boolean) = when (voice.phase) {
     VoicePhase.Starting -> "Connecting"
     VoicePhase.Reconnecting -> "Reconnecting"
     VoicePhase.Speaking -> "Speaking"
@@ -138,7 +138,7 @@ private const val CONNECTING_PERIOD = 2.4f
  * an indeterminate progress line instead (a short segment gliding back and forth along a faint track,
  * resting at the left with reduced motion), and fades back to the dots.
  */
-@Composable internal fun LevelDots(level: Float, speaking: Boolean, working: Boolean, connecting: Boolean, color: Color, modifier: Modifier) {
+@Composable internal fun CallLevelDots(level: Float, speaking: Boolean, working: Boolean, connecting: Boolean, color: Color, modifier: Modifier) {
     val still = reduceMotion()
     var time by remember { mutableFloatStateOf(0f) }
     if (!still) LaunchedEffect(Unit) { while (true) withFrameNanos { time = it / 1e9f } }

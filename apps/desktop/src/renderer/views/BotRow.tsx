@@ -9,6 +9,8 @@ import { messagePreview } from '../lib/message-preview'
 import { useModel } from '../lib/observable'
 import { useTr } from '../lib/use-language'
 import type { BotStore } from '../store/bot-store'
+import { fastLabel, rosterProjectLabel } from '../lib/roster-query'
+import { RosterElapsed } from './RosterElapsed'
 
 /** A roster row: avatar with status, name, and the live activity or last message (Grok Bot's desktop sidebar). */
 export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer, members }: { bot: Bot; store: BotStore; compact: boolean; usingComputer: boolean; members: Bot[] }) {
@@ -29,6 +31,8 @@ export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer,
           </HStack>
           {bot.unread > 0 ? <span className="unread-badge">{bot.unread}</span> : null}
         </HStack>
+        {!isGroup(bot) ? <Text size="caption" tone="tertiary" truncate>{[store.backendName(bot.backend), rosterProjectLabel(bot), fastLabel(bot)].filter(Boolean).join(' · ')}</Text> : null}
+        {isWorking(bot) ? <RosterElapsed bot={bot} online={store.connection.kind === 'online'} /> : null}
       </VStack>
     </HStack>
   )

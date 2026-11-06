@@ -22,7 +22,7 @@ import Testing
     // Streaming and final content have the same ID. The final update must be read
     // even though the roster has not yet reported any unread messages.
     await fake.emit(#"{"type":"entry","entry":{"id":"answer","seq":1,"botId":"b1","rev":2,"kind":"agent","turn":1,"data":{"text":"draft","final":false},"createdAt":1,"updatedAt":1}}"#)
-    #expect(await until { store.chat("b1").last?.rev == 2 })
+    #expect(await until { store.entries["b1"]?.last?.rev == 2 })
     await fake.emit(#"{"type":"entry","entry":{"id":"answer","seq":1,"botId":"b1","rev":3,"kind":"agent","turn":1,"data":{"text":"done","final":true},"createdAt":1,"updatedAt":2}}"#)
     #expect(await until { await fake.readReceipts.count == 2 })
     await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":4,"unread":1}}"#)
@@ -36,7 +36,6 @@ import Testing
     store.setReading(token, botId: "b1", active: true)
     #expect(await until { await fake.readReceipts.count == 4 })
 }
-
 
 @MainActor @Test func initialOfflineReportWaitsForReconnect() async throws {
     let (storage, suite) = context()
@@ -135,12 +134,11 @@ import Testing
     store.stop("b1")
     #expect(await until { await fake.calls.filter { $0 == "stop" }.count == 2 })
     #expect(store.lastError == nil)
-    // A call's opening can't be told apart from a second one, so it isn't sent twice.
-    store.bots["b1"]?.lead = true
-    await fake.fail("callStarted", times: 1)
-    store.callStarted("b1", call: "c1")
+    // A new session can't be told apart from a second one, so it isn't sent twice.
+    await fake.fail("newSession", times: 1)
+    store.newSession("b1")
     #expect(await until { store.lastError != nil })
-    #expect(await fake.calls.filter { $0 == "callStarted" }.count == 1)
+    #expect(await fake.calls.filter { $0 == "newSession" }.count == 1)
 }
 
 @MainActor @Test(.timeLimit(.minutes(1))) func offlineTapReconnectsBeforeGivingUp() async throws {

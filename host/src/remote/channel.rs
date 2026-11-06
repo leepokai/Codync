@@ -8,7 +8,6 @@
 //! The device's authorization is re-checked on every request, whenever the device
 //! table changes and when its lease runs out; a revoked device is closed at once.
 
-mod pairing;
 mod subscriptions;
 
 use crate::LockExt;
@@ -513,7 +512,6 @@ impl Channel {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
-    mod accounts;
     mod screen_signaling;
     use super::*;
     use crate::remote::identity::Identity;

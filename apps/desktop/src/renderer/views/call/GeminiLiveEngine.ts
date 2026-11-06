@@ -116,6 +116,7 @@ export class GeminiLiveEngine extends VoiceEngine {
       inputAudioTranscription: {},
       outputAudioTranscription: {},
       sessionResumption: this.resumeHandle ? { handle: this.resumeHandle } : {},
+      ...(this.transcript ? { inputAudioTranscription: {}, outputAudioTranscription: {} } : {}),
     }
     this.send({ setup }, socket)
   }
@@ -142,6 +143,7 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   interrupt() {
     if (this.phase !== 'speaking') return
+    this.transcript?.interrupted()
     this.stopPlayback()
     this.dropping = !this.turnDone
     this.setPhase('listening')
@@ -220,6 +222,7 @@ export class GeminiLiveEngine extends VoiceEngine {
     }
     const content = msg.serverContent
     if (content) {
+      this.transcript?.gemini(content)
       if (typeof content.inputTranscription?.text === 'string') this.link.add('user', content.inputTranscription.text)
       if (typeof content.outputTranscription?.text === 'string') this.link.add('voice', content.outputTranscription.text)
       if (content.turnComplete === true || content.interrupted === true) this.link.endTurn()

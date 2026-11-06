@@ -24,6 +24,7 @@ mod overlay;
 mod pair;
 mod permission;
 mod roster;
+mod roster_tools;
 mod skill;
 mod style;
 mod time;

@@ -100,7 +100,7 @@ export function LabeledRow({ label, top = false, className, children }: { label:
 }
 
 /** One quiet line under the group: what the host read, or why it can't. */
-function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview | null; error: string | null }) {
+export function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview | null; error: string | null }) {
   const tr = useTr()
   if (error) return <Text size="callout" tone="danger" className="schedule-preview">{error}</Text>
   return (

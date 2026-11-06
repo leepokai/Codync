@@ -362,6 +362,7 @@ mod tests {
             id: "e".into(),
             seq: 1,
             bot_id: "b".into(),
+            thread_id: None,
             rev: 1,
             kind: kind.as_str().into(),
             turn: 1,

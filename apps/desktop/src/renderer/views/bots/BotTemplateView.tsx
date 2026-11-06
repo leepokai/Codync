@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BotDraft } from '@shared/models'
+import { encodeTemplate } from '@shared/bot-template'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { encodeTemplate } from '../../lib/bot-template'
 import { useTr } from '../../lib/use-language'
 import './bots.css'
 

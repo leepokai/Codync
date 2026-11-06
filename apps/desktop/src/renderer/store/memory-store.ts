@@ -95,7 +95,13 @@ export class MemoryStore extends Observable {
     this.changed()
   }
 
-  /** A long-form file as it is now. */
+  /** Drops the error of an action that failed once the sheet has read the latest; what the user wrote stays. */
+  dismissError() {
+    this.error = null
+    this.changed()
+  }
+
+  /** A long-form file as it is now, with its versions. */
   async file(name: string, shared: boolean): Promise<MemoryFileDetail | null> {
     try {
       return await (await this.client()).call<MemoryFileDetail>('memoryFile', { botId: this.botId, file: name, shared })

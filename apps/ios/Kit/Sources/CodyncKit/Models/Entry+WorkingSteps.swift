@@ -6,7 +6,8 @@ public extension Entry {
     /// Thinking, narration, a tool call or a plan; never the bot's bookkeeping, nor a call the host didn't flag
     /// (one older than 2.25.0 flags none).
     var isWorkingStep: Bool {
-        switch kind {
+        guard !isInternal else { return false }
+        return switch kind {
         case "thought": !(data.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case "agent": data.final != true && !Self.isPass(data.text ?? "")
         case "tool": data.bookkeeping == false
@@ -23,7 +24,7 @@ public extension Entry {
 
     /// The turn running now while the bot works in this chat; a queued message already holds the next turn.
     static func runningTurn(_ entries: [Entry], working: Bool) -> Int64? {
-        working ? entries.filter { $0.data.status != "queued" }.map(\.turn).max() : nil
+        working ? entries.filter { !$0.isInternal && $0.data.status != "queued" }.map(\.turn).max() : nil
     }
 
     /// What the running turn has done so far, in order.

@@ -54,6 +54,8 @@ fun externalHttps(value: String): URI {
 }
 
 @Serializable data class SavedLogin(val id: String, val site: String, val username: String = "")
+/** A secret a bot keeps for API calls or commands; `destination` is worded by the host. The value never leaves it. */
+@Serializable data class BotSecret(val id: String, val botId: String, val botName: String? = null, val name: String, val destination: String)
 @Serializable data class CredentialStatus(val provider: String, val onePasswordConnected: Boolean = false)
 @Serializable data class ConnectionRequest(val kind: String, val status: String, val title: String, val botId: String,
     val toolkit: String? = null, val registryName: String? = null, val connectorId: String? = null,

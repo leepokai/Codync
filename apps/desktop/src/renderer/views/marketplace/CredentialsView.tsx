@@ -5,7 +5,11 @@ import { ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { errorText, market, type CredentialStatus, type InstalledConnector, type SavedLogin } from './market-models'
+import { isBelow } from '@shared/compat'
+import {
+  BOT_SECRETS_HOST, errorText, market,
+  type BotSecret, type CredentialStatus, type InstalledConnector, type SavedLogin,
+} from './market-models'
 import { ErrorText, Field, FormSheet, ScreenHeader, filled } from './pieces'
 import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
@@ -67,6 +71,7 @@ export function CredentialsView({ onBack }: { onBack: () => void }) {
           <Text size="caption" tone="secondary">{tr(`Values stay hidden. Select a connection to replace its credentials.`)}</Text>
         </CardSection>
         <LoginsSection />
+        {isBelow(store.hello?.version ?? '', BOT_SECRETS_HOST) ? null : <BotSecretsSection />}
         <CardSection title="1Password" footer="Use a service account with read access only to a dedicated shared vault. The 1Password CLI must be installed on the computer.">
           <span>{tr(status?.onePasswordConnected ? 'Connected' : 'Connect a shared vault')}</span>
           <CredentialField label="Service account token" value={token} onChange={setToken} placeholder="Paste your token" secret />
@@ -150,6 +155,51 @@ function LoginsSection() {
       <CredentialField label="Username or email" value={username} onChange={setUsername} placeholder="name@example.com" />
       <CredentialField label="Password" value={password} onChange={setPassword} placeholder="Password or op:// reference" secret />
       <div><Button disabled={busy || !site || !password} onClick={() => void save()}>Save sign-in</Button></div>
+      {error ? <Text size="footnote" tone="danger">{error}</Text> : null}
+    </CardSection>
+  )
+}
+
+/** API keys and command variables bots asked for on a secure card; values stay hidden. */
+function BotSecretsSection() {
+  const store = useStore()
+  const [secrets, setSecrets] = useState<BotSecret[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      const client = store.client
+      try {
+        setSecrets(client ? await market.botSecrets(client) : [])
+      } catch (e) {
+        setError(errorText(e))
+      }
+    })()
+  }, [store])
+
+  const remove = async (secret: BotSecret) => {
+    const client = store.client
+    if (!client) return
+    try {
+      await market.removeBotSecret(client, secret.id)
+      setSecrets((old) => old.filter((s) => s.id !== secret.id))
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  return (
+    <CardSection title="Bot secrets" footer="Bots ask for these on a secure card. Codync attaches them to the bot's API calls or commands; the bot never sees the value.">
+      {secrets.map((secret) => (
+        <HStack key={secret.id}>
+          <VStack gap={2} grow>
+            <span>{secret.name}</span>
+            <Text size="caption" tone="secondary">{`${secret.botName ?? 'A removed bot'} · ${secret.destination}`}</Text>
+          </VStack>
+          <IconButton title="Remove" icon="trash" onClick={() => void remove(secret)} />
+        </HStack>
+      ))}
+      {secrets.length === 0 ? <Text size="caption" tone="secondary">No bot secrets yet.</Text> : null}
       {error ? <Text size="footnote" tone="danger">{error}</Text> : null}
     </CardSection>
   )

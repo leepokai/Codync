@@ -86,7 +86,8 @@ can be traced from the events around it:
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
   never send.
-- **codync.dev** counts page views and clicks on download and outbound links without cookies.
+- **codync.dev** counts page views, time on page, scrolling, load speed and clicks on download
+  and outbound links without cookies, through its own `/e` path ([website](../reference/analytics-events.md#website)).
 
 Every event, its sender and its properties: [analytics events](../reference/analytics-events.md).
 

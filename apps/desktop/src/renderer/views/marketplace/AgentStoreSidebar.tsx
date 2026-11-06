@@ -17,16 +17,6 @@ export function AgentStoreSidebar({ agents, group, onGroup, onAgent }: {
   const tr = useTr()
   return (
     <aside className="market-side" aria-label={tr('Agents and groups')}>
-      <Text size="caption" weight="semibold" tone="tertiary" className="market-side-title">{tr('Agent CLIs')}</Text>
-      {agents.map((backend) => (
-        <button key={backend.id} type="button" className="market-side-row" onClick={() => onAgent(backend)}>
-          <AgentIcon registry={backend.registry} size={16} color="var(--text)" />
-          <span className="market-side-copy">
-            <span className="market-side-name">{backend.name}</span>
-            {backend.description ? <span className="market-side-spec">{backend.description}</span> : null}
-          </span>
-        </button>
-      ))}
       <Text size="caption" weight="semibold" tone="tertiary" className="market-side-title">{tr('Groups')}</Text>
       <button type="button" className="market-side-row" data-current={group === 'all'} onClick={() => onGroup('all')}>
         <span className="market-side-name">{tr('All agents')}</span>
@@ -37,6 +27,16 @@ export function AgentStoreSidebar({ agents, group, onGroup, onAgent }: {
       {CATEGORIES.map((category) => (
         <button key={category} type="button" className="market-side-row" data-current={group === category} onClick={() => onGroup(category)}>
           <span className="market-side-name">{tr(CATEGORY_LABELS[category]!)}</span>
+        </button>
+      ))}
+      <Text size="caption" weight="semibold" tone="tertiary" className="market-side-title">{tr('Agent CLIs')}</Text>
+      {agents.map((backend) => (
+        <button key={backend.id} type="button" className="market-side-row" onClick={() => onAgent(backend)}>
+          <AgentIcon registry={backend.registry} size={16} color="var(--text)" />
+          <span className="market-side-copy">
+            <span className="market-side-name">{backend.name}</span>
+            {backend.description ? <span className="market-side-spec">{backend.description}</span> : null}
+          </span>
         </button>
       ))}
     </aside>

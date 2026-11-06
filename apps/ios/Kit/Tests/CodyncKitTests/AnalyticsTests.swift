@@ -3,7 +3,7 @@ import Testing
 @testable import CodyncKit
 
 @MainActor
-@Test func analyticsIsOnByDefaultAndIdentifiesAccountsOnce() throws {
+@Test func analyticsIsOnByDefaultAndIdentifiesOnlyTheFirstAccount() throws {
     let defaults = try #require(UserDefaults(suiteName: "AnalyticsTests-\(UUID())"))
     let analytics = Analytics(defaults: defaults) { _ in false }
 
@@ -38,6 +38,12 @@ import Testing
     #expect(identify.distinct_id == "user_1")
     #expect(identify.properties["$anon_distinct_id"] == .string(anon.distinct_id))
     #expect(analytics.pending[2].properties["$process_person_profile"] == .bool(true))
+
+    // Another account on this phone: the install ID already joined the first, so no second $identify.
+    analytics.userID = { "user_2" }
+    analytics.capture(.signedIn(.apple))
+    #expect(analytics.pending.last?.distinct_id == "user_2")
+    #expect(analytics.pending.filter { $0.event == "$identify" }.count == 1)
 
     // The computer key matches the host's (host/src/analytics.rs `computer_tag_matches_the_iphone`).
     #expect(Analytics.computerTag("AAECAwQFBgcICQoLDA0ODw") == "2d6878bee20aba04")

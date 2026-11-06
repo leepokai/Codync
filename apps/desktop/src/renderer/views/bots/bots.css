@@ -338,3 +338,5 @@ button.member-row:hover {
   gap: 6px;
   color: var(--text);
 }
+
+.chat-color-swatch{width:22px;height:22px;border-radius:50%;border:1px solid var(--separator);cursor:pointer}.chat-color-swatch.selected{outline:2px solid var(--text);outline-offset:2px}

@@ -16,6 +16,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 新的 Workflow Builder 會把觸發條件、步驟與結果建成流程，步驟會依次出現在畫布上。
 - 每個 Bot 可以在設定中命名瀏覽器設定檔，讓登入與 Cookie 保留在該設定檔裡。
 - 可以從訊息選單刪除任何訊息；它會在所有裝置上消失。
+- 每個 Bot 的聊天可以選擇顏色，方便一眼分辨。
 - Slack、Telegram 與 Discord 的提及可以啟動流程；GitHub 的 issue、PR 與失敗檢查也一樣。
 - 新增 TickTick 等應用程式，以及每個代理程式的建立者、審核狀態、分類與更新日期。
 
@@ -26,6 +27,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - The new Workflow Builder turns a trigger, steps and a result into a workflow that draws itself on the canvas.
 - Each bot can name a browser profile, keeping sign-ins and cookies inside that profile.
 - Any message can be deleted from its menu and disappears on every device.
+- Each bot's chat can have its own color, so it is easy to tell apart.
 - Slack, Telegram and Discord mentions can start a workflow, as can GitHub issues, pull requests and failed checks.
 - New apps such as TickTick, and each agent page now names its creator, review, category and update date.
 

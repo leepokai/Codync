@@ -384,6 +384,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
     <div className="transcript-frame">
       <div
         className="transcript"
+        style={bot?.chatColor ? { background: `color-mix(in srgb, ${bot.chatColor} 10%, var(--background))` } : undefined}
         ref={scroller}
         role="log"
         aria-label="Messages"

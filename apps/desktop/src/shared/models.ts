@@ -86,6 +86,8 @@ export interface Bot {
   backgroundModel: string | null
   /** A named protected-browser profile: its sign-ins and cookies persist. */
   browserProfile: string | null
+  /** A hex tint behind this bot's chat. */
+  chatColor: string | null
   /** Saver: once its daily token budget reaches 80 percent, new sessions start on the background model until tomorrow. */
   saver: boolean
   /** The user's rules for the agent's permission requests, first match first. */
@@ -168,6 +170,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     verifyCommand: raw.verifyCommand ?? null,
     backgroundModel: raw.backgroundModel ?? null,
     browserProfile: raw.browserProfile ?? null,
+    chatColor: raw.chatColor ?? null,
     saver: raw.saver ?? false,
     approvalRules: raw.approvalRules ?? [],
     actionRulesOn: raw.actionRulesOn ?? null,
@@ -773,6 +776,7 @@ export interface BotDraft {
   backgroundModel?: string | null
   /** A named protected-browser profile: its sign-ins and cookies persist. */
   browserProfile?: string | null
+  chatColor?: string | null
   saver?: boolean
   approvalRules?: ApprovalRule[]
   actionRulesOn?: boolean
@@ -818,6 +822,7 @@ export function draftOf(bot: Bot): BotDraft {
     verifyCommand: bot.verifyCommand,
     backgroundModel: bot.backgroundModel,
     browserProfile: bot.browserProfile,
+    chatColor: bot.chatColor,
     saver: bot.saver,
     approvalRules: bot.approvalRules,
     actionRulesOn: bot.actionRulesOn ?? undefined,

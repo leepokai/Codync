@@ -47,6 +47,7 @@ data class BotDraft(
     /** The model routine runs and check-ins use instead of [model]. Null where the host has none. */
     val backgroundModel: String? = null,
     val browserProfile: String? = null,
+    val chatColor: String? = null,
     /** Null where the host has none, so it isn't sent. */
     val saver: Boolean? = null,
     /** Null where the host has none, so it isn't sent. */
@@ -105,6 +106,6 @@ data class BotDraft(
             bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.mode, bot.customIcon, bot.model,
             bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.account,
             bot.manageTeam ?: false, bot.isChief, bot.chiefBotId, bot.computerPermissions, bot.fallbacks, bot.selfFallbacks,
-            bot.verifyCommand, bot.backgroundModel, bot.browserProfile, bot.saver, bot.personality, bot.offeredToNetwork, bot.reachableByAssistants, bot.approvalRules, bot.actionRulesOn, bot.securityProfile)
+            bot.verifyCommand, bot.backgroundModel, bot.browserProfile, bot.chatColor, bot.saver, bot.personality, bot.offeredToNetwork, bot.reachableByAssistants, bot.approvalRules, bot.actionRulesOn, bot.securityProfile)
     }
 }

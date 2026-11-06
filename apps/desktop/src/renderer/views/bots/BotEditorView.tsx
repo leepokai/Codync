@@ -269,6 +269,19 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               </div>
             </AnchoredPanel>
           </ValueRow>
+          <ValueRow label="Chat color" detail="Tints this bot's chat so it is easy to tell apart.">
+            <HStack gap={6} wrap>
+              {['', '#E5484D', '#F76B15', '#FFB224', '#46A758', '#12A594', '#0090FF', '#8E4EC6', '#E93D82'].map((color) => (
+                <button
+                  key={color || 'none'}
+                  className={`chat-color-swatch${(draft.chatColor ?? '') === color ? ' selected' : ''}`}
+                  title={color || 'None'}
+                  style={{ background: color || 'var(--background)' }}
+                  onClick={() => set('chatColor', color || null)}
+                />
+              ))}
+            </HStack>
+          </ValueRow>
           <Field label="Name">
             <input className="field-box" value={draft.name} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
           </Field>

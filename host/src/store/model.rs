@@ -215,6 +215,9 @@ pub struct BotConfig {
     /// Protected browser profile name: its sign-ins and cookies persist for this bot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_profile: Option<String>,
+    /// A hex tint behind this bot's chat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_color: Option<String>,
     /// Saver: once its daily token budget reaches the warning level, a new session of the bot starts on its
     /// background model, until the next day.
     #[serde(default)]

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
@@ -54,7 +56,7 @@ internal enum class FormPart { All, Often, Rarely }
                     }
                     AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) })
                 }
-                CardSection("Profile") { nameRow(draft, change); instructionsRow(state, store, draft, change); createdByRow(state, bot) }
+                CardSection("Profile") { nameRow(draft, change); chatColorRow(draft, change); instructionsRow(state, store, draft, change); createdByRow(state, bot) }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot); computerRow(state, online)
                     agentRows(state, store, draft, change, bot) { addingFallback = true }; placeRows(state, store, draft, bot?.securityProfile, change) { folders = true }
@@ -101,6 +103,21 @@ internal enum class FormPart { All, Often, Rarely }
 @Composable private fun OfflineNote() = Text(tr("Reconnect to this computer to save settings."), style = Type.caption, color = Palette.warning)
 
 // A bot left unnamed at creation is named from its first conversations; rename it any time after.
+private fun CardRows.chatColorRow(draft: BotDraft, change: (BotDraft) -> Unit) = row {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Chat color", style = Type.body, color = Palette.text)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (hex in CHAT_COLORS) {
+                Box(Modifier.size(24.dp).clip(RoundedRectangle(12.dp))
+                    .background(if (hex.isEmpty()) Palette.background else Color(android.graphics.Color.parseColor(hex)))
+                    .plainButton { change(draft.copy(chatColor = hex.ifEmpty { null })) })
+            }
+        }
+    }
+}
+
+private val CHAT_COLORS = listOf("", "#E5484D", "#F76B15", "#FFB224", "#46A758", "#12A594", "#0090FF", "#8E4EC6", "#E93D82")
+
 private fun CardRows.nameRow(draft: BotDraft, change: (BotDraft) -> Unit) =
     row { Field("Name") { FieldBox(draft.name, { change(draft.copy(name = it)) }, "Name") } }
 

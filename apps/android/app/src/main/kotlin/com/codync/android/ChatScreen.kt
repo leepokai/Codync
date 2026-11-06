@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -106,7 +108,7 @@ import com.kyant.shapes.RoundedRectangle
     val density = LocalDensity.current
     // The main chat ignores an open thread: it stays put underneath.
     val chatState = state.copy(thread = null, trace = false)
-    GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
+    GlassStage(Modifier.fillMaxSize().background(bot.chatColor?.let { Color(android.graphics.Color.parseColor(it)).copy(alpha = 0.1f).compositeOver(Palette.background) } ?: Palette.background), chrome = {
         // Down to just above the header's bottom; the bottom one stops under Jump to latest.
         ScrollEdge(Edge.Top, top + 84.dp)
         ScrollEdge(Edge.Bottom, with(density) { composerHeight.toDp() } + 4.dp, Modifier.align(Alignment.BottomCenter))

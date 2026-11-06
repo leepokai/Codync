@@ -31,8 +31,9 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   packages have no install step that could ask.
 - **Identity.** Every device gets a person profile. Signed in to a Codync account: the Clerk
   user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
-  The first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events join
-  the account.
+  A device's first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events
+  join the account. Only once per device: PostHog refuses to merge an id into a second account
+  (`cannot_merge_already_identified`), so a later account on that device starts its own profile.
 - **Sessions.** Every event carries a `$session_id` (a UUIDv7) that changes after 30 minutes
   without events or 24 hours in all, as in PostHog's own SDKs, and on each launch of an app or
   start of the host (host `analytics/session.rs`, `AnalyticsSession` on the iPhone and Android),

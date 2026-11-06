@@ -1403,5 +1403,7 @@
   "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "云端助手可联系：你 Codync 账户里的 ChatGPT 或 Claude 能看到这个 Bot 并给它发消息。",
   "Window": "时间段",
   "Only run between two times": "只在两个时间之间运行",
-  "Plan limits reported by each connected agent.": "?????????????????"
+  "Plan limits reported by each connected agent.": "?????????????????",
+  "Accounts": "??",
+  "Default account": "????"
 }

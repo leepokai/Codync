@@ -1403,5 +1403,7 @@
   "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "Für Cloud-Assistenten erreichbar: ChatGPT oder Claude in deinem Codync-Konto sehen diesen Bot und können ihm schreiben.",
   "Window": "Zeitfenster",
   "Only run between two times": "Nur zwischen zwei Uhrzeiten ausführen",
-  "Plan limits reported by each connected agent.": "Von jedem verbundenen Agenten gemeldete Tariflimits."
+  "Plan limits reported by each connected agent.": "Von jedem verbundenen Agenten gemeldete Tariflimits.",
+  "Accounts": "Konten",
+  "Default account": "Standardkonto"
 }

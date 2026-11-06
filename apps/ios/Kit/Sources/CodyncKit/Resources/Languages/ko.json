@@ -1403,5 +1403,7 @@
   "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "클라우드 어시스턴트가 연락 가능: Codync 계정의 ChatGPT나 Claude가 이 봇을 보고 메시지를 보낼 수 있습니다.",
   "Window": "시간 범위",
   "Only run between two times": "두 시간 사이에만 실행",
-  "Plan limits reported by each connected agent.": "??? ? ????? ???? ?? ??."
+  "Plan limits reported by each connected agent.": "??? ? ????? ???? ?? ??.",
+  "Accounts": "??",
+  "Default account": "?? ??"
 }

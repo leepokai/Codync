@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AgentAccount, Backend } from '@shared/models'
 import { Button, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Dialog } from '../../components/Overlay'
@@ -95,14 +95,14 @@ export function AgentAccounts({ backend, onChanged }: { backend: Backend; onChan
         </VStack>
         {backend.signOut ? (
           <Button kind="secondary" disabled={busy} onClick={() => setConfirmSignOut(true)}>
-            {disconnecting ? 'Signing outâ€¦' : 'Disconnect'}
+            {disconnecting ? 'Signing out...' : 'Disconnect'}
           </Button>
         ) : null}
       </HStack>
       {loading ? (
         <HStack gap={8}>
           <Spinner size={12} />
-          <Text size="subheadline" tone="secondary">Loading accountsâ€¦</Text>
+          <Text size="subheadline" tone="secondary">Loading accounts...</Text>
         </HStack>
       ) : accounts.map((account) => (
         <HStack key={account.id} gap={10}>
@@ -122,11 +122,11 @@ export function AgentAccounts({ backend, onChanged }: { backend: Backend; onChan
         <VStack grow gap={2}>
           <Text size="body" weight="medium" tone="text">{tr('Add account')}</Text>
           <Text size="subheadline" tone="secondary">
-            {adding ? `Finish signing in in the browser on ${host}â€¦` : 'Sign in to another account without signing out of this one.'}
+            {adding ? `Finish signing in in the browser on ${host}...` : 'Sign in to another account without signing out of this one.'}
           </Text>
         </VStack>
         <Button disabled={busy} onClick={() => { void add() }}>
-          {adding ? 'Signing inâ€¦' : '+ Add account'}
+          {adding ? 'Signing in...' : '+ ' + tr('Add account')}
         </Button>
       </HStack>
       {error ? <Text size="caption" tone="attention" className="selectable">{error}</Text> : null}

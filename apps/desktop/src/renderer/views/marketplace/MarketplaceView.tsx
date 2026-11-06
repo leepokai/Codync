@@ -223,7 +223,7 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
             </>
           ) : section === 'agents' ? (
             <div className="market-split">
-              <AgentStoreSidebar agents={allAgents} group={agentGroup} onGroup={setAgentGroup} onAgent={setAgent} />
+              <AgentStoreSidebar group={agentGroup} onGroup={setAgentGroup} />
               <div className="market-split-main">
                 <MarketAgentsPanel
                   agents={groupedAgents}
@@ -238,17 +238,16 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
                 <MarketSection title={tr('Coordinator teams')}>
                   <CatalogPanel kind="teams" query={query} added={catalogAdded} onAdded={onCatalogAdded} onError={setError} />
                 </MarketSection>
-                <MarketSection title={tr('Agent CLIs')}>
-                  <AgentsPanel
-                    agents={agents}
-                    query={query}
-                    needsNode={allAgents.some((b) => b.node === 'missing')}
-                    onAddNode={() => setAddingNode(true)}
-                    onAgent={setAgent}
-                  />
-                </MarketSection>
               </div>
             </div>
+          ) : section === 'clis' ? (
+            <AgentsPanel
+              agents={agents}
+              query={query}
+              needsNode={allAgents.some((b) => b.node === 'missing')}
+              onAddNode={() => setAddingNode(true)}
+              onAgent={setAgent}
+            />
           ) : (
             <SkillsPanel
               skills={shownSkills}

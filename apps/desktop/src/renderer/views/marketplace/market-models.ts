@@ -360,12 +360,13 @@ export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) =>
 
 export const replacePage = <T>(items: T[], id: (t: T) => string) => appendPage(emptyPage<T>(), items, id)
 
-export type ExtensionSection = 'apps' | 'agents' | 'skills'
+export type ExtensionSection = 'apps' | 'agents' | 'clis' | 'skills'
 
 /** Each section with the line saying where its items come from. */
 export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; source: string }[] = [
   { id: 'apps', label: 'Apps', source: 'Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server.' },
   { id: 'agents', label: 'Agents', source: 'Ready-made agents come with their own instructions, skills and routines. Add one to {name}.' },
+  { id: 'clis', label: 'CLIs', source: 'The coding agents (ACPs) that run bots on {name}. Install one and sign in.' },
   { id: 'skills', label: 'Skills', source: 'Skills install on {name} and every bot can use them.' },
 ]
 

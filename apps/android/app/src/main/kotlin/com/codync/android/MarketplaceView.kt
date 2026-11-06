@@ -159,7 +159,7 @@ import kotlinx.coroutines.launch
     val side = if (inModal) 44.dp else 24.dp
     val inset = Modifier.padding(horizontal = side)
     val needsNode = backends.any { it.needsNode }
-    val pinned = section == ExtensionSection.Apps || section == ExtensionSection.Skills || (section == ExtensionSection.Agents && needsNode)
+    val pinned = section == ExtensionSection.Apps || section == ExtensionSection.Skills || (section == ExtensionSection.Clis && needsNode)
     // Each section opens at its top.
     val listState = remember(section) { LazyListState() }
     // A second tap on Extensions brings the open section back to its top.
@@ -196,7 +196,7 @@ import kotlinx.coroutines.launch
         }
     }
     @Composable fun Pins() {
-        if (section == ExtensionSection.Agents && needsNode) NodeNotice(state) { addingNode = true }
+        if (section == ExtensionSection.Clis && needsNode) NodeNotice(state) { addingNode = true }
         if (section == ExtensionSection.Apps) MarketRow("Custom connector", "Any MCP server: a command or a URL", added = false, addLabel = "New",
             icon = { TileIcon("point.3.connected.trianglepath.dotted") }) { addingConnector = true }
         if (section == ExtensionSection.Apps) MarketRow("WhatsApp", "Link a WhatsApp number and let your bots work from it.", added = false, addLabel = "Link",
@@ -232,23 +232,25 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            ExtensionSection.Agents -> {
-                item(key = "cli:title") { MarketSection(tr("Agent CLIs")) {} }
-                items(agents, key = { "cli:${it.id}" }) { backend ->
+            ExtensionSection.Agents -> when {
+                shownMarketAgents.isEmpty() -> item {
+                    Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+                }
+                else -> MarketCategories.group(shownMarketAgents, { it.category }, { it.featured }).forEach { (title, group) ->
+                    item(key = "agent:$title") { MarketSection(title) {} }
+                    items(group, key = { it.id }) { a ->
+                        MarketRow(a.name, a.title, a.installed || a.id in agentsAdded,
+                            icon = { CharacterAvatar(a.avatarShape, a.avatarColor, 46.dp) }, open = { viewingAgent = a }) { viewingAgent = a }
+                    }
+                }
+            }
+            ExtensionSection.Clis -> when {
+                agents.isEmpty() -> item {
+                    Text(if (query.isEmpty()) tr("No agent CLIs yet.") else tr("No agent CLIs match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+                }
+                else -> items(agents, key = { "cli:${it.id}" }) { backend ->
                     MarketRow(backend.name, backend.description ?: "", added = false, open = { agent = backend },
                         icon = { AgentIcon(backend.registry, 22.dp) }) { agent = backend }
-                }
-                when {
-                    shownMarketAgents.isEmpty() -> item {
-                        Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
-                    }
-                    else -> MarketCategories.group(shownMarketAgents, { it.category }, { it.featured }).forEach { (title, group) ->
-                        item(key = "agent:$title") { MarketSection(title) {} }
-                        items(group, key = { it.id }) { a ->
-                            MarketRow(a.name, a.title, a.installed || a.id in agentsAdded,
-                                icon = { CharacterAvatar(a.avatarShape, a.avatarColor, 46.dp) }, open = { viewingAgent = a }) { viewingAgent = a }
-                        }
-                    }
                 }
             }
             ExtensionSection.Skills -> if (loadingSkills) item { SkeletonRows() }

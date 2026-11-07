@@ -46,6 +46,11 @@ export function pairingAnswers(request: Pick<PairingRequest, 'canJoin' | 'phoneO
   return [...stayOut, { title: 'Add to account', join: true }]
 }
 
+/** A computer leaving its account drops every device it has: by name when the computer could list them. */
+export function leavingRemovesText(tr: Tr, email: string | null | undefined, names: readonly string[] | null | undefined) {
+  return joinRemovesText(tr, names) || devicesLoseAccess(tr, email)
+}
+
 /** A computer that changes its account drops every device of the old one, QR-paired ones included. */
 export function devicesLoseAccess(tr: Tr, email: string | null | undefined) {
   return email ? fill(tr("Every device of {email}'s account loses access."), { email }) : tr('Every device of that account loses access.')

@@ -16,8 +16,8 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
-import { devicesLoseAccess, spacedCode, withJoinRemoves } from '../../lib/account-copy'
-import { useJoinRemoves } from '../use-join-removes'
+import { leavingRemovesText, spacedCode, withJoinRemoves } from '../../lib/account-copy'
+import { useJoinRemoves, useLeaveRemoves } from '../use-join-removes'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
@@ -41,6 +41,8 @@ export function ComputersView() {
   const [removing, setRemoving] = useState<CloudComputer | null>(null)
   const removingOlder = removing !== null && cloud.isOlderCopy(removing)
   const managed = app.managedStores
+  // A computer this app reaches (an SSH one) can name what goes; any other gets the general warning.
+  const removingNames = useLeaveRemoves(managed.find((store) => store.computer.id === removing?.computerId) ?? null, removing !== null)
   // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
   const others = cloud.computers.filter((c) => c.computerId !== app.local?.computer.id)
   const addSSH = (host: string) => setEditing({ profile: { ...newSSHProfile(window.codync.hostPort), host }, isNew: true })
@@ -95,7 +97,7 @@ export function ComputersView() {
         message={removingOlder
           ? tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removing.name)
           // Offline may only mean asleep: removal unclaims it, and its own app won't add it back by itself.
-          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', () => removing?.name ?? tr('a computer'))}`}
+          : `${leavingRemovesText(tr, account.user?.email, removingNames)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', () => removing?.name ?? tr('a computer'))}`}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removing.computerId) }] : []}
         onClose={() => setRemoving(null)}
       />
@@ -143,6 +145,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
   // account to add it to, and it stays in none; a saved session still restoring makes the switch wait.
   const asksAccount = cloud?.joinsAccountOnEnable === true
   const joinRemoves = useJoinRemoves(store, askAccount)
+  const leaveRemoves = useLeaveRemoves(store, confirmUnclaim)
   const setReach = (on: boolean) => {
     if (on && asksAccount && account.isSignedIn) setAskAccount(true)
     else void run(() => app.cloud.setCloud(store, on))
@@ -295,7 +298,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       <Dialog
         open={confirmUnclaim}
         title={tr('Remove {name} from the account?').replaceAll('{name}', name)}
-        message={devicesLoseAccess(tr, owner?.email)}
+        message={leavingRemovesText(tr, owner?.email, leaveRemoves)}
         actions={[{ title: 'Remove from account', destructive: true, action: () => run(() => app.cloud.unclaim(store)) }]}
         onClose={() => setConfirmUnclaim(false)}
       />

@@ -242,11 +242,21 @@ export class CloudModel extends Observable {
   }
 
   /** The phones `store`'s computer would remove by joining the signed-in account. A host before this method removes the same phones and can't name them. */
-  async joinWouldRemove(store: BotStore): Promise<string[]> {
+  joinWouldRemove = async (store: BotStore): Promise<string[]> => {
     const userId = this.userId
     if (!userId) return []
     try {
       return (await (await store.ready()).call<{ names: string[] }>('joinWouldRemove', { userId })).names
+    } catch (error) {
+      this.fail(error, true)
+      return []
+    }
+  }
+
+  /** The devices on `store`'s computer, which all go when it leaves its account. Empty when it can't say: the warning then stays general. */
+  deviceNames = async (store: BotStore): Promise<string[]> => {
+    try {
+      return (await (await store.ready()).call<{ devices: { name: string }[] }>('devices')).devices.map((device) => device.name)
     } catch (error) {
       this.fail(error, true)
       return []

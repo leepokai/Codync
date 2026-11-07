@@ -166,10 +166,13 @@ enum Sub {
         port: u16,
     },
     /// Claude Code statusLine command: forwards usage limits to the host, then prints
-    /// the wrapped command's status line (`statusline -- <command>`) or a short default.
+    /// the wrapped command's status line (`statusline --command '<command>'`, or
+    /// `statusline -- <command>` as older hosts wrote it) or a short default.
     Statusline {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
+        #[arg(long, conflicts_with = "wrapped", allow_hyphen_values = true)]
+        command: Option<String>,
         #[arg(last = true)]
         wrapped: Vec<String>,
     },
@@ -467,8 +470,8 @@ async fn main() -> Result<()> {
         }
         Sub::Node => agent::node::add().await,
         Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
-        Sub::Statusline { port, wrapped } => {
-            statusline(port, wrapped.join(" ")).await;
+        Sub::Statusline { port, command, wrapped } => {
+            statusline(port, command.unwrap_or_else(|| wrapped.join(" "))).await;
             Ok(())
         }
         Sub::ResetToken => {

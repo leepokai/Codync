@@ -25,6 +25,8 @@ final class SharedAudio {
     @ObservationIgnored private var generation = 0
     /// Ticks `elapsed` while the sound plays.
     @ObservationIgnored private var clock: Timer?
+    /// A call or Siri taking the audio pauses the note, as the user's own pause would.
+    @ObservationIgnored private var interruptions: AudioSessionEvents?
     /// Fetches the sound's bytes; tests hold it open to stop the card mid-load.
     private let load: @MainActor (BotStore, SharedFile, String) async -> Data?
 
@@ -60,6 +62,9 @@ final class SharedAudio {
             elapsed = player.currentTime
             state = .playing
             startClock()
+            interruptions = interruptions ?? AudioSessionEvents(engine: nil) { [weak self] interruption in
+                if case .began = interruption, self?.state == .playing { self?.pause() }
+            }
             if fromStart { Analytics.shared.capture(.voiceNotePlayed(.played)) }
         } catch {
             // A card that went away mid-load never shows the failure.
@@ -73,6 +78,8 @@ final class SharedAudio {
         generation += 1
         player?.stop()
         player?.currentTime = 0
+        interruptions?.stop()
+        interruptions = nil
         finish()
     }
 
@@ -110,11 +117,14 @@ final class SharedAudio {
         releaseSession()
     }
 
-    /// Paused, stopped, ended or failed: other apps' audio may pick up again.
+    /// Paused, stopped, ended or failed: other apps' audio may pick up again. A call or dictation that took the
+    /// session since (`.playAndRecord`) keeps it active.
     private func releaseSession() {
         guard ownsSession else { return }
         ownsSession = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        let session = AVAudioSession.sharedInstance()
+        guard session.category == .playback else { return }
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func prepared(_ file: SharedFile, entryId: String, model: BotStore) async throws -> AVAudioPlayer {

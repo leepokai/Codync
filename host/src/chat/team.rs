@@ -21,6 +21,7 @@ mod batch;
 mod blocking;
 mod directory;
 pub mod flow;
+pub mod members;
 mod pipeline;
 pub mod remote;
 mod requests;
@@ -83,6 +84,7 @@ pub fn tools() -> Value {
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         },
         blocking::tool(),
+        members::tool(),
         batch::tool(),
         pipeline::tool(),
     ])
@@ -406,6 +408,10 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) ->
                 Recipient::There(target) => remote::message(hub, &visible_bot(hub, from)?, &target, message).await,
                 Recipient::Here(_) => call(hub, from, name, args),
             }
+        }
+        "ask_member" => {
+            let source = visible_bot(hub, from)?;
+            return members::ask(hub, &source, args["question"].as_str().unwrap_or_default()).await;
         }
         "ask_bot" | "delegate_batch" | "run_pipeline" => {
             let source = visible_bot(hub, from)?;

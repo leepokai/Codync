@@ -392,6 +392,8 @@ export interface EntryData {
   handoff?: HandoffCard
   /** A routine root line that owns a thread. */
   routineThread?: string
+  /** A bot asking the people of a group to answer (`ask_member`). */
+  memberQuestion?: { status: string; answers: string[] }
   /** notice: a bot-built interactive mini-app card (Idea 1). */
   botApp?: BotApp
   /** notice: human takeover request card (Idea 13). */

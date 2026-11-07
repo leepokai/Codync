@@ -1703,5 +1703,8 @@
   "Run in a thread": "In einem Thread ausführen",
   "Its runs post in a thread of the bot chat instead of the main one.": "Seine Läufe landen in einem Thread des Bot-Chats statt im Hauptchat.",
   "Open the thread": "Thread öffnen",
-  "in the thread": "im Thread"
+  "in the thread": "im Thread",
+  "Needs a member": "Braucht eine Person",
+  "Answer": "Antworten",
+  "A bot": "Ein Bot"
 }

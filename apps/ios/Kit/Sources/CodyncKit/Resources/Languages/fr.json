@@ -1703,5 +1703,8 @@
   "Run in a thread": "Exécuter dans un fil",
   "Its runs post in a thread of the bot chat instead of the main one.": "Ses exécutions sont publiées dans un fil du chat du bot, pas dans le principal.",
   "Open the thread": "Ouvrir le fil",
-  "in the thread": "dans le fil"
+  "in the thread": "dans le fil",
+  "Needs a member": "A besoin d'un membre",
+  "Answer": "Répondre",
+  "A bot": "Un bot"
 }

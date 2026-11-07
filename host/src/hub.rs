@@ -89,6 +89,8 @@ pub struct Hub {
     /// A linked `WhatsApp` number (a child process) and what to do with its messages.
     pub whatsapp: Arc<crate::whatsapp::WhatsApp>,
     pub team: crate::chat::team::Requests,
+    /// People answering a bot's `ask_member` card (`chat::team::members`).
+    pub members: crate::chat::team::members::Members,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
     pub network: crate::network::Network,
@@ -154,6 +156,7 @@ impl Hub {
                 crate::health::Monitor::saved_thresholds(&store),
             ),
             team: crate::chat::team::Requests::default(),
+            members: crate::chat::team::members::Members::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
             waiting: crate::chat::team::remote::Waiting::default(),

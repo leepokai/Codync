@@ -1703,5 +1703,8 @@
   "Run in a thread": "在线程中运行",
   "Its runs post in a thread of the bot chat instead of the main one.": "其运行会发布到机器人聊天的线程中，而不是主聊天。",
   "Open the thread": "打开线程",
-  "in the thread": "在线程中"
+  "in the thread": "在线程中",
+  "Needs a member": "需要一名成员",
+  "Answer": "回答",
+  "A bot": "一个机器人"
 }

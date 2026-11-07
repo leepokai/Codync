@@ -1703,5 +1703,8 @@
   "Run in a thread": "スレッドで実行",
   "Its runs post in a thread of the bot chat instead of the main one.": "実行はメインチャットではなく、ボットチャットのスレッドに投稿されます。",
   "Open the thread": "スレッドを開く",
-  "in the thread": "スレッド内"
+  "in the thread": "スレッド内",
+  "Needs a member": "メンバーが必要です",
+  "Answer": "回答",
+  "A bot": "ボット"
 }

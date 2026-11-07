@@ -1703,5 +1703,8 @@
   "Run in a thread": "스레드에서 실행",
   "Its runs post in a thread of the bot chat instead of the main one.": "실행은 기본 채팅이 아니라 봇 채팅의 스레드에 게시됩니다.",
   "Open the thread": "스레드 열기",
-  "in the thread": "스레드에"
+  "in the thread": "스레드에",
+  "Needs a member": "멤버가 필요합니다",
+  "Answer": "답변",
+  "A bot": "봇"
 }

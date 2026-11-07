@@ -10,6 +10,7 @@ import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
+import { MemberQuestionCard } from './MemberQuestionCard'
 import { useTr } from '../../lib/use-language'
 import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
@@ -54,7 +55,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   openThread?: (rootId: string) => void
 }) {
   const host = useStore()
-  const reply = onReply && isReplyable(entry) ? () => onReply(entry) : undefined
+  const reply = onReply && (isReplyable(entry) || entry.data.memberQuestion) ? () => onReply(entry) : undefined
   switch (entry.kind) {
     case 'user':
       return (
@@ -87,6 +88,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
         </VStack>
       )
     default:
+      if (entry.data.memberQuestion) return <div className="chat-row group-start"><MemberQuestionCard entry={entry} reply={reply} /></div>
       if (entry.data.connectionRequest) return <div className="chat-row group-start"><ConnectionRequestCard entry={entry} /></div>
       if (entry.data.handoff) return <div className="chat-row notice"><HandoffNotice entry={entry} card={entry.data.handoff} /></div>
       if (entry.data.takeoverRequest) return <div className="chat-row group-start"><TakeoverRequestNotice entry={entry} /></div>

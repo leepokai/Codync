@@ -1703,5 +1703,8 @@
   "Run in a thread": "在執行緒中執行",
   "Its runs post in a thread of the bot chat instead of the main one.": "其執行會發佈到機器人聊天的執行緒中，而不是主聊天。",
   "Open the thread": "開啟執行緒",
-  "in the thread": "在執行緒中"
+  "in the thread": "在執行緒中",
+  "Needs a member": "需要一名成員",
+  "Answer": "回答",
+  "A bot": "一個機器人"
 }

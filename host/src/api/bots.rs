@@ -263,6 +263,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 bail!("empty message");
             }
             let nonce = b["clientNonce"].as_str().unwrap_or_default();
+            // A reply to a pending `ask_member` card answers it instead of starting a turn.
+            if let Some(card) = b["replyTo"].as_str().filter(|id| !id.is_empty())
+                && !text.is_empty()
+                && hub.members.waiting(card)
+                && hub.members.answer(card, "You", text)
+            {
+                return Ok(ControlFlow::Break(json!({"answered": true})));
+            }
             if !nonce.is_empty()
                 && let Some(e) = hub.store.find_by_nonce(bot, nonce)
             {

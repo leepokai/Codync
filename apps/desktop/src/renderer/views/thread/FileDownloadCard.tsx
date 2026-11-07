@@ -7,7 +7,7 @@ import { Spinner } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { AttachmentImage, AttachmentViewer, attachmentSymbol, type ImageSource } from './Attachments'
-import { cardActions, cardDetail, cardKeyAction, clickRunsFirstAction, downloadAction, seekKeyTarget } from './file-card'
+import { cardActions, cardDetail, cardKeyAction, clickRunsFirstAction, downloadAction } from './file-card'
 import type { AudioSnapshot } from './shared-audio'
 import { useSharedAudio } from './use-shared-audio'
 import './attachments.css'
@@ -81,15 +81,11 @@ function useFileStop(entry: Entry, file: SharedFile, audio?: AudioSnapshot, togg
   const actions = () => cardActions({ state, audio, toggle, view: showsAsImage(file) ? view : undefined, download })
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return
-    const seconds = seekKeyTarget(e.key, audio)
-    if (seek && seconds !== undefined) {
-      e.preventDefault()
-      return seek(seconds)
-    }
-    const action = cardKeyAction(e, menu.open)
+    const action = cardKeyAction(e, menu.open, seek ? audio : undefined)
     if (!action) return
     e.preventDefault()
-    if (action === 'first') actions()[0].action()
+    if (action.kind === 'seek') seek?.(action.seconds)
+    else if (action.kind === 'first') actions()[0].action()
     else {
       const { left, bottom } = e.currentTarget.getBoundingClientRect()
       menu.openAt({ x: left, y: bottom })

@@ -33,6 +33,10 @@ data class Entry(
     val status: String? get() = data.text("status")
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
+    /** The voice note playing at the top of this reply's bubble: only a host that flagged it and whose one file is a
+     *  sound; anything else (no flag, no file, a file too big or not audio) keeps the plain file card. */
+    val voiceNote: SharedFile? get() =
+        if (data["voiceNote"]?.jsonPrimitive?.booleanOrNull == true) files.firstOrNull()?.takeIf { it.showsAsAudio } else null
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */
     val artifact: ArtifactCard? get() = (data["artifact"] as? JsonObject)?.let { runCatching { WireJson.decodeFromJsonElement<ArtifactCard>(it) }.getOrNull() }
     /** A message of the user's waiting behind the bot's work: the computer hasn't given it to the agent yet. */
@@ -105,12 +109,18 @@ private data class EntryFields(
     val isImage: Boolean get() = isImageName(name)
 }
 
-private fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
+fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
+fun isAudioName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("mp3", "m4a", "wav", "aac")
+
+/** The largest shared file the phone fetches whole to show (an image) or play (a sound). */
+private const val INLINE_BYTES = 20L * 1024 * 1024
 
 /** A file a bot shared: immutable on the computer, checked against its SHA-256 once downloaded. */
 @Serializable data class SharedFile(val id: String, val name: String, val size: Long, val sha256: String) {
-    /** An image small enough to show in the chat (the phone fetches all of it). */
-    val showsAsImage: Boolean get() = isImageName(name) && size <= 20L * 1024 * 1024
+    /** An image small enough to show in the chat. */
+    val showsAsImage: Boolean get() = isImageName(name) && size <= INLINE_BYTES
+    /** A voice note or other sound small enough to play in the chat. */
+    val showsAsAudio: Boolean get() = isAudioName(name) && size <= INLINE_BYTES
 
     /** Before any of it is read: a name that can't leave its folder and a hash to check. */
     fun validate() {

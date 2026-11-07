@@ -34,6 +34,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -43,9 +44,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +60,7 @@ import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -165,12 +170,14 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
     }
 }
 
-/** The menu a message opens on long press: copy, reply quoting it, what the agent did. */
-private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?) = buildList {
+/** The menu a message opens on long press: copy, reply quoting it, what the agent did, and a voice-note bubble's download. */
+private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?,
+    download: MenuItem? = null) = buildList {
     add(MenuItem("Copy", icon = "square.on.square") {
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", entry.text))
     })
     if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
+    if (download != null) add(download)
     if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
 }
 
@@ -258,10 +265,24 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val focus = LocalFocusManager.current
     val files = entry.files
     val artifact = entry.artifact
+    val voiceNote = entry.voiceNote
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // An artifact card or a message with files is that: the text is only the computer's fallback.
+        // An artifact card or a message with files is that: the text is only the computer's fallback. A voice note
+        // instead plays inside its bubble, over the message it captions.
         if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = reactionPick(entry, store),
             onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) { messageMenu(context, entry, reply, openTrace) })
+        else if (voiceNote != null) {
+            val player = rememberSharedAudio(entry, voiceNote, store)
+            val download = state.fileDownloads[voiceNote.id]
+            val busy = download is FileDownloadState.Downloading
+            val save = { if (busy) store.cancelFile(voiceNote.id) else store.saveFile(entry.id, entry.botId, voiceNote) }
+            Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+                .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() },
+                    preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) }) {
+                    messageMenu(context, entry, reply, openTrace, MenuItem(if (busy) "Cancel download" else "Download",
+                        icon = if (busy) "xmark" else "arrow.down.to.line", action = save))
+                }) { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = false) }
+        }
         else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }) { messageMenu(context, entry, reply, openTrace) },
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (file in files) FileDownloadCard(entry, file, state, store)
@@ -269,6 +290,38 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }) {
                 messageMenu(context, entry, reply, openTrace)
             }) { AgentText(entry.text, selectable = false) }
+    }
+}
+
+/**
+ * A reply carrying a voice note, as a messaging app shows one with a caption: the player at the top of its bubble,
+ * the message under it. The player row is one element — "Voice note, <caption>" — with the card's play and download
+ * actions; download has no button here, the bubble's menu and those actions carry it.
+ */
+@Composable private fun VoiceNoteMessage(text: String, file: SharedFile, audio: SharedAudio, download: FileDownloadState?,
+    save: () -> Unit, selectable: Boolean) {
+    val scope = rememberCoroutineScope()
+    val translate = translator()
+    val busy = download is FileDownloadState.Downloading
+    val caption = detail(file, download, audio, translate)
+    val play = { scope.launch { audio.toggle() }; Unit }
+    Column(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().clearAndSetSemantics {
+            contentDescription = "${translate("Voice note")}, $caption"
+            audioSeek(audio)
+            customActions = listOf(
+                CustomAccessibilityAction(translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true },
+                CustomAccessibilityAction(translate(if (busy) "Cancel download" else "Download")) { save(); true })
+            onClick(label = translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true }
+        }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SharedAudioButton(audio, play)
+            if (audio.duration > 0.0) AudioProgress(audio, Modifier.weight(1f))
+            // Steady digits, so the bar's end doesn't move as the clock runs.
+            Text(caption, style = Type.caption2.copy(fontFeatureSettings = "tnum"),
+                color = if (audio.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
+        }
+        if (text.isNotEmpty()) MarkdownText(text, selectable)
     }
 }
 

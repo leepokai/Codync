@@ -98,6 +98,11 @@ fn validate(hub: &Hub, c: &Config) -> Result<()> {
     }
     Ok(())
 }
+/// The token and its generation, for a caller that has to send something.
+pub(crate) fn credentials(store: &Store) -> Result<Option<(String, String)>> {
+    Ok(load(store)?.map(|c| (c.bot_token, c.generation)))
+}
+
 pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Value> {
     crate::market::vault::unlock(hub.clone()).await?;
     let prepared = if method == "setSlackChannel" {

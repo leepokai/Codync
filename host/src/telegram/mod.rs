@@ -106,6 +106,22 @@ struct Add {
     bot_id: String,
 }
 
+/// The token of the Telegram bot called `name`, for a caller that has to send something.
+pub(crate) fn token(store: &Store, name: &str) -> Result<Option<String>> {
+    Ok(load(store)?.bots.into_iter().find(|b| b.name == name).map(|b| b.token))
+}
+
+/// The first Telegram bot's name, for an output that named none.
+pub(crate) fn first_name(store: &Store) -> Result<Option<String>> {
+    Ok(load(store)?.bots.into_iter().next().map(|b| b.name))
+}
+
+/// Sends one message to a Telegram chat as `name`'s bot, through the egress policy.
+pub(crate) async fn send_text(store: &Store, name: &str, chat: i64, text: &str) -> Result<()> {
+    let token = token(store, name)?.context("Unknown Telegram bot.")?;
+    client::message(&Endpoint::telegram(), &token, chat, text, None).await.map(drop)
+}
+
 pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Value> {
     call_with(hub, &Endpoint::telegram(), method, body).await
 }

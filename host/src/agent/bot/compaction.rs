@@ -43,7 +43,8 @@ impl Actor {
         if let Some(life) = self.hub.store.kv_get(&self.cache_life_key()).and_then(|v| serde_json::from_str(&v).ok()) {
             return life;
         }
-        let api_key = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)
+        // The environment the agent starts with (saved keys and the login shell's), and the host's own it inherits.
+        let api_key = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)
             .unwrap_or_default()
             .iter()
             .any(|(k, _)| k == "ANTHROPIC_API_KEY")

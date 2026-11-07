@@ -55,6 +55,8 @@ export type AnalyticsEvent =
   | { event: 'link_opened'; link: Link }
   | { event: 'dev_server_action'; action: 'open' | 'copy' }
   | { event: 'screen_viewed'; screen: Screen }
+  | { event: 'conversation_find_opened' }
+  | { event: 'conversation_find_searched'; found: boolean }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }

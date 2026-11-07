@@ -73,6 +73,8 @@ host answers and sends it once the host is up.
 | Event | Sent by | When | Properties |
 |---|---|---|---|
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
+| `conversation_find_opened` | host `track` (desktop) | ⌘F opens the find bar in a conversation | — |
+| `conversation_find_searched` | host `track` (desktop) | A search in the find bar settles (typing paused, or Enter / ⌘G steps to another match), at most once per searched text | `found` (whether anything matched; never the text searched for) |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `bots_imported` | host | `importBots` (bots it makes send no `bot_created`) | `source` (`grok-bot`/`openbot`/`other`), `bots`, `groups` (counts) |
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values |

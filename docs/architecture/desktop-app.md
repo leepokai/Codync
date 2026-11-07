@@ -26,7 +26,7 @@ reaching the end of a history response determines when there are no earlier mess
 | `src/preload/` | The `window.codync` bridge (types in `src/shared/ipc.ts`) |
 | `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession` |
 | `src/renderer/components/` | Design system: controls, overlays (sheets, dialogs, menus), SF Symbol icons, character avatars, thinking orbs |
-| `src/renderer/views/` | Screens, mirroring kit's folders (`thread/`, `bots/`, `marketplace/`, `settings/`, `routines/`, `call/`) |
+| `src/renderer/views/` | Screens, mirroring kit's folders (`thread/`, `bots/`, `marketplace/`, `settings/`, `routines/`, `call/`); ⌘F find in the open chat is `FindBar.tsx` over `use-conversation-find.ts`, which searches the transcript (`data-find-root`) and paints matches with CSS custom highlights (`lib/transcript-find.ts`) |
 | `native/speech-macos/` | `codync-speech`, a Swift helper running SFSpeechRecognizer for on-device calls |
 | `tools/export-symbols.swift` | Renders the SF Symbols the app uses into masks at build time (macOS) |
 

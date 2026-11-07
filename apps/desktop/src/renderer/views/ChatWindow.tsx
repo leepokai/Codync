@@ -28,6 +28,7 @@ import { MarketplaceView } from './marketplace/MarketplaceView'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
+import { FindBar } from './FindBar'
 import { SearchPalette } from './SearchPalette'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
@@ -202,6 +203,12 @@ function ChatSplitView() {
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
+  // Find in the open conversation: the bar's focus count while it is open.
+  const [find, setFind] = useState<number | null>(null)
+  const openFind = () => {
+    if (find === null) analytics.track({ event: 'conversation_find_opened' })
+    setFind((n) => (n ?? 0) + 1)
+  }
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
@@ -253,6 +260,8 @@ function ChatSplitView() {
       window.codync.app.onCommand((c) => {
         if (c.kind === 'newBot' && onlineStores.length) create('bot')
         if (c.kind === 'search') setSearching(true)
+        // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
+        if (c.kind === 'find') app.selection ? openFind() : setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
         if (c.kind === 'voiceKey') {
@@ -339,6 +348,9 @@ function ChatSplitView() {
   const errorMessage = app.errorMessage
   const mismatchStores = stores.filter((s) => shown.has(s.computer.id) && s.mismatch)
   const selected = app.selection
+  const selectedKey = selected ? refKey(selected) : null
+  // Another conversation, another find.
+  useEffect(() => setFind(null), [selectedKey])
   const selectedBot = selected && selectedStore?.bots.get(selected.botId)
 
   let detail: ReactNode
@@ -429,6 +441,7 @@ function ChatSplitView() {
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
+        {find !== null && selectedBot ? <FindBar focusKey={find} onClose={() => setFind(null)} /> : null}
       </main>
 
       {showAccount ? (

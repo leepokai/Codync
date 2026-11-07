@@ -1701,5 +1701,7 @@
   "with a password": "con contraseña",
   "Without a proxy the browser uses this computer's network.": "Sin proxy, el navegador usa la red de esta computadora.",
   "Run in a thread": "Ejecutar en un hilo",
-  "Its runs post in a thread of the bot chat instead of the main one.": "Sus ejecuciones se publican en un hilo del chat del bot, no en el principal."
+  "Its runs post in a thread of the bot chat instead of the main one.": "Sus ejecuciones se publican en un hilo del chat del bot, no en el principal.",
+  "Open the thread": "Abrir el hilo",
+  "in the thread": "en el hilo"
 }

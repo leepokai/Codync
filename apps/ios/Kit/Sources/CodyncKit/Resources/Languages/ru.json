@@ -1701,5 +1701,7 @@
   "with a password": "с паролем",
   "Without a proxy the browser uses this computer's network.": "Без прокси браузер использует сеть этого компьютера.",
   "Run in a thread": "Запускать в ветке",
-  "Its runs post in a thread of the bot chat instead of the main one.": "Запуски публикуются в ветке чата бота, а не в основном чате."
+  "Its runs post in a thread of the bot chat instead of the main one.": "Запуски публикуются в ветке чата бота, а не в основном чате.",
+  "Open the thread": "Открыть ветку",
+  "in the thread": "в ветке"
 }

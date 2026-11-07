@@ -1701,5 +1701,7 @@
   "with a password": "mit Passwort",
   "Without a proxy the browser uses this computer's network.": "Ohne Proxy nutzt der Browser das Netzwerk dieses Computers.",
   "Run in a thread": "In einem Thread ausführen",
-  "Its runs post in a thread of the bot chat instead of the main one.": "Seine Läufe landen in einem Thread des Bot-Chats statt im Hauptchat."
+  "Its runs post in a thread of the bot chat instead of the main one.": "Seine Läufe landen in einem Thread des Bot-Chats statt im Hauptchat.",
+  "Open the thread": "Thread öffnen",
+  "in the thread": "im Thread"
 }

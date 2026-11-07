@@ -11,6 +11,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -30,6 +31,8 @@ data class Entry(
     val updatedAt: Long = 0,
     /** A document's side conversation (`doc:<id>`) it's in; null in the chat itself. */
     val threadId: String? = null,
+    /** On a thread's root line: how many of its replies are unread. */
+    val threadUnread: Int? = null,
 ) {
     val text: String get() = data.text("text").orEmpty()
     val clientNonce: String? get() = data.text("clientNonce")
@@ -173,6 +176,8 @@ etwork` is null from hosts before the network view (or one this app can't read).
     data class Network(val view: NetworkView) : MirrorEvent
     /** These bots' routine-flow canvases changed: load them again. Live only, never a checkpoint. */
     data class RoutineFlow(val rev: Long, val botIds: List<String>) : MirrorEvent
+    /** A thread root's unread count. */
+    data class ThreadUnread(val threadId: String, val botId: String, val unread: Int) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -196,6 +201,13 @@ etwork` is null from hosts before the network view (or one this app can't read).
             "screen" -> Screen(value.getValue("screen").jsonObject)
             // One this app can't read is passed over rather than fetching everything again: a card or the Library reads it again.
             "artifact" -> runCatching { ArtifactChanged(Artifact.decode(value.getValue("artifact"))) }.getOrDefault(Ignored)
+            "thread" -> runCatching {
+                ThreadUnread(
+                    value.getValue("threadId").jsonPrimitive.content,
+                    value.getValue("botId").jsonPrimitive.content,
+                    value.getValue("unread").jsonPrimitive.int,
+                )
+            }.getOrDefault(Ignored)
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)

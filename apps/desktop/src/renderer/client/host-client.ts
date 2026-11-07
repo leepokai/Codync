@@ -73,6 +73,8 @@ export type HostEvent =
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
   | { type: 'entryDeleted'; id: string; rev: number }
+  /** A thread's root line says how many of its replies are unread. */
+  | { type: 'thread'; threadId: string; botId: string; unread: number }
   | { type: 'usage'; usage: Usage }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
@@ -159,6 +161,10 @@ export function parseEvent(line: string): HostEvent | null {
       const botIds = Array.isArray(raw.botIds) ? raw.botIds.filter((id): id is string => typeof id === 'string') : null
       return botIds && typeof raw.rev === 'number' ? { type, rev: raw.rev, botIds } : { type: 'undecodable', kind: 'routineFlow' }
     }
+    case 'thread':
+      return typeof raw.threadId === 'string' && typeof raw.botId === 'string' && typeof raw.unread === 'number'
+        ? { type, threadId: raw.threadId, botId: raw.botId, unread: raw.unread }
+        : { type: 'undecodable', kind: 'thread' }
     case 'resync':
       return { type }
     default:

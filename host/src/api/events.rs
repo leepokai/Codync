@@ -64,7 +64,15 @@ pub fn events_stream(
         catch_up.push(json!({"type": "bot", "rev": bot["rev"], "bot": bot}));
     }
     for e in hub.store.entries_since(since, CATCH_UP_PER_BOT)? {
-        catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
+        let mut entry = serde_json::to_value(&e)?;
+        // A root line says how many of its thread's replies are unread.
+        if e.thread_id.is_none() {
+            let unread = hub.store.thread_unread(&e.id);
+            if unread > 0 {
+                entry["threadUnread"] = unread.into();
+            }
+        }
+        catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": entry}));
     }
     catch_up.extend(crate::chat::artifacts::since(&hub.store, since));
     catch_up.extend(crate::routines::flow::catch_up(&hub.store, since));

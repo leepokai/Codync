@@ -1701,5 +1701,7 @@
   "with a password": "带密码",
   "Without a proxy the browser uses this computer's network.": "没有代理时，浏览器使用本电脑的网络。",
   "Run in a thread": "在线程中运行",
-  "Its runs post in a thread of the bot chat instead of the main one.": "其运行会发布到机器人聊天的线程中，而不是主聊天。"
+  "Its runs post in a thread of the bot chat instead of the main one.": "其运行会发布到机器人聊天的线程中，而不是主聊天。",
+  "Open the thread": "打开线程",
+  "in the thread": "在线程中"
 }

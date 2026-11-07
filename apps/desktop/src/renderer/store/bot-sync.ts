@@ -275,6 +275,14 @@ export class BotSync extends BotMirror {
         this.bump(event.entry.rev)
         this.acknowledgeVisible(event.entry.botId, event.entry)
         break
+      case 'thread': {
+        const root = (this.entries.get(event.botId) ?? []).find((e) => e.id === event.threadId)
+        if (root) {
+          root.threadUnread = event.unread
+          this.changed()
+        }
+        break
+      }
       case 'usage':
         this.usage = event.usage
         break

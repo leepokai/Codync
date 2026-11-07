@@ -46,8 +46,8 @@ export function RepliesView({ botId, rootId, close, documentTitle }: { botId: st
   const openTrace = () => setShowTrace(true)
   return (
     <SheetPage>
-      <ModalHeader title="Document conversation" subtitle={[documentTitle, chat?.name].filter(Boolean).join(' · ')} onClose={close}
-        closeTitle="Close document conversation" />
+      <ModalHeader title={documentTitle ? 'Document conversation' : 'Thread'} subtitle={[documentTitle, chat?.name].filter(Boolean).join(' · ')} onClose={close}
+        closeTitle={documentTitle ? 'Close document conversation' : 'Close thread'} />
       <div className="thread-hairline" />
       <div ref={scroller} className="thread-scroll">
         <div className="replies-content">

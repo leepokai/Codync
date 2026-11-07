@@ -134,13 +134,17 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let limit = b["limit"].as_i64().unwrap_or(100).clamp(1, 500);
             json!({"entries": hub.store.history(bot, before, limit)?})
         }
-        // A side conversation (a document's `doc:<id>`, a Slack thread's `slack-…`); the chat itself has none.
+        // A side conversation (a document's `doc:<id>`, a routine's thread, a Slack thread's `slack-…`);
+        // the chat itself has none.
         "thread" => {
             let root = str_arg(&b, "rootId")?;
-            if !(root.starts_with("doc:") || root.starts_with("slack-")) {
+            let bot = str_arg(&b, "botId")?;
+            if !(root.starts_with("doc:") || root.starts_with("slack-") || root.starts_with("routine-thread-")) {
                 bail!("threads are gone: replies are in the chat");
             }
-            json!({"entries": hub.store.thread(str_arg(&b, "botId")?, root, 500)?})
+            let entries = hub.store.thread(bot, root, 500)?;
+            hub.store.mark_thread_read(root)?;
+            json!({"entries": entries, "unread": 0})
         }
         // Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet.
         "botConversation" => {
@@ -268,13 +272,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             if crate::external::is_external(&row.config) {
                 bail!("this bot runs in your terminal: reply there, or use its approval cards here");
             }
-            // `threadId`: a document's side conversation (`doc:<id>`); the chat itself has no threads.
+            // `threadId`: a side conversation (a document's `doc:<id>`, a routine's thread); the chat itself has none.
             let side = match b["threadId"].as_str().filter(|t| !t.is_empty()) {
-                Some(root) => {
-                    let id = root.strip_prefix("doc:").context("threads are gone: reply to a message instead")?;
+                Some(root) if root.starts_with("doc:") => {
+                    let id = root.strip_prefix("doc:").context("unknown document conversation")?;
                     hub.store.document(id)?.filter(|doc| doc.bot_id == bot).context("unknown document conversation")?;
                     Some(root.to_owned())
                 }
+                Some(root) => Some(root.to_owned()),
                 None => None,
             };
             // `replyTo`: the message of this chat it answers (`chat::replies`).

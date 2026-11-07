@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -136,6 +137,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
             UserBubble(entry, state, store, reply, thread)
             ReactionsRow(entry, store)
             ThreadChip(entry, state, reply)
+            RoutineThreadChip(entry, store)
         }
         "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -326,8 +328,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 }
 
 /** Under a message with a thread (Slack's): how many replied, how recently. */
-@Composable private fun ThreadChip(entry: Entry, state: AppState, open: (() -> Unit)?) {
-    val summary = entry.data["thread"] as? JsonObject ?: return
+@Composable private fun ThreadChip(entry: Entry, state: AppState, open: (() -> Unit)?) {    val summary = entry.data["thread"] as? JsonObject ?: return
     val count = summary["count"]?.jsonPrimitive?.intOrNull ?: 0
     if (count == 0 || open == null) return
     val unread = summary["unread"]?.jsonPrimitive?.intOrNull ?: 0
@@ -434,3 +435,19 @@ internal fun currentThinking(entries: List<Entry>, botId: String, thread: String
 }
 
 internal fun JsonObject.text(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+
+/** A routine's thread root: opens it, with a dot while it has unread replies. */
+@Composable private fun RoutineThreadChip(entry: Entry, store: AppStore) {
+    if (entry.threadId != null || entry.data["routineThread"] == null) return
+    val unread = entry.threadUnread ?: 0
+    val pressed = rememberPress().second
+    Row(Modifier.pressScale(pressed).clip(Capsule()).background(Palette.surface)
+        .clickable(role = Role.Button) { store.openBot(entry.botId, entry.id) }
+        .padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (unread > 0) Box(Modifier.size(7.dp).clip(RoundedRectangle(4.dp)).background(Palette.accent))
+        Text(if (unread > 0) "$unread ${tr("in the thread")}" else tr("Open the thread"),
+            style = Type.chatFootnote.semibold, color = Palette.accent)
+        Symbol("chevron.right", size = 12.dp, tint = Palette.tertiary)
+    }
+}

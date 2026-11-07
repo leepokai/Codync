@@ -14,6 +14,7 @@ import com.codync.android.core.WireJson
 import java.io.File
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
 /** All entity writes, send reconciliation and the event cursor commit together. */
@@ -88,6 +89,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.BotChanged -> { writeBot(db, event.bot); bump(db, event.bot.rev) }
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
             is MirrorEvent.EntryDeleted -> { db.delete("entries", "id=?", arrayOf(event.id)); bump(db, event.rev) }
+            is MirrorEvent.ThreadUnread -> readEntry(db, event.threadId)?.let { writeEntry(db, it.copy(threadUnread = event.unread)) }
+            is MirrorEvent.ThreadUnread -> readEntry(db, event.threadId)?.let { writeEntry(db, it.copy(threadUnread = event.unread)) }
             is MirrorEvent.Icons -> setMeta(db, "icons", kotlinx.serialization.json.Json.encodeToString(event.icons))
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
@@ -140,6 +143,10 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             db.delete("history", "lane=?", arrayOf(bot.id))
         }
     }
+    private fun readEntry(db: SQLiteDatabase, id: String): Entry? =
+        db.rawQuery("SELECT payload FROM entries WHERE id=?", arrayOf(id)).use {
+            if (it.moveToFirst()) Entry.decode(Json.parseToJsonElement(it.getString(0)).jsonObject) else null
+        }
     private fun writeEntry(db: SQLiteDatabase, entry: Entry) {
         val deleted = db.rawQuery("SELECT deleted FROM bots WHERE id=?", arrayOf(entry.botId)).use { it.moveToFirst() && it.getInt(0) == 1 }
         if (deleted) return

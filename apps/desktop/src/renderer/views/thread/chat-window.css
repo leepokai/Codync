@@ -1,0 +1,4 @@
+
+.thread-link { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-caption); color: var(--secondary); }
+.thread-link:hover { color: var(--text); }
+.thread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }

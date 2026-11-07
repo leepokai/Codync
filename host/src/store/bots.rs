@@ -152,6 +152,36 @@ impl Store {
         logged("unread", n).unwrap_or(0)
     }
 
+    /// Unread replies of one thread (a document's or a routine's), after its own read mark.
+    pub fn thread_unread(&self, thread: &str) -> i64 {
+        let c = self.db.locked();
+        let mark: i64 =
+            c.query_row("SELECT read_rev FROM thread_reads WHERE thread_id = ?1", [thread], |r| r.get(0)).unwrap_or(0);
+        let n = c.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM entries WHERE thread_id = ?1 AND {PUBLIC} AND
+               ((kind = 'agent' AND json_extract(data, '$.final') = 1) OR
+                (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
+               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2"
+            ),
+            params![thread, mark],
+            |r| r.get(0),
+        );
+        logged("thread unread", n).unwrap_or(0)
+    }
+
+    /// Reading a thread marks it read up to now.
+    pub fn mark_thread_read(&self, thread: &str) -> Result<i64> {
+        let c = self.db.locked();
+        let rev = next_rev(&c)?;
+        c.execute(
+            "INSERT INTO thread_reads(thread_id, read_rev) VALUES(?1, ?2)
+             ON CONFLICT(thread_id) DO UPDATE SET read_rev = excluded.read_rev",
+            params![thread, rev],
+        )?;
+        Ok(rev)
+    }
+
     /// Newest chat-visible line for the roster preview, with its author
     /// (`None` for the user; a group reply names the bot that wrote it). A voice call's messages show only behind
     /// its line, so they aren't it.

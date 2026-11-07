@@ -390,6 +390,8 @@ export interface EntryData {
   compaction?: Compaction
   /** notice: the bot's chat starts over with this handoff (see `HandoffNotice`). */
   handoff?: HandoffCard
+  /** A routine root line that owns a thread. */
+  routineThread?: string
   /** notice: a bot-built interactive mini-app card (Idea 1). */
   botApp?: BotApp
   /** notice: human takeover request card (Idea 13). */
@@ -474,6 +476,8 @@ export interface Entry {
   updatedAt: number
   /** The side conversation it's in (a document's `doc:<id>`); absent in the chat itself. */
   threadId?: string | null
+  /** On a thread's root line: how many of its replies are unread. */
+  threadUnread?: number | null
 }
 
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */

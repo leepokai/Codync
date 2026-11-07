@@ -171,6 +171,8 @@ impl Store {
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS entries_rev ON entries(rev);
              CREATE INDEX IF NOT EXISTS entries_bot ON entries(bot_id, seq);
+             CREATE TABLE IF NOT EXISTS thread_reads(
+                thread_id TEXT PRIMARY KEY, read_rev INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS computer_activity(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, bot_id TEXT NOT NULL,
                 action TEXT NOT NULL, result TEXT NOT NULL CHECK(result IN ('success', 'failed')),

@@ -37,7 +37,7 @@ export function quoteEntry(store: BotStore, entry: Entry) {
 }
 
 /** One chat-visible entry, with what can be done to it. */
-export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, openAgent, openApp, openArtifact }: {
+export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, openAgent, openApp, openArtifact, openThread }: {
   entry: Entry
   groupStart: boolean
   chat: Bot | null
@@ -50,6 +50,8 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   openApp?: (app: BotApp) => void
   /** Opens an artifact card's artifact over the chat. */
   openArtifact?: (artifactId: string) => void
+  /** Opens a thread from its root line. */
+  openThread?: (rootId: string) => void
 }) {
   const host = useStore()
   const reply = onReply && isReplyable(entry) ? () => onReply(entry) : undefined
@@ -58,6 +60,12 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       return (
         <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
           <UserBubble entry={entry} botWorking={!!chat && isWorking(chat)} reply={reply} />
+          {entry.data.routineThread && openThread ? (
+            <button className="thread-link press" onClick={() => openThread(entry.id)}>
+              {entry.threadUnread ? <span className="thread-dot" aria-hidden /> : null}
+              {entry.threadUnread ? `${entry.threadUnread} ` : ''}Open the thread
+            </button>
+          ) : null}
           <ReactionsRow entry={entry} />
         </VStack>
       )

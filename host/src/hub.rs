@@ -511,11 +511,21 @@ impl Hub {
         Ok(false)
     }
 
+    /// Tells clients how many replies of the entry's thread are unread (a dot on the root line).
+    fn thread_unread(&self, lane: &Lane) {
+        if let Some(thread) = &lane.thread {
+            let unread = self.store.thread_unread(thread);
+            let _ =
+                self.events.send(json!({"type": "thread", "threadId": thread, "botId": lane.chat, "unread": unread}));
+        }
+    }
+
     pub fn add_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
         match self.store.insert_entry(lane, kind, turn, data) {
             Ok(e) => {
                 let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+                self.thread_unread(lane);
                 Some(e)
             }
             Err(error) => {
@@ -542,6 +552,7 @@ impl Hub {
         let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
         if added {
             let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
+            self.thread_unread(lane);
         }
         Ok((entry, added))
     }

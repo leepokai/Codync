@@ -23,6 +23,7 @@ mod documents;
 mod egress;
 mod environment;
 mod external;
+mod github;
 mod health;
 mod hub;
 mod icons;

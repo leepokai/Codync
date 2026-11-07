@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "Discord no está conectado.",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "Configura Discord en la computadora: el token del bot se queda allí. Solo las personas permitidas en cada canal pueden escribirle.",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Habla con un bot desde Telegram, Slack o Discord. Solo pueden escribirle las personas que emparejes o permitas; los tokens se quedan en el almacén de credenciales de esta computadora.",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Crea una app de Discord, añade su bot al servidor y pega aquí el token del bot. En la app, activa la intención de contenido de mensajes."
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Crea una app de Discord, añade su bot al servidor y pega aquí el token del bot. En la app, activa la intención de contenido de mensajes.",
+  "GitHub": "GitHub",
+  "Signed in as": "Sesión iniciada como",
+  "Scopes": "Permisos",
+  "No scopes reported": "Sin permisos indicados",
+  "Disconnect GitHub": "Desconectar GitHub",
+  "Connect GitHub": "Conectar GitHub",
+  "GitHub is not connected.": "GitHub no está conectado.",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "Un token específico con los permisos de repositorio que necesiten tus flujos. Se queda en el almacén de credenciales de esta computadora; Codync no lo envía a ningún otro sitio.",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "Configura GitHub en la computadora: el token se queda allí. Los flujos pueden comentar, etiquetar y abrir incidencias con él."
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Channels
 import com.codync.android.core.DiscordStatus
+import com.codync.android.core.GitHubStatus
 import com.codync.android.core.SlackStatus
 import com.codync.android.core.TelegramBot
 import com.codync.android.design.*
@@ -30,6 +31,7 @@ import kotlinx.coroutines.launch
     var bots by remember { mutableStateOf<List<TelegramBot>?>(null) }
     var slack by remember { mutableStateOf<SlackStatus?>(null) }
     var discord by remember { mutableStateOf<DiscordStatus?>(null) }
+    var github by remember { mutableStateOf<GitHubStatus?>(null) }
     var pairing by remember { mutableStateOf<Pair<String, String>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -39,6 +41,7 @@ import kotlinx.coroutines.launch
         bots = store.telegramBots()
         slack = store.slackStatus()
         discord = store.discordStatus()
+        github = store.githubStatus()
     }
     // One change at a time; the host's answer replaces what is shown.
     fun act(work: suspend () -> Unit) {
@@ -101,6 +104,29 @@ import kotlinx.coroutines.launch
                                     discord = store.disconnectDiscord()
                                     discord = store.discordStatus() ?: discord
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+            CardSection("GitHub", footer = "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.") {
+                row {
+                    val connected = github
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            tr(when {
+                                connected == null -> "Loading…"
+                                !connected.configured -> "GitHub is not connected."
+                                else -> "${tr("Signed in as")} ${connected.login.orEmpty()}"
+                            }),
+                            style = Type.body, color = Palette.secondary,
+                        )
+                        if (connected?.configured == true) {
+                            if (connected.scopes.isNotEmpty()) {
+                                Text("${tr("Scopes")}: ${connected.scopes.joinToString(", ")}", style = Type.caption, color = Palette.tertiary)
+                            }
+                            SecondaryButton("Disconnect GitHub", enabled = !busy) {
+                                act { github = store.disconnectGitHub() }
                             }
                         }
                     }

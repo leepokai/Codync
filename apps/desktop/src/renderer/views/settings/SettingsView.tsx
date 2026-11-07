@@ -30,6 +30,7 @@ import { N8nSettings } from './N8nSettings'
 import { DiagnosticsView } from './DiagnosticsView'
 import { AgentImportSection } from './AgentImportSection'
 import { ChannelsSection } from './ChannelsSection'
+import { GitHubSection } from './GitHubSection'
 import { DemoSection } from './DemoSection'
 import { ResearchSettingsSection } from './ResearchSettingsSection'
 import { HiddenBotsSection } from './HiddenBotsSection'
@@ -245,6 +246,7 @@ function GeneralSettings() {
       <PrivacySettings />
       {window.codync.platform === 'win32' ? <ResearchSettingsSection /> : null}
       <ChannelsSection />
+      <GitHubSection />
       <AgentImportSection />
       <DemoSection />
       <HiddenBotsSection />

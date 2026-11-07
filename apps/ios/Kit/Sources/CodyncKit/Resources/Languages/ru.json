@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "Discord не подключён.",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "Настройте Discord на компьютере: токен бота остаётся там. Писать ему могут только разрешённые люди в каждом канале.",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Говорите с ботом из Telegram, Slack или Discord. Писать ему могут только сопряжённые или разрешённые люди; токены остаются в хранилище учётных данных этого компьютера.",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Создайте приложение Discord, добавьте его бота на сервер и вставьте здесь токен бота. В приложении включите намерение содержимого сообщений."
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Создайте приложение Discord, добавьте его бота на сервер и вставьте здесь токен бота. В приложении включите намерение содержимого сообщений.",
+  "GitHub": "GitHub",
+  "Signed in as": "Вы вошли как",
+  "Scopes": "Области доступа",
+  "No scopes reported": "Области не указаны",
+  "Disconnect GitHub": "Отключить GitHub",
+  "Connect GitHub": "Подключить GitHub",
+  "GitHub is not connected.": "GitHub не подключён.",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "Точный токен с правами на репозиторий, которые нужны вашим workflow. Он остаётся в хранилище учётных данных этого компьютера; Codync никуда больше его не отправляет.",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "Настройте GitHub на компьютере: токен остаётся там. Workflow могут комментировать, ставить метки и открывать задачи с его помощью."
 }

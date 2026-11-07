@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "Discord가 연결되지 않았습니다.",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "Discord는 컴퓨터에서 설정합니다. 봇 토큰은 그곳에 남습니다. 각 채널에서 허용된 사람만 글을 쓸 수 있습니다.",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Telegram, Slack 또는 Discord에서 봇과 대화하세요. 페어링하거나 허용한 사람만 글을 쓸 수 있으며 토큰은 이 컴퓨터의 자격 증명 보관소에 남습니다.",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Discord 앱을 만들고 봇을 서버에 추가한 뒤 봇 토큰을 여기에 붙여넣으세요. 앱에서 메시지 콘텐츠 인텐트를 켜세요."
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Discord 앱을 만들고 봇을 서버에 추가한 뒤 봇 토큰을 여기에 붙여넣으세요. 앱에서 메시지 콘텐츠 인텐트를 켜세요.",
+  "GitHub": "GitHub",
+  "Signed in as": "다음으로 로그인됨",
+  "Scopes": "범위",
+  "No scopes reported": "보고된 범위 없음",
+  "Disconnect GitHub": "GitHub 연결 해제",
+  "Connect GitHub": "GitHub 연결",
+  "GitHub is not connected.": "GitHub가 연결되지 않았습니다.",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "워크플로에 필요한 저장소 권한만 가진 세밀한 토큰입니다. 이 컴퓨터의 자격 증명 보관소에 남으며 Codync가 다른 곳으로 보내지 않습니다.",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "GitHub는 컴퓨터에서 설정합니다. 토큰은 그곳에 남습니다. 워크플로는 그것으로 댓글, 라벨, 이슈 생성을 할 수 있습니다."
 }

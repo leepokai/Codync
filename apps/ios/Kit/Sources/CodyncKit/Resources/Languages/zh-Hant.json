@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "Discord 未連線。",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "在電腦上設定 Discord：機器人權杖留在那裡。只有每個頻道中允許的人才能寫給它。",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "從 Telegram、Slack 或 Discord 與機器人交談。只有你配對或允許的人才能寫給它；權杖留在本電腦的憑證保險庫中。",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "建立 Discord 應用程式，將其機器人加入伺服器，然後在此貼上機器人權杖。在應用程式中開啟訊息內容意圖。"
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "建立 Discord 應用程式，將其機器人加入伺服器，然後在此貼上機器人權杖。在應用程式中開啟訊息內容意圖。",
+  "GitHub": "GitHub",
+  "Signed in as": "已登入為",
+  "Scopes": "範圍",
+  "No scopes reported": "未回報範圍",
+  "Disconnect GitHub": "中斷 GitHub",
+  "Connect GitHub": "連線 GitHub",
+  "GitHub is not connected.": "GitHub 未連線。",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "一個細粒度權杖，只帶工作流所需的儲存庫權限。它留在本電腦的憑證保險庫中；Codync 不會把它送往別處。",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "在電腦上設定 GitHub：權杖留在那裡。工作流可以用它留言、加標籤和開 Issue。"
 }

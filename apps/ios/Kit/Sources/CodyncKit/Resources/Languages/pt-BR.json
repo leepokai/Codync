@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "O Discord não está conectado.",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "Configure o Discord no computador: o token do bot fica lá. Só as pessoas permitidas em cada canal podem escrever para ele.",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Fale com um bot pelo Telegram, Slack ou Discord. Só as pessoas que você emparelhar ou permitir podem escrever para ele; os tokens ficam no cofre de credenciais deste computador.",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Crie um app do Discord, adicione o bot dele ao servidor e cole aqui o token do bot. No app, ative a intenção de conteúdo de mensagens."
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Crie um app do Discord, adicione o bot dele ao servidor e cole aqui o token do bot. No app, ative a intenção de conteúdo de mensagens.",
+  "GitHub": "GitHub",
+  "Signed in as": "Conectado como",
+  "Scopes": "Escopos",
+  "No scopes reported": "Nenhum escopo informado",
+  "Disconnect GitHub": "Desconectar o GitHub",
+  "Connect GitHub": "Conectar o GitHub",
+  "GitHub is not connected.": "O GitHub não está conectado.",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "Um token refinado com as permissões de repositório que seus fluxos precisam. Ele fica no cofre de credenciais deste computador; o Codync não o envia a nenhum outro lugar.",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "Configure o GitHub no computador: o token fica lá. Os fluxos podem comentar, etiquetar e abrir issues com ele."
 }

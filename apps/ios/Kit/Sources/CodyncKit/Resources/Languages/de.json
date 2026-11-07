@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "Discord ist nicht verbunden.",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "Richte Discord am Computer ein: Das Bot-Token bleibt dort. Nur erlaubte Personen je Kanal können ihm schreiben.",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Sprich über Telegram, Slack oder Discord mit einem Bot. Nur gekoppelte oder erlaubte Personen können ihm schreiben; Tokens bleiben im Anmeldedaten-Tresor dieses Computers.",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Erstelle eine Discord-App, füge ihren Bot dem Server hinzu und füge das Bot-Token hier ein. Aktiviere in der App den Message-Content-Intent."
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Erstelle eine Discord-App, füge ihren Bot dem Server hinzu und füge das Bot-Token hier ein. Aktiviere in der App den Message-Content-Intent.",
+  "GitHub": "GitHub",
+  "Signed in as": "Angemeldet als",
+  "Scopes": "Berechtigungen",
+  "No scopes reported": "Keine Berechtigungen gemeldet",
+  "Disconnect GitHub": "GitHub trennen",
+  "Connect GitHub": "GitHub verbinden",
+  "GitHub is not connected.": "GitHub ist nicht verbunden.",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "Ein fein abgestuftes Token mit den Repository-Rechten, die deine Workflows brauchen. Es bleibt im Anmeldedaten-Tresor dieses Computers; Codync sendet es nirgendwo sonst hin.",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "Richte GitHub am Computer ein: Das Token bleibt dort. Workflows können damit kommentieren, etikettieren und Issues öffnen."
 }

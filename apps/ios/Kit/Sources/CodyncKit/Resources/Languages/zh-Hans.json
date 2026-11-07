@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "Discord 未连接。",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "在电脑上设置 Discord：机器人令牌留在那里。只有每个频道里允许的人才能给它写信。",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "从 Telegram、Slack 或 Discord 与机器人交谈。只有你配对或允许的人才能给它写信；令牌留在本电脑的凭据保险库中。",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "创建 Discord 应用，把它的机器人加入服务器，然后在此粘贴机器人令牌。在应用中开启消息内容意图。"
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "创建 Discord 应用，把它的机器人加入服务器，然后在此粘贴机器人令牌。在应用中开启消息内容意图。",
+  "GitHub": "GitHub",
+  "Signed in as": "已登录为",
+  "Scopes": "范围",
+  "No scopes reported": "未报告范围",
+  "Disconnect GitHub": "断开 GitHub",
+  "Connect GitHub": "连接 GitHub",
+  "GitHub is not connected.": "GitHub 未连接。",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "一个细粒度令牌，只带工作流所需的仓库权限。它留在本电脑的凭据保险库中；Codync 不会把它发往别处。",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "在电脑上设置 GitHub：令牌留在那里。工作流可以用它评论、加标签和开 Issue。"
 }

@@ -1656,5 +1656,14 @@
   "Discord is not connected.": "Discord は未接続です。",
   "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.": "Discord はコンピューターで設定します。ボットトークンはそこに残ります。各チャンネルで許可された人だけが書き込めます。",
   "Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Telegram、Slack、Discord からボットと話せます。ペアリングまたは許可した人だけが書き込めます。トークンはこのコンピューターの認証情報保管庫に残ります。",
-  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Discord アプリを作成し、そのボットをサーバーに追加して、ボットトークンをここに貼り付けます。アプリでメッセージコンテンツのインテントをオンにします。"
+  "Make a Discord app, add its bot to the server, and paste the bot token here. In the app, turn on the Message Content intent.": "Discord アプリを作成し、そのボットをサーバーに追加して、ボットトークンをここに貼り付けます。アプリでメッセージコンテンツのインテントをオンにします。",
+  "GitHub": "GitHub",
+  "Signed in as": "次のユーザーでサインイン",
+  "Scopes": "スコープ",
+  "No scopes reported": "スコープの報告なし",
+  "Disconnect GitHub": "GitHub を切断",
+  "Connect GitHub": "GitHub を接続",
+  "GitHub is not connected.": "GitHub は未接続です。",
+  "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "ワークフローに必要なリポジトリ権限だけを持つ細かいトークンです。このコンピューターの認証情報保管庫に残り、Codync が他のどこかへ送ることはありません。",
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "GitHub はコンピューターで設定します。トークンはそこに残ります。ワークフローはそれでコメント、ラベル付け、Issue 作成ができます。"
 }

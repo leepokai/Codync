@@ -1,20 +1,100 @@
-//! Input events (see `host/src/screen/mod.rs`) through the `RemoteDesktop` portal.
+//! Input events (see `host/src/screen/mod.rs`), injected through the `RemoteDesktop` portal or,
+//! without one, through XTest (`x11.rs`).
 
-use crate::portal::{Display, Portal};
+use crate::portal::Portal;
 use anyhow::{Result, anyhow};
 use ashpd::desktop::remote_desktop::{Axis, KeyState};
 use serde_json::Value;
+use std::future::Future;
 use std::time::Duration;
 
 /// Linux input event codes (`linux/input-event-codes.h`).
-const BTN_LEFT: i32 = 0x110;
-const BTN_RIGHT: i32 = 0x111;
-const BTN_MIDDLE: i32 = 0x112;
+pub const BTN_LEFT: i32 = 0x110;
+pub const BTN_RIGHT: i32 = 0x111;
+pub const BTN_MIDDLE: i32 = 0x112;
 
-pub async fn perform(portal: &Portal, display: &Display, event: &Value) -> Result<()> {
-    let (d, e) = (display, event);
-    let rd = portal.remote();
-    let session = portal.session();
+/// What a backend injects. Coordinates are logical pixels of the event's display; buttons are
+/// Linux codes; keys are X keysyms.
+pub trait Inject {
+    fn motion(&self, x: f64, y: f64) -> impl Future<Output = Result<()>> + Send;
+    fn button(&self, button: i32, pressed: bool) -> impl Future<Output = Result<()>> + Send;
+    /// Press or release a key that stays held (modifiers).
+    fn key(&self, sym: i32, pressed: bool) -> impl Future<Output = Result<()>> + Send;
+    /// Fails if any of these held keys can't be pressed, before a shortcut presses some of them.
+    fn check_keys(&self, _syms: &[i32]) -> impl Future<Output = Result<()>> + Send {
+        async { Ok(()) }
+    }
+    /// Press and release one key.
+    fn tap(&self, sym: i32) -> impl Future<Output = Result<()>> + Send;
+    /// Smooth scroll in pixels.
+    fn axis(&self, dx: f64, dy: f64) -> impl Future<Output = Result<()>> + Send;
+    fn axis_discrete(&self, axis: Axis, steps: i32) -> impl Future<Output = Result<()>> + Send;
+}
+
+/// The portal's input for one stream.
+pub struct PortalInput<'a> {
+    pub portal: &'a Portal,
+    pub node: u32,
+}
+
+fn key_state(pressed: bool) -> KeyState {
+    if pressed {
+        KeyState::Pressed
+    } else {
+        KeyState::Released
+    }
+}
+
+impl Inject for PortalInput<'_> {
+    async fn motion(&self, x: f64, y: f64) -> Result<()> {
+        let (rd, session) = (self.portal.remote(), self.portal.session());
+        Ok(rd
+            .notify_pointer_motion_absolute(session, self.node, x, y, Default::default())
+            .await?)
+    }
+
+    async fn button(&self, button: i32, pressed: bool) -> Result<()> {
+        let (rd, session) = (self.portal.remote(), self.portal.session());
+        Ok(rd
+            .notify_pointer_button(session, button, key_state(pressed), Default::default())
+            .await?)
+    }
+
+    async fn key(&self, sym: i32, pressed: bool) -> Result<()> {
+        let (rd, session) = (self.portal.remote(), self.portal.session());
+        Ok(rd
+            .notify_keyboard_keysym(session, sym, key_state(pressed), Default::default())
+            .await?)
+    }
+
+    async fn tap(&self, sym: i32) -> Result<()> {
+        self.key(sym, true).await?;
+        self.key(sym, false).await
+    }
+
+    async fn axis(&self, dx: f64, dy: f64) -> Result<()> {
+        let (rd, session) = (self.portal.remote(), self.portal.session());
+        Ok(rd
+            .notify_pointer_axis(
+                session,
+                dx,
+                dy,
+                ashpd::desktop::remote_desktop::NotifyPointerAxisOptions::default()
+                    .set_finish(true),
+            )
+            .await?)
+    }
+
+    async fn axis_discrete(&self, axis: Axis, steps: i32) -> Result<()> {
+        let (rd, session) = (self.portal.remote(), self.portal.session());
+        Ok(rd
+            .notify_pointer_axis_discrete(session, axis, steps, Default::default())
+            .await?)
+    }
+}
+
+pub async fn perform(input: &impl Inject, event: &Value) -> Result<()> {
+    let e = event;
     let num = |k: &str| e[k].as_f64();
     let point = || -> Result<(f64, f64)> {
         Ok((
@@ -33,20 +113,14 @@ pub async fn perform(portal: &Portal, display: &Display, event: &Value) -> Resul
         .flatten()
         .filter_map(|m| modifier(m.as_str()?))
         .collect();
-    let move_to = |x: f64, y: f64| {
-        rd.notify_pointer_motion_absolute(session, d.node, x, y, Default::default())
-    };
+    if !modifiers.is_empty() {
+        input.check_keys(&modifiers).await?;
+    }
     let hold = |down: bool| {
         let modifiers = modifiers.clone();
         async move {
-            let state = if down {
-                KeyState::Pressed
-            } else {
-                KeyState::Released
-            };
             for m in modifiers {
-                rd.notify_keyboard_keysym(session, m, state, Default::default())
-                    .await?;
+                input.key(m, down).await?;
             }
             anyhow::Ok(())
         }
@@ -54,29 +128,21 @@ pub async fn perform(portal: &Portal, display: &Display, event: &Value) -> Resul
     match e["type"].as_str().unwrap_or_default() {
         "move" => {
             let (px, py) = point()?;
-            move_to(px, py).await?;
+            input.motion(px, py).await?;
         }
         "down" | "up" => {
             let (px, py) = point()?;
-            move_to(px, py).await?;
-            let state = if e["type"] == "down" {
-                KeyState::Pressed
-            } else {
-                KeyState::Released
-            };
-            rd.notify_pointer_button(session, button, state, Default::default())
-                .await?;
+            input.motion(px, py).await?;
+            input.button(button, e["type"] == "down").await?;
         }
         "click" => {
             let (px, py) = point()?;
-            move_to(px, py).await?;
+            input.motion(px, py).await?;
             hold(true).await?;
             let count = e["count"].as_u64().unwrap_or(1).clamp(1, 3);
             for _ in 0..count {
-                rd.notify_pointer_button(session, button, KeyState::Pressed, Default::default())
-                    .await?;
-                rd.notify_pointer_button(session, button, KeyState::Released, Default::default())
-                    .await?;
+                input.button(button, true).await?;
+                input.button(button, false).await?;
             }
             hold(false).await?;
         }
@@ -86,30 +152,21 @@ pub async fn perform(portal: &Portal, display: &Display, event: &Value) -> Resul
                 num("toX").ok_or_else(|| anyhow!("toX is required"))?,
                 num("toY").ok_or_else(|| anyhow!("toY is required"))?,
             );
-            move_to(px, py).await?;
-            rd.notify_pointer_button(session, BTN_LEFT, KeyState::Pressed, Default::default())
-                .await?;
+            input.motion(px, py).await?;
+            input.button(BTN_LEFT, true).await?;
             for i in 1..=20 {
                 tokio::time::sleep(Duration::from_millis(15)).await;
                 let t = f64::from(i) / 20.0;
-                move_to(px + (tx - px) * t, py + (ty - py) * t).await?;
+                input.motion(px + (tx - px) * t, py + (ty - py) * t).await?;
             }
-            rd.notify_pointer_button(session, BTN_LEFT, KeyState::Released, Default::default())
-                .await?;
+            input.button(BTN_LEFT, false).await?;
         }
         "scroll" => {
             let (px, py) = point()?;
-            move_to(px, py).await?;
+            input.motion(px, py).await?;
             let (dx, dy) = (num("dx").unwrap_or(0.0), num("dy").unwrap_or(0.0));
             if e["units"] == "pixel" {
-                rd.notify_pointer_axis(
-                    session,
-                    dx,
-                    dy,
-                    ashpd::desktop::remote_desktop::NotifyPointerAxisOptions::default()
-                        .set_finish(true),
-                )
-                .await?;
+                input.axis(dx, dy).await?;
             } else {
                 #[expect(clippy::cast_possible_truncation, reason = "a few scroll lines")]
                 for (axis, steps) in [
@@ -117,29 +174,21 @@ pub async fn perform(portal: &Portal, display: &Display, event: &Value) -> Resul
                     (Axis::Horizontal, dx.round() as i32),
                 ] {
                     if steps != 0 {
-                        rd.notify_pointer_axis_discrete(session, axis, steps, Default::default())
-                            .await?;
+                        input.axis_discrete(axis, steps).await?;
                     }
                 }
             }
         }
         "text" => {
             for c in e["text"].as_str().unwrap_or_default().chars() {
-                let sym = char_keysym(c);
-                rd.notify_keyboard_keysym(session, sym, KeyState::Pressed, Default::default())
-                    .await?;
-                rd.notify_keyboard_keysym(session, sym, KeyState::Released, Default::default())
-                    .await?;
+                input.tap(char_keysym(c)).await?;
             }
         }
         "key" => {
             let name = e["key"].as_str().unwrap_or_default();
             let sym = keysym(name).ok_or_else(|| anyhow!("unknown key {name}"))?;
             hold(true).await?;
-            rd.notify_keyboard_keysym(session, sym, KeyState::Pressed, Default::default())
-                .await?;
-            rd.notify_keyboard_keysym(session, sym, KeyState::Released, Default::default())
-                .await?;
+            input.tap(sym).await?;
             hold(false).await?;
         }
         other => return Err(anyhow!("unknown input {other}")),
@@ -147,12 +196,19 @@ pub async fn perform(portal: &Portal, display: &Display, event: &Value) -> Resul
     Ok(())
 }
 
+const SUPER_L: i32 = 0xffeb;
+const ALT_L: i32 = 0xffe9;
+const CONTROL_L: i32 = 0xffe3;
+const SHIFT_L: i32 = 0xffe1;
+/// Every key `modifiers` can hold.
+pub const MODIFIER_KEYSYMS: [i32; 4] = [SUPER_L, ALT_L, CONTROL_L, SHIFT_L];
+
 fn modifier(name: &str) -> Option<i32> {
     Some(match name {
-        "cmd" => 0xffeb,    // Super_L
-        "option" => 0xffe9, // Alt_L
-        "ctrl" => 0xffe3,   // Control_L
-        "shift" => 0xffe1,  // Shift_L
+        "cmd" => SUPER_L,
+        "option" => ALT_L,
+        "ctrl" => CONTROL_L,
+        "shift" => SHIFT_L,
         _ => return None,
     })
 }
@@ -243,5 +299,111 @@ mod tests {
         assert_eq!(keysym("banana"), None);
         assert_eq!(char_keysym('é'), 0xe9);
         assert_eq!(char_keysym('中'), 0x0100_4e2d);
+    }
+
+    /// Records what `perform` injects: the backends only translate these calls. Keys in the
+    /// second field are missing from the keyboard.
+    #[derive(Default)]
+    struct Record(std::sync::Mutex<Vec<String>>, Vec<i32>);
+
+    impl Record {
+        fn push(&self, call: String) {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(call);
+        }
+    }
+
+    #[allow(
+        clippy::unused_async_trait_impl,
+        reason = "a synchronous fake of an async trait"
+    )]
+    impl Inject for Record {
+        async fn motion(&self, x: f64, y: f64) -> Result<()> {
+            self.push(format!("move {x},{y}"));
+            Ok(())
+        }
+        async fn button(&self, button: i32, pressed: bool) -> Result<()> {
+            self.push(format!("button {button:#x} {pressed}"));
+            Ok(())
+        }
+        async fn key(&self, sym: i32, pressed: bool) -> Result<()> {
+            self.push(format!("key {sym:#x} {pressed}"));
+            Ok(())
+        }
+        async fn check_keys(&self, syms: &[i32]) -> Result<()> {
+            match syms.iter().find(|s| self.1.contains(s)) {
+                Some(sym) => Err(anyhow!("key {sym:#x} isn't on this keyboard")),
+                None => Ok(()),
+            }
+        }
+        async fn tap(&self, sym: i32) -> Result<()> {
+            self.push(format!("tap {sym:#x}"));
+            Ok(())
+        }
+        async fn axis(&self, dx: f64, dy: f64) -> Result<()> {
+            self.push(format!("axis {dx},{dy}"));
+            Ok(())
+        }
+        async fn axis_discrete(&self, axis: Axis, steps: i32) -> Result<()> {
+            self.push(format!("discrete {axis:?} {steps}"));
+            Ok(())
+        }
+    }
+
+    async fn calls(event: Value) -> Vec<String> {
+        let record = Record::default();
+        perform(&record, &event).await.expect("valid event");
+        record
+            .0
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[tokio::test]
+    async fn events_become_the_same_injections_on_every_backend() {
+        let click = serde_json::json!({"type": "click", "x": 10, "y": 20, "button": "right", "count": 2, "modifiers": ["ctrl"]});
+        assert_eq!(
+            calls(click).await,
+            [
+                "move 10,20",
+                "key 0xffe3 true",
+                "button 0x111 true",
+                "button 0x111 false",
+                "button 0x111 true",
+                "button 0x111 false",
+                "key 0xffe3 false",
+            ]
+        );
+        let lines = serde_json::json!({"type": "scroll", "x": 1, "y": 2, "dy": 2, "dx": -1});
+        assert_eq!(
+            calls(lines).await,
+            ["move 1,2", "discrete Vertical 2", "discrete Horizontal -1"]
+        );
+        let pixels =
+            serde_json::json!({"type": "scroll", "x": 1, "y": 2, "dy": -90, "units": "pixel"});
+        assert_eq!(calls(pixels).await, ["move 1,2", "axis 0,-90"]);
+        let text = serde_json::json!({"type": "text", "text": "aé"});
+        assert_eq!(calls(text).await, ["tap 0x61", "tap 0xe9"]);
+        let key = serde_json::json!({"type": "key", "key": "return", "modifiers": ["shift", "fn"]});
+        assert_eq!(
+            calls(key).await,
+            ["key 0xffe1 true", "tap 0xff0d", "key 0xffe1 false"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_shortcut_with_a_missing_modifier_presses_nothing() {
+        let record = Record(std::sync::Mutex::default(), vec![0xffeb]);
+        let shortcut = serde_json::json!({"type": "key", "key": "l", "modifiers": ["ctrl", "cmd"]});
+        assert!(perform(&record, &shortcut).await.is_err());
+        let click = serde_json::json!({"type": "click", "x": 1, "y": 2, "modifiers": ["cmd"]});
+        assert!(perform(&record, &click).await.is_err());
+        let pressed = record
+            .0
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(pressed, Vec::<String>::new());
     }
 }

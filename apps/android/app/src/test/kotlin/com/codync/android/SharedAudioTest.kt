@@ -65,6 +65,7 @@ class SharedAudioTest {
         fetch.completeExceptionally(java.io.IOException("gone"))
         tap.join()
         assertEquals(AudioPhase.Failed, audio.phase)
+        assertEquals(VoiceNoteFailure.Load, audio.failure)
         assertEquals(1, loads)
 
         fetch = CompletableDeferred()
@@ -99,6 +100,7 @@ class SharedAudioTest {
         fetch.complete(File("note.m4a"))
         tap.join()
         assertEquals(AudioPhase.Failed, audio.phase)
+        assertEquals(VoiceNoteFailure.Playback, audio.failure)
         assertEquals(listOf("open", "start", "release"), speaker.log)
     }
 

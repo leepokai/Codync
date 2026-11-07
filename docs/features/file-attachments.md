@@ -104,8 +104,8 @@ caption), its glyph on the text's edge, and the Markdown text under it; screen r
 get the player as one element, "Voice note, <caption>", with Play/Pause and Download as its
 actions, and the text as its own. The terminal UI shows the file line, then the text. A
 voice note sent without `text` keeps its own card. Older clients show the card alone.
-Analytics: the host reports `voice_note_sent`, and each app `voice_note_played` (`played` or
-`failed`) when a tap starts a note from its beginning; never the file or the text
+Analytics: the host reports `voice_note_sent`, and each app `voice_note_played` (`played`, or
+`failed` with the step that broke: `load` or `playback`) when a tap starts a note from its beginning; never the file or the text
 ([event catalog](../reference/analytics-events.md)).
 
 This feature adds no previews of other file types, folder packaging, background

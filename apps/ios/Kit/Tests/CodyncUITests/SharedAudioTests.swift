@@ -67,6 +67,7 @@ private func silentWAV() -> Data {
         await first.value
 
         #expect(audio.state == .failed)
+        #expect(audio.failure == .load)
         #expect(store.lastError == nil)
 
         let second = Task { await audio.toggle(note, entryId: "entry", model: store) }

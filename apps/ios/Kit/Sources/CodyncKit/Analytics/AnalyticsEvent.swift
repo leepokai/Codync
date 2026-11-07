@@ -36,8 +36,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case reviewLinkOpened
     /// A dev server opened, or its address copied; the host reports what it does itself.
     case devServerAction(DevServerUse)
-    /// A voice note started from its beginning, or couldn't play; never which note.
-    case voiceNotePlayed(VoiceNoteOutcome)
+    /// A voice note started from its beginning, or which step broke (`nil`: it played); never which note.
+    case voiceNotePlayed(VoiceNoteFailure?)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -53,7 +53,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
     public enum DevServerUse: String, Sendable { case open, copy }
-    public enum VoiceNoteOutcome: String, Sendable { case played, failed }
+    public enum VoiceNoteFailure: String, Sendable { case load, playback }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
     public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
@@ -190,7 +190,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
             return ["prompts": .int(prompts), "policy": .string("v2")]
         case .reviewLinkOpened: return ["source": .string("settings")]
         case let .devServerAction(use): return ["action": .string(use.rawValue)]
-        case let .voiceNotePlayed(outcome): return ["outcome": .string(outcome.rawValue)]
+        case let .voiceNotePlayed(failure):
+            guard let failure else { return ["outcome": .string("played")] }
+            return ["outcome": .string("failed"), "error": .string(failure.rawValue)]
         case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
         }
     }

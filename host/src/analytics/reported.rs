@@ -100,6 +100,9 @@ pub enum Reported {
     },
     VoiceNotePlayed {
         outcome: VoiceNoteOutcome,
+        /// Which step broke, when it failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<VoiceNoteFailure>,
     },
 }
 
@@ -271,6 +274,16 @@ pub enum VoiceNoteOutcome {
     Other,
 }
 
+/// Which step of a voice note's play failed: fetching or opening it, or starting it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceNoteFailure {
+    Load,
+    Playback,
+    #[serde(other)]
+    Other,
+}
+
 /// Why a computer couldn't be added to the account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -372,7 +385,11 @@ mod tests {
             ),
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
             (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
-            (json!({"event": "voice_note_played", "app": "desktop", "outcome": "failed"}), Event::VoiceNotePlayed),
+            (json!({"event": "voice_note_played", "app": "desktop", "outcome": "played"}), Event::VoiceNotePlayed),
+            (
+                json!({"event": "voice_note_played", "app": "desktop", "outcome": "failed", "error": "load"}),
+                Event::VoiceNotePlayed,
+            ),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (

@@ -54,7 +54,8 @@ export type AnalyticsEvent =
   | { event: 'star_prompt_answered'; ask: 'first' | 'second'; starred: boolean }
   | { event: 'link_opened'; link: Link }
   | { event: 'dev_server_action'; action: 'open' | 'copy' }
-  | { event: 'voice_note_played'; outcome: 'played' | 'failed' }
+  | { event: 'voice_note_played'; outcome: 'played' }
+  | { event: 'voice_note_played'; outcome: 'failed'; error: 'load' | 'playback' }
   | { event: 'screen_viewed'; screen: Screen }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }

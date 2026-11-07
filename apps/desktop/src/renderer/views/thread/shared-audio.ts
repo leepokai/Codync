@@ -1,5 +1,7 @@
 /** One voice-note card's player state. */
 export type AudioPhase = 'idle' | 'loading' | 'playing' | 'paused' | 'failed'
+/** Which step of a play failed: fetching or opening the sound, or starting it. */
+export type AudioFailure = 'load' | 'playback'
 
 /** What a card shows: the player's phase and the sound's clock (seconds; duration 0 until known). */
 export interface AudioSnapshot {
@@ -44,6 +46,8 @@ export class SharedAudio {
   private duration = 0
   private sound: Sound | null = null
   private disposed = false
+  /** The step this tap is on, so a failure says which one broke. */
+  failure: AudioFailure = 'load'
   private readonly platform: SharedAudioPlatform
   private readonly changed: (snapshot: AudioSnapshot) => void
 
@@ -62,6 +66,7 @@ export class SharedAudio {
     // A tap while the sound loads is dropped, so it never starts a second player.
     if (this.phase === 'loading' || this.disposed) return
     this.setPhase('loading')
+    this.failure = 'load'
     try {
       await this.play()
     } catch (error) {
@@ -117,6 +122,7 @@ export class SharedAudio {
       })
       this.sound = sound
     }
+    this.failure = 'playback'
     await this.sound.play()
   }
 

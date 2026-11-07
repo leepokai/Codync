@@ -18,14 +18,14 @@ export function useSharedAudio(file: SharedFile, entryId: string) {
   return { snapshot, toggle: () => void play(audio), seek: (seconds: number) => audio.seek(seconds) }
 }
 
-/** Taps the card's control; a start from the beginning reports whether the note played (never which note). */
+/** Taps the card's control; a start from the beginning reports whether the note played, else which step broke. */
 async function play(audio: SharedAudio) {
   const fromStart = audio.snapshot.phase === 'idle' || audio.snapshot.phase === 'failed'
   await audio.toggle()
+  if (!fromStart) return
   const { phase } = audio.snapshot
-  if (fromStart && (phase === 'playing' || phase === 'failed')) {
-    analytics.track({ event: 'voice_note_played', outcome: phase === 'playing' ? 'played' : 'failed' })
-  }
+  if (phase === 'playing') analytics.track({ event: 'voice_note_played', outcome: 'played' })
+  if (phase === 'failed') analytics.track({ event: 'voice_note_played', outcome: 'failed', error: audio.failure })
 }
 
 function audioElement(data: Uint8Array, events: SoundEvents): Sound {

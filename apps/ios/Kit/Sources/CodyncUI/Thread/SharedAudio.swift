@@ -27,6 +27,8 @@ final class SharedAudio {
     @ObservationIgnored private var clock: Timer?
     /// A call or Siri taking the audio pauses the note, as the user's own pause would.
     @ObservationIgnored private var interruptions: AudioSessionEvents?
+    /// The step this tap is on, so a failure says which one broke.
+    private(set) var failure = AnalyticsEvent.VoiceNoteFailure.load
     /// Fetches the sound's bytes; tests hold it open to stop the card mid-load.
     private let load: @MainActor (BotStore, SharedFile, String) async -> Data?
 
@@ -48,9 +50,11 @@ final class SharedAudio {
             break
         }
         let started = generation
+        failure = .load
         do {
             let player = try await prepared(file, entryId: entryId, model: model)
             guard generation == started else { state = .idle; return }
+            failure = .playback
             // Heard with the ringer off too.
             let session = AVAudioSession.sharedInstance()
             if session.category != .playAndRecord {
@@ -65,12 +69,12 @@ final class SharedAudio {
             interruptions = interruptions ?? AudioSessionEvents(engine: nil) { [weak self] interruption in
                 if case .began = interruption, self?.state == .playing { self?.pause() }
             }
-            if fromStart { Analytics.shared.capture(.voiceNotePlayed(.played)) }
+            if fromStart { Analytics.shared.capture(.voiceNotePlayed(nil)) }
         } catch {
             // A card that went away mid-load never shows the failure.
             guard generation == started else { return }
             fail()
-            if fromStart { Analytics.shared.capture(.voiceNotePlayed(.failed)) }
+            if fromStart { Analytics.shared.capture(.voiceNotePlayed(failure)) }
         }
     }
 

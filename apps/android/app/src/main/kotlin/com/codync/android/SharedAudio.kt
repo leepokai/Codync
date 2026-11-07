@@ -58,6 +58,9 @@ internal class SharedAudio(
     var elapsed by mutableStateOf(0.0)
         private set
     private var sound: Sound? = null
+    /** The step this tap is on, so a failure says which one broke. */
+    var failure = VoiceNoteFailure.Load
+        private set
     /** The card went: a load still running then starts nothing. */
     private var released = false
 
@@ -73,12 +76,14 @@ internal class SharedAudio(
         if (phase == AudioPhase.Loading) return
         val fromStart = phase == AudioPhase.Idle || phase == AudioPhase.Failed
         phase = AudioPhase.Loading
+        failure = VoiceNoteFailure.Load
         try {
             val ready = current ?: load().let { file ->
                 if (released) return
                 open(file) { ended -> if (ended) finished() else if (phase == AudioPhase.Playing) interrupted() }
                     .also { sound = it; duration = it.duration }
             }
+            failure = VoiceNoteFailure.Playback
             if (ready.start()) { elapsed = ready.position; phase = AudioPhase.Playing } else { drop(); phase = AudioPhase.Failed }
         } catch (cancelled: CancellationException) {
             // The tap's scope went (a dismissed preview) while this card's player lives on: the next tap starts over.
@@ -86,8 +91,7 @@ internal class SharedAudio(
             throw cancelled
         }
         catch (_: Exception) { drop(); phase = AudioPhase.Failed }
-        if (fromStart) Analytics.capture(AnalyticsEvent.VoiceNotePlayed(
-            if (phase == AudioPhase.Playing) VoiceNoteOutcome.Played else VoiceNoteOutcome.Failed))
+        if (fromStart) Analytics.capture(AnalyticsEvent.VoiceNotePlayed(failure.takeIf { phase == AudioPhase.Failed }))
     }
 
     /** Moves a loaded sound's playhead, held to its length; playing or paused, it stays so. */

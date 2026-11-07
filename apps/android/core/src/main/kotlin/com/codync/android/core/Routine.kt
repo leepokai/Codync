@@ -18,6 +18,8 @@ import java.time.format.FormatStyle
     val missedPolicy: String? = null,
     /** What a run that would pass the bot's daily token limit follows: `wait` or `skip` (older hosts send nothing). */
     val limitPolicy: String? = null,
+    /** Where a workflow's last reply goes (older hosts send nothing). */
+    val outputs: List<RoutineOutput> = emptyList(),
 ) {
     val keepsOriginal: Boolean get() = triggers.size != 1 || triggers.single()["type"]?.jsonPrimitive?.content !in listOf("cron", "interval", "event", "webhook")
     val hasWebhook: Boolean get() = triggers.any { it["type"]?.jsonPrimitive?.content in listOf("webhook", "event") }
@@ -128,10 +130,27 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 
 @Serializable data class RoutineWebhook(val url: String? = null, val localUrl: String, val key: String, val connected: Boolean)
 
+/** Where a workflow's last reply goes: a channel, a chat, or the issue that started it. */
+@Serializable data class RoutineOutput(val kind: String = "slack", val target: String = "", val account: String? = null)
+
+/** The output kinds the editor offers, and their destination rules (host `routines::outputs`). */
+object RoutineOutputs {
+    val kinds = listOf("slack" to "Slack", "telegram" to "Telegram", "discord" to "Discord", "githubComment" to "GitHub comment")
+
+    fun problem(output: RoutineOutput): String? {
+        val target = output.target.trim()
+        if (target.isEmpty()) return "An output needs a destination."
+        if (output.kind == "telegram" && target.toLongOrNull() == null) return "Use a Telegram chat id."
+        if (output.kind == "githubComment" && !Regex("^[^/\\s]+/[^/\\s]+$").matches(target)) return "Use owner/name."
+        if (output.kind in listOf("slack", "discord") && target.any(Char::isWhitespace)) return "Use a channel id."
+        return null
+    }
+}
+
 data class RoutineDraft(val id: String? = null, val name: String = "", val instruction: String = "",
     val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600",
     /** Absent (null) keeps the saved policies, the host's default on a new routine. */
-    val missedPolicy: String? = null, val limitPolicy: String? = null) {
+    val missedPolicy: String? = null, val limitPolicy: String? = null, val outputs: List<RoutineOutput> = emptyList()) {
     /** The timeout in words: whole hours, else whole minutes, else seconds; anything else as typed. */
     val timeoutText: String get() {
         val seconds = timeoutSeconds.toLongOrNull() ?: return "${timeoutSeconds}s"
@@ -147,5 +166,6 @@ data class RoutineDraft(val id: String? = null, val name: String = "", val instr
         put("botId", botId); id?.let { put("id", it) }; put("name", name); put("instruction", instruction)
         put("schedule", WireJson.encodeToJsonElement(schedule)); put("timeoutSeconds", timeoutSeconds)
         missedPolicy?.let { put("missedPolicy", it) }; limitPolicy?.let { put("limitPolicy", it) }
+        put("outputs", WireJson.encodeToJsonElement(outputs))
     }
 }

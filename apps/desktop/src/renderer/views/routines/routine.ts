@@ -16,6 +16,14 @@ export interface RoutineTrigger {
   everyMinutes?: number | null
 }
 
+export interface RoutineOutput {
+  /** `slack`, `telegram`, `discord` or `githubComment`. */
+  kind: string
+  /** A channel id, a chat id, or the repository (`owner/name`). */
+  target: string
+  account?: string | null
+}
+
 export interface Routine {
   id: string
   botId: string
@@ -34,6 +42,9 @@ export interface Routine {
   missedPolicy?: string | null
   /** What a run that would pass the bot's daily token limit follows: `wait` or `skip`. */
   limitPolicy?: string | null
+  /** Where a workflow's last reply goes. */
+  outputs?: RoutineOutput[] | null
+  outputDescriptions?: string[] | null
 }
 
 export interface RoutineRun {
@@ -222,3 +233,21 @@ export function durationText(text: string) {
 }
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** The output kinds the editor offers. */
+export const outputKinds = [
+  { id: 'slack', label: 'Slack' },
+  { id: 'telegram', label: 'Telegram' },
+  { id: 'discord', label: 'Discord' },
+  { id: 'githubComment', label: 'GitHub comment' },
+] as const
+
+/** Why one output can't be saved, or null when it can; the same rules as the host's. */
+export function outputProblem(output: RoutineOutput): string | null {
+  const target = output.target.trim()
+  if (!target) return 'An output needs a destination.'
+  if (output.kind === 'telegram' && !/^-?\d+$/.test(target)) return 'Use a Telegram chat id.'
+  if (output.kind === 'githubComment' && !/^[^/\s]+\/[^/\s]+$/.test(target)) return 'Use owner/name.'
+  if ((output.kind === 'slack' || output.kind === 'discord') && /\s/.test(target)) return 'Use a channel id.'
+  return null
+}

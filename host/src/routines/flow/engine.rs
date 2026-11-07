@@ -34,6 +34,10 @@ pub struct Start {
     pub max_depth: usize,
     /// The routine's instruction, the root step's input.
     pub instruction: String,
+    /// Where the last reply goes.
+    pub outputs: Vec<crate::routines::Output>,
+    /// The delivery that started the run, for outputs that answer it.
+    pub event: serde_json::Value,
     pub root: Root,
 }
 
@@ -121,6 +125,9 @@ async fn run_flow(hub: &Arc<Hub>, start: Arc<Start>) -> Result<()> {
     let links: Vec<FlowLink> =
         hub.store.flow_links(&start.routine_id)?.into_iter().filter(|l| l.created_at <= start.run_at).collect();
     if links.is_empty() {
+        if let Root::Replied(reply) = &start.root {
+            crate::routines::outputs::deliver(hub, &start.routine_id, &start.outputs, &start.event, reply).await;
+        }
         return Ok(());
     }
     let running = hub.routines.flows.register(&start.run_id, &start.routine_id, &start.owner);
@@ -168,6 +175,21 @@ async fn run_flow(hub: &Arc<Hub>, start: Arc<Start>) -> Result<()> {
                 Err(error) => tracing::error!(error = %error, "a routine flow step's task ended abnormally"),
             }
         }
+    }
+    // The bots nothing hangs below carry the workflow's result out.
+    if !start.outputs.is_empty() {
+        let mut final_bots: Vec<&String> =
+            results.keys().filter(|bot| !links.iter().any(|link| &link.from_bot_id == *bot)).collect();
+        final_bots.sort();
+        let text = final_bots
+            .iter()
+            .filter_map(|bot| match results.get(*bot) {
+                Some(Outcome::Replied(text)) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+        crate::routines::outputs::deliver(hub, &start.routine_id, &start.outputs, &start.event, &text).await;
     }
     Ok(())
 }
@@ -310,6 +332,8 @@ pub fn start_for(
         timeout: Duration::from_secs(routine.timeout_seconds),
         max_depth: super::max_depth(),
         instruction: routine.instruction.clone(),
+        outputs: routine.outputs.clone(),
+        event: run.event.clone(),
         root,
     })
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compiledCron, durationText, emptyDraft, repeatChoice, runLabel, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
+import { compiledCron, durationText, emptyDraft, outputProblem, repeatChoice, runLabel, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
 import { matchZones, timeZoneOptions, zoneOffset } from './time-zones.ts'
 
 test('time zones match like the phones: name start, word starts, inside, letters in order', () => {
@@ -62,6 +62,17 @@ test('an event draft starts at a valid GitHub event with no filters', () => {
   assert.equal(draft.eventName, 'issues.opened')
   assert.deepEqual(draft.eventFilters, {})
   assert.equal(draft.kind, 'cron', 'a new routine still starts on a schedule')
+})
+
+test('an output checks its own destination', () => {
+  const output = (kind: string, target: string) => ({ kind, target })
+  assert.equal(outputProblem(output('slack', 'C0123')), null)
+  assert.equal(outputProblem(output('telegram', '-100123')), null)
+  assert.equal(outputProblem(output('githubComment', 'owner/repo')), null)
+  assert.ok(outputProblem(output('slack', 'not a channel')))
+  assert.ok(outputProblem(output('telegram', 'abc')))
+  assert.ok(outputProblem(output('githubComment', 'owner')))
+  assert.ok(outputProblem(output('slack', '')))
 })
 
 test('a queued run says when a waiting retry goes', () => {

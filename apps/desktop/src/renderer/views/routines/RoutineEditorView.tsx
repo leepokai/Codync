@@ -5,13 +5,14 @@ import { Dialog, ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineEventSource, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { durationText, emptyDraft, errorText, outputProblem, repeatChoice, sameDraft, type Routine, type RoutineEventSource, type RoutineOutput, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import { Field } from '../bots/parts'
 import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { IntervalScheduleFields } from './IntervalScheduleFields'
 import { editorKind } from '../../lib/routine-schedule'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
 import { RoutineEventFields } from './RoutineEventFields'
+import { RoutineOutputsFields } from './RoutineOutputsFields'
 import { currentZone } from './time-zones'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
@@ -41,6 +42,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [checkedSchedule, setCheckedSchedule] = useState<RoutineScheduleDraft | null>(null)
   const [sources, setSources] = useState<RoutineEventSource[]>([])
+  const [outputs, setOutputs] = useState<RoutineOutput[]>(routine?.outputs ?? [])
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [started, setStarted] = useState(false)
   const latest = useRef(schedule)
@@ -56,6 +58,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
     { id: 'webhook', label: 'Webhook' },
   ]
   const canSave = !!name.trim() && !!instruction.trim() && !store.isOffline && !busy && loaded && sameDraft(checkedSchedule, schedule) && previewError === null
+    && outputs.every((output) => outputProblem(output) === null)
 
   const loadSchedule = async () => {
     try {
@@ -123,6 +126,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
         timeoutSeconds: timeout,
         missedPolicy,
         limitPolicy,
+        outputs,
       })
       saved(result.routine)
     } catch (e) {
@@ -244,6 +248,10 @@ export function RoutineEditorView({ botId, routine, saved }: {
                   </CardSection>
                 </div>
               ) : null}
+            </VStack>
+            <VStack gap={10}>
+              <Text tone="text">{tr('Outputs')}</Text>
+              <RoutineOutputsFields outputs={outputs} update={setOutputs} />
             </VStack>
           </VStack>
         </fieldset>

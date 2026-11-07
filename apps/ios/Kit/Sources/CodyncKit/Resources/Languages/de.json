@@ -1665,5 +1665,18 @@
   "Connect GitHub": "GitHub verbinden",
   "GitHub is not connected.": "GitHub ist nicht verbunden.",
   "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "Ein fein abgestuftes Token mit den Repository-Rechten, die deine Workflows brauchen. Es bleibt im Anmeldedaten-Tresor dieses Computers; Codync sendet es nirgendwo sonst hin.",
-  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "Richte GitHub am Computer ein: Das Token bleibt dort. Workflows können damit kommentieren, etikettieren und Issues öffnen."
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "Richte GitHub am Computer ein: Das Token bleibt dort. Workflows können damit kommentieren, etikettieren und Issues öffnen.",
+  "Outputs": "Ausgaben",
+  "Sent once, after the last step, with its reply. Empty is fine.": "Wird einmal nach dem letzten Schritt mit seiner Antwort gesendet. Leer ist in Ordnung.",
+  "Sent once, after the last step, with its reply.": "Wird einmal nach dem letzten Schritt mit seiner Antwort gesendet.",
+  "Destination": "Ziel",
+  "Telegram bot": "Telegram-Bot",
+  "The bot it sends as, if there are several": "Der Bot, der sendet, wenn es mehrere gibt",
+  "Add an output": "Ausgabe hinzufügen",
+  "GitHub comment": "GitHub-Kommentar",
+  "Kind": "Art",
+  "An output needs a destination.": "Eine Ausgabe braucht ein Ziel.",
+  "Use a Telegram chat id.": "Nutze eine Telegram-Chat-ID.",
+  "Use owner/name.": "Nutze owner/name.",
+  "Use a channel id.": "Nutze eine Kanal-ID."
 }

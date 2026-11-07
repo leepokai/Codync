@@ -12,6 +12,8 @@ pub mod hooks;
 use hooks::Refused;
 mod mcp;
 pub use mcp::{INSTRUCTIONS, call, tools};
+mod outputs;
+pub use outputs::Output;
 mod retry;
 mod runner;
 mod schedule;
@@ -79,6 +81,9 @@ pub struct Routine {
     pub missed_policy: String,
     #[serde(default = "default_limit_policy")]
     pub limit_policy: String,
+    /// Where a workflow's last reply goes, if anywhere.
+    #[serde(default)]
+    pub outputs: Vec<Output>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -367,6 +372,7 @@ impl Routines {
             .filter(|b| !b.deleted && !b.config.is_group())
             .context("routine requires an existing agent bot")?;
         let Checked { name, instruction, mut triggers, timeout } = Checked::parse(body)?;
+        let wanted_outputs = body.get("outputs").map(|value| outputs::parse(Some(value))).transpose()?;
         // "Keep" means the saved triggers, not the client's copy of them, which an older app
         // may have decoded without the fields of a trigger type it doesn't know.
         if body["schedule"]["kind"] == "keep"
@@ -424,6 +430,7 @@ impl Routines {
                     |r| r.limit_policy.as_str(),
                     "wait",
                 ),
+                outputs: wanted_outputs.or_else(|| old.as_ref().map(|r| r.outputs.clone())).unwrap_or_default(),
             };
             if !(1..=86_400).contains(&r.timeout_seconds) {
                 bail!("timeoutSeconds must be between 1 and 86400");
@@ -625,6 +632,7 @@ fn policy(
 pub(crate) fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,"missedPolicy":r.missed_policy,"limitPolicy":r.limit_policy,
+        "outputs":r.outputs,"outputDescriptions":r.outputs.iter().map(outputs::describe).collect::<Vec<_>>(),
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {

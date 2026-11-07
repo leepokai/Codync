@@ -155,6 +155,8 @@ fn test(hub: &Arc<Hub>, routine: &Routine, reply: String) -> Result<String> {
         }),
         max_depth: super::max_depth(),
         instruction: routine.instruction.clone(),
+        outputs: routine.outputs.clone(),
+        event: Value::Null,
         root: engine::Root::Replied(reply),
     };
     tokio::spawn(engine::execute(hub.clone(), start));

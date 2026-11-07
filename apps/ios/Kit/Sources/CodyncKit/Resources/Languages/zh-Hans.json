@@ -1665,5 +1665,18 @@
   "Connect GitHub": "连接 GitHub",
   "GitHub is not connected.": "GitHub 未连接。",
   "A fine-grained token with the repository permissions your workflows need. It stays in this computer's credential vault; Codync never sends it anywhere else.": "一个细粒度令牌，只带工作流所需的仓库权限。它留在本电脑的凭据保险库中；Codync 不会把它发往别处。",
-  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "在电脑上设置 GitHub：令牌留在那里。工作流可以用它评论、加标签和开 Issue。"
+  "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.": "在电脑上设置 GitHub：令牌留在那里。工作流可以用它评论、加标签和开 Issue。",
+  "Outputs": "输出",
+  "Sent once, after the last step, with its reply. Empty is fine.": "在最后一步后随其回复发送一次。可以留空。",
+  "Sent once, after the last step, with its reply.": "在最后一步后随其回复发送一次。",
+  "Destination": "目标",
+  "Telegram bot": "Telegram 机器人",
+  "The bot it sends as, if there are several": "有多个时用来发送的机器人",
+  "Add an output": "添加输出",
+  "GitHub comment": "GitHub 评论",
+  "Kind": "类型",
+  "An output needs a destination.": "输出需要一个目标。",
+  "Use a Telegram chat id.": "使用 Telegram 聊天 ID。",
+  "Use owner/name.": "使用 owner/name。",
+  "Use a channel id.": "使用频道 ID。"
 }

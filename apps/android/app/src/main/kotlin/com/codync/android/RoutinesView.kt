@@ -55,6 +55,8 @@ import com.codync.android.core.RoutineDraft
 import com.codync.android.core.RoutineScheduleDraft
 import com.codync.android.core.RoutineSchedulePreview
 import com.codync.android.core.RoutineEventSource
+import com.codync.android.core.RoutineOutput
+import com.codync.android.core.RoutineOutputs
 import com.codync.android.core.RoutineWebhook
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -122,7 +124,7 @@ import kotlinx.coroutines.launch
     var draft by remember(routine?.id) {
         mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(),
             timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString(),
-            missedPolicy = routine?.missedPolicy, limitPolicy = routine?.limitPolicy))
+            missedPolicy = routine?.missedPolicy, limitPolicy = routine?.limitPolicy, outputs = routine?.outputs.orEmpty()))
     }
     var loaded by remember(routine?.id) { mutableStateOf(false) }
     var loadAttempt by remember { mutableIntStateOf(0) }
@@ -159,6 +161,7 @@ import kotlinx.coroutines.launch
         catch (failure: Exception) { if (draft.schedule == requested) previewError = failure.message ?: "Couldn't check this schedule." }
     }
     val canSave = draft.name.isNotBlank() && draft.instruction.isNotBlank() && online && !busy && loaded && checked == draft.schedule && previewError == null
+        && draft.outputs.all { RoutineOutputs.problem(it) == null }
     val options = buildList {
         if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.triggerDescriptions.joinToString(" · "))
         add("cron" to "Schedule"); add("interval" to "Interval"); add("event" to "Event"); add("webhook" to "Webhook")
@@ -211,6 +214,39 @@ import kotlinx.coroutines.launch
                                 { draft = draft.copy(limitPolicy = it) }, label = "When out of usage")
                         }
                         Note("The bot's daily token limit is used up: its runs follow this rule.")
+                    }
+                }
+            }
+            Field("Outputs") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for ((index, output) in draft.outputs.withIndex()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) {
+                                ChoicePicker(output.kind, RoutineOutputs.kinds, { kind ->
+                                    draft = draft.copy(outputs = draft.outputs.mapIndexed { i, o -> if (i == index) o.copy(kind = kind) else o })
+                                }, label = "Kind")
+                            }
+                            SecondaryButton("Remove") { draft = draft.copy(outputs = draft.outputs.filterIndexed { i, _ -> i != index }) }
+                        }
+                        FieldBox(output.target, { target ->
+                            draft = draft.copy(outputs = draft.outputs.mapIndexed { i, o -> if (i == index) o.copy(target = target) else o })
+                        }, when (output.kind) {
+                            "githubComment" -> "owner/name"
+                            "telegram" -> "-1001234567890"
+                            else -> "1234567890"
+                        }, fill = Palette.bubbleUser, capitalize = false)
+                        if (output.kind == "telegram") {
+                            FieldBox(output.account.orEmpty(), { account ->
+                                draft = draft.copy(outputs = draft.outputs.mapIndexed { i, o -> if (i == index) o.copy(account = account) else o })
+                            }, "The bot it sends as, if there are several", fill = Palette.bubbleUser, capitalize = false)
+                        }
+                        RoutineOutputs.problem(output)?.let { Text(it, style = Type.caption, color = Palette.danger) }
+                    }
+                    if (draft.outputs.size < 10) {
+                        LinkButton("Add an output") { draft = draft.copy(outputs = draft.outputs + RoutineOutput()) }
+                    }
+                    if (draft.outputs.isNotEmpty()) {
+                        Text("Sent once, after the last step, with its reply.", style = Type.caption, color = Palette.tertiary)
                     }
                 }
             }

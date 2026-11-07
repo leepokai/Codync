@@ -82,6 +82,38 @@ test('typing @ in a group lists its members one per row, and the keyboard or the
     await field.press('Tab')
     await expect(field).toHaveValue(`hello @${alpha} `)
 
+    // Off the `@partial` (caret moved away, or text selected), the keys edit the draft and Return sends.
+    await field.fill('hello @')
+    await expect(rows).toHaveCount(2)
+    await field.press('Home')
+    await field.press('ArrowDown')
+    await expect(rows.nth(0)).toHaveAttribute('aria-selected', 'true')
+    await field.press('Home')
+    await field.press('Enter')
+    await expect(field).toHaveValue('')
+    await expect.poll(() => sent(page, groupId)).toBe(2)
+    await field.fill('hello @alp')
+    await expect(rows).toHaveCount(1)
+    await field.press('Shift+ArrowLeft')
+    await field.press('Enter')
+    await expect(field).toHaveValue('')
+    await expect.poll(() => sent(page, groupId)).toBe(3)
+
+    // Escape there still hides the list first, and keeps the reply being written.
+    const message = page.locator('.message.user').last()
+    await message.hover()
+    await message.getByRole('button', { name: 'Reply' }).click()
+    const quote = page.locator('.composer-reply')
+    await expect(quote).toBeVisible()
+    await field.fill('see @')
+    await expect(rows).toHaveCount(2)
+    await field.press('Home')
+    await field.press('Escape')
+    await expect(list).toHaveCount(0)
+    await expect(quote).toBeVisible()
+    await field.press('Escape')
+    await expect(quote).toHaveCount(0)
+
     // An input method's Return confirms its candidate, not a member.
     await field.fill('@')
     await expect(rows).toHaveCount(2)

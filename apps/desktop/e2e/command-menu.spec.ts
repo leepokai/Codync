@@ -36,6 +36,12 @@ test('typing / lists the bot\'s commands, and the keyboard moves, picks and hide
     await field.press('ArrowUp')
     await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true')
 
+    // Off the end of the draft, they move the caret and leave the highlight.
+    await field.press('Home')
+    await field.press('ArrowDown')
+    await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true')
+    await field.press('End')
+
     // Return fills in the skill and sends nothing.
     await field.press('Enter')
     await expect(field).toHaveValue(`/${skill.id} `)

@@ -17,6 +17,8 @@ interface ComposerMenuState<T> {
 /**
  * The highlight and keys of a list above the box (`/` commands, `@` members): ↑/↓ move, Tab or Return picks,
  * Escape hides the list until the draft changes. `returnPicks` lets Return fall through to sending for a row.
+ * Both lists are for the query at the end of the draft, so with the caret elsewhere or text selected
+ * every key but Escape edits the draft and Return sends.
  */
 export function useComposerMenu<T>(draft: string, items: T[], pick: (item: T) => void, returnPicks: (item: T, draft: string) => boolean = () => true) {
   const [highlight, setHighlight] = useState({ draft: '', index: 0 })
@@ -26,9 +28,11 @@ export function useComposerMenu<T>(draft: string, items: T[], pick: (item: T) =>
   const index = highlight.draft === draft ? Math.min(highlight.index, shown.length - 1) : 0
 
   /** Handles a key in the field while the list is up; returns whether it did. */
-  const onKey = (e: KeyboardEvent, composing: boolean): boolean => {
+  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>, composing: boolean): boolean => {
     const picked = shown[index]
     if (!picked || composing || e.altKey || e.metaKey || e.ctrlKey) return false
+    const { selectionStart, selectionEnd } = e.currentTarget
+    if ((selectionStart !== draft.length || selectionEnd !== draft.length) && e.key !== 'Escape') return false
     const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
     const picks = (e.key === 'Tab' && !e.shiftKey) || (e.key === 'Enter' && !e.shiftKey && returnPicks(picked, draft))
     if (!step && !picks && e.key !== 'Escape') return false

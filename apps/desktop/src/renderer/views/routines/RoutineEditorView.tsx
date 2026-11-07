@@ -5,12 +5,13 @@ import { Dialog, ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineEventSource, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import { Field } from '../bots/parts'
 import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { IntervalScheduleFields } from './IntervalScheduleFields'
 import { editorKind } from '../../lib/routine-schedule'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
+import { RoutineEventFields } from './RoutineEventFields'
 import { currentZone } from './time-zones'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
@@ -39,17 +40,19 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const [preview, setPreview] = useState<RoutineSchedulePreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [checkedSchedule, setCheckedSchedule] = useState<RoutineScheduleDraft | null>(null)
+  const [sources, setSources] = useState<RoutineEventSource[]>([])
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [started, setStarted] = useState(false)
   const latest = useRef(schedule)
   latest.current = schedule
 
   // Unsupported kinds and several triggers stay as the bot set them until replaced.
-  const keepsOriginal = routine ? (routine.triggers.length === 1 ? !['cron', 'interval', 'webhook'].includes(routine.triggers[0]!.type) : routine.triggers.length > 0) : false
+  const keepsOriginal = routine ? (routine.triggers.length === 1 ? !['cron', 'interval', 'webhook', 'event'].includes(routine.triggers[0]!.type) : routine.triggers.length > 0) : false
   const options = [
     ...(keepsOriginal ? [{ id: 'keep', label: 'Set by bot' }] : []),
     { id: 'cron', label: 'Schedule' },
     { id: 'interval', label: 'Interval' },
+    { id: 'event', label: 'Event' },
     { id: 'webhook', label: 'Webhook' },
   ]
   const canSave = !!name.trim() && !!instruction.trim() && !store.isOffline && !busy && loaded && sameDraft(checkedSchedule, schedule) && previewError === null
@@ -65,6 +68,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
       draft.kind = editorKind(draft.kind)
       setSchedule(draft)
       setPreview(result)
+      if (result.sources) setSources(result.sources)
       // What the fields show, not the host's kind: `keep` is already what a later save sends.
       setCheckedSchedule(draft)
       setLoaded(true)
@@ -83,6 +87,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
       const result = await (await store.ready()).call<RoutineSchedulePreview>('routineSchedule', { draft: requested })
       if (latest.current !== requested) return
       setPreview(result)
+      if (result.sources) setSources(result.sources)
       setCheckedSchedule(requested)
     } catch (e) {
       if (latest.current !== requested) return
@@ -156,8 +161,10 @@ export function RoutineEditorView({ botId, routine, saved }: {
         ) : (
           <Note icon="link" title="Runs each time something is posted to its URL." detail="Save to get the URL and key." />
         )
+      case 'event':
+        return <RoutineEventFields schedule={schedule} update={update} preview={shownPreview} error={previewError} sources={sources} />
       default:
-        return <Note icon="sparkles" title={routine?.triggerDescriptions.join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
+        return <Note icon="sparkles" title={routine?.triggerDescriptions.join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule, Event or Webhook to replace it." />
     }
   }
 
@@ -165,80 +172,82 @@ export function RoutineEditorView({ botId, routine, saved }: {
     <VStack className="routine-editor">
       <ModalHeader icon={schedule.kind === 'webhook' ? 'link' : 'clock'} title={routine ? 'Edit routine' : 'Set up a routine'} />
       {/* The card fits the form; it scrolls only when taller than the window allows. */}
-      <fieldset className="routine-form" disabled={busy || !loaded}>
-        <VStack gap={24} className="routine-form-body">
-          <VStack gap={16}>
-            <Field label="Name">
-              <input className="routine-input" value={name} placeholder="e.g. Morning summary" onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <Field label="Instruction">
-              <textarea className="routine-input" value={instruction} placeholder="Describe what this bot should do each time it runs." onChange={(e) => setInstruction(e.target.value)} />
-            </Field>
-          </VStack>
-          <VStack gap={10}>
-            <HStack gap={12}>
-              <Text tone="text" grow>{tr(`When to run`)}</Text>
-              <SegmentedChoice selection={schedule.kind} options={options} onChange={(kind) => update({ kind })} />
-            </HStack>
-            {loaded ? (
-              triggerFields()
-            ) : (
-              <HStack as="span" gap={6} className="routine-loading">
-                <Icon name="clock" size={12} />
-                Loading schedule…
+      <div className="routine-form-scroll">
+        <fieldset className="routine-form" disabled={busy || !loaded}>
+          <VStack gap={24} className="routine-form-body">
+            <VStack gap={16}>
+              <Field label="Name">
+                <input className="routine-input" value={name} placeholder="e.g. Morning summary" onChange={(e) => setName(e.target.value)} />
+              </Field>
+              <Field label="Instruction">
+                <textarea className="routine-input" value={instruction} placeholder="Describe what this bot should do each time it runs." onChange={(e) => setInstruction(e.target.value)} />
+              </Field>
+            </VStack>
+            <VStack gap={10}>
+              <HStack gap={12}>
+                <Text tone="text" grow>{tr(`When to run`)}</Text>
+                <SegmentedChoice selection={schedule.kind} options={options} onChange={(kind) => update({ kind })} />
               </HStack>
-            )}
+              {loaded ? (
+                triggerFields()
+              ) : (
+                <HStack as="span" gap={6} className="routine-loading">
+                  <Icon name="clock" size={12} />
+                  Loading schedule…
+                </HStack>
+              )}
+            </VStack>
+            <VStack gap={10}>
+              <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
+                Run settings
+                <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
+                  <Icon name="chevron.down" size={10} weight="semibold" />
+                </span>
+                <Spacer />
+                {!advanced ? <Text tone="tertiary">Timeout {durationText(timeout)}</Text> : null}
+              </button>
+              {advanced ? (
+                <div className="routine-fade">
+                  <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
+                    <LabeledRow label="Timeout">
+                      <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
+                      <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
+                    </LabeledRow>
+                    <LabeledRow label={tr(`Missed runs`)}>
+                      <ChipChoice
+                        label={tr(`Missed runs`)}
+                        selection={missedPolicy}
+                        options={[
+                          { id: 'skip', label: tr(`Skip it`) },
+                          { id: 'runOnce', label: tr(`Run the newest one`) },
+                        ]}
+                        onChange={setMissedPolicy}
+                      />
+                    </LabeledRow>
+                    <Text size="caption" tone="tertiary" className="routine-policy-hint">
+                      {tr(`When this computer is off at a run's time, its missed runs follow this rule.`)}
+                    </Text>
+                    <LabeledRow label={tr(`When out of usage`)}>
+                      <ChipChoice
+                        label={tr(`When out of usage`)}
+                        selection={limitPolicy}
+                        options={[
+                          { id: 'wait', label: tr(`Wait for the limit to reset`) },
+                          { id: 'skip', label: tr(`Skip the run`) },
+                        ]}
+                        onChange={setLimitPolicy}
+                      />
+                    </LabeledRow>
+                    <Text size="caption" tone="tertiary" className="routine-policy-hint">
+                      {tr(`The bot's daily token limit is used up: its runs follow this rule.`)}
+                    </Text>
+                  </CardSection>
+                </div>
+              ) : null}
+            </VStack>
           </VStack>
-          <VStack gap={10}>
-            <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
-              Run settings
-              <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
-                <Icon name="chevron.down" size={10} weight="semibold" />
-              </span>
-              <Spacer />
-              {!advanced ? <Text tone="tertiary">Timeout {durationText(timeout)}</Text> : null}
-            </button>
-            {advanced ? (
-              <div className="routine-fade">
-                <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
-                  <LabeledRow label="Timeout">
-                    <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
-                    <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
-                  </LabeledRow>
-                  <LabeledRow label={tr(`Missed runs`)}>
-                    <ChipChoice
-                      label={tr(`Missed runs`)}
-                      selection={missedPolicy}
-                      options={[
-                        { id: 'skip', label: tr(`Skip it`) },
-                        { id: 'runOnce', label: tr(`Run the newest one`) },
-                      ]}
-                      onChange={setMissedPolicy}
-                    />
-                  </LabeledRow>
-                  <Text size="caption" tone="tertiary" className="routine-policy-hint">
-                    {tr(`When this computer is off at a run's time, its missed runs follow this rule.`)}
-                  </Text>
-                  <LabeledRow label={tr(`When out of usage`)}>
-                    <ChipChoice
-                      label={tr(`When out of usage`)}
-                      selection={limitPolicy}
-                      options={[
-                        { id: 'wait', label: tr(`Wait for the limit to reset`) },
-                        { id: 'skip', label: tr(`Skip the run`) },
-                      ]}
-                      onChange={setLimitPolicy}
-                    />
-                  </LabeledRow>
-                  <Text size="caption" tone="tertiary" className="routine-policy-hint">
-                    {tr(`The bot's daily token limit is used up: its runs follow this rule.`)}
-                  </Text>
-                </CardSection>
-              </div>
-            ) : null}
-          </VStack>
-        </VStack>
-      </fieldset>
+        </fieldset>
+      </div>
 
       <VStack gap={12} className="routine-editor-footer">
         {previewError !== null ? (
@@ -251,7 +260,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             Retry loading schedule
           </button>
         ) : null}
-        {!['cron', 'interval'].includes(schedule.kind) && previewError ? <Text size="caption" tone="danger">{previewError}</Text> : null}
+        {!['cron', 'interval', 'event'].includes(schedule.kind) && previewError ? <Text size="caption" tone="danger">{previewError}</Text> : null}
         {error ? (
           <HStack as="span" gap={6} align="flex-start" className="routine-error">
             <Icon name="exclamationmark.circle" size={12} className="routine-error-icon" />

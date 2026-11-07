@@ -2,6 +2,7 @@
 mod check;
 pub use check::Checked;
 mod editor;
+pub mod events;
 mod failed;
 pub mod flow;
 mod idle;

@@ -3,7 +3,7 @@ use super::Trigger;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -28,6 +28,10 @@ pub struct ScheduleDraft {
     pub at: i64,
     pub expression: String,
     pub zone: String,
+    /// An event trigger: the service, the event it sends and its filters.
+    pub event_source: String,
+    pub event_name: String,
+    pub event_filters: BTreeMap<String, String>,
     pub original: Vec<Trigger>,
 }
 
@@ -51,6 +55,9 @@ impl Default for ScheduleDraft {
             at: 0,
             expression: "0 9 * * *".into(),
             zone: "UTC".into(),
+            event_source: "github".into(),
+            event_name: "issues.opened".into(),
+            event_filters: BTreeMap::new(),
             original: Vec::new(),
         }
     }
@@ -76,7 +83,13 @@ impl ScheduleDraft {
                 draft.at = *at;
             }
             Trigger::Webhook => draft.kind = "webhook".into(),
-            Trigger::Event { .. } | Trigger::Watch { .. } => draft.kind = "keep".into(),
+            Trigger::Event { source, event, filters } => {
+                draft.kind = "event".into();
+                draft.event_source.clone_from(source);
+                draft.event_name.clone_from(event);
+                draft.event_filters.clone_from(filters);
+            }
+            Trigger::Watch { .. } => draft.kind = "keep".into(),
             Trigger::Cron { expression, time_zone } => {
                 draft.zone.clone_from(time_zone);
                 draft.expression.clone_from(expression);
@@ -167,6 +180,14 @@ impl ScheduleDraft {
             }
             "once" => vec![Trigger::Once { at: self.at }],
             "webhook" => vec![Trigger::Webhook],
+            "event" => {
+                super::events::validate(&self.event_source, &self.event_name, &self.event_filters)?;
+                vec![Trigger::Event {
+                    source: self.event_source.clone(),
+                    event: self.event_name.clone(),
+                    filters: self.event_filters.clone(),
+                }]
+            }
             "cron" => vec![Trigger::Cron { expression: self.cron()?, time_zone: self.zone.clone() }],
             _ => bail!("choose when this routine should run"),
         })
@@ -357,7 +378,7 @@ pub fn preview(body: &Value, now: i64) -> Result<Value> {
     }
     Ok(
         json!({"draft":draft,"triggers":triggers,"summary":triggers.iter().map(Trigger::description).collect::<Vec<_>>().join(" · "),
-        "nextRunAt":next,"nextRuns":next_runs,"warning":warning}),
+        "nextRunAt":next,"nextRuns":next_runs,"warning":warning,"sources":super::events::catalog()["sources"]}),
     )
 }
 
@@ -421,8 +442,33 @@ mod tests {
             json!([{"type":"interval","seconds":5400}]),
             json!([{"type":"once","at":1000}]),
             json!([{"type":"webhook"},{"type":"interval","seconds":90}]),
+            json!([{"type":"event","source":"github","event":"issues.opened","filters":{"repo":"o/r"}}]),
+            json!([{"type":"event","source":"slack","event":"app_mention","filters":{"channel":"C1","messageContains":"deploy"}}]),
         ] {
             assert_eq!(preview(&json!({"triggers":triggers}), NOW).unwrap()["triggers"], triggers);
+        }
+    }
+
+    #[test]
+    fn an_event_trigger_edits_like_any_other_and_is_checked() {
+        let body = json!({"draft":{"kind":"event","eventSource":"github","eventName":"pull_request.opened","eventFilters":{"repo":"o/r"}}});
+        let result = preview(&body, NOW).unwrap();
+        assert_eq!(result["draft"]["kind"], "event");
+        assert_eq!(result["triggers"][0]["event"], "pull_request.opened");
+        assert_eq!(result["summary"], "When GitHub: pull request opened");
+        assert!(result["sources"].as_array().is_some_and(|sources| !sources.is_empty()));
+        for bad in [
+            json!({"eventSource":""}),
+            json!({"eventName":""}),
+            json!({"eventName":"issues.assigned"}),
+            json!({"eventFilters":{"channel":"C1"}}),
+            json!({"eventFilters":{"repo":" "}}),
+        ] {
+            let mut body = body.clone();
+            for (key, value) in bad.as_object().unwrap() {
+                body["draft"][key] = value.clone();
+            }
+            assert!(preview(&body, NOW).is_err(), "{bad}");
         }
     }
 

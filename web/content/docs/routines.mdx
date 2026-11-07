@@ -24,14 +24,14 @@ Type your request directly in the chat. To set up a routine by hand, use **+** i
 
 The bot saves it with Codync's built-in routine tools; your system's cron isn't involved. It asks only about what's missing or unclear, such as the time zone. It checks that the tools, sign-ins and files the task needs are there, looks at its existing routines so it doesn't make a duplicate, then saves and tells you what it saved: the schedule, time zone, next run and whether it's on. A "Created routine" line appears in the chat; tap it to open the routine.
 
-Ask the bot for what the iPhone and desktop editors don't offer: a one-time run, an interval, events from GitHub, or several triggers on one routine.
+Ask the bot for what the iPhone and desktop editors don't offer: a one-time run, an interval, or several triggers on one routine. Events from GitHub, Slack, Telegram and Discord are in the editor.
 
 ### In the routine editor
 
 Choose **+** (**Set up a routine**) in the routine list, or press `n` in the terminal UI.
 
 - **Name** and **Instruction**: what the bot should do each time it runs.
-- **When to run**: **Schedule** or **Webhook**.
+- **When to run**: **Schedule**, **Interval**, **Event** or **Webhook**.
 - **Run settings**: the **Timeout**.
 
 Choose **Create routine** to save it (desktop: ⌘S or Ctrl+S; terminal UI: Ctrl+S). Open a routine from the list to change it, then choose **Save changes**.
@@ -40,7 +40,7 @@ For a schedule, pick how often it repeats (**Hourly**, **Daily**, **Weekdays**, 
 
 In the terminal UI you type when it runs: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00`, `hourly :30`, `every 2h`, a date and time like `2026-11-02 14:30`, a cron expression, or `webhook`. Add a time zone at the end; Tab completes it.
 
-If the bot set up triggers the editor doesn't offer, the editor shows them as **Set by bot** and keeps them until you pick Schedule or Webhook instead.
+If the bot set up triggers the editor doesn't offer, the editor shows them as **Set by bot** and keeps them until you pick another kind instead.
 
 ## Triggers
 
@@ -50,7 +50,7 @@ If the bot set up triggers the editor doesn't offer, the editor shows them as **
 | Webhook | Each time an authenticated delivery arrives at its URL. | Editor or bot |
 | Once | One time, at a date and time in the future. | Bot (or terminal UI) |
 | Interval | Every so many seconds, minutes, hours or days, from 1 second to 365 days. | Bot (or terminal UI) |
-| Event | When a webhook delivery matches a source and event, such as a pull request opening on GitHub. | Bot |
+| Event | When a webhook delivery matches a source and event, such as a pull request opening on GitHub. | Editor or bot |
 
 A routine can have several triggers; it runs when any of them fires.
 
@@ -104,6 +104,12 @@ Codync doesn't register the webhook with the other service. You (or the bot, wit
 - **Other services:** an event trigger can also match a JSON delivery by its `source` and `event` fields. Codync recognizes GitHub's deliveries by itself; for other senders, the JSON they post has to carry those fields.
 - A delivery that arrives twice with the same delivery ID runs once. Bodies can be up to 64 KB.
 - Replacing the key stops the old one at once. Senders using it stop working until they get the new key.
+
+### Event triggers
+
+Choose **Event** under **When to run**, then a service and an event. Narrow it with the filters the service offers (repository, channel, chat, sender, conclusion or text); the routine runs only for a delivery that matches every filter, and an empty filter matches anything. A GitHub event needs the webhook above: point the repository's webhook at the routine, then pick the events you want, such as an issue opening, a review arriving, or a check finishing with `failure`. Slack and Telegram events arrive through the connected app once a bot is bound to the channel, and need no routine URL.
+
+The editor lists the events each service can send. A saved trigger the editor doesn't list stays as it is until you change it.
 
 The run's prompt tells the bot that the delivery's contents are untrusted data to read, and that it shouldn't follow them as instructions. Still, keep secrets out of routine instructions and payloads.
 

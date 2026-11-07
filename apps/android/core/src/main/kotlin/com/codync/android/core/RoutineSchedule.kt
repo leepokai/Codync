@@ -6,8 +6,8 @@ package com.codync.android.core
  * computes the next runs; this only lists what the editor can offer.
  */
 object RoutineSchedule {
-    /** Trigger kinds the editor edits; any other (`once`, events, several triggers) keeps the original triggers. */
-    val editableKinds = listOf("cron", "interval", "webhook")
+    /** Trigger kinds the editor edits; any other (`once`, several triggers) keeps the original triggers. */
+    val editableKinds = listOf("cron", "interval", "event", "webhook")
     /** Style → title, in display order. `custom` is the raw cron expression. */
     val styles = listOf(
         "minutes" to "Every few minutes", "hourly" to "Hourly", "daily" to "Daily", "weekdays" to "Weekdays",

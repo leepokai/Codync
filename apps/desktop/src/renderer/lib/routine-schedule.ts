@@ -3,7 +3,7 @@
 // this only lists what the editor can offer. Same options as the Android editor (core RoutineSchedule).
 
 /** Trigger kinds the editor edits; any other (a one-off time, events, several triggers) keeps the original triggers. */
-export const editableKinds = ['cron', 'interval', 'webhook']
+export const editableKinds = ['cron', 'interval', 'event', 'webhook']
 
 /** Style → title, in display order. `custom` is the raw cron expression. */
 export const scheduleStyles = [

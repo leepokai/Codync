@@ -4,7 +4,8 @@ import { clock, editorKind, toggleDay, usesTime } from './routine-schedule.ts'
 
 test('kinds the editor cannot edit keep their original triggers', () => {
   assert.equal(editorKind('once'), 'keep')
-  assert.equal(editorKind('event'), 'keep')
+  assert.equal(editorKind('event'), 'event')
+  assert.equal(editorKind('webhook'), 'webhook')
   assert.equal(editorKind('interval'), 'interval')
   assert.equal(editorKind('cron'), 'cron')
 })

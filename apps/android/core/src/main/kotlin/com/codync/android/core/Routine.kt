@@ -19,7 +19,7 @@ import java.time.format.FormatStyle
     /** What a run that would pass the bot's daily token limit follows: `wait` or `skip` (older hosts send nothing). */
     val limitPolicy: String? = null,
 ) {
-    val keepsOriginal: Boolean get() = triggers.size != 1 || triggers.single()["type"]?.jsonPrimitive?.content !in listOf("cron", "interval", "webhook")
+    val keepsOriginal: Boolean get() = triggers.size != 1 || triggers.single()["type"]?.jsonPrimitive?.content !in listOf("cron", "interval", "event", "webhook")
     val hasWebhook: Boolean get() = triggers.any { it["type"]?.jsonPrimitive?.content in listOf("webhook", "event") }
 }
 
@@ -96,9 +96,12 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
     val windowStart: Int? = null, val windowEnd: Int? = null,
     val hour: Int = 9, val minute: Int = 0,
     val at: Long = 0, val expression: String = "", val zone: String = "", val original: List<JsonObject> = emptyList(),
+    /** An event trigger: the service, the event it sends and its filters. */
+    val eventSource: String = "github", val eventName: String = "issues.opened",
+    val eventFilters: Map<String, String> = emptyMap(),
 ) {
     /**
-     * What the editor shows: the host's own reading of the trigger. Kinds the editor can't edit (`once`, events,
+     * What the editor shows: the host's own reading of the trigger. Kinds the editor can't edit (`once`,
      * several triggers) keep the original triggers; the visual style the host detected is retained, never forced to `custom`.
      */
     fun forMobileEditor(): RoutineScheduleDraft = copy(kind = if (kind in RoutineSchedule.editableKinds) kind else "keep")
@@ -112,7 +115,16 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 @Serializable data class RoutineSchedulePreview(
     val draft: RoutineScheduleDraft, val triggers: List<JsonObject>, val summary: String,
     val nextRunAt: Long? = null, val nextRuns: List<Long>? = null, val warning: String? = null,
+    /** The event services and filters the editor offers. */
+    val sources: List<RoutineEventSource> = emptyList(),
 )
+
+/** A service a routine can run on, its events and the filters it takes (host `routines::events`). */
+@Serializable data class RoutineEventSource(val id: String, val label: String, val events: List<RoutineEvent>, val filters: List<RoutineEventFilter>)
+
+@Serializable data class RoutineEvent(val id: String, val label: String)
+
+@Serializable data class RoutineEventFilter(val key: String, val label: String, val hint: String)
 
 @Serializable data class RoutineWebhook(val url: String? = null, val localUrl: String, val key: String, val connected: Boolean)
 

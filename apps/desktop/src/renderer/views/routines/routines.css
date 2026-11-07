@@ -50,10 +50,12 @@ textarea.routine-input {
   font-size: var(--text-body);
   font-weight: 400;
 }
-.routine-form {
+.routine-form-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+}
+.routine-form {
   border: none;
   margin: 0;
   padding: 0;

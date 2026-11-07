@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compiledCron, durationText, repeatChoice, runLabel, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
+import { compiledCron, durationText, emptyDraft, repeatChoice, runLabel, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
 import { matchZones, timeZoneOptions, zoneOffset } from './time-zones.ts'
 
 test('time zones match like the phones: name start, word starts, inside, letters in order', () => {
@@ -54,6 +54,14 @@ test('Custom starts from the cron the host compiled', () => {
   assert.equal(compiledCron(preview([{ type: 'cron', expression: '0 9 * * 1-5', timeZone: 'Asia/Taipei' }])), '0 9 * * 1-5')
   assert.equal(compiledCron(preview([{ type: 'webhook' }])), null)
   assert.equal(compiledCron(null), null)
+})
+
+test('an event draft starts at a valid GitHub event with no filters', () => {
+  const draft = emptyDraft()
+  assert.equal(draft.eventSource, 'github')
+  assert.equal(draft.eventName, 'issues.opened')
+  assert.deepEqual(draft.eventFilters, {})
+  assert.equal(draft.kind, 'cron', 'a new routine still starts on a schedule')
 })
 
 test('a queued run says when a waiting retry goes', () => {

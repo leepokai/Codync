@@ -18,6 +18,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.RoutineEvent
+import com.codync.android.core.RoutineEventSource
 import com.codync.android.core.RoutineSchedule
 import com.codync.android.core.RoutineScheduleDraft
 import com.codync.android.core.RoutineSchedulePreview
@@ -101,6 +103,46 @@ import java.util.Date
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { FieldBox(schedule.amount, { change(schedule.copy(amount = it.filter(Char::isDigit).take(6))) }, "1", fill = Palette.bubbleUser, capitalize = false) }
                 ChoicePicker(schedule.unit, RoutineSchedule.intervalUnits, { change(schedule.copy(unit = it)) }, label = "Unit")
+            }
+        }
+        SchedulePreview(preview, error)
+    }
+}
+
+/** The service, the event and its filters of an `event` trigger (host `routines::events`). */
+@Composable internal fun EventFields(
+    schedule: RoutineScheduleDraft,
+    change: (RoutineScheduleDraft) -> Unit,
+    sources: List<RoutineEventSource>,
+    preview: RoutineSchedulePreview?,
+    error: String?,
+) {
+    val known = sources.firstOrNull { it.id == schedule.eventSource }
+    val source = known ?: sources.firstOrNull()
+    // A source the catalog doesn't list (an older trigger) is offered as it is, so saving it again
+    // doesn't move its event to another service.
+    val offers = if (known == null && source != null && schedule.eventSource.isNotBlank())
+        listOf(RoutineEventSource(schedule.eventSource, schedule.eventSource, listOf(RoutineEvent(schedule.eventName, schedule.eventName)), emptyList())) + sources
+    else sources
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        if (source == null) Text("Loading the services…", style = Type.caption, color = Palette.tertiary)
+        else {
+            Field("Service") {
+                ChoicePicker(source.id, offers.map { it.id to it.label }, { id ->
+                    // A new service starts from its first event and has no filters of the old one.
+                    val next = offers.firstOrNull { it.id == id }
+                    change(schedule.copy(eventSource = id, eventName = next?.events?.firstOrNull()?.id ?: "*", eventFilters = emptyMap()))
+                }, label = "Service")
+            }
+            Field("Event") {
+                ChoicePicker(schedule.eventName, source.events.map { it.id to it.label }, { change(schedule.copy(eventName = it)) }, label = "Event")
+            }
+            for (filter in source.filters) Field(filter.label, filter.hint) {
+                FieldBox(schedule.eventFilters[filter.key].orEmpty(), { value ->
+                    val next = schedule.eventFilters.toMutableMap()
+                    if (value.isBlank()) next.remove(filter.key) else next[filter.key] = value
+                    change(schedule.copy(eventFilters = next))
+                }, if (filter.key == "repo") "owner/name" else "", fill = Palette.bubbleUser, capitalize = false)
             }
         }
         SchedulePreview(preview, error)

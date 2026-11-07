@@ -81,6 +81,15 @@ class RoutineTest {
         assertEquals(listOf(1, 2, 3, 4, 6, 8, 12), RoutineSchedule.everyHours.map { it.first })
     }
 
+    @Test fun `an event draft starts at a valid GitHub event and the editor can edit it`() {
+        val draft = RoutineScheduleDraft()
+        assertEquals("github", draft.eventSource)
+        assertEquals("issues.opened", draft.eventName)
+        assertTrue(draft.eventFilters.isEmpty())
+        assertTrue("event" in RoutineSchedule.editableKinds)
+        assertEquals("event", draft.copy(kind = "event").forMobileEditor().kind)
+    }
+
     @Test fun `only calendar styles ask for a time`() {
         assertTrue(RoutineSchedule.usesTime("weekly"))
         assertFalse(RoutineSchedule.usesTime("hourly"))

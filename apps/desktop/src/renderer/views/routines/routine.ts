@@ -136,6 +136,10 @@ export interface RoutineScheduleDraft {
   at: number
   expression: string
   zone: string
+  /** An event trigger: the service, the event it sends and its filters. */
+  eventSource: string
+  eventName: string
+  eventFilters: Record<string, string>
   original: RoutineTrigger[]
 }
 
@@ -157,10 +161,20 @@ export const emptyDraft = (): RoutineScheduleDraft => ({
   at: 0,
   expression: '',
   zone: '',
+  eventSource: 'github',
+  eventName: 'issues.opened',
+  eventFilters: {},
   original: [],
 })
 
 export const sameDraft = (a: RoutineScheduleDraft | null, b: RoutineScheduleDraft | null) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b)
+
+export interface RoutineEventSource {
+  id: string
+  label: string
+  events: { id: string; label: string }[]
+  filters: { key: string; label: string; hint: string }[]
+}
 
 export interface RoutineSchedulePreview {
   draft: RoutineScheduleDraft
@@ -169,6 +183,8 @@ export interface RoutineSchedulePreview {
   nextRunAt?: number | null
   nextRuns?: number[] | null
   warning?: string | null
+  /** The event services and filters the editor offers. */
+  sources?: RoutineEventSource[]
 }
 
 /**

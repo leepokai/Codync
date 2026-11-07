@@ -226,7 +226,9 @@ impl Trigger {
                     .map_or_else(|_| expression.clone(), |cron| cron.describe().trim_end_matches('.').to_owned())
             ),
             Self::Webhook => "When a webhook fires".into(),
-            Self::Event { source, event, .. } => format!("{source} · {event}"),
+            Self::Event { source, event, .. } => {
+                super::events::describe(source, event).unwrap_or_else(|| format!("{source} · {event}"))
+            }
             Self::Watch { target, every_minutes, .. } => {
                 format!("When {target} changes · checked every {every_minutes} min")
             }
@@ -237,13 +239,7 @@ impl Trigger {
         let Self::Event { source, event, filters } = self else { return false };
         payload["source"].as_str() == Some(source)
             && (event == "*" || payload["event"].as_str() == Some(event))
-            && filters.iter().all(|(key, value)| {
-                if key == "messageContains" {
-                    payload["text"].as_str().is_some_and(|text| text.contains(value))
-                } else {
-                    payload[key].as_str() == Some(value)
-                }
-            })
+            && filters.iter().all(|(key, value)| super::events::matches(payload, key, value))
     }
 }
 

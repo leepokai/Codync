@@ -54,6 +54,7 @@ import com.codync.android.core.Routine
 import com.codync.android.core.RoutineDraft
 import com.codync.android.core.RoutineScheduleDraft
 import com.codync.android.core.RoutineSchedulePreview
+import com.codync.android.core.RoutineEventSource
 import com.codync.android.core.RoutineWebhook
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -129,6 +130,7 @@ import kotlinx.coroutines.launch
     var preview by remember { mutableStateOf<RoutineSchedulePreview?>(null) }
     var checked by remember { mutableStateOf<RoutineScheduleDraft?>(null) }
     var previewError by remember { mutableStateOf<String?>(null) }
+    var sources by remember { mutableStateOf<List<RoutineEventSource>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     var advanced by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -140,6 +142,7 @@ import kotlinx.coroutines.launch
             val result = store.routineSchedule(routine?.triggers.orEmpty(), TimeZone.getDefault().id)
             draft = draft.copy(schedule = result.draft.forMobileEditor())
             preview = result; checked = draft.schedule; loaded = true; error = null
+            if (result.sources.isNotEmpty()) sources = result.sources
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = failure.message ?: "Connect to this computer to load the schedule." }
     }
@@ -151,14 +154,14 @@ import kotlinx.coroutines.launch
         delay(300)
         try {
             val result = store.routineSchedule(requested)
-            if (draft.schedule == requested) { preview = result; checked = requested }
+            if (draft.schedule == requested) { preview = result; checked = requested; if (result.sources.isNotEmpty()) sources = result.sources }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { if (draft.schedule == requested) previewError = failure.message ?: "Couldn't check this schedule." }
     }
     val canSave = draft.name.isNotBlank() && draft.instruction.isNotBlank() && online && !busy && loaded && checked == draft.schedule && previewError == null
     val options = buildList {
         if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.triggerDescriptions.joinToString(" · "))
-        add("cron" to "Schedule"); add("interval" to "Interval"); add("webhook" to "Webhook")
+        add("cron" to "Schedule"); add("interval" to "Interval"); add("event" to "Event"); add("webhook" to "Webhook")
     }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader(if (routine == null) "Set up a routine" else "Edit routine")
@@ -177,9 +180,11 @@ import kotlinx.coroutines.launch
                 else when (draft.schedule.kind) {
                     "cron" -> ScheduleFields(draft.schedule, { draft = draft.copy(schedule = it) }, if (checked == draft.schedule) preview else null, previewError)
                     "interval" -> IntervalFields(draft.schedule, { draft = draft.copy(schedule = it) }, if (checked == draft.schedule) preview else null, previewError)
+                    "event" -> EventFields(draft.schedule, { draft = draft.copy(schedule = it) }, sources,
+                        if (checked == draft.schedule) preview else null, previewError)
                     "webhook" -> if (routine?.hasWebhook == true) RoutineWebhookPanel(botId, routine.id, online, state.contextId, store)
                         else Note("Runs each time something is posted to its URL. Save to get the URL and key.")
-                    else -> Note("Set up by the bot. Pick Schedule, Interval or Webhook to replace it.")
+                    else -> Note("Set up by the bot. Pick Schedule, Event or Webhook to replace it.")
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -214,7 +219,7 @@ import kotlinx.coroutines.launch
         Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 36.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (previewError != null) LinkButton("Check schedule again", enabled = online) { checkAttempt++ }
             if (!loaded && error != null) LinkButton("Retry loading schedule") { loadAttempt++ }
-            if (draft.schedule.kind !in listOf("cron", "interval")) previewError?.let { Text(it, style = Type.caption, color = Palette.danger) }
+            if (draft.schedule.kind !in listOf("cron", "interval", "event")) previewError?.let { Text(it, style = Type.caption, color = Palette.danger) }
             error?.let { IconLabel(it, "exclamationmark.circle", Palette.danger, style = Type.callout) }
             if (!online) IconLabel("Connect to this computer to save your routine.", "wifi.slash", Palette.danger, style = Type.caption)
             if (loaded && online && (draft.name.isBlank() || draft.instruction.isBlank()))

@@ -7,6 +7,7 @@ const dev = require('../../tools/dev-builder.cjs')
 const { AppInfo } = require('app-builder-lib/out/appInfo')
 const { getWindowsInstallationDirName, getWindowsInstallationAppPackageName } = require('app-builder-lib/out/targets/targetUtil')
 const { parse } = require('yaml')
+const { deepAssign } = require('builder-util')
 const prod = parse(readFileSync(new URL('../../electron-builder.yml', import.meta.url), 'utf8'))
 const metadata = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
 
@@ -19,6 +20,25 @@ test('Linux packages and Windows installation resources have separate developmen
   assert.notEqual(getWindowsInstallationDirName(devInfo, true), getWindowsInstallationDirName(mainInfo, true))
   assert.notEqual(getWindowsInstallationAppPackageName(devInfo.name), getWindowsInstallationAppPackageName(mainInfo.name))
   assert.equal(dev.extraMetadata.desktopName, 'codync-dev.desktop')
+})
+
+test('macOS packaging declares local network access alongside microphone and speech', () => {
+  const usage = 'Connect to model servers and devices on your local network.'
+  for (const config of [prod, dev]) {
+    assert.equal(config.mac.extendInfo.NSLocalNetworkUsageDescription, usage)
+    assert.equal(config.mac.extendInfo.NSMicrophoneUsageDescription, 'Talk to your bots in a voice call.')
+    assert.match(config.mac.extendInfo.NSSpeechRecognitionUsageDescription, /transcribed on this Mac/)
+    // MacPackager.applyCommonInfo deep-assigns extendInfo onto Contents/Info.plist.
+    const appPlist: Record<string, unknown> = {
+      CFBundleIdentifier: 'com.pokai.Codync',
+      NSAppTransportSecurity: { NSAllowsLocalNetworking: true },
+    }
+    deepAssign(appPlist, config.mac.extendInfo)
+    assert.equal(appPlist.NSLocalNetworkUsageDescription, usage)
+    assert.equal(appPlist.NSMicrophoneUsageDescription, 'Talk to your bots in a voice call.')
+    const transport = appPlist.NSAppTransportSecurity as { NSAllowsLocalNetworking: boolean }
+    assert.equal(transport.NSAllowsLocalNetworking, true)
+  }
 })
 
 test('development packaging registers only development callbacks and background helpers', () => {

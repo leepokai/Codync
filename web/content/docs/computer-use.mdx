@@ -110,3 +110,5 @@ A bot that uses the computer can keep a named browser profile in its settings, u
 
 Profile names are local to the bot and to the computer. Clearing the name starts the next visit with an empty browser; the named profile's saved pages stay on disk until you remove Codync's data.
 
+A profile can also use its own **browser proxy**, set beside the profile name: `socks5://user:password@host:1080`, `http://host:3128`, `user:password@host:port` or `host:port:user:password`. The password is kept in the credential vault and masked afterwards, and the browser's traffic leaves through the proxy, including its sign-in, which Chromium cannot do by itself. Without a proxy the browser uses this computer's network.
+

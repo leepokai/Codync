@@ -1695,5 +1695,9 @@
   "People": "人員",
   "Labels, separated by commas": "標籤，用逗號分隔",
   "People, separated by commas": "人員，用逗號分隔",
-  "This output needs a value.": "此輸出需要一個值。"
+  "This output needs a value.": "此輸出需要一個值。",
+  "Browser proxy": "瀏覽器代理",
+  "This profile uses": "此設定檔使用",
+  "with a password": "帶密碼",
+  "Without a proxy the browser uses this computer's network.": "沒有代理時，瀏覽器使用本電腦的網路。"
 }

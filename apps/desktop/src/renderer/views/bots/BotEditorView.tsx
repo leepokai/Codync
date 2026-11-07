@@ -131,6 +131,9 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const [pickingAvatar, setPickingAvatar] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
+  const [proxy, setProxy] = useState<{ proxy: string | null; authenticated: boolean } | null>(null)
+  const [proxyInput, setProxyInput] = useState('')
+  const [proxyError, setProxyError] = useState<string | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
   const setLayer = (layer: keyof Personality, value: string) =>
@@ -140,6 +143,36 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
   const models = useAgentModels(draft.backend, draft.account ?? null)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
+  useEffect(() => {
+    const id = draft.id
+    if (!id) return
+    void (async () => {
+      try {
+        setProxy(await (await store.ready()).call('browserProxy', { botId: id }))
+      } catch {
+        setProxy(null)
+      }
+    })()
+  }, [draft.id, store])
+  const saveProxy = async () => {
+    if (!draft.id || !proxyInput.trim()) return
+    try {
+      setProxy(await (await store.ready()).call('setBrowserProxy', { botId: draft.id, address: proxyInput.trim() }))
+      setProxyInput('')
+      setProxyError(null)
+    } catch (e) {
+      setProxyError((e as Error).message)
+    }
+  }
+  const clearProxy = async () => {
+    if (!draft.id) return
+    try {
+      setProxy(await (await store.ready()).call('clearBrowserProxy', { botId: draft.id }))
+      setProxyError(null)
+    } catch (e) {
+      setProxyError((e as Error).message)
+    }
+  }
 
   const backends = store.hello?.backends ?? []
   const backend = backends.find((b) => b.id === draft.backend)
@@ -398,6 +431,25 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
                 spellCheck={false}
                 onChange={(e) => set('browserProfile', e.target.value || null)}
               />
+            </ValueRow>
+          ) : null}
+          {draft.computer && draft.id ? (
+            <ValueRow
+              label="Browser proxy"
+              detail={proxy?.proxy ? `This profile uses ${proxy.proxy}${proxy.authenticated ? ' · with a password' : ''}.` : "Without a proxy the browser uses this computer's network."}
+            >
+              <HStack gap={8}>
+                <input
+                  className="field-box bot-command"
+                  value={proxyInput}
+                  placeholder="socks5://user:pass@host:1080"
+                  spellCheck={false}
+                  onChange={(e) => setProxyInput(e.target.value)}
+                />
+                <Button kind="secondary" disabled={!proxyInput.trim()} onClick={() => void saveProxy()}>{tr('Save')}</Button>
+                {proxy?.proxy ? <Button kind="secondary" onClick={() => void clearProxy()}>{tr('Remove')}</Button> : null}
+              </HStack>
+              {proxyError ? <Text size="caption" tone="danger">{proxyError}</Text> : null}
             </ValueRow>
           ) : null}
           {[...store.bots.values()].some((b) => b.manageTeam !== null) ? (

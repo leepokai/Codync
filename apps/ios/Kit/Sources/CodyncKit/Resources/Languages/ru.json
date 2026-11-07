@@ -1695,5 +1695,9 @@
   "People": "Люди",
   "Labels, separated by commas": "Метки через запятую",
   "People, separated by commas": "Люди через запятую",
-  "This output needs a value.": "Этому выходу нужно значение."
+  "This output needs a value.": "Этому выходу нужно значение.",
+  "Browser proxy": "Прокси браузера",
+  "This profile uses": "Этот профиль использует",
+  "with a password": "с паролем",
+  "Without a proxy the browser uses this computer's network.": "Без прокси браузер использует сеть этого компьютера."
 }

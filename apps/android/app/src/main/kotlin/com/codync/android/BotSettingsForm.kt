@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.launch
 
 /**
  * Which settings a form shows (iOS `FormPart`): all of them (the editor), what changes often (instructions and the agent:
@@ -62,7 +64,7 @@ internal enum class FormPart { All, Often, Rarely }
                     agentRows(state, store, draft, change, bot) { addingFallback = true }; placeRows(state, store, draft, bot?.securityProfile, change) { folders = true }
                 }
                 CardSection("Activity") {
-                    notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
+                    notifyRow(draft, change); computerUseRow(state, store, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
                 }
                 Plugins(state, draft, change) { viewingSkill = it }
                 draft.id?.let { MemoryCard(it, state, store) }
@@ -209,7 +211,7 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
 private fun CardRows.notifyRow(draft: BotDraft, change: (BotDraft) -> Unit) =
     row { SwitchRow("Notifications", "Get notified when this bot finishes or needs you", draft.notify != false, { change(draft.copy(notify = it)) }) }
 
-private fun CardRows.computerUseRow(state: AppState, draft: BotDraft, change: (BotDraft) -> Unit) {
+private fun CardRows.computerUseRow(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit) {
     val screen = state.screen ?: return
     row { SwitchRow("Use the computer", computerUseDetail(screen), draft.computer, { change(draft.copy(computer = it)) }) }
     if (draft.computer) {
@@ -217,6 +219,36 @@ private fun CardRows.computerUseRow(state: AppState, draft: BotDraft, change: (B
             Field("Browser profile", "A name keeps this bot's sign-ins and cookies between visits. Leave empty for a fresh browser each time.") {
                 FieldBox(draft.browserProfile ?: "", { change(draft.copy(browserProfile = it.ifBlank { null })) }, "e.g. Client A")
             }
+        }
+        draft.id?.let { id -> row { BrowserProxyField(id, store) } }
+    }
+}
+
+/** A bot's proxy, masked; the password stays on the computer. */
+@Composable private fun BrowserProxyField(botId: String, store: AppStore) {
+    var current by remember(botId) { mutableStateOf<BrowserProxy?>(null) }
+    var input by remember(botId) { mutableStateOf("") }
+    var error by remember(botId) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(botId) { current = runCatching { store.browserProxy(botId) }.getOrNull() }
+    val detail = current?.proxy?.let { "${tr("This profile uses")} $it${if (current?.authenticated == true) " · ${tr("with a password")}" else ""}." }
+        ?: tr("Without a proxy the browser uses this computer's network.")
+    Field("Browser proxy", detail) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            FieldBox(input, { input = it }, "socks5://user:pass@host:1080", fill = Palette.bubbleUser, capitalize = false)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton("Save", enabled = input.isNotBlank()) {
+                    scope.launch {
+                        runCatching { store.setBrowserProxy(botId, input.trim()) }
+                            .onSuccess { current = it; input = ""; error = null }
+                            .onFailure { error = it.message ?: "That proxy did not work." }
+                    }
+                }
+                if (current?.proxy != null) {
+                    SecondaryButton("Remove") { scope.launch { runCatching { store.clearBrowserProxy(botId) }.onSuccess { current = it } } }
+                }
+            }
+            error?.let { Text(it, style = Type.caption, color = Palette.danger) }
         }
     }
 }

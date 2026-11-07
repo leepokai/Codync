@@ -19,7 +19,7 @@ pub(super) struct Pipe {
     next: u64,
     poisoned: bool,
 }
-pub(super) fn spawn(browser: &Path, folder: &Path) -> Result<(Process, Pipe)> {
+pub(super) fn spawn(browser: &Path, folder: &Path, proxy: Option<&str>) -> Result<(Process, Pipe)> {
     let node = crate::agent::backends::which("node")
         .or_else(|| {
             crate::agent::node::search_dirs().iter().map(|dir| dir.join("node.exe")).find(|path| path.is_file())
@@ -35,6 +35,7 @@ pub(super) fn spawn(browser: &Path, folder: &Path) -> Result<(Process, Pipe)> {
         .args(["-e", include_str!("../protected-browser-broker.mjs"), "--"])
         .arg(browser)
         .arg(folder)
+        .args(proxy.map(|proxy| format!("--proxy={proxy}")))
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())

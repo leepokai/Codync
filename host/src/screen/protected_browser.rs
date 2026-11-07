@@ -17,6 +17,8 @@ pub(super) struct Browser {
     context: String,
     /// A named profile keeps its sign-ins between entries; a fresh one is deleted on close.
     persistent: bool,
+    /// The loopback relay of this profile's proxy; dropped with the browser.
+    relay: Option<crate::browser::proxy::Relay>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -28,7 +30,7 @@ struct Request {
     code: Option<String>,
 }
 
-pub async fn call(hub: &Hub, method: &str, body: Value) -> Result<Value> {
+pub async fn call(hub: &std::sync::Arc<Hub>, method: &str, body: Value) -> Result<Value> {
     let _operation = hub.screen.protected_operation.lock().await;
     let request: Request = serde_json::from_value(body)?;
     let state = hub.screen.protected_state();
@@ -64,7 +66,7 @@ pub async fn call(hub: &Hub, method: &str, body: Value) -> Result<Value> {
         }
         hub.screen.driver.cancel().await?;
         *current = Some(
-            tokio::time::timeout(Duration::from_secs(20), open(&request.id, site, bot, profile.as_deref()))
+            tokio::time::timeout(Duration::from_secs(20), open(hub, &request.id, site, bot, profile.as_deref()))
                 .await
                 .context("Protected browser opening timed out")??,
         );
@@ -241,8 +243,14 @@ fn remove_profile(folder: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-async fn open(id: &str, site: &str, bot: &str, profile: Option<&str>) -> Result<Browser> {
+async fn open(hub: &std::sync::Arc<Hub>, id: &str, site: &str, bot: &str, profile: Option<&str>) -> Result<Browser> {
     let exe = browser_executable().context("Install Chrome or Edge to use protected browser entry")?;
+    crate::market::vault::unlock(hub.clone()).await?;
+    let relay = match crate::browser::proxy::load(&hub.store, bot)? {
+        Some(proxy) => Some(crate::browser::proxy::start(proxy).await?),
+        None => None,
+    };
+    let proxy = relay.as_ref().map(|relay| format!("http://127.0.0.1:{}", relay.port));
     let parent = crate::service::data_dir().join("protected-browsers");
     std::fs::create_dir_all(&parent)?;
     let named = profile.map(profile_slug).filter(|name| !name.is_empty());
@@ -255,7 +263,7 @@ async fn open(id: &str, site: &str, bot: &str, profile: Option<&str>) -> Result<
         std::fs::create_dir(&folder)?;
         (folder, false)
     };
-    let (process, mut socket) = pipe::spawn(&exe, &folder)?;
+    let (process, mut socket) = pipe::spawn(&exe, &folder, proxy.as_deref())?;
     let targets = rpc(&mut socket, "Target.getTargets", json!({}), None).await?;
     let context = rpc(&mut socket, "Target.createBrowserContext", json!({"disposeOnDetach":false}), None).await?;
     let context = context["browserContextId"]
@@ -270,7 +278,7 @@ async fn open(id: &str, site: &str, bot: &str, profile: Option<&str>) -> Result<
     for page in targets["targetInfos"].as_array().into_iter().flatten().filter(|page| page["type"] == "page") {
         rpc(&mut socket, "Target.closeTarget", json!({"targetId":page["targetId"]}), None).await?;
     }
-    Ok(Browser { id: id.into(), process, folder, pipe: socket, target, context, persistent })
+    Ok(Browser { id: id.into(), process, folder, pipe: socket, target, context, persistent, relay })
 }
 
 /// A safe folder name for a bot or profile label.

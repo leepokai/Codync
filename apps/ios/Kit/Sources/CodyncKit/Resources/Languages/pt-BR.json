@@ -1695,5 +1695,9 @@
   "People": "Pessoas",
   "Labels, separated by commas": "Etiquetas, separadas por vírgulas",
   "People, separated by commas": "Pessoas, separadas por vírgulas",
-  "This output needs a value.": "Esta saída precisa de um valor."
+  "This output needs a value.": "Esta saída precisa de um valor.",
+  "Browser proxy": "Proxy do navegador",
+  "This profile uses": "Este perfil usa",
+  "with a password": "com senha",
+  "Without a proxy the browser uses this computer's network.": "Sem proxy, o navegador usa a rede deste computador."
 }

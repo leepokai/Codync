@@ -1695,5 +1695,9 @@
   "People": "人",
   "Labels, separated by commas": "ラベルをカンマ区切り",
   "People, separated by commas": "人をカンマ区切り",
-  "This output needs a value.": "この出力には値が必要です。"
+  "This output needs a value.": "この出力には値が必要です。",
+  "Browser proxy": "ブラウザプロキシ",
+  "This profile uses": "このプロファイルは使用します",
+  "with a password": "パスワードあり",
+  "Without a proxy the browser uses this computer's network.": "プロキシがなければ、ブラウザはこのコンピューターのネットワークを使います。"
 }

@@ -1695,5 +1695,9 @@
   "People": "人员",
   "Labels, separated by commas": "标签，用逗号分隔",
   "People, separated by commas": "人员，用逗号分隔",
-  "This output needs a value.": "此输出需要一个值。"
+  "This output needs a value.": "此输出需要一个值。",
+  "Browser proxy": "浏览器代理",
+  "This profile uses": "此配置文件使用",
+  "with a password": "带密码",
+  "Without a proxy the browser uses this computer's network.": "没有代理时，浏览器使用本电脑的网络。"
 }

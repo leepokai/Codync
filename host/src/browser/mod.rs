@@ -3,4 +3,5 @@
 
 pub mod passkey_detector;
 pub mod profile_manager;
+pub mod proxy;
 pub mod tab_guard;

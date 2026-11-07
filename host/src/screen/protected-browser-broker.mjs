@@ -1,9 +1,11 @@
 // Private inherited CDP pipes only. Never log requests, replies, errors or secret values.
 const {spawn}=require('node:child_process')
 const {once}=require('node:events')
-const [executable,folder,probe]=process.argv.slice(1)
-if(!executable||!folder||(probe&&probe!=='--headless-probe'))process.exit(1)
-const browser=spawn(executable,[`--user-data-dir=${folder}`,'--remote-debugging-pipe',...(probe?['--headless=new']:[]),'--incognito','--no-first-run','--no-default-browser-check','--disable-extensions','--disable-sync','--new-window','about:blank'],{stdio:['ignore','ignore','ignore','pipe','pipe'],windowsHide:!!probe})
+const [executable,folder,...flags]=process.argv.slice(1)
+if(!executable||!folder)process.exit(1)
+const proxy=flags.find(f=>f.startsWith('--proxy='))?.slice('--proxy='.length)
+const probe=flags.includes('--headless-probe')
+const browser=spawn(executable,[`--user-data-dir=${folder}`,'--remote-debugging-pipe',...(proxy?[`--proxy-server=${proxy}`]:[]),...(probe?['--headless=new']:[]),'--incognito','--no-first-run','--no-default-browser-check','--disable-extensions','--disable-sync','--new-window','about:blank'],{stdio:['ignore','ignore','ignore','pipe','pipe'],windowsHide:!!probe})
 const limit=262144
 const requests=new Set()
 let lastId=0

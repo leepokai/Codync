@@ -16,6 +16,25 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
+        "browserProxy" => {
+            let bot = str_arg(&b, "botId")?;
+            crate::market::vault::unlock(hub.clone()).await?;
+            let proxy = crate::browser::proxy::load(&hub.store, bot)?;
+            json!({"proxy": proxy.as_ref().map(crate::browser::proxy::Proxy::masked), "authenticated": proxy.is_some_and(|p| p.username.is_some())})
+        }
+        "setBrowserProxy" => {
+            let bot = str_arg(&b, "botId")?;
+            let proxy = crate::browser::proxy::parse(str_arg(&b, "address")?)?;
+            crate::market::vault::unlock(hub.clone()).await?;
+            crate::browser::proxy::save(&hub.store, bot, &proxy)?;
+            json!({"proxy": proxy.masked(), "authenticated": proxy.username.is_some()})
+        }
+        "clearBrowserProxy" => {
+            let bot = str_arg(&b, "botId")?;
+            crate::market::vault::unlock(hub.clone()).await?;
+            crate::browser::proxy::clear(&hub.store, bot)?;
+            json!({"proxy": null, "authenticated": false})
+        }
         "routines" => hub.routines.list(str_arg(&b, "botId")?, |_| false),
         "routineCalendar" => hub.routines.calendar(
             str_arg(&b, "botId")?,

@@ -83,12 +83,14 @@ read leaves the placeholder. While a sound loads its button shows a spinner; onc
 its caption reads elapsed / total time over a progress bar. Tapping or dragging the bar
 (clicking on desktop) moves the sound there, playing or paused; its touch area runs past the
 4 pt bar without taking layout, and VoiceOver/TalkBack adjust or the arrow keys move it five
-seconds. A sound that can't be read or decoded goes back to play and its caption reads
-"Couldn't play. Tap to retry." (click on desktop), with no dialog; the next tap reads it
-again. Screen readers get one element per card, with play, view and download as its
-actions. On desktop the card is one keyboard stop: Enter or Space does its first action
-(play, view, else download), and its menu (right-click, Shift-F10 or VoiceOver's Show
-menu) lists them all. The terminal UI shows only the card.
+seconds. A sound that can't be read or decoded, also one that breaks mid-play, goes back to
+play and its caption reads "Couldn't play. Tap to retry." (click on desktop), with no
+dialog; the next tap reads it again. On the phones, starting a sound pauses the one playing.
+Screen readers get one element per card, with play, view and download as its actions; a
+double tap runs the first. On desktop the card is one keyboard stop: Enter or Space does its
+first action (play, view, else download), and its menu (right-click, Shift-F10 or
+VoiceOver's Show menu) lists them all; while the menu is open the card's own keys do
+nothing. The terminal UI shows only the card.
 
 ### A voice note inside its message
 

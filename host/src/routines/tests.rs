@@ -19,6 +19,7 @@ pub(super) fn routine() -> Routine {
         missed_policy: "skip".into(),
         limit_policy: "wait".into(),
         outputs: vec![],
+        thread: false,
     }
 }
 #[test]

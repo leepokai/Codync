@@ -1699,5 +1699,7 @@
   "Browser proxy": "Proxy du navigateur",
   "This profile uses": "Ce profil utilise",
   "with a password": "avec un mot de passe",
-  "Without a proxy the browser uses this computer's network.": "Sans proxy, le navigateur utilise le réseau de cet ordinateur."
+  "Without a proxy the browser uses this computer's network.": "Sans proxy, le navigateur utilise le réseau de cet ordinateur.",
+  "Run in a thread": "Exécuter dans un fil",
+  "Its runs post in a thread of the bot chat instead of the main one.": "Ses exécutions sont publiées dans un fil du chat du bot, pas dans le principal."
 }

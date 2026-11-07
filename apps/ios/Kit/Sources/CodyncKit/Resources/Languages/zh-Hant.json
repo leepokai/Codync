@@ -1699,5 +1699,7 @@
   "Browser proxy": "瀏覽器代理",
   "This profile uses": "此設定檔使用",
   "with a password": "帶密碼",
-  "Without a proxy the browser uses this computer's network.": "沒有代理時，瀏覽器使用本電腦的網路。"
+  "Without a proxy the browser uses this computer's network.": "沒有代理時，瀏覽器使用本電腦的網路。",
+  "Run in a thread": "在執行緒中執行",
+  "Its runs post in a thread of the bot chat instead of the main one.": "其執行會發佈到機器人聊天的執行緒中，而不是主聊天。"
 }

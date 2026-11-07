@@ -1699,5 +1699,7 @@
   "Browser proxy": "ブラウザプロキシ",
   "This profile uses": "このプロファイルは使用します",
   "with a password": "パスワードあり",
-  "Without a proxy the browser uses this computer's network.": "プロキシがなければ、ブラウザはこのコンピューターのネットワークを使います。"
+  "Without a proxy the browser uses this computer's network.": "プロキシがなければ、ブラウザはこのコンピューターのネットワークを使います。",
+  "Run in a thread": "スレッドで実行",
+  "Its runs post in a thread of the bot chat instead of the main one.": "実行はメインチャットではなく、ボットチャットのスレッドに投稿されます。"
 }

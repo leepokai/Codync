@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, CardSection, ChipChoice, IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
+import { Button, CardSection, ChipChoice, IconButton, SegmentedChoice, Spinner, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -43,6 +43,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const [checkedSchedule, setCheckedSchedule] = useState<RoutineScheduleDraft | null>(null)
   const [sources, setSources] = useState<RoutineEventSource[]>([])
   const [outputs, setOutputs] = useState<RoutineOutput[]>(routine?.outputs ?? [])
+  const [thread, setThread] = useState(routine?.thread ?? false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [started, setStarted] = useState(false)
   const latest = useRef(schedule)
@@ -127,6 +128,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
         missedPolicy,
         limitPolicy,
         outputs,
+        thread,
       })
       saved(result.routine)
     } catch (e) {
@@ -244,6 +246,12 @@ export function RoutineEditorView({ botId, routine, saved }: {
                     </LabeledRow>
                     <Text size="caption" tone="tertiary" className="routine-policy-hint">
                       {tr(`The bot's daily token limit is used up: its runs follow this rule.`)}
+                    </Text>
+                    <LabeledRow label={tr('Run in a thread')}>
+                      <Switch on={thread} label={tr('Run in a thread')} onChange={setThread} />
+                    </LabeledRow>
+                    <Text size="caption" tone="tertiary" className="routine-policy-hint">
+                      {tr('Its runs post in a thread of the bot chat instead of the main one.')}
                     </Text>
                   </CardSection>
                 </div>

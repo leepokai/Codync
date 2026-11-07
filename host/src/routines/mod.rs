@@ -84,6 +84,9 @@ pub struct Routine {
     /// Where a workflow's last reply goes, if anywhere.
     #[serde(default)]
     pub outputs: Vec<Output>,
+    /// Runs post in a thread of the bot's chat instead of its main one.
+    #[serde(default)]
+    pub thread: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -123,6 +126,9 @@ pub struct Run {
     pub delivery_id: Option<String>,
     #[serde(default)]
     pub started_at: Option<i64>,
+    /// The thread this run posts in, when its routine asked for one.
+    #[serde(default)]
+    pub thread_root: Option<String>,
     #[serde(default)]
     report_pending: bool,
     #[serde(default)]
@@ -431,6 +437,7 @@ impl Routines {
                     "wait",
                 ),
                 outputs: wanted_outputs.or_else(|| old.as_ref().map(|r| r.outputs.clone())).unwrap_or_default(),
+                thread: body["thread"].as_bool().unwrap_or_else(|| old.as_ref().is_some_and(|r| r.thread)),
             };
             if !(1..=86_400).contains(&r.timeout_seconds) {
                 bail!("timeoutSeconds must be between 1 and 86400");
@@ -633,6 +640,7 @@ pub(crate) fn public(r: &Routine) -> Value {
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,"missedPolicy":r.missed_policy,"limitPolicy":r.limit_policy,
         "outputs":r.outputs,"outputDescriptions":r.outputs.iter().map(outputs::describe).collect::<Vec<_>>(),
+        "thread":r.thread,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
@@ -647,6 +655,7 @@ fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
         event,
         delivery_id,
         started_at: None,
+        thread_root: None,
         report_pending: false,
         result: None,
         attempt: 0,

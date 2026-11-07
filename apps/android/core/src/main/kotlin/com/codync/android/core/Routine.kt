@@ -20,6 +20,8 @@ import java.time.format.FormatStyle
     val limitPolicy: String? = null,
     /** Where a workflow's last reply goes (older hosts send nothing). */
     val outputs: List<RoutineOutput> = emptyList(),
+    /** Its runs post in a thread of the bot chat. */
+    val thread: Boolean = false,
 ) {
     val keepsOriginal: Boolean get() = triggers.size != 1 || triggers.single()["type"]?.jsonPrimitive?.content !in listOf("cron", "interval", "event", "webhook")
     val hasWebhook: Boolean get() = triggers.any { it["type"]?.jsonPrimitive?.content in listOf("webhook", "event") }
@@ -163,7 +165,7 @@ object RoutineOutputs {
 data class RoutineDraft(val id: String? = null, val name: String = "", val instruction: String = "",
     val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600",
     /** Absent (null) keeps the saved policies, the host's default on a new routine. */
-    val missedPolicy: String? = null, val limitPolicy: String? = null, val outputs: List<RoutineOutput> = emptyList()) {
+    val missedPolicy: String? = null, val limitPolicy: String? = null, val outputs: List<RoutineOutput> = emptyList(), val thread: Boolean = false) {
     /** The timeout in words: whole hours, else whole minutes, else seconds; anything else as typed. */
     val timeoutText: String get() {
         val seconds = timeoutSeconds.toLongOrNull() ?: return "${timeoutSeconds}s"
@@ -180,5 +182,6 @@ data class RoutineDraft(val id: String? = null, val name: String = "", val instr
         put("schedule", WireJson.encodeToJsonElement(schedule)); put("timeoutSeconds", timeoutSeconds)
         missedPolicy?.let { put("missedPolicy", it) }; limitPolicy?.let { put("limitPolicy", it) }
         put("outputs", WireJson.encodeToJsonElement(outputs))
+        put("thread", thread)
     }
 }

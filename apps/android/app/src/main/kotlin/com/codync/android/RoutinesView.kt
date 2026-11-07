@@ -124,7 +124,7 @@ import kotlinx.coroutines.launch
     var draft by remember(routine?.id) {
         mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(),
             timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString(),
-            missedPolicy = routine?.missedPolicy, limitPolicy = routine?.limitPolicy, outputs = routine?.outputs.orEmpty()))
+            missedPolicy = routine?.missedPolicy, limitPolicy = routine?.limitPolicy, outputs = routine?.outputs.orEmpty(), thread = routine?.thread ?: false))
     }
     var loaded by remember(routine?.id) { mutableStateOf(false) }
     var loadAttempt by remember { mutableIntStateOf(0) }
@@ -214,6 +214,10 @@ import kotlinx.coroutines.launch
                                 { draft = draft.copy(limitPolicy = it) }, label = "When out of usage")
                         }
                         Note("The bot's daily token limit is used up: its runs follow this rule.")
+                        Field("Run in a thread", "Its runs post in a thread of the bot chat instead of the main one.") {
+                            SwitchRow("Run in a thread", "Its runs post in a thread of the bot chat instead of the main one.", draft.thread,
+                                onChange = { draft = draft.copy(thread = it) })
+                        }
                     }
                 }
             }

@@ -47,6 +47,8 @@ export interface Routine {
   /** Where a workflow's last reply goes. */
   outputs?: RoutineOutput[] | null
   outputDescriptions?: string[] | null
+  /** Runs post in a thread of the bot's chat. */
+  thread?: boolean | null
 }
 
 export interface RoutineRun {

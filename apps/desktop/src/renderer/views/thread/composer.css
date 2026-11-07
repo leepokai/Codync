@@ -1,11 +1,4 @@
-/* The box, its mentions row and its attachments. */
-.mentions {
-  display: flex;
-  gap: 6px;
-  padding: 0 16px 6px;
-  overflow-x: auto;
-}
-.mention,
+/* The box and its attachments. */
 .file-chip {
   display: flex;
   align-items: center;
@@ -217,8 +210,8 @@
   color: var(--tertiary);
 }
 
-/* The `/` command list, floating over the transcript above the box. */
-.command-menu {
+/* The `/` and `@` lists, floating over the transcript above the box. */
+.composer-menu {
   position: absolute;
   left: 0;
   right: 0;
@@ -232,25 +225,10 @@
   transform: translateY(4px);
   transition: opacity var(--fade), transform var(--layout);
 }
-.command-menu.shown {
+.composer-menu.shown {
   opacity: 1;
   transform: none;
 }
-.command-menu .menu-panel {
+.composer-menu .menu-panel {
   max-height: 300px;
-}
-.command-title {
-  flex: none;
-}
-.command-detail {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-  color: var(--secondary);
-}
-.command-detail.warning {
-  color: var(--attention);
 }

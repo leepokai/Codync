@@ -85,7 +85,7 @@
 .anchored-panel::after,
 .account-panel::after,
 .action-menu::after,
-.command-menu::after {
+.composer-menu::after {
   content: '';
   position: absolute;
   inset: 0;

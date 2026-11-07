@@ -4,7 +4,7 @@
 //! growing wait whenever it drops or Discord asks. A message is queued before it is acknowledged by
 //! any later frame, so a drop right after receiving one loses nothing; the inbox drops duplicates.
 
-use super::{Arc, Config, Context, Hub, LockExt, Result, ingress, load};
+use super::{Arc, Config, Context, Hub, LockExt, Result, ingress, interactions, load};
 use crate::egress::{self, Policy};
 use anyhow::{bail, ensure};
 use futures::{SinkExt as _, StreamExt as _};
@@ -62,7 +62,7 @@ pub(super) async fn run(hub: Arc<Hub>, ep: Endpoint) {
     let mut session: Option<String> = None;
     let mut sequence: u64 = 0;
     loop {
-        match serve(&hub, &ep, &mut wait, &mut session, &mut sequence).await {
+        match Box::pin(serve(&hub, &ep, &mut wait, &mut session, &mut sequence)).await {
             Ok(()) => wait = (wait * 2).min(ep.max_wait),
             Err(error) => {
                 set_state(&hub, &format!("error: {}", format!("{error:#}").chars().take(160).collect::<String>()));
@@ -162,6 +162,18 @@ async fn serve(
             };
             if let Err(error) = ingress::accept(hub, &current, &frame["d"]) {
                 tracing::warn!(error = format!("{error:#}"), "Discord message was not accepted");
+            }
+        }
+        if frame["op"] == 0 && frame["t"] == "INTERACTION_CREATE" {
+            let Some(current) = ({
+                let _configuration = hub.store.connector_lock.locked();
+                load(&hub.store)?
+            })
+            .filter(|current| current.generation == c.generation) else {
+                return Ok(());
+            };
+            if let Err(error) = interactions::accept(hub, &current, &frame["d"], ep).await {
+                tracing::warn!(error = format!("{error:#}"), "Discord button was not answered");
             }
         }
     }

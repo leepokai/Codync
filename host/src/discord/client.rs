@@ -2,7 +2,7 @@
 
 use super::Endpoint;
 use crate::egress;
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use serde_json::json;
 use std::time::Duration;
 
@@ -65,6 +65,77 @@ pub(super) async fn message(
             let why = why["message"].as_str().unwrap_or("refused").to_owned();
             anyhow::bail!("Discord answered {status}: {why}");
         }
+    }
+    Ok(())
+}
+
+/// Sends a permission card with a button per option; returns the message id, so it can be settled.
+pub(super) async fn card(
+    ep: &Endpoint,
+    token: &str,
+    channel: &str,
+    text: &str,
+    buttons: &[(String, String)],
+) -> Result<String> {
+    let url = format!("{}/channels/{channel}/messages", ep.api);
+    let client = egress::client(ep.policy, &url).await?;
+    let row: Vec<serde_json::Value> = buttons
+        .iter()
+        .map(|(label, id)| {
+            json!({"type": 2, "style": 1, "label": label.chars().take(80).collect::<String>(), "custom_id": id})
+        })
+        .collect();
+    let body = json!({"content": text, "components": [{"type": 1, "components": row}]});
+    let response = client
+        .post(&url)
+        .header("authorization", format!("Bot {token}"))
+        .json(&body)
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Discord card failed: {}", e.without_url()))?;
+    let status = response.status();
+    let answer = egress::json(response, 16 * 1024).await.unwrap_or_default();
+    if !status.is_success() {
+        let why = answer["message"].as_str().unwrap_or("refused").to_owned();
+        anyhow::bail!("Discord answered {status}: {why}");
+    }
+    answer["id"].as_str().map(str::to_owned).context("Discord sent no card id")
+}
+
+/// Settles a card: its text changes and its buttons go away.
+pub(super) async fn settle(ep: &Endpoint, token: &str, channel: &str, message: &str, text: &str) -> Result<()> {
+    let url = format!("{}/channels/{channel}/messages/{message}", ep.api);
+    let client = egress::client(ep.policy, &url).await?;
+    let response = client
+        .patch(&url)
+        .header("authorization", format!("Bot {token}"))
+        .json(&json!({"content": text, "components": []}))
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Discord card edit failed: {}", e.without_url()))?;
+    let status = response.status();
+    if !status.is_success() {
+        let why = egress::json(response, 16 * 1024).await.unwrap_or_default();
+        let why = why["message"].as_str().unwrap_or("refused").to_owned();
+        anyhow::bail!("Discord answered {status}: {why}");
+    }
+    Ok(())
+}
+
+/// Answers a component interaction: `kind` 6 defers the card's update, 4 shows a small ephemeral note.
+pub(super) async fn interaction(ep: &Endpoint, token: &str, id: &str, kind: u8, note: Option<&str>) -> Result<()> {
+    let url = format!("{}/interactions/{id}/{token}/callback", ep.api);
+    let client = egress::client(ep.policy, &url).await?;
+    let mut body = json!({"type": kind});
+    if let Some(note) = note {
+        body["data"] = json!({"content": note, "flags": 64});
+    }
+    let response = client.post(&url).json(&body).timeout(Duration::from_secs(20)).send().await?;
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!("Discord refused the interaction answer with {status}");
     }
     Ok(())
 }

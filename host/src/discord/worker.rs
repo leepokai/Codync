@@ -6,12 +6,95 @@ use crate::{
 use std::time::Duration;
 
 pub(crate) async fn run(hub: Arc<Hub>) {
+    tokio::join!(sending(hub.clone()), watching(hub));
+}
+
+/// Prompt and reply queues, durable across restarts.
+async fn sending(hub: Arc<Hub>) {
     loop {
         if let Err(error) = tick(&hub).await {
             tracing::warn!(%error,"Discord channel needs attention");
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
+}
+
+/// Approval cards: posted when one is asked in a bound conversation, settled once anyone answers.
+async fn watching(hub: Arc<Hub>) {
+    let mut events = hub.events.subscribe();
+    loop {
+        let event = match events.recv().await {
+            Ok(event) => event,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+        };
+        if event["type"] != "entry" || event["entry"]["kind"] != "permission" {
+            continue;
+        }
+        if let Err(error) = card(&hub, &event["entry"]).await {
+            tracing::warn!(error = format!("{error:#}"), "Discord approval card was not shown");
+        }
+    }
+}
+
+async fn card(hub: &Arc<Hub>, entry: &serde_json::Value) -> Result<()> {
+    let Some(id) = entry["id"].as_str() else { return Ok(()) };
+    let Some(thread) = entry["threadId"].as_str() else { return Ok(()) };
+    let Some(root) = hub.store.entry(thread) else { return Ok(()) };
+    let Some(channel) = root.data["discordChannel"].as_str() else { return Ok(()) };
+    let Some(bot) = entry["botId"].as_str() else { return Ok(()) };
+    let Some(c) = load(&hub.store)? else { return Ok(()) };
+    let Some(binding) = c.bindings.iter().find(|b| b.bot_id == bot) else { return Ok(()) };
+    if root.data["discordUser"].as_str().is_none_or(|u| !binding.allowed_users.iter().any(|a| a == u)) {
+        return Ok(());
+    }
+    let shown = entry["data"]["discordCard"].as_str().is_some();
+    let settled = entry["data"]["discordSettled"] == true;
+    match (entry["data"]["status"].as_str(), shown, settled) {
+        (Some("pending"), false, _) => {
+            let buttons: Vec<(String, String)> = entry["data"]["options"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|o| {
+                    Some((o["name"].as_str()?.to_owned(), super::interactions::button(entry, o["optionId"].as_str()?)))
+                })
+                .collect();
+            if buttons.is_empty() {
+                return Ok(());
+            }
+            let message = client::card(
+                &super::Endpoint::discord(),
+                &c.bot_token,
+                channel,
+                &super::interactions::text(entry),
+                &buttons,
+            )
+            .await?;
+            let mut data = entry["data"].clone();
+            data["discordCard"] = message.into();
+            hub.set_entry(id, &data);
+        }
+        (Some(status), true, false) if status != "pending" => {
+            let message = entry["data"]["discordCard"].as_str().unwrap_or_default();
+            let chosen = entry["data"]["options"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|o| o["optionId"] == entry["data"]["selected"])
+                .and_then(|o| o["name"].as_str());
+            let text = match chosen {
+                Some(name) => format!("{}\n✓ {name}", super::interactions::text(entry)),
+                None => format!("{}\n(closed)", super::interactions::text(entry)),
+            };
+            client::settle(&super::Endpoint::discord(), &c.bot_token, channel, message, &text).await?;
+            let mut data = entry["data"].clone();
+            data["discordSettled"] = true.into();
+            hub.set_entry(id, &data);
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub(crate) fn claim_prompt(hub: &Hub, entry: &str) -> Result<bool> {
@@ -93,7 +176,7 @@ fn deliver(hub: &Hub, event: &DiscordIncoming) -> Result<()> {
         EntryKind::User,
         hub.store.max_turn(&event.bot),
         &json!({"text":format!("Discord conversation · {}",event.channel),
-        "source":"discord","status":"sent","discordChannel":event.channel}),
+        "source":"discord","status":"sent","discordChannel":event.channel,"discordUser":event.user}),
     )?;
     let lane = Lane::in_thread(&event.bot, &root);
     let (entry, _) = hub.add_entry_once(

@@ -5,6 +5,7 @@
 mod client;
 mod gateway;
 mod ingress;
+mod interactions;
 mod worker;
 
 pub use gateway::Endpoint;

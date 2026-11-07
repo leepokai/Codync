@@ -75,6 +75,8 @@ The answers come from the agent, usually:
 
 In the terminal UI, press `y` to allow once, `a` to always allow, `n` to reject, `N` to reject and say why, or `1`…`9` to pick an option.
 
+When the bot talks through a bound Slack channel, Telegram bot or Discord channel, the card arrives there with its options as buttons. Anyone allowed in that conversation may tap one; the first answer wins and settles the card in every client, and a button from a card that changed says so instead of answering.
+
 The agent waits for your answer. If the turn ends before you answer, for example because you stopped it, the card reads **Expired — the agent moved on**.
 
 With **Approve automatically**, no cards appear: Codync allows each request for you. Your agent's own permission rules still apply under any setting. To change the setting, see [Bots](/docs/bots#permissions).

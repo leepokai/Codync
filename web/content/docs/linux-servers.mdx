@@ -42,7 +42,9 @@ codync-host status
 
 ## Pair your phone
 
-With the host running, run `codync-host pair` over SSH. It prints a QR code and a short code like `QRTX-4821`. On the iPhone, signed in, scan the QR code during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer) or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**), or type the short code into the field under the scanner. A server that isn't in an account yet asks in the terminal whether to let the phone in and join your account: check the phone shows the same 6-digit code, then answer `y` within 90 seconds. With `codync-host pair --json`, or SSH without a terminal, answer with `codync-host access approve <code>` instead. A server that lets the phone in but can't join your account at that moment (its cloud is off, or the phone couldn't reach the Codync cloud) joins it the next time the phone connects with the Codync cloud on. If it still isn't in your account after that, pair it again. `codync-host cloud` says which account the server is in, and `codync-host cloud --leave` takes the server out of it: every phone paired with it loses access and pairs again with a new code.
+With the host running, run `codync-host pair` over SSH. It prints a QR code and a short code like `QRTX-4821`. On the iPhone, scan the QR code during first-time setup (tap **Continue** on the install page, after **Pair a new computer** if your account already has a computer) or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). Signed in, you can type the short code into the field under the scanner instead.
+
+A server that isn't in an account asks in the terminal whether to let the phone in and, for a signed-in phone, whether to join its account: check the phone shows the same 6-digit code, then answer within 90 seconds. Without joining, the phone connects only over Wi-Fi or Tailscale. With `codync-host pair --json`, or SSH without a terminal, answer with `codync-host access approve <code>` (add `--phone-only` to stay out of the account). To join later, tap **Add to account** on the signed-in phone and answer the same way. `codync-host cloud` says which account the server is in, and `codync-host cloud --leave` takes the server out of it: every phone paired with it loses access and pairs again with a new code.
 
 The code works once and expires after 10 minutes. More about pairing and accounts: [Remote access](/docs/remote-access).
 
@@ -71,13 +73,13 @@ On Windows, enable **OpenSSH Client** in **Windows Settings → Optional feature
 
 You have three options, and you can combine them:
 
-- **Codync relay (on by default).** The host connects out to the relay, so the phone reaches the server from anywhere with nothing to open or configure.
+- **Codync relay, for a server in your account.** With the server in your account and the phone signed in to it, the host connects out to the relay, so the phone reaches the server from anywhere with nothing to open or configure.
 - **Tailscale (recommended for a direct connection).** Install Tailscale on the server and on the phone, then pair. The pairing code includes the server's Tailscale address. You don't need to open any port in the cloud firewall.
 - **Your own HTTPS reverse proxy.** Forward only `/channel` to the host and set `CODYNC_EXTERNAL_URL` with a systemd drop-in. Follow the steps and security rules in [Remote access](/docs/remote-access) exactly.
 
 The pairing code lists only Tailscale and private network addresses, plus any URL you set yourself. The host never advertises the server's public IP.
 
-To keep the server off the relay, run `codync-host cloud --disable`. The phone then needs Tailscale, a private network or your own URL, and devices approved through your account can't connect.
+A server in no account is off the relay already; phones reach it over Tailscale, a private network or your own URL. To turn the relay off for a server in your account, run `codync-host cloud --disable`. The phone then needs one of those too, and devices approved through your account can't connect.
 
 ## Firewall
 
@@ -86,6 +88,8 @@ The host listens on port 19222 on every interface. Its API (the one apps on the 
 - the end-to-end encrypted channel, which serves only devices you paired or approved;
 - a health check that reports the host's version, environment and identifiers (its install path and whether a bot is working are reported only to callers on the server itself);
 - local routine webhooks, which need the routine's key.
+
+While the server is in no account, the host also advertises itself on the local network over mDNS (UDP port 5353): the service `_codync._tcp`, with its computer ID and private network addresses. Anyone on that network can read them. Nothing is advertised once it's in an account.
 
 Keep port 19222 closed in your cloud firewall anyway, unless you deliberately connect over a VPN or private network. Tailscale and the relay don't need it open.
 

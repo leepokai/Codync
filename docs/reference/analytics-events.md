@@ -38,7 +38,7 @@ host answers and sends it once the host is up.
 | `window_recovery` | host `track` (desktop) | A window's page crashed (`RendererGone` in error tracking): it loaded again, or crashed too often and stays down | `outcome` (`reloaded`/`gave_up`) |
 | `host_started` | host | Each start of the host process | `first_run` (the first start of a new install; `open_store` marks a new host id with an empty `analytics_version`), `updated_from` (the previous version, when it changed), `service` (started by launchd, systemd or the Windows runner: `XPC_SERVICE_NAME`, `SYSTEMD_EXEC_PID`, `CODYNC_SERVICE`) |
 | `host_setup_failed` | desktop main | The desktop app couldn't get a working host | `stage` (`missing_binary`/`install`/`verify`/`not_responding`/`environment`) |
-| `onboarding_step_viewed` | iOS, Android | An onboarding screen appears. `welcome` is also the sign-in screen, so it's sent again after each sign-out (builds with accounts require sign-in): count persons, or the first one per person, for first runs | `step` (`welcome`/`choose`/`install`/`scan`; `choose`: the account has computers, ask one or pair a new one) |
+| `onboarding_step_viewed` | iOS, Android | An onboarding screen appears. `welcome` is also the sign-in screen, so it's sent again after each sign-out: count persons, or the first one per person, for first runs | `step` (`welcome`/`choose`/`install`/`scan`; `choose`: the account has computers, ask one or pair a new one) |
 | `onboarding_completed` | host `track` (desktop), iOS, Android | Once per setup. Desktop: the first run's welcome is finished (by signing in, in a build with accounts). Phones: the first-run screens are finished and the tabs appear (a computer reached, or skipped). | desktop `signed_in`; phones `via` (`paired`: by its code; `account`: approved after asking; `skipped`) |
 | `computer_access_finished` | host `track` (desktop) | The *Computer access* step is left | `ready` (screen recording and control granted), `onboarding` |
 | `sign_in_started` | host `track` (desktop), iOS, Android | A sign-in button is pressed | `provider` (`apple`/`google`/`github`/`hosted`) |
@@ -46,15 +46,23 @@ host answers and sends it once the host is up.
 | `signed_in` | host `track` (desktop), iOS, Android | Signed in to a Codync account | `provider` |
 | `signed_out` | host `track` (desktop), iOS, Android | Signed out | — |
 | `signed_out_pairings_moved` | iOS, Android | At sign-in, computers paired while signed out (before sign-in was required) moved into the account | `computers` (count), `keys` (`moved`: this phone's keys went along, nothing to scan; `rescan`: the account already had its own key on this phone, so they need a new scan) |
+| `continued_without_account` | host `track` (desktop), iOS, Android | **Continue without an account** on the welcome screen | — |
+| `add_to_account_asked` | iOS, Android | **Add to account** on a computer in no account | — |
+| `add_to_account_completed` | iOS, Android | That ended with the computer in the account | — |
+| `add_to_account_failed` | iOS, Android | That ended without the computer joining | `reason` (`declined`/`certificate`/`unreachable`/`other`) |
+| `join_from_phone_answered` | host (`joinAccount`) | The computer answered a paired phone's **Add to account** | `outcome` (`approved`/`declined`) |
+| `discovery_failed` | host | A computer in no account couldn't advertise on the local network, reported once per host run | `stage` (`start`/`update`) |
+| `join_offer_answered` | host `track` (desktop) | The ask to add a computer to the signed-in account ended | `outcome` (`added`/`kept_out`/`failed`) |
+| `computer_found_on_network` | iOS, Android | A phone reached a computer in no account at an address it found on the local network | — |
 | `pairing_code_created` | host (`pairing`) | A pairing QR code is made (desktop, terminal UI, `codync-host pair`), including each new one an open pairing screen makes when its code expires: count persons, not events | `client` |
 | `pairing_failed` | iOS, Android | A pairing attempt fails | `reason` (`not_pairing_link`/`outdated_host`/`invalid`/`expired`/`unauthorized`/`unreachable`/`timeout`/`upgrade_required`/`other`) |
 | `computer_paired` | iOS, Android | The phone reached a computer | `via` (`qr`: scanned or pasted on the scan screen; `link`: a pairing link opened from outside; `account`), `computer` |
-| `device_paired` | host | A phone was added: a pairing code redeemed or an account request approved | `via` (`qr`/`account`), `platform`, `automatic` (approved without a tap) |
+| `device_paired` | host | A phone was added: a pairing code redeemed or an account request approved | `via` (`qr`/`account`), `platform`, `automatic` (approved without a tap), `account` (`joined`: in the computer's account, or the computer joined the phone's; `phone_only`: signed in, the computer stayed out; `signed_out`) |
 | `access_requested` | iOS, Android | The phone asks an account computer for access | — |
 | `access_request_failed` | iOS, Android | The request ended without access | `reason` (`denied`/`expired`/`cancelled`) |
 | `access_request_denied` | host (`decideAccessRequest`) | The computer's owner denied a phone | `client` |
 | `device_revoked` | host (`revokeDevice`) | A phone's access was removed | `client` |
-| `phone_connected` | host | A paired phone connects, at most once per phone per UTC day | `platform` |
+| `phone_connected` | host | A paired phone connects, at most once per phone per UTC day | `platform`, `route` (`direct`/`relay`: how that first connection of the day came in) |
 | `notifications_answered` | iOS, Android | The system notification prompt was answered | `granted`, `source` (`settings`/`widgets`/`automatic`) |
 | `notification_opened` | iOS, Android | A Codync notification was tapped | `kind` (`done`/`needs_input`/`failed`) |
 | `star_prompt_answered` | host `track` (desktop) | The GitHub star setup invitation or the fifth-prompt invitation was answered or closed | `ask` (`first`/`second`), `starred` |
@@ -151,7 +159,7 @@ The *Onboarding & conversion* dashboard in PostHog reads these steps, each per `
   `message_sent` with `client = remote` (Activated).
 - **iPhone / Android**: first `onboarding_step_viewed` `welcome` → `sign_in_started` → `signed_in`
   → `install` → `scan` → `computer_paired` → `message_sent` with `client = remote` on that
-  `computer`; an account with computers goes `choose` → `access_requested` → `computer_paired` (`via = account`), or `choose` → `install`. The sign-in steps are the gate's sign-in rate (sign-in is required since 2.35.0).
+  `computer`; an account with computers goes `choose` → `access_requested` → `computer_paired` (`via = account`), or `choose` → `install`. The sign-in steps are the welcome screen's sign-in rate (required 2.35.0 to 2.40.x); `continued_without_account` takes the other way from 2.41.0.
 - **Star**: `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`.
 - **Website**: `$pageview` → `download_clicked` (per `platform`) → the first `app_opened` that day
   (counts only, no link between a visitor and an install).

@@ -73,6 +73,8 @@ public struct RoutineWebhook: Codable, Sendable, Equatable {
     public var localUrl: String
     public var key: String
     public var connected: Bool
+    /// In no account, so public deliveries can't reach it (older hosts: nil).
+    public var needsAccount: Bool?
 }
 
 extension HostClient {

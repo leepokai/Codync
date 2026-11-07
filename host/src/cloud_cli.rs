@@ -124,7 +124,7 @@ fn account_hint(status: &Value) -> Option<&'static str> {
         return None;
     }
     Some(if status["canJoinAccount"] == true {
-        "Not in an account. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
+        "Not in an account, so phones connect only over Wi-Fi or Tailscale. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints; or, on a phone already paired, tap Add to account and answer with `codync-host access approve <code>`. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
     } else {
         "Not in an account. Phones pair with `codync-host pair` and a QR code; joining an account needs the Codync cloud (`codync-host cloud --enable`)."
     })

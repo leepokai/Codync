@@ -1,6 +1,6 @@
 import type { ClaimFailure } from '@shared/analytics'
 import type { CloudStatus, ClaimSignature } from '@shared/models'
-import { accountMismatch, mayAutoClaim, mayJoinAfterInstall, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/auto-claim'
+import { accountMismatch, mayJoinAfterInstall, mayOfferJoin, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/join-offer'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
 import { relayAddressToSave } from '../lib/relay-address'
@@ -99,9 +99,12 @@ export class CloudModel extends Observable {
   /** The latest list request: an earlier one it overtook answers with it. */
   private listing: Promise<boolean> = Promise.resolve(false)
   private enablingCloud = false
-  private autoClaiming = false
+  /** A computer the user asked to add (Settings, an SSH install), waiting for the join prompt's answer. */
+  private joinRequest: BotStore | null = null
   /** This computer is on its way from another account into this one (`moveHere`). */
   private moving = false
+  /** A computer the user said yes to is on its way into this account (`acceptJoin`). */
+  private joining = false
 
   constructor(private app: AppModel) {
     super()
@@ -151,7 +154,7 @@ export class CloudModel extends Observable {
       void this.refresh(true)
     }
     this.applyCloudDefault()
-    this.autoClaim()
+    this.noteClaimed()
   }
 
   /**
@@ -199,31 +202,74 @@ export class CloudModel extends Observable {
       .finally(() => (this.enablingCloud = false))
   }
 
-  /** Signed in, this computer joins the account on its own (`mayAutoClaim`). */
-  private autoClaim() {
+  /** Remembers this computer's identity once it's seen in the account (`mayOfferJoin`). */
+  private noteClaimed() {
     const user = this.userId
     const store = this.app.local
     if (user && store && store.cloud?.owner?.userId === user) include(claimedIds(user), store.computer.id)
-    const target = this.autoClaimTarget
-    if (!target || this.autoClaiming) return
-    this.autoClaiming = true
-    void (async () => {
-      // A failed join (network hiccup) is retried with backoff for as long as it's still wanted.
-      let delay = 30_000
-      while (!(await this.claim(target, true))) {
-        await new Promise((r) => setTimeout(r, delay))
-        delay = Math.min(delay * 2, 600_000)
-        if (this.autoClaimTarget?.computer.id !== target.computer.id) break
-      }
-      this.autoClaiming = false
-    })()
   }
 
-  private get autoClaimTarget(): BotStore | null {
+  /** What the join prompt asks about: a computer the user asked to add, or this one, once, while it's in no account. */
+  get joinOffer(): BotStore | null {
     const user = this.userId
+    if (!user || this.moving || this.joining) return null
+    if (this.joinRequest) return this.joinRequest
     const store = this.app.local
-    if (!user || !store || this.moving) return null
-    return mayAutoClaim(candidate(store), keptOut(user).get(), claimedIds(user).get()) ? store : null
+    return store && mayOfferJoin(candidate(store), keptOut(user).get(), claimedIds(user).get()) ? store : null
+  }
+
+  /** Add to account, through the prompt that says which phones it removes. */
+  requestJoin(store: BotStore) {
+    this.joinRequest = store
+    this.changed()
+  }
+
+  /**
+   * Yes to `joinOffer`. The host hears of its account a moment later, so a computer that joined isn't asked about
+   * again meanwhile; one that couldn't says why (`fail`), and Add to account tries again.
+   */
+  async acceptJoin(store: BotStore) {
+    const user = this.userId
+    if (this.joining || !user) return
+    this.joinRequest = null
+    this.joining = true
+    this.changed()
+    const joined = await this.claim(store)
+    include(joined ? claimedIds(user) : keptOut(user), store.computer.id)
+    this.joining = false
+    this.changed()
+    analytics.track({ event: 'join_offer_answered', outcome: joined ? 'added' : 'failed' })
+  }
+
+  /** The phones `store`'s computer would remove by joining the signed-in account. `null`: it couldn't say. A host before this method removes the same phones and can't name them. */
+  joinWouldRemove = async (store: BotStore): Promise<string[] | null> => {
+    const userId = this.userId
+    if (!userId) return []
+    try {
+      return (await (await store.ready()).call<{ names: string[] }>('joinWouldRemove', { userId })).names
+    } catch (error) {
+      this.fail(error, true)
+      return null
+    }
+  }
+
+  /** The devices on `store`'s computer, which all go when it leaves its account. Empty when it can't say: the warning then stays general. */
+  deviceNames = async (store: BotStore): Promise<string[]> => {
+    try {
+      return (await (await store.ready()).call<{ devices: { name: string }[] }>('devices')).devices.map((device) => device.name)
+    } catch (error) {
+      this.fail(error, true)
+      return []
+    }
+  }
+
+  /** No to `joinOffer`: phones reach it only over Wi-Fi or Tailscale, and it isn't offered again (Add to account still adds it). */
+  declineJoin(store: BotStore) {
+    const user = this.userId
+    if (user) include(keptOut(user), store.computer.id)
+    this.joinRequest = null
+    this.changed()
+    analytics.track({ event: 'join_offer_answered', outcome: 'kept_out' })
   }
 
   /** This computer, still in another account than the one signed in here: the user is asked to move it (`mayOfferMove`). */
@@ -239,7 +285,7 @@ export class CloudModel extends Observable {
     const user = this.userId
     const store = this.app.local
     if (!user || !store || this.moving) return null
-    return accountMismatch(candidate(store), user, keptOut(user).get(), claimedIds(user).get())
+    return accountMismatch(candidate(store), user)
   }
 
   /** The sidebar line: asks again whether to move this computer here, even after "Keep it there". */
@@ -278,11 +324,11 @@ export class CloudModel extends Observable {
     }
   }
 
-  /** Add to account for an SSH computer just installed from here (installing shows the intent), once its host is up. */
+  /** Asks to add an SSH computer just installed from here, once its host is up. */
   async joinAfterInstall(store: BotStore) {
     if (!this.userId) return
     try {
-      if (mayJoinAfterInstall(await (await store.ready()).call<CloudStatus>('cloudStatus'))) await this.claim(store)
+      if (mayJoinAfterInstall(await (await store.ready()).call<CloudStatus>('cloudStatus'))) this.requestJoin(store)
     } catch (error) {
       this.fail(error)
     }
@@ -326,7 +372,7 @@ export class CloudModel extends Observable {
 
   /**
    * Asked before Reach from anywhere turns on: Use your own relay. It's on the Codync relay until its address is saved,
-   * so it's kept out of auto-claim meanwhile (`keptOut`; Add to account still adds it).
+   * so it isn't offered the account meanwhile (`keptOut`; Add to account still adds it).
    */
   async useOwnRelay(store: BotStore) {
     const user = this.userId
@@ -425,7 +471,7 @@ export class CloudModel extends Observable {
   }
 }
 
-/** What the account rules (`auto-claim`) read of a computer's host. */
+/** What the account rules (`join-offer`) read of a computer's host. */
 function candidate(store: BotStore): ClaimCandidate {
   return { id: store.computer.id, online: store.connection.kind === 'online', cloud: store.cloud }
 }

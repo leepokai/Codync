@@ -78,6 +78,8 @@ export interface RoutineWebhook {
   localUrl: string
   key: string
   connected: boolean
+  /** In no account, so public deliveries can't reach it. */
+  needsAccount?: boolean
 }
 
 /** Form values only. */

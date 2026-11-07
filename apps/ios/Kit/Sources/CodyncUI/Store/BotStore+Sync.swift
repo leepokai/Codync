@@ -66,7 +66,6 @@ extension BotStore {
         hello = h
         applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
-        if h.joinAccount == true { onJoinAccount?(client) }
     }
 
     private func noteHostVersion(_ new: HostVersion) {

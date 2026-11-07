@@ -65,7 +65,8 @@ struct AccessRenewalTests {
                                 session: URLSession(configuration: config)) { "token" }
         let storage = SharedStore.Context(accountID: "account", suite: suite)
         let id = RelayCrypto.computerId(signKey: renewalHostKey)
-        var computer = Computer(id: id, name: "Desk", signKey: renewalHostKey.base64URL, urls: ["http://192.168.1.20:19223"])
+        var computer = Computer(id: id, name: "Desk", signKey: renewalHostKey.base64URL, urls: ["http://192.168.1.20:19223"],
+                                cloud: URL(string: "https://cloud.test"))
         computer.color = "blue"
         computer.route = .directOnly
         computer.notifications = false

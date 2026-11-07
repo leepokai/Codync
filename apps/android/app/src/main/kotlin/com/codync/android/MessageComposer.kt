@@ -131,8 +131,9 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     } }
     val online = state.actualConnection is LinkState.Ready
     val empty = text.text.isBlank() && files.isEmpty()
-    // Offline computers still take text when the relay can hold it; files need the computer.
-    val canSend = !empty && !importing && !queuing && (online || state.actualConnection is LinkState.ComputerOffline && files.isEmpty())
+    // Offline computers still take text: the relay holds it for them, or with no relay this phone does. Files need the computer.
+    val canHold = state.actualConnection is LinkState.ComputerOffline || holdsOnPhone(state.computer.cloud, state.actualConnection)
+    val canSend = !empty && !importing && !queuing && (online || canHold && files.isEmpty())
     val working = bot.isWorking(bot.id)
     val bare = text.text.isEmpty() && files.isEmpty()
     val trailing = when {
@@ -155,10 +156,11 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val startingCommand = typed == "/"
     LaunchedEffect(startingCommand) { if (startingCommand && online) store.refreshPlugins() }
     // The one way a group's box differs: @ asks one of its bots.
-    val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed)?.let { query ->
+    val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed, members)?.let { query ->
         members.filter { query.isEmpty() || it.name.contains(query, true) }
     }.orEmpty()
     fun clear() = text.edit { replace(0, length, "") }
+    fun mention(member: Bot) = text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ")
     fun run(command: SlashCommand) {
         val skill = command.skill
         when {
@@ -179,8 +181,9 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
         CommandList(commands, ::run, Modifier.padding(horizontal = 16.dp))
     }
-    AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-        MentionChips(mentions, state.bots) { member -> text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ") }
+    AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
+        exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
+        MentionList(mentions, state.bots, ::mention, Modifier.padding(horizontal = 16.dp))
     }
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp), verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {

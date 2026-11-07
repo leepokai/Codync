@@ -1,5 +1,5 @@
 use super::*;
-use crate::store::{Device, DeviceSource, Store};
+use crate::store::{Device, DeviceAccount, DeviceSource, Store};
 use serde_json::json;
 
 fn temp_hub() -> (std::sync::Arc<Hub>, std::path::PathBuf) {
@@ -280,7 +280,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
             lease_until: None,
             created_at: 0,
             last_seen_at: None,
-            account: None,
+            account: DeviceAccount::Unrecorded,
         })
         .unwrap();
     let (event, p) = observe_call(&hub, &phone, "respondPermission", &answer).unwrap();

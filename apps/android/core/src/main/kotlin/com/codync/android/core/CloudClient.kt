@@ -40,7 +40,7 @@ data class AccessStatus(val requestId: String, val status: String, val computerI
 data class DeviceCertificate(val payload: String, val sig: String) {
     /** When it stops being valid (ms), from the signed payload. */
     val expiresAt: Long = Json.parseToJsonElement(payload).jsonObject.getValue("exp").jsonPrimitive.long
-    internal val json: JsonObject get() = buildJsonObject { put("payload", payload); put("sig", sig) }
+    val json: JsonObject get() = buildJsonObject { put("payload", payload); put("sig", sig) }
 }
 
 /** What a computer that joins this phone's account by pairing signs, so the account takes it in. */

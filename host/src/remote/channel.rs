@@ -16,7 +16,7 @@ use crate::api;
 use crate::api::devices::{self, Caller, RejectCode};
 use crate::hub::Hub;
 use crate::remote::crypto::{self, FrameError, Opener, Sealer};
-use crate::store::{Device, DeviceSource, Scope, now_ms};
+use crate::store::{Device, DeviceAccount, DeviceSource, Scope, now_ms};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use futures::{SinkExt as _, StreamExt as _};
 use serde_json::{Value, json};
@@ -188,6 +188,7 @@ pub async fn run(hub: Arc<Hub>, t: Transport, kind: ChannelKind) {
         caller: Arc::new(Caller::Local),
         lease: None,
         online: None,
+        relayed: matches!(kind, ChannelKind::Relay { .. }),
     };
     let opener = Opener::new(hs.keys.d2h, if hs.device.is_some() { MAX_INBOUND } else { 1 << 20 });
     let (code, reason) = if let Some(d) = hs.device {
@@ -195,7 +196,7 @@ pub async fn run(hub: Arc<Hub>, t: Transport, kind: ChannelKind) {
         ch.serve(&mut incoming, opener, &mut writer).await
     } else {
         ch.caller = Arc::new(Caller::Pairing { key: ch.key.clone() });
-        ch.pair(&mut incoming, opener, &kind.source()).await
+        ch.pair(&mut incoming, opener, &kind).await
     };
     for job in ch.jobs.locked().drain() {
         if let (_, Job::Sub(h)) = job {
@@ -317,12 +318,12 @@ enum Job {
 struct Online(Arc<Hub>, String);
 
 impl Online {
-    fn new(hub: Arc<Hub>, key: String) -> Self {
+    fn new(hub: Arc<Hub>, key: String, relayed: bool) -> Self {
         *hub.connected.locked().entry(key.clone()).or_default() += 1;
         if let Err(error) = hub.store.touch_device(&key) {
             tracing::warn!(error = format!("{error:#}"), "couldn't record when a device was last seen");
         }
-        crate::analytics::phone_connected(&hub, &key);
+        crate::analytics::phone_connected(&hub, &key, relayed);
         Self(hub, key)
     }
 }
@@ -347,6 +348,8 @@ struct Channel {
     caller: Arc<Caller>,
     lease: Option<Instant>,
     online: Option<Online>,
+    /// It came through a relay, not over Wi-Fi or Tailscale.
+    relayed: bool,
 }
 
 type CloseWith = (u16, &'static str);
@@ -411,6 +414,7 @@ impl Channel {
         // A new relay address (or the relay on or off) reaches phones only in `hello`: reconnecting
         // reads it again, over this route or the old relay while it is still up (`relay::MOVE_GRACE`).
         let mut cloud = self.hub.cloud.config.subscribe();
+        let mut account = self.hub.cloud.account_changed.subscribe();
         let rekey_at = Instant::now() + MAX_AGE;
         loop {
             let lease = self.lease;
@@ -422,7 +426,7 @@ impl Channel {
                         Err(e) => return frame_close(&e),
                     };
                     if self.online.is_none() {
-                        self.online = Some(Online::new(self.hub.clone(), self.key.clone()));
+                        self.online = Some(Online::new(self.hub.clone(), self.key.clone(), self.relayed));
                     }
                     if let Some(bytes) = message
                         && let Err(close) = self.handle(&bytes).await
@@ -445,6 +449,7 @@ impl Channel {
                 }
                 () = sleep_until(rekey_at) => return (close::REKEY, "rekey"),
                 _ = cloud.changed() => return (close::REKEY, "relay"),
+                _ = account.changed() => return (close::REKEY, "account"),
                 _ = &mut *writer => return (close::NORMAL, ""),
             }
         }
@@ -820,7 +825,7 @@ mod tests {
             lease_until: Some(now_ms() + 300),
             created_at: now_ms(),
             last_seen_at: None,
-            account: None,
+            account: DeviceAccount::Unrecorded,
         };
         hub.store.put_device(&device).unwrap();
         let mut p = Phone::direct(&hub, key.clone());

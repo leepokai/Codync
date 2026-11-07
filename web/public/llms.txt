@@ -8,7 +8,7 @@ Key facts:
 - Where it runs: `codync-host`, one Rust binary, on macOS, Windows (x64, bundled in the desktop app) or Linux (desktop or headless server, static binary for x86_64 and arm64). Bots, chats and memory stay on that computer.
 - Clients: native SwiftUI iPhone app (iOS 26+), one Electron desktop app for macOS, Windows and Linux, and a terminal UI (`codync-host tui`) that works over SSH.
 - Features: persistent bots with their own agent, project folder and instructions; group chats where bots answer in turn; quote replies; bots asking each other for help; approval cards (allow once, always allow, deny) on the phone; per-bot memory; routines on a schedule or webhook; connectors from the MCP registry, apps through Composio, and skills; agent fallbacks (when a bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent in its list carries on in the same chat); SSH computers in the Mac and Linux desktop app, their bots in the same sidebar; remote screen over WebRTC; voice calls; "needs you" and "done" push notifications.
-- Remote access: a free Cloudflare relay, end-to-end encrypted between phone and computer, or a direct connection on the same network or Tailscale. No account required; pairing is a QR code.
+- Remote access: a direct connection on the same network or Tailscale, with no account; pairing is a QR code. From anywhere else, a free Cloudflare relay, end-to-end encrypted between phone and computer, needs the computer and the phone in the same free account.
 - Not affiliated with Grok Bot, Muse, Dots, Anthropic, OpenAI or any agent vendor.
 
 ## Get it

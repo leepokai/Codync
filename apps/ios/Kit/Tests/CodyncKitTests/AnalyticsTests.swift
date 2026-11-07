@@ -66,6 +66,7 @@ import Testing
     #expect(try json(.settingChanged(.liveActivities, on: true)) == #"{"on":true,"setting":"live_activities"}"#)
     // Multi-word values are snake_case, as in the catalog.
     #expect(try json(.signInFailed(.google, reason: .cancelled)) == #"{"provider":"google","reason":"cancelled"}"#)
+    #expect(try json(.addToAccountFailed(.declined)) == #"{"reason":"declined"}"#)
     #expect(try json(.screenViewed(.botDetails)) == #"{"screen":"bot_details"}"#)
     #expect(try json(.voiceCallStarted(.onDevice)) == #"{"engine":"on_device"}"#)
     #expect(try json(.voiceCallQuality(.gemini, readyMs: 1200, reconnects: 1, stuck: .none, failure: .connection))

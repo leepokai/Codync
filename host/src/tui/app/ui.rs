@@ -311,8 +311,13 @@ pub struct GroupForm {
 /// The pair-a-phone sheet's code: on its way, shown (its pairing link, and the short code to type when the
 /// Codync cloud holds one), or why none came.
 pub enum PairCode {
+    /// Opened for a phone asking: only the question shows, and no code is issued, which would wake the relay.
+    QuestionOnly,
     Loading,
-    Ready { url: String, short_code: Option<String> },
+    Ready {
+        url: String,
+        short_code: Option<String>,
+    },
     Failed(String),
 }
 

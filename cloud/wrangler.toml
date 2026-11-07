@@ -73,7 +73,7 @@ crons = ["*/15 * * * *", "*/5 * * * *"]
 name = "codync-cloud-dev"
 r2_buckets = [{ binding = "ICONS", bucket_name = "codync-icons-dev" }]
 routes = [{ pattern = "dev-api.codync.dev", custom_domain = true }, { pattern = "dev-mcp.codync.dev", custom_domain = true }]
-vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev" }
+vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev", RELAY_NEEDS_ACCOUNT = "1" }
 d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "0c03c398-3cec-4f06-a76e-998176ca19ae", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
 ratelimits = [{ name = "ICON_LIMITER", namespace_id = "1042", simple = { limit = 30, period = 60 } }, { name = "REGISTER_LIMITER", namespace_id = "1002", simple = { limit = 10, period = 60 } }, { name = "TURN_LIMITER", namespace_id = "1012", simple = { limit = 12, period = 60 } }, { name = "HOOK_LIMITER", namespace_id = "1022", simple = { limit = 60, period = 60 } }, { name = "ASSISTANT_LIMITER", namespace_id = "1032", simple = { limit = 120, period = 60 } }, { name = "PAIRING_CODE_LIMITER", namespace_id = "1052", simple = { limit = 10, period = 60 } }]

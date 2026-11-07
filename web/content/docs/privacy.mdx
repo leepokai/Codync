@@ -30,6 +30,8 @@ The relay can't add a device to your computer. A new device needs either a pairi
 
 **Remote screen** sessions are encrypted between your phone and your computer. When there's no direct path, the video goes through a Cloudflare relay that can't see what's on your screen.
 
+**Local network advertising.** A computer in no account has no relay to tell a phone its new address, so it advertises its computer ID and private network addresses on the local network over mDNS. Anyone on that network can read them; Tailscale names and addresses are left out, and nothing is advertised once the computer is in an account. They go nowhere beyond the network.
+
 **codync-network**, your computers' network ([bots on your other computers](/docs/teamwork#bots-on-your-other-computers)) doesn't use the Codync relay. Your computers connect to each other directly, encrypted end to end. When two can't, the default connector sends their encrypted traffic through iroh's public relays, run by n0, and they find each other through n0's address lookup; these see your computers' IP addresses and when they connect, not what they say. With your own `iroh-relay` or the private connector, nothing reaches n0.
 
 ## Push notifications

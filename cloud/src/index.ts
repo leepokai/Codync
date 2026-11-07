@@ -36,6 +36,8 @@ export interface Env {
   CLERK_WEBHOOK_SECRET?: string;
   /** Ed25519 private key (JWK JSON) that signs device certificates; hosts compile in its public half. */
   DEVICE_CERT_KEY?: string;
+  /** "1": the relay and public webhooks are only for computers in an account (`relayNeedsAccount`). */
+  RELAY_NEEDS_ACCOUNT?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
 }

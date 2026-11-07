@@ -58,16 +58,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "hello" => {
             let port = hub.port;
             let icons = crate::icons::snapshot(&hub.store)?;
-            let join_account = crate::remote::owner::joinable_by(hub, caller.device_key()).unwrap_or_else(|e| {
-                tracing::warn!(error = format!("{e:#}"), "couldn't check whether this phone can finish joining");
-                None
-            });
             json!({
                 "hostId": hub.host_id,
                 "computerId": hub.identity.computer_id(),
                 "signKey": hub.identity.sign_pub_b64(),
                 "boxKey": hub.identity.box_pub_b64(),
-                "cloud": crate::remote::cloud::url(&hub.store),
+                // Only where a phone may use it: in no account, phones go over Wi-Fi or Tailscale.
+                "cloud": crate::remote::owner::url_for_phones(hub, caller.device_key()),
                 "name": crate::service::host_name(),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
@@ -84,8 +81,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
-                // This phone paired without the computer joining its account: it calls `joinAccount` to finish.
-                "joinAccount": join_account.is_some(),
+                // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
+                // don't send, so they aren't told to.
+                "joinAccount": false,
+                // A signed-in phone may offer to bring this computer into its account (`joinAccount`).
+                "canJoinAccount": crate::remote::owner::can_join(hub),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
             })

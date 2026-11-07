@@ -43,7 +43,7 @@ impl Actor {
             Cmd::React { emoji, to, reply } => {
                 let _ = reply.send(self.react(&emoji, to.as_deref()));
             }
-            Cmd::SendFile { path, name, cancelled, reply } => self.begin_file(path, name, cancelled, reply),
+            Cmd::SendFile { path, name, text, cancelled, reply } => self.begin_file(path, name, text, cancelled, reply),
             Cmd::PostArtifact { data, reply } => {
                 let _ = reply.send(self.post_artifact(data));
             }

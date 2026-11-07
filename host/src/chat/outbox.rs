@@ -15,7 +15,7 @@ use tokio::sync::oneshot;
 pub const INSTRUCTIONS: &str = "In your chat with the user, the user sees only what you send with send_message; \
 text you write as your reply never reaches them. Send a message whenever you have something worth telling them: \
 short and plain, one thought per message, in the user's language. Lead with the result, then what needs the user. \
-Use send_file(path, name?) to share a generated regular file (any type, up to 100 MiB); a local path in text is not a download. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself. \
+Use send_file(path, name?) to share a generated regular file (any type, up to 100 MiB); a local path in text is not a download. To speak your message, send_file(path, text) with the voice note's audio and the message: it plays at the top of that message. Don't send just to acknowledge, to say you started or are still working, or to repeat yourself. \
 For something the user will read as a whole or come back to (a report, plan, comparison, tracker or dashboard), make an Artifact \
 instead of a long message: write one self-contained HTML file (inline CSS and JS; it may load libraries from a CDN) and \
 publish_artifact(path, title). It shows as a card in your chat and in its Library. To change an artifact, edit a copy of its HTML and \
@@ -41,8 +41,12 @@ pub fn tools() -> Value {
         "annotations": {"readOnlyHint": false, "idempotentHint": false},
     }, {
         "name": "send_file",
-        "description": "Share one regular file with the user in your own chat. Any file type, including empty files, up to 100 MiB. The host saves an immutable copy. Paths are absolute or relative to your working directory. A successful response means the file message was published; do not repeat it.",
-        "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string", "description": "Optional display filename, without folders."}}, "required": ["path"]},
+        "description": "Share one regular file with the user in your own chat. Any file type, including empty files, up to 100 MiB. The host saves an immutable copy. Paths are absolute or relative to your working directory. With text, the file is a voice note (mp3, m4a, wav or aac, up to 20 MiB) that plays at the top of that message, which counts as one you sent. A successful response means the file message was published; do not repeat it.",
+        "inputSchema": {"type": "object", "properties": {
+            "path": {"type": "string"},
+            "name": {"type": "string", "description": "Optional display filename, without folders."},
+            "text": {"type": "string", "description": "Optional message (Markdown) the voice note belongs to."},
+        }, "required": ["path"]},
         "annotations": {"readOnlyHint": false, "idempotentHint": false},
     }])
 }
@@ -60,12 +64,18 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
     if name != "send_message" {
         bail!("unknown chat tool: {name}");
     }
-    let text = args["text"].as_str().unwrap_or_default().trim();
+    let text = message_text(args["text"].as_str().unwrap_or_default())?;
+    deliver(hub, bot, |reply| Cmd::SendToUser { text, reply }).await?;
+    Ok(json!({"sent": true}))
+}
+
+/// A message for the user, trimmed: nonempty and at most `MAX_MESSAGE_BYTES`.
+fn message_text(text: &str) -> Result<String> {
+    let text = text.trim();
     if text.is_empty() || text.len() > MAX_MESSAGE_BYTES {
         bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
     }
-    deliver(hub, bot, |reply| Cmd::SendToUser { text: text.to_owned(), reply }).await?;
-    Ok(json!({"sent": true}))
+    Ok(text.to_owned())
 }
 
 /// Hands the bot's actor a command for its running turn and waits for its answer.
@@ -91,9 +101,13 @@ async fn send_file(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
         Some(value) => Some(crate::chat::files::name(value.as_str().ok_or_else(|| anyhow!("name must be a string"))?)?),
         None => None,
     };
+    let text = match args.get("text") {
+        Some(value) => Some(message_text(value.as_str().ok_or_else(|| anyhow!("text must be a string"))?)?),
+        None => None,
+    };
     let guard = CancelCopy(Arc::new(std::sync::atomic::AtomicBool::new(false)));
     let (reply, delivered) = oneshot::channel();
-    hub.send_cmd(bot, Cmd::SendFile { path: path.to_owned(), name, cancelled: guard.0.clone(), reply })?;
+    hub.send_cmd(bot, Cmd::SendFile { path: path.to_owned(), name, text, cancelled: guard.0.clone(), reply })?;
     let result = tokio::time::timeout(Duration::from_mins(1), delivered).await;
     let delivered = result.map_err(|_| anyhow!("file sharing timed out; check the conversation before retrying"))?;
     delivered.map_err(|_| anyhow!("file sharing interrupted"))??;

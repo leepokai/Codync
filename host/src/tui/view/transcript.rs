@@ -210,6 +210,10 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                         t.dim,
                     )));
                 }
+                // A message's voice note: the terminal can't play it, so its line, then the message.
+                if e.data["voiceNote"] == true {
+                    out.lines.extend(md::render(e.text(), width, 1));
+                }
             } else {
                 out.lines.extend(md::render(e.text(), width, 1));
             }

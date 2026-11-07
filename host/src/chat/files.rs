@@ -18,6 +18,17 @@ pub struct SharedFile {
     pub sha256: String,
 }
 
+/// The largest sound a chat fetches whole to play; the clients' `showsAsAudio` uses the same rule.
+const PLAYABLE_BYTES: u64 = 20 * 1024 * 1024;
+
+impl SharedFile {
+    /// A sound the chat plays in place (a voice note), as opposed to a file to download.
+    pub fn plays_in_chat(&self) -> bool {
+        let extension = self.name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
+        matches!(extension.as_deref(), Some("mp3" | "m4a" | "wav" | "aac")) && self.size <= PLAYABLE_BYTES
+    }
+}
+
 /// Removes an unpublished snapshot on every failure, including a dropped actor.
 pub struct Snapshot {
     pub meta: SharedFile,

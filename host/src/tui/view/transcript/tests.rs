@@ -18,6 +18,23 @@ async fn generated_files_are_selectable_cards_without_duplicate_fallback_text() 
 }
 
 #[tokio::test]
+async fn a_voice_note_shows_its_message_under_its_file_line() {
+    use crate::tui::app::Msg;
+    use serde_json::json;
+    let mut app = app_with_bots();
+    app.on_msg(Msg::Event(
+        json!({"type":"entry", "entry":{"id":"spoken", "botId":"a", "seq":1, "kind":"agent", "turn":1,
+        "data":{"author":"a", "text":"Here is the plan.", "final":true, "voiceNote":true,
+                "files":[{"id":"file", "name":"note.m4a", "size":2048, "sha256":"hash"}]}}}),
+    ));
+    let chat = build_chat(&app, &app.bots["a"], 80);
+    let lines: Vec<_> = chat.lines.iter().map(ToString::to_string).collect();
+    let file = lines.iter().position(|l| l.contains("note.m4a")).unwrap();
+    let message = lines.iter().position(|l| l.contains("Here is the plan.")).unwrap();
+    assert!(file < message, "{lines:?}");
+}
+
+#[tokio::test]
 async fn an_artifact_card_is_one_line_with_its_newest_title() {
     use crate::tui::app::Msg;
     use serde_json::json;

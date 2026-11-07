@@ -30,6 +30,9 @@ def prompt(message):
         if 'invalid-files' in text:
             for path in ['missing', '.', 'oversized']:
                 results.append(request('tools/call', {'name':'send_file', 'arguments':{'path':path}}))
+        elif 'spoken' in text:
+            for path in ['note.m4a', 'report.pdf']:
+                results.append(request('tools/call', {'name':'send_file', 'arguments':{'path':path, 'text':'Here is the **plan**.'}}))
         else:
             paths = ['binary.dat', '.hidden', 'empty', 'report.pdf']
             for path in paths:

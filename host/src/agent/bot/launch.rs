@@ -3,6 +3,7 @@
 
 use super::{Adapter, Conn, SessionCaps};
 use crate::agent::acp::{self, Acp};
+use crate::agent::backends;
 use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::Result;
@@ -42,7 +43,7 @@ fn claude_options(cfg: &BotConfig) -> Value {
 pub(crate) fn launch_commands(cfg: &BotConfig) -> Result<Vec<Candidate>> {
     Ok(match cfg.command.as_deref().map(str::trim) {
         Some(c) if !c.is_empty() => vec![Candidate::Ready(Cmd { program: c.to_owned(), args: String::new() })],
-        _ => crate::agent::backends::launch_candidates(&cfg.backend)?,
+        _ => backends::launch_candidates(&cfg.backend)?,
     })
 }
 
@@ -117,9 +118,16 @@ fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a
     (model, Vec::new())
 }
 
-/// Spawns an ACP agent and completes the `initialize` handshake.
-pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
-    let (acp, rx) = Acp::spawn(command, cwd, env)?;
+/// Spawns `backend`'s ACP agent and completes the `initialize` handshake. An agent that quits during it fails
+/// with what it printed on the way out (`backends::exit_reason`).
+pub(crate) async fn start_agent(
+    backend: &str,
+    command: &str,
+    cwd: &str,
+    env: &[(String, String)],
+    budget: Duration,
+) -> Result<Conn> {
+    let (acp, mut rx) = Acp::spawn(command, cwd, env)?;
     let init = tokio::time::timeout(
         budget,
         acp.request(
@@ -143,8 +151,12 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
     let init = match init {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
+            let why = acp::exit_tail(&e, &mut rx).await.and_then(|tail| backends::exit_reason(backend, &tail));
             acp.kill().await;
-            return Err(e);
+            return Err(match why {
+                Some(why) => e.context(why),
+                None => e,
+            });
         }
         Err(_) => {
             acp.kill().await;

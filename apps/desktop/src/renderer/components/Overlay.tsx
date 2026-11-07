@@ -164,6 +164,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
 export interface DialogAction {
   title: string
   destructive?: boolean
+  disabled?: boolean
   action: () => void
 }
 
@@ -214,6 +215,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCan
             <button
               key={a.title}
               className={`dialog-button ${a.destructive ? 'destructive' : 'prominent'}`}
+              disabled={a.disabled}
               onClick={() => {
                 onClose()
                 a.action()

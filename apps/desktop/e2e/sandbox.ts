@@ -1,4 +1,5 @@
 import { chromium, type Browser, type Page } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
@@ -21,6 +22,13 @@ export function sandbox() {
     throw new Error(`No sandbox for ${root}: run \`npm run dev -- --cdp\` in apps/desktop first.`)
   }
   return { name, port, cdp: port + 10000 }
+}
+
+/** Freezes the sandbox host, still connected and answering nothing, until the function it returns. Not on Windows. */
+export function freezeHost() {
+  const pid = Number(execFileSync('lsof', ['-t', '-sTCP:LISTEN', `-iTCP:${sandbox().port}`], { encoding: 'utf8' }).trim())
+  process.kill(pid, 'SIGSTOP')
+  return () => process.kill(pid, 'SIGCONT')
 }
 
 /** Attaches to the sandbox app's main window over the DevTools protocol. */

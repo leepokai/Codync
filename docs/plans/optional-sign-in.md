@@ -10,7 +10,7 @@ Agreed 2026-11-06, built in 2.41.0. Reverses part of [require sign-in](require-s
 - **A computer in no account may have phones of different accounts.** It confirms each one.
 - **TURN stays relay only.** `hostScreenIce` already requires an account and doesn't change. A direct session contacts no STUN or TURN provider ([remote screen](../features/remote-screen.md)).
 - **Public webhooks need a computer in an account.**
-- **A computer that joins an account removes its signed-out phones and other accounts' phones.** A dialog warns first and names them. They pair again, signed in to that account.
+- **A computer that joins an account removes its signed-out phones and other accounts' phones.** A dialog warns first and names them; Add to account waits for the names, and a computer that can't say gets a general warning. They pair again, signed in to that account.
 - **The screen follows the Connection choice:** Auto goes direct, then TURN; Cloudflare first the other way round; Wi-Fi or Tailscale only never asks. A computer in no account shows no choice.
 
 | Phone | Computer in no account | In the phone's account | In another account |
@@ -27,7 +27,7 @@ These follow the recommendations already given. Say if one is wrong.
 - Direct means anything off Codync's infrastructure: LAN, Tailscale, `CODYNC_EXTERNAL_URL`, the user's own tunnel, a private relay.
 - Signing out returns to the welcome screen. The account's computers and chats stay locked, and the signed-out space is separate and starts empty.
 - LAN discovery ships in the first version, because any phone of a computer in no account has no other way to find a changed address. It advertises only while the computer is in no account, so a computer in an account never needs a multicast permission.
-- A message that can't leave a phone with no relay waits there and goes when the computer is back, with the same nonce.
+- A message that can't leave a phone with no relay waits there and goes when the computer is back, with the same nonce, also if the computer has joined an account since.
 
 ## How it's built
 

@@ -47,6 +47,7 @@ test('the answers offered follow what the host says the phone may get', () => {
 test('the phones a join removes follow what it says', () => {
   assert.equal(withJoinRemoves(tr, 'Add it?', []), 'Add it?')
   assert.equal(withJoinRemoves(tr, 'Add it?', ['Old']), 'Add it? These phones lose access and must pair again: Old.')
+  assert.equal(withJoinRemoves(tr, 'Add it?', null), 'Add it? Phones paired without this account lose access and must pair again.')
 })
 
 test('a phone without an email is a Codync account, and names keep their braces', () => {

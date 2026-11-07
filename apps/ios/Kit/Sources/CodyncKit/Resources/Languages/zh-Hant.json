@@ -1880,5 +1880,6 @@
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "這個賬戶在這支手機上已有自己的金鑰。請重新掃描每台未登入時配對的電腦的 QR 碼；訊息會保留。",
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} 想使用這台電腦，電腦隨後會加入 {email} 的賬戶。",
   "Sign in there with {email} and add it to your account, and it shows up here.": "在那裡用 {email} 登入並將電腦加入賬戶，它就會顯示在這裡。",
-  "Scan with the Codync app or the iPhone Camera.": "用 Codync App 或 iPhone 相機掃描。"
+  "Scan with the Codync app or the iPhone Camera.": "用 Codync App 或 iPhone 相機掃描。",
+  "Phones paired without this account lose access and must pair again.": "未用此賬戶配對的手機將失去存取權，必須重新配對。"
 }

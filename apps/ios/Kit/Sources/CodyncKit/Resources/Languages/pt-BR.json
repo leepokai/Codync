@@ -1880,5 +1880,6 @@
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "Esta conta já tem a própria chave neste celular. Escaneie de novo o código de cada computador que você pareou sem conta; suas mensagens são mantidas.",
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} quer usar este computador, que depois entra na conta de {email}.",
   "Sign in there with {email} and add it to your account, and it shows up here.": "Entre lá com {email} e adicione-o à sua conta, e ele aparece aqui.",
-  "Scan with the Codync app or the iPhone Camera.": "Escaneie com o app Codync ou a câmera do iPhone."
+  "Scan with the Codync app or the iPhone Camera.": "Escaneie com o app Codync ou a câmera do iPhone.",
+  "Phones paired without this account lose access and must pair again.": "Celulares pareados sem esta conta perdem o acesso e precisam parear de novo."
 }

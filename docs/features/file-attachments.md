@@ -75,10 +75,35 @@ files. Retry starts from zero. Account/computer retirement cancels its transfers
 Downloads use bounded memory and check size and SHA-256 before save/export.
 
 An image file (by extension) up to 20 MB also shows inline above its card on iPhone,
-Android and desktop, tap/click for full size. For it the client reads the whole file
-into memory through the same `readFile` chunks, checks size and SHA-256, and keeps it
-in the sent-attachment cache under its file id; a failed read leaves the placeholder.
-The terminal UI shows only the card.
+Android and desktop, tap/click for full size. A sound file (`mp3`, `m4a`, `wav`, `aac`, a
+voice note) up to 20 MB gets a play/pause button in place of its icon. For either the
+client reads the whole file into memory through the same `readFile` chunks, checks size
+and SHA-256, and keeps it in the sent-attachment cache under its file id; a failed image
+read leaves the placeholder. While a sound loads its button shows a spinner; once loaded
+its caption reads elapsed / total time over a progress bar. Tapping or dragging the bar
+(clicking on desktop) moves the sound there, playing or paused; its touch area runs past the
+4 pt bar without taking layout, and VoiceOver/TalkBack adjust or the arrow keys move it five
+seconds. A sound that can't be read or decoded goes back to play and its caption reads
+"Couldn't play. Tap to retry." (click on desktop), with no dialog; the next tap reads it
+again. Screen readers get one element per card, with play, view and download as its
+actions. On desktop the card is one keyboard stop: Enter or Space does its first action
+(play, view, else download), and its menu (right-click, Shift-F10 or VoiceOver's Show
+menu) lists them all. The terminal UI shows only the card.
+
+### A voice note inside its message
+
+`send_file {path, text}` sends a message that carries a voice note: one final agent entry
+`{text, final: true, files: [meta], voiceNote: true}`. The host accepts `text` only with a
+sound the chat plays (the extensions above, up to 20 MiB; `SharedFile::plays_in_chat`) and
+checks it like `send_message` (nonempty, at most 32 KiB). The message counts as one the bot
+sent: like `send_message`, the agent's own reply text then stays in the trace. iPhone,
+Android and desktop show the player at the top of
+the bubble on one centred row (play/pause with its spinner, the progress bar once the length is
+known, then elapsed / length, or the size before the first play, the same "Couldn't play"
+caption), its glyph on the text's edge, and the Markdown text under it; screen readers
+get the player as one element, "Voice note, <caption>", with Play/Pause and Download as its
+actions, and the text as its own. The terminal UI shows the file line, then the text. A
+voice note sent without `text` keeps its own card. Older clients show the card alone.
 
 This feature adds no previews of other file types, folder packaging, background
 transfers, persistent resume or Watch UI. Existing bots do not publish workspace files

@@ -51,13 +51,15 @@ Use the **+** button left of the message box.
 
 A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's personal workspace, or in Codync's data folder for a bot that works in a project folder. The agent gets your message with the path of each file and reads them with its own tools.
 
-Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window. This also applies to images you send. To save a file:
+Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window. This also applies to images you send. A voice note or other sound file (MP3, M4A, WAV or AAC) up to 20 MB has a play button in place of its icon in the same apps. It spins while the sound loads; then the card shows the time played and its length over a progress bar. If the sound can't be played, the card says **Couldn't play** and the next tap tries again. With VoiceOver or TalkBack, each card is one item, with play and download among its actions. To save a file:
 
 - **Desktop:** saves through the system Save dialog.
 - **iPhone:** opens the share sheet, including Save to Files.
 - **Terminal UI:** pick the message (`v`), then `f` saves it to Downloads.
 
 Codync keeps its own copy of each shared file, so it stays downloadable even if the bot later changes or deletes the original. Bots share files only in their own chat, not in group chats or routine runs.
+
+A bot can also speak a message: its voice note then plays at the top of that message's bubble, with the text under it, instead of coming as a card of its own. The player works like a voice note's card: tap play, then the progress bar and the time played sit beside the button on one row; tap or drag the bar to jump to another point, and tap again if it says **Couldn't play**. To save the sound, pick Download in the message's menu (press and hold on the phones, right-click on desktop). The terminal UI shows the file's line with the text under it.
 
 A report or a tracker you'll come back to can come as an [artifact](/docs/artifacts) instead: a page that opens from its card. Everything made or shared in a chat is also in its [Library](/docs/artifacts#the-library).
 

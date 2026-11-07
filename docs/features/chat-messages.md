@@ -13,7 +13,7 @@ it has no pointer tooltip or link-opening action.
 ## Messages are sent, not streamed
 
 - Every bot gets the built-in `chat` MCP server (`codync-host mcp chat`,
-  `host/src/chat/outbox.rs`) with `send_message {text}` and `send_file {path, name?}`. In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
+  `host/src/chat/outbox.rs`) with `send_message {text}` and `send_file {path, name?, text?}` (`text`: the message a voice note plays in, [file attachments](file-attachments.md#a-voice-note-inside-its-message)). In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
   `final: true`. A turn can send several.
 - The agent's own reply text (`agent_message_chunk`) stays in the trace when the turn sent
   text through `send_message`. A turn that sent nothing (an agent that ignores the tool, or has no MCP) falls back to

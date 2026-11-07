@@ -12,14 +12,20 @@ struct WelcomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 0 = nothing yet … 4 = everything shown. Each beat enters in turn.
     @State private var beat = 0
+    /// What the pitch needs besides the crew, which shrinks into the rest.
+    @State private var textHeight: CGFloat = 0
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                content
-                    .frame(minHeight: geometry.size.height)
+        VStack(spacing: 0) {
+            // The way forward stays on screen at any size: the pitch above it gives way.
+            GeometryReader { geometry in
+                ScrollView {
+                    pitch(room: geometry.size.height)
+                        .frame(minHeight: geometry.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .scrollBounceBehavior(.basedOnSize)
+            actions
         }
         .background(Palette.background)
         .tracked(.onboardingStepViewed(.welcome))
@@ -32,83 +38,89 @@ struct WelcomeView: View {
         }
     }
 
-    private var content: some View {
+    private func pitch(room: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 24)
 
-            Crew(shown: beat >= 1)
+            Crew(shown: beat >= 1, room: room - textHeight - 48)
                 .frame(maxWidth: .infinity)
 
             Spacer(minLength: 24)
 
-            ChatGlimpse(shown: beat >= 2)
-                .padding(.bottom, 24)
+            VStack(alignment: .leading, spacing: 0) {
+                ChatGlimpse(shown: beat >= 2)
+                    .padding(.bottom, 24)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.tr("Your coding agents,\nas teammates."))
-                    .font(.system(size: 34, weight: .semibold))
-                    .tracking(-0.6)
-                    .foregroundStyle(Palette.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(L10n.tr("Give each one a name and a project. They work on your computer while you're away."))
-                    .font(.body)
-                    .foregroundStyle(Palette.secondary)
-                DemoButton().padding(.top, 4)
-            }
-            .rise(beat >= 3)
-
-            Spacer(minLength: 32)
-
-            VStack(spacing: 10) {
-                if signedOutComputers > 0 {
-                    Text(signedOutComputers == 1
-                         ? L10n.tr("Your computer stays paired. If you sign in with an account used on this phone before, scan its code again. Add to account brings it into your account.")
-                         : L10n.tr("Your {count} computers stay paired. If you sign in with an account used on this phone before, scan their codes again. Add to account brings each into your account.")
-                            .replacingOccurrences(of: "{count}", with: String(signedOutComputers)))
-                        .font(.footnote)
-                        .foregroundStyle(Palette.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L10n.tr("Your coding agents,\nas teammates."))
+                        .font(.system(size: 34, weight: .semibold))
+                        .tracking(-0.6)
+                        .foregroundStyle(Palette.text)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 4)
+                    Text(L10n.tr("Give each one a name and a project. They work on your computer while you're away."))
+                        .font(.body)
+                        .foregroundStyle(Palette.secondary)
+                    DemoButton().padding(.top, 4)
                 }
-                if account.isConfigured {
-                    SignInButtons().disabled(!account.isReady)
-                    Button(action: start) {
-                        VStack(spacing: 2) {
-                            Text(L10n.tr("Continue without an account")).font(.subheadline.weight(.medium))
-                                .foregroundStyle(Palette.text)
-                            Text(L10n.tr("Only on the same Wi-Fi or Tailscale as your computer"))
-                                .font(.caption)
-                                .foregroundStyle(Palette.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressScale())
-                } else {
-                    Button(action: start) {
-                        Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
-                    }
-                    .buttonStyle(.primary)
-                }
-                if let message = account.errorMessage {
-                    Text(message).font(.footnote).foregroundStyle(Palette.danger)
-                        .transition(.opacity)
-                }
-                if account.restoreFailed {
-                    HStack(spacing: 8) {
-                        Text(L10n.tr("Couldn't restore sign-in. Check your connection and retry."))
-                            .font(.footnote).foregroundStyle(Palette.danger)
-                            .fixedSize(horizontal: false, vertical: true)
-                        IconButton("Try again", systemImage: "arrow.clockwise") { Task { await account.retryRestore() } }
-                    }
-                    .transition(.opacity)
-                }
+                .rise(beat >= 3)
             }
-            .animation(Motion.fade, value: account.restoreFailed)
-            .rise(beat >= 4)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
         }
         .padding(.horizontal, 24)
+    }
+
+    private var actions: some View {
+        VStack(spacing: 10) {
+            if signedOutComputers > 0 {
+                Text(signedOutComputers == 1
+                     ? L10n.tr("Your computer stays paired. If you sign in with an account used on this phone before, scan its code again. Add to account brings it into your account.")
+                     : L10n.tr("Your {count} computers stay paired. If you sign in with an account used on this phone before, scan their codes again. Add to account brings each into your account.")
+                        .replacingOccurrences(of: "{count}", with: String(signedOutComputers)))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 4)
+            }
+            if account.isConfigured {
+                SignInButtons().disabled(!account.isReady)
+                Button(action: start) {
+                    VStack(spacing: 2) {
+                        Text(L10n.tr("Continue without an account")).font(.subheadline.weight(.medium))
+                        // A little stronger than `Palette.secondary`, which is too faint for this size on the fill.
+                        Text(L10n.tr("Only on the same Wi-Fi or Tailscale as your computer"))
+                            .font(.caption)
+                            .foregroundStyle(Palette.text.opacity(0.7))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.secondary)
+            } else {
+                Button(action: start) {
+                    Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.primary)
+            }
+            if let message = account.errorMessage {
+                Text(message).font(.footnote).foregroundStyle(Palette.danger)
+                    .transition(.opacity)
+            }
+            if account.restoreFailed {
+                HStack(spacing: 8) {
+                    Text(L10n.tr("Couldn't restore sign-in. Check your connection and retry."))
+                        .font(.footnote).foregroundStyle(Palette.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    IconButton("Try again", systemImage: "arrow.clockwise") { Task { await account.retryRestore() } }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(Motion.fade, value: account.restoreFailed)
+        .rise(beat >= 4)
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
         .padding(.bottom, 12)
     }
 }
@@ -116,7 +128,15 @@ struct WelcomeView: View {
 /// Five bots bobbing out of step: the "persistent, named" part of the pitch, without words.
 private struct Crew: View {
     let shown: Bool
+    /// The height the pitch leaves it. It shrinks into that, and goes when it would be too small to read.
+    let room: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let fullHeight: CGFloat = 170
+    private var fit: CGFloat {
+        let fit = min(1, room / Self.fullHeight)
+        return fit < 0.35 ? 0 : fit
+    }
 
     private let members: [(shape: String, color: String, size: CGFloat, x: CGFloat, y: CGFloat, mood: CharacterAvatar.Mood)] = [
         ("blob", "blue", 92, 0, 0, .working),
@@ -140,7 +160,9 @@ private struct Crew: View {
                 }
             }
         }
-        .frame(height: 170)
+        .scaleEffect(fit)
+        .frame(height: Self.fullHeight * fit)
+        .animation(Motion.fade, value: fit)
     }
 }
 

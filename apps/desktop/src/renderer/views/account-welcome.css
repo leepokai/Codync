@@ -16,7 +16,7 @@
   margin: 0 auto;
   padding: 0 24px 12px;
 }
-/* The way forward stays on screen at any window size: the pitch scrolls behind it, and gives up the crew first. */
+/* The way forward stays on screen at any window size: the pitch scrolls above it. */
 .welcome-pitch {
   flex: 1;
   min-height: 0;
@@ -44,31 +44,22 @@
   font-size: var(--text-body);
   font-weight: 700;
 }
-/* A little stronger than the secondary tone, which is too faint for this size on the button's fill. */
-.welcome-continue-note {
-  opacity: 0.7;
+/* Short windows keep the crew and give up button height first. */
+@media (max-height: 720px) {
+  .styled-button.welcome-button {
+    min-height: 40px;
+  }
+}
+.welcome-continue {
+  width: 100%;
+  min-height: 44px;
+  color: var(--text);
 }
 
 .welcome-crew {
   position: relative;
   flex-shrink: 0;
   height: 170px;
-}
-@media (max-height: 720px) {
-  .welcome-crew {
-    height: 110px;
-    transform: scale(0.65);
-  }
-}
-@media (max-height: 640px) {
-  .welcome-crew {
-    display: none;
-  }
-}
-@media (max-height: 540px) {
-  .welcome-glimpse {
-    display: none;
-  }
 }
 .welcome-crew-member {
   position: absolute;

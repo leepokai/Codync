@@ -12,15 +12,13 @@ struct WelcomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 0 = nothing yet … 4 = everything shown. Each beat enters in turn.
     @State private var beat = 0
-    /// What the pitch needs besides the crew, which shrinks into the rest.
-    @State private var textHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            // The way forward stays on screen at any size: the pitch above it gives way.
+            // The way forward stays on screen at any size: the pitch scrolls above it on the smallest.
             GeometryReader { geometry in
                 ScrollView {
-                    pitch(room: geometry.size.height)
+                    pitch
                         .frame(minHeight: geometry.size.height)
                 }
                 .scrollBounceBehavior(.basedOnSize)
@@ -38,11 +36,11 @@ struct WelcomeView: View {
         }
     }
 
-    private func pitch(room: CGFloat) -> some View {
+    private var pitch: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 24)
 
-            Crew(shown: beat >= 1, room: room - textHeight - 48)
+            Crew(shown: beat >= 1)
                 .frame(maxWidth: .infinity)
 
             Spacer(minLength: 24)
@@ -64,7 +62,6 @@ struct WelcomeView: View {
                 }
                 .rise(beat >= 3)
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
         }
         .padding(.horizontal, 24)
     }
@@ -86,17 +83,18 @@ struct WelcomeView: View {
                 SignInButtons().disabled(!account.isReady)
                 Button(action: start) {
                     VStack(spacing: 2) {
-                        Text(L10n.tr("Continue without an account")).font(.subheadline.weight(.medium))
-                        // A little stronger than `Palette.secondary`, which is too faint for this size on the fill.
+                        Text(L10n.tr("Continue without an account")).font(.footnote.weight(.medium))
+                            .foregroundStyle(Palette.text)
                         Text(L10n.tr("Only on the same Wi-Fi or Tailscale as your computer"))
-                            .font(.caption)
-                            .foregroundStyle(Palette.text.opacity(0.7))
+                            .font(.caption2)
+                            .foregroundStyle(Palette.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.secondary)
+                .buttonStyle(PressScale())
             } else {
                 Button(action: start) {
                     Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
@@ -128,15 +126,7 @@ struct WelcomeView: View {
 /// Five bots bobbing out of step: the "persistent, named" part of the pitch, without words.
 private struct Crew: View {
     let shown: Bool
-    /// The height the pitch leaves it. It shrinks into that, and goes when it would be too small to read.
-    let room: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private static let fullHeight: CGFloat = 170
-    private var fit: CGFloat {
-        let fit = min(1, room / Self.fullHeight)
-        return fit < 0.35 ? 0 : fit
-    }
 
     private let members: [(shape: String, color: String, size: CGFloat, x: CGFloat, y: CGFloat, mood: CharacterAvatar.Mood)] = [
         ("blob", "blue", 92, 0, 0, .working),
@@ -160,9 +150,7 @@ private struct Crew: View {
                 }
             }
         }
-        .scaleEffect(fit)
-        .frame(height: Self.fullHeight * fit)
-        .animation(Motion.fade, value: fit)
+        .frame(height: 170)
     }
 }
 

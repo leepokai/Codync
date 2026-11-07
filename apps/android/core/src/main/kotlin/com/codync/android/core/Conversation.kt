@@ -123,8 +123,9 @@ private fun isImageName(name: String) = name.substringAfterLast('.', "").lowerca
 /** Unicode control and format characters, which a file name may not contain. */
 private val CONTROLS = setOf(Character.CONTROL, Character.FORMAT)
 
+/** [Waiting]: in the relay's mailbox. [Held]: on this phone, until the computer can be reached. */
 @Serializable
-enum class SendStatus { Sending, Waiting, Delivering, Failed }
+enum class SendStatus { Sending, Waiting, Delivering, Failed, Held }
 
 @Serializable
 data class PendingSend(

@@ -1884,5 +1884,7 @@
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "У этого аккаунта уже есть свой ключ на этом телефоне. Снова отсканируйте код каждого компьютера, сопряжённого без аккаунта; ваши сообщения сохранятся.",
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} хочет использовать этот компьютер, который затем присоединится к аккаунту {email}.",
   "Sign in there with {email} and add it to your account, and it shows up here.": "Войдите там как {email} и добавьте его в аккаунт: он появится здесь.",
-  "Scan with the Codync app or the iPhone Camera.": "Отсканируйте в приложении Codync или камерой iPhone."
+  "Scan with the Codync app or the iPhone Camera.": "Отсканируйте в приложении Codync или камерой iPhone.",
+  "Phones paired without this account lose access and must pair again.": "Телефоны, сопряжённые без этого аккаунта, потеряют доступ, и их нужно будет сопрячь заново.",
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "Файлов этого сообщения больше нет на этом устройстве. Удалите его и прикрепите файлы заново."
 }

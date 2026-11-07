@@ -14,12 +14,16 @@ struct WelcomeView: View {
     @State private var beat = 0
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                content
-                    .frame(minHeight: geometry.size.height)
+        VStack(spacing: 0) {
+            // The way forward stays on screen at any size: the pitch scrolls above it on the smallest.
+            GeometryReader { geometry in
+                ScrollView {
+                    pitch
+                        .frame(minHeight: geometry.size.height)
+                }
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .scrollBounceBehavior(.basedOnSize)
+            actions
         }
         .background(Palette.background)
         .tracked(.onboardingStepViewed(.welcome))
@@ -32,7 +36,7 @@ struct WelcomeView: View {
         }
     }
 
-    private var content: some View {
+    private var pitch: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 24)
 
@@ -41,74 +45,80 @@ struct WelcomeView: View {
 
             Spacer(minLength: 24)
 
-            ChatGlimpse(shown: beat >= 2)
-                .padding(.bottom, 24)
+            VStack(alignment: .leading, spacing: 0) {
+                ChatGlimpse(shown: beat >= 2)
+                    .padding(.bottom, 24)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.tr("Your coding agents,\nas teammates."))
-                    .font(.system(size: 34, weight: .semibold))
-                    .tracking(-0.6)
-                    .foregroundStyle(Palette.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(L10n.tr("Give each one a name and a project. They work on your computer while you're away."))
-                    .font(.body)
-                    .foregroundStyle(Palette.secondary)
-                DemoButton().padding(.top, 4)
-            }
-            .rise(beat >= 3)
-
-            Spacer(minLength: 32)
-
-            VStack(spacing: 10) {
-                if signedOutComputers > 0 {
-                    Text(signedOutComputers == 1
-                         ? L10n.tr("Your computer stays paired. If you sign in with an account used on this phone before, scan its code again. Add to account brings it into your account.")
-                         : L10n.tr("Your {count} computers stay paired. If you sign in with an account used on this phone before, scan their codes again. Add to account brings each into your account.")
-                            .replacingOccurrences(of: "{count}", with: String(signedOutComputers)))
-                        .font(.footnote)
-                        .foregroundStyle(Palette.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L10n.tr("Your coding agents,\nas teammates."))
+                        .font(.system(size: 34, weight: .semibold))
+                        .tracking(-0.6)
+                        .foregroundStyle(Palette.text)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 4)
+                    Text(L10n.tr("Give each one a name and a project. They work on your computer while you're away."))
+                        .font(.body)
+                        .foregroundStyle(Palette.secondary)
+                    DemoButton().padding(.top, 4)
                 }
-                if account.isConfigured {
-                    SignInButtons().disabled(!account.isReady)
-                    Button(action: start) {
-                        VStack(spacing: 2) {
-                            Text(L10n.tr("Continue without an account")).font(.subheadline.weight(.medium))
-                                .foregroundStyle(Palette.text)
-                            Text(L10n.tr("Only on the same Wi-Fi or Tailscale as your computer"))
-                                .font(.caption)
-                                .foregroundStyle(Palette.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressScale())
-                } else {
-                    Button(action: start) {
-                        Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
-                    }
-                    .buttonStyle(.primary)
-                }
-                if let message = account.errorMessage {
-                    Text(message).font(.footnote).foregroundStyle(Palette.danger)
-                        .transition(.opacity)
-                }
-                if account.restoreFailed {
-                    HStack(spacing: 8) {
-                        Text(L10n.tr("Couldn't restore sign-in. Check your connection and retry."))
-                            .font(.footnote).foregroundStyle(Palette.danger)
-                            .fixedSize(horizontal: false, vertical: true)
-                        IconButton("Try again", systemImage: "arrow.clockwise") { Task { await account.retryRestore() } }
-                    }
-                    .transition(.opacity)
-                }
+                .rise(beat >= 3)
             }
-            .animation(Motion.fade, value: account.restoreFailed)
-            .rise(beat >= 4)
         }
         .padding(.horizontal, 24)
+    }
+
+    private var actions: some View {
+        VStack(spacing: 10) {
+            if signedOutComputers > 0 {
+                Text(signedOutComputers == 1
+                     ? L10n.tr("Your computer stays paired. If you sign in with an account used on this phone before, scan its code again. Add to account brings it into your account.")
+                     : L10n.tr("Your {count} computers stay paired. If you sign in with an account used on this phone before, scan their codes again. Add to account brings each into your account.")
+                        .replacingOccurrences(of: "{count}", with: String(signedOutComputers)))
+                    .font(.footnote)
+                    .foregroundStyle(Palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 4)
+            }
+            if account.isConfigured {
+                SignInButtons().disabled(!account.isReady)
+                Button(action: start) {
+                    VStack(spacing: 2) {
+                        Text(L10n.tr("Continue without an account")).font(.footnote.weight(.medium))
+                            .foregroundStyle(Palette.text)
+                        Text(L10n.tr("Only on the same Wi-Fi or Tailscale as your computer"))
+                            .font(.caption2)
+                            .foregroundStyle(Palette.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressScale())
+            } else {
+                Button(action: start) {
+                    Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.primary)
+            }
+            if let message = account.errorMessage {
+                Text(message).font(.footnote).foregroundStyle(Palette.danger)
+                    .transition(.opacity)
+            }
+            if account.restoreFailed {
+                HStack(spacing: 8) {
+                    Text(L10n.tr("Couldn't restore sign-in. Check your connection and retry."))
+                        .font(.footnote).foregroundStyle(Palette.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    IconButton("Try again", systemImage: "arrow.clockwise") { Task { await account.retryRestore() } }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(Motion.fade, value: account.restoreFailed)
+        .rise(beat >= 4)
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
         .padding(.bottom, 12)
     }
 }

@@ -241,12 +241,22 @@ export class CloudModel extends Observable {
     analytics.track({ event: 'join_offer_answered', outcome: joined ? 'added' : 'failed' })
   }
 
-  /** The phones `store`'s computer would remove by joining the signed-in account. A host before this method removes the same phones and can't name them. */
-  async joinWouldRemove(store: BotStore): Promise<string[]> {
+  /** The phones `store`'s computer would remove by joining the signed-in account. `null`: it couldn't say. A host before this method removes the same phones and can't name them. */
+  joinWouldRemove = async (store: BotStore): Promise<string[] | null> => {
     const userId = this.userId
     if (!userId) return []
     try {
       return (await (await store.ready()).call<{ names: string[] }>('joinWouldRemove', { userId })).names
+    } catch (error) {
+      this.fail(error, true)
+      return null
+    }
+  }
+
+  /** The devices on `store`'s computer, which all go when it leaves its account. Empty when it can't say: the warning then stays general. */
+  deviceNames = async (store: BotStore): Promise<string[]> => {
+    try {
+      return (await (await store.ready()).call<{ devices: { name: string }[] }>('devices')).devices.map((device) => device.name)
     } catch (error) {
       this.fail(error, true)
       return []

@@ -52,7 +52,7 @@ The phone finds and pairs every computer itself. A computer the phone hasn't pai
 | Away | Tap it in the account list, compare 6 digits on the computer, Allow (or **Skip the 6-digit check**) | Must already be in your account |
 
 - The host checks a signed-in phone's account from a proof the cloud signed, never from what the phone says. The check works offline (a signature), so computers with the cloud off or on a private relay still pair in person. A phone with no proof is a signed-out phone; a proof that doesn't check out is refused, never treated as none.
-- A QR pairing records the phone's account on the computer, or that it has none. When a host changes the account it belongs to, it drops every device of another account and every phone with none, after a warning that names them.
+- A QR pairing records the phone's account on the computer, or that it has none. When a host changes the account it belongs to, it drops every device of another account and every phone with none, after a warning that names them (a general one when the host can't say).
 - Joining an account on a scan is how a headless computer "signs in": there is no `codync-host login`. A computer may also join through a manager's **Add to account**, which uses the manager app's account, or later through a paired signed-in phone's **Add to account**, which asks on the computer again.
 
 ## Accounts on a phone

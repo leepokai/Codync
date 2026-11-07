@@ -130,7 +130,7 @@ extension BotStore {
                 if outgoingFiles[nonce] != nil { lastError = "Couldn't send the files: \(error.localizedDescription)" }
                 // With no relay holding it, a message waits here until the computer can be reached (`sendHeld`).
                 let holds = computer.cloud == nil && (error as? HostError)?.isTransient == true
-                markLocal(nonce: nonce, botId: botId, status: holds ? "waiting" : "failed")
+                markLocal(nonce: nonce, botId: botId, status: holds ? "held" : "failed")
                 return holds ? .queued : .failed
             }
         }
@@ -191,7 +191,7 @@ extension BotStore {
 
     /// Takes a waiting message back out of the mailbox, unless the computer already has it.
     public func cancelQueued(_ entry: Entry) {
-        if computer.cloud == nil {
+        if computer.cloud == nil || entry.data.status == "held" {
             // No relay holds it: it only waits on this phone.
             discard(entry)
             if let bot = bots[entry.botId] { onSent?(bot, .cancelled) }
@@ -227,21 +227,24 @@ extension BotStore {
     /// "Failed" is safe even if one was delivered: the events catch-up replaces it by clientNonce,
     /// and a resend reuses that nonce, so the computer never runs it twice.
     func reconcileQueued(_ remote: any RemoteTransport) async {
-        let waiting = entries.values.flatMap { $0 }.filter { $0.data.status == "waiting" }
-        guard !waiting.isEmpty else { return }
-        guard computer.cloud != nil else { return sendHeld(waiting) }
-        let heldItems: [QueuedItem]
+        let local = entries.values.flatMap { $0 }
+        // What waits on this phone goes now, also when the computer has joined an account since. With no relay
+        // now, what a relay held can't be asked about: it goes with the same nonce too.
+        sendHeld(local.filter { $0.data.status == "held" || ($0.data.status == "waiting" && computer.cloud == nil) })
+        let waiting = local.filter { $0.data.status == "waiting" }
+        guard computer.cloud != nil, !waiting.isEmpty else { return }
+        let relayItems: [QueuedItem]
         do {
-            heldItems = try await remote.listQueued()
+            relayItems = try await remote.listQueued()
         } catch {
             log.debug("mailbox reconciliation deferred: \(error.localizedDescription)")
             return
         }
-        let held = Dictionary(heldItems.map { ($0.nonce, $0.state) }, uniquingKeysWith: { a, _ in a })
+        let inRelay = Dictionary(relayItems.map { ($0.nonce, $0.state) }, uniquingKeysWith: { a, _ in a })
         guard !retired else { return }
         for e in waiting {
             guard let nonce = e.data.clientNonce else { continue }
-            switch held[nonce] {
+            switch inRelay[nonce] {
             case "queued": break
             case .some: markLocal(nonce: nonce, botId: e.botId, status: "delivering")
             case nil: markLocal(nonce: nonce, botId: e.botId, status: "failed")
@@ -250,12 +253,11 @@ extension BotStore {
         saveCache()
     }
 
-    /// The computer is back, and it has no relay: what waited on this phone goes now, with the same nonces. Files are
-    /// kept only in memory: a message whose files went with the app stays for the user to resend, not half sent.
-    private func sendHeld(_ waiting: [Entry]) {
-        for entry in waiting.sorted(by: { $0.createdAt < $1.createdAt }) {
-            let filesGone = entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
-            if filesGone, let nonce = entry.data.clientNonce {
+    /// The computer is back: what waited on this phone goes now, with the same nonces.
+    private func sendHeld(_ held: [Entry]) {
+        guard !held.isEmpty else { return }
+        for entry in held.sorted(by: { $0.createdAt < $1.createdAt }) {
+            if filesGone(entry), let nonce = entry.data.clientNonce {
                 markLocal(nonce: nonce, botId: entry.botId, status: "failed")
             } else {
                 retry(entry)
@@ -264,7 +266,16 @@ extension BotStore {
         saveCache()
     }
 
+    /// Files are kept only in memory: a message whose files went with the app can't go again, or it would go half sent.
+    private func filesGone(_ entry: Entry) -> Bool {
+        entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
+    }
+
     public func retry(_ entry: Entry) {
+        guard !filesGone(entry) else {
+            lastError = "This message's files aren't on this device anymore. Delete it and attach them again."
+            return
+        }
         let files = entry.data.clientNonce.flatMap { outgoingFiles[$0] } ?? []
         guard let text = entry.data.text, !text.isEmpty || !files.isEmpty else { return }
         entries[entry.botId]?.removeAll { $0.id == entry.id }

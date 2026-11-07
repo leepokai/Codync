@@ -1884,5 +1884,7 @@
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "这个账户在这部手机上已有自己的密钥。请重新扫描每台未登录时配对的电脑的二维码；消息会保留。",
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} 想使用这台电脑，电脑随后会加入 {email} 的账户。",
   "Sign in there with {email} and add it to your account, and it shows up here.": "在那里用 {email} 登录并将电脑加入账户，它就会显示在这里。",
-  "Scan with the Codync app or the iPhone Camera.": "用 Codync App 或 iPhone 相机扫描。"
+  "Scan with the Codync app or the iPhone Camera.": "用 Codync App 或 iPhone 相机扫描。",
+  "Phones paired without this account lose access and must pair again.": "未用此账户配对的手机将失去访问权限，必须重新配对。",
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "此消息的文件已不在此设备上。请删除这条消息并重新添加文件。"
 }

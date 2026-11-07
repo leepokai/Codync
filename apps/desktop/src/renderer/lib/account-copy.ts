@@ -12,9 +12,9 @@ export function joinRemovesText(tr: Tr, names: readonly string[] | null | undefi
   return names?.length ? fill(tr('These phones lose access and must pair again: {names}.'), { names: names.join(', ') }) : ''
 }
 
-/** `text`, then the phones a join removes. */
+/** `text`, then the phones a join removes. `null`: the computer couldn't say, so the warning stays general. */
 export const withJoinRemoves = (tr: Tr, text: string, names: readonly string[] | null | undefined) =>
-  [text, joinRemovesText(tr, names)].filter(Boolean).join(' ')
+  [text, names === null ? tr('Phones paired without this account lose access and must pair again.') : joinRemovesText(tr, names)].filter(Boolean).join(' ')
 
 /**
  * A phone scanned a computer in no account, or a paired phone asks to add it to its account. A signed-in phone may
@@ -44,6 +44,11 @@ export function pairingAnswers(request: Pick<PairingRequest, 'canJoin' | 'phoneO
   if (!request.canJoin) return [{ title: 'Let in' }]
   const stayOut = request.phoneOnly ? [{ title: 'Wi-Fi or Tailscale only', join: false }] : []
   return [...stayOut, { title: 'Add to account', join: true }]
+}
+
+/** A computer leaving its account drops every device it has: by name when the computer could list them. */
+export function leavingRemovesText(tr: Tr, email: string | null | undefined, names: readonly string[] | null | undefined) {
+  return joinRemovesText(tr, names) || devicesLoseAccess(tr, email)
 }
 
 /** A computer that changes its account drops every device of the old one, QR-paired ones included. */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { devicesLoseAccess, joinRemovesText, pairingAnswers, pairingAskText, spacedCode, withJoinRemoves } from './account-copy.ts'
+import { devicesLoseAccess, joinRemovesText, leavingRemovesText, pairingAnswers, pairingAskText, spacedCode, withJoinRemoves } from './account-copy.ts'
 
 const tr = (text: string) => text
 
@@ -47,6 +47,7 @@ test('the answers offered follow what the host says the phone may get', () => {
 test('the phones a join removes follow what it says', () => {
   assert.equal(withJoinRemoves(tr, 'Add it?', []), 'Add it?')
   assert.equal(withJoinRemoves(tr, 'Add it?', ['Old']), 'Add it? These phones lose access and must pair again: Old.')
+  assert.equal(withJoinRemoves(tr, 'Add it?', null), 'Add it? Phones paired without this account lose access and must pair again.')
 })
 
 test('a phone without an email is a Codync account, and names keep their braces', () => {
@@ -58,6 +59,12 @@ test('a phone without an email is a Codync account, and names keep their braces'
 test('changing account drops every device of the old one', () => {
   assert.equal(devicesLoseAccess(tr, 'k@example.com'), "Every device of k@example.com's account loses access.")
   assert.equal(devicesLoseAccess(tr, null), 'Every device of that account loses access.')
+})
+
+test('leaving an account names the devices it drops, when the computer could list them', () => {
+  assert.equal(leavingRemovesText(tr, 'k@example.com', ['Pixel', 'iPad']), 'These phones lose access and must pair again: Pixel, iPad.')
+  assert.equal(leavingRemovesText(tr, 'k@example.com', []), "Every device of k@example.com's account loses access.")
+  assert.equal(leavingRemovesText(tr, null, null), 'Every device of that account loses access.')
 })
 
 test('codes other than 6 digits stay as they are', () => {

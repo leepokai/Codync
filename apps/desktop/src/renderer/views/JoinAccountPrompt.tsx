@@ -29,7 +29,8 @@ export function JoinAccountPrompt() {
       cancel={null}
       actions={store ? [
         { title: 'Not now', action: () => app.cloud.declineJoin(store) },
-        { title: 'Add to account', action: () => void app.cloud.acceptJoin(store) },
+        // Not before it says which phones this removes.
+        { title: 'Add to account', disabled: names === undefined, action: () => void app.cloud.acceptJoin(store) },
       ] : []}
       onClose={() => {}}
     />

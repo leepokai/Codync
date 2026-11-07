@@ -1678,5 +1678,9 @@
   "An output needs a destination.": "Eine Ausgabe braucht ein Ziel.",
   "Use a Telegram chat id.": "Nutze eine Telegram-Chat-ID.",
   "Use owner/name.": "Nutze owner/name.",
-  "Use a channel id.": "Nutze eine Kanal-ID."
+  "Use a channel id.": "Nutze eine Kanal-ID.",
+  "Allowed chats": "Erlaubte Chats",
+  "Anyone can write right now. Add a chat or person to restrict it.": "Gerade kann jeder schreiben. Füge einen Chat oder eine Person hinzu, um es einzuschränken.",
+  "Anyone can write while this is empty. The owner always can.": "Solange das leer ist, kann jeder schreiben. Der Eigentümer immer.",
+  "Allow": "Erlauben"
 }

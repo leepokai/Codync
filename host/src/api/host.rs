@@ -35,6 +35,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             if let Some(bot) = hub.store.kv_get("whatsapp.bot") {
                 view["bot"] = Value::String(bot);
             }
+            view["allowed"] = serde_json::to_value(crate::whatsapp::allowed(hub))?;
             view
         }
         "whatsappConnect" => {
@@ -49,6 +50,23 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let bot = str_arg(&b, "botId")?;
             hub.store.kv_set("whatsapp.bot", bot)?;
             json!({"ok": true})
+        }
+        "whatsappAllowed" => json!({"allowed": crate::whatsapp::allowed(hub)}),
+        "whatsappSetAllowed" => {
+            let jid = str_arg(&b, "jid")?;
+            if jid.is_empty() || jid.len() > 120 || jid.contains(char::is_whitespace) {
+                bail!("Use a WhatsApp id, such as 5215555555555@s.whatsapp.net.");
+            }
+            let mut list = crate::whatsapp::allowed(hub);
+            list.retain(|a| a != jid);
+            if b["allowed"].as_bool().unwrap_or(true) {
+                if list.len() >= 200 {
+                    bail!("That is as many chats as one number allows (200).");
+                }
+                list.push(jid.to_owned());
+            }
+            hub.store.kv_set("whatsapp.allowed", &serde_json::to_string(&list)?)?;
+            json!({"allowed": list})
         }
         "whatsappSend" => {
             let body: crate::whatsapp::SendBody = serde_json::from_value(b)?;

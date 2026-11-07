@@ -1678,5 +1678,9 @@
   "An output needs a destination.": "输出需要一个目标。",
   "Use a Telegram chat id.": "使用 Telegram 聊天 ID。",
   "Use owner/name.": "使用 owner/name。",
-  "Use a channel id.": "使用频道 ID。"
+  "Use a channel id.": "使用频道 ID。",
+  "Allowed chats": "允许的聊天",
+  "Anyone can write right now. Add a chat or person to restrict it.": "现在任何人都能写信。添加聊天或人来限制。",
+  "Anyone can write while this is empty. The owner always can.": "为空时任何人都能写信。所有者始终可以。",
+  "Allow": "允许"
 }

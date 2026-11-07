@@ -4,6 +4,7 @@ import com.codync.android.core.WhatsApp
 import com.codync.android.core.WhatsAppLink
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** The computer's linked WhatsApp number. Null from an older host. */
 suspend fun AppStore.whatsapp(): WhatsAppLink? = runCatching { WhatsApp.decode(hostQuery("whatsappState", buildJsonObject { })) }.getOrNull()
@@ -16,3 +17,9 @@ suspend fun AppStore.whatsappLogout(): JsonElement = hostQuery("whatsappLogout",
 
 /** Sends the number's messages to [botId], or to none when null. */
 suspend fun AppStore.whatsappSetBot(botId: String?): JsonElement = hostQuery("whatsappSetBot", body("botId" to botId))
+
+/** Lets a chat or person write, or takes them out. Returns the list as it is then. */
+suspend fun AppStore.whatsappSetAllowed(jid: String, allowed: Boolean): List<String> {
+    val answer = hostQuery("whatsappSetAllowed", buildJsonObject { put("jid", jid); put("allowed", allowed) })
+    return WhatsApp.decode(answer).allowed
+}

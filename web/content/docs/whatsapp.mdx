@@ -20,6 +20,18 @@ stops with the host; **Disconnect** logs it out.
 
 Put `@` and a bot's name in a message to send it to that bot instead of the chosen one.
 
+### Restricting who writes
+
+While the allowed list is empty, anyone who has the number can write. Add a chat or person
+(`5215555555555@s.whatsapp.net`) to restrict it to those; the owner is always let in. For a group,
+add the group id and the bot answers the allowed people there.
+
+## Approval codes
+
+A run that needs a decision becomes one message with its two options. The person who wrote the
+request answers `1` or `2`; the first answer wins, from the phone or the app. A card that was
+already settled says so.
+
 ## Files
 
 Photos, videos, voice notes and documents are saved under the host's data folder and named in the
@@ -28,8 +40,9 @@ attaches (images arrive as photos). A very large attachment is named but not sav
 
 ## Approval codes
 
-A run that needs a decision can be answered from the phone: reply `1` or `2` to the card. The code
-belongs to that card only, and the run keeps waiting until it expires or you answer.
+A run that needs a decision becomes one message with its two options. The person who wrote the
+request answers `1` or `2`; the first answer wins, from the phone or the app. A card that was
+already settled says so.
 
 ## Limits
 

@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonObject
     val error: String? = null,
     /** The bot whose chat receives this number's messages. */
     val bot: String? = null,
+    /** Chats and people allowed to write; empty means anyone. */
+    val allowed: List<String> = emptyList(),
 )
 
 /** What the WhatsApp screen shows, and the words it uses; the host owns the meaning. */

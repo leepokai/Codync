@@ -542,6 +542,12 @@ export class BotStore extends BotSync {
   async whatsappConnect() { return (await this.ready()).call('whatsappConnect') }
   async whatsappLogout() { return (await this.ready()).call('whatsappLogout') }
   async whatsappSetBot(botId: string | null) { return this.whatsapp = { ...(this.whatsapp ?? { state: 'disconnected' }), bot: botId }, await (await this.ready()).call('whatsappSetBot', { botId: botId ?? '' }), this.changed() }
+  /** Lets a chat or person write, or takes them out; an empty list lets anyone in. */
+  async whatsappSetAllowed(jid: string, allowed: boolean) {
+    const result = await (await this.ready()).call<{ allowed: string[] }>('whatsappSetAllowed', { jid, allowed })
+    this.whatsapp = { ...(this.whatsapp ?? { state: 'disconnected' }), allowed: result.allowed }
+    this.changed()
+  }
 
   /** Removes one message on the computer. */
   async deleteEntry(id: string) {

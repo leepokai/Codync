@@ -76,15 +76,17 @@ async function start() {
             if (type !== 'notify') return
             const me = socket?.user?.id ? jidNormalizedUser(socket.user.id) : ''
             for (const message of messages) {
-                if (!message.message || message.key.fromMe) continue
+                if (!message.message) continue
                 const chat = message.key.remoteJid
                 const group = chat?.endsWith('@g.us') ?? false
+                const self = me !== '' && chat === me
+                // Your own messages count only in the "message yourself" chat.
+                if (message.key.fromMe && !self) continue
                 const context = message.message?.extendedTextMessage?.contextInfo ?? message.message?.imageMessage?.contextInfo
                     ?? message.message?.videoMessage?.contextInfo ?? message.message?.documentMessage?.contextInfo
                 const mentioned = (context?.mentionedJid ?? []).some((jid) => jidNormalizedUser(jid) === me)
                 // Answering the bot's own message, or quoting one, is how a group asks it something.
                 const quoted = context?.participant ? jidNormalizedUser(context.participant) === me : false
-                const self = me !== '' && chat === me
                 if (group && !mentioned && !quoted && !self) continue
                 const sender = message.key.participant ? jidNormalizedUser(message.key.participant) : (chat ? jidNormalizedUser(chat) : '')
                 let media = null
@@ -99,7 +101,7 @@ async function start() {
                     id: message.key.id,
                     chat,
                     sender,
-                    fromMe: false,
+                    fromMe: message.key.fromMe ?? false,
                     group,
                     mentioned,
                     quoted,

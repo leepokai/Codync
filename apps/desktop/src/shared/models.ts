@@ -713,6 +713,8 @@ export interface WhatsAppState {
   error?: string | null
   /** The bot whose chat receives this number's messages. */
   bot?: string | null
+  /** Chats and people allowed to write; empty means anyone. */
+  allowed?: string[]
 }
 
 export interface CloudStatus {

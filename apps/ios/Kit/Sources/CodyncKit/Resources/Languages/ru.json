@@ -1678,5 +1678,9 @@
   "An output needs a destination.": "Выходу нужен адрес.",
   "Use a Telegram chat id.": "Укажите id чата Telegram.",
   "Use owner/name.": "Укажите owner/name.",
-  "Use a channel id.": "Укажите id канала."
+  "Use a channel id.": "Укажите id канала.",
+  "Allowed chats": "Разрешённые чаты",
+  "Anyone can write right now. Add a chat or person to restrict it.": "Сейчас писать может любой. Добавьте чат или человека, чтобы ограничить.",
+  "Anyone can write while this is empty. The owner always can.": "Пока список пуст, писать может любой. Владелец — всегда.",
+  "Allow": "Разрешить"
 }

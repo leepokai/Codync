@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
     var link by remember { mutableStateOf<WhatsAppLink?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var jid by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     // The link changes on its own while a QR code is scanned, so it is read again while this is open.
     LaunchedEffect(state.computers.firstOrNull()?.id) {
@@ -93,6 +94,23 @@ import kotlinx.coroutines.launch
                     when (current?.state) {
                         "connected", "qr", "starting" -> SecondaryButton(tr("Unlink"), enabled = !busy) { act { store.whatsappLogout(); link = store.whatsapp() } }
                         else -> PrimaryButton(tr("Link WhatsApp"), enabled = !busy) { act { store.whatsappConnect(); link = store.whatsapp() } }
+                    }
+                }
+            }
+            if (link?.state == "connected") {
+                CardSection("Allowed chats", footer = "Anyone can write while this is empty. The owner always can.") {
+                    link?.allowed.orEmpty().forEach { entry ->
+                        row {
+                            Text(entry, style = Type.caption.monospaced, color = Palette.text, modifier = Modifier.weight(1f))
+                            SecondaryButton("Remove", enabled = !busy) { act { store.whatsappSetAllowed(entry, false); link = store.whatsapp() } }
+                        }
+                    }
+                    row {
+                        FieldBox(jid, { jid = it }, "5215555555555@s.whatsapp.net", fill = Palette.bubbleUser, capitalize = false)
+                        SecondaryButton("Allow", enabled = !busy && jid.isNotBlank()) {
+                            val value = jid.trim()
+                            act { store.whatsappSetAllowed(value, true); jid = ""; link = store.whatsapp() }
+                        }
                     }
                 }
             }

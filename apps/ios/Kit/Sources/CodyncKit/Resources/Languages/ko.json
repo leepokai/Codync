@@ -1678,5 +1678,9 @@
   "An output needs a destination.": "출력에는 대상이 필요합니다.",
   "Use a Telegram chat id.": "Telegram 채팅 ID를 사용하세요.",
   "Use owner/name.": "owner/name을 사용하세요.",
-  "Use a channel id.": "채널 ID를 사용하세요."
+  "Use a channel id.": "채널 ID를 사용하세요.",
+  "Allowed chats": "허용된 채팅",
+  "Anyone can write right now. Add a chat or person to restrict it.": "지금은 누구나 글을 쓸 수 있습니다. 채팅이나 사람을 추가해 제한하세요.",
+  "Anyone can write while this is empty. The owner always can.": "비어 있는 동안 누구나 글을 쓸 수 있습니다. 소유자는 항상 가능합니다.",
+  "Allow": "허용"
 }

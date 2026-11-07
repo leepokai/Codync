@@ -126,7 +126,56 @@ impl WhatsApp {
                 tracing::warn!(%error,entry=%reply.entry,"WhatsApp reply was not sent");
             }
         }
+        self.cards(hub).await?;
         Ok(())
+    }
+
+    /// Shows a pending approval as a numbered request, once, to the person who wrote.
+    async fn cards(&self, hub: &Hub) -> Result<()> {
+        for (chat, entry) in hub.store.pending_whatsapp_cards()? {
+            let Some(card) = hub.store.entry(&entry) else { continue };
+            let Some(options) = card.data["options"].as_array().filter(|o| o.len() >= 2) else { continue };
+            let sender = hub.store.whatsapp_sender(&chat).unwrap_or_default();
+            let mut lines = vec![format!("{}\n\nResponde 1 o 2:", card.data["title"].as_str().unwrap_or("Aprobación"))];
+            for (index, option) in options.iter().take(2).enumerate() {
+                lines.push(format!("{}) {}", index + 1, option["name"].as_str().unwrap_or_default()));
+            }
+            self.send_message(&chat, &lines.join("\n"), None, None, None).await?;
+            hub.store.mark_whatsapp_card(&chat, &entry, &sender)?;
+        }
+        Ok(())
+    }
+
+    /// `1` approves and `2` denies the last card of the chat; true when the text was one of them.
+    async fn answer_card(&self, hub: &Arc<Hub>, chat: &str, sender: &str, text: &str) -> bool {
+        let choice = match text.trim() {
+            "1" => 0,
+            "2" => 1,
+            _ => return false,
+        };
+        let Some(id) = hub.store.whatsapp_card(chat, sender) else { return false };
+        let card = hub.store.entry(&id).filter(|e| e.kind == "permission" && e.data["status"] == "pending");
+        let Some(card) = card else {
+            hub.store.forget_whatsapp_card(chat, &id).ok();
+            let _ = self.send_message(chat, "Esa aprobación ya no está pendiente.", None, None, None).await;
+            return true;
+        };
+        let Some(option) = card.data["options"].as_array().and_then(|o| o.get(choice)) else { return true };
+        let option_id = option["optionId"].as_str().unwrap_or_default().to_owned();
+        let answered = crate::api::dispatch(
+            hub,
+            &crate::api::devices::Caller::Local,
+            "respondPermission",
+            json!({"entryId": id, "optionId": option_id}),
+        )
+        .await;
+        hub.store.forget_whatsapp_card(chat, &id).ok();
+        let line = match answered {
+            Ok(_) => "Hecho.".to_owned(),
+            Err(error) => format!("{error:#}").chars().take(180).collect(),
+        };
+        let _ = self.send_message(chat, &line, None, None, None).await;
+        true
     }
 
     async fn begin(&self, hub: &Arc<Hub>) -> Result<()> {
@@ -270,8 +319,23 @@ impl WhatsApp {
             return;
         }
         let Some(chat) = event["chat"].as_str().filter(|c| !c.is_empty()) else { return };
+        let sender = event["sender"].as_str().unwrap_or_default();
         let group = event["group"].as_bool().unwrap_or(false);
         if group && !event["mentioned"].as_bool().unwrap_or(false) && !event["quoted"].as_bool().unwrap_or(false) {
+            return;
+        }
+        // With a list, only the owner, allowed people and allowed groups get through.
+        let allowed = allowed(hub);
+        let me = self.state.lock().await.me.clone().unwrap_or_default();
+        let own = !me.is_empty() && (chat == me || sender == me);
+        if !allowed.is_empty() && !own {
+            let listed = if group { allowed.iter().any(|a| a == chat) } else { allowed.iter().any(|a| a == sender) };
+            if !listed {
+                return;
+            }
+        }
+        // `1` or `2` answers the request card, from the person who wrote it.
+        if self.answer_card(hub, chat, sender, &text).await {
             return;
         }
         // The orchestrator: an `@name` in the message picks that bot, anything else the chosen one.
@@ -336,7 +400,7 @@ impl WhatsApp {
                 &json!({"text":format!("WhatsApp conversation · {chat}"), "source":"whatsapp", "status":"sent", "whatsappChat": chat}),
             )
             .ok();
-            hub.store.map_whatsapp_thread(chat, &root).ok();
+            hub.store.map_whatsapp_thread(chat, &root, sender).ok();
             root
         };
         let id = entry_id(&["message", chat, event["id"].as_str().unwrap_or_default()]);
@@ -377,6 +441,14 @@ impl WhatsApp {
             .await;
         }
     }
+}
+
+/// The chats and people allowed to write, as `whatsapp.allowed` keeps them; empty means anyone.
+pub fn allowed(hub: &Hub) -> Vec<String> {
+    hub.store
+        .kv_get("whatsapp.allowed")
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+        .unwrap_or_default()
 }
 
 /// A stable entry id from its parts (`whatsapp-<hash>`).

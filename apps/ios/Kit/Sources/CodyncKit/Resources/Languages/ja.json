@@ -1678,5 +1678,9 @@
   "An output needs a destination.": "出力には送り先が必要です。",
   "Use a Telegram chat id.": "Telegram チャット ID を指定します。",
   "Use owner/name.": "owner/name を指定します。",
-  "Use a channel id.": "チャンネル ID を指定します。"
+  "Use a channel id.": "チャンネル ID を指定します。",
+  "Allowed chats": "許可されたチャット",
+  "Anyone can write right now. Add a chat or person to restrict it.": "今は誰でも書き込めます。チャットか人を追加して制限します。",
+  "Anyone can write while this is empty. The owner always can.": "空の間は誰でも書き込めます。所有者は常に可能です。",
+  "Allow": "許可"
 }

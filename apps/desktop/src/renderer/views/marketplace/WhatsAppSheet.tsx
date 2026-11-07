@@ -67,6 +67,7 @@ export function WhatsAppSheet() {
                 <HStack gap={8}>
                   <Button kind="secondary" onClick={() => void store.whatsappLogout()}>{tr('Unlink')}</Button>
                 </HStack>
+                <AllowedChats allowed={state.allowed ?? []} onSet={(jid, allowed) => void store.whatsappSetAllowed(jid, allowed)} />
               </>
             ) : state?.state === 'starting' ? (
               <HStack gap={8}><Spinner size={18} /><Text tone="secondary">{tr('Starting the WhatsApp link…')}</Text></HStack>
@@ -97,12 +98,35 @@ export function WhatsAppSheet() {
   )
 }
 
-/** A labelled row; the marketplace's inputs share it. */
-function ValueRow({ label, children }: { label: string; children: React.ReactNode }) {
+/** A labelled row; the marketplace's inputs share it. */function ValueRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <VStack gap={4}>
       <Text size="caption" tone="secondary">{label}</Text>
       {children}
+    </VStack>
+  )
+}
+
+/** Who may write to the number: the owner always, and these chats and people when the list is not empty. */
+function AllowedChats({ allowed, onSet }: { allowed: string[]; onSet: (jid: string, allowed: boolean) => void }) {
+  const tr = useTr()
+  const [jid, setJid] = useState('')
+  const add = () => { const value = jid.trim(); if (value) { onSet(value, true); setJid('') } }
+  return (
+    <VStack gap={6}>
+      <Text size="caption" tone="secondary">
+        {allowed.length === 0 ? tr('Anyone can write right now. Add a chat or person to restrict it.') : tr('Allowed chats')}
+      </Text>
+      {allowed.map((entry) => (
+        <HStack key={entry} gap={8}>
+          <Text grow size="caption" mono>{entry}</Text>
+          <Button kind="secondary" onClick={() => onSet(entry, false)}>{tr('Remove')}</Button>
+        </HStack>
+      ))}
+      <HStack gap={8}>
+        <input className="field-box" value={jid} placeholder="5215555555555@s.whatsapp.net" onChange={(e) => setJid(e.target.value)} />
+        <Button kind="secondary" disabled={!jid.trim()} onClick={add}>{tr('Allow')}</Button>
+      </HStack>
     </VStack>
   )
 }

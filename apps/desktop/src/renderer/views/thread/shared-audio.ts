@@ -64,7 +64,9 @@ export class SharedAudio {
     this.setPhase('loading')
     try {
       await this.play()
-    } catch {
+    } catch (error) {
+      // A pause before play() settled rejects it with AbortError: the sound stays loaded where it was.
+      if (error instanceof DOMException && error.name === 'AbortError') return
       // play() may already have started the sound before its promise rejects: the card must not stay on pause.
       this.drop()
       this.setPhase('failed')

@@ -16,6 +16,7 @@
 //! written to the group's transcript; see `group`). A routine run talks in its chat
 //! from a session of its own (see `session`).
 
+mod background_work;
 mod cmd;
 mod codex_names;
 mod compaction;
@@ -28,6 +29,7 @@ mod modes;
 mod pi_tools;
 mod queue;
 mod session;
+mod steer;
 mod tool_entry;
 mod turn;
 mod updates;
@@ -111,6 +113,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         first_prompt: None,
         turn: None,
         queue: VecDeque::new(),
+        steers_in_flight: HashMap::new(),
+        held_done: None,
         active_request: None,
         reply_hops: None,
         active_prompt: false,
@@ -121,6 +125,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         last_text: None,
         sent: Vec::new(),
         reacted: Reacted::No,
+        joined: false,
         files: files::FileShares::default(),
         perms: HashMap::new(),
         stop_requested: false,
@@ -141,14 +146,17 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy)]
 struct SessionCaps {
-    /// `session/load`: resume a session after a restart.
-    load: bool,
+    /// The request that opens a session the agent isn't holding, when it can: `session/load`, whose replay is thrown
+    /// away as the host keeps the chat itself, or `session/resume` on an agent without it.
+    reopen: Option<&'static str>,
     /// `session/close`: an idle session can be released while the agent keeps running.
     close: bool,
     /// ACP `systemPrompt`: instructions on `session/new` and `load` that the agent keeps at system level.
     system_prompt: bool,
     /// ACP `additionalDirectories`: folders outside `cwd` the agent may work in, here the memory folders.
     additional_directories: bool,
+    /// `_session/steering` (not in ACP v1 yet): a message joins the running turn (see `steer`).
+    steering: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -283,6 +291,10 @@ struct Actor {
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
     queue: VecDeque<Queued>,
+    /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
+    steers_in_flight: HashMap<String, steer::InFlight>,
+    /// How the running turn ended, while the agent still owes an answer to a steer (`turn_ended`).
+    held_done: Option<Done>,
     active_request: Option<crate::chat::team::BotRequest>,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
@@ -293,11 +305,16 @@ struct Actor {
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,
+    /// What it wrote last this turn, since its last `send_message` or `react`.
     last_text: Option<String>,
     /// Messages the bot sent the user this turn (`send_message`); none: its last text is the reply.
     sent: Vec<String>,
     /// The bot's `react` this turn; with no message sent, it is the reply.
     reacted: Reacted,
+    /// A steered message joined this turn: its last text is a reply even after a `send_message` or `react`.
+    // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
+    // many beats a reply lost.
+    joined: bool,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
@@ -331,6 +348,32 @@ struct RoutineCompletion {
 type Done = Result<Value>;
 
 impl Actor {
+    /// The running turn is over, with every steer answered (`turn_ended`): it finishes or goes on with the next agent.
+    async fn on_turn_done(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
+        // Updates sent before the prompt response are already queued; apply them first.
+        while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
+            match inc {
+                // No agent ends a turn it waits on: a request queued here is for work after it.
+                Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
+                inc => self.on_incoming(Some(inc)).await,
+            }
+        }
+        if let Err(error) = &done
+            && self.fall_back(error, done_tx).await
+        {
+            return;
+        }
+        let (session, routine) = (self.turn_session.clone(), self.active_routine.is_some());
+        let failed = done.as_ref().is_err_and(acp::may_end_session);
+        self.finish_turn(&done);
+        match session {
+            Some(sid) if routine => self.release_spent(&sid).await,
+            Some(sid) if failed => self.close_reopenable(&sid).await,
+            _ => {}
+        }
+        self.next_in_queue(done_tx).await;
+    }
+
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.
     async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, interrupted: Option<Lane>) {
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
@@ -350,28 +393,7 @@ impl Actor {
                 }
                 Some(file) = self.files.rx.recv() => self.finish_file(file),
                 inc = recv_incoming(&mut self.conn) => self.on_incoming(inc).await,
-                Some(done) = done_rx.recv() => {
-                    // Updates sent before the prompt response are already queued; apply them first.
-                    while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
-                        match inc {
-                            // No agent ends a turn it waits on: a request queued here is for work after it.
-                            Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
-                            inc => self.on_incoming(Some(inc)).await,
-                        }
-                    }
-                    if let Err(error) = &done && self.fall_back(error, &done_tx).await {
-                        continue;
-                    }
-                    let (session, routine) = (self.turn_session.clone(), self.active_routine.is_some());
-                    let failed = done.as_ref().is_err_and(acp::may_end_session);
-                    self.finish_turn(&done);
-                    match session {
-                        Some(sid) if routine => self.release_spent(&sid).await,
-                        Some(sid) if failed => self.close_reloadable(&sid).await,
-                        _ => {}
-                    }
-                    self.next_in_queue(&done_tx).await;
-                }
+                Some(done) = done_rx.recv() => self.turn_ended(done, &done_tx).await,
                 _ = flush_tick.tick() => {
                     self.flush(false);
                     self.expire_abandoned().await;

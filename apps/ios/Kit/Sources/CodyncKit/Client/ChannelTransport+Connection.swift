@@ -51,10 +51,18 @@ extension ChannelTransport {
            let socket = try? await dial(.relay(relayRequest(cloud))) {
             return await serve(socket, route: .relay, keys: nil)
         }
-        let directURLs = computer.urls.compactMap(Self.channelURL)
+        // With no relay, a changed address can only be found on the network.
+        var found: [String] = []
+        if computer.cloud == nil {
+            let saved = computer.urls
+            found = await discovered(computer.id).filter { !saved.contains($0) }
+        }
+        let directURLs = (computer.urls + found).compactMap(Self.channelURL)
         if !directURLs.isEmpty {
             switch await raceDirect(directURLs) {
-            case let .connected(socket, keys): return await serve(socket, route: .direct, keys: keys)
+            case let .connected(socket, keys):
+                if !found.isEmpty { await Analytics.shared.capture(.computerFoundOnNetwork) }
+                return await serve(socket, route: .direct, keys: keys)
             case let .outcome(end): return end
             case let .rejected(end):
                 // A plaintext `reject` isn't signed: whatever answers at a saved LAN address can
@@ -71,7 +79,11 @@ extension ChannelTransport {
             }
         }
         // Already tried first, or ruled out by the user (privacy): no second relay attempt.
-        guard let cloud = computer.cloud, route == .automatic else { return .retry(HostError.unreachable.localizedDescription) }
+        guard let cloud = computer.cloud else { return .retry(HostError.unreachableDirectly.localizedDescription) }
+        guard route == .automatic else {
+            let failure = route == .directOnly ? HostError.unreachableDirectly : HostError.unreachable
+            return .retry(failure.localizedDescription)
+        }
         let socket: any ChannelSocket
         do {
             socket = try await dial(.relay(relayRequest(cloud)))

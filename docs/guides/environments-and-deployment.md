@@ -62,6 +62,8 @@ A migration that changes what the database accepts goes out before the Worker co
 
 ## Releasing cloud changes
 
+`RELAY_NEEDS_ACCOUNT` is on for dev and off for main. It keeps the relay and public webhooks to computers in an account ([optional sign-in](../plans/optional-sign-in.md#compatibility-and-rollout)). Turn it on for main with a `[vars]` entry in `wrangler.toml` once both stores have the apps from 2.41.0.
+
 CI only tests `cloud/`; nothing deploys it. A dev → main PR that changes `cloud/` (routes, bindings, migrations) goes out in this order:
 
 1. Before the PR merges: create any new binding in dev (R2 bucket, rate limit, D1 migration), `npm run deploy:dev`, and test the changed flows end to end against `dev-api.codync.dev` with the dev apps.
@@ -87,6 +89,10 @@ The repository is public, so its whole history counts as published. Last scan: 2
 | `0002_windows_computers.sql` | 2026-10-07 | 2026-10-07 | dev `00000b79-00000000-000050fc-e6cb8fa431592b1c3d7824f3cf64afb9`, main `0000041d-0000085c-000050fc-fda9fcdf91e3498c08fa7c332a989e24` |
 | `0003_desktop_devices.sql` | 2026-10-07 | 2026-10-07 | dev `00000cb2-00000002-000050fd-8600044ac4775783e20c8ff9b4d5fa14`, main `00000420-000012d2-000050fd-12871b6db16548f336c1c9221d28c556` |
 | `0004_android_devices.sql` | 2026-11-01 | 2026-11-01 | dev `00003428-00000000-00005115-cc5e0e1311eab7918b2c9470a0e71611`, main `00000509-00063149-00005115-8caa0ba65c5566a0616c65bafa82e27f` |
+| `0005_pairing_codes.sql` | 2026-11-01 | 2026-11-02 | dev not recorded, main `00000519-0005d251-00005117-8acfe05ed62b5a5d6a6a8e47e17c98b9` (also before `0006`) |
+| `0006_signed_out_devices.sql` | 2026-11-02 | 2026-11-02 | dev not recorded, main as `0005` |
+
+`0005` adds the `pairing_codes` table (short codes like `QRTX-4821`) and `0006` adds `devices.signed_out_at`; both are additive. On main, right after the 2.36.0 merge, the counts were unchanged (2381 devices, 3233 computers, 534 grants, 739 access requests) with a clean `foreign_key_check`. The main Worker got its `DEVICE_CERT_KEY` secret (from `.env.production`, the public half matching `host/src/environment.rs`) before `deploy:main`; every new route then answered 401 without credentials.
 
 `0002` lets `computers.platform` be `windows` (Windows hosts register with `std::env::consts::OS`). SQLite can't change a CHECK, so it rebuilds `computers` together with `access_requests` and `grants`, the tables that reference it: dropping a referenced table while foreign keys are enforced would count every referencing row as a violation. Live schemas matched `0001` beforehand; row counts were unchanged afterwards (dev 24 computers, 8 grants, 14 access requests; main 101, 38, 48) with no orphaned rows. A signed `POST /v1/host/register` with `platform: "windows"` returned 200 on both (the probe rows were deleted). Main's Worker answered with the previous version for about 20 seconds after `deploy`.
 

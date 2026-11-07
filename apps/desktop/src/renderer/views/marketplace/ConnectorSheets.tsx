@@ -1,13 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import { CardForm, CardSection, ChoiceList, IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
-import { ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
+import { Dialog, ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
+import { useModel } from '../../lib/observable'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { errorText, market, needsSignIn, type InstalledConnector, type MarketConnector, type MarketInput } from './market-models'
 import { ErrorText, Field, WebLink } from './pieces'
 import { usePlugins } from './plugins'
+import { signInCode } from './sign-in-code'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
+
+/** A sign-in with a code (GitHub): the code to paste on its page, before the page opens. */
+export function SignInCodeDialog() {
+  const tr = useTr()
+  const prompt = useModel(signInCode)
+  return (
+    <Dialog
+      open={prompt.code !== null}
+      title={prompt.code ?? ''}
+      message={tr('Paste this code on the sign-in page that opens next.')}
+      actions={[{ title: 'Copy and open', action: () => prompt.open() }]}
+      onClose={() => prompt.close()}
+    />
+  )
+}
 
 /**
  * `addsAtOnce`: opened by an Add, so a connector with nothing to fill in installs at once. Opened to
@@ -38,7 +56,11 @@ export function InstallConnectorSheet({ item, requestId, addsAtOnce = true, done
       const c = await plugins.installConnector(item, option.id, values)
       setInstalled(c)
       setValues({})
-      if (needsSignIn(c)) await plugins.signIn(c.id)
+      // Cancelled: the sheet stays as it is.
+      if (needsSignIn(c) && !(await plugins.signIn(c.id))) {
+        setSaving(false)
+        return
+      }
       if (requestId) await market.finishConnectionRequest(client, requestId, { connectorId: c.id })
       else await market.verifyConnector(client, c.id)
       await plugins.refresh()
@@ -85,7 +107,7 @@ export function InstallConnectorSheet({ item, requestId, addsAtOnce = true, done
                 id: o.id,
                 label: o.kind === 'remote'
                   ? tr('Hosted by {name}').replaceAll('{name}', item.title)
-                  : tr('On {name} ({kind})').replaceAll('{name}', store.hostName).replaceAll('{kind}', o.kind),
+                  : fill(tr('On {name} ({kind})'), { name: store.hostName, kind: o.kind }),
               }))}
             />
           </CardSection>
@@ -172,7 +194,7 @@ export function CustomConnectorSheet() {
       <ModalHeader icon="point.3.connected.trianglepath.dotted" title={tr(`Custom connector`)} trailing={saving ? <Spinner /> : <IconButton title="Add" icon="plus" disabled={!ready} onClick={() => void save()} />} />
       <CardForm>
         <CardSection footer={footer}>
-          <SegmentedChoice selection={mode} onChange={setMode} options={[{ id: 'command', label: 'Command' }, { id: 'url', label: 'URL' }, { id: 'config', label: 'Config' }]} />
+          <SegmentedChoice selection={mode} onChange={setMode} options={[{ id: 'command', label: tr('Command') }, { id: 'url', label: tr('URL') }, { id: 'config', label: tr('Config') }]} />
           {mode === 'config' ? <Field value={config} onChange={setConfig} placeholder={'{ "mcpServers": { … } }'} lines={[6, 16]} mono /> : null}
           {mode !== 'config' ? <Field value={name} onChange={setName} placeholder="Name" /> : null}
           {mode !== 'config' ? <Field value={target} onChange={setTarget} placeholder={mode === 'url' ? 'https://example.com/mcp' : 'npx -y @scope/server'} mono /> : null}

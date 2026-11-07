@@ -9,18 +9,32 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-@Serializable data class UsageReport(val providers: List<UsageProvider> = emptyList()) {
+/** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
+@Serializable data class UsageService(val id: String, val name: String, val shown: Boolean = false, val registry: String? = null) {
+    /** What a mascot needs of an agent that may have no reading. */
+    val provider: UsageProvider get() = UsageProvider(id, name, registry = registry)
+}
+
+/** `services` is absent from a host older than the chooser. */
+@Serializable data class UsageReport(val providers: List<UsageProvider> = emptyList(), val services: List<UsageService> = emptyList()) {
+    /** The agents in [order], a move still on its way to the host; any it doesn't name follow in the host's order. */
+    fun servicesIn(order: List<String>?): List<UsageService> {
+        if (order == null) return services
+        return order.mapNotNull { id -> services.firstOrNull { it.id == id } } + services.filter { it.id !in order }
+    }
+
+    /** On, with nothing to show: signed out, or nothing to report. */
+    fun hasNoReading(service: UsageService): Boolean = service.shown && providers.none { it.id == service.id }
+
     companion object { fun decode(value: JsonElement): UsageReport = WireJson.decodeFromJsonElement(value) }
 }
 
 @Serializable data class UsageProvider(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(),
-    val source: String = "", val updatedAt: Long? = null) {
+    val source: String = "", val updatedAt: Long? = null,
+    /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
+    val registry: String? = null) {
     val limits: List<UsageWindow> get() = windows.filter { it.text.isNullOrBlank() }
     val tightest: UsageWindow? get() = limits.filter { it.percent?.isFinite() == true }.maxByOrNull { requireNotNull(it.percent) }
-    val sourceLabel: String get() = when (source) {
-        "claude" -> "Claude Code"; "statusline" -> "Claude Code status line"
-        "agent" -> "A running bot"; "sessions" -> "Codex sessions"; "" -> "Unknown source"; else -> source
-    }
 }
 
 @Serializable data class UsageWindow(val id: String, val label: String, val percent: Double? = null,

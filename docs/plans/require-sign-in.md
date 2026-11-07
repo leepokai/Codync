@@ -1,6 +1,6 @@
 # Require sign-in
 
-Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. All three phases are built (2.36.0). Phase 2 needs the cloud's certificate key before it works against a cloud: see [Release steps](#release-steps).
+Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. All three phases are built (2.36.0). Phase 2 needs the cloud's certificate key before it works against a cloud: see [Release steps](#release-steps). [Optional sign-in](optional-sign-in.md) has since made signing in optional; where the two differ, that one holds.
 
 ## Decisions
 
@@ -49,7 +49,7 @@ Built in 2.35.0 as handing the key back; changed before release (2026-11-02) to 
 
 1. **Clerk:** sign out first. When that fails nothing below runs. The cloud call below needs a session token, so one is taken before (`CloudClient.pinningToken()`); it stays valid until it expires. The account's stores stay open until the steps below finish (`AppStore.leaving` on iOS, `transitions` on Android).
 2. **Computers this phone can reach:** `unregisterDevice` drops its push tickets (Android: closing each computer's store does it, `AppStore.retire`). The device stays.
-3. **Cloud:** `POST /v1/devices/sign-out` (Clerk + `Codync-Sig`) marks the device signed out and tells the account's computers to pull their state, whose `signedOut` lists it: each drops its push tickets. `POST /v1/devices`, which the phone sends with every refresh of the account's computers (opening the account, coming back to the foreground), clears the mark, so a failed one is retried. `CloudClient.signOutThisDevice()` and its Android twin.
+3. **Cloud:** `POST /v1/devices/sign-out` (Clerk + `Codync-Sig`) marks the device signed out and tells the account's computers to pull their state, whose `signedOutDevices` lists it with how long ago it signed out (relative, so the computer's clock needn't match the cloud's): each drops the push tickets registered up to then (a ticket sent after signing back in can arrive before `POST /v1/devices` clears the mark). The phone stops registering push before this call (iOS `PushRegistrar.deactivate()`, Android `PushDelivery.retire`), so no ticket from the phone that is signing out comes later. `POST /v1/devices`, which the phone sends with every refresh of the account's computers (opening the account, coming back to the foreground), clears the mark, so a failed one is retried. `CloudClient.signOutThisDevice()` and its Android twin.
 4. Switch context. The account's key, computers and drafts stay on the phone.
 
 The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable.
@@ -116,11 +116,11 @@ After either case the signed-out context is erased (on iOS except a mirror cache
 
 ### 5. Desktop: computer in another account
 
-- **Logic:** a pure function next to `mayOfferMove` in `lib/auto-claim.ts`, `accountMismatch(host, userId, keptOut, seen)`. It returns one of three values:
+- **Logic:** a pure function next to `mayOfferMove` in `lib/join-offer.ts`, `accountMismatch(host, userId, keptOut, seen)`. It returns one of three values:
   - `other {email}`;
   - `none {reason: cloudOff | privateRelay | keptOut}`;
   - `null` when the accounts match.
-  Tested in `auto-claim.test.ts`.
+  Tested in `join-offer.test.ts`.
 - **A notice** above the sidebar footer's buttons (`SidebarFooter.tsx`): an amber card with an icon that shows its text in full, wrapping as needed, and takes no space when there's no mismatch. The narrow rail shows it as an amber icon with the text as its tooltip.
   - `other`: "This computer is in {email}'s account", with the full address as Settings and the move dialog show it. Clicking it reopens the move choice (`MoveComputerPrompt`), even after *Keep it there*.
   - `none`: "This computer isn't in an account: its cloud is off" / "…: it uses a private relay", or "This computer isn't in your account" (taken out). Clicking it opens Settings → Computers.
@@ -152,7 +152,7 @@ After either case the signed-out context is erased (on iOS except a mirror cache
 | Fresh install | The welcome shows only sign-in. Signing in leads to pairing, and a QR pair works |
 | Upgrade | With the previous build signed out, pair by QR. Install this build: the gate counts the computer. Sign in: the computer is there and connects without scanning, and push still arrives |
 | Merge case | Unit tests only: with sign-in required, a phone can't pair signed out any more, so this only happens to someone who was signed in on an older build and had also paired signed out (the older builds can't take the test sign-in ticket) |
-| Sign out | The computer keeps the phone but has no push ticket for it; the cloud's host state lists it in `signedOut`. Sign back in: it connects without a scan and registers push again |
+| Sign out | The computer keeps the phone but has no push ticket for it; the cloud's host state lists it in `signedOutDevices`. Sign back in: it connects without a scan and registers push again |
 | Delete account | The test user is gone in Clerk, and the computers leave the account (`--prune` cleans up) |
 | Desktop | Signed out shows the welcome with no skip. Sign out returns to it. Signed in to a second test account, the footer notice shows and reopens the move choice |
 
@@ -177,7 +177,7 @@ After either case the signed-out context is erased (on iOS except a mirror cache
 | Certificate not valid for this device key | 403 "Couldn't confirm your Codync account. Sign in again, then scan a new code." |
 | In the phone's account | The phone is let in at once |
 | In another account | 403 "This computer is in k•••@example.com's account. Move it to your account in Codync on that computer, or sign in with that account." |
-| In no account | The computer asks for up to 90 seconds, inside the relay's 2-minute pairing socket (`remote/pairing_requests.rs`: the loopback-only `pairingRequests` event and method, `decidePairing`): the desktop app and the terminal UI show a dialog, `codync-host pair` asks `y/N` in a terminal, and `codync-host access approve <code>` answers anywhere. A phone that leaves takes the question off the screens. Both screens show the same 6-digit code, `sha256("codync/pair-check/v1" ‖ deviceKey ‖ hostSignKey)` (`crypto::pair_check_code`, vector `pairCheck`). Declined or unanswered: 403 "The computer didn't let this phone in." Let in, the account is checked again: a computer that joined another account while it asked gives the "In another account" 403 and leaves the code unspent. Otherwise the computer signs the claim the phone made (`POST /v1/claims`) and the phone completes it (`POST /v1/claims/{id}/complete`), so joining needs no new cloud route. With the cloud off or a private relay there is no claim; the phone is let in and the computer stays out of any account |
+| In no account | The computer asks for up to 90 seconds, inside the relay's 2-minute pairing socket (`remote/pairing_requests.rs`: the loopback-only `pairingRequests` event and method, `decidePairing`): the desktop app and the terminal UI show a dialog, `codync-host pair` asks `y/N` in a terminal, and `codync-host access approve <code>` answers anywhere. A phone that leaves takes the question off the screens. Both screens show the same 6-digit code, `sha256("codync/pair-check/v1" ‖ deviceKey ‖ hostSignKey)` (`crypto::pair_check_code`, vector `pairCheck`). Declined or unanswered: 403 "The computer didn't let this phone in." Let in, the account is checked again: a computer that joined another account while it asked gives the "In another account" 403 and leaves the code unspent. Otherwise the computer signs the claim the phone made (`POST /v1/claims`) and the phone completes it (`POST /v1/claims/{id}/complete`), so joining needs no new cloud route. With the cloud off or a private relay there is no claim; the phone is let in and the computer stays out of any account. A later connection on the Codync cloud finishes a join that didn't happen here ([connections](../architecture/connections.md#pairing-a-phone)) |
 
 **Each device records its account** (`devices.account`, schema 7). When the host changes the account it belongs to (joining one, moving, or leaving with **Remove from account**), devices of any other account are dropped. Joining a first account keeps the phones paired before devices recorded their account, so updating doesn't cost anyone a phone. The desktop's move and remove dialogs say: "Every device of {email}'s account loses access." Networks stay as they are: a computer handed to someone else is taken out of a network by the network's creator or an admin, like its SSH key is taken off the manager.
 

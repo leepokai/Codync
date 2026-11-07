@@ -55,6 +55,8 @@ pub enum After {
     Sheet(Reply),
     /// The network sheet's calls.
     Network(super::super::manage::NetReply),
+    /// A move in the Usage chooser, to this row.
+    UsageOrder(usize),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -150,9 +152,10 @@ impl Entry {
 
     /// A notice's line; a voice call gets its length ("Voice chat · 00:16").
     pub fn notice_text(&self) -> String {
+        let text = super::super::l10n::tr(self.text());
         match self.data["callSeconds"].as_u64() {
-            Some(s) => format!("{} · {:02}:{:02}", self.text(), s / 60, s % 60),
-            None => self.text().to_owned(),
+            Some(s) => format!("{text} · {:02}:{:02}", s / 60, s % 60),
+            None => text.into_owned(),
         }
     }
 
@@ -221,6 +224,11 @@ impl Entry {
 
     pub fn pending(&self) -> bool {
         self.kind == Kind::Permission && self.data["status"] == "pending"
+    }
+
+    /// A message of the user's waiting for its turn: it shows above the composer, not in the chat.
+    pub fn queued(&self) -> bool {
+        self.kind == Kind::User && self.data["status"] == "queued"
     }
 
     /// Approval options in the apps' order: allow once, allow always, reject once, reject always.

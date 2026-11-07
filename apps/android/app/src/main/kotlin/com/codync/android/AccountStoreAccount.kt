@@ -31,13 +31,16 @@ fun AccountStore.retryAccounts() { NativeAccounts.retry() }
  * one connected (`AppStore.retire`), and the account tells the others (iOS `signOut`; connections.md, accounts on a phone).
  */
 fun AccountStore.signOut() = sessionAction {
-    val old = state.value.account.accounts.firstOrNull { it.userId == state.value.account.userId } ?: return@sessionAction
+    val old = state.value.account.current ?: return@sessionAction
     // Sent first so it still counts toward the account.
     Analytics.capture(AnalyticsEvent.SignedOut)
     // The cloud call goes out after Clerk signed out, on a token taken now (it outlives the session).
     val account = cloud?.pinningToken()
     transitions.withLock {
         NativeAccounts.signOut(old.sessionId)
+        // No push ticket goes out from here (a background registration finishes first): a computer keeps one that
+        // reaches it after the account marks this phone signed out, taking it for one sent on signing back in.
+        PushDelivery.retire(getApplication())
         account?.let { bestEffort("tell the account this phone signed out") { it.signOutThisDevice() } }
         switchAway(old.userId)
     }
@@ -96,24 +99,33 @@ private suspend fun AccountStore.forget(userId: String) {
 }
 
 fun AccountStore.refreshCloud() = action("cloud") {
-    val client = cloud ?: return@action
     try {
+        val client = cloud ?: return@action
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
         mutableState.update { it.copy(cloudComputers = computers, appFloor = null) }
         shareAccountView()
+        learnRelay(computers)
         askCloudComputers(computers)
-        // Signed in to an account with computers, before pairing any (iOS: the same moment): setup is done.
-        if (computers.isNotEmpty() && !state.value.setupComplete) {
-            withContext(Dispatchers.IO) { local.completeSetup() }
-            mutableState.update { it.copy(setupComplete = true) }
-        }
-        if (computers.isNotEmpty() && state.value.computers.isEmpty()) Analytics.completeOnboarding(OnboardingVia.Account)
     } catch (error: IOException) {
         if (error is CloudError && !error.isTransient) throw error
         // Runs on every launch and foreground: a dropped connection, a busy cloud or a token not ready
         // yet fixes itself on the next refresh, so only answers that stay reach the dialog (as on iOS).
         android.util.Log.i("Codync", "Cloud refresh failed: ${error.message}")
+    } finally { mutableState.update { it.copy(cloudLoaded = true) } }
+}
+
+/**
+ * A computer that joined this account while this phone couldn't hear its `hello` still has the relay, or a phone away
+ * from its network could never reach it to find out (iOS `learnRelay`). Listed online, it's on the relay; a phone
+ * connected to it goes by its `hello`.
+ */
+private suspend fun AccountStore.learnRelay(listed: List<CloudComputer>) {
+    for (store in stores.value) {
+        val state = store.state.value
+        if (state.computer.cloud != null || state.connection is LinkState.Ready || listed.none { it.computerId == store.id && it.online == true }) continue
+        store.changeComputer { it.copy(cloud = BuildConfig.CLOUD_URL) }
+        store.reconnect()
     }
 }
 
@@ -198,6 +210,7 @@ private suspend fun AccountStore.useApprovedComputer(computer: Computer, request
     transitions.withLock { addComputer(computer) }
     withContext(Dispatchers.IO) { local.completeSetup() }
     mutableState.update { it.copy(setupComplete = true) }
+    Analytics.completeOnboarding(OnboardingVia.Account)
     refreshCloud()
 }
 
@@ -275,7 +288,8 @@ fun AccountStore.startOver() = sessionAction {
                 cache.listFiles()?.filter { it.name.startsWith("codync-images") }?.forEach { it.deleteRecursively() }
             }
             Analytics.forgetOnboarding()
-            mutableState.update { it.copy(account = AccountState(ready = true), error = null) }
+            withoutAccountChosen = false
+            mutableState.update { it.copy(account = AccountState(ready = true), error = null, withoutAccount = false) }
             loadContext(null)
         }
     }

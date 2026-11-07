@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
+mod bots;
 mod groups;
 mod lead;
 mod order;
@@ -98,6 +99,8 @@ pub struct Hub {
     runtime: Mutex<HashMap<String, Runtime>>,
     pub phone_clients: AtomicUsize,
     pub usage: Mutex<Usage>,
+    /// An agent became wanted: its usage is read now, not at the next poll.
+    pub usage_wake: tokio::sync::Notify,
     keep_awake: Mutex<service::KeepAwake>,
     /// Generation of the authorized-device table and pairing offers: bumped on every
     /// change so open channels re-check their device (and the ACL is republished).
@@ -116,6 +119,8 @@ pub struct Hub {
     pub terms: Arc<crate::agent::term::Terms>,
     /// Model lists being fetched (`agentModels`).
     pub model_lists: crate::agent::auth::InFlight,
+    /// The programs bots keep running, and what they left running through their own shells.
+    pub dev_servers: crate::dev_servers::DevServers,
 }
 
 impl Hub {
@@ -146,6 +151,7 @@ impl Hub {
             runtime: Mutex::default(),
             phone_clients: AtomicUsize::new(0),
             usage: Mutex::default(),
+            usage_wake: tokio::sync::Notify::new(),
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
             pairing: Mutex::default(),
@@ -156,6 +162,7 @@ impl Hub {
             screen,
             terms: Arc::default(),
             model_lists: crate::agent::auth::InFlight::default(),
+            dev_servers: crate::dev_servers::DevServers::default(),
         })
     }
 
@@ -199,6 +206,7 @@ impl Hub {
         if tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(tasks)).await.is_err() {
             tracing::warn!("some bots didn't stop within 5 s");
         }
+        self.dev_servers.shutdown().await;
         self.keep_awake.locked().set(false);
     }
 
@@ -212,102 +220,6 @@ impl Hub {
 
     pub fn bot_name(&self, id: &str) -> String {
         self.store.bot(id).ok().flatten().map_or_else(|| "A deleted bot".into(), |b| b.config.name)
-    }
-
-    pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
-        cfg.id = uuid::Uuid::new_v4().to_string();
-        cfg.created_at = crate::store::now_ms();
-        cfg.position = self.new_bot_position()?;
-        // No name yet (Grok Bot's flow): it gets one after its first few conversations.
-        cfg.auto_name = !cfg.is_group() && cfg.name.trim().is_empty();
-        if cfg.auto_name {
-            crate::chat::naming::PLACEHOLDER.clone_into(&mut cfg.name);
-        }
-        if cfg.is_group() {
-            cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
-            // The same bots again: open the group they already share (Grok Bot's rule).
-            if let Some(existing) = crate::chat::group::with_members(&self.store, &cfg.members)? {
-                return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
-            }
-        }
-        crate::agent::fallback::tidy(&mut cfg);
-        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
-        validate(&cfg)?;
-        crate::agent::workspace::prepare(&mut cfg)?;
-        {
-            let _g = self.emit_lock.locked();
-            self.store.save_bot(&cfg)?;
-        }
-        crate::network::publish(self);
-        if !cfg.is_group() {
-            self.spawn_bot(cfg.clone());
-            crate::market::agent_sign_in::ask_before_first_message(self, &cfg);
-        }
-        self.emit_bot(&cfg.id);
-        Ok(self.bot_value(&cfg.id).unwrap_or(Value::Null))
-    }
-
-    pub fn update_bot(&self, patch: &Value) -> Result<Value> {
-        let id = patch["id"].as_str().ok_or_else(|| anyhow!("id required"))?.to_owned();
-        // Read, merge and save under one lock: a section rename in between would otherwise be written back.
-        let (before, cfg) = {
-            let _g = self.emit_lock.locked();
-            let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-            let mut cfg = patch::patched(&row.config, patch)?;
-            if cfg.is_group() {
-                cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
-            }
-            crate::agent::fallback::tidy(&mut cfg);
-            cfg.section = sections::normalize_section(cfg.section.as_deref())?;
-            // ponytail: validated under the lock, so a workspace folder on a hung network share (its
-            // `is_dir`) stalls every bot's events until it answers. Upgrade: build and validate outside the
-            // lock from a snapshot, then save under it only if the stored config is unchanged (compare the
-            // serialized configs, not rev), else retry.
-            validate(&cfg)?;
-            crate::agent::workspace::prepare(&mut cfg)?;
-            crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
-            self.store.save_bot(&cfg)?;
-            (row.config, cfg)
-        };
-        crate::network::publish(self);
-        if !cfg.is_group() {
-            if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
-                crate::chat::memory::changed(self, Some(&id));
-            }
-            self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
-        }
-        self.emit_bot(&id);
-        Ok(self.bot_value(&id).unwrap_or(Value::Null))
-    }
-
-    pub fn delete_bot(&self, id: &str) -> Result<()> {
-        self.routines.disable_bot(&self.store, id)?;
-        self.team.end_turn(id);
-        self.groups.stop(self, id);
-        let _ = self.send_cmd(id, Cmd::Shutdown);
-        self.bots.locked().remove(id);
-        self.runtime.locked().remove(id);
-        {
-            let _g = self.emit_lock.locked();
-            let rev = self.store.delete_bot(id)?;
-            let _ =
-                self.events.send(json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}}));
-        }
-        crate::network::publish(self);
-        // Its shared files and artifacts are unreachable once the bot is deleted.
-        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
-        let bot = id.to_owned();
-        tokio::task::spawn_blocking(move || {
-            crate::chat::memory::files::remove_bot(&bot);
-            for folder in folders {
-                if let Err(error) = std::fs::remove_dir_all(&folder)
-                    && error.kind() != std::io::ErrorKind::NotFound
-                {
-                    tracing::warn!(error = %error, "couldn't remove a deleted bot's shared files or artifacts");
-                }
-            }
-        });
-        self.leave_groups(id)
     }
 
     /// Marks what the user has seen as read. Nothing unread there is a no-op, so clients
@@ -435,8 +347,13 @@ impl Hub {
 
     /// Updates and broadcasts an entry; failures are logged here, like [`Self::add_entry`].
     pub fn set_entry(&self, id: &str, data: &Value) -> Option<Entry> {
+        self.set_entry_turn(id, None, data)
+    }
+
+    /// [`Self::set_entry`] that also moves the entry into `turn` when given.
+    pub fn set_entry_turn(&self, id: &str, turn: Option<i64>, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
-        match self.store.update_entry(id, data) {
+        match self.store.update_entry_turn(id, turn, data) {
             Ok(e) => {
                 if let Some(e) = &e {
                     let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
@@ -464,9 +381,15 @@ impl Hub {
         Ok(e)
     }
 
-    pub fn set_usage(&self, usage: Usage) {
-        let _ = self.events.send(json!({"type": "usage", "usage": usage}));
-        *self.usage.locked() = usage;
+    /// Changes the usage under its lock, so a reading that lands meanwhile isn't written over, and
+    /// tells the apps what they may see of it (`hub.usage` also holds the agents the user hides).
+    pub fn update_usage(&self, change: impl FnOnce(&mut Usage)) {
+        let mut usage = self.usage.locked();
+        let before = usage.clone();
+        change(&mut usage);
+        if *usage != before {
+            let _ = self.events.send(json!({"type": "usage", "usage": usage.visible()}));
+        }
     }
 
     // MARK: devices

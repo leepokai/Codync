@@ -17,7 +17,8 @@ way open with a sentence or two, read aloud like any reply and part of the call 
 - UI follows Grok Bot: a floating capsule over the top of the chat (`ThreadView` overlay), and the
   chat stays readable and usable underneath. Left to right: the bot's avatar (pulses while
   speaking; tap it to interrupt), a dotted level line (your voice while listening, a ripple while
-  the bot speaks, a slow breath while it works; while the engine connects, an indeterminate progress
+  the bot speaks, a slow breath while it works, a still row otherwise, always in the text color so a dark bot's line
+  doesn't vanish on the dark bar; while the engine connects, an indeterminate progress
   line instead: a short segment gliding back and forth along a faint track, easing at both ends
   (white in dark mode, black in light), still at the left under Reduce Motion, fading back to the dots
   once the call is really connected), gear (call settings), mic (mute), red ✕ (end). Connected means
@@ -86,8 +87,11 @@ on-device (its window doesn't reach the host).
   the window that lost it (`stopped`) and ignores that window's stop.
 - iPhone (`Thread/Dictation.swift`, pill in `Thread/RecordingPill.swift`, menu in
   `Thread/DictationEngineMenu.swift`, dots shared with the call bar in `LevelDots.swift`):
-  `SFSpeechRecognizer` on device; with no microphone route (some simulators) the mic does nothing.
-  A provider's errors (no key, no connection) show in a dialog.
+  `SFSpeechRecognizer` on device, set up as the call sets it up (`Call/OnDeviceSpeech.swift`). Why it couldn't
+  start or stopped early shows in the *Couldn't dictate* dialog: a denied permission, no microphone route (some
+  simulators), no recognizer for the language, a recognizer error ("Couldn't hear you. Check the microphone and
+  Speech Recognition in Settings."), and a provider's errors (no key, no connection). A pause with nothing said ends
+  it without a dialog, as on Android.
 - Android (`Dictation.kt`, pill and engine menu in `DictationControls.kt`, dots shared with the call
   bar): Android's on-device recognizer (Android 12+) in the call's language. Where the phone has none,
   or it lacks the language, the phone's own recognizer listens instead, and that one may send the
@@ -304,8 +308,10 @@ carries audio and talks to these methods:
   across a reconnect; an ended call can't start again. The call's actors (a group's members) hear `CallEnded`. A one-shot of the bot's harness (`chat::oneshot`) titles it from the conversation, in the user's
   language, into the notice's `text` ("Voice chat" until then, or when there's nothing to sum up); older apps
   show the title too. The line shows a waveform, the title and the length; tapping it opens the conversation
-  (iPhone and Android sheets, the desktop `Sheet`, `o` in the terminal): the user's lines, the voice's lines, what
-  it relayed and the bot's messages, in order. The chat an app holds may not reach back to an older call (the
+  (iPhone and Android sheets, the desktop `Sheet`, `o` in the terminal): under a header with the bot's avatar and name,
+  the line's time and the call's length (not in the terminal), the user's lines, the voice's lines, what it relayed and
+  the bot's messages, in order; a short call reads from the top, a long one opens at its end, and each time you speak
+  after the other side starts an exchange with more room above it. The chat an app holds may not reach back to an older call (the
   desktop mirror keeps the newest 200 entries), so opening the conversation fetches the call's own messages,
   `callEntries {botId, callId}` → the newest 500, and merges them with the loaded chat, each entry once; it shows
   a spinner until they arrive and the error if they can't. `logCall` stays for older apps.
@@ -365,6 +371,12 @@ carries audio and talks to these methods:
   resume." (as Android does). Route changes (AirPods) restart the iPhone's audio engine (`AVAudioEngineConfigurationChange`);
   the desktop restarts the microphone (and moves OpenAI's track) on `devicechange`. The desktop's on-device engine
   uses the speech helper's own microphone and isn't restarted.
+- On-device recognition that stops with an error mid-call sends what was heard and listens again. The iPhone
+  (`OnDeviceEngine`, counted by `RecognitionFailures`) and Android (`VoiceSession`) fail the call with the error
+  (iPhone: "Couldn't hear you. Check the microphone and Speech Recognition in Settings.", `provider`) after three in
+  a row that each failed within 2 s of listening (no speech assets, Siri and Dictation off); words heard, or a
+  recognition that ran longer, start the count over. The desktop's on-device engine fails when the speech helper gives
+  up again within 1 s of its last restart.
 - After the voice's turn, playback that reports no progress for 4 s returns the call to listening, so a stuck player
   (#214) can't hold the bot's replies back (`onStall`, counted as stuck `speaking`).
 - Each engine of a call sends one `voice_call_quality` when it's replaced or the call ends: milliseconds until ready,

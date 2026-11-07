@@ -3,7 +3,7 @@ import Testing
 @testable import CodyncKit
 
 @MainActor
-@Test func analyticsIsOnByDefaultAndIdentifiesAccountsOnce() throws {
+@Test func analyticsIsOnByDefaultAndIdentifiesOnlyTheFirstAccount() throws {
     let defaults = try #require(UserDefaults(suiteName: "AnalyticsTests-\(UUID())"))
     let analytics = Analytics(defaults: defaults) { _ in false }
 
@@ -39,6 +39,12 @@ import Testing
     #expect(identify.properties["$anon_distinct_id"] == .string(anon.distinct_id))
     #expect(analytics.pending[2].properties["$process_person_profile"] == .bool(true))
 
+    // Another account on this phone: the install ID already joined the first, so no second $identify.
+    analytics.userID = { "user_2" }
+    analytics.capture(.signedIn(.apple))
+    #expect(analytics.pending.last?.distinct_id == "user_2")
+    #expect(analytics.pending.filter { $0.event == "$identify" }.count == 1)
+
     // The computer key matches the host's (host/src/analytics.rs `computer_tag_matches_the_iphone`).
     #expect(Analytics.computerTag("AAECAwQFBgcICQoLDA0ODw") == "2d6878bee20aba04")
 
@@ -60,6 +66,7 @@ import Testing
     #expect(try json(.settingChanged(.liveActivities, on: true)) == #"{"on":true,"setting":"live_activities"}"#)
     // Multi-word values are snake_case, as in the catalog.
     #expect(try json(.signInFailed(.google, reason: .cancelled)) == #"{"provider":"google","reason":"cancelled"}"#)
+    #expect(try json(.addToAccountFailed(.declined)) == #"{"reason":"declined"}"#)
     #expect(try json(.screenViewed(.botDetails)) == #"{"screen":"bot_details"}"#)
     #expect(try json(.voiceCallStarted(.onDevice)) == #"{"engine":"on_device"}"#)
     #expect(try json(.voiceCallQuality(.gemini, readyMs: 1200, reconnects: 1, stuck: .none, failure: .connection))
@@ -68,6 +75,8 @@ import Testing
     #expect(try json(.voiceCallQuality(.onDevice, readyMs: nil, reconnects: 0, stuck: .connecting, failure: .none))
         == #"{"engine":"on_device","failure":"none","reconnects":0,"stuck":"connecting"}"#)
     #expect(try json(.linkOpened(.installCommand)) == #"{"link":"install_command"}"#)
+    #expect(try json(.linkOpened(.installLink)) == #"{"link":"install_link"}"#)
+    #expect(try json(.onboardingStepViewed(.choose)) == #"{"step":"choose"}"#)
     #expect(try json(.signedOutPairingsMoved(computers: 2, keys: .rescan)) == #"{"computers":2,"keys":"rescan"}"#)
     #expect(AnalyticsEvent.notificationOpened(.needsInput).name == "notification_opened")
     #expect(AnalyticsEvent.NotificationKind(category: "needsInput") == .needsInput)

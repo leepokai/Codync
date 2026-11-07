@@ -30,6 +30,9 @@ public final class AccountStore {
     public private(set) var stores: [ComputerID: BotStore] = [:]
     /// Everything in the account, including computers this device isn't authorized on yet.
     public private(set) var cloudComputers: [CloudComputer] = []
+    /// The account answered (or failed to) at least once, so an empty `cloudComputers` means what it says.
+    /// True from the start without a cloud: there's nothing to wait for.
+    public private(set) var cloudListLoaded: Bool
     /// Access requests waiting for approval on the computer, with the SAS to show.
     public private(set) var pendingAccess: [ComputerID: AccessTicket] = [:]
     /// The actual request approved most recently, distinct from a previously paired computer.
@@ -38,7 +41,7 @@ public final class AccountStore {
     public let cloudMachine: CloudMachineStore?
     public var lastError: String?
     /// While pairing: the code the computer shows if it asks whether to let this phone in.
-    public private(set) var pairingCheck: String?
+    public internal(set) var pairingCheck: String?
     public var selection: BotReference? {
         didSet {
             guard !retired else { return }
@@ -55,22 +58,26 @@ public final class AccountStore {
     /// The combined roster changed: a bot came, changed or went, or a computer did.
     public var onRosterChanged: (@MainActor ([RosterItem]) -> Void)?
 
-    private let cloud: CloudClient?
+    let cloud: CloudClient?
     private let computerOrder: ComputerOrderStore
     private let makeStore: @MainActor (Computer) -> BotStore
     /// Persisted in the context (channel route).
-    private var saved: [Computer]
+    var saved: [Computer]
     private var accessPolls: [ComputerID: Task<Void, Never>] = [:]
     /// A list that comes back after a newer request was started is out of date.
     private var cloudListVersion = 0
     /// Access requests still waiting for their code, joined by a second ask.
     private var asks: [ComputerID: Task<AccessTicket, any Error>] = [:]
     /// The account's word for this device's key, kept in memory for this context.
-    private var certificate: DeviceCertificate?
+    var certificate: DeviceCertificate?
+    /// Computers joining this account (`joinAccount`).
+    var joining: Set<ComputerID> = []
+    /// Computers asked from here to join this account, with the code they show meanwhile.
+    var addingToAccount: [ComputerID: String] = [:]
     /// Cloud computers already asked for access by themselves this session.
     private var askedCloud: Set<ComputerID> = []
     private var isActive = true
-    private var retired = false
+    private(set) var retired = false
 
     public convenience init(storage: SharedStore.Context, cloud: CloudClient?) {
         self.init(storage: storage, cloud: cloud) { computer in
@@ -82,6 +89,7 @@ public final class AccountStore {
          makeStore: @escaping @MainActor (Computer) -> BotStore) {
         self.storage = storage
         self.cloud = cloud
+        cloudListLoaded = cloud == nil
         computerOrder = ComputerOrderStore(storage: storage)
         self.makeStore = makeStore
         cloudMachine = cloud.map(CloudMachineStore.init)
@@ -110,71 +118,6 @@ public final class AccountStore {
     public func store(for id: ComputerID) -> BotStore? { stores[id] }
 
     // MARK: computers
-
-    /// QR pairing (§4.1) with this account's certificate: a computer in another account turns the phone away,
-    /// one in none asks its user, then joins this account. The computer is saved in this context and connected.
-    public func pair(_ pairing: Pairing, deviceName: String, platform: String) async throws -> Computer {
-        let identity = try DeviceIdentity.load(context: storage)
-        guard let cloud else { throw Self.noCertificate }
-        let certificate = try await pairingCertificate(cloud, deviceName: deviceName, platform: platform)
-        // Without a claim the computer still pairs; it just doesn't join the account.
-        let claim: CloudClaim?
-        do { claim = try await cloud.createClaim() } catch {
-            log.info("pairing without a claim: \(error.localizedDescription, privacy: .public)")
-            claim = nil
-        }
-        pairingCheck = pairing.checkCode(for: identity)
-        defer { pairingCheck = nil }
-        let paired = try await HostConnector.pair(pairing, identity: identity, deviceName: deviceName, platform: platform,
-                                                  certificate: certificate, claim: claim)
-        guard !retired else { throw CancellationError() }
-        var computer = paired.computer
-        if let previous = saved.first(where: { $0.id == computer.id }) { computer.keepDevicePicks(from: previous) }
-        save(computer)
-        open(computer)
-        if let claim, let signed = paired.claim {
-            Task { await joinAccount(claimId: claim.claimId, signed: signed, cloud: cloud) }
-        }
-        return computer
-    }
-
-    public static let noCertificate = CloudError(status: 0, code: "noCertificate",
-                                          message: "Connect to the internet to pair, so Codync can confirm your account.")
-
-    /// This device's certificate: the one held while more than a day is left, else a new one, registering
-    /// the device again if the cloud doesn't know it. Offline, one that is still valid will do.
-    func pairingCertificate(_ cloud: CloudClient, deviceName: String, platform: String) async throws -> DeviceCertificate {
-        if let certificate, certificate.isFresh() { return certificate }
-        do {
-            let fresh: DeviceCertificate
-            do {
-                fresh = try await cloud.deviceCertificate()
-            } catch let error as CloudError where error.status == 403 {
-                try await cloud.registerDevice(name: deviceName, platform: platform)
-                fresh = try await cloud.deviceCertificate()
-            }
-            certificate = fresh
-            return fresh
-        } catch let error as CloudError where !error.isTransient {
-            throw error
-        } catch {
-            if let certificate, certificate.isValid() { return certificate }
-            log.info("no device certificate: \(error.localizedDescription, privacy: .public)")
-            throw Self.noCertificate
-        }
-    }
-
-    /// The computer signed this account's claim while letting this phone in: the phone, which holds the
-    /// account's session, completes it. Best effort: without it the computer stays paired, outside the account.
-    private func joinAccount(claimId: String, signed: Data, cloud: CloudClient) async {
-        do {
-            try await cloud.completeClaim(claimId: claimId, claim: signed)
-        } catch {
-            log.error("paired computer didn't join the account: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        await refreshCloud()
-    }
 
     public func forget(_ id: ComputerID) {
         saved.removeAll { $0.id == id }
@@ -221,6 +164,7 @@ public final class AccountStore {
         guard let cloud, !retired else { return }
         cloudListVersion += 1
         let version = cloudListVersion
+        defer { if version == cloudListVersion { cloudListLoaded = true } }
         do {
             // Every refresh, as on Android: signing back in clears the account's signed-out mark, or its computers
             // drop this iPhone's push tickets again on their next state pull.
@@ -229,6 +173,7 @@ public final class AccountStore {
             guard !retired, version == cloudListVersion else { return }
             if list != cloudComputers { Motion.animate { cloudComputers = list } }
             for (id, store) in stores { setHosting(store, id) }
+            learnRelay(from: list, cloud: cloud)
             askCloudComputers()
         } catch let error as CloudError where !error.isTransient {
             lastError = error.localizedDescription
@@ -236,6 +181,17 @@ public final class AccountStore {
             // Runs on every launch and foreground: a dropped connection, a busy cloud or a token
             // not ready yet fixes itself on the next refresh, so only answers that stay reach the dialog.
             log.info("cloud refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// A computer that joined this account while this phone couldn't hear its `hello` still has the relay, or a phone
+    /// away from its network could never reach it to find out. Listed online, it's on the relay; a phone connected to it
+    /// goes by its `hello`.
+    private func learnRelay(from list: [CloudComputer], cloud: CloudClient) {
+        for computer in saved where computer.cloud == nil && stores[computer.id]?.connection != .online
+            && list.contains(where: { $0.computerId == computer.id && $0.isOnline }) {
+            updateSaved(computer.id) { $0.cloud = cloud.baseURL }
+            stores[computer.id]?.restartStream()
         }
     }
 
@@ -447,7 +403,7 @@ public final class AccountStore {
 
     // MARK: plumbing
 
-    private func open(_ computer: Computer) {
+    func open(_ computer: Computer) {
         close(computer.id)
         let store = makeStore(computer)
         let id = computer.id
@@ -483,7 +439,7 @@ public final class AccountStore {
         refreshList()
     }
 
-    private func save(_ computer: Computer) {
+    func save(_ computer: Computer) {
         saved.removeAll { $0.id == computer.id }
         saved.insert(computer, at: 0)
         persist()

@@ -7,17 +7,49 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.36.0
+## 2.41.0
 ### zh-Hant
-- Codync 現在需要用 Apple、Google 或 GitHub 登入。以前沒登入就配對的電腦，第一次登入時會一起移進你的賬戶，不用再掃一次。
-- 登出後，這支手機不再收到通知，但會保留它的電腦，重新登入不用再掃描。
-- 可以在 App 裡刪除賬戶：點 Bots 分頁左上角的賬戶按鈕，再點「刪除賬戶」。
-- 配對會確認賬戶：在別人賬戶裡的電腦會告訴你它在誰的賬戶；還不在任何賬戶的電腦，會先在電腦上問一聲，再加入你的賬戶。
-- 也可以輸入 `codync-host pair` 印出的短代碼來配對，不用掃 QR code。
+- 不登入也能用了：在歡迎畫面選擇「不登入繼續」，手機掃電腦的 QR 碼就能配對，透過 Wi-Fi 或 Tailscale 連線。之後登入，配對會留在手機上；到「管理電腦」按「加入帳號」，電腦確認後就能從任何地方連線。
+- 電腦可以不加入帳號。配對時電腦會詢問；不加入的話，手機只能用 Wi-Fi 或 Tailscale 連線，之後也能在「管理電腦」加入帳號。
+- 遠端畫面會照連線設定換路：自動是先直連再走 Cloudflare，Cloudflare 優先則相反。
+- 群組裡輸入 @ 會列出成員，一排一個，和 / 指令選單一樣。
 
 ### en-US
-- Codync now asks you to sign in with Apple, Google or GitHub. Computers you paired before come along, no new scan.
-- Signing out stops notifications and keeps your computers: sign back in, no scan.
-- Delete your account in the app: account button (top left of Bots), then Delete account.
-- Pairing checks your account: a computer in another account says whose; one in no account asks first, then joins yours.
-- Or type the short code `codync-host pair` prints instead of scanning.
+- No account needed: choose Continue without an account, then scan your computer's QR code to connect over Wi-Fi or Tailscale. Sign in later and your computers stay paired.
+- A computer can stay out of your account: it asks when you pair, and Manage computers can add it later.
+- Remote screen now follows the Connection setting: Auto tries direct first, then Cloudflare, and Cloudflare first does the reverse.
+- Typing @ in a group lists its members one per row, like the / command list.
+
+## 2.40.2
+### zh-Hant
+- bot 現在可以讓 dev server 持續在電腦上執行，不會因為 bot 閒置或重新啟動而中斷。port 會顯示在聊天標題下方；點 bot 的名稱，就能看記錄、重新啟動或停止；手機連得到電腦時，也能直接開啟。
+- 用量頁面可以自己選要看哪些服務並調整順序：預設只顯示 bot 正在用的，也可以打開或隱藏其他服務，或拖曳排列。另外支援顯示 Google Antigravity 和 GitHub Copilot 的額度。
+
+### en-US
+- Bots can now keep a dev server running on your computer, even when the bot goes idle or restarts. Its port shows under the chat title; tap the bot's name to read its logs, restart or stop it, and to open it when your phone can reach it.
+- Choose and arrange which agents show in Usage: by default it lists the ones your bots run, and you can turn others on, hide them or drag them into order. Usage now also reads Google Antigravity's and GitHub Copilot's limits.
+
+## 2.39.0
+### zh-Hant
+- 第一次設定時，如果帳號裡已有電腦，可以向它申請訪問，或配對一臺新電腦（例如 VPS）。安裝頁也能一鍵複製網站連結，到電腦上下載。
+- bot 工作中送出的訊息會排在輸入框上方，可立即送出或收回。
+- bot 用了不只一種智慧體時，列表會在頭像左下角標出各自的智慧體標誌，可在「設定 › 外觀」關閉。
+- 修正與電腦的連線中斷時，app 可能閃退的問題。
+- 語音通話中語音辨識偶爾出錯時，會送出已聽到的內容並繼續聆聽，不再直接結束通話。
+- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
+- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
+- 用 QR Code 配對的電腦如果當下沒能加入帳號，下次連上時會自動補上。
+- 語音通話的對話紀錄更好讀，通話列在 bot 沒說話時也會顯示一排靜止的點。
+- 排隊狀態、例行任務和執行紀錄會跟隨介面語言，名稱與訊息保留原文。
+- 新增義大利文介面：可在設定選擇「Italiano」，或跟隨系統的義大利文語言。
+- 擴充功能的「已安裝」提示也會顯示技能的圖示。
+
+### en-US
+- Messages sent while a bot works wait above the box: send now or take back.
+- First-time setup offers your account's computers or a new one.
+- When bots use different agents, the list shows each one's logo (off in Settings).
+- Fixed a crash when the connection dropped.
+- A one-off speech error no longer ends a voice call.
+- Choose Português (Brasil), Русский or Italiano in Settings.
+- A QR-paired computer joins your account when it next connects.
+- Calls read more clearly.

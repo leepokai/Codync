@@ -39,12 +39,14 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Cloud assistants](features/cloud-assistants.md) (ChatGPT, Claude and others message the bots through the Codync connector)
 - [codync-network and cloud assistants: design](design/codync-network.md) (why iroh, connectors and relays, trust, addresses, quiet letters, the connector's choices, next steps)
 - [Context and memory](features/context-and-memory.md)
+- [Usage limits](features/usage-limits.md) (which agents show, how each one is read, and which can't be)
 - [Bot memory and compaction](design/bot-memory.md) (design; storage, gate and dreaming built, compaction to come)
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
 - [Bot workspaces](features/bot-workspaces.md)
 - [Bot import](features/bot-import.md) (agents from a Grok Bot export file become bots)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
+- [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)
@@ -60,6 +62,8 @@ Source review, a passing build, local integration tests and production acceptanc
 
 ## Plans
 
+- [Optional sign-in](plans/optional-sign-in.md) (signed-out phones, computers in no account, the relay only within an account; built, the rollout steps remain)
+- [Windows remote screen](plans/windows-remote-screen.md) (a screen helper for Windows; planned)
 - [Android parity and acceptance](plans/android-app.md)
 - [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
@@ -71,6 +75,7 @@ Source review, a passing build, local integration tests and production acceptanc
 Production signals (PostHog errors, failed turns) traced to a root cause, newest first. Dated
 records: the fixes they name have shipped or are listed as open.
 
+- [PostHog error triage, 2026-11-03](investigations/posthog-errors-2026-11-03.md): Android crash on a dropped connection, blank desktop windows, iPhone voice call crash
 - [Claude reported signed in on Windows while signed out, 2026-10-20](investigations/windows-claude-sign-in-2026-10-20.md)
 - [PostHog error triage, 2026-10-19](investigations/posthog-errors-2026-10-19.md): host panics, desktop and iPhone crashes, failed Claude turns
 - [npm agents failing to start on Windows, 2026-10-14](investigations/windows-npm-agents-2026-10-14.md)

@@ -73,7 +73,6 @@ struct CodyncApp: App {
                 }
                 .onOpenURL { url in app.open(url) }
                 .onChange(of: scenePhase, initial: true) { _, phase in
-                    ReviewInvitation.shared.setActive(phase == .active)
                     switch phase {
                     case .active: Analytics.shared.becameActive()
                     case .background: BackgroundTime.run("Analytics") { await Analytics.shared.enteredBackground() }
@@ -155,11 +154,12 @@ final class AppStore {
         }
         CrashReports.shared.start()
         contextID = storage.id
-        Self.adoptSignedOutPairings(into: storage)
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         // Accounts Clerk hasn't restored by launch keep their computers' push on.
         SharedStore.Context.splitPushSwitch(from: .standard,
                                             into: Set([nil, storage.accountID] + session.accounts.map(\.id)).map { SharedStore.Context(accountID: $0) })
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
+        if rescan { accounts.lastError = Self.scanAgain }
     }
 
     var storage: SharedStore.Context { accounts.storage }
@@ -175,7 +175,7 @@ final class AppStore {
         accounts.retire()
         PushRegistrar.shared.deactivate()
         LiveActivities.shared.endAll()
-        Self.adoptSignedOutPairings(into: storage)
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         SharedStore.activeAccountID = userID
         storage.bots = []
         contextID = storage.id
@@ -183,6 +183,7 @@ final class AppStore {
         showComputers = false
         marketplace = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
+        if rescan { accounts.lastError = Self.scanAgain }
         BotsWidgetFeed.reset()
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -202,6 +203,7 @@ final class AppStore {
         storage.bots = []
         SharedStore.activeAccountID = nil
         UserDefaults.standard.set(false, forKey: "onboardingCompleted")
+        UserDefaults.standard.set(false, forKey: "withoutAccount")
         showComputers = false
         account.showSwitcher = false
         marketplace = nil
@@ -218,7 +220,7 @@ final class AppStore {
     func pairing(from text: String) async throws -> Pairing {
         do {
             guard let code = Pairing.shortCode(text) else { return try Pairing.parse(text) }
-            guard let cloud else { throw AccountStore.noCertificate }
+            guard let cloud else { throw AccountStore.signInForShortCode }
             return try Pairing.parse(try await cloud.pairingLink(code: code))
         } catch {
             throw pairingFailed(error)

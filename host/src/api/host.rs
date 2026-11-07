@@ -63,7 +63,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "computerId": hub.identity.computer_id(),
                 "signKey": hub.identity.sign_pub_b64(),
                 "boxKey": hub.identity.box_pub_b64(),
-                "cloud": crate::remote::cloud::url(&hub.store),
+                // Only where a phone may use it: in no account, phones go over Wi-Fi or Tailscale.
+                "cloud": crate::remote::owner::url_for_phones(hub, caller.device_key()),
                 "name": crate::remote::managed::computer_name(&hub.store),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
@@ -80,6 +81,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
+                // don't send, so they aren't told to.
+                "joinAccount": false,
+                // A signed-in phone may offer to bring this computer into its account (`joinAccount`).
+                "canJoinAccount": crate::remote::owner::can_join(hub),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
             })
@@ -93,7 +99,30 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             if b["refresh"].as_bool().unwrap_or(false) {
                 usage::refresh(hub).await;
             }
-            serde_json::to_value(&*hub.usage.locked())?
+            serde_json::to_value(hub.usage.locked().visible())?
+        }
+        // Whether the Usage screens list this agent's limits.
+        "setUsageShown" => {
+            let id = str_arg(&b, "id")?.to_owned();
+            let shown = b["shown"].as_bool().context("shown is required")?;
+            let hub = hub.clone();
+            let usage = tokio::task::spawn_blocking(move || {
+                usage::set_shown(&hub, &id, shown)?;
+                anyhow::Ok(hub.usage.locked().visible())
+            })
+            .await??;
+            serde_json::to_value(usage)?
+        }
+        // The order the Usage screens list the agents in.
+        "setUsageOrder" => {
+            let ids: Vec<String> = serde_json::from_value(b["ids"].clone()).context("ids is required")?;
+            let hub = hub.clone();
+            let usage = tokio::task::spawn_blocking(move || {
+                usage::set_order(&hub, &ids)?;
+                anyhow::Ok(hub.usage.locked().visible())
+            })
+            .await??;
+            serde_json::to_value(usage)?
         }
         "listDirs" => {
             let path = b["path"].as_str().map(std::path::PathBuf::from);

@@ -24,4 +24,10 @@ if (identity.environment === 'dev') {
   const sandbox = app.isPackaged ? undefined : process.env.CODYNC_HOME
   app.setName(sandbox ? sandboxLabel(identity.name, sandbox) : identity.name)
   app.setPath('userData', sandbox ? join(sandbox, 'desktop') : join(app.getPath('appData'), identity.name))
+  // A sandbox leaves no Safe Storage item in the system's credential store: Keychain (first switch), a Linux keyring
+  // (second); Windows keeps its key in the sandbox. Its sealed files then protect nothing, like its host's key.
+  if (sandbox) {
+    app.commandLine.appendSwitch('use-mock-keychain')
+    app.commandLine.appendSwitch('password-store', 'basic')
+  }
 }

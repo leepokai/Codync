@@ -134,35 +134,61 @@
   justify-content: flex-end;
 }
 
-/* Usage: a computer's label over its limits, then one row per limit. */
+/* Usage: a computer's name and button over its card. */
 .settings-usage-computer {
   font-size: var(--text-body);
-  font-weight: 700;
+  font-weight: 600;
+  min-height: 28px;
 }
-.settings-usage-row {
+/* One card a computer: its agents' limits, or which agents show and in what order. */
+.settings-usage-card {
+  background: var(--surface);
+  border-radius: var(--radius-l);
   font-size: var(--text-callout);
-  font-weight: 400;
-  white-space: nowrap;
 }
-.settings-usage-title {
-  width: 64px;
-  flex: none;
-}
-.settings-usage-percent {
-  /* Grows past this for longer translations (de, fr); the bar gives way. */
-  min-width: 76px;
-  flex: none;
-  text-align: right;
+/* Padding, not a gap: it folds away with an agent turned off, and leaves room for a mascot's alert. */
+.settings-usage-provider {
+  padding: 14px 16px;
 }
 .settings-usage-note {
-  flex: 1;
-  min-width: 0;
   text-align: right;
 }
-.settings-usage-reset {
-  width: 130px;
+.settings-usage-card .progress-track.usage-bar {
   flex: none;
-  text-align: right;
+  height: 5px;
+  background: rgba(var(--text-rgb), 0.08);
+}
+.settings-usage-chooser {
+  padding: 4px;
+}
+.settings-usage-choice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding-right: 10px;
+  border-radius: var(--radius-m);
+  transition: background-color var(--hover);
+}
+.settings-usage-choice.held {
+  position: relative;
+  z-index: 1;
+  background: var(--sheet);
+  box-shadow: var(--shadow-m);
+}
+.settings-usage-switch {
+  flex: 1;
+  min-width: 0;
+}
+.settings-usage-grip {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-xs);
+  cursor: grab;
+  touch-action: none;
 }
 
 /* Computers & devices. */

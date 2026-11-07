@@ -9,10 +9,10 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: November 2, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: November 6, 2026</p>
 
         <Section title="Overview">
-          Codync is made by Leeporic LLC (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
+          Codync is an independent open-source project by leepokai (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
         </Section>
 
         <Section title="What stays on your devices">
@@ -20,7 +20,7 @@ export default function Privacy() {
             <li><strong>Bots and conversations</strong> are stored by the Codync host on your computer (in <code>~/.codync</code>). Your phone keeps a cache so the app opens instantly.</li>
             <li><strong>Your phone talks to your computer</strong> directly over your local network or Tailscale, or, away from home, through our relay, which only forwards end-to-end encrypted data it can&apos;t read. A message you send while your computer is offline waits in the relay, still encrypted for your computer, for up to 24 hours, and is deleted once delivered. If you point a computer at a relay you run yourself, its traffic goes through that relay instead of ours and we receive none of it; its notifications still go through our push relay.</li>
             <li><strong>Agents run with your own logins</strong> (Claude Code, Codex, Cursor and others). Codync never sees or stores their credentials.</li>
-            <li><strong>Usage limits</strong> are read locally from the agents installed on your computer. Only percentages reach your phone.</li>
+            <li><strong>Usage limits</strong> are read on your computer, only for the agents your bots run and the ones you turn on. Your phone gets the limits as percentages, plus any balance or credits an agent reports as text.</li>
           </ul>
         </Section>
 
@@ -37,16 +37,16 @@ export default function Privacy() {
         </Section>
 
         <Section title="Codync account">
-          The Codync apps ask you to sign in with Apple, Google or GitHub, so your phones can find your computers. Your account keeps your email address, an account ID, and the names of the phones and computers you connect with it. You can delete it at any time: see <a href="#delete-account" className="underline">Delete your Codync account</a> below.
+          You can sign in to the Codync apps with Apple, Google or GitHub, so your phones can find your computers and reach them through our relay. You can also use them without an account, over Wi-Fi or Tailscale only; a computer in no account then advertises its computer ID and private network addresses on your local network, so your phones can find it there. Your account keeps your email address, an account ID, and the names of the phones and computers you connect with it. You can delete it at any time: see <a href="#delete-account" className="underline">Delete your Codync account</a> below.
         </Section>
 
         <Section title="Data we collect">
           <p className="mb-2">
-            Usage analytics; the registration of each computer that uses our relay (its name, platform, device type, Codync version, public keys and when it was last online), with the public keys of the devices allowed to use it; and the account data described under Codync account. Analytics are on by default; turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
+            Usage analytics; the registration of each computer that uses our relay (its name, platform, device type, Codync version, public keys and when it was last online), with the public keys of the devices allowed to use it; and the account data described under Codync account. Analytics are on by default (the Windows installer asks first); turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>What we record:</strong> which features you use, such as opening the app and its screens, setting up and pairing a device (and whether you allow notifications), creating or deleting a bot, sending a message (with the number of attachments, not the files), starting a routine or a voice call, and installing a connector from the catalog. Each event carries the app version, the platform and the agent and model a bot uses.</li>
-            <li><strong>On codync.dev:</strong> page views and clicks on download and outbound links, counted without cookies; counting them stores nothing on your device.</li>
+            <li><strong>On codync.dev:</strong> page views, how long a page stays open and how far it&apos;s scrolled, how fast it loads, and clicks on download and outbound links, counted without cookies; counting them stores nothing on your device.</li>
             <li><strong>Crash and error reports:</strong> when an app crashes or hits an unexpected error, or an agent fails to answer, we record what kind of error it was and where in Codync&apos;s own code it happened (type, function names and line numbers). The error&apos;s message is never sent, and file paths are cut down to Codync&apos;s own files.</li>
             <li><strong>What we never record:</strong> your messages, prompts, code, files, file names or paths, bot names, credentials or anything your agents produce. We don&apos;t store your IP address: it is only used to look up your approximate location (country and city), which is kept with the events.</li>
             <li><strong>Who it&apos;s linked to:</strong> your Codync account when you&apos;re signed in; otherwise a random ID created on that device.</li>
@@ -63,6 +63,7 @@ export default function Privacy() {
             <li><strong>Clerk</strong>: runs sign-in for the Codync account, including the sign-in an assistant you connect to Codync uses.</li>
             <li><strong>n0 (iroh public relays)</strong>: only if you connect your computers with codync-network using the default connector. When two of your computers can&apos;t connect directly, their encrypted traffic goes through iroh&apos;s public relays, and they find each other through n0&apos;s address lookup; these see the computers&apos; IP addresses and connection metadata, not what they say. With your own relay or the private connector, none of it reaches n0.</li>
             <li><strong>PostHog (US)</strong>: stores the usage analytics described above, unless you turned them off.</li>
+            <li><strong>Vercel</strong>: hosts codync.dev and forwards the site&apos;s analytics to PostHog.</li>
             <li><strong>The AI agents you choose</strong>: they run on your computer under their own terms and privacy policies.</li>
             <li><strong>OpenAI or Google (optional, voice)</strong>: only if you add your own OpenAI or Gemini API key for calls or dictation. In a realtime call, your voice goes from your phone or computer directly to that provider, together with the bot&apos;s name and description and the chat messages it asks for during the call. In a call&apos;s speech mode, and when you dictate a message with the provider, your recording goes to your computer, which sends it to the provider to be transcribed, together with the names of the bots on that computer as spelling hints, and sends the bot&apos;s replies to the provider to be read aloud. All of it is under your account and the provider&apos;s privacy policy. The key is stored encrypted on your computer and sent only to that provider, never to our relay or services; a realtime call gets a short-lived credential made from it. Without a key, voice uses your device&apos;s own speech recognition.</li>
           </ul>

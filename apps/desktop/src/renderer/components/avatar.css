@@ -41,6 +41,16 @@
   background: var(--accent-fill);
 }
 
+.avatar-agent {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--background);
+}
+
 .lead-agent-badge {
   position: absolute;
   right: 0;

@@ -40,6 +40,7 @@ qwen-code 0.26.5.
 | `/compact` ignores its instructions | `host/src/agent/bot/session.rs`: `CODEX_CONFIG={"compact_prompt": KEEP}` | none | `/compact <text>` uses the text |
 | Sets no tool timeout for Codync's servers, so Codex's 300 s default drops a call without telling the server | `host/src/chat/manage.rs`: `APPROVAL_TIMEOUT` is 270 s | none | A per-server timeout, or Codex sends `notifications/cancelled` |
 | Sends 429s and overloads as reply text, not as errors | **Not patched**: only `usageLimitExceeded` moves a Codex bot to its fallback ([agent fallbacks](../features/agent-fallback.md)) | [#647](https://github.com/agentclientprotocol/codex-acp/issues/647) | When fixed, map the new categories in `host/src/agent/fallback/reason.rs` |
+| Keeps a closed session's MCP servers until the agent stops | Nothing beyond the idle stop in `host/src/agent/bot/lifecycle.rs` ([conversation runtime](../architecture/conversation-runtime.md)) | none | Upstream fix: nothing to delete |
 | Never closes the thread it titles each new session in, so that thread's MCP servers stay up until the agent stops | Nothing beyond the idle stop in `host/src/agent/bot/lifecycle.rs` ([conversation runtime](../architecture/conversation-runtime.md)) | [#628](https://github.com/agentclientprotocol/codex-acp/issues/628) | Upstream fix: nothing to delete |
 | The Codex CLI deletes the current credentials as soon as a new sign-in starts | `host/src/agent/term.rs`: no Login step while signed in | none | The CLI keeps them until the new login succeeds |
 
@@ -82,6 +83,9 @@ qwen-code 0.26.5.
 | Hermes | Starts MCP servers with a filtered environment | `host/src/mcp.rs`: `CODYNC_HOME` in each server's `env` | Keep: within the spec |
 | Kilo | `_meta.terminal-auth` names `opencode` | `host/src/agent/auth.rs`: that method is left out | Kilo names its own CLI |
 | Qwen Code | Terminal sign-in in `_meta: {type: "terminal", args}` instead of the spec's fields | `host/src/agent/auth.rs` reads it | The spec's fields |
+| Antigravity | Signed out, it starts its browser sign-in as soon as a session opens, so a usage reading would open a browser at every poll | `host/src/usage/acp_read.rs`: started with `BROWSER=true`, which its Python honors. Windows has no such command, so `host/src/usage/antigravity.rs` needs a saved login file first. No issue opened yet: this only surfaced reading usage | `session/new` doesn't start a sign-in |
+| Antigravity | Each new session leaves a conversation database behind, about 400 KB | `host/src/usage/acp_read.rs`: readings share one session, resumed each time (`usage.session.<id>` in the kv). No issue opened yet: keeping sessions may be intended | A session with no turn leaves nothing behind |
+| Grok Build | Not every build answers ACP's extension name `_x.ai/billing`, and the 1.0.75 binary names `x.ai/billing` | `host/src/usage/grok.rs`: asks `x.ai/billing`, then `_x.ai/billing`. No issue opened: seen only in the binary's strings, with no login to run it | The oldest build we support answers one name |
 | oh-my-pi | Tool call titles are prose ("Creating probe bot"), not the tool's name, so Codync's own calls aren't recognized as its bookkeeping | **Not patched** (`host/src/agent/bot/tool_entry.rs` matches names only) | Titles or `_meta` carry the tool's name |
 
 ## Gaps in ACP itself
@@ -90,10 +94,15 @@ Not one adapter's bug: the protocol leaves these open, and the host covers them 
 
 - No structured MCP server and tool name on a tool call: `host/src/agent/bot/tool_entry.rs` parses titles (`mcp__x__y`, `mcp.x.y`).
 - Every adapter names its error category differently (`errorKind`, `category`, `codexErrorInfo`): `host/src/agent/acp.rs`.
-- Agents that ignore `session/cancel` are killed after 15 s; a hung `session/new` or `session/load` after 3 min;
+- Agents that ignore `session/cancel` are killed after 15 s; a hung `session/new`, `session/load` or `session/resume` after 3 min;
   an old CLI that hangs on `initialize` gets 20 s when another way to start it is left (`host/src/agent/bot/mod.rs`,
   `host/src/agent/bot/session.rs`).
 - Agents that send no `compaction_update`: a drop in context use by more than half stands in for one
   (`host/src/agent/bot/compaction.rs`).
 - Mode ids have no fixed meaning: Auto is found by id or name, and Goose's `auto` (approves everything) is hidden
   (`host/src/agent/modes.rs`).
+- No way in ACP v1 to hand a running turn another message: *Send now* uses the agents' own `_session/steering`
+  (advertised in the top-level `_meta.steering.supported`; claude-acp, codex-acp, omp) with `idleBehavior:
+  "promptRequired"`, and stops the turn for agents without it (`host/src/agent/bot/steer.rs`). Move to the standard
+  once ACP v2's prompts during active work and the `delivery` RFD
+  ([agent-client-protocol#1261](https://github.com/agentclientprotocol/agent-client-protocol/pull/1261)) are stable.

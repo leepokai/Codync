@@ -43,6 +43,7 @@ public struct ThreadView: View {
                         .transition(.opacity)
                 } else {
                     Composer(botId: botId, replyingTo: $replyingTo,
+                             queued: model.chat(botId).hidingCalls().queue(working: busy),
                              onCall: !calling && bot != nil ? { calling = true } : nil,
                              onInterrupt: callSpeaking ? interruptCall : nil)
                 }
@@ -65,9 +66,6 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
-            .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
-                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
-                           && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -142,15 +140,36 @@ public struct ThreadView: View {
             }
             .frame(width: 12)
             .accessibilityHidden(true)
-            Text(L10n.tr(model.connectionLabel))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            HStack(spacing: 3) {
+                Text(L10n.tr(model.connectionLabel))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let devServerLabel {
+                    Text("·")
+                    if devServerSummary == .starting { Spinner(size: 8) }
+                    Text(devServerLabel)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .foregroundStyle(devServerSummary == .failed ? Palette.danger : Palette.secondary)
+                }
+            }
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundStyle(Palette.secondary)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(model.hostName), \(L10n.tr(connectionDescription))")
+        .accessibilityLabel([model.hostName, L10n.tr(connectionDescription), devServerLabel].compactMap(\.self).joined(separator: ", "))
         .help("\(model.hostName) · \(L10n.tr(connectionDescription))")
+    }
+
+    private var devServerSummary: DevServerSummary { DevServerSummary(bot?.devServers ?? []) }
+
+    private var devServerLabel: String? {
+        switch devServerSummary {
+        case .none: nil
+        case .starting: L10n.tr("Starting")
+        case .failed: L10n.tr("Failed to start")
+        case let .running(text): text
+        }
     }
 
     private var connectionSymbol: String {
@@ -293,9 +312,7 @@ struct IntroCard: View {
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text(bot.managedWorkspace
                  ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
-                 : L10n.tr("{agent} in {path}")
-                    .replacingOccurrences(of: "{agent}", with: model.backendName(bot.backend))
-                    .replacingOccurrences(of: "{path}", with: bot.cwd))
+                 : L10n.fill(L10n.tr("{agent} in {path}"), ["agent": model.backendName(bot.backend), "path": bot.cwd]))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -323,13 +340,16 @@ extension ThreadView {
     }
 
     private var working: Bool { bot?.isWorking(in: botId) == true && !model.isOffline }
+    /// The bot works anywhere (a room, a routine): the user's messages here wait above the composer.
+    private var busy: Bool { bot?.isWorking == true }
 
     /// iPhone's messages: all this device has, earlier ones from the computer as the reader
     /// scrolls up; the chat follows the newest message until they scroll away, and a reply is
     /// revealed steadily as it's written.
     var transcript: some View {
         // What voice calls carried shows in each call's conversation, not in the chat.
-        let items = ChatItem.build(model.chat(botId).hidingCalls())
+        // Messages waiting behind the bot's work show above the composer instead.
+        let items = ChatItem.build(model.chat(botId).hidingCalls().hidingQueue(working: busy))
         var rows: [ConversationRow] = []
         if moreOnComputer {
             rows.append(ConversationRow("earlier") {
@@ -386,7 +406,9 @@ extension ThreadView {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
                         header
-                        connectionSubtitle
+                        // The port shows here, so a tap on it opens the details too.
+                        Button(action: openDetails) { connectionSubtitle }
+                            .buttonStyle(.plain)
                     }
                 }
                 if model.screen != nil {

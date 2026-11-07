@@ -77,7 +77,7 @@ private enum class ComputerOS { Mac, Linux }
  * (iOS `PairingView`). In a sheet it has a close button and closes once paired.
  */
 @Composable internal fun PairingView(state: AccountContext, store: AccountStore, inModal: Boolean = false, onSkip: () -> Unit = {},
-    leading: @Composable RowScope.() -> Unit = {}) {
+    onContinue: () -> Unit = {}, leading: @Composable RowScope.() -> Unit = {}) {
     var step by rememberSaveable { mutableStateOf(Step.Install) }
     var os by rememberSaveable { mutableStateOf(ComputerOS.Mac) }
     val dismiss = LocalDismissModal.current
@@ -98,7 +98,9 @@ private enum class ComputerOS { Mac, Linux }
                 (slideOutHorizontally(Motion.spring(0.45f)) { if (forward) -it else it } + fadeOut(Motion.spring(0.45f)))
         }, label = "Pairing step") { shown ->
             when (shown) {
-                Step.Install -> InstallPage(os, { os = it }) { step = Step.Scan }
+                Step.Install -> InstallPage(os, { os = it }, state.account.current?.address) {
+                    onContinue(); step = Step.Scan
+                }
                 Step.Scan -> ScanPage(state, store, os) { if (inModal) dismiss() }
             }
         }
@@ -112,7 +114,8 @@ private enum class ComputerOS { Mac, Linux }
 
 // MARK: - Install
 
-@Composable private fun InstallPage(os: ComputerOS, choose: (ComputerOS) -> Unit, next: () -> Unit) {
+@Composable private fun InstallPage(os: ComputerOS, choose: (ComputerOS) -> Unit, email: String?, next: () -> Unit) {
+    val (linkCopied, copyLink) = rememberCopy(WEBSITE_LINK, OutboundLink.InstallLink)
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -124,6 +127,20 @@ private enum class ComputerOS { Mac, Linux }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(tr("Install Codync\non your computer"), style = PAGE_TITLE, color = Palette.text)
                 Text(tr("Your bots run there. This phone is how you talk to them."), style = Type.body, color = Palette.secondary)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Hint("Open the website on your computer to download Codync")
+                SecondaryButton(copyLink, Modifier.fillMaxWidth()) {
+                    Crossfade(linkCopied, animationSpec = Motion.morph(), label = "Copy link") { done ->
+                        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), Alignment.CenterVertically) {
+                            Symbol(if (done) "checkmark" else "doc.on.doc", size = 18.dp, tint = Palette.text)
+                            Text(tr(if (done) "Copied" else "Copy website link"), style = Type.headline)
+                        }
+                    }
+                }
+                // The same account is what lets this phone find the computer afterwards.
+                if (email != null) Text(tr("Sign in there with {email} and add it to your account, and it shows up here.").replace("{email}", email),
+                    style = Type.subheadline, color = Palette.secondary)
             }
             SegmentedChoice(os, listOf(ComputerOS.Mac to "Mac", ComputerOS.Linux to "Linux"), choose)
             // Copied here, pasted on the computer (a message to yourself, a shared clipboard).
@@ -142,8 +159,6 @@ private enum class ComputerOS { Mac, Linux }
                     }
                     Text(tr(if (shown == ComputerOS.Mac) "Open Codync and it sets up the host on its own."
                         else "codync-host install keeps it running in the background."), style = Type.subheadline, color = Palette.secondary)
-                    Hint("Every install option")
-                    CommandBlock("https://www.codync.dev/#install", records = OutboundLink.InstallCommand)
                 }
             }
             DemoButton()
@@ -169,24 +184,31 @@ private enum class ComputerOS { Mac, Linux }
 /** A small label above a `CommandBlock`. */
 @Composable private fun Hint(text: String) = Text(tr(text), style = Type.footnote, color = Palette.secondary)
 
-/** A terminal command with a copy button; copying it counts as opening `records`. */
-@Composable private fun CommandBlock(command: String, records: OutboundLink? = null) {
+/** Whether [text] was just copied, and what copies it; copying counts as opening [records]. */
+@Composable private fun rememberCopy(text: String, records: OutboundLink?): Pair<Boolean, () -> Unit> {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
+    val copy: () -> Unit = {
+        scope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Command", text)))
+            records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
+            copied = true; delay(1500); copied = false
+        }
+    }
+    return copied to copy
+}
+
+/** A terminal command or link with a copy button; copying it counts as opening `records`. */
+@Composable private fun CommandBlock(command: String, records: OutboundLink? = null) {
+    val (copied, copy) = rememberCopy(command, records)
     Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.codeBackground).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SelectionContainer(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(command, style = Type.footnote.monospaced, color = Palette.text)
         }
         Crossfade(copied, animationSpec = Motion.morph(), label = "Copy") { done ->
-            IconButton(if (done) "Copied" else "Copy", if (done) "checkmark" else "doc.on.doc") {
-                scope.launch {
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Command", command)))
-                    records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
-                    copied = true; delay(1500); copied = false
-                }
-            }
+            IconButton(if (done) "Copied" else "Copy", if (done) "checkmark" else "doc.on.doc", action = copy)
         }
     }
 }
@@ -245,15 +267,18 @@ private enum class ComputerOS { Mac, Linux }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(tr(error.orEmpty()), style = Type.footnote, color = Palette.danger)
                 // The usual cause: the phone has no road to the computer yet.
-                if (state.pairingUnreachable) IconLabel("Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
+                if (state.pairingUnreachable) IconLabel(if (state.account.userId != null) "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."
+                    else "Check that this phone and the computer are on the same Wi-Fi or both on Tailscale.",
                     "wifi.exclamationmark", Palette.secondary)
+                if (state.pairingUnreachable) IconLabel("Also check that the Wi-Fi isn't a guest network, and that no firewall on the computer blocks Codync.",
+                    "lock.shield", Palette.secondary)
             }
         }
         // Signed in, account computers show up in Computers, where a tap asks one for access.
         if (state.account.configured && state.account.userId == null) SignInButtons(state, store)
         // How it connects is never a choice here: every paired computer gets every route.
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconLabel(pairingLine(pasted, BuildConfig.URL_SCHEME), "lock.fill")
+            IconLabel(pairingLine(pasted, BuildConfig.URL_SCHEME, state.account.userId != null), "lock.fill")
             if (tailscale) IconLabel("Tailscale is on: Codync connects over it directly.", "checkmark.circle.fill")
             else IconLabel("Use Tailscale? Direct and faster away from home.", "arrow.up.right",
                 modifier = Modifier.plainButton { uri.open("https://tailscale.com/download", OutboundLink.Tailscale) })
@@ -270,7 +295,10 @@ private enum class ComputerOS { Mac, Linux }
     }
 }
 
-private val PAGE_TITLE = Type.system(30f, FontWeight.SemiBold).copy(letterSpacing = (-0.5).sp)
+internal val PAGE_TITLE = Type.system(30f, FontWeight.SemiBold).copy(letterSpacing = (-0.5).sp)
+
+/** The website: its first button downloads for whatever the computer runs. */
+private const val WEBSITE_LINK = "https://www.codync.dev"
 
 /** Tailscale gives every device an address in 100.64.0.0/10 on its VPN (`tun`) interface. */
 private fun tailscaleConnected(): Boolean = try {

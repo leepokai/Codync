@@ -17,6 +17,8 @@ export default defineConfig(async () => ({
         // The pool's bundled workerd trails wrangler's; pin to the newest date it supports.
         compatibilityDate: "2026-08-22",
         bindings: {
+          // The switch's two sides are tested directly (test/relay-account.test.ts).
+          RELAY_NEEDS_ACCOUNT: "",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
           CLERK_JWT_KEY: publicKey.export({ type: "spki", format: "pem" }).toString(),
           TEST_CLERK_PRIVATE_JWK: JSON.stringify(privateKey.export({ format: "jwk" })),

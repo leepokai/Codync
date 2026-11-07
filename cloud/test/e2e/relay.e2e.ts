@@ -39,6 +39,7 @@ async function startHost() {
     CODYNC_HOME: home,
     CODYNC_CLOUD_URL: CLOUD,
     CODYNC_DEVICE_CERT_KEY: local.certPub,
+    CODYNC_AGENT_CHECKS: "off",
   });
   await waitFor("host /health", () => fetch(`http://127.0.0.1:${hostPort}/health`).then((r) => r.ok || undefined).catch(() => undefined), 30_000);
 }

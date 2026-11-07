@@ -40,7 +40,7 @@ private struct ProviderButton<Mark: View>: View {
                 if account.isBusy { Spinner(size: 18) }
             }
             .font(.headline)
-            .frame(maxWidth: .infinity, minHeight: 50)
+            .frame(maxWidth: .infinity, minHeight: 28)
         }
         .disabled(account.isBusy)
         .animation(Motion.fade, value: account.isBusy)

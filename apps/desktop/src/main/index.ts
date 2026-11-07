@@ -27,6 +27,7 @@ import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
 import { Island } from './island'
 import { registerErrorReports } from './error-reports'
+import { registerRendererRecovery } from './renderer-recovery'
 import { reportHostSetupFailure } from './analytics'
 import { launchAtLogin, openedAtLogin, setLaunchAtLogin, updateLoginItem } from './login-item'
 
@@ -41,10 +42,16 @@ function computerName() {
 }
 
 // UI checks drive the renderer over the DevTools protocol (development builds only).
-if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) app.commandLine.appendSwitch('remote-debugging-port', process.env.CODYNC_REMOTE_DEBUG)
+if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env.CODYNC_REMOTE_DEBUG)
+  // As Playwright does for the Chromium it launches. Reloading the dev server's unbundled modules holds about 750 MB of
+  // shared memory until a garbage collection; past a Linux VM's /dev/shm (half its memory) requests fail and the window stays blank.
+  app.commandLine.appendSwitch('disable-dev-shm-usage')
+}
 
 const host = new HostController()
 registerErrorReports(host)
+registerRendererRecovery(host)
 host.on('setupFailed', reportHostSetupFailure)
 const account = new AccountService()
 const updates = new Updates(host)

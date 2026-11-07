@@ -6,7 +6,7 @@
 use crate::LockExt;
 use crate::hub::Hub;
 use crate::remote::crypto::{self, b64};
-use crate::store::{Device, DeviceSource, Scope, Store, now_ms};
+use crate::store::{Device, DeviceAccount, DeviceSource, Scope, Store, now_ms};
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::watch;
 
-pub use super::cloud_url::{Address, RelayKind, TokenChange, current, set_cloud, set_cloud_url, show, url};
+pub use super::cloud_url::{Address, RelayKind, TokenChange, current, set_cloud, set_cloud_url, show, url, when_on};
 
 /// How long one successful state pull keeps an account device allowed.
 pub const LEASE_MS: i64 = 15 * 60 * 1000;
@@ -63,9 +63,13 @@ pub struct CloudStatus {
     pub assistants: bool,
     /// Whose relay: on a private one there is no account, access request or relayed screen.
     pub relay: RelayKind,
-    /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs asks to bring it
-    /// into its account. Kept by [`update_status`], so every app words it the same.
+    /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs is asked about it,
+    /// and phones reach it only over Wi-Fi or Tailscale until it joins. Kept by [`update_status`], so every app words
+    /// it the same.
     pub can_join_account: bool,
+    /// Turned on, the cloud would leave this computer in no account on a Codync cloud, so the desktop app asks to add
+    /// it first. Known with the cloud off too, unlike the fields above; kept by [`update_status`].
+    pub joins_account_on_enable: bool,
 }
 
 /// How account devices get in (`setApproval`, local only).
@@ -119,6 +123,12 @@ pub struct Cloud {
     pub(super) account: Mutex<()>,
     /// Bumped when the cloud is turned on or off or pointed elsewhere: the relay restarts.
     pub config: watch::Sender<u64>,
+    /// Bumped when this computer's account changes: phones read the relay address again.
+    pub account_changed: watch::Sender<u64>,
+    /// Wakes a computer without its relay socket: a pairing code or a claim needs it now.
+    pub relay_wake: tokio::sync::Notify,
+    /// When the relay no longer stays up for a claim just signed (`owner::wants_relay`).
+    pub(super) join_pending_until: Mutex<i64>,
 }
 
 impl Default for Cloud {
@@ -129,6 +139,9 @@ impl Default for Cloud {
             pulling: tokio::sync::Mutex::new(()),
             account: Mutex::default(),
             config: watch::Sender::new(0),
+            account_changed: watch::Sender::new(0),
+            relay_wake: tokio::sync::Notify::new(),
+            join_pending_until: Mutex::default(),
         }
     }
 }
@@ -145,11 +158,13 @@ impl Cloud {
 
 /// Changes the status and tells this computer's apps when it actually changed.
 pub fn update_status(hub: &Hub, f: impl FnOnce(&mut CloudStatus)) {
+    let joins_account_on_enable = super::owner::joins_account_on_enable(&hub.store);
     let changed = {
         let mut s = hub.cloud.status.locked();
         let before = s.clone();
         f(&mut s);
         s.can_join_account = s.enabled && s.relay == RelayKind::Codync && s.owner.is_none();
+        s.joins_account_on_enable = joins_account_on_enable;
         (*s != before).then(|| s.clone())
     };
     if let Some(s) = changed {
@@ -303,10 +318,18 @@ struct State {
     requests: Vec<StateRequest>,
     /// The account's phones that signed out: they keep their access, but get no alerts until they sign back in.
     #[serde(default)]
-    signed_out: Vec<String>,
+    signed_out_devices: Vec<SignedOut>,
     /// A cloud computer's update order (`remote::managed`).
     #[serde(default)]
     update: Option<crate::remote::managed::UpdateOrder>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignedOut {
+    device_key: String,
+    /// How long before the cloud answered (ms): relative, so its clock needn't match this computer's.
+    signed_out_ago: i64,
 }
 
 #[derive(Deserialize)]
@@ -344,8 +367,12 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
-    for device in &state.signed_out {
-        hub.store.remove_push_tickets(device)?;
+    // Only tickets from before signing out: the phone sends a new one on signing back in, which can arrive before
+    // the cloud hears of it. Counted back from after the answer, a slow one drops a ticket a moment too new (sent
+    // again on the phone's next connection) rather than keep one too old.
+    let now = now_ms();
+    for device in &state.signed_out_devices {
+        hub.store.remove_push_tickets_until(&device.device_key, now - device.signed_out_ago)?;
     }
     super::owner::remember(hub, state.owner.as_ref())?;
     let in_account = state.owner.is_some();
@@ -577,11 +604,17 @@ pub async fn decide(hub: &Hub, id: &str, approve: bool, how: Approval) -> Result
         created_at: now_ms(),
         last_seen_at: None,
         // Approved through the account the computer is in.
-        account: super::owner::owner(&hub.store).map(|o| o.user_id),
+        account: super::owner::owner(&hub.store).map_or(DeviceAccount::Unrecorded, |o| DeviceAccount::Of(o.user_id)),
     };
     hub.store.put_device(&device)?;
     tracing::info!(grant_id = grant, "account device approved");
-    crate::analytics::device_paired(hub, crate::analytics::Via::Account, &device.platform, how == Approval::Auto);
+    crate::analytics::device_paired(
+        hub,
+        crate::analytics::Via::Account,
+        &device.platform,
+        how == Approval::Auto,
+        crate::analytics::PairedAccount::Joined,
+    );
     hub.auth_changed();
     Ok(())
 }
@@ -676,7 +709,7 @@ mod tests {
             lease_until: Some(now_ms() + 1000),
             created_at: now_ms(),
             last_seen_at: None,
-            account: None,
+            account: DeviceAccount::Unrecorded,
         }
     }
 
@@ -821,11 +854,20 @@ mod tests {
         let base = fake_cloud(fake.clone()).await;
         hub.store.add_push_ticket("t1", "signed out", None, Some("ctx"), "iPhone").unwrap();
         hub.store.add_push_ticket("t2", "still in", None, Some("ctx"), "Pixel").unwrap();
-        *fake.state.lock().unwrap() =
-            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [], "signedOut": ["signed out"]});
+        let state = |signed_out_ago: i64| {
+            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [],
+                   "signedOutDevices": [{"deviceKey": "signed out", "signedOutAgo": signed_out_ago}]})
+        };
+        *fake.state.lock().unwrap() = state(0);
         pull(&hub, &base).await.unwrap();
-        let tickets: Vec<String> = hub.store.push_tickets().into_iter().map(|t| t.ticket).collect();
-        assert_eq!(tickets, ["t2"]);
+        let tickets = || hub.store.push_tickets().into_iter().map(|t| t.ticket).collect::<Vec<_>>();
+        assert_eq!(tickets(), ["t2"]);
+        // Signed out a minute ago; signing back in, the new ticket can reach this computer before the cloud clears
+        // the mark.
+        hub.store.add_push_ticket("t3", "signed out", None, Some("ctx"), "iPhone").unwrap();
+        *fake.state.lock().unwrap() = state(60_000);
+        pull(&hub, &base).await.unwrap();
+        assert_eq!(tickets(), ["t2", "t3"], "a ticket sent after signing out keeps its alerts");
     }
 
     #[tokio::test]

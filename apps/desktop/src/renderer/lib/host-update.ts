@@ -1,4 +1,5 @@
 import { isBelow, type VersionMismatch } from '../../shared/compat.ts'
+import { trNow } from './l10n.ts'
 
 /** An update this app asked of a computer that's behind it (`installHostUpdate`). */
 export type HostUpdate = { kind: 'requested'; at: number } | { kind: 'failed'; message: string }
@@ -23,7 +24,8 @@ export function offerHostUpdate(update: HostUpdate | null, canUpdate: boolean, n
 export const updateNeededText = {
   /** `cloud`: a Codync Cloud computer, which the cloud updates by itself. */
   title(m: VersionMismatch, host: string, cloud = false) {
-    return m.kind === 'updateApp' ? 'Update this app' : cloud ? 'Your cloud computer is updating…' : `Update Codync on ${host}`
+    if (m.kind === 'updateApp') return trNow('Update this app')
+    return cloud ? trNow('Your cloud computer is updating…') : trNow('Update Codync on {host}').replaceAll('{host}', () => host)
   },
   detail(m: VersionMismatch, host: string, hostVersion: string | null | undefined, os: string | null | undefined, instructions = true, cloud = false) {
     if (m.kind === 'updateApp') {

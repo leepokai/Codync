@@ -67,17 +67,19 @@ export function RoutineWebhookPanel({ botId, routineId }: { botId: string; routi
           footer={
             webhook.url
               ? 'POST with Authorization: Bearer <key>. For GitHub, use content type application/json and the key as the secret. ' +
-                'Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them.'
-              : 'The Codync cloud is off, so only this computer can send to it.'
+                tr('Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them.')
+              : webhook.needsAccount
+                ? "This computer isn't in an account, so only it can send to this address. Add it to your account for a public one."
+                : 'The Codync cloud is off, so only this computer can send to it.'
           }
         >
-          {row(webhook.url ? 'URL' : 'Local URL', webhook.url ?? webhook.localUrl, 'url')}
+          {row(webhook.url ? tr('URL') : tr('Local URL'), webhook.url ?? webhook.localUrl, 'url')}
           {row(
             'Key',
             showKey ? webhook.key : '•'.repeat(16),
             'key',
             <>
-              <IconButton title={showKey ? 'Hide key' : 'Show key'} icon={showKey ? 'eye.slash' : 'eye'} onClick={() => setShowKey((s) => !s)} />
+              <IconButton title={tr(showKey ? 'Hide key' : 'Show key')} icon={showKey ? 'eye.slash' : 'eye'} onClick={() => setShowKey((s) => !s)} />
               <IconButton title="Replace key" icon="arrow.triangle.2.circlepath" disabled={rotating || store.isOffline} onClick={() => setConfirmRotate(true)} />
             </>,
           )}

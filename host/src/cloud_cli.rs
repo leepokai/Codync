@@ -1,8 +1,10 @@
-//! `codync-host cloud`: the relay this computer uses, its registration token and account approval.
+//! `codync-host cloud`: the relay this computer uses, its registration token, its account and account approval.
 
-use crate::local_api::local_call;
-use anyhow::Result;
-use serde_json::json;
+use crate::local_api::{local_call, local_call_for};
+use anyhow::{Result, bail};
+use serde_json::{Value, json};
+use std::io::IsTerminal as _;
+use std::time::Duration;
 
 #[derive(clap::Args)]
 #[allow(clippy::struct_excessive_bools, reason = "independent command-line flags")]
@@ -13,6 +15,10 @@ pub struct CloudArgs {
     enable: bool,
     #[arg(long)]
     disable: bool,
+    /// Take this computer out of its Codync account (asks first). Every device paired with it
+    /// loses access and pairs again with a new code.
+    #[arg(long, conflicts_with = "disable")]
+    leave: bool,
     /// How devices on this computer's account get in: `code` (compare the 6-digit code,
     /// the default) or `auto` (no check: anyone who gets into the account, or controls
     /// the cloud, can then add a device).
@@ -37,14 +43,14 @@ pub struct CloudArgs {
 
 /// `codync-host cloud`: shows or changes the cloud this computer uses.
 pub async fn run(args: CloudArgs) -> Result<()> {
-    let CloudArgs { port, enable, disable, approval, assistants, url, clear_url, token } = args;
+    let CloudArgs { port, enable, disable, leave, approval, assistants, url, clear_url, token } = args;
     let mut status = None;
     if clear_url {
         status = Some(local_call(port, "setCloudUrl", json!({ "url": "" })).await?);
     } else if let Some(url) = url {
         let mut body = json!({ "url": url });
         if token {
-            let token = crate::secret_prompt::read("Relay token: ")?;
+            let token = crate::prompt::read_secret("Relay token: ")?;
             // An empty answer would clear the saved token; `--clear-url` is the way to forget it.
             if token.is_empty() {
                 anyhow::bail!("No relay token was given.");
@@ -57,6 +63,9 @@ pub async fn run(args: CloudArgs) -> Result<()> {
     if enable || disable {
         status = Some(local_call(port, "setCloud", json!({"enabled": !disable})).await?);
     }
+    if leave {
+        status = Some(leave_account(port).await?);
+    }
     if let Some(approval) = approval {
         status = Some(local_call(port, "setApproval", json!({ "approval": approval })).await?);
     }
@@ -68,7 +77,7 @@ pub async fn run(args: CloudArgs) -> Result<()> {
         None => local_call(port, "cloudStatus", json!({})).await?,
     };
     let text = |k: &str| status[k].as_str().unwrap_or("-").to_owned();
-    let owner = status["owner"]["email"].as_str().or(status["owner"]["userId"].as_str()).unwrap_or("none");
+    let owner = owner(&status).unwrap_or("none");
     println!(
         "enabled:    {}\nurl:        {}\nrelay:      {}\ntoken:      {}\nregistered: {}\nconnected:  {}\naccount:    {owner}\napproval:   {}\nassistants: {}\nlast error: {}",
         status["enabled"],
@@ -87,13 +96,35 @@ pub async fn run(args: CloudArgs) -> Result<()> {
     Ok(())
 }
 
+/// `--leave`: after a yes in a terminal, the desktop app's Remove from account (`unclaim`). Returns the status.
+async fn leave_account(port: u16) -> Result<Value> {
+    let status = local_call(port, "cloudStatus", json!({})).await?;
+    let Some(owner) = owner(&status) else { bail!("This computer isn't in an account.") };
+    if !std::io::stdin().is_terminal() {
+        bail!("Run `codync-host cloud --leave` in a terminal to confirm.");
+    }
+    let prompt =
+        format!("Take this computer out of {owner}'s account? Every device paired with it loses access. [y/N] ");
+    if !crate::prompt::ask_yes_no(&prompt).await? {
+        return Ok(status);
+    }
+    // The cloud call and the state pull after it: the desktop app allows them 30 seconds too.
+    local_call_for(port, "unclaim", json!({}), Duration::from_secs(30)).await?;
+    local_call(port, "cloudStatus", json!({})).await
+}
+
+/// The account this computer is in, by email when the cloud gave one.
+fn owner(status: &Value) -> Option<&str> {
+    status["owner"]["email"].as_str().or(status["owner"]["userId"].as_str())
+}
+
 /// How a computer with no desktop app gets into an account (docs/architecture/connections.md, headless computers).
-fn account_hint(status: &serde_json::Value) -> Option<&'static str> {
+fn account_hint(status: &Value) -> Option<&'static str> {
     if !status["owner"].is_null() {
         return None;
     }
     Some(if status["canJoinAccount"] == true {
-        "Not in an account. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
+        "Not in an account, so phones connect only over Wi-Fi or Tailscale. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints; or, on a phone already paired, tap Add to account and answer with `codync-host access approve <code>`. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
     } else {
         "Not in an account. Phones pair with `codync-host pair` and a QR code; joining an account needs the Codync cloud (`codync-host cloud --enable`)."
     })

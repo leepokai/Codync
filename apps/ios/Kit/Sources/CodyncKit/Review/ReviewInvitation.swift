@@ -7,17 +7,18 @@ import os
 public final class ReviewInvitation {
     public static let shared = ReviewInvitation()
     static let storageKey = "reviewInvitation.v1"
+    /// E2E flows launch with this argument on: the system's window would cover what they tap.
+    static let offKey = "reviewInvitationOff"
     private static let log = Logger(subsystem: "com.pokai.Codync", category: "ReviewInvitation")
     private let defaults: UserDefaults
     private let capture: @MainActor (AnalyticsEvent) -> Void
     private var history: ReviewHistory
-    private var activeSince: Date?
-    private var viewedChat: String?
     public private(set) var opportunity: UUID?
-    private var interruptions: Set<UUID> = []
-    public var isInterrupted: Bool { !interruptions.isEmpty }
+    private var opportunityDate = Date.distantPast
+    /// With no view there to ask (a background shortcut), the token waits in memory: coming back to the app later must not ask.
+    private static let opportunityLifetime: TimeInterval = 5
 
-    init(defaults: UserDefaults = .standard, now: Date = .now,
+    init(defaults: UserDefaults = .standard,
          capture: @escaping @MainActor (AnalyticsEvent) -> Void = { Analytics.shared.capture($0) }) {
         self.defaults = defaults
         self.capture = capture
@@ -25,82 +26,35 @@ public final class ReviewInvitation {
             do { history = try JSONDecoder().decode(ReviewHistory.self, from: data) }
             catch {
                 Self.log.error("Cannot read review history: \(error.localizedDescription)")
-                history = ReviewHistory(firstUse: now)
+                history = ReviewHistory()
             }
-        } else { history = ReviewHistory(firstUse: now) }
-        prune(at: now)
+        } else { history = ReviewHistory() }
+    }
+
+    /// A prompt reached the computer or its mailbox.
+    public func sent(version: String = AppVersion.current, now: Date = .now) {
+        history.prompts += 1
         save()
-    }
-
-    public func setInterrupted(_ token: UUID, active: Bool) {
-        if active {
-            interruptions.insert(token)
-            cancel(.unavailable)
-        } else { interruptions.remove(token) }
-    }
-
-    public func setActive(_ active: Bool, now: Date = .now) {
-        if active {
-            prune(at: now)
-            save()
-            if activeSince == nil { activeSince = now }
-        } else {
-            activeSince = nil
-            viewedChat = nil
-            cancel(.background)
+        if !defaults.bool(forKey: Self.offKey), history.eligible(at: now, version: version) {
+            opportunity = UUID()
+            opportunityDate = now
         }
-    }
-
-    public func sent(_ nonce: String, now: Date = .now) {
-        prune(at: now)
-        if history.sent.count >= 100, let oldest = history.sent.min(by: { $0.value < $1.value })?.key {
-            history.sent[oldest] = nil
-        }
-        history.sent[nonce] = now
-        history.recordActivity(at: now)
-        viewedChat = nil
-        cancel(.interaction)
-        save()
-    }
-
-    /// Called only after an unobscured final answer at the bottom of the chat stayed visible.
-    public func viewed(chat: String, entries: [Entry], now: Date = .now) {
-        guard activeSince != nil, !isInterrupted,
-              let result = ReviewCompletion.match(entries: entries, sent: history.sent, now: now) else { return }
-        for nonce in result { history.sent[nonce] = nil }
-        history.completed += 1
-        history.recordActivity(at: now)
-        viewedChat = chat
-        save()
-    }
-
-    public func returned(from chat: String, version: String = AppVersion.current, now: Date = .now) {
-        defer { viewedChat = nil }
-        guard !isInterrupted, viewedChat == chat, let activeSince, now.timeIntervalSince(activeSince) >= 60,
-              history.eligible(at: now, version: version) else { return }
-        opportunity = UUID()
-        capture(.reviewOpportunity(completed: history.completed))
-    }
-
-    public func cancel(_ reason: AnalyticsEvent.ReviewCancellation) {
-        guard opportunity != nil else { return }
-        opportunity = nil
-        capture(.reviewCancelled(reason))
     }
 
     /// Persist before StoreKit: an undisplayed request still consumes our own cooldown.
     public func request(_ token: UUID, version: String = AppVersion.current, now: Date = .now) -> Bool {
-        guard !isInterrupted, opportunity == token, let activeSince, now.timeIntervalSince(activeSince) >= 60,
-              history.eligible(at: now, version: version) else { return false }
+        guard opportunity == token else { return false }
         opportunity = nil
+        guard now.timeIntervalSince(opportunityDate) <= Self.opportunityLifetime else { return false }
         history.recordRequest(at: now, version: version)
         save()
-        capture(.reviewRequested(completed: history.completed))
+        capture(.reviewRequested(prompts: history.prompts))
         return true
     }
 
-    private func prune(at now: Date) {
-        history.sent = history.sent.filter { now.timeIntervalSince($0.value) < 30 * ReviewHistory.day }
+    /// The app couldn't ask on this one (backgrounded, or its view went away): only a later prompt asks.
+    public func skip(_ token: UUID) {
+        if opportunity == token { opportunity = nil }
     }
 
     private func save() {

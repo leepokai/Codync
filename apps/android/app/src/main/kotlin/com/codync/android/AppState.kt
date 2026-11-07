@@ -17,6 +17,8 @@ data class AccountContext(
     val generation: Int = 0,
     val account: AccountState = AccountState(),
     val cloudComputers: List<CloudComputer> = emptyList(),
+    /** The account answered (or failed to) at least once, so an empty [cloudComputers] means what it says. */
+    val cloudLoaded: Boolean = false,
     /** Access requests waiting for approval on the computer, with the code to check, by computer ID. */
     val access: Map<String, AccessTicket> = emptyMap(),
     /** The request each computer was approved through most recently. */
@@ -35,6 +37,10 @@ data class AccountContext(
     val pairingCheck: String? = null,
     /** The last pairing failed because the phone couldn't reach the computer (not a refusal): the network hint helps. */
     val pairingUnreachable: Boolean = false,
+    /** Chose to go on without signing in; signing in or starting over ends it (iOS `withoutAccount`). */
+    val withoutAccount: Boolean = false,
+    /** Computers asked from here to join this account, with the code they show meanwhile. */
+    val addingToAccount: Map<String, String> = emptyMap(),
     /** This phone's computers, in the order it shows them. */
     val computers: List<Computer> = emptyList(),
     /** The computer whose lead "Talk to Codync" calls; null is Automatic (iOS `shortcutLeadComputer`). */
@@ -99,6 +105,8 @@ data class AppState(
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */
     val unreadable: Boolean = false,
+    /** A sign-in with a code (GitHub): the code, shown before its page opens until Copy and open or Cancel. */
+    val signInCode: String? = null,
     /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
     val hostUpdate: HostUpdate? = null,
     /** Codync Cloud runs this computer (the account's list says, `AccountStore.refreshCloud`): asleep isn't offline. */

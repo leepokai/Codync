@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Confirm, ConfirmAct, Editor, Overlay, fuzzy};
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::{Fields, Input, Market, Reply, Row, Submit, TABS, Tab, ctrl, s};
 
 /// Registry rows kept loaded under the cursor on Connectors, about the list's height.
@@ -185,7 +185,7 @@ impl App {
         let act = match self.market_rows(&m).get(m.cursor) {
             Some(Row::Node) => Act::Node,
             Some(Row::Agent(b)) => Act::Agent(s(b, "id")),
-            Some(Row::Installed(c)) if c["auth"] == "signedOut" => Act::SignIn(s(c, "id")),
+            Some(Row::Installed(c)) if c["auth"] == "signedOut" || c["canSignIn"] == true => Act::SignIn(s(c, "id")),
             Some(Row::Custom) => Act::Custom,
             Some(Row::Registry(c)) => Act::Install((*c).clone()),
             Some(Row::Skill(v)) => Act::Skill((*v).clone(), true),
@@ -204,7 +204,7 @@ impl App {
             }
             Act::SignIn(id) => {
                 self.flash("Starting the sign-in…");
-                self.sheet("connectorSignIn", json!({"id": id}), Reply::SignIn);
+                self.sheet("connectorSignIn", json!({"id": id, "showsCode": true}), Reply::SignIn);
             }
             Act::Custom => {
                 self.overlays.push(Overlay::Market(m));
@@ -240,7 +240,7 @@ impl App {
                         if o["kind"] == "remote" {
                             tr("Hosted by {name}").replace("{name}", &title)
                         } else {
-                            tr("On {name} ({kind})").replace("{name}", &host).replace("{kind}", &s(o, "kind"))
+                            fill(&tr("On {name} ({kind})"), &[("name", &host), ("kind", &s(o, "kind"))])
                         }
                     })
                     .collect();
@@ -409,5 +409,24 @@ mod tests {
         app.open_agent("kimi", false);
         let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("the agent sheet is open") };
         assert!(!a.busy && !app.agent_set_up(a), "a registry agent that never ran waits for Set up");
+    }
+
+    #[tokio::test]
+    async fn a_connector_with_a_saved_token_signs_in_with_a_code() {
+        let mut app = open();
+        for (can_sign_in, starts) in [(false, false), (true, true)] {
+            app.plugins.0 = vec![json!({"id": "github", "name": "GitHub", "auth": "none", "canSignIn": can_sign_in})];
+            app.hint = None;
+            move_to(&mut app, 0);
+            let Some(Overlay::Market(m)) = app.overlays.pop() else { panic!("the marketplace is open") };
+            let m = app.market_key(m, KeyEvent::from(KeyCode::Enter)).expect("the marketplace stays open");
+            app.overlays.push(m);
+            assert_eq!(app.hint.is_some(), starts, "canSignIn {can_sign_in}: \"Starting the sign-in…\"");
+        }
+        // No browser opens from this TUI (not on the computer): the hint names the code and the page.
+        let device = "https://github.com/login/device";
+        app.on_sheet_reply(Reply::SignIn, Ok(json!({"url": device, "callback": "host", "code": "ABCD-1234"})));
+        let hint = &app.hint.as_ref().expect("the code shows").0;
+        assert!(hint.contains("ABCD-1234") && hint.contains(device), "{hint}");
     }
 }

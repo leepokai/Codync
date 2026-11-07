@@ -7,21 +7,38 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 
+/** A computer pairing let in, and the claim it signed when it joined this phone's account (null when it didn't). */
+data class Paired(val computer: Computer, val claim: JsonObject?)
+
+private const val UNREACHABLE_DIRECTLY = "Can't reach your computer. Check you're on the same network or that Tailscale is on."
+
+/** Nothing answered at the address, as opposed to a host that turned this phone away. */
+private val Throwable?.isNoAnswer get() = this == null || this is java.net.SocketException ||
+    this is java.net.UnknownHostException || this is java.io.InterruptedIOException
+
 object HostConnector {
-    suspend fun pair(pairing: Pairing, identity: DeviceIdentity, deviceName: String): Computer {
+    /**
+     * Pairs with [certificate] as the account proof; a computer in no account first asks its user (up to 90 seconds),
+     * then signs [claim] to join the phone's account.
+     */
+    suspend fun pair(pairing: Pairing, identity: DeviceIdentity, deviceName: String, certificate: DeviceCertificate?,
+        claim: PairingClaim? = null): Paired {
         require(deviceName.isNotBlank() && deviceName.codePointCount(0, deviceName.length) <= 100)
         val channel = connect(pairing.computer, identity, pairing)
         try {
             val response = try {
                 channel.call("pair", buildJsonObject {
                     put("code", pairing.code); put("name", deviceName); put("platform", "android")
-                }, timeoutMillis = 30_000)
+                    certificate?.let { put("certificate", it.json) }
+                    claim?.let { put("claim", it.json) }
+                }, timeoutMillis = 150_000)
             } catch (error: HostError) {
                 // Hosts from before Android support turn the platform down: say what to do, not the wire error.
                 if (error.status == 400 && "platform" in error.message) throw HostError(400, "Update Codync on this computer to pair an Android phone.")
@@ -29,15 +46,19 @@ object HostConnector {
             }
             val result = response.jsonObject
             require(result.text("computerId") == pairing.computer.id) { "This computer's identity changed. Pair it again." }
-            return pairing.computer.copy(name = result.text("name")?.takeIf(String::isNotBlank) ?: pairing.computer.name)
+            return Paired(pairing.computer.copy(name = result.text("name")?.takeIf(String::isNotBlank) ?: pairing.computer.name),
+                result["claim"] as? JsonObject)
         } finally {
             channel.close()
         }
     }
 
-    suspend fun connect(computer: Computer, identity: DeviceIdentity): EncryptedChannel = connect(computer, identity, null)
+    /** [discovered]: addresses found on the local network, for a computer with no relay to learn them from. */
+    suspend fun connect(computer: Computer, identity: DeviceIdentity, discovered: List<String> = emptyList()): EncryptedChannel =
+        connect(computer, identity, null, discovered)
 
-    private suspend fun connect(computer: Computer, identity: DeviceIdentity, pairing: Pairing?): EncryptedChannel {
+    private suspend fun connect(computer: Computer, identity: DeviceIdentity, pairing: Pairing?,
+        discovered: List<String> = emptyList()): EncryptedChannel {
         computer.validate()
         if (computer.route == ConnectionRoute.CloudflareFirst && computer.cloud != null) {
             try { return relay(computer, identity, pairing) }
@@ -45,12 +66,13 @@ object HostConnector {
             catch (error: SecurityException) { throw error }
             catch (_: IOException) { /* Try the direct candidates below. */ }
         }
+        val candidates = (computer.urls + discovered).distinct()
         var directError: Throwable? = null
         var ownedWinner: EncryptedChannel? = null
         val direct = try { coroutineScope {
             val attempts = Channel<Result<EncryptedChannel>>(Channel.UNLIMITED,
                 onUndeliveredElement = { result -> result.getOrNull()?.close() })
-            val jobs = computer.urls.map { base -> launch {
+            val jobs = candidates.map { base -> launch {
                 var channel: EncryptedChannel? = null
                 try {
                     val url = base.toHttpUrl().newBuilder().encodedPath("/channel").query("v=1").build()
@@ -69,7 +91,7 @@ object HostConnector {
                 val budget = if (computer.route == ConnectionRoute.DirectOnly || computer.cloud == null) 15_000L else 1_500L
                 withTimeoutOrNull(budget) {
                     var winner: EncryptedChannel? = null
-                    repeat(computer.urls.size) {
+                    repeat(candidates.size) {
                         if (winner == null) {
                             val outcome = attempts.receive()
                             winner = outcome.getOrNull()
@@ -87,6 +109,10 @@ object HostConnector {
         if (direct != null) return direct
         if (directError is SecurityException) throw requireNotNull(directError)
         if (computer.cloud != null && computer.route == ConnectionRoute.Automatic) return relay(computer, identity, pairing)
+        // With no relay, a computer that's off and a phone that's away look the same. An answer from the host says more.
+        if (directError.isNoAnswer && (computer.cloud == null || computer.route == ConnectionRoute.DirectOnly)) {
+            throw IOException(UNREACHABLE_DIRECTLY)
+        }
         throw directError ?: IOException("Can't reach the computer. Check its connection and try again.")
     }
 

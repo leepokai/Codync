@@ -131,6 +131,7 @@ impl Actor {
         self.last_text = None;
         self.sent.clear();
         self.reacted = Reacted::No;
+        self.joined = false;
         self.files.summary = None;
         self.files.cancel();
         if hidden {
@@ -206,11 +207,10 @@ impl Actor {
         if self.session_fresh {
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
-        if let Some(conn) = self.conn.as_mut() {
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
+        // Requests that came in before this turn: a permission gets the answer it would have had a moment ago.
+        while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
+            if let Incoming::Request { id, method, params } = inc {
+                self.answer_outside_turn(id, &method, &params).await;
             }
         }
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
@@ -263,11 +263,11 @@ impl Actor {
         let sent = std::mem::take(&mut self.sent);
         let reacted = std::mem::take(&mut self.reacted);
         if !sent.is_empty() {
-            // The bot talked through send_message: what it wrote as its reply stays in the trace.
-            self.last_text = None;
             final_text = Some(sent.join("\n\n"));
-        } else if !matches!(reacted, Reacted::No) {
-            // A reaction (or one it held back) was its whole reply: what it wrote stays in the trace too.
+        }
+        // The bot talked through send_message, or a reaction (or one it held back) was its whole reply: what it wrote
+        // stays in the trace. With a message that joined the turn, either may have answered only what came before it.
+        if !self.joined && (!sent.is_empty() || !matches!(reacted, Reacted::No)) {
             self.last_text = None;
         }
         if let Some(id) = self.last_text.take().filter(|_| !stopped)
@@ -414,11 +414,15 @@ impl Actor {
         self.files.cancel();
         self.flush(true);
         self.seg = Seg::None;
-        let ids: Vec<String> = self.perms.drain().map(|(k, _)| k).collect();
-        for id in ids {
+        let client = self.conn.as_ref().map(|c| c.acp.clone());
+        for (id, answer) in self.perms.drain() {
             if let Some(mut e) = self.hub.store.entry(&id) {
                 e.data["status"] = "expired".into();
                 self.hub.set_entry(&id, &e.data);
+            }
+            // The agent would wait on a card no one can answer any more.
+            if let (super::updates::Answer::Agent(rpc_id), Some(client)) = (answer, client.clone()) {
+                tokio::spawn(async move { client.respond(rpc_id, acp::permission_answer(None)).await });
             }
         }
         for entry_id in self.tools.values() {
@@ -448,7 +452,7 @@ impl Actor {
     }
 
     /// What started the turn that is starting or running.
-    fn source(&self) -> TurnSource {
+    pub(super) fn source(&self) -> TurnSource {
         if self.active_routine.is_some() {
             TurnSource::Routine
         } else if self.active_group.is_some() {

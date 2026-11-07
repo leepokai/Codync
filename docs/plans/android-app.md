@@ -16,10 +16,10 @@ emulator against a real host; device acceptance is listed separately.
 | --- | --- | --- |
 | Welcome/pairing | Ported: welcome crew and chat glimpse, Install (Mac/Linux) and Scan pages with the camera on the page (1080p frames, refocused on the middle every 2.5 s, tap to focus), paste link, Tailscale note, sign-in | Physical optical scan, camera permission denial |
 | Accounts/access | Ported: account sheet and switcher, several computers (`AccountStore` with one `AppStore` per computer, as iOS `AccountStore` + `BotStore`), Computer management with a card per computer (connection status, badge color, Revoke this phone's access, older copies removed from the account), account computer access with its code (one request per computer), access banners, `codync-dev://computers` and `codync-dev://plugins` | Provider browser round trip on a device; Revoke and older copies against a signed-in account (covered by cloud request tests only) |
-| Roster | Ported: rows, menus, pin/hide/delete, Make lead agent, groups, sections (move to, fold per device, rename, remove), drag to reorder (host-synced order) and TalkBack Move up/down, a heading per computer once there are several (fold, drag to reorder on this phone, its Extensions), the computer filter (show, hide, Show only), the newer-release reminder, pull to refresh (also in Computer management) | — |
+| Roster | Ported: rows, menus, pin/hide/delete, Make lead agent, groups, sections (move to, fold per device, rename, remove), drag to reorder (host-synced order) and TalkBack Move up/down, a heading per computer once there are several (fold, drag to reorder on this phone, its Extensions), the computer filter (show, hide, All computers; stays open while picking), the newer-release reminder, pull to refresh (also in Computer management) | — |
 | Conversation | Ported: bubbles, Markdown/code, permissions, reactions, quote replies, Full conversation, bot-to-bot exchange lines and their conversation, routine notices that open their routine, files a bot shares (verified download, then the share sheet), sent images full size, pull down to reconnect, jump to latest, read receipts for every conversation on screen | Physical keyboard and TalkBack |
 | Composer | Ported: files/photos/paste (groups too, image thumbnails, Paste only when the clipboard holds files), `/` commands (Fast mode, skills listed fresh on `/`), @mentions in groups, call/send/stop/interrupt button, dictation (the mic, its recording pill, the engine menu beside it: On device through Android's recognizer, or OpenAI / Gemini transcribed on the user's key with *Transcribing…*, and the *Couldn't dictate* dialog) | Dictation with a live microphone and a provider key on a device |
-| Bot and group editors | Ported: avatar (a row that unfolds the picker), profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills (with their details); the bot details sheet (`BotDetailsView`, from the chat's title, a routine notice or Add a fallback): Details (instructions, agent, Use the computer, Routines), Library, Memory, Settings (Codync's skill and connector switches), saved as you edit, Create template; a group's title opens its editor. An agent's own skills, connectors, rules and plugins are on its sheet in Extensions, under Sign in | — |
+| Bot and group editors | Ported: avatar (a row that unfolds the picker), profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills (with their details); the bot details sheet (`BotDetailsView`, from the chat's title, a routine notice or Add a fallback): Details (dev servers, instructions, agent, Use the computer, Routines), Library, Memory, Settings (Codync's skill and connector switches), saved as you edit, Create template; a group's title opens its editor. An agent's own skills, connectors, rules and plugins are on its sheet in Extensions, under Sign in | — |
 | Memory | Ported, read-only (`MemoryCard.kt`, `MemoryInfoSheet.kt`): About you and This bot with each `MEMORY.md` line and who wrote it, notes and their reader, dreams, the harness's own memory switch (or Shared) and its tab, the info sheets; handoff cards (keep the conversation, edit or unfold what it carries) | — |
 | Routines | Ported: list with switches, editor (schedule, webhook panel, run settings), test run, delete | Live provider/routine acceptance |
 | Extensions | Ported: agents (install, sign-in, setup terminal, and the skills, connectors, rules and plugins that agent already has), registry connectors, Composio apps, skills, installed list, custom connector, own skill, credentials, chat connection request card | Real provider OAuth, 1Password |
@@ -102,12 +102,13 @@ the Dynamic Island) with its feature graphic, per language.
   Play Console. Set the repository variable `PLAY_TRACK=alpha` once it runs, then run
   `Submit Android` by hand with the current version and `alpha` (it moves the version Play
   already has there) or promote it in Play Console.
-- [ ] Account deletion inside the app: Play requires it for apps that create accounts. Today an
-  account is deleted on request (`codync.dev/privacy#delete-account`, by email); add a *Delete
-  account* action (cloud method that deletes the Clerk user, whose webhook already removes the
-  rest) to every client.
-- [ ] Reviewer access: pairing needs a computer, so review needs a way in (a demo video of
-  pairing and a chat, or a reusable demo host), linked from App content → Login details.
+- [x] Account deletion inside the app: *Delete account* in the account sheet (2.35.0) deletes the
+  Clerk user, whose webhook removes the rest. The web address Play asks for is
+  `codync.dev/delete-account`.
+- [ ] Reviewer access: pairing needs a computer, and signing in is optional (2.41.0). In App
+  content → App access, say that the reviewer signs in with any Google account (no credentials
+  needed), and link a way to a computer (a demo video of pairing and a chat, or a reusable demo
+  host).
 - [ ] The foreground service video Play asks for the microphone and media playback services
   (voice calls), if it asks when the release goes to review.
 - [ ] Physical upgrade keeps the saved account, pinned keys, bots and history.

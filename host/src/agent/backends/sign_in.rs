@@ -6,6 +6,12 @@ use serde_json::Value;
 use std::sync::Mutex;
 use std::time::Duration;
 
+/// `CODYNC_AGENT_CHECKS=off`, the tests' disposable hosts: nothing runs the computer's agent CLIs to check on their
+/// sign-in or usage, so a test never starts one on the user's own login.
+pub fn agent_checks_off() -> bool {
+    std::env::var("CODYNC_AGENT_CHECKS").is_ok_and(|value| value == "off")
+}
+
 /// `<bin> <args>`, judged by exit code and stdout.
 #[derive(Clone, Copy)]
 pub struct SignInCheck {
@@ -81,6 +87,9 @@ pub async fn refresh_sign_in() {
 /// What `h`'s own CLI says about its sign-in, run with `env` (the keys its agent gets, so both
 /// judge the same login). `None`: it has no such check, isn't installed or didn't answer.
 pub async fn cli_signed_in(h: &Harness, env: &[(String, String)]) -> Option<bool> {
+    if agent_checks_off() {
+        return None;
+    }
     let check = h.signed_in?;
     let bin = h.bins.iter().find_map(|b| which(b))?;
     let run = tokio::process::Command::new(bin)

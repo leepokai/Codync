@@ -90,7 +90,7 @@ val routineRepeats = listOf("hourly" to "Hourly", "daily" to "Daily", "weekdays"
         ?.get("expression")?.jsonPrimitive?.content
 }
 
-@Serializable data class RoutineWebhook(val url: String? = null, val localUrl: String, val key: String, val connected: Boolean)
+@Serializable data class RoutineWebhook(val url: String? = null, val needsAccount: Boolean = false, val localUrl: String, val key: String, val connected: Boolean)
 
 data class RoutineDraft(val id: String? = null, val name: String = "", val instruction: String = "",
     val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600") {

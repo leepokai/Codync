@@ -157,5 +157,9 @@ export function usage(now: number): Usage {
         { id: 'secondary', label: 'Weekly', percent: 47, resetsAt: hours(95) },
       ] },
     ],
+    services: [
+      { id: 'claude', name: 'Claude', shown: true },
+      { id: 'codex', name: 'Codex', shown: true },
+    ],
   }
 }

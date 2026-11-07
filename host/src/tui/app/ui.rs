@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Gear, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
-    RoutineList, SkillSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, Library, Market, MemorySheet,
+    NetworkSheet, RoutineForm, RoutineList, SkillSheet,
 };
 use super::{Editor, Mark};
 
@@ -308,10 +308,16 @@ pub struct GroupForm {
     pub saving: bool,
 }
 
-/// The pair-a-phone sheet's code: on its way, shown (its pairing link), or why none came.
+/// The pair-a-phone sheet's code: on its way, shown (its pairing link, and the short code to type when the
+/// Codync cloud holds one), or why none came.
 pub enum PairCode {
+    /// Opened for a phone asking: only the question shows, and no code is issued, which would wake the relay.
+    QuestionOnly,
     Loading,
-    Ready(String),
+    Ready {
+        url: String,
+        short_code: Option<String>,
+    },
     Failed(String),
 }
 
@@ -326,10 +332,18 @@ pub enum Overlay {
     Group(GroupForm),
     /// How far its list is scrolled.
     Usage(usize),
+    /// Which agents' limits show: the row under the cursor, and whether a move is on its way to the host (the next waits
+    /// for its answer).
+    UsageChooser {
+        row: usize,
+        moving: bool,
+    },
     Pair(PairCode),
     Memory(MemorySheet),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
+    /// A bot's dev servers.
+    DevServers(DevServersSheet),
     Routines(RoutineList),
     Routine(Box<RoutineForm>),
     Library(Library),
@@ -362,6 +376,8 @@ pub enum Click {
     Steps,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
+    /// The port in the chat's header: opens the bot's dev servers.
+    DevServers,
     /// A section's label (its name): folds or unfolds it, like `z`.
     Section(String),
 }

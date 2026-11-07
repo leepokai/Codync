@@ -2,7 +2,7 @@ import type { HostState } from './ipc.ts'
 import type { SSHState, SSHStatus } from './ssh.ts'
 
 export function isSSHConnecting(status: SSHStatus): boolean {
-  return status.kind === 'connecting' || status.kind === 'retrying'
+  return status.kind === 'connecting' || status.kind === 'retrying' || status.kind === 'installing'
 }
 
 /** Saved remote computers keep their status and recovery controls reachable. */
@@ -22,7 +22,8 @@ export function sshSummary(statuses: SSHStatus[]): string {
 export function sshStatusDetail(status: SSHStatus, attached = true): string {
   switch (status.kind) {
     case 'idle': return 'Not connected'
-    case 'connecting': return status.step
+    case 'connecting':
+    case 'installing': return status.step
     case 'retrying': return `${status.message} Retrying…`
     case 'confirmHostKey': return 'Confirm host key…'
     case 'connected': return attached ? 'Connected' : 'Connected · opening…'

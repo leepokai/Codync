@@ -3,6 +3,7 @@
 use super::{Analytics, Event, capture, platform, platform_of};
 use crate::LockExt as _;
 use crate::hub::Hub;
+use crate::remote::pairing_requests::Answer;
 use serde_json::{Map, Value};
 
 /// The version this host last started as (`host_started.updated_from`); empty when the install
@@ -40,23 +41,75 @@ fn started(last: Option<&str>, version: &str, service: bool) -> Map<String, Valu
     p
 }
 
+/// How a phone stands with this computer's account after pairing (`device_paired`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PairedAccount {
+    /// In the computer's account, or the computer joined the phone's.
+    Joined,
+    /// Signed in, and the computer stayed out of its account.
+    PhoneOnly,
+    /// A phone with no account.
+    SignedOut,
+}
+
+impl PairedAccount {
+    /// From whether the phone is signed in, and what the computer answered if it asked (in the phone's account, it
+    /// doesn't).
+    pub fn of(signed_in: bool, answer: Option<Answer>) -> Self {
+        match (signed_in, answer) {
+            (false, _) => Self::SignedOut,
+            (true, Some(Answer::PhoneOnly)) => Self::PhoneOnly,
+            (true, _) => Self::Joined,
+        }
+    }
+}
+
 /// `device_paired`: a phone was added to this computer.
-pub fn device_paired(hub: &Hub, via: Via, device_platform: &str, automatic: bool) {
+pub fn device_paired(hub: &Hub, via: Via, device_platform: &str, automatic: bool, account: PairedAccount) {
     let mut p = Map::new();
     p.insert("via".into(), (if via == Via::Qr { "qr" } else { "account" }).into());
     p.insert("platform".into(), platform(device_platform).into());
     p.insert("automatic".into(), automatic.into());
+    let account = match account {
+        PairedAccount::Joined => "joined",
+        PairedAccount::PhoneOnly => "phone_only",
+        PairedAccount::SignedOut => "signed_out",
+    };
+    p.insert("account".into(), account.into());
     capture(hub, Event::DevicePaired, p);
 }
 
-/// `phone_connected`: a paired phone opened a channel, counted once per phone per UTC day.
-pub fn phone_connected(hub: &Hub, key: &str) {
+/// `phone_connected`: a paired phone opened a channel, counted once per phone per UTC day. `relayed`: it came through
+/// a relay rather than over Wi-Fi or Tailscale.
+pub fn phone_connected(hub: &Hub, key: &str, relayed: bool) {
     if !hub.analytics.first_today(key, chrono::Utc::now().date_naive()) {
         return;
     }
     let mut p = Map::new();
     p.insert("platform".into(), platform_of(hub, key).into());
+    p.insert("route".into(), (if relayed { "relay" } else { "direct" }).into());
     capture(hub, Event::PhoneConnected, p);
+}
+
+/// `join_from_phone_answered`: the computer answered a paired phone's Add to account.
+pub fn join_from_phone_answered(hub: &Hub, approved: bool) {
+    let mut p = Map::new();
+    p.insert("outcome".into(), (if approved { "approved" } else { "declined" }).into());
+    capture(hub, Event::JoinFromPhoneAnswered, p);
+}
+
+/// Where advertising on the local network failed (`discovery_failed`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscoveryStage {
+    Start,
+    Update,
+}
+
+/// `discovery_failed`: a computer in no account couldn't advertise on the local network.
+pub fn discovery_failed(hub: &Hub, stage: DiscoveryStage) {
+    let mut p = Map::new();
+    p.insert("stage".into(), (if stage == DiscoveryStage::Start { "start" } else { "update" }).into());
+    capture(hub, Event::DiscoveryFailed, p);
 }
 
 impl Analytics {
@@ -70,6 +123,14 @@ impl Analytics {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_pairing_says_how_the_phone_stands_with_the_account() {
+        assert_eq!(PairedAccount::of(false, Some(Answer::PhoneOnly)), PairedAccount::SignedOut);
+        assert_eq!(PairedAccount::of(true, Some(Answer::PhoneOnly)), PairedAccount::PhoneOnly);
+        assert_eq!(PairedAccount::of(true, Some(Answer::Join)), PairedAccount::Joined);
+        assert_eq!(PairedAccount::of(true, None), PairedAccount::Joined, "the computer is in the phone's account");
+    }
 
     #[test]
     fn a_phone_counts_once_a_day() {

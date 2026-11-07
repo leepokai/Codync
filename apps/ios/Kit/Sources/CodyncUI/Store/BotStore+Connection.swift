@@ -216,12 +216,15 @@ extension BotStore {
         Task { [weak self] in
             for await computer in updates {
                 guard let self, !self.retired else { return }
+                let hadRelay = self.computer.cloud != nil
                 // The transport's copy of this device's picks may be older.
                 self.updateComputer { current in
                     var next = computer
                     next.keepDevicePicks(from: current)
                     current = next
                 }
+                // The relay it had was the only one to ask about what it held.
+                if hadRelay, self.computer.cloud == nil { await self.reconcileQueued(remote) }
             }
         }
         Task { [weak self] in

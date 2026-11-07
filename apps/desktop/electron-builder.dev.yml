@@ -34,7 +34,7 @@ linux:
     entry:
       StartupWMClass: Codync Dev
 win:
-  artifactName: codync-dev-windows-x64.${ext}
+  artifactName: codync-dev-windows-${arch}.${ext}
   extraResources:
     - from: build/native/codync-host.exe
       to: codync-host.exe

@@ -79,6 +79,8 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    /** What it keeps running on the computer. Empty from an older host, and for a group. */
+    val devServers: List<DevServer> = emptyList(),
     val customIcon: CustomIcon? = null,
 ) {
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
@@ -97,8 +99,10 @@ data class Bot(
     /** A group's bots, in member order, from [bots]. */
     fun memberBots(bots: List<Bot>): List<Bot> = members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
 
+    /** Working anywhere: its own chat, a room or a routine. */
+    val isWorking: Boolean get() = status in listOf("working", "needsInput")
     /** Working right now in this chat (its own, or a group it's in). */
-    fun isWorking(chat: String): Boolean = status in listOf("working", "needsInput") && (workingChat ?: id) == chat
+    fun isWorking(chat: String): Boolean = isWorking && (workingChat ?: id) == chat
 }
 
 object HostClient {
@@ -113,7 +117,7 @@ object HostClient {
         val updated = computer.copy(
             name = hello.text("name")?.takeIf(String::isNotBlank) ?: computer.name,
             boxKey = hello.text("boxKey") ?: computer.boxKey,
-            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.filter(::isDirectUrl) ?: computer.urls,
+            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.let(::directUrls) ?: computer.urls,
             cloud = hello.text("cloud"),
         )
         updated.validate()

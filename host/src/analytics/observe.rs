@@ -81,6 +81,18 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             }
             Event::BotCreated
         }
+        "setUsageShown" => {
+            // A successful call names one of the host's own agents.
+            p.insert("setting".into(), "usage_shown".into());
+            p.insert("agent".into(), b["id"].clone());
+            p.insert("on".into(), (b["shown"] == true).into());
+            Event::SettingChanged
+        }
+        "setUsageOrder" => {
+            p.insert("setting".into(), "usage_order".into());
+            p.insert("on".into(), true.into());
+            Event::SettingChanged
+        }
         "updateBot" => Event::BotUpdated,
         "reorderBots" => Event::BotsReordered,
         "renameSection" => {
@@ -96,6 +108,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::MessageSent
         }
         "stop" => Event::TurnStopped,
+        "unqueue" => Event::QueuedMessageRemoved,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,
         "react" => Event::ReactionAdded,
@@ -107,6 +120,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        "devServerStop" | "devServerRestart" | "devServerRemove" | "devServerLogs" => {
+            let action = method.trim_start_matches("devServer").to_ascii_lowercase();
+            p.insert("action".into(), action.into());
+            Event::DevServerAction
+        }
         "logCall" | "endCall" => {
             p.insert("seconds".into(), b["seconds"].as_u64().unwrap_or(0).into());
             Event::VoiceCallFinished
@@ -128,6 +146,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "importConnectors" => Event::ConnectorsImported,
         "importBots" => Event::BotsImported,
         "removeConnector" => Event::ConnectorRemoved,
+        "updateConnector" => Event::ConnectorUpdated,
         "connectorSignIn" => Event::ConnectorSigninStarted,
         "installSkill" => {
             p.insert("custom".into(), (!b["source"].is_string()).into());
@@ -204,8 +223,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 }
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
-/// connected yet (its sign-in is polled until the connection is active), and whether a published
-/// artifact's card went into its bot's chat. `None`: not an event.
+/// connected yet (its sign-in is polled until the connection is active), whether a published
+/// artifact's card went into its bot's chat, and whether a connector edit needed a check. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -223,6 +242,9 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ArtifactPublished => {
             p.insert("card".into(), answer["card"].is_null().into());
         }
+        Event::ConnectorUpdated => {
+            p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
+        }
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
         {
@@ -234,12 +256,23 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`; other failures report nothing.
-pub fn failed(event: Event, mut p: Map<String, Value>) -> Option<(Event, Map<String, Value>)> {
-    matches!(event, Event::NetworkJoined | Event::NetworkChanged).then(|| {
-        p.insert("stage".into(), "action".into());
-        (Event::NetworkFailed, p)
-    })
+/// `action`) as `network_failed` with `stage` `action`, and a connector edit reports its category,
+/// never the message; other failures report nothing.
+pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
+    match event {
+        Event::NetworkJoined | Event::NetworkChanged => {
+            p.insert("stage".into(), "action".into());
+            Some((Event::NetworkFailed, p))
+        }
+        Event::ConnectorUpdated => {
+            let category =
+                error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        _ => None,
+    }
 }
 
 /// The bot settings a patch changes, by name (never their values), sorted.

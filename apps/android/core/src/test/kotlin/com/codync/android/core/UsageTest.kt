@@ -4,10 +4,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class UsageTest {
+    @Test fun `the chooser list decodes and an older host sends none`() {
+        val report = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[],"services":[{"id":"cursor","name":"Cursor","shown":false}]}"""))
+        assertEquals(listOf(UsageService("cursor", "Cursor", false)), report.services)
+        assertEquals("Cursor", report.services.single().provider.name)
+        val named = UsageReport.decode(WireJson.parseToJsonElement("""{"services":[{"id":"copilot","name":"GitHub Copilot","shown":true,"registry":"github-copilot-cli"}]}"""))
+        assertEquals("github-copilot-cli", named.services.single().provider.registry)
+        assertTrue(UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[]}""")).services.isEmpty())
+    }
+    @Test fun `a move on its way holds the order and agents it does not name follow`() {
+        val report = UsageReport(services = listOf("claude", "codex", "cursor").map { UsageService(it, it, true) })
+        assertEquals(listOf("claude", "codex", "cursor"), report.servicesIn(null).map { it.id })
+        assertEquals(listOf("cursor", "claude", "codex"), report.servicesIn(listOf("cursor", "gone", "claude")).map { it.id })
+        assertTrue(UsageReport().servicesIn(listOf("claude")).isEmpty())
+    }
+    @Test fun `only an agent that is on can lack a reading`() {
+        val report = UsageReport(providers = listOf(UsageProvider("claude", "Claude")))
+        assertFalse(report.hasNoReading(UsageService("claude", "Claude", true)))
+        assertTrue(report.hasNoReading(UsageService("cursor", "Cursor", true)))
+        assertFalse(report.hasNoReading(UsageService("cursor", "Cursor", false)))
+    }
     @Test fun `unknown providers and missing windows remain distinct from zero consumption`() {
         val report = UsageReport.decode(WireJson.parseToJsonElement("""{"providers":[{"id":"future","name":"Future agent","source":"future-source","windows":[{"id":"unknown","label":"Monthly"},{"id":"zero","label":"Daily","percent":0}]}]}"""))
         val provider = report.providers.single()
-        assertEquals("future-source", provider.sourceLabel)
+        assertEquals("future-source", provider.source)
         assertNull(provider.updatedAt)
         assertNull(provider.windows.first().reportedPercent)
         assertNull(provider.windows.first().barFraction)
@@ -29,6 +49,5 @@ class UsageTest {
         val provider = UsageProvider("codex", "Codex", listOf(window, window.copy(id = "week", percent = 15.0)), "sessions", 1)
         assertEquals(1L, provider.updatedAt)
         assertEquals("session", provider.tightest?.id)
-        assertEquals("Codex sessions", provider.sourceLabel)
     }
 }

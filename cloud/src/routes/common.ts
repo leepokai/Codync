@@ -21,6 +21,7 @@ const STATUS: Record<string, number> = {
   badSignature: 401,
   forbidden: 403,
   accountDeleted: 403,
+  needsAccount: 403,
   notFound: 404,
   unknownComputer: 404,
   alreadyClaimed: 409,
@@ -31,6 +32,7 @@ const STATUS: Record<string, number> = {
   tooLarge: 413,
   rateLimited: 429,
   internal: 500,
+  notConfigured: 503,
 };
 
 export class ApiError extends Error {

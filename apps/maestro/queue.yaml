@@ -1,0 +1,90 @@
+# A message sent while the bot works waits above the composer: Send now joins the running turn, whose reply answers it,
+# and Remove takes it back. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow makes
+# its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags composer \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e STEER_AGENT="$PWD/host/tests/fixtures/steer_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - composer
+onFlowComplete:
+  - runScript:
+      file: queue.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: queue.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "Queue a message for.*"
+- inputText: "second"
+- tapOn: "Send"
+- assertVisible: "second"
+- takeScreenshot: queue-waiting
+- tapOn: "Send now"
+- assertNotVisible: "Send now"
+- assertVisible: "Got: .*"
+- runScript:
+    file: queue.js
+    env:
+      SEND: "third"
+- tapOn: "Queue a message for.*"
+- inputText: "never sent"
+- tapOn: "Send"
+- assertVisible: "never sent"
+- tapOn: "Remove"
+- assertNotVisible: "never sent"
+- assertNotVisible: "Remove"
+# A long queue scrolls: its oldest message and the box both stay on screen, and every row can be reached.
+# Swipes start on the second row under the bot's status: the iPhone reports rows scrolled out of the box at their places
+# up and down the screen, where a swipe down from the first one pulls down Notification Center.
+- runScript:
+    file: queue.js
+    env:
+      FILL: "25"
+- assertVisible: "Waiting 1"
+- assertVisible: "Queue a message for.*"
+- takeScreenshot: queue-long
+- repeat:
+    while:
+      notVisible: "Waiting 25"
+    times: 8
+    commands:
+      - swipe:
+          from:
+            text: "Waiting .*"
+            below: "Writing a reply.*"
+            index: 1
+          direction: UP
+- assertVisible: "Waiting 25"
+- repeat:
+    while:
+      notVisible: "Waiting 1"
+    times: 8
+    commands:
+      - swipe:
+          from:
+            text: "Waiting .*"
+            below: "Writing a reply.*"
+            index: 1
+          direction: DOWN
+- assertVisible: "Waiting 1"
+# One typed here scrolls into view; the ones the computer got from elsewhere didn't.
+- tapOn: "Queue a message for.*"
+- inputText: "typed here"
+- tapOn: "Send"
+- assertVisible: "typed here"

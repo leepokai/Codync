@@ -15,8 +15,10 @@ struct CodyncApp: App {
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @AppStorage(AppLanguage.storageKey, store: AppLanguage.defaults) private var appLanguageRaw = AppLanguage.system.rawValue
-    /// Cold launch with a computer to reach: the splash covers its connect and catch-up.
+    /// Cold launch with a computer to reach: the splash covers its connect and catch-up. Not over the sign-in
+    /// screen, where signed-out computers wait to move into the account.
     @State private var launching = !AppStore.shared.accounts.computers.isEmpty
+        && (AppStore.shared.accounts.accountId != nil || !AppStore.shared.account.isConfigured)
     init() {
         // A tapped widget bot arrives as an intent, not a URL.
         OpenBotIntent.open = { AppStore.shared.open($0) }
@@ -34,8 +36,7 @@ struct CodyncApp: App {
                 .environment(\.customIconAccount, CustomIconAccount(
                     signedIn: app.account.isSignedIn, loading: app.account.isBusy || !app.account.isReady,
                     error: app.account.errorMessage,
-                    signInApple: { Task { await app.account.signIn(provider: .apple) } },
-                    signInGoogle: { Task { await app.account.signIn(provider: .google) } }))
+                    signIn: { provider in Task { await app.account.signIn(provider: provider) } }))
                 // A computer needs a newer app: its App Store page has the Update button.
                 .environment(\.appUpdate, AppUpdateAction {
                     Analytics.shared.capture(.linkOpened(.appStore))
@@ -72,7 +73,6 @@ struct CodyncApp: App {
                 }
                 .onOpenURL { url in app.open(url) }
                 .onChange(of: scenePhase, initial: true) { _, phase in
-                    ReviewInvitation.shared.setActive(phase == .active)
                     switch phase {
                     case .active: Analytics.shared.becameActive()
                     case .background: BackgroundTime.run("Analytics") { await Analytics.shared.enteredBackground() }
@@ -132,6 +132,8 @@ final class AppStore {
     var showUsage = false
     /// The computer whose marketplace is open.
     var marketplace: ComputerID?
+    /// While an account is being left: its stores stay open until its computers have been told.
+    var leaving = false
 
     private init() {
         let session = AccountSession()
@@ -148,10 +150,12 @@ final class AppStore {
         }
         CrashReports.shared.start()
         contextID = storage.id
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         // Accounts Clerk hasn't restored by launch keep their computers' push on.
         SharedStore.Context.splitPushSwitch(from: .standard,
                                             into: Set([nil, storage.accountID] + session.accounts.map(\.id)).map { SharedStore.Context(accountID: $0) })
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
+        if rescan { accounts.lastError = Self.scanAgain }
     }
 
     var storage: SharedStore.Context { accounts.storage }
@@ -163,10 +167,11 @@ final class AppStore {
 
     func switchAccount(to userID: String?) {
         let storage = SharedStore.Context(accountID: userID)
-        guard storage.id != contextID else { return }
+        guard storage.id != contextID, !leaving else { return }
         accounts.retire()
         PushRegistrar.shared.deactivate()
         LiveActivities.shared.endAll()
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         SharedStore.activeAccountID = userID
         storage.bots = []
         contextID = storage.id
@@ -174,36 +179,27 @@ final class AppStore {
         showComputers = false
         marketplace = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
+        if rescan { accounts.lastError = Self.scanAgain }
         BotsWidgetFeed.reset()
         WidgetCenter.shared.reloadAllTimelines()
-    }
-
-    /// Signing out forgets this account on this iPhone: its device keys, computers and caches (spec §3.2).
-    func signOut() async {
-        guard let userID = account.userID else { return }
-        // Sent first so it still counts toward the account.
-        Analytics.shared.capture(.signedOut)
-        await account.signOut()
-        guard account.userID != userID, !account.accounts.contains(where: { $0.id == userID }) else { return }
-        // Retire its stores first: a retiring store saves its cache one last time.
-        switchAccount(to: account.userID)
-        SharedStore.Context(accountID: userID).erase()
     }
 
     /// Settings → Start over: signs out of every account and forgets every computer, key and cache
     /// on this iPhone, then shows the welcome again. The computers keep their bots and chats.
     func startOver() async {
-        let userIDs = account.accounts.map(\.id)
+        // The open account's computers and cloud drop this iPhone; every account's keys go regardless, those signed
+        // out here too (signing out keeps them).
+        await handBack(cloud: cloud)
         await account.signOutAll()
         accounts.retire()
         PushRegistrar.shared.deactivate()
         LiveActivities.shared.endAll()
-        for id in userIDs { SharedStore.Context(accountID: id).erase() }
+        SharedStore.eraseAll()
         let storage = SharedStore.Context(accountID: nil)
-        storage.erase()
         storage.bots = []
         SharedStore.activeAccountID = nil
         UserDefaults.standard.set(false, forKey: "onboardingCompleted")
+        UserDefaults.standard.set(false, forKey: "withoutAccount")
         showComputers = false
         account.showSwitcher = false
         marketplace = nil
@@ -215,9 +211,16 @@ final class AppStore {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    /// A scanned, pasted or opened pairing link; one that can't be read is recorded before it's shown.
-    func pairing(from link: String) throws -> Pairing {
-        do { return try Pairing.parse(link) } catch { throw pairingFailed(error) }
+    /// A scanned, pasted or opened pairing link, or a short code typed from the computer, which the cloud
+    /// turns into its link; one that can't be read is recorded before it's shown.
+    func pairing(from text: String) async throws -> Pairing {
+        do {
+            guard let code = Pairing.shortCode(text) else { return try Pairing.parse(text) }
+            guard let cloud else { throw AccountStore.signInForShortCode }
+            return try Pairing.parse(try await cloud.pairingLink(code: code))
+        } catch {
+            throw pairingFailed(error)
+        }
     }
 
     /// `via`: `qr` scanned or pasted here, `link` opened from the Camera app.
@@ -248,7 +251,7 @@ final class AppStore {
             // Scanned with the Camera app: pair right away.
             let accounts = accounts
             Task {
-                do { _ = try await pair(try pairing(from: url.absoluteString), via: .link) } catch { accounts.lastError = error.localizedDescription }
+                do { _ = try await pair(try await pairing(from: url.absoluteString), via: .link) } catch { accounts.lastError = error.localizedDescription }
             }
         case "bot":
             guard let ref = storage.reference(from: url), accounts.store(for: ref.computerId) != nil else { return }
@@ -293,19 +296,8 @@ final class AppStore {
             guard let store = accounts?.store(for: ref.computerId) else { return }
             LiveActivities.shared.sent(ref, bot: bot, progress: progress, store: store)
         }
-        if let cloud {
-            // Signed in: make this iPhone known to the account, then list its computers.
-            Task { [weak accounts] in
-                do {
-                    try await cloud.registerDevice(name: UIDevice.current.name, platform: "ios")
-                } catch let error as CloudError where !error.isTransient {
-                    accounts?.lastError = error.localizedDescription
-                } catch {
-                    // Transient (network, busy cloud, token not ready): the next launch registers again.
-                }
-                await accounts?.refreshCloud()
-            }
-        }
+        // Signed in: make this iPhone known to the account, then list its computers.
+        if cloud != nil { Task { [weak accounts] in await accounts?.refreshCloud() } }
         return (accounts, cloud)
     }
 

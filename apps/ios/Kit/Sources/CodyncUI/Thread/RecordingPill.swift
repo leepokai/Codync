@@ -31,7 +31,7 @@ struct RecordingPill: View {
                 Text(timerInterval: dictation.startedAt...Date.distantFuture, countsDown: false)
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(Palette.text)
-                LevelDots(level: dictation.level, speaking: false, working: false, color: Palette.text, reduceMotion: reduceMotion)
+                LevelDots(level: dictation.level, speaking: false, working: false, reduceMotion: reduceMotion)
                     .frame(width: 32, height: 12)
                     .accessibilityLabel("Listening")
             }

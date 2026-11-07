@@ -31,7 +31,7 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
   }, [store])
 
   // Also when it changes account: the devices approved through the old one lose access.
-  useEffect(() => void loadDevices(), [loadDevices, online, store.accessRequests.length, store.cloud?.owner?.userId])
+  useEffect(() => void loadDevices(), [loadDevices, online, store.accessRequests.length, store.pairingRequests.length, store.cloud?.owner?.userId])
 
   const revoke = async (device: AuthorizedDevice) => {
     try {
@@ -80,8 +80,9 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
 
 function deviceDetail(device: AuthorizedDevice, tr: (text: string) => string) {
   const paired = device.source === 'account' ? 'Approved through the account' : 'Paired with a QR code'
-  if (device.connected) return tr(`${paired} · connected`)
+  // Two phrases, not a `{paired} · connected` key: as a template it would also match the routine notice `Routine · connected`.
+  if (device.connected) return `${tr(paired)} · ${tr('connected')}`
   if (!device.lastSeenAt) return tr(paired)
   const when = relativeDay(new Date(device.lastSeenAt))
-  return tr(`${paired} · seen {when}`).replaceAll('{when}', when === 'Yesterday' ? tr('Yesterday') : when)
+  return tr('{paired} · seen {when}').replaceAll('{paired}', () => tr(paired)).replaceAll('{when}', () => when === 'Yesterday' ? tr('Yesterday') : when)
 }

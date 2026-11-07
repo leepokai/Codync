@@ -4,8 +4,8 @@ A computer's identity is its host signing key's `computerId`, not its display na
 address, Apple login or transport. Pairing and account discovery of the same host
 reuse that ID; iOS keeps one store per ID. Different computers may have the same
 name without being merged. Resetting the host's data/keys makes a new identity:
-its old offline entry may need removing. Signing in with Apple and Google shares
-this state only when both reach the same Codync account.
+its old offline entry may need removing. Signing in with Apple, Google or GitHub shares
+this state only when they reach the same Codync account.
 
 Desktop and iOS show one section per selected computer, or no computer headings when
 only one is selected. Drag a section heading to reorder it. Desktop also supports

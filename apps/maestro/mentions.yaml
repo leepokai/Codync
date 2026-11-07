@@ -1,0 +1,43 @@
+# Typing @ in a group lists its members one per row, with their descriptions, and a tap fills in the name. The phone must
+# already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it
+# apart from `welcome`, whose clearState undoes that; the flow makes its own group there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags composer \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e STEER_AGENT="$PWD/host/tests/fixtures/steer_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - composer
+onFlowComplete:
+  - runScript:
+      file: mentions.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: mentions.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.group}
+- tapOn: "Ask everyone.*"
+- inputText: "@"
+- assertVisible: ${output.alpha}
+- assertVisible:
+    text: ${output.beta}
+    below:
+      text: ${output.alpha}
+- assertVisible: "Reviews the code"
+- takeScreenshot: mention-list
+- tapOn: ${output.beta}
+- assertNotVisible: "Reviews the code"
+- assertVisible: "@${output.beta}.*"

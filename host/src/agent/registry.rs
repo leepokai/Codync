@@ -90,12 +90,21 @@ pub fn platform() -> Option<&'static str> {
     })
 }
 
+/// This machine's build in a registry `distribution`.
+fn binary(distribution: &Value) -> Option<&Value> {
+    binary_for(distribution, platform()?)
+}
+
+/// Windows on ARM falls back to the x64 build, which Windows 11 runs through Prism.
+fn binary_for<'a>(distribution: &'a Value, platform: &str) -> Option<&'a Value> {
+    let prism = (platform == "windows-aarch64").then_some("windows-x86_64");
+    std::iter::once(platform).chain(prism).map(|p| &distribution["binary"][p]).find(|target| target.is_object())
+}
+
 pub fn launch_kind(agent: &Value) -> Option<Launch> {
     let d = &agent["distribution"];
     let on_path = crate::agent::backends::on_path;
-    if let Some(p) = platform()
-        && d["binary"][p].is_object()
-    {
+    if binary(d).is_some() {
         return Some(Launch::Download);
     }
     if d["npx"].is_object() && on_path("npx") {
@@ -110,7 +119,7 @@ pub fn launch_kind(agent: &Value) -> Option<Launch> {
 /// The agent runs through `npx` here (no build of its own for this platform).
 pub fn needs_node(agent: &Value) -> bool {
     let d = &agent["distribution"];
-    d["npx"].is_object() && !platform().is_some_and(|p| d["binary"][p].is_object())
+    d["npx"].is_object() && binary(d).is_none()
 }
 
 fn args_of(v: &Value) -> String {
@@ -180,8 +189,7 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
     let d = &agent["distribution"];
     match launch_kind(agent) {
         Some(Launch::Download) => {
-            let platform = platform().ok_or_else(|| anyhow!("no download for this platform"))?;
-            let target = &d["binary"][platform];
+            let target = binary(d).ok_or_else(|| anyhow!("no download for this platform"))?;
             let cmd =
                 target["cmd"].as_str().and_then(contained).ok_or_else(|| anyhow!("registry entry has a bad cmd"))?;
             let dir = install_binary(agent, target, cmd, &progress).await?;
@@ -294,14 +302,34 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     })
 }
 
-/// Downloads + extracts a binary distribution into `~/.codync/agents/<id>/<version>`.
-async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &impl Fn(&str)) -> Result<PathBuf> {
+/// `~/.codync/agents/<id>/<version>`, where a binary distribution is unpacked.
+fn binary_dir(agent: &Value) -> Result<PathBuf> {
     let id = agent["id"].as_str().and_then(safe_component).ok_or_else(|| anyhow!("registry entry has a bad id"))?;
     let version = agent["version"].as_str().and_then(safe_component).unwrap_or("latest");
-    let dir = crate::service::data_dir().join("agents").join(id).join(version);
-    if tokio::fs::try_exists(dir.join(".installed")).await.unwrap_or(false) {
+    Ok(crate::service::data_dir().join("agents").join(id).join(version))
+}
+
+/// Starting this agent would first install its current build, and with it remove the one before.
+pub fn update_pending(agent: &Value) -> bool {
+    launch_kind(agent) == Some(Launch::Download) && binary_dir(agent).is_ok_and(|dir| !dir.join(".installed").exists())
+}
+
+/// Downloads + extracts a binary distribution into [`binary_dir`].
+async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &impl Fn(&str)) -> Result<PathBuf> {
+    // A sign-in check and a usage reading can start the same agent at once: installing side by side,
+    // each would delete the other's files.
+    // ponytail: one lock for every agent's install, as npx has. Per agent if one big download holding up another hurts.
+    static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let dir = binary_dir(agent)?;
+    let installed = async || tokio::fs::try_exists(dir.join(".installed")).await.unwrap_or(false);
+    if installed().await {
         return Ok(dir);
     }
+    let _one_at_a_time = INSTALLING.lock().await;
+    if installed().await {
+        return Ok(dir);
+    }
+    let id = agent["id"].as_str().unwrap_or("agent");
     let url = target["archive"].as_str().ok_or_else(|| anyhow!("registry entry has no archive"))?;
     if !url.starts_with("https://") {
         bail!("refusing a non-HTTPS download for {id}");
@@ -450,6 +478,15 @@ mod tests {
         assert_eq!(std::fs::metadata(&executable).unwrap().permissions().mode() & 0o111, 0o111);
         assert!(!archive.exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn windows_on_arm_falls_back_to_the_x64_binary() {
+        let x64 = json!({"binary": {"windows-x86_64": {"cmd": "./x64.exe"}}});
+        assert_eq!(binary_for(&x64, "windows-aarch64"), Some(&x64["binary"]["windows-x86_64"]));
+        assert_eq!(binary_for(&x64, "linux-aarch64"), None);
+        let both = json!({"binary": {"windows-x86_64": {"cmd": "./x64.exe"}, "windows-aarch64": {"cmd": "./arm.exe"}}});
+        assert_eq!(binary_for(&both, "windows-aarch64"), Some(&both["binary"]["windows-aarch64"]));
     }
 
     #[test]

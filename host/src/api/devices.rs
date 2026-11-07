@@ -57,12 +57,20 @@ const LOCAL_ONLY: &[&str] = &[
     "connectorTarget",
     "connectorRuntime",
     "connectorCall",
+    // It can point a connector that holds credentials at any program; no app edits connectors yet.
+    "updateConnector",
     "claimSign",
     "unclaim",
     "devices",
     "revokeDevice",
     "accessRequests",
     "decideAccessRequest",
+    // Letting a phone in that brings this computer into its account is decided at the computer.
+    "pairingRequests",
+    "decidePairing",
+    "pairingCodeOpen",
+    // Names the other phones of this computer, which a phone has no business reading.
+    "joinWouldRemove",
     "cloudStatus",
     "setCloud",
     "setCloudUrl",
@@ -232,17 +240,27 @@ impl Pairing {
         true
     }
 
-    /// Uses up `code` if it is valid (constant-time over every live code).
+    /// Whether `code` is live, without using it up.
+    pub fn valid(&mut self, code: &str) -> bool {
+        self.find(code).is_some()
+    }
+
+    /// Uses up `code` if it is valid.
     pub fn redeem(&mut self, code: &str) -> bool {
+        self.find(code).map(|i| self.codes.remove(i)).is_some()
+    }
+
+    /// Where `code` is among the live codes (constant-time over every one).
+    fn find(&mut self, code: &str) -> Option<usize> {
         self.prune(now_ms());
-        let Ok(given) = crypto::unb64_n::<16>(code) else { return false };
+        let given = crypto::unb64_n::<16>(code).ok()?;
         let mut found = None;
         for (i, c) in self.codes.iter().enumerate() {
             if crypto::ct_eq(&c.code, &given) {
                 found = Some(i);
             }
         }
-        found.map(|i| self.codes.remove(i)).is_some()
+        found
     }
 }
 
@@ -260,6 +278,8 @@ mod tests {
             assert!(permit(&both, m).is_err(), "{m} is loopback only");
         }
         assert!(permit(&both, "send").is_ok());
+        assert!(permit(&control, "joinWouldRemove").is_err(), "a phone doesn't learn the other phones' names");
+        assert!(permit(&control, "joinAccount").is_ok(), "a paired phone can ask to add the computer");
         assert!(permit(&both, "networkView").is_ok(), "phones read the network");
         assert!(permit(&both, "screenOffer").is_ok());
         assert!(permit(&both, "screenPrepare").is_ok());
@@ -287,6 +307,8 @@ mod tests {
         let offer = crypto::offer_id(&crypto::unb64_n(&first.code).unwrap());
         assert_eq!(p.offers(), [(offer, first.expires_at)]);
         assert!(!p.redeem("CAgICAgICAgICAgICAgICA"));
+        assert!(p.valid(&first.code) && p.valid(&first.code), "checking doesn't use it up");
+        assert!(!p.valid("CAgICAgICAgICAgICAgICA"));
         assert!(p.redeem(&first.code));
         assert!(!p.redeem(&first.code), "single use");
         assert!(!p.open());

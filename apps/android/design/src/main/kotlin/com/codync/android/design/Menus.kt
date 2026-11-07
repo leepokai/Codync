@@ -89,6 +89,8 @@ class MenuItem(
     /** Shows [title] as it is, never translated: a name the user gave (a section's). */
     val verbatim: Boolean = false,
     val detail: String? = null,
+    /** Picking it leaves the menu open, for choices made several at a time (iOS `.menuActionDismissBehavior(.disabled)`). */
+    val keepsOpen: Boolean = false,
     val action: () -> Unit = {},
 ) {
     /** [title] as the row shows it: through [translate], unless [verbatim]. */
@@ -248,7 +250,7 @@ private val MenuShape = RoundedRectangle(26.dp)
                 for ((index, item) in (open?.children ?: items).withIndex()) {
                     if (item.divider && index > 0) MenuDivider()
                     MenuRow(item) {
-                        if (item.children != null) submenu = item else { close(); item.action() }
+                        if (item.children != null) submenu = item else { if (!item.keepsOpen) close(); item.action() }
                     }
                 }
             }

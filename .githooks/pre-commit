@@ -59,7 +59,7 @@ host_tests() {
             host/src/chat/memory/*|host/crates/memory/*) add="memory_e2e memory_files_e2e compaction_e2e" ;;
             host/src/voice.rs|host/src/chat/calls*) add="calls_e2e" ;;
             host/src/tui/*|host/src/screen/*|host/src/update/*|host/src/usage/*|host/src/remote/*|host/src/analytics*|\
-            host/src/service/*|host/src/cloud_cli.rs|host/src/compat.rs|host/src/secret_prompt.rs|\
+            host/src/service/*|host/src/cloud_cli.rs|host/src/compat.rs|host/src/prompt.rs|\
             packaging/updates/*|docs/reference/fixtures/*) add="" ;;
             host/tests/common/*) echo all; return ;;
             host/tests/*.py|host/tests/fixtures/*)

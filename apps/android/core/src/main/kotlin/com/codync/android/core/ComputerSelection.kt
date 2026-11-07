@@ -17,7 +17,5 @@ class ComputerSelection(val all: List<String>, hidden: String) {
         return encoded(all.toSet() - visible)
     }
 
-    fun only(id: String): String = if (id !in all) "" else encoded(all.toSet() - id)
-
     private fun encoded(ids: Set<String>): String = ids.sorted().joinToString(",")
 }

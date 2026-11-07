@@ -1,15 +1,30 @@
 //! Shared by the end-to-end tests.
 
 pub mod host;
+pub mod steer;
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// The seed of the cloud key a test host trusts for device certificates.
+pub const TEST_CLOUD_SEED: [u8; 32] = [9; 32];
+
+fn test_cloud_key() -> String {
+    use base64::Engine as _;
+    let key = ed25519_dalek::SigningKey::from_bytes(&TEST_CLOUD_SEED).verifying_key();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes())
+}
+
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
 /// picked here is only free for a moment; when something else takes it before the host binds, the
 /// host exits and this starts it again on another one.
 pub async fn serve(home: &Path) -> (Child, String) {
+    serve_with(home, &[]).await
+}
+
+/// [`serve`] with `env` on top of the test host's own.
+pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
     let log = home.join("host-stderr.log");
@@ -21,6 +36,13 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
             .env("CODYNC_HOME", home)
             .env("CODYNC_CLOUD", "off")
+            // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
+            .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
+            // A test host leaves the computer's agent CLIs and the user's logins alone.
+            .env("CODYNC_AGENT_CHECKS", "off")
+            // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
+            .env("CODYNC_VAULT", "folder")
+            .envs(env.iter().copied())
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
             .spawn()
@@ -74,9 +96,29 @@ pub fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Waits until `done` holds, checking every 100 ms; fails naming `what` after `within`.
+#[allow(dead_code, reason = "only some tests wait this way")]
+pub async fn eventually(what: &str, within: Duration, mut done: impl AsyncFnMut() -> bool) {
+    let deadline = Instant::now() + within;
+    while !done().await {
+        assert!(Instant::now() < deadline, "timed out waiting until {what}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// Python as the test machine names it.
 pub fn python() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }
+}
+
+/// Whether the test machine lacks Python, which a test of a Python fixture then skips.
+#[allow(dead_code, reason = "only the tests of Python fixtures check")]
+pub fn python_missing() -> bool {
+    let missing = Command::new(python()).arg("--version").output().is_err();
+    if missing {
+        eprintln!("skipping: Python not available");
+    }
+    missing
 }
 
 /// The agent command that runs a Python fixture (quoted for `sh -c` / `cmd /c`). UTF-8 mode makes it read the host's
@@ -88,6 +130,13 @@ pub fn python_agent(script: &Path) -> String {
     } else {
         format!("{} -X utf8 -u '{}'", python(), path.replace('\'', "'\\''"))
     }
+}
+
+/// The command of a program that listens on `port` of this computer until it's stopped.
+#[allow(dead_code, reason = "only the tests of dev servers use it")]
+pub fn port_server(port: u16) -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/port_server.py");
+    format!("{} {port}", python_agent(&script))
 }
 
 /// What a client holds after the event stream's catch-up: `{"rev", "bots": [...], "entries": [...]}`,

@@ -6,13 +6,28 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.34.0
+## 2.41.0
 ### zh-Hant
-- 「權限」改成列出代理程式自己的模式，例如 Claude Code 的 Auto、Manual、Plan。新 bot 預設 Auto：安全的事代理程式直接做，其餘的才問你。
-- 自訂圖示現在只用在 bot 上，代理程式一律顯示自己的標誌。
-- 只用 Cursor CLI 登入時，也能看到 Cursor 的用量。
+- 不登入也能用了：在歡迎畫面選擇「不登入繼續」，手機掃電腦的 QR 碼就能配對，透過 Wi-Fi 或 Tailscale 連線。之後登入，配對會留在手機上；到「管理電腦」按「加入帳號」，電腦確認後就能從任何地方連線。
+- 電腦可以不加入帳號。配對時電腦會詢問；不加入的話，手機只能用 Wi-Fi 或 Tailscale 連線，之後也能在「管理電腦」加入帳號。
+- 遠端畫面會照連線設定換路：自動是先直連再走 Cloudflare，Cloudflare 優先則相反。
+- 群組裡輸入 @ 會列出成員，一排一個，和 / 指令選單一樣。
 
 ### en-US
-- Permissions now list your agent's own modes, like Claude Code's Auto, Manual and Plan. New bots start in Auto: the agent does what's safe and asks you about the rest.
-- Custom icons are now for bots only; agents always show their own logo.
-- Cursor usage now shows when you sign in with the Cursor CLI only.
+- Use Codync without an account: choose Continue without an account on the welcome screen, then scan your computer's QR code. It connects over Wi-Fi or Tailscale. Sign in later and your computers stay paired; Add to account in Manage computers brings each into your account once the computer confirms.
+- A computer can stay out of your account. It asks when you pair; without it, your phone connects only over Wi-Fi or Tailscale, and you can add it later in Manage computers.
+- Remote screen now follows the Connection setting: Auto tries direct first, then Cloudflare, and Cloudflare first does the reverse.
+- Typing @ in a group lists its members one per row, like the / command list.
+
+## 2.40.3
+### zh-Hant
+- bot 現在可以讓 dev server 持續在電腦上執行，不會因為 bot 閒置或重新啟動而中斷。port 會顯示在聊天標題下方；點 bot 的名稱，就能看記錄、重新啟動或停止；手機連得到電腦時，也能直接開啟。
+- 用量頁面可以自己選要看哪些服務並調整順序：預設只顯示 bot 正在用的，也可以打開或隱藏其他服務，或拖曳排列。另外支援顯示 Google Antigravity 和 GitHub Copilot 的額度。
+- 修正 bot 更新時，選單偶爾點了沒反應的問題。
+- 修正 iOS 27.2 之後的部分測試版上，登入後 app 當掉，之後每次開啟都立刻關閉（重新安裝也一樣）的問題。
+
+### en-US
+- Bots can now keep a dev server running on your computer, even when the bot goes idle or restarts. Its port shows under the chat title; tap the bot's name to read its logs, restart or stop it, and to open it when your phone can reach it.
+- Choose and arrange which agents show in Usage: by default it lists the ones your bots run, and you can turn others on, hide them or drag them into order. Usage now also reads Google Antigravity's and GitHub Copilot's limits.
+- Fixed menus sometimes ignoring a tap while a bot was updating.
+- Fixed a crash on some betas of iOS 27.2 and later that closed the app after sign-in and at every launch afterwards, even after reinstalling.

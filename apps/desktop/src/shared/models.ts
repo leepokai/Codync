@@ -1,5 +1,6 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
+import { normalizeDevServer, type DevServer } from './dev-servers.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -43,6 +44,8 @@ export interface Bot {
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
   resting: Resting[]
+  /** What it keeps running (`dev-servers.ts`). */
+  devServers: DevServer[]
   pinned: boolean
   /** The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it. Placed in the roster like any bot, never hidden. */
   lead: boolean
@@ -110,6 +113,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     resting: raw.resting ?? [],
+    devServers: (raw.devServers ?? []).map(normalizeDevServer),
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,
@@ -308,6 +312,8 @@ export interface EntryData {
   final?: boolean
   /** user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired */
   status?: string
+  /** user: taken back from the queue before it went out (`unqueue`); no view reads it (`withoutRemoved`). */
+  removed?: boolean
   clientNonce?: string
   title?: string
   toolKind?: string
@@ -358,6 +364,21 @@ export interface Entry {
   updatedAt: number
 }
 
+const shownOf = new WeakMap<Entry[], Entry[]>()
+
+/**
+ * `list` as the views read it, without the messages taken back (`unqueue`): the store keeps those for its rev guard
+ * against a late response. One array per list, because the chat's memos depend on its identity.
+ */
+export function withoutRemoved(list: Entry[]): Entry[] {
+  let shown = shownOf.get(list)
+  if (!shown) {
+    shown = list.filter((e) => !e.data.removed)
+    shownOf.set(list, shown)
+  }
+  return shown
+}
+
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */
 export function isChat(e: Entry): boolean {
   switch (e.kind) {
@@ -404,10 +425,23 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
+  registry?: string
+}
+
+/** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
+export interface UsageService {
+  id: string
+  name: string
+  shown: boolean
+  /** The agent's ACP registry id, which its logo goes by. */
+  registry?: string
 }
 
 export interface Usage {
   providers: UsageProvider[]
+  /** Absent from a host older than the chooser. */
+  services?: UsageService[]
 }
 
 export interface Backend {
@@ -529,6 +563,24 @@ export interface AccessRequest {
   expiresAt?: number | null
 }
 
+/** A signed-in phone that scanned a computer in no account, waiting to be let in (loopback `pairingRequests`). */
+export interface PairingRequest {
+  requestId: string
+  deviceName: string
+  platform?: string | null
+  /** The phone's account, which the computer can join. */
+  email?: string | null
+  /** The 6 digits the phone shows too. */
+  code: string
+  /** The phone is signed in and the Codync cloud is on, so the computer can join its account. */
+  canJoin?: boolean | null
+  /** The computer can stay out of an account: the phone then connects only over Wi-Fi or Tailscale. */
+  phoneOnly?: boolean | null
+  /** The phones that lose access if the computer joins. */
+  removes?: string[] | null
+  expiresAt?: number | null
+}
+
 /** A device the host authorized (loopback `devices`). */
 export interface AuthorizedDevice {
   key: string
@@ -565,6 +617,10 @@ export interface CloudStatus {
   relay?: 'codync' | 'private' | null
   /** The user's cloud assistant may message this computer's bots (`setAssistants`). */
   assistants?: boolean | null
+  /** In no account while it could join one: a signed-in phone that pairs asks to bring it into its account. Absent from older hosts. */
+  canJoinAccount?: boolean | null
+  /** Turned on, the cloud would leave it in no account on a Codync cloud; known with the cloud off too. Absent from older hosts, which just turn on. */
+  joinsAccountOnEnable?: boolean | null
 }
 
 export interface ClaimSignature {

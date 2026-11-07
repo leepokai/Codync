@@ -5,17 +5,12 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use super::{
-    After, App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, Overlay, PairCode, SHAPES, Toggle, cycle,
+    After, App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle, cycle,
     merge_toggles,
 };
 use crate::tui::manage::Page;
 
 impl App {
-    pub(super) fn open_pair(&mut self) {
-        self.overlays.push(Overlay::Pair(PairCode::Loading));
-        self.call("pairing", json!({}), After::Pairing);
-    }
-
     pub(in crate::tui) fn edit_bot(&mut self) {
         if let Some(id) = self.selected.clone() {
             self.edit_bot_of(&id);

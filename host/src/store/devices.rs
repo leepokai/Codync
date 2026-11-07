@@ -25,6 +25,17 @@ pub enum Scope {
     Screen,
 }
 
+/// How a device stands with accounts (columns `account`, `no_account`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeviceAccount {
+    /// Paired before devices recorded their account (2.36.0): it stays when this computer joins its first account.
+    Unrecorded,
+    /// Paired signed out (docs/plans/optional-sign-in.md): it goes when this computer joins an account.
+    SignedOut,
+    /// Let in for this account (a Clerk user ID).
+    Of(String),
+}
+
 /// One row of the authorized-device table (spec §4.3).
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +50,8 @@ pub struct Device {
     pub lease_until: Option<i64>,
     pub created_at: i64,
     pub last_seen_at: Option<i64>,
+    #[serde(skip)]
+    pub account: DeviceAccount,
 }
 
 /// A push ticket with the device's push key (§6.7) and account context.
@@ -48,7 +61,16 @@ pub struct PushTicket {
     pub ctx: Option<String>,
 }
 
-const DEVICE_COLS: &str = "key, name, platform, source, grant_id, scopes, lease_until, created_at, last_seen_at";
+const DEVICE_COLS: &str =
+    "key, name, platform, source, grant_id, scopes, lease_until, created_at, last_seen_at, account, no_account";
+
+/// A device with its push and Live Activity tickets; the number of device rows removed.
+fn delete_device(tx: &rusqlite::Transaction, key: &str) -> rusqlite::Result<usize> {
+    let n = tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;
+    tx.execute("DELETE FROM push_tickets WHERE device_key = ?1", [key])?;
+    tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
+    Ok(n)
+}
 
 fn row_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
     let source: String = r.get(3)?;
@@ -65,6 +87,11 @@ fn row_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
         lease_until: r.get(6)?,
         created_at: r.get(7)?,
         last_seen_at: r.get(8)?,
+        account: match (r.get(9)?, r.get(10)?) {
+            (Some(account), _) => DeviceAccount::Of(account),
+            (None, true) => DeviceAccount::SignedOut,
+            (None, false) => DeviceAccount::Unrecorded,
+        },
     })
 }
 
@@ -83,12 +110,17 @@ impl Store {
 
     /// Adds (or, for a key paired again, refreshes) an authorized device.
     pub fn put_device(&self, d: &Device) -> Result<()> {
+        let (account, no_account) = match &d.account {
+            DeviceAccount::Unrecorded => (None, false),
+            DeviceAccount::SignedOut => (None, true),
+            DeviceAccount::Of(account) => (Some(account.as_str()), false),
+        };
         let c = self.db.locked();
         c.execute(
-            "INSERT INTO devices(key, name, platform, source, grant_id, scopes, lease_until, created_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO devices(key, name, platform, source, grant_id, scopes, lease_until, created_at, account, no_account)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(key) DO UPDATE SET name = ?2, platform = ?3, source = ?4, grant_id = ?5,
-               scopes = ?6, lease_until = ?7",
+               scopes = ?6, lease_until = ?7, account = ?9, no_account = ?10",
             params![
                 d.key,
                 d.name,
@@ -97,7 +129,9 @@ impl Store {
                 d.grant_id,
                 serde_json::to_string(&d.scopes)?,
                 d.lease_until,
-                d.created_at
+                d.created_at,
+                account,
+                no_account
             ],
         )?;
         Ok(())
@@ -107,11 +141,49 @@ impl Store {
     pub fn remove_device(&self, key: &str) -> Result<bool> {
         let mut c = self.db.locked();
         let tx = c.transaction()?;
-        let n = tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;
-        tx.execute("DELETE FROM push_tickets WHERE device_key = ?1", [key])?;
-        tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
+        let n = delete_device(&tx, key)?;
         tx.commit()?;
         Ok(n > 0)
+    }
+
+    /// The computer changed the account it belongs to: every device let in for another account goes, with its
+    /// tickets. `None`: it left its account, and all go. Devices paired before devices recorded their account
+    /// stay only with `keep_unrecorded` (a computer joining its first account keeps the phones it had).
+    /// Returns the removed keys.
+    pub fn keep_devices_of(&self, account: Option<&str>, keep_unrecorded: bool) -> Result<Vec<String>> {
+        self.remove_devices_where(
+            "(account IS NULL AND NOT ?2) OR (account IS NOT NULL AND account IS NOT ?1)",
+            params![account, keep_unrecorded],
+        )
+    }
+
+    /// This computer joined an account: the phones that paired with no account go, with their tickets. Returns the
+    /// removed keys.
+    pub fn drop_no_account_devices(&self) -> Result<Vec<String>> {
+        self.remove_devices_where("no_account", [])
+    }
+
+    /// Removes the devices matching `condition`, with their tickets, as one change. Returns the removed keys.
+    fn remove_devices_where(&self, condition: &str, params: impl rusqlite::Params) -> Result<Vec<String>> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let gone: Vec<String> = {
+            let mut st = tx.prepare(&format!("SELECT key FROM devices WHERE {condition}"))?;
+            st.query_map(params, |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+        };
+        for key in &gone {
+            delete_device(&tx, key)?;
+        }
+        tx.commit()?;
+        Ok(gone)
+    }
+
+    /// A phone that paired with no account now brings this computer into `account`, so it stays when the computer joins.
+    pub fn set_device_account(&self, key: &str, account: &str) -> Result<()> {
+        self.db
+            .locked()
+            .execute("UPDATE devices SET account = ?2, no_account = 0 WHERE key = ?1", params![key, account])?;
+        Ok(())
     }
 
     /// Extends an account device's lease (the cloud still lists its grant).
@@ -148,10 +220,18 @@ impl Store {
         Ok(())
     }
 
-    /// Stops alerts to a device (its notification switch is off); Live Activity tickets stay.
+    /// Stops alerts to a device (its notification switch is off, or it signed out); Live Activity tickets stay.
     pub fn remove_push_tickets(&self, device_key: &str) -> Result<()> {
         let c = self.db.locked();
         c.execute("DELETE FROM push_tickets WHERE device_key = ?1", [device_key])?;
+        Ok(())
+    }
+
+    /// As `remove_push_tickets`, for the tickets a device registered up to `until` (ms): a newer one came after it
+    /// signed back in.
+    pub fn remove_push_tickets_until(&self, device_key: &str, until: i64) -> Result<()> {
+        let c = self.db.locked();
+        c.execute("DELETE FROM push_tickets WHERE device_key = ?1 AND created_at <= ?2", params![device_key, until])?;
         Ok(())
     }
 
@@ -234,6 +314,7 @@ mod tests {
             lease_until: None,
             created_at: 1,
             last_seen_at: None,
+            account: DeviceAccount::Unrecorded,
         };
         s.put_device(&d).unwrap();
         s.put_device(&Device { key: "dk2".into(), ..d.clone() }).unwrap();

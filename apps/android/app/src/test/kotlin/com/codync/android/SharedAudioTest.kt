@@ -2,6 +2,7 @@ package com.codync.android
 
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -74,6 +75,20 @@ class SharedAudioTest {
         fetch.complete(File("note.m4a"))
         retry.join()
         assertEquals(listOf("open", "start"), speaker.log)
+        assertEquals(AudioPhase.Playing, audio.phase)
+    }
+
+    @Test fun `a tap whose scope goes while the sound loads leaves the next tap free to play`() = runBlocking {
+        val tap = launch { audio.toggle() }
+        yield()
+        tap.cancelAndJoin()
+        assertEquals(AudioPhase.Idle, audio.phase)
+
+        val retry = launch { audio.toggle() }
+        yield()
+        assertEquals(2, loads)
+        fetch.complete(File("note.m4a"))
+        retry.join()
         assertEquals(AudioPhase.Playing, audio.phase)
     }
 

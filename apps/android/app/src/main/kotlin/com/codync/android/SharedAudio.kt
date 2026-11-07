@@ -79,7 +79,11 @@ internal class SharedAudio(
                     .also { sound = it; duration = it.duration }
             }
             if (ready.start()) { elapsed = ready.position; phase = AudioPhase.Playing } else { drop(); phase = AudioPhase.Failed }
-        } catch (cancelled: CancellationException) { throw cancelled }
+        } catch (cancelled: CancellationException) {
+            // The tap's scope went (a dismissed preview) while this card's player lives on: the next tap starts over.
+            if (phase == AudioPhase.Loading) phase = if (sound != null) AudioPhase.Paused else AudioPhase.Idle
+            throw cancelled
+        }
         catch (_: Exception) { drop(); phase = AudioPhase.Failed }
     }
 

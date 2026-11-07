@@ -143,7 +143,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 bail!("threads are gone: replies are in the chat");
             }
             let entries = hub.store.thread(bot, root, 500)?;
-            hub.store.mark_thread_read(root)?;
+            hub.mark_thread_read(bot, root)?;
             json!({"entries": entries, "unread": 0})
         }
         // Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet.

@@ -415,6 +415,14 @@ impl Hub {
 
     /// Marks what the user has seen as read. Nothing unread there is a no-op, so clients
     /// may call it whenever a chat is on screen.
+    /// Reading a thread clears its dot.
+    pub fn mark_thread_read(&self, bot: &str, thread: &str) -> Result<()> {
+        let _g = self.emit_lock.locked();
+        self.store.mark_thread_read(thread)?;
+        self.thread_unread(Some(thread), bot);
+        Ok(())
+    }
+
     pub fn mark_read(&self, id: &str) -> Result<()> {
         let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
         if self.store.unread(id, row.read_rev) == 0 {
@@ -512,11 +520,10 @@ impl Hub {
     }
 
     /// Tells clients how many replies of the entry's thread are unread (a dot on the root line).
-    fn thread_unread(&self, lane: &Lane) {
-        if let Some(thread) = &lane.thread {
+    fn thread_unread(&self, thread: Option<&str>, bot: &str) {
+        if let Some(thread) = thread {
             let unread = self.store.thread_unread(thread);
-            let _ =
-                self.events.send(json!({"type": "thread", "threadId": thread, "botId": lane.chat, "unread": unread}));
+            let _ = self.events.send(json!({"type": "thread", "threadId": thread, "botId": bot, "unread": unread}));
         }
     }
 
@@ -525,7 +532,7 @@ impl Hub {
         match self.store.insert_entry(lane, kind, turn, data) {
             Ok(e) => {
                 let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
-                self.thread_unread(lane);
+                self.thread_unread(lane.thread.as_deref(), &lane.chat);
                 Some(e)
             }
             Err(error) => {
@@ -552,7 +559,7 @@ impl Hub {
         let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
         if added {
             let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
-            self.thread_unread(lane);
+            self.thread_unread(lane.thread.as_deref(), &lane.chat);
         }
         Ok((entry, added))
     }
@@ -564,6 +571,7 @@ impl Hub {
             Ok(e) => {
                 if let Some(e) = &e {
                     let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+                    self.thread_unread(e.thread_id.as_deref(), &e.bot_id);
                 }
                 e
             }
@@ -585,6 +593,7 @@ impl Hub {
         }
         let e = self.store.update_entry(id, &e.data)?.ok_or_else(|| anyhow!("unknown message"))?;
         let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+        self.thread_unread(e.thread_id.as_deref(), &e.bot_id);
         Ok(e)
     }
 

@@ -27,6 +27,7 @@ mod screen;
 mod send_cli;
 mod service;
 mod shell;
+mod shutdown;
 mod store;
 mod tui;
 mod update;
@@ -537,7 +538,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     tokio::pin!(server);
     tokio::select! {
         result = &mut server => result?,
-        () = shutdown_signal() => {},
+        () = shutdown::signal() => {},
     }
     hub.shutdown().await;
     background::stop_agent_checks(agent_checks).await;
@@ -546,34 +547,6 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     tracing::info!("codync-host stopped");
     // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.
     std::process::exit(0)
-}
-
-/// Resolves on Ctrl-C or SIGTERM.
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        if let Err(error) = tokio::signal::ctrl_c().await {
-            tracing::warn!(%error, "can't listen for Ctrl-C");
-            std::future::pending::<()>().await;
-        }
-    };
-    #[cfg(unix)]
-    let term = async {
-        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-            Ok(mut s) => {
-                s.recv().await;
-            }
-            Err(error) => {
-                tracing::warn!(%error, "can't listen for SIGTERM");
-                std::future::pending::<()>().await;
-            }
-        }
-    };
-    #[cfg(not(unix))]
-    let term = std::future::pending::<()>();
-    tokio::select! {
-        () = ctrl_c => {}
-        () = term => {}
-    }
 }
 
 /// Reads the identity and token only; never creates them (that's `serve`'s job).

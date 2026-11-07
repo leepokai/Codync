@@ -120,6 +120,40 @@ async fn readiness_needs_this_homes_token() {
     std::fs::remove_dir_all(home).unwrap();
 }
 
+/// The session folders oh-my-pi keeps in `agent_dir` whose names hold `home`'s own folder name: none while
+/// it has no `sessions` folder yet. Any other read error fails the test, so an unreadable folder never passes.
+fn omp_sessions(agent_dir: &std::path::Path, home: &std::path::Path) -> Vec<String> {
+    let name = home.file_name().unwrap().to_string_lossy().into_owned();
+    let dir = agent_dir.join("sessions");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => panic!("reading {}: {e}", dir.display()),
+    };
+    entries
+        .map(|entry| entry.unwrap_or_else(|e| panic!("reading {}: {e}", dir.display())).file_name())
+        .map(|folder| folder.to_string_lossy().into_owned())
+        .filter(|folder| folder.contains(&name))
+        .collect()
+}
+
+#[tokio::test]
+async fn agent_probes_leave_no_session_in_the_users_omp() {
+    let host = start_host().await;
+    let hello = host.call("hello", json!({})).await;
+    let omp = hello["backends"].as_array().unwrap().iter().find(|b| b["id"] == "omp").unwrap();
+    if omp["installed"] != true {
+        eprintln!("skipping: oh-my-pi not installed");
+        return;
+    }
+    // The probe is started here: which agent the host starts on its own depends on what else is installed.
+    host.call("agentModels", json!({"backend": "omp"})).await;
+    let users = std::env::var_os("PI_CODING_AGENT_DIR")
+        .map_or_else(|| dirs::home_dir().unwrap().join(".omp/agent"), PathBuf::from);
+    assert_eq!(omp_sessions(&users, &host.home), Vec::<String>::new(), "a probe session in the user's oh-my-pi");
+    assert_ne!(omp_sessions(&common::agent_dir(&host.home), &host.home), Vec::<String>::new(), "no probe session");
+}
+
 // SIGTERM is Unix only; Windows stops the host by ending its process.
 #[cfg(unix)]
 #[tokio::test]
@@ -139,6 +173,16 @@ async fn termination_exits_with_an_open_event_stream() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     drop(stream);
+}
+
+/// What a test run that is killed does to its hosts: the system closes their stdin, and they shut down as on SIGTERM.
+#[tokio::test]
+async fn a_test_host_stops_when_its_run_goes_away() {
+    let mut host = start_host().await;
+    drop(host.child.stdin.take());
+    common::eventually("the host stopped", Duration::from_secs(10), async || host.child.try_wait().unwrap().is_some())
+        .await;
+    assert!(host.child.wait().unwrap().success(), "the host shut down cleanly");
 }
 
 #[tokio::test]

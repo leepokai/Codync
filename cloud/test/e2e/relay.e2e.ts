@@ -51,8 +51,9 @@ async function freePort(): Promise<number> {
   });
 }
 
-function run(cmd: string, args: string[], env: Record<string, string> = {}): ChildProcess {
-  const child = spawn(cmd, args, { cwd: CLOUD_DIR, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+/// `stdin: "pipe"` for the host: with `CODYNC_EXIT_WITH_STDIN` it stops when the pipe closes, so a killed run takes it along.
+function run(cmd: string, args: string[], env: Record<string, string> = {}, stdin: "ignore" | "pipe" = "ignore"): ChildProcess {
+  const child = spawn(cmd, args, { cwd: CLOUD_DIR, env: { ...process.env, ...env }, stdio: [stdin, "pipe", "pipe"] });
   const tag = cmd.split("/").pop();
   child.stdout?.on("data", (d) => process.env.E2E_VERBOSE && process.stdout.write(`[${tag}] ${d}`));
   child.stderr?.on("data", (d) => process.env.E2E_VERBOSE && process.stderr.write(`[${tag}] ${d}`));
@@ -127,10 +128,13 @@ async function startHost() {
   // 0.0.0.0 so step 7 can prove a non-loopback bearer token is refused.
   host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], {
     CODYNC_HOME: home,
+    // oh-my-pi keeps its probe sessions here, removed with `tmp`, not in the user's ~/.omp.
+    PI_CODING_AGENT_DIR: join(tmp, "pi-agent"),
     CODYNC_CLOUD_URL: CLOUD,
     CODYNC_DEVICE_CERT_KEY: certPub,
     CODYNC_AGENT_CHECKS: "off",
-  });
+    CODYNC_EXIT_WITH_STDIN: "1",
+  }, "pipe");
   await waitFor("host /health", () => fetch(`http://127.0.0.1:${hostPort}/health`).then((r) => r.ok || undefined).catch(() => undefined), 30_000);
 }
 
@@ -378,6 +382,11 @@ async function main() {
 async function cleanup() {
   await Promise.all(children.map(stop));
   rmSync(tmp, { recursive: true, force: true });
+}
+
+// A run stopped by Ctrl-C or SIGTERM still stops wrangler and the host and deletes its data.
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => void cleanup().finally(() => process.exit(1)));
 }
 
 try {

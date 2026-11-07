@@ -11,7 +11,7 @@ mod timeout;
 
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::Duration;
 
 struct Host {
@@ -429,10 +429,8 @@ async fn recurring_work_continues_after_a_failed_run() {
 #[tokio::test]
 async fn only_one_host_can_own_a_data_directory_even_on_another_port() {
     let host = Host::start().await;
-    let mut other = Command::new(env!("CARGO_BIN_EXE_codync-host"))
-        .args(["serve", "--bind", "127.0.0.1", "--port", "0"])
-        .env("CODYNC_CLOUD", "off")
-        .env("CODYNC_HOME", &host.home)
+    let mut other = common::host_command(&host.home)
+        .args(["--bind", "127.0.0.1", "--port", "0"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

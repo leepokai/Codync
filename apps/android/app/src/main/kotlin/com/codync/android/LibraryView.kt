@@ -68,7 +68,7 @@ import com.kyant.shapes.RoundedRectangle
     // The artifact as composed: Save closes the dialog (clearing `renaming`) before it renames.
     val target = renaming
     RenameArtifactDialog(target?.title, { renaming = null }) { title -> target?.let { store.renameArtifact(bot.id, it.id, title) } }
-    AttachmentImageSheet(image, bot.id, state, store) { image = null }
+    AttachmentImageSheet(image, bot.id, null, state, store) { image = null }
 }
 
 /** One row of the Library: what it is on the left, its name and detail. */

@@ -125,8 +125,16 @@ import java.util.Date
         listOf(RoutineEventSource(schedule.eventSource, schedule.eventSource, listOf(RoutineEvent(schedule.eventName, schedule.eventName)), emptyList())) + sources
     else sources
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        // A Slack or Telegram trigger depends on that app's connection: it is edited on the computer.
+        val locked = source?.id in listOf("slack", "telegram")
         if (source == null) Text("Loading the services…", style = Type.caption, color = Palette.tertiary)
-        else {
+        else if (locked) {
+            Text("${source.label} · ${source.events.firstOrNull { it.id == schedule.eventName }?.label ?: schedule.eventName}",
+                style = Type.caption, color = Palette.secondary)
+            if (schedule.eventFilters.isNotEmpty()) Text(schedule.eventFilters.entries.joinToString(" · ") { "${it.key} ${it.value}" },
+                style = Type.caption, color = Palette.secondary)
+            Text("Edit this trigger on the computer. Here it stays as it is when you save.", style = Type.caption, color = Palette.secondary)
+        } else {
             Field("Service") {
                 ChoicePicker(source.id, offers.map { it.id to it.label }, { id ->
                     // A new service starts from its first event and has no filters of the old one.

@@ -179,6 +179,7 @@ pub enum Field {
     SelfFallbacks,
     Folder,
     Approvals,
+    Compaction,
     Notify,
     Computer,
     Team,
@@ -190,7 +191,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 19] = [
+pub const FIELDS: [Field; 20] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -201,6 +202,7 @@ pub const FIELDS: [Field; 19] = [
     Field::SelfFallbacks,
     Field::Folder,
     Field::Approvals,
+    Field::Compaction,
     Field::Notify,
     Field::Computer,
     Field::Team,
@@ -242,6 +244,9 @@ pub struct Form {
     /// `None`: the host has no per-bot network switches.
     pub offered_to_network: Option<bool>,
     pub reachable_by_assistants: Option<bool>,
+    /// `None`: Codync doesn't summarize this agent's chats.
+    pub compaction: Option<codync_mem::compaction::Threshold>,
+    pub compaction_sizes: Vec<u64>,
     pub color: usize,
     pub shape: usize,
     pub connectors: Vec<Toggle>,

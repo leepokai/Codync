@@ -1,5 +1,6 @@
 //! The bot settings form.
 
+use codync_mem::compaction::Threshold;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -51,6 +52,8 @@ impl App {
             manage_team: b.manage_team,
             offered_to_network: b.offered_to_network,
             reachable_by_assistants: b.reachable_by_assistants,
+            compaction: b.compaction,
+            compaction_sizes: b.compaction_sizes.clone(),
             color: COLORS.iter().position(|c| *c == b.color).unwrap_or(7),
             shape: SHAPES.iter().position(|s| *s == b.shape).unwrap_or(0),
             connectors: b.connectors.iter().map(|id| Toggle { id: id.clone(), name: id.clone(), on: true }).collect(),
@@ -146,6 +149,7 @@ impl App {
                         | Field::Fast
                         | Field::SelfFallbacks
                         | Field::Approvals
+                        | Field::Compaction
                         | Field::Notify
                         | Field::Computer
                         | Field::Team
@@ -179,6 +183,7 @@ impl App {
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::Approvals => self.cycle_approval(&mut f, d),
+                    Field::Compaction => f.cycle_compaction(d),
                     Field::Notify => f.notify = !f.notify,
                     Field::Computer => f.computer = !f.computer,
                     Field::Team => f.manage_team = f.manage_team.map(|on| !on),
@@ -283,11 +288,27 @@ impl Form {
             "manageTeam": self.manage_team.unwrap_or_default(),
             "offeredToNetwork": self.offered_to_network.unwrap_or(true),
             "reachableByAssistants": self.reachable_by_assistants.unwrap_or(true),
+            "compaction": self.compaction,
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],
             "connectors": self.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
             "skills": self.skills.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
         })
+    }
+
+    /// When Codync summarizes the chat, in the order ← → steps through: the three choices, then each size.
+    pub fn compaction_choices(&self) -> Vec<Threshold> {
+        [Threshold::Early, Threshold::NearLimit, Threshold::Off]
+            .into_iter()
+            .chain(self.compaction_sizes.iter().map(|&n| Threshold::Tokens(n)))
+            .collect()
+    }
+
+    fn cycle_compaction(&mut self, d: isize) {
+        let Some(now) = self.compaction else { return };
+        let choices = self.compaction_choices();
+        let i = choices.iter().position(|c| *c == now).unwrap_or(0);
+        self.compaction = Some(choices[cycle(i, d, choices.len())]);
     }
 
     /// Whether anything changed since the form opened.
@@ -358,6 +379,33 @@ mod tests {
         assert_eq!(f.changes(), json!({}));
         f.notify = false;
         assert_eq!(f.changes(), json!({"notify": false}), "a model changed elsewhere meanwhile stays");
+    }
+
+    #[tokio::test]
+    async fn the_compaction_threshold_steps_through_choices_then_sizes() {
+        let mut app = test_app();
+        let bot = json!({"id": "b", "name": "B", "backend": "claude", "compaction": "off",
+            "compactionTokens": {"min": 50_000, "max": 70_000, "step": 10_000}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        let right = KeyEvent::from(KeyCode::Right);
+        let Some(Overlay::Form(f)) = app.form_key(f, right) else { panic!("the editor stays") };
+        assert_eq!(f.changes(), json!({"compaction": 50_000}));
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Left)) else { panic!("stays") };
+        assert_eq!(f.changes(), json!({}));
+        assert_eq!(f.compaction_choices().len(), 6, "early, near the limit, only when full, 50K, 60K, 70K");
+
+        let other = json!({"id": "g", "name": "G", "backend": "gemini", "compaction": null});
+        app.bots.insert("g".into(), Bot::parse(&other).expect("a bot"));
+        app.selected = Some("g".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        let Some(Overlay::Form(f)) = app.form_key(f, right) else { panic!("the editor stays") };
+        assert_eq!(f.changes(), json!({}), "nothing to choose where Codync doesn't summarize");
     }
 
     #[tokio::test]

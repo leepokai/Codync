@@ -167,6 +167,13 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   It runs as a hidden turn: dreaming first, then the opening rendered again (a Claude session reloads only when
   it changed), then `/compact <keep-list>` for Claude, or `/compact` for Codex, whose keep-list is its
   `CODEX_CONFIG` `compact_prompt`. Other harnesses compact on their own. The keep-list is also in the opening.
+- **The user's threshold** (*Summarize long chats* in a Claude Code or Codex bot's settings, the bot's
+  `compaction`): Early (the default above), Near the limit, Only when full (no compaction or rollover from the
+  host), or a size in 10k steps from 50k up to the window less 40k. A size or Near the limit also keeps idle
+  compaction and the cold rollover away until the context reaches it. The bot's JSON carries `compaction`
+  (`null` for other agents, or a custom command until it turns out to run Claude's or Codex's adapter) and
+  `compactionTokens` (`{min, max, step}`, `null` until the agent has reported the window, kept in
+  `context.window.<bot>`). The rules and the table are in the [design](../design/bot-memory.md#compaction).
 - **Loop guard:** after three host compactions in a day, or one that left 60% of the trigger in use, or one
   fewer than five turns ago, the host rolls over instead of compacting again.
 - **Rollover:** also due when a conversation over 100k went cold (its cache expired) or after eight hours away

@@ -215,6 +215,11 @@ struct BotSettingsForm: View {
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
                 }
                 ApprovalPicker(draft: $draft, reload: modelReload)
+                // Only where the host summarizes this bot's chat (its bot says).
+                if bot?.compaction != nil, draft.compaction != nil {
+                    CompactionPicker(selection: Binding(get: { draft.compaction ?? .early }, set: { draft.compaction = $0 }),
+                                     range: bot?.compactionTokens)
+                }
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 

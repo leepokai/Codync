@@ -1,0 +1,62 @@
+# A bot's Summarize long chats setting on the phones: once its agent has replied and told its window, the menu has the
+# three choices and Set a size, whose sizes go up to what the window holds; a size picked shows on the pill and the host
+# keeps it, and so does a choice. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
+# makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags bot-settings \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/instructions_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - bot-settings
+onFlowComplete:
+  - runScript:
+      file: compaction.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: compaction.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+# The agent's reply: by then the host knows the window.
+- extendedWaitUntil:
+    visible: "ok"
+    timeout: 20000
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+# Centered, so the pill under the label is on screen too (on Android the label alone can stop at the bottom edge).
+- scrollUntilVisible:
+    element: "Summarize long chats"
+    centerElement: true
+- tapOn: "Early \\(default\\)"
+- assertVisible: "Near the limit"
+- assertVisible: "Only when full"
+- tapOn: "Set a size"
+- assertVisible: "50K"
+- tapOn: "120K"
+- assertVisible: "120K"
+- takeScreenshot: compaction-size
+- runScript:
+    file: compaction.js
+    env:
+      STORED: "120000"
+- tapOn: "120K"
+- tapOn: "Only when full"
+- assertVisible: "Only when full"
+- runScript:
+    file: compaction.js
+    env:
+      STORED: "off"

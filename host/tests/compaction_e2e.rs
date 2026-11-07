@@ -48,6 +48,38 @@ async fn a_full_conversation_is_compacted_with_its_keep_list() {
 }
 
 #[tokio::test]
+async fn the_users_threshold_decides_when_the_host_compacts() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Roomy", "instructions_agent.py", "claude").await;
+    let shown = common::bot(&host.snapshot().await, &bot).clone();
+    assert!(shown["compaction"].is_null(), "a custom command shows it once it runs Claude");
+    host.reply(&bot, "USAGE 10000 SIZE 1000000").await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let shown = loop {
+        let shown = common::bot(&host.snapshot().await, &bot).clone();
+        if !shown["compactionTokens"].is_null() || Instant::now() > deadline {
+            break shown;
+        }
+    };
+    assert_eq!(shown["compaction"], "early");
+    assert_eq!(shown["compactionTokens"], json!({"min": 50_000, "max": 960_000, "step": 10_000}));
+
+    host.call("updateBot", json!({"id": bot, "compaction": 300_000})).await;
+    host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
+    host.reply(&bot, "still short of it").await;
+    assert!(!host.prompts(&bot).iter().any(|p| p.starts_with("/compact")), "200k is short of the user's 300k");
+    host.reply(&bot, "USAGE 300000 SIZE 1000000").await;
+    notice(&host, &bot, "compaction").await;
+
+    let off = host.fixture_bot("Off", "instructions_agent.py", "codex").await;
+    host.call("updateBot", json!({"id": off, "compaction": "off"})).await;
+    host.reply(&off, "USAGE 950000 SIZE 1000000").await;
+    host.reply(&off, "next").await;
+    assert!(!host.prompts(&off).iter().any(|p| p == "/compact"), "left to the agent's own compaction");
+    assert!(host.refused("updateBot", json!({"id": off, "compaction": 123_456})).await.contains("multiple of"));
+}
+
+#[tokio::test]
 async fn compacting_too_often_turns_into_a_rollover_the_user_can_edit_or_turn_down() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Busy", "instructions_agent.py", "codex").await;

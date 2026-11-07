@@ -27,7 +27,7 @@ pub use lifecycle::{
 };
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
-pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, message_steered, turn_finished};
+pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, context_compacted, message_steered, turn_finished};
 
 const KV_ENABLED: &str = "analytics_enabled";
 /// The account the install id was merged into. An id merges into one account and a second is
@@ -75,6 +75,8 @@ pub enum Event {
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
+    ContextCompacted,
     UsageReadFailed,
     SessionReset,
     PermissionAnswered,
@@ -165,6 +167,7 @@ impl Event {
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",
             Self::PermissionAnswered => "permission_answered",

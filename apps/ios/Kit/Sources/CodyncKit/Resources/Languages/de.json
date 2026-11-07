@@ -1882,5 +1882,14 @@
   "Sign in there with {email} and add it to your account, and it shows up here.": "Melde dich dort mit {email} an und füge ihn deinem Konto hinzu, dann erscheint er hier.",
   "Scan with the Codync app or the iPhone Camera.": "Scanne mit der Codync-App oder der iPhone-Kamera.",
   "Phones paired without this account lose access and must pair again.": "Nicht mit diesem Konto gekoppelte Telefone verlieren den Zugriff und müssen neu gekoppelt werden.",
-  "This message's files aren't on this device anymore. Delete it and attach them again.": "Die Dateien dieser Nachricht sind nicht mehr auf diesem Gerät. Lösche sie und hänge die Dateien erneut an."
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "Die Dateien dieser Nachricht sind nicht mehr auf diesem Gerät. Lösche sie und hänge die Dateien erneut an.",
+  "Summarize long chats": "Lange Chats zusammenfassen",
+  "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.": "Wann Codync diesen Chat zusammenfasst, damit er weitergehen kann. Füllt sich der Chat vorher, fasst der Agent ihn selbst zusammen.",
+  "Early (default)": "Früh (Standard)",
+  "Near the limit": "Kurz vor dem Limit",
+  "Set a size": "Größe festlegen",
+  "Sizes show after the bot's next reply": "Größen erscheinen nach der nächsten Antwort des Bots",
+  "Only when full": "Nur wenn voll",
+  "Summarize": "Verdichten",
+  "Claude Code and Codex bots only": "Nur für Claude-Code- und Codex-Bots"
 }

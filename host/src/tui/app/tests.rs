@@ -164,3 +164,21 @@ async fn lead_role_opens_from_the_keyboard_and_badge_without_changing_selection(
     app.on_key(KeyEvent::from(KeyCode::Enter));
     assert!(app.overlays.is_empty());
 }
+
+#[tokio::test]
+async fn the_settings_form_scrolls_to_keep_the_focused_field_in_sight() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = test_app();
+    app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "name": "B", "backend": "claude"})).expect("valid bot"));
+    app.selected = Some("b".into());
+    app.edit_bot();
+    let mut drawn = |field: usize| {
+        let Some(Overlay::Form(f)) = app.overlays.last_mut() else { panic!("the editor opens") };
+        f.field = field;
+        let mut terminal = Terminal::new(TestBackend::new(100, 44)).expect("terminal");
+        terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw the form");
+        terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+    };
+    assert!(!drawn(0).contains("Skills"), "more fields than the form has rows");
+    assert!(drawn(FIELDS.len() - 1).contains("Skills"), "scrolled to the focused one");
+}

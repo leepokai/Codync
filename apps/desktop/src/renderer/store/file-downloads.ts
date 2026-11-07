@@ -26,6 +26,12 @@ export class FileDownloads {
 
   retire() { this.retired = true; for (const id of this.jobs.keys()) this.cancel(id) }
 
+  /** The download button: cancels the file's download under way, else starts one. */
+  toggle(client: HostClient | null, entryId: string, file: SharedFile) {
+    if (this.jobs.has(file.id)) this.cancel(file.id)
+    else void this.save(client, entryId, file)
+  }
+
   async save(client: HostClient | null, entryId: string, file: SharedFile) {
     if (this.retired || this.jobs.has(file.id)) return
     const job: Job = { cancelled: false, handle: null }

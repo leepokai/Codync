@@ -186,6 +186,7 @@ impl Store {
         super::runtime::create_tables(&c)?;
         super::documents::open(&c)?;
         super::mcp_policies::open(&c)?;
+        super::discord::open(&c)?;
         super::slack::open(&c)?;
         super::research::open(&c)?;
         super::analytics::open(&c)?;

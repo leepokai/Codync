@@ -1,4 +1,4 @@
-//! What every messaging channel (Slack, Telegram) hands the host and takes back, so the host's own code never
+//! What every messaging channel (Slack, Telegram, Discord) hands the host and takes back, so the host's own code never
 //! learns a provider's wire format. A provider module turns its events into [`Incoming`]; the rest is the host's.
 
 /// A file a person attached to a message. Only its name travels for now: the host does not download it.

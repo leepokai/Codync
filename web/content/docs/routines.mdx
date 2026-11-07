@@ -107,7 +107,7 @@ Codync doesn't register the webhook with the other service. You (or the bot, wit
 
 ### Event triggers
 
-Choose **Event** under **When to run**, then a service and an event. Narrow it with the filters the service offers (repository, channel, chat, sender, conclusion or text); the routine runs only for a delivery that matches every filter, and an empty filter matches anything. A GitHub event needs the webhook above: point the repository's webhook at the routine, then pick the events you want, such as an issue opening, a review arriving, or a check finishing with `failure`. Slack and Telegram events arrive through the connected app once a bot is bound to the channel, and need no routine URL.
+Choose **Event** under **When to run**, then a service and an event. Narrow it with the filters the service offers (repository, channel, chat, sender, conclusion or text); the routine runs only for a delivery that matches every filter, and an empty filter matches anything. A GitHub event needs the webhook above: point the repository's webhook at the routine, then pick the events you want, such as an issue opening, a review arriving, or a check finishing with `failure`. Slack, Telegram and Discord events arrive through the connected app once a bot is bound to the channel, and need no routine URL. A mention answers both the trigger and the chat; on Discord a message after the bot already answered the channel counts too.
 
 The editor lists the events each service can send. A saved trigger the editor doesn't list stays as it is until you change it.
 
@@ -136,7 +136,7 @@ A bot works only with its own routines. A bot that [manages the team](/docs/team
 
 A workflow is a routine with a trigger and a chain of steps. Each step is another bot that receives the previous result, does one named job and passes a named result on, and the canvas shows every link in order as it is added. Use one for work that should move between bots: triage, then research, then a draft, then a review.
 
-Add **Workflow Builder** from **Extensions → Agents** and describe the job, its trigger and the bots for each step. It creates the routine, links the bots, and runs one test when you agree. Open the workflow from the routine's canvas to watch the steps and their results. A workflow can start from a clock, a webhook, a watched file or URL, or a mention in Slack or Telegram; a GitHub webhook delivery can start one on an issue, pull request, review or failed check. Report what is still to connect before you rely on it: a webhook is not live until the sending service has its URL and key.
+Add **Workflow Builder** from **Extensions → Agents** and describe the job, its trigger and the bots for each step. It creates the routine, links the bots, and runs one test when you agree. Open the workflow from the routine's canvas to watch the steps and their results. A workflow can start from a clock, a webhook, a watched file or URL, or a mention in Slack, Telegram or Discord; a GitHub webhook delivery can start one on an issue, pull request, review or failed check. Report what is still to connect before you rely on it: a webhook is not live until the sending service has its URL and key.
 
 A workflow is still a routine at heart: it belongs to the first bot, it runs on your computer, and its results stay in the chats. A one-off task needs no workflow.
 

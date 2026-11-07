@@ -171,6 +171,11 @@ pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
                 hub.set_entry(&entry.id, &entry.data);
                 continue;
             }
+            if entry.data["source"] == "discord" && !hub.store.resume_discord_sign_in(&entry.id)? {
+                entry.data["status"] = "cancelled".into();
+                hub.set_entry(&entry.id, &entry.data);
+                continue;
+            }
             let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry.data);
             entry.data["status"] = "queued".into();
             hub.set_entry(&entry.id, &entry.data);

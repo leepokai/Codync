@@ -337,6 +337,24 @@ impl Actor {
                             }
                         }
                     }
+                    if self.hub.store.entry(&entry_id).is_some_and(|e| e.data["source"] == "discord") {
+                        match crate::discord::claim_prompt(&self.hub, &entry_id) {
+                            Ok(true) => {}
+                            Ok(false) => {
+                                if let Some(mut entry) =
+                                    self.hub.store.entry(&entry_id).filter(|e| e.data["status"] == "queued")
+                                {
+                                    entry.data["status"] = "cancelled".into();
+                                    self.hub.set_entry(&entry_id, &entry.data);
+                                }
+                                continue;
+                            }
+                            Err(error) => {
+                                tracing::warn!(%error,"Discord prompt claim failed");
+                                continue;
+                            }
+                        }
+                    }
                     batch.push((entry_id, text));
                 }
             }

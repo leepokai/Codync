@@ -93,6 +93,12 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         }
         return crate::research::call(hub, method, &b).await;
     }
+    if crate::discord::METHODS.contains(&method) {
+        if !matches!(caller, Caller::Local) && method != "discordStatus" {
+            return Err(Forbidden.into());
+        }
+        return crate::discord::call(hub, method, b).await;
+    }
     if crate::slack::METHODS.contains(&method) {
         if !matches!(caller, Caller::Local) && method != "slackStatus" {
             return Err(Forbidden.into());

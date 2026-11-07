@@ -17,6 +17,7 @@ mod cli;
 mod cloud_cli;
 mod compat;
 mod computer;
+mod discord;
 mod doctor;
 mod documents;
 mod egress;

@@ -1,6 +1,6 @@
 import type { HostClient } from '../client/host-client'
 import { Observable } from '../lib/observable.ts'
-import type { SlackStatus, TelegramBotStatus } from '../../shared/channels'
+import type { DiscordStatus, SlackStatus, TelegramBotStatus } from '../../shared/channels'
 
 interface TelegramReply { bots: TelegramBotStatus[]; result?: { code?: string; expiresAt?: number } }
 
@@ -8,6 +8,7 @@ interface TelegramReply { bots: TelegramBotStatus[]; result?: { code?: string; e
 export class ChannelsStore extends Observable {
   telegram: TelegramBotStatus[] = []
   slack: SlackStatus | null = null
+  discord: DiscordStatus | null = null
   loading = false
   busy = false
   error: string | null = null
@@ -24,10 +25,15 @@ export class ChannelsStore extends Observable {
     this.loading = true; this.error = null; this.changed()
     try {
       const host = await this.client()
-      const [telegram, slack] = await Promise.all([host.call<TelegramReply>('telegramStatus', {}), host.call<SlackStatus>('slackStatus', {})])
+      const [telegram, slack, discord] = await Promise.all([
+        host.call<TelegramReply>('telegramStatus', {}),
+        host.call<SlackStatus>('slackStatus', {}),
+        host.call<DiscordStatus>('discordStatus', {}),
+      ])
       if (!this.active) return
       this.telegram = telegram.bots
       this.slack = slack
+      this.discord = discord
     } catch (error) { if (this.active) this.error = String(error) }
     finally { if (this.active) { this.loading = false; this.changed() } }
   }
@@ -63,6 +69,31 @@ export class ChannelsStore extends Observable {
     this.busy = true; this.error = null; this.changed()
     try {
       this.slack = await (await this.client()).call<SlackStatus>('disconnectSlack', {})
+    } catch (error) { if (this.active) this.error = String(error) }
+    finally { if (this.active) { this.busy = false; this.changed() } }
+  }
+
+  /** Saves the Discord connection; the host checks the token and every channel first. */
+  async setDiscord(body: {
+    guildId: string
+    botUserId: string
+    botToken: string
+    bindings: { channelId: string; botId: string; allowedUsers: string[] }[]
+  }) {
+    if (!this.active || this.busy) return false
+    this.busy = true; this.error = null; this.changed()
+    try {
+      this.discord = await (await this.client()).call<DiscordStatus>('setDiscordChannel', body)
+      return true
+    } catch (error) { if (this.active) this.error = String(error); return false }
+    finally { if (this.active) { this.busy = false; this.changed() } }
+  }
+
+  async disconnectDiscord() {
+    if (!this.active || this.busy) return
+    this.busy = true; this.error = null; this.changed()
+    try {
+      this.discord = await (await this.client()).call<DiscordStatus>('disconnectDiscord', {})
     } catch (error) { if (this.active) this.error = String(error) }
     finally { if (this.active) { this.busy = false; this.changed() } }
   }

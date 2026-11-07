@@ -19,6 +19,27 @@ export interface SlackStatus {
   bindings: { channelId: string; botId: string; allowedUsers: string[] }[] | null
 }
 
+/** The Discord connection, as `discordStatus` reports it. Snowflakes are digits. */
+export interface DiscordStatus {
+  configured: boolean
+  guildId: string | null
+  botUserId: string | null
+  bindings: { channelId: string; botId: string; allowedUsers: string[] }[] | null
+  /** `ok`, `starting`, or `error: …`. */
+  state: string
+  deliveries: { id: string; state: string }[]
+}
+
+export const discordIdOk = (id: string) => /^\d{1,32}$/.test(id)
+export const discordTokenOk = (token: string) =>
+  token.length <= 200 && /^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{20,}$/.test(token)
+
+export function discordStateText(state: string): string {
+  if (state === 'ok') return 'Connected'
+  if (state === 'starting') return 'Connecting…'
+  return 'Cannot reach Discord'
+}
+
 /** Same shape rules as the host's, so a mistake is told before the call. */
 export const telegramNameOk = (name: string) => /^[a-z0-9-]{1,32}$/.test(name)
 export const telegramTokenOk = (token: string) => token.length <= 128 && /^\d+:[A-Za-z0-9_-]{30,}$/.test(token)

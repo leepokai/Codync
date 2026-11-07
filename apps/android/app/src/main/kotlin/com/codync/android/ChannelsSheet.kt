@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Channels
+import com.codync.android.core.DiscordStatus
 import com.codync.android.core.SlackStatus
 import com.codync.android.core.TelegramBot
 import com.codync.android.design.*
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
 @Composable internal fun ChannelsSheet(state: AppState, store: AppStore) {
     var bots by remember { mutableStateOf<List<TelegramBot>?>(null) }
     var slack by remember { mutableStateOf<SlackStatus?>(null) }
+    var discord by remember { mutableStateOf<DiscordStatus?>(null) }
     var pairing by remember { mutableStateOf<Pair<String, String>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -36,6 +38,7 @@ import kotlinx.coroutines.launch
     LaunchedEffect(computer) {
         bots = store.telegramBots()
         slack = store.slackStatus()
+        discord = store.discordStatus()
     }
     // One change at a time; the host's answer replaces what is shown.
     fun act(work: suspend () -> Unit) {
@@ -72,6 +75,31 @@ import kotlinx.coroutines.launch
                                     val answer = store.pairTelegram(bot.name)
                                     Channels.pairingCode(answer)?.let { pairing = bot.name to it }
                                     bots = store.telegramBots() ?: bots
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            CardSection("Discord", footer = "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.") {
+                row {
+                    val connected = discord
+                    val text = when {
+                        connected == null -> "Loading…"
+                        !connected.configured -> "Discord is not connected."
+                        else -> "${tr(Channels.discordStateText(connected.state))} · ${connected.bindings.size} ${tr("channels bound")} · ${tr("Server")} ${connected.guildId.orEmpty()}"
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(tr(text), style = Type.body, color = Palette.secondary)
+                        connected?.bindings?.forEach { binding ->
+                            Text("${binding.channelId} �� ${binding.allowedUsers.size} ${tr("people allowed")}",
+                                style = Type.caption, color = Palette.tertiary)
+                        }
+                        if (connected?.configured == true) {
+                            SecondaryButton("Disconnect Discord", enabled = !busy) {
+                                act {
+                                    discord = store.disconnectDiscord()
+                                    discord = store.discordStatus() ?: discord
                                 }
                             }
                         }

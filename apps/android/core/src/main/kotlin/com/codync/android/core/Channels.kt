@@ -20,12 +20,33 @@ import kotlinx.serialization.json.jsonObject
 /** The Slack connection, as `slackStatus` reports it. */
 @Serializable data class SlackStatus(val configured: Boolean = false, val socketMode: Boolean = false, val workspaceId: String? = null)
 
+/** One bound Discord channel: the host bot that answers it and the people allowed in it. */
+@Serializable data class DiscordBinding(val channelId: String, val botId: String = "", val allowedUsers: List<String> = emptyList())
+
+/** The Discord connection, as `discordStatus` reports it. */
+@Serializable data class DiscordStatus(
+    val configured: Boolean = false,
+    val guildId: String? = null,
+    val botUserId: String? = null,
+    val bindings: List<DiscordBinding> = emptyList(),
+    /** `ok`, `starting`, or `error: …`. */
+    val state: String = "starting",
+)
+
 /** What the Channels screen shows, and the words it uses; the host owns the meaning. */
 object Channels {
     fun decodeTelegram(response: JsonElement): List<TelegramBot> =
         WireJson.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(TelegramBot.serializer()), response.jsonObject.getValue("bots"))
 
     fun decodeSlack(response: JsonElement): SlackStatus = WireJson.decodeFromJsonElement(SlackStatus.serializer(), response)
+
+    fun decodeDiscord(response: JsonElement): DiscordStatus = WireJson.decodeFromJsonElement(DiscordStatus.serializer(), response)
+
+    fun discordStateText(state: String): String = when (state) {
+        "ok" -> "Connected"
+        "starting" -> "Connecting…"
+        else -> "Cannot reach Discord"
+    }
 
     /** The pairing code a `pairTelegram` answer carries. */
     fun pairingCode(response: JsonElement): String? =

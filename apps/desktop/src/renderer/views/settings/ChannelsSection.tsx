@@ -8,6 +8,7 @@ import { allowedText, lastReceivedText, pairingInstruction, telegramNameOk, tele
 import { useApp } from '../../store/context'
 import { ChannelsStore } from '../../store/channels-store'
 import { ErrorText, Field } from '../marketplace/pieces'
+import { DiscordChannel } from './DiscordChannel'
 
 /** Telegram bots (add, pair, who may write, which bot answers, state) and the Slack connection of this computer's host. */
 export function ChannelsSection() {
@@ -25,10 +26,12 @@ export function ChannelsSection() {
     return () => { clearInterval(refresh); model.dispose() }
   }, [model])
   const slack = model.slack
-  return <CardSection title="Channels" footer="Talk to a bot from Telegram or Slack. Only people you pair or allow can write to it; tokens stay in this computer’s credential vault.">
+  const bots = (local?.roster ?? []).filter((b) => b.kind !== 'group' && b.backend !== 'external').map((b) => ({ id: b.id, label: b.name }))
+  return <CardSection title="Channels" footer="Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.">
     {model.telegram.map((bot) => <TelegramRow key={bot.name} bot={bot} model={model} onRemove={() => setRemoving(bot.name)} />)}
     {model.telegram.length === 0 ? <Text tone="secondary">No Telegram bots yet.</Text> : null}
-    <AddTelegram model={model} bots={(local?.roster ?? []).filter((b) => b.kind !== 'group' && b.backend !== 'external').map((b) => ({ id: b.id, label: b.name }))} />
+    <AddTelegram model={model} bots={bots} />
+    <DiscordChannel status={model.discord} model={model} bots={bots} />
     {slack?.configured ? <VStack gap={4} className="settings-stack">
       <Text>Slack {slack.socketMode ? '· Socket Mode' : '· HTTP endpoint'}</Text>
       <Text size="caption" tone="tertiary">{slack.workspaceId} · {slack.bindings?.length ?? 0} channel{slack.bindings?.length === 1 ? '' : 's'} bound</Text>

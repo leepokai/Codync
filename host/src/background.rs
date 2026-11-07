@@ -4,6 +4,7 @@ use crate::{agent::registry, hub::Hub, market, remote::relay, screen, update, us
 use std::sync::Arc;
 
 pub fn start(hub: &Arc<Hub>) {
+    tokio::spawn(crate::discord::run(hub.clone()));
     tokio::spawn(crate::slack::run(hub.clone()));
     tokio::spawn(crate::telegram::run(hub.clone()));
     tokio::spawn(crate::health::run(hub.clone()));

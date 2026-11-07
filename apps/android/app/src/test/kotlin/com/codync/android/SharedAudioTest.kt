@@ -14,7 +14,7 @@ class SharedAudioTest {
     private class Speaker : Sound {
         val log = mutableListOf<String>()
         var startable = true
-        var ended: ((Boolean) -> Unit)? = null
+        var stopped: ((SoundStop) -> Unit)? = null
         override var playing = false
         override val duration = 48.0
         override var position = 0.0
@@ -32,7 +32,7 @@ class SharedAudioTest {
     private var fetch = CompletableDeferred<File>()
     private var loads = 0
     private val audio = SharedAudio(load = { loads++; fetch.await() },
-        open = { _, stopped -> speaker.ended = stopped; speaker.log += "open"; speaker })
+        open = { _, stopped -> speaker.stopped = stopped; speaker.log += "open"; speaker })
 
     @Test fun `a second tap while the sound loads plays it once`() = runBlocking {
         val first = launch { audio.toggle() }
@@ -111,7 +111,7 @@ class SharedAudioTest {
         tap.join()
         speaker.playing = true
         speaker.position = 48.0
-        speaker.ended!!(true)
+        speaker.stopped!!(SoundStop.Ended)
         assertEquals(AudioPhase.Idle, audio.phase)
         assertEquals(0.0, audio.elapsed, 0.0)
         assertEquals(48.0, audio.duration, 0.0)
@@ -128,9 +128,25 @@ class SharedAudioTest {
         tap.join()
         speaker.playing = false
         speaker.position = 7.0
-        speaker.ended!!(false)
+        speaker.stopped!!(SoundStop.Interrupted)
         assertEquals(AudioPhase.Paused, audio.phase)
         assertEquals(7.0, audio.elapsed, 0.0)
+    }
+
+    @Test fun `a sound that breaks while playing fails the card and the next tap loads again`() = runBlocking {
+        val tap = launch { audio.toggle() }
+        yield()
+        fetch.complete(File("note.m4a"))
+        tap.join()
+        speaker.stopped!!(SoundStop.Broke)
+        assertEquals(AudioPhase.Failed, audio.phase)
+        assertEquals(0.0, audio.duration, 0.0)
+        assertEquals(listOf("open", "start", "release"), speaker.log)
+
+        val retry = launch { audio.toggle() }
+        yield()
+        assertEquals(2, loads)
+        retry.cancelAndJoin()
     }
 
     @Test fun `seeking holds the playhead to the sound and keeps it playing or paused`() = runBlocking {

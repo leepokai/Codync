@@ -264,7 +264,7 @@ final class CloudSpeechEngine: VoiceEngine {
             let player = try AVAudioPlayer(contentsOf: url)
             try? FileManager.default.removeItem(at: url)
             let generation = speakGeneration
-            let done = PlayDone { [weak self] in Task { @MainActor in self?.played(generation) } }
+            let done = PlayDone { [weak self] _ in Task { @MainActor in self?.played(generation) } }
             player.delegate = done
             playDone = done
             self.player = player

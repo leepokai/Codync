@@ -1891,5 +1891,9 @@
   "Sizes show after the bot's next reply": "Bot 下次回覆後就能指定數量",
   "Only when full": "不主動壓縮",
   "Summarize": "壓縮",
-  "Claude Code and Codex bots only": "只適用於 Claude Code 和 Codex 的 bot"
+  "Claude Code and Codex bots only": "只適用於 Claude Code 和 Codex 的 bot",
+  "Custom size…": "自訂數量…",
+  "Custom size": "自訂數量",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "以千 token 為單位，會取到 10K 的倍數，最多到模型裝得下的上限。",
+  "Or type a size in K:": "也可以直接輸入數量（K）："
 }

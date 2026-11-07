@@ -11,6 +11,8 @@ const STEP: u64 = 10_000;
 const MIN_TOKENS: u64 = 50_000;
 /// ...and leaves this much of the window to the compaction turn: its prompt and a summary of about 20k.
 const HEADROOM: u64 = 40_000;
+/// The sizes a menu lists are multiples of this; any other size is the user's to type.
+const PRESET_STEP: u64 = 100_000;
 
 /// When the caller compacts a conversation: the user's choice. On the wire `"early"`, `"nearLimit"`, `"off"`, or the
 /// size in tokens; anything else reads as the default.
@@ -104,17 +106,31 @@ impl Threshold {
     }
 }
 
-/// The sizes a user may set in one window: `min` to `max` tokens by `step`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+/// The sizes a user may set in one window: `min` to `max` tokens by `step`, and the few a menu lists.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sizes {
     pub min: u64,
     pub max: u64,
     pub step: u64,
+    pub presets: Vec<u64>,
+}
+
+impl Sizes {
+    /// A size typed as `tokens`, as one this window takes: to the nearest step, within `min` and `max`.
+    pub fn fit(&self, tokens: u64) -> u64 {
+        let step = self.step.max(1);
+        (tokens.saturating_add(step / 2) / step * step).max(self.min).min(self.max)
+    }
 }
 
 /// The sizes a window of `window` tokens allows; `None` for a window too small to offer one.
 pub fn sizes(window: u64) -> Option<Sizes> {
-    max_tokens(window).map(|max| Sizes { min: MIN_TOKENS, max, step: STEP })
+    max_tokens(window).map(|max| Sizes {
+        min: MIN_TOKENS,
+        max,
+        step: STEP,
+        presets: (1..=max / PRESET_STEP).map(|n| n * PRESET_STEP).collect(),
+    })
 }
 
 /// The largest size a window allows, leaving the compaction turn its headroom.
@@ -144,8 +160,12 @@ mod tests {
 
     #[test]
     fn a_window_offers_sizes_in_steps_short_of_its_headroom() {
-        assert_eq!(sizes(1_000_000), Some(Sizes { min: 50_000, max: 960_000, step: 10_000 }));
-        assert_eq!(sizes(272_000).map(|s| s.max), Some(230_000));
+        let million = sizes(1_000_000).expect("a 1M window offers sizes");
+        assert_eq!((million.min, million.max, million.step), (50_000, 960_000, 10_000));
+        assert_eq!(million.presets, (1..=9).map(|n| n * 100_000).collect::<Vec<_>>(), "100K to 900K");
+        assert_eq!(sizes(272_000).map(|s| (s.max, s.presets)), Some((230_000, vec![100_000, 200_000])));
+        assert_eq!(sizes(130_000).map(|s| s.presets), Some(vec![]), "90K at most: only a size of one's own");
+        assert_eq!([354_000, 355_000, 10_000, 5_000_000].map(|n| million.fit(n)), [350_000, 360_000, 50_000, 960_000]);
         assert_eq!(sizes(64_000), None);
         for ok in [Threshold::NearLimit, Threshold::Tokens(50_000), Threshold::Tokens(2_000_000)] {
             assert!(ok.check().is_ok(), "{ok:?}");

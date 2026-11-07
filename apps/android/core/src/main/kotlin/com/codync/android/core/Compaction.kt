@@ -31,13 +31,24 @@ sealed interface Compaction {
 
     companion object {
         fun sizeLabel(tokens: Long): String = "${tokens / 1000}K"
+
+        /** A size the user typed, in thousands of tokens ("350", "350K", "1.5k"), as tokens; null when it isn't one. */
+        fun typed(text: String): Long? {
+            val k = text.trim().removeSuffix("k").removeSuffix("K").trim().toDoubleOrNull() ?: return null
+            // Past a billion thousands no window holds it, and the tokens would overflow when fitted.
+            return if (k > 0 && k < 1e9) Math.round(k * 1000) else null
+        }
     }
 }
 
-/** The sizes the bot's window allows (`compactionTokens`): [min] to [max] by [step]. */
+/** The sizes the bot's window allows (`compactionTokens`): [min] to [max] by [step], and the few a menu lists. */
 @Serializable
-data class CompactionTokens(val min: Long, val max: Long, val step: Long) {
-    val sizes: List<Long> get() = if (step > 0 && min <= max) (min..max step step).toList() else emptyList()
+data class CompactionTokens(val min: Long, val max: Long, val step: Long, val presets: List<Long> = emptyList()) {
+    /** A typed size as one the window takes: to the nearest [step], within [min] and [max]. */
+    fun fit(tokens: Long): Long {
+        val step = step.coerceAtLeast(1)
+        return ((tokens + step / 2) / step * step).coerceAtLeast(min).coerceAtMost(max)
+    }
 }
 
 /** `"early"`, `"nearLimit"`, `"off"` or a number of tokens; a name from a newer host reads as early, rather than losing the bot. */

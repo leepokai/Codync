@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.dp
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
-/** A button in a Codync dialog. */
-class DialogAction(val title: String, val destructive: Boolean = false, val action: () -> Unit)
+/** A button in a Codync dialog; [enabled] is off while what it asks for isn't valid yet (a field that doesn't read). */
+class DialogAction(val title: String, val destructive: Boolean = false, val enabled: Boolean = true, val action: () -> Unit)
 
 /**
  * A centered card over a dimmed screen with the actions and Cancel: the replacement for
@@ -70,7 +70,7 @@ class DialogAction(val title: String, val destructive: Boolean = false, val acti
                 }
                 field?.invoke()
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (action in actions()) DialogButton(tr(action.title), action.destructive, prominent = true) { dismiss(); action.action() }
+                    for (action in actions()) DialogButton(tr(action.title), action.destructive, prominent = true, enabled = action.enabled) { dismiss(); action.action() }
                     if (cancel != null) DialogButton(tr(cancel), destructive = false, prominent = false) { dismiss() }
                 }
             }
@@ -78,11 +78,11 @@ class DialogAction(val title: String, val destructive: Boolean = false, val acti
     }
 }
 
-@Composable private fun DialogButton(title: String, destructive: Boolean, prominent: Boolean, action: () -> Unit) {
+@Composable private fun DialogButton(title: String, destructive: Boolean, prominent: Boolean, enabled: Boolean = true, action: () -> Unit) {
     val (source, pressed) = rememberPress()
-    Box(Modifier.fillMaxWidth().pressScale(pressed).graphicsLayer { alpha = if (pressed) 0.85f else 1f }.clip(Capsule())
+    Box(Modifier.fillMaxWidth().pressScale(pressed).graphicsLayer { alpha = if (enabled) (if (pressed) 0.85f else 1f) else 0.4f }.clip(Capsule())
         .background(if (destructive) Palette.danger else if (prominent) Palette.accentFill else Palette.bubbleUser)
-        .clickable(source, null, role = Role.Button, onClick = action).padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+        .clickable(source, null, enabled = enabled, role = Role.Button, onClick = action).padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
         Text(title, style = Type.body.medium, color = if (destructive) Color.White else if (prominent) Palette.onAccent else Palette.text)
     }
 }

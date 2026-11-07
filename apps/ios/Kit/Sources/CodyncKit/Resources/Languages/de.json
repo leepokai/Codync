@@ -1891,5 +1891,9 @@
   "Sizes show after the bot's next reply": "Größen erscheinen nach der nächsten Antwort des Bots",
   "Only when full": "Nur wenn voll",
   "Summarize": "Verdichten",
-  "Claude Code and Codex bots only": "Nur für Claude-Code- und Codex-Bots"
+  "Claude Code and Codex bots only": "Nur für Claude-Code- und Codex-Bots",
+  "Custom size…": "Eigene Größe…",
+  "Custom size": "Eigene Größe",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "In Tausend Tokens, auf 10K gerundet, bis zu dem, was das Modell fasst.",
+  "Or type a size in K:": "Oder eine Größe in K eingeben:"
 }

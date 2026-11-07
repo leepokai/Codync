@@ -439,9 +439,10 @@ config, `codync_mem::compaction::Threshold`) that moves the end-of-turn trigger:
 
 The 40k headroom is the compaction turn itself (its prompt and a summary of about 20k). Below 50k, the summary and
 the opening alone would trip the trigger every few turns. The long-absence rollover (8 hours, 3 compactions) and
-the loop guard apply to every setting but Only when full. The apps list the sizes from `compactionTokens`
-(`{min, max, step}`), which the host sends once the bot's own agent (not a fallback) has reported the main chat's
-window (kept in `context.window.<bot>`); before that they offer only the three choices. A custom command that
+the loop guard apply to every setting but Only when full. The apps take the sizes from `compactionTokens`
+(`{min, max, step, presets}`: the bounds a typed size is rounded and held to, and the 100k multiples a menu
+lists), which the host sends once the bot's own agent (not a fallback) has reported the main chat's window (kept
+in `context.window.<bot>`); before that they offer only the three choices. A custom command that
 reported a window keeps its setting while its agent isn't running. Other agents have no setting (`compaction` is
 `null`) and keep the defaults for rollovers.
 

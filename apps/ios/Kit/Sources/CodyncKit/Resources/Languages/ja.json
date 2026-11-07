@@ -1891,5 +1891,9 @@
   "Sizes show after the bot's next reply": "ボットの次の返信後にサイズを選べます",
   "Only when full": "満杯になったときだけ",
   "Summarize": "要約",
-  "Claude Code and Codex bots only": "Claude Code と Codex のボットのみ"
+  "Claude Code and Codex bots only": "Claude Code と Codex のボットのみ",
+  "Custom size…": "カスタムサイズ…",
+  "Custom size": "カスタムサイズ",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "千トークン単位で、10K 単位に丸められ、モデルが扱える上限までです。",
+  "Or type a size in K:": "サイズを K 単位で入力することもできます："
 }

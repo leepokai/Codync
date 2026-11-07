@@ -62,7 +62,10 @@ async fn the_users_threshold_decides_when_the_host_compacts() {
         }
     };
     assert_eq!(shown["compaction"], "early");
-    assert_eq!(shown["compactionTokens"], json!({"min": 50_000, "max": 960_000, "step": 10_000}));
+    assert_eq!(
+        shown["compactionTokens"],
+        json!({"min": 50_000, "max": 960_000, "step": 10_000, "presets": (1..=9).map(|n| n * 100_000).collect::<Vec<u64>>()})
+    );
 
     host.call("updateBot", json!({"id": bot, "compaction": 300_000})).await;
     host.reply(&bot, "USAGE 210000 SIZE 1000000").await;

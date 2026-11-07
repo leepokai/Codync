@@ -8,10 +8,10 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 
 ## 2.42.0
 ### zh-Hant
-- bot 設定新增「壓縮對話」：選擇 Codync 什麼時候把長對話壓縮成摘要。可以選提早（預設）、接近上限、不主動壓縮，或以 10K 為一級自己指定數量，最多到模型裝得下的上限。適用於 Claude Code 和 Codex 的 bot。
+- bot 詳情的「智慧體」區塊新增「壓縮對話」：選擇 Codync 什麼時候把長對話壓縮成摘要。可以選提早（預設）、接近上限、不主動壓縮，或指定數量：從 100K、200K… 裡挑，或自己輸入，最多到模型裝得下的上限。適用於 Claude Code 和 Codex 的 bot。
 
 ### en-US
-- New Summarize long chats setting for a bot: choose when Codync summarizes a long chat. Pick Early (default), Near the limit, Only when full, or a size you set in 10K steps, up to what the model holds. For Claude Code and Codex bots.
+- New Summarize long chats setting in a bot's Agent section: choose when Codync summarizes a long chat. Pick Early (default), Near the limit, Only when full, or a size: 100K, 200K and so on, or one you type, up to what the model holds. For Claude Code and Codex bots.
 
 ## 2.41.0
 ### zh-Hant

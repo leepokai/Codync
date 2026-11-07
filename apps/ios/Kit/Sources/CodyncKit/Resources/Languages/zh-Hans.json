@@ -1891,5 +1891,9 @@
   "Sizes show after the bot's next reply": "Bot 下次回复后就能指定数量",
   "Only when full": "不主动压缩",
   "Summarize": "压缩",
-  "Claude Code and Codex bots only": "仅适用于 Claude Code 和 Codex 的 bot"
+  "Claude Code and Codex bots only": "仅适用于 Claude Code 和 Codex 的 bot",
+  "Custom size…": "自定义数量…",
+  "Custom size": "自定义数量",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "以千 token 为单位，会取到 10K 的倍数，最多到模型容纳的上限。",
+  "Or type a size in K:": "也可以直接输入数量（K）："
 }

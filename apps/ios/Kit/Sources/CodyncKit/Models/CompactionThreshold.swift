@@ -30,19 +30,33 @@ public enum CompactionThreshold: Codable, Hashable, Sendable {
     }
 }
 
-/// The sizes a bot's `CompactionThreshold` may take (`compactionTokens`): `min` to `max` tokens by `step`.
+/// The sizes a bot's `CompactionThreshold` may take (`compactionTokens`): `min` to `max` tokens by `step`, and the few
+/// its menu lists.
 public struct TokenRange: Codable, Hashable, Sendable {
     public var min: Int
     public var max: Int
     public var step: Int
+    public var presets: [Int]
 
-    public init(min: Int, max: Int, step: Int) {
+    public init(min: Int, max: Int, step: Int, presets: [Int] = []) {
         self.min = min
         self.max = max
         self.step = step
+        self.presets = presets
     }
 
-    public var sizes: [Int] {
-        step > 0 && min <= max ? Array(stride(from: min, through: max, by: step)) : []
+    /// A size typed as `tokens`, as one this window takes: to the nearest step, within `min` and `max`.
+    public func fit(_ tokens: Int) -> Int {
+        let step = Swift.max(step, 1)
+        return Swift.min(Swift.max((tokens + step / 2) / step * step, min), max)
+    }
+
+    /// What the user typed, in thousands of tokens ("350", "350K", "1.5k"), as tokens; nil for anything else.
+    public static func typed(_ text: String) -> Int? {
+        var number = text.trimmingCharacters(in: .whitespaces)
+        if number.last == "k" || number.last == "K" { number.removeLast() }
+        // Past a billion thousands, no window holds it, and Int(_:) would trap.
+        guard let thousands = Double(number), thousands > 0, thousands < 1e9 else { return nil }
+        return Int((thousands * 1000).rounded())
     }
 }

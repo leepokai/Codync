@@ -1881,5 +1881,6 @@
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} möchte diesen Computer verwenden, der dann dem Konto von {email} beitritt.",
   "Sign in there with {email} and add it to your account, and it shows up here.": "Melde dich dort mit {email} an und füge ihn deinem Konto hinzu, dann erscheint er hier.",
   "Scan with the Codync app or the iPhone Camera.": "Scanne mit der Codync-App oder der iPhone-Kamera.",
-  "Phones paired without this account lose access and must pair again.": "Nicht mit diesem Konto gekoppelte Telefone verlieren den Zugriff und müssen neu gekoppelt werden."
+  "Phones paired without this account lose access and must pair again.": "Nicht mit diesem Konto gekoppelte Telefone verlieren den Zugriff und müssen neu gekoppelt werden.",
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "Die Dateien dieser Nachricht sind nicht mehr auf diesem Gerät. Lösche sie und hänge die Dateien erneut an."
 }

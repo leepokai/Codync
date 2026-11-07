@@ -17,13 +17,14 @@ import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { latestOnly } from '../lib/latest-only'
+import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
 import { DevServerCommands } from './dev-servers'
 import { BotSync, sleep } from './bot-sync'
-import type { OutgoingFile } from './outgoing-files.ts'
+import { filesToResend, type OutgoingFile } from './outgoing-files.ts'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
 
@@ -111,7 +112,8 @@ export class BotStore extends BotSync {
   }
 
   retry(entry: Entry) {
-    const files = (entry.data.clientNonce && this.outgoingFiles.get(entry.data.clientNonce)) || []
+    const files = filesToResend(entry, this.outgoingFiles)
+    if (!files) return this.setError(trNow("This message's files aren't on this device anymore. Delete it and attach them again."))
     const text = entry.data.text ?? ''
     if (!text && !files.length) return
     this.dropEntry(entry)

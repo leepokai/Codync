@@ -250,13 +250,11 @@ extension BotStore {
         saveCache()
     }
 
-    /// The computer is back: what waited on this phone goes now, with the same nonces. Files are
-    /// kept only in memory: a message whose files went with the app stays for the user to resend, not half sent.
+    /// The computer is back: what waited on this phone goes now, with the same nonces.
     private func sendHeld(_ held: [Entry]) {
         guard !held.isEmpty else { return }
         for entry in held.sorted(by: { $0.createdAt < $1.createdAt }) {
-            let filesGone = entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
-            if filesGone, let nonce = entry.data.clientNonce {
+            if filesGone(entry), let nonce = entry.data.clientNonce {
                 markLocal(nonce: nonce, botId: entry.botId, status: "failed")
             } else {
                 retry(entry)
@@ -265,7 +263,16 @@ extension BotStore {
         saveCache()
     }
 
+    /// Files are kept only in memory: a message whose files went with the app can't go again, or it would go half sent.
+    private func filesGone(_ entry: Entry) -> Bool {
+        entry.data.attachments?.isEmpty == false && entry.data.clientNonce.flatMap { outgoingFiles[$0] } == nil
+    }
+
     public func retry(_ entry: Entry) {
+        guard !filesGone(entry) else {
+            lastError = "This message's files aren't on this device anymore. Delete it and attach them again."
+            return
+        }
         let files = entry.data.clientNonce.flatMap { outgoingFiles[$0] } ?? []
         guard let text = entry.data.text, !text.isEmpty || !files.isEmpty else { return }
         entries[entry.botId]?.removeAll { $0.id == entry.id }

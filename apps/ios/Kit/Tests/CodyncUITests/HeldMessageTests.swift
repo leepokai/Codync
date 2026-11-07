@@ -87,7 +87,25 @@ import Testing
     store.upsert(Entry(id: "local-n1", seq: .max, botId: "b1", rev: 0, kind: "user", turn: 0, data: data, createdAt: 1, updatedAt: 0))
     await phone.back()
     #expect(await until { store.chat("b1").first?.data.status == "failed" })
+    #expect(store.lastError == nil)
+    store.retry(try #require(store.chat("b1").first))
+    #expect(store.lastError != nil)
+    #expect(store.chat("b1").first?.data.status == "failed")
     #expect(await phone.sent().isEmpty, "not without its files")
+}
+
+@MainActor @Test func aResendWhileTheAppIsOpenKeepsItsFiles() async throws {
+    let phone = NoRelay()
+    defer { phone.end() }
+    await phone.start()
+    let store = phone.store
+    store.send("see this", to: "b1", files: [OutgoingFile(name: "a.txt", data: Data("x".utf8))])
+    #expect(await until { store.chat("b1").first?.data.status == "held" })
+    store.lastError = nil
+    store.retry(try #require(store.chat("b1").first))
+    #expect(store.lastError == nil)
+    #expect(store.chat("b1").first?.data.status == "sending")
+    #expect(store.chat("b1").first?.data.attachments?.count == 1)
 }
 
 @MainActor @Test func aResendKeepsTheCallItWasSaidIn() async throws {

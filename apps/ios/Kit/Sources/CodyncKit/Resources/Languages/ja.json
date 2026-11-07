@@ -1881,5 +1881,6 @@
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} がこのコンピュータを使おうとしています。このコンピュータは {email} のアカウントに参加します。",
   "Sign in there with {email} and add it to your account, and it shows up here.": "そこで {email} でサインインしてアカウントに追加すると、ここに表示されます。",
   "Scan with the Codync app or the iPhone Camera.": "Codync アプリまたは iPhone のカメラでスキャンしてください。",
-  "Phones paired without this account lose access and must pair again.": "このアカウントでペアリングしていないスマートフォンはアクセスを失い、再度ペアリングが必要です。"
+  "Phones paired without this account lose access and must pair again.": "このアカウントでペアリングしていないスマートフォンはアクセスを失い、再度ペアリングが必要です。",
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "このメッセージのファイルはこの端末にもうありません。メッセージを削除して、もう一度ファイルを添付してください。"
 }

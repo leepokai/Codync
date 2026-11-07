@@ -7,6 +7,7 @@ import { undoOnFailure } from '../lib/undo-on-failure'
 import { account } from './account'
 import { analytics } from './analytics'
 import { BotStore } from './bot-store'
+import { AccountComputers } from './account-computers'
 import { CloudModel } from './cloud'
 import { DeviceComputerOrder } from './computer-order'
 import { ComputerAccess } from './computer-access'
@@ -71,12 +72,20 @@ export class AppModel extends Observable {
   readonly computerAccess: ComputerAccess
   readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
+  /** The account's other computers this app opens through the relay, and its requests for access to them. */
+  readonly accountComputers: AccountComputers
 
   constructor(private mirrors = true) {
     super()
     this.computerAccess = new ComputerAccess(this)
     this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
+    this.accountComputers = new AccountComputers(this)
+    if (mirrors) {
+      const sync = () => this.accountComputers.sync()
+      this.subscribe(sync)
+      this.cloud.subscribe(sync)
+    }
     account.subscribe(() => this.noteAccount())
   }
 

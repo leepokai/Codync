@@ -60,6 +60,8 @@ Signing in with Apple, Google or GitHub doesn't give any device access by itself
 
 On a computer without the desktop app, use `codync-host access` to list requests and `codync-host access approve <code>` to approve one.
 
+The desktop app reaches your account's other computers the same way, with no SSH setup or QR code: in **Settings → Computers**, under **Other computers in your account**, choose **Ask for access** on an online computer and compare the 6-digit code it shows. Once it's approved, its bots join the sidebar, and **Open** on its row opens them.
+
 Signing out of the desktop app keeps the computer in your account. If you then sign in with a different account, the app asks whether to move the computer there. Choose **Move here** and your phone, signed in to the new account, finds it under **Manage computers**. Every device of the old account loses access, phones paired with a QR code included. Moving it turns **Skip the 6-digit check** off, so new devices ask with the 6-digit code; turn it back on in **Settings → Computers** if you want. Choose **Keep it there** to leave it where it is; you can still move it later with **Remove from account** and then **Add to account**.
 
 When the computer is in another account than the desktop app's, an amber notice at the bottom of the sidebar says so (in the narrow sidebar, an amber icon; point at it to read it):

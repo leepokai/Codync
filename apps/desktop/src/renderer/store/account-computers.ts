@@ -1,0 +1,133 @@
+import type { AccessFailure } from '@shared/analytics'
+import type { AccessTicket } from '@shared/ipc'
+import type { Computer } from '@shared/models'
+import { RelayTransport } from '../client/host-client'
+import { Observable } from '../lib/observable'
+import { account } from './account'
+import { analytics } from './analytics'
+import type { AppModel } from './app-model'
+import { BotStore } from './bot-store'
+import { CloudError, request, type CloudComputer } from './cloud'
+import { relayPlan } from '../lib/relay-plan'
+
+/** An access request this app is waiting on: null until the computer shows its code. */
+type Asking = { ticket: AccessTicket | null }
+
+/**
+ * The account's other computers this app reaches through the account's relay, as the phones do: one it was
+ * approved on opens as a store (its bots join the sidebar); one it wasn't asks for access with the 6-digit code.
+ */
+export class AccountComputers extends Observable {
+  asking = new Map<string, Asking>()
+  /** Ids of the relay stores attached here; one another route took over (SSH) is no longer ours to close. */
+  private attached = new Set<string>()
+  private syncing = false
+  private app: AppModel
+
+  constructor(app: AppModel) {
+    super()
+    this.app = app
+  }
+
+  /** Attaches every approved account computer the app doesn't reach otherwise, and detaches those no longer approved. */
+  sync() {
+    // Attaching notifies the app, which calls back here.
+    if (this.syncing) return
+    this.syncing = true
+    try {
+      const plan = relayPlan(this.app.cloud.computers, this.app.local?.computer.id ?? null, this.attached, (id) => this.app.store(id))
+      this.attached = plan.kept
+      for (const id of plan.detach) this.app.detach(id)
+      for (const id of plan.close) window.codync.remote.close(id)
+      for (const c of plan.attach) {
+        const cached = this.app.computers.find((x) => x.id === c.computerId)
+        const computer: Computer = { id: c.computerId, name: c.name, signKey: c.signKey, urls: [], cloud: account.cloudURL, device: c.device ?? null, color: cached?.color ?? null }
+        this.attached.add(c.computerId)
+        const store = new BotStore(computer, false, () => new RelayTransport({ id: c.computerId, signKey: c.signKey }))
+        this.app.attach(computer, store)
+        this.relistWhenRefused(store)
+      }
+    } finally {
+      this.syncing = false
+    }
+  }
+
+  /**
+   * A computer that turns this app away (its grant went) has the account listed again, which lets its store go
+   * and shows it as one to ask for access, as the phones do.
+   */
+  private relistWhenRefused(store: BotStore) {
+    let refused = false
+    store.subscribe(() => {
+      const now = store.connection.kind === 'unauthorized'
+      if (now && !refused) void this.app.cloud.refresh(true)
+      refused = now
+    })
+  }
+
+  /** Asks `computer` to let this app in; its bots open once it's approved there. */
+  async ask(computer: CloudComputer) {
+    const id = computer.computerId
+    if (this.asking.has(id)) return
+    const asking: Asking = { ticket: null }
+    this.set(id, asking)
+    try {
+      const ticket = await window.codync.cloud.requestAccess({ id, signKey: computer.signKey })
+      // Withdrawn while the computer was still answering: take it off its screen too.
+      if (this.asking.get(id) !== asking) return withdraw(ticket)
+      asking.ticket = ticket
+      analytics.track({ event: 'access_requested' })
+      this.changed()
+      if (await this.awaitDecision(id, ticket)) await this.app.cloud.refresh()
+    } catch (error) {
+      if (this.asking.get(id) === asking) this.app.setError(error instanceof Error ? error.message : (error as { message: string }).message)
+    } finally {
+      if (this.asking.get(id) === asking) this.set(id, null)
+    }
+  }
+
+  /** Withdraws the request: the computer stops showing it. */
+  cancel(computerId: string) {
+    const ticket = this.asking.get(computerId)?.ticket
+    this.set(computerId, null)
+    // No code yet: the main process still holds the request, so it withdraws it.
+    if (!ticket) return window.codync.cloud.cancelAccess(computerId)
+    analytics.track({ event: 'access_request_failed', reason: 'cancelled' })
+    withdraw(ticket)
+  }
+
+  /** True once approved; false when withdrawn here; throws when the computer declined or the request ran out. */
+  private async awaitDecision(computerId: string, ticket: AccessTicket) {
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+      if (this.asking.get(computerId)?.ticket !== ticket) return false
+      if (Date.now() >= ticket.expiresAt) throw failed('expired')
+      const status = await request<{ status: string }>('GET', `v1/access-requests/${ticket.requestId}`, undefined, true).catch((error: unknown) => {
+        if (error instanceof CloudError && error.status === 0) return { status: 'pending' }
+        throw error
+      })
+      // Withdrawn while the status was on its way: the withdrawal already counted.
+      if (this.asking.get(computerId)?.ticket !== ticket) return false
+      if (status.status === 'approved') return true
+      if (status.status === 'denied') throw failed('denied')
+      if (status.status !== 'pending') throw failed(status.status === 'cancelled' ? 'cancelled' : 'expired')
+    }
+  }
+
+  private set(computerId: string, asking: Asking | null) {
+    if (asking) this.asking.set(computerId, asking)
+    else this.asking.delete(computerId)
+    this.changed()
+  }
+}
+
+/** One that can't be withdrawn now stays on the computer's screen only until it expires. */
+function withdraw(ticket: AccessTicket) {
+  void request('DELETE', `v1/access-requests/${ticket.requestId}`, undefined, true).catch((error: unknown) => console.warn('Could not withdraw the access request', error))
+}
+
+/** The request ended without access (as the phones count it): its reason goes out, and the error the person sees comes back. */
+function failed(reason: AccessFailure) {
+  analytics.track({ event: 'access_request_failed', reason })
+  return reason === 'denied' ? new Error('The computer declined the request.') : new CloudError(410, 'requestExpired', null)
+}

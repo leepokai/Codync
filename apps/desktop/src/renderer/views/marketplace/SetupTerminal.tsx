@@ -104,7 +104,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
       new Promise<'retry' | 'done'>((resolve) => {
         term.reset()
         stopStream = client.transport.stream(
-          `/term/${encodeURIComponent(id)}`,
+          { kind: 'term', term: id },
           (line) => {
             attempt = 0
             let raw: { type: string; data?: string; code?: number }

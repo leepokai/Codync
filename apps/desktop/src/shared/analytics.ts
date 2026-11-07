@@ -34,6 +34,8 @@ export type VoiceCallEngine = 'on_device' | 'openai' | 'gemini' | 'cloud'
 export type VoiceStuck = 'none' | 'connecting' | 'reconnecting' | 'speaking'
 /** Why a call's engine gave up. */
 export type VoiceFailure = 'none' | 'microphone' | 'connection' | 'provider'
+/** Why an access request to an account computer ended without access (the phones' reasons). */
+export type AccessFailure = 'denied' | 'expired' | 'cancelled'
 
 /** What came of a window whose page crashed: it loaded again, or crashed too often and stays down. */
 export type WindowRecoveryOutcome = 'reloaded' | 'gave_up'
@@ -57,6 +59,8 @@ export type AnalyticsEvent =
   | { event: 'screen_viewed'; screen: Screen }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
+  | { event: 'access_requested' }
+  | { event: 'access_request_failed'; reason: AccessFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }
   | { event: 'reach_account_answered'; outcome: ReachOutcome; error?: ClaimFailure }
   | { event: 'continued_without_account' }

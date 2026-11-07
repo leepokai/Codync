@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import * as crypto from 'node:crypto'
 import path from 'node:path'
 import { test } from 'node:test'
+import * as timers from 'node:timers/promises'
+import * as channelCrypto from '../main/channel-crypto.ts'
 import { loadMainModule } from './test-support/main-module.ts'
 
 // The key files, in memory; `safeStorage` is unavailable, so a file holds the seed as base64url text.
@@ -16,8 +18,9 @@ const fs = {
 }
 const calls: string[] = []
 const { revokeThisDevice, dropDeviceKey } = loadMainModule<typeof import('../main/cloud.ts')>('cloud', {
-  'node:crypto': crypto, 'node:fs': { promises: fs }, 'node:path': path,
+  'node:crypto': crypto, 'node:fs': { promises: fs }, 'node:path': path, 'node:timers/promises': timers,
   electron: { app: { getPath: () => '/data' }, ipcMain: {}, safeStorage: { isEncryptionAvailable: () => false } },
+  './channel-crypto': channelCrypto, './account-channel': {},
 }, {
   URL, Buffer,
   fetch: async (input: URL, init: RequestInit) => {

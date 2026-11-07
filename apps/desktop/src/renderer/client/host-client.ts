@@ -1,4 +1,4 @@
-import type { CallError } from '@shared/ipc'
+import type { AccountComputer, CallError } from '@shared/ipc'
 import {
   normalizeBot,
   normalizeScreen,
@@ -16,7 +16,7 @@ import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
 import { trNow } from '../lib/l10n.ts'
 
-/** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
+/** How a client reaches a host API: loopback (this computer's own host or an SSH tunnel) or the account's relay. */
 export type HostRoute = 'loopback' | 'direct' | 'relay'
 
 export class HostError extends Error {
@@ -37,10 +37,18 @@ export class HostError extends Error {
   }
 }
 
+/** A host subscription: live events since a revision, or one setup terminal's output. */
+export type HostStream = { kind: 'events'; since: number; client: string } | { kind: 'term'; term: string }
+
 export interface HostTransport {
   call(method: string, body: unknown, timeoutMs: number): Promise<unknown>
   /** Each element is one event's JSON (what SSE puts after `data:`). */
-  stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void): () => void
+  stream(sub: HostStream, onData: (line: string) => void, onEnd: (error: HostError | null) => void): () => void
+}
+
+/** A `CallError` from the main process as a `HostError`; a 401 means the computer no longer lets this device in. */
+function hostError(error: CallError) {
+  return new HostError(error.status ?? 0, error.status === 401 ? trNow("This device isn't allowed on that computer anymore.") : error.message)
 }
 
 export class LoopbackTransport implements HostTransport {
@@ -53,15 +61,31 @@ export class LoopbackTransport implements HostTransport {
     try {
       return await window.codync.host.call(this.baseURL, this.token, method, body, timeoutMs)
     } catch (e) {
-      const error = e as CallError
-      throw new HostError(error.status ?? 0, error.status === 401 ? trNow("This device isn't allowed on that computer anymore.") : error.message)
+      throw hostError(e as CallError)
     }
   }
 
-  stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
-    return window.codync.host.stream(`${this.baseURL}${path}`, this.token, onData, (error) =>
-      onEnd(error ? new HostError(error.status, error.message) : null),
-    )
+  stream(sub: HostStream, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
+    const path = sub.kind === 'events' ? `/events?${new URLSearchParams({ since: String(sub.since), client: sub.client })}` : `/term/${encodeURIComponent(sub.term)}`
+    return window.codync.host.stream(`${this.baseURL}${path}`, this.token, onData, (error) => onEnd(error && new HostError(error.status, error.message)))
+  }
+}
+
+/** An account computer through its end-to-end encrypted channel (main `account-channel`), signed in with this install's device key. */
+export class RelayTransport implements HostTransport {
+  constructor(readonly computer: AccountComputer) {}
+
+  async call(method: string, body: unknown, timeoutMs: number) {
+    try {
+      return await window.codync.remote.call(this.computer, method, body, timeoutMs)
+    } catch (e) {
+      throw hostError(e as CallError)
+    }
+  }
+
+  stream(sub: HostStream, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
+    const { kind, ...body } = sub
+    return window.codync.remote.stream(this.computer, kind, body, onData, (error) => onEnd(error && hostError(error)))
   }
 }
 
@@ -174,8 +198,7 @@ export class HostClient {
 
   /** Catch-up since `since`, then live updates. */
   events(since: number, client: string, onEvent: (e: HostEvent) => void, onEnd: (error: HostError | null) => void) {
-    const query = new URLSearchParams({ since: String(since), client })
-    return this.transport.stream(`/events?${query}`, (line) => {
+    return this.transport.stream({ kind: 'events', since, client }, (line) => {
       const event = parseEvent(line)
       if (event) onEvent(event)
     }, onEnd)
@@ -200,7 +223,7 @@ export class HostClient {
     return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(call ? { call } : {}) })).entry
   }
 
-  /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */
+  /** Bytes per `upload` call: base64 of it stays well under the channel's 8 MiB message. */
   static uploadChunk = 384 * 1024
 
   async upload(botId: string, uploadId: string, name: string, data: Uint8Array) {

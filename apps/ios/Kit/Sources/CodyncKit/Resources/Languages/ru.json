@@ -1682,5 +1682,7 @@
   "Allowed chats": "Разрешённые чаты",
   "Anyone can write right now. Add a chat or person to restrict it.": "Сейчас писать может любой. Добавьте чат или человека, чтобы ограничить.",
   "Anyone can write while this is empty. The owner always can.": "Пока список пуст, писать может любой. Владелец — всегда.",
-  "Allow": "Разрешить"
+  "Allow": "Разрешить",
+  "Discord reaction": "Реакция в Discord",
+  "Use one emoji or name:id.": "Укажите эмодзи или name:id."
 }

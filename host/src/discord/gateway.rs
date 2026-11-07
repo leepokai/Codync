@@ -59,8 +59,10 @@ pub(super) enum Action {
 
 pub(super) async fn run(hub: Arc<Hub>, ep: Endpoint) {
     let mut wait = ep.first_wait;
+    let mut session: Option<String> = None;
+    let mut sequence: u64 = 0;
     loop {
-        match serve(&hub, &ep, &mut wait).await {
+        match serve(&hub, &ep, &mut wait, &mut session, &mut sequence).await {
             Ok(()) => wait = (wait * 2).min(ep.max_wait),
             Err(error) => {
                 set_state(&hub, &format!("error: {}", format!("{error:#}").chars().take(160).collect::<String>()));
@@ -79,7 +81,13 @@ fn set_state(hub: &Hub, state: &str) {
 }
 
 /// One connection, until it drops or Discord asks for another.
-async fn serve(hub: &Arc<Hub>, ep: &Endpoint, wait: &mut Duration) -> Result<()> {
+async fn serve(
+    hub: &Arc<Hub>,
+    ep: &Endpoint,
+    wait: &mut Duration,
+    session: &mut Option<String>,
+    sequence: &mut u64,
+) -> Result<()> {
     if hub.store.kv_read(super::SLOT)?.is_none() {
         tokio::time::sleep(Duration::from_secs(5)).await;
         return Ok(());
@@ -92,12 +100,11 @@ async fn serve(hub: &Arc<Hub>, ep: &Endpoint, wait: &mut Duration) -> Result<()>
         .await
         .context("Discord did not answer in time")??;
     let mut heartbeat: Option<tokio::time::Interval> = None;
-    let mut sequence: u64 = 0;
     loop {
         let message = if let Some(ticker) = heartbeat.as_mut() {
             tokio::select! {
                 _ = ticker.tick() => {
-                    send(&mut ws, &json!({"op": 1, "d": sequence})).await?;
+                    send(&mut ws, &json!({"op": 1, "d": *sequence})).await?;
                     continue;
                 }
                 next = tokio::time::timeout(ep.idle, ws.next()) =>
@@ -115,21 +122,37 @@ async fn serve(hub: &Arc<Hub>, ep: &Endpoint, wait: &mut Duration) -> Result<()>
             _ => continue,
         };
         if let Some(s) = frame["s"].as_u64() {
-            sequence = s;
+            *sequence = s;
         }
         match action(&frame) {
             Action::Hello(seconds) => {
-                send(&mut ws, &identify(&c)).await?;
+                // A dropped connection resumes where it stopped; a refused one identifies again.
+                match &*session {
+                    Some(id) => {
+                        send(
+                            &mut ws,
+                            &json!({"op": 6, "d": {"token": c.bot_token, "session_id": id, "seq": *sequence}}),
+                        )
+                        .await?;
+                    }
+                    None => send(&mut ws, &identify(&c)).await?,
+                }
                 *wait = ep.first_wait;
                 let mut ticker = tokio::time::interval(Duration::from_millis(seconds));
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
                 heartbeat = Some(ticker);
             }
-            Action::Heartbeat => send(&mut ws, &json!({"op": 1, "d": sequence})).await?,
-            Action::Reconnect => return Ok(()),
+            Action::Heartbeat => send(&mut ws, &json!({"op": 1, "d": *sequence})).await?,
+            Action::Reconnect => {
+                if frame["op"] == 9 {
+                    *session = None;
+                }
+                return Ok(());
+            }
             Action::Ignore => {}
         }
         if frame["op"] == 0 && frame["t"] == "READY" {
+            *session = frame["d"]["session_id"].as_str().map(str::to_owned);
             set_state(hub, "ok");
         }
         if frame["op"] == 0 && frame["t"] == "MESSAGE_CREATE" {

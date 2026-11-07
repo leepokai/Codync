@@ -41,8 +41,9 @@ prompts.
 
 ## Limits worth knowing
 
-- The Gateway connection is re-`IDENTIFY`ed after a drop (no `RESUME`): a short drop can miss the
-  messages sent while it lasted. Durability starts once a message is queued.
+- The Gateway connection resumes after a drop (`RESUME` with the session and sequence), so messages
+  sent while it lasted arrive again; the inbox drops one it already has. A refused session
+  identifies afresh.
 - The host asks for `GUILDS`, `GUILD_MESSAGES`, `DIRECT_MESSAGES` and `MESSAGE_CONTENT` only.
 - Threads inside Discord are ordinary channels for this integration: bind the thread id to answer
   in it.

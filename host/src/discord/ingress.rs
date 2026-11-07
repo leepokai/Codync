@@ -56,7 +56,7 @@ pub(super) fn accept(hub: &Hub, c: &Config, message: &Value) -> Result<()> {
     }
     let event = json!({
         "source": "discord", "event": if mention {"message.mention"} else {"message.created"},
-        "channel": channel, "user": author, "text": text,
+        "channel": channel, "user": author, "text": text, "messageId": id,
         "url": format!("https://discord.com/channels/{}/{channel}/{id}", c.guild_id),
     });
     // A routine can ask for a mention or for any message: the mention wins, as on Slack and Telegram.

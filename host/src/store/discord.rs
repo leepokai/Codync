@@ -25,6 +25,7 @@ pub struct DiscordOutgoing {
     pub reply_to: String,
     pub text: String,
     pub bot: String,
+    pub files: Vec<serde_json::Value>,
 }
 #[derive(Serialize)]
 pub struct DiscordDelivery {
@@ -124,10 +125,10 @@ impl Store {
     pub fn pending_discord_replies(&self, generation: &str) -> Result<Vec<DiscordOutgoing>> {
         let db = self.db.locked();
         let mut q = db.prepare(
-            "SELECT e.id,t.channel_id,t.message_id,json_extract(e.data,'$.text'),t.bot_id
+            "SELECT e.id,t.channel_id,t.message_id,json_extract(e.data,'$.text'),t.bot_id,COALESCE(json_extract(e.data,'$.files'),'[]')
             FROM entries e JOIN discord_threads t ON t.bot_id=e.bot_id AND t.root_id=e.thread_id
             WHERE t.generation=?1 AND e.kind='agent' AND json_extract(e.data,'$.final')=1
-            AND COALESCE(json_extract(e.data,'$.text'),'')<>''
+            AND (COALESCE(json_extract(e.data,'$.text'),'')<>'' OR json_extract(e.data,'$.files') IS NOT NULL)
             AND NOT EXISTS(SELECT 1 FROM discord_outbox o WHERE o.entry_id=e.id) ORDER BY e.seq LIMIT 20",
         )?;
         Ok(q.query_map([generation], |r| {
@@ -137,6 +138,7 @@ impl Store {
                 reply_to: r.get(2)?,
                 text: r.get(3)?,
                 bot: r.get(4)?,
+                files: serde_json::from_str(&r.get::<_, String>(5)?).unwrap_or_default(),
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?)

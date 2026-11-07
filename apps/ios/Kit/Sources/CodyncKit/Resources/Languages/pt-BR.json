@@ -1682,5 +1682,7 @@
   "Allowed chats": "Conversas permitidas",
   "Anyone can write right now. Add a chat or person to restrict it.": "Qualquer um pode escrever agora. Adicione uma conversa ou pessoa para restringir.",
   "Anyone can write while this is empty. The owner always can.": "Qualquer um pode escrever enquanto estiver vazio. O dono sempre pode.",
-  "Allow": "Permitir"
+  "Allow": "Permitir",
+  "Discord reaction": "Reação no Discord",
+  "Use one emoji or name:id.": "Use um emoji ou nome:id."
 }

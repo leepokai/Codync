@@ -40,7 +40,7 @@ if-addrs = "0.15.0"
 portable-pty = "0.9.0"
 qrcode = { version = "0.14.1", default-features = false }
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream", "cookies"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream", "cookies", "multipart"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 semver = "1.0.28"
@@ -48,6 +48,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 sha2 = "0.11.0"
 hmac = "0.13.0"
+percent-encoding = "2"
 # Already built for reqwest's URL handling; the TUI folds accents out of section names to sort them.
 icu_normalizer = { version = "2.3.0", default-features = false, features = ["compiled_data"] }
 shlex = "2.0.1"

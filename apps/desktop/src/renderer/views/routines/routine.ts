@@ -239,6 +239,7 @@ export const outputKinds = [
   { id: 'slack', label: 'Slack' },
   { id: 'telegram', label: 'Telegram' },
   { id: 'discord', label: 'Discord' },
+  { id: 'discordReact', label: 'Discord reaction' },
   { id: 'githubComment', label: 'GitHub comment' },
 ] as const
 
@@ -249,5 +250,6 @@ export function outputProblem(output: RoutineOutput): string | null {
   if (output.kind === 'telegram' && !/^-?\d+$/.test(target)) return 'Use a Telegram chat id.'
   if (output.kind === 'githubComment' && !/^[^/\s]+\/[^/\s]+$/.test(target)) return 'Use owner/name.'
   if ((output.kind === 'slack' || output.kind === 'discord') && /\s/.test(target)) return 'Use a channel id.'
+  if (output.kind === 'discordReact' && /\s/.test(target)) return 'Use one emoji or name:id.'
   return null
 }

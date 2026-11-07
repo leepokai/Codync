@@ -233,6 +233,7 @@ import kotlinx.coroutines.launch
                         }, when (output.kind) {
                             "githubComment" -> "owner/name"
                             "telegram" -> "-1001234567890"
+                            "discordReact" -> "👍"
                             else -> "1234567890"
                         }, fill = Palette.bubbleUser, capitalize = false)
                         if (output.kind == "telegram") {

@@ -135,7 +135,7 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 
 /** The output kinds the editor offers, and their destination rules (host `routines::outputs`). */
 object RoutineOutputs {
-    val kinds = listOf("slack" to "Slack", "telegram" to "Telegram", "discord" to "Discord", "githubComment" to "GitHub comment")
+    val kinds = listOf("slack" to "Slack", "telegram" to "Telegram", "discord" to "Discord", "discordReact" to "Discord reaction", "githubComment" to "GitHub comment")
 
     fun problem(output: RoutineOutput): String? {
         val target = output.target.trim()
@@ -143,6 +143,7 @@ object RoutineOutputs {
         if (output.kind == "telegram" && target.toLongOrNull() == null) return "Use a Telegram chat id."
         if (output.kind == "githubComment" && !Regex("^[^/\\s]+/[^/\\s]+$").matches(target)) return "Use owner/name."
         if (output.kind in listOf("slack", "discord") && target.any(Char::isWhitespace)) return "Use a channel id."
+        if (output.kind == "discordReact" && target.any(Char::isWhitespace)) return "Use one emoji or name:id."
         return null
     }
 }

@@ -37,9 +37,10 @@ pub fn problem(output: &Output) -> Option<String> {
         "slack" | "discord" if target.len() > 64 || target.contains(char::is_whitespace) => {
             Some("Use a channel id.".into())
         }
+        "discordReact" if target.contains(char::is_whitespace) => Some("Use one emoji or name:id.".into()),
         "telegram" if target.parse::<i64>().is_err() => Some("Use a Telegram chat id.".into()),
         "githubComment" if !github_repo(target) => Some("Use owner/name.".into()),
-        "slack" | "telegram" | "discord" | "githubComment" => None,
+        "slack" | "telegram" | "discord" | "discordReact" | "githubComment" => None,
         _ => Some("Choose what kind of output it is.".into()),
     }
 }
@@ -73,6 +74,7 @@ pub fn describe(output: &Output) -> String {
         "slack" => format!("Post in Slack {}", output.target),
         "telegram" => format!("Send to Telegram {}", output.target),
         "discord" => format!("Post in Discord {}", output.target),
+        "discordReact" => format!("React with {} on Discord", output.target),
         other => format!("{other} {}", output.target),
     }
 }
@@ -122,6 +124,11 @@ async fn one(hub: &Arc<Hub>, output: &Output, event: &Value, text: &str) -> Resu
             crate::telegram::send_text(&hub.store, &account, chat, text).await?;
         }
         "discord" => crate::discord::send_text(&hub.store, &output.target, text).await?,
+        "discordReact" => {
+            let channel = event["channel"].as_str().context("The run did not come from a channel.")?;
+            let message = event["messageId"].as_str().context("The run did not name a message.")?;
+            crate::discord::react(&hub.store, channel, message, output.target.trim()).await?;
+        }
         "githubComment" => github_comment(hub, output, event, text).await?,
         other => bail!("Unknown output {other}."),
     }
@@ -173,6 +180,8 @@ mod tests {
     fn each_kind_checks_its_destination() {
         assert!(problem(&output("slack", "C0123")).is_none());
         assert!(problem(&output("discord", "123")).is_none());
+        assert!(problem(&output("discordReact", "👍")).is_none());
+        assert!(problem(&output("discordReact", "two words")).is_some());
         assert!(problem(&output("telegram", "-100123")).is_none());
         assert!(problem(&output("githubComment", "owner/repo")).is_none());
         assert!(problem(&output("slack", "not a channel")).is_some());

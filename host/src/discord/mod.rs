@@ -151,6 +151,39 @@ async fn verify(c: &Config) -> Result<()> {
     Ok(())
 }
 
+/// The bot token, for a caller that has to send something.
+pub(crate) fn credentials(store: &Store) -> Result<Option<String>> {
+    Ok(load(store)?.filter(|c| !c.bot_token.is_empty()).map(|c| c.bot_token))
+}
+
+/// Reacts to one message with `emoji` (a character, or `name:id` for a custom one).
+pub(crate) async fn react(store: &Store, channel: &str, message: &str, emoji: &str) -> Result<()> {
+    let token = credentials(store)?.context("Discord is not configured.")?;
+    let emoji = percent_encoding::utf8_percent_encode(emoji, EMOJI).to_string();
+    let url = format!("{}/channels/{channel}/messages/{message}/reactions/{emoji}/@me", Endpoint::discord().api);
+    let client = crate::egress::client(crate::egress::Policy::Only(&["discord.com"]), &url).await?;
+    let response = client
+        .put(&url)
+        .header("authorization", format!("Bot {token}"))
+        .header("content-length", "0")
+        .timeout(std::time::Duration::from_secs(20))
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        anyhow::bail!("Discord answered {}", response.status());
+    }
+    Ok(())
+}
+
+/// The characters a reaction's path keeps unencoded: `name:id` stays readable, everything else is escaped.
+const EMOJI: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC.remove(b':').remove(b'_').remove(b'-');
+
+/// Sends one message to a bound channel.
+pub(crate) async fn send_text(store: &Store, channel: &str, text: &str) -> Result<()> {
+    let token = credentials(store)?.context("Discord is not configured.")?;
+    client::message(&Endpoint::discord(), &token, channel, "", text, &[]).await
+}
+
 pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Value> {
     crate::market::vault::unlock(hub.clone()).await?;
     let prepared = if method == "setDiscordChannel" {

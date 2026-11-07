@@ -1682,5 +1682,7 @@
   "Allowed chats": "允许的聊天",
   "Anyone can write right now. Add a chat or person to restrict it.": "现在任何人都能写信。添加聊天或人来限制。",
   "Anyone can write while this is empty. The owner always can.": "为空时任何人都能写信。所有者始终可以。",
-  "Allow": "允许"
+  "Allow": "允许",
+  "Discord reaction": "Discord 反应",
+  "Use one emoji or name:id.": "使用一个表情或 name:id。"
 }

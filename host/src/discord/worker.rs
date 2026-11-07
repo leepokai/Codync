@@ -55,7 +55,7 @@ async fn tick(hub: &Arc<Hub>) -> Result<()> {
                 continue;
             }
         }
-        let sent = client::message(&ep, &c.bot_token, &reply.channel, &reply.reply_to, &reply.text).await;
+        let sent = client::message(&ep, &c.bot_token, &reply.channel, &reply.reply_to, &reply.text, &reply.files).await;
         match sent {
             Ok(()) => hub.store.finish_discord_reply(&reply.entry, "sent")?,
             Err(error) => {

@@ -1682,5 +1682,7 @@
   "Allowed chats": "許可されたチャット",
   "Anyone can write right now. Add a chat or person to restrict it.": "今は誰でも書き込めます。チャットか人を追加して制限します。",
   "Anyone can write while this is empty. The owner always can.": "空の間は誰でも書き込めます。所有者は常に可能です。",
-  "Allow": "許可"
+  "Allow": "許可",
+  "Discord reaction": "Discord のリアクション",
+  "Use one emoji or name:id.": "絵文字または name:id を指定します。"
 }

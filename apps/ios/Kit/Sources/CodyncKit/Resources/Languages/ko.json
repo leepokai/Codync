@@ -1682,5 +1682,7 @@
   "Allowed chats": "허용된 채팅",
   "Anyone can write right now. Add a chat or person to restrict it.": "지금은 누구나 글을 쓸 수 있습니다. 채팅이나 사람을 추가해 제한하세요.",
   "Anyone can write while this is empty. The owner always can.": "비어 있는 동안 누구나 글을 쓸 수 있습니다. 소유자는 항상 가능합니다.",
-  "Allow": "허용"
+  "Allow": "허용",
+  "Discord reaction": "Discord 반응",
+  "Use one emoji or name:id.": "이모지 또는 name:id를 사용하세요."
 }

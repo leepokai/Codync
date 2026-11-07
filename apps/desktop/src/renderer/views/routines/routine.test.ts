@@ -72,6 +72,8 @@ test('an output checks its own destination', () => {
   assert.ok(outputProblem(output('slack', 'not a channel')))
   assert.ok(outputProblem(output('telegram', 'abc')))
   assert.ok(outputProblem(output('githubComment', 'owner')))
+  assert.ok(outputProblem(output('discordReact', 'two words')))
+  assert.equal(outputProblem(output('discordReact', '👍')), null)
   assert.ok(outputProblem(output('slack', '')))
 })
 

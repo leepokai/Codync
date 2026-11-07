@@ -6,7 +6,7 @@ import { outputKinds, outputProblem, type RoutineOutput } from './routine'
 import './routines.css'
 
 const placeholder = (kind: string) =>
-  kind === 'githubComment' ? 'owner/name' : kind === 'telegram' ? '-1001234567890' : '1234567890'
+  kind === 'githubComment' ? 'owner/name' : kind === 'telegram' ? '-1001234567890' : kind === 'discordReact' ? '👍' : '1234567890'
 
 /** Where a workflow's last reply goes: a channel, a chat, or the issue that started it. */
 export function RoutineOutputsFields({ outputs, update }: { outputs: RoutineOutput[]; update: (outputs: RoutineOutput[]) => void }) {

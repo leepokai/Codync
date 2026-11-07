@@ -27,6 +27,8 @@ final class SharedAudio {
     @ObservationIgnored private var clock: Timer?
     /// A call or Siri taking the audio pauses the note, as the user's own pause would.
     @ObservationIgnored private var interruptions: AudioSessionEvents?
+    /// The note now sounding: starting another pauses it first, so only one owns the audio session.
+    private static weak var sounding: SharedAudio?
     /// The step this tap is on, so a failure says which one broke.
     private(set) var failure = AnalyticsEvent.VoiceNoteFailure.load
     /// Fetches the sound's bytes; tests hold it open to stop the card mid-load.
@@ -61,6 +63,7 @@ final class SharedAudio {
             let player = try await prepared(file, entryId: entryId, model: model)
             guard generation == started else { state = .idle; return }
             failure = .playback
+            if let other = Self.sounding, other !== self, other.state == .playing { other.pause() }
             // Heard with the ringer off too.
             let session = AVAudioSession.sharedInstance()
             if session.category != .playAndRecord {
@@ -69,6 +72,7 @@ final class SharedAudio {
                 ownsSession = true
             }
             guard player.play() else { throw CocoaError(.coderReadCorrupt) }
+            Self.sounding = self
             elapsed = player.currentTime
             state = .playing
             startClock()
@@ -141,7 +145,7 @@ final class SharedAudio {
         guard let data = await load(model, file, entryId) else { throw CocoaError(.fileReadUnknown) }
         let player = try AVAudioPlayer(data: data)
         duration = player.duration
-        let done = PlayDone { [weak self] in Task { @MainActor in self?.finish() } }
+        let done = PlayDone { [weak self] played in Task { @MainActor in played ? self?.finish() : self?.fail() } }
         player.delegate = done
         (self.player, self.done) = (player, done)
         return player

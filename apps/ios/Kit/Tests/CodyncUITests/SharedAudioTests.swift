@@ -132,6 +132,27 @@ private func silentWAV() -> Data {
         }
     }
 
+    @Test func startingASecondVoiceNotePausesTheFirstSoItKeepsTheAudio() async {
+        var deactivations = 0
+        await playing(deactivate: { deactivations += 1 }) { first, load, store, note in
+            let second = SharedAudio(load: { _, _, _ in silentWAV() }, deactivate: { deactivations += 1 })
+            let tap = Task { await first.toggle(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await tap.value
+            await second.toggle(note, entryId: "entry", model: store)
+            #expect(first.state == .paused)
+            #expect(second.state == .playing)
+
+            await first.toggle(note, entryId: "entry", model: store)
+            #expect(second.state == .paused, "the note playing before hands it back")
+            #expect(first.state == .playing)
+            first.stop()
+            second.stop()
+            #expect(deactivations == 3, "each pause and the stop hand the audio back once")
+        }
+    }
+
     @Test func pausingAVoiceNoteAfterACallTookTheAudioLeavesTheCallsSessionActive() async throws {
         let session = AVAudioSession.sharedInstance()
         defer { try? session.setCategory(.soloAmbient) }

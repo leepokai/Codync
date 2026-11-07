@@ -8,6 +8,7 @@ use crate::hub::Hub;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest as _, Sha256};
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
@@ -47,6 +48,7 @@ struct Link {
 pub struct WhatsApp {
     state: Mutex<LinkState>,
     link: Mutex<Link>,
+    sender: std::sync::atomic::AtomicBool,
 }
 
 impl WhatsApp {
@@ -56,6 +58,7 @@ impl WhatsApp {
 
     /// Starts the bridge and the link. A running link stays as it is.
     pub fn start(self: &Arc<Self>, hub: &Arc<Hub>) {
+        self.ensure_sender(hub);
         let app = self.clone();
         let hub = hub.clone();
         tokio::spawn(async move {
@@ -67,6 +70,63 @@ impl WhatsApp {
                 .await;
             }
         });
+    }
+
+    /// Runs the reply sender once for the life of the host.
+    fn ensure_sender(self: &Arc<Self>, hub: &Arc<Hub>) {
+        if self.sender.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        let app = self.clone();
+        let hub = hub.clone();
+        tokio::spawn(async move {
+            loop {
+                if app.state.lock().await.state == "connected"
+                    && let Err(error) = app.replies(&hub).await
+                {
+                    tracing::warn!(error = format!("{error:#}"), "WhatsApp replies need attention");
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            }
+        });
+    }
+
+    /// Sends the bot replies of this chat back to it. A file that left the chat follows its text.
+    async fn replies(&self, hub: &Hub) -> Result<()> {
+        for reply in hub.store.pending_whatsapp_replies()? {
+            if !hub.store.claim_whatsapp_reply(&reply.entry)? {
+                continue;
+            }
+            let mut sent = Ok(());
+            if !reply.text.trim().is_empty() {
+                sent = self.send_message(&reply.chat, &reply.text, None, None, None).await;
+            }
+            if sent.is_ok() {
+                for file in &reply.files {
+                    let path = file["path"].as_str().unwrap_or_default();
+                    if path.is_empty() {
+                        continue;
+                    }
+                    sent = self
+                        .send_message(
+                            &reply.chat,
+                            "",
+                            Some(Path::new(path)),
+                            file["name"].as_str(),
+                            file["mimetype"].as_str(),
+                        )
+                        .await;
+                    if sent.is_err() {
+                        break;
+                    }
+                }
+            }
+            hub.store.finish_whatsapp_reply(&reply.entry, if sent.is_ok() { "sent" } else { "failed" })?;
+            if let Err(error) = sent {
+                tracing::warn!(%error,entry=%reply.entry,"WhatsApp reply was not sent");
+            }
+        }
+        Ok(())
     }
 
     async fn begin(&self, hub: &Arc<Hub>) -> Result<()> {
@@ -205,21 +265,56 @@ impl WhatsApp {
     }
 
     async fn on_message(&self, hub: &Arc<Hub>, event: &Value) {
-        let text = event["text"].as_str().unwrap_or_default();
+        let text = event["text"].as_str().unwrap_or_default().trim().to_owned();
         if text.is_empty() && event["media"].is_null() {
             return;
         }
+        let Some(chat) = event["chat"].as_str().filter(|c| !c.is_empty()) else { return };
+        let group = event["group"].as_bool().unwrap_or(false);
+        if group && !event["mentioned"].as_bool().unwrap_or(false) && !event["quoted"].as_bool().unwrap_or(false) {
+            return;
+        }
+        // The orchestrator: an `@name` in the message picks that bot, anything else the chosen one.
+        let roster: Vec<crate::store::BotRow> = hub
+            .store
+            .bots()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|bot| !bot.deleted && !bot.config.is_group() && !crate::external::is_external(&bot.config))
+            .collect();
+        let (chosen, text) = mentioned_bot(&roster, &text);
+        let bot = chosen
+            .map(|b| b.config.id.clone())
+            .or_else(|| hub.store.kv_get("whatsapp.bot"))
+            .filter(|id| roster.iter().any(|b| &b.config.id == id));
+        let Some(bot) = bot else {
+            let _ = self
+                .send_message(
+                    chat,
+                    "No hay ningún bot asignado a este WhatsApp. Elige uno en Ajustes.",
+                    None,
+                    None,
+                    None,
+                )
+                .await;
+            return;
+        };
         let media = event["media"].as_object();
-        let note = media.map_or_else(
-            || text.to_owned(),
-            |m| {
+        let mut attached = Vec::new();
+        let note = if let Some(m) = media {
+            if let Ok(Some(path)) = save_media(m).await {
+                attached.push(path.clone());
+                format!("[Attached: {path}]")
+            } else {
                 let kind = m.get("kind").and_then(Value::as_str).unwrap_or("file");
-                format!("[{kind}] {}", m.get("name").and_then(Value::as_str).unwrap_or(text))
-            },
-        );
+                format!("[{kind}] {}", m.get("name").and_then(Value::as_str).unwrap_or(&text))
+            }
+        } else {
+            text.clone()
+        };
         let routine_event = json!({
             "source": "whatsapp",
-            "event": if event["group"].as_bool().unwrap_or(false) { "groupMention" } else { "message" },
+            "event": if group { "groupMention" } else { "message" },
             "chat": event["chat"],
             "from": event["sender"],
             "name": event["name"],
@@ -227,24 +322,44 @@ impl WhatsApp {
             "group": event["group"],
             "media": media.cloned(),
         });
-        hub.routines.receive_event(&hub.store, &routine_event, None);
-        let Some(bot) = hub.store.kv_get("whatsapp.bot") else { return };
-        if hub.store.bot(&bot).ok().flatten().is_none() {
-            return;
-        }
+        hub.routines.receive_event(&hub.store, &routine_event, event["id"].as_str().map(str::to_owned));
+        let Some(bot_row) = hub.store.bot(&bot).ok().flatten() else { return };
+        let root = if let Some(root) = hub.store.whatsapp_root(chat) {
+            root
+        } else {
+            let root = entry_id(&["root", chat]);
+            hub.add_entry_once(
+                &root,
+                &crate::store::Lane::main(&bot),
+                crate::store::EntryKind::User,
+                hub.store.max_turn(&bot),
+                &json!({"text":format!("WhatsApp conversation · {chat}"), "source":"whatsapp", "status":"sent", "whatsappChat": chat}),
+            )
+            .ok();
+            hub.store.map_whatsapp_thread(chat, &root).ok();
+            root
+        };
+        let id = entry_id(&["message", chat, event["id"].as_str().unwrap_or_default()]);
         let prompt = format!(
             "WhatsApp message from {}:\n\n{note}",
             event["name"].as_str().unwrap_or_else(|| event["sender"].as_str().unwrap_or("someone"))
         );
-        if let Err(error) = crate::api::dispatch(
-            hub,
-            &crate::api::devices::Caller::Local,
-            "send",
-            json!({"botId": bot, "text": prompt}),
-        )
-        .await
-        {
-            tracing::warn!(%error, "Could not deliver a WhatsApp message to a bot");
+        let lane = crate::store::Lane::in_thread(&bot, &root);
+        let Ok((entry, _)) = hub.add_entry_once(
+            &id,
+            &lane,
+            crate::store::EntryKind::User,
+            hub.store.max_turn(&bot) + 1,
+            &json!({"text":prompt, "status":"queued", "source":"whatsapp", "whatsappChat": chat,
+                "whatsappFiles": attached}),
+        ) else {
+            return;
+        };
+        if entry.data["status"] == "queued" {
+            let text = crate::chat::prompt::of_entry(hub, &bot_row.config, &entry.data);
+            if let Err(error) = hub.send_cmd(&bot, crate::agent::bot::Cmd::Send { lane, entry_id: entry.id, text }) {
+                tracing::warn!(%error, "Could not deliver a WhatsApp message to a bot");
+            }
         }
     }
 
@@ -262,6 +377,64 @@ impl WhatsApp {
             .await;
         }
     }
+}
+
+/// A stable entry id from its parts (`whatsapp-<hash>`).
+fn entry_id(parts: &[&str]) -> String {
+    let mut digest = Sha256::new();
+    for part in parts {
+        digest.update((part.len() as u64).to_le_bytes());
+        digest.update(part.as_bytes());
+    }
+    format!("whatsapp-{}", crate::chat::files::digest_hex(&digest.finalize()))
+}
+
+/// The bot an `@name` in `text` names, and the text without it; the first match wins.
+fn mentioned_bot<'a>(roster: &'a [crate::store::BotRow], text: &str) -> (Option<&'a crate::store::BotRow>, String) {
+    let lower = text.to_lowercase();
+    let found = roster.iter().find(|bot| {
+        let needle = format!("@{}", bot.config.name.to_lowercase());
+        !bot.config.name.is_empty() && lower.contains(&needle)
+    });
+    match found {
+        Some(bot) => {
+            let needle = format!("@{}", bot.config.name.to_lowercase());
+            let at = lower.find(&needle).unwrap_or(0);
+            let mut stripped = text.to_owned();
+            stripped.replace_range(at..at + needle.len(), "");
+            (Some(bot), stripped.trim().to_owned())
+        }
+        None => (None, text.to_owned()),
+    }
+}
+
+/// Saves attached media under the data folder, so the bot can open it; `None` when it is too big or wrong.
+async fn save_media(media: &serde_json::Map<String, Value>) -> Result<Option<String>> {
+    let Some(data) = media.get("data").and_then(Value::as_str) else { return Ok(None) };
+    let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)?;
+    if bytes.len() > 32 * 1024 * 1024 {
+        return Ok(None);
+    }
+    let ext = match media.get("mimetype").and_then(Value::as_str) {
+        Some("image/jpeg") => "jpg",
+        Some("image/png") => "png",
+        Some("image/webp") => "webp",
+        Some("video/mp4") => "mp4",
+        Some("audio/ogg") => "ogg",
+        Some("application/pdf") => "pdf",
+        _ => "bin",
+    };
+    let dir = crate::service::data_dir().join("whatsapp-media");
+    tokio::fs::create_dir_all(&dir).await?;
+    let name: String = media
+        .get("name")
+        .and_then(Value::as_str)
+        .map(|n| n.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')).collect())
+        .filter(|n: &String| !n.is_empty())
+        .unwrap_or_else(|| format!("media.{ext}"));
+    let path = dir.join(format!("{}-{name}", uuid::Uuid::new_v4().simple()));
+    tokio::fs::write(&path, bytes).await?;
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 #[derive(Deserialize)]
@@ -311,5 +484,30 @@ mod tests {
         let state = LinkState::default();
         assert_eq!(state.state, "");
         assert!(state.qr.is_none());
+    }
+
+    #[test]
+    fn an_at_name_picks_that_bot_and_leaves_the_text() {
+        let bot = |id: &str, name: &str| crate::store::BotRow {
+            config: serde_json::from_value(
+                json!({"id": id, "name": name, "backend": "fixture", "command": "x", "cwd": "/"}),
+            )
+            .unwrap(),
+            rev: 0,
+            deleted: false,
+            session_id: None,
+            read_rev: 0,
+        };
+        let roster = vec![bot("1", "Casa"), bot("2", "Trabajo")];
+        let (chosen, text) = mentioned_bot(&roster, "@Trabajo resúmeme esto");
+        assert_eq!(chosen.map(|b| b.config.id.as_str()), Some("2"));
+        assert_eq!(text, "resúmeme esto");
+        let (none, same) = mentioned_bot(&roster, "hola");
+        assert!(none.is_none());
+        assert_eq!(same, "hola");
+        // A longer word that starts with a name still matches; the rest of it stays.
+        let (partial, rest) = mentioned_bot(&roster, "@Casamiento ya");
+        assert_eq!(partial.map(|b| b.config.id.as_str()), Some("1"));
+        assert_eq!(rest, "miento ya");
     }
 }

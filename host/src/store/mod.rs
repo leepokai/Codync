@@ -32,6 +32,7 @@ mod workspaces;
 pub use visibility::is_internal;
 pub(crate) mod discord;
 pub(crate) mod slack;
+pub(crate) mod whatsapp;
 
 pub use apps::{AppLink, AppLinkMode, BotApp};
 pub use computer_activity::{ComputerActivity, ComputerActivityResult};

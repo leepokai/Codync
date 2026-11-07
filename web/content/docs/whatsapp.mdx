@@ -1,0 +1,39 @@
+# WhatsApp
+
+A linked WhatsApp number lets people reach a bot from their phone. The link runs on your computer
+through a small Node bridge and appears in WhatsApp under **Linked devices**; nothing goes through a
+Codync server. It is not an official WhatsApp integration and WhatsApp may block a number it takes
+for automated, so a separate number is safer.
+
+## Link it
+
+Open **Extensions → Apps → WhatsApp** on the computer, pick the bot that answers, and choose **Link
+WhatsApp**. Scan the code on the phone in **WhatsApp → Linked devices → Link a device**. The link
+stops with the host; **Disconnect** logs it out.
+
+## Who gets answered
+
+- **A direct chat:** every message is answered by the chosen bot.
+- **Your own chat (message to yourself):** answered too.
+- **A group:** the bot answers a mention of the number or a reply to something it sent, and stays
+  quiet for the rest.
+
+Put `@` and a bot's name in a message to send it to that bot instead of the chosen one.
+
+## Files
+
+Photos, videos, voice notes and documents are saved under the host's data folder and named in the
+prompt, so the bot can open them. The bot's replies come back into the same chat, with any files it
+attaches (images arrive as photos). A very large attachment is named but not saved.
+
+## Approval codes
+
+A run that needs a decision can be answered from the phone: reply `1` or `2` to the card. The code
+belongs to that card only, and the run keeps waiting until it expires or you answer.
+
+## Limits
+
+- One number per computer.
+- Group messages older than the link are not read: the bridge only sees what arrives while it runs.
+- A message with no text and no file is ignored.
+- The bot keeps its own session and memory: the chat is a way in, not another persona.

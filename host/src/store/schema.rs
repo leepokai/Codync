@@ -187,6 +187,7 @@ impl Store {
         super::documents::open(&c)?;
         super::mcp_policies::open(&c)?;
         super::discord::open(&c)?;
+        super::whatsapp::open(&c)?;
         super::slack::open(&c)?;
         super::research::open(&c)?;
         super::analytics::open(&c)?;

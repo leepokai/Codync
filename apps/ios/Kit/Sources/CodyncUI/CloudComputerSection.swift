@@ -42,6 +42,9 @@ public struct CloudComputerSection: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
+        } accessory: {
+            // Codync Cloud is a beta feature.
+            BetaTag()
         }
         .codyncDialog(confirm == .computer ? "Delete your cloud computer?" : "Delete snapshots?",
                       isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Button, CardSection, IconButton, RowLabel, Spinner, ValueRow } from '../../components/Controls'
+import { BetaTag, Button, CardSection, IconButton, RowLabel, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
@@ -35,7 +35,13 @@ export function CodyncCloudSection() {
     <>
       <CardSection
         title="Codync Cloud"
-        accessory={<IconButton title="Refresh" icon="arrow.clockwise" onClick={() => void model.refresh()} />}
+        accessory={
+          <>
+            {/* Codync Cloud is a beta feature. */}
+            <BetaTag />
+            <IconButton title="Refresh" icon="arrow.clockwise" onClick={() => void model.refresh()} />
+          </>
+        }
         footer={
           <Text size="caption" tone={model.error ? 'danger' : 'secondary'}>
             {tr(model.error ?? "Runs on your own Boat account, which bills you while it's awake. It sleeps when idle and wakes when you message it.")}

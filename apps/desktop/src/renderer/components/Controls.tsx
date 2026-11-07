@@ -378,3 +378,9 @@ export function ResizeHandle({ label, width, min, max, edge, onResize, onDraggin
     />
   )
 }
+
+/** A quiet "Beta" pill beside a feature still in beta (Network, Codync Cloud). */
+export function BetaTag() {
+  const tr = useTr()
+  return <Text as="span" size="caption" weight="semibold" className="beta-tag">{tr('Beta')}</Text>
+}

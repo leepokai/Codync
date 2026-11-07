@@ -42,7 +42,9 @@ private val CloudMachine.stateLabel: String get() = when (state) {
     if (machine == null && !offer.available) return
     val busy = "cloudMachine" in state.busy || "session" in state.busy
     val keyBusy = "cloudKey" in state.busy
-    CardSection("Codync Cloud", "Runs on your own Boat account, which bills you while it's awake. It sleeps when idle and wakes when you message it.") {
+    // Codync Cloud is a beta feature.
+    CardSection("Codync Cloud", "Runs on your own Boat account, which bills you while it's awake. It sleeps when idle and wakes when you message it.",
+        accessory = { BetaTag() }) {
         if (machine == null) {
             row { CloudKeyRows(offer, keyBusy, canRemove = true, store) }
             if (offer.canCreate) row { CloudAction("cloud", "Create cloud computer", Palette.text, busy, spinning = busy, action = store::createCloudComputer) }

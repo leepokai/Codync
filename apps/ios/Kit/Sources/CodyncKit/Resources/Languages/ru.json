@@ -1706,5 +1706,10 @@
   "in the thread": "в ветке",
   "Needs a member": "Нужен человек",
   "Answer": "Ответить",
-  "A bot": "Бот"
+  "A bot": "Бот",
+  "Send to a channel…": "Отправить в канал…",
+  "Send to a channel": "Отправить в канал",
+  "The message arrives there as a forwarded copy.": "Сообщение придёт туда как пересланная копия.",
+  "Forwarded from": "Переслано от",
+  "No chats yet.": "Чатов пока нет."
 }

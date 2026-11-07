@@ -1706,5 +1706,10 @@
   "in the thread": "im Thread",
   "Needs a member": "Braucht eine Person",
   "Answer": "Antworten",
-  "A bot": "Ein Bot"
+  "A bot": "Ein Bot",
+  "Send to a channel…": "An einen Kanal senden…",
+  "Send to a channel": "An einen Kanal senden",
+  "The message arrives there as a forwarded copy.": "Die Nachricht kommt dort als weitergeleitete Kopie an.",
+  "Forwarded from": "Weitergeleitet von",
+  "No chats yet.": "Noch keine Chats."
 }

@@ -1706,5 +1706,10 @@
   "in the thread": "在執行緒中",
   "Needs a member": "需要一名成員",
   "Answer": "回答",
-  "A bot": "一個機器人"
+  "A bot": "一個機器人",
+  "Send to a channel…": "傳送到頻道…",
+  "Send to a channel": "傳送到頻道",
+  "The message arrives there as a forwarded copy.": "訊息會以轉傳副本的形式到達那裡。",
+  "Forwarded from": "轉傳自",
+  "No chats yet.": "還沒有聊天。"
 }

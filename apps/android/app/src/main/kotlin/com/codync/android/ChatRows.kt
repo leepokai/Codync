@@ -131,10 +131,15 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
     val topGroupGap = if (compact) 8.dp else 12.dp
     val topSameGap = if (compact) 2.dp else 4.dp
     val haptics = LocalCodyncHaptics.current
+    // The message picked to send on to another chat.
+    var forwardEntry by remember { mutableStateOf<Entry?>(null) }
+    val forward: (() -> Unit)? = if (entry.text.isNotBlank() || entry.files.isNotEmpty() || entry.data["attachments"]?.jsonArray?.isNotEmpty() == true) {
+        { forwardEntry = entry }
+    } else null
     when (entry.kind) {
         "user" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            UserBubble(entry, state, store, reply, thread)
+            UserBubble(entry, state, store, reply, forward, thread)
             ReactionsRow(entry, store)
             ThreadChip(entry, state, reply)
             RoutineThreadChip(entry, store)
@@ -142,7 +147,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
         "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
-            AgentBubble(entry, state, store, openTrace, reply, thread, openArtifact)
+            AgentBubble(entry, state, store, openTrace, reply, forward, thread, openArtifact)
             Column(Modifier.padding(start = if (group) 34.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ReactionsRow(entry, store)
                 ThreadChip(entry, state, reply)
@@ -171,6 +176,9 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
         } else Box(Modifier.padding(top = if (compact) 6.dp else 10.dp)) { NoticeRow(entry, state, store) }
     }
+    CodyncSheet(forwardEntry, { forwardEntry = null }) { picked ->
+        ForwardSheet(picked, state, store) { forwardEntry = null }
+    }
 }
 
 /** What a connection request in the chat opens. */
@@ -186,7 +194,7 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 }
 
 /** The menu a message opens on long press: copy, quote, reply in its thread, what the agent did. */
-private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?, store: AppStore? = null, quote: (() -> Unit)?) = buildList {
+private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?, store: AppStore? = null, quote: (() -> Unit)?, forward: (() -> Unit)? = null) = buildList {
     add(MenuItem("Copy", icon = "square.on.square") {
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", entry.text))
     })
@@ -195,6 +203,7 @@ private fun messageMenu(context: android.content.Context, entry: Entry, reply: (
         store.command("saveBookmark", body("botId" to entry.botId, "entryId" to entry.id, "preview" to entry.text, "author" to entry.replyQuote.author), "bookmark:" + entry.id)
     })
     if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
+    if (forward != null) add(MenuItem("Send to a channel…", icon = "arrowshape.turn.up.right", action = forward))
     if (store != null) add(MenuItem("Delete", icon = "trash") { store.deleteEntry(entry) })
     if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
 }
@@ -226,25 +235,36 @@ private fun reactionPick(entry: Entry, store: AppStore) = ReactionPick(quickReac
 
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
-@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, thread: String?) {
+@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?) {
     val context = LocalContext.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, state, store)
+        ForwardedLabel(entry)
         entry.replyTo?.let { quote ->
             val author = if (quote.author == "user") "You" else state.bots.firstOrNull { it.id == quote.author }?.name ?: "Bot"
             Text("↩ $author: ${quote.text}", style = Type.caption, color = Palette.tertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser).swipeToReply(reply)
             .contextActions(reactions = reactionPick(entry, store), preview = { SelectionContainer { UserText(entry.text) } }) {
-                messageMenu(context, entry, reply, null, store) { store.quoteMessage(entry, thread) }
+                messageMenu(context, entry, reply, null, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
             }) { UserText(entry.text) }
         SendStatusLine(entry.status, state.bots.firstOrNull { it.id == entry.botId }?.status == "working")
     }
 }
 
-@Composable private fun UserText(text: String) {
-    val compact = LocalUiDensity.current == UiDensity.Compact
+/** Said as forwarded from another chat: the author above the copy. */
+@Composable private fun ForwardedLabel(entry: Entry) {
+    val forwarded = entry.data["forwardedFrom"] as? JsonObject ?: return
+    val author = forwarded["author"]?.jsonPrimitive?.contentOrNull ?: return
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Symbol("arrowshape.turn.up.right", size = 10.dp, tint = Palette.tertiary)
+        Text(tr("Forwarded from") + " " + author, style = Type.caption, color = Palette.tertiary, maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable private fun UserText(text: String) {    val compact = LocalUiDensity.current == UiDensity.Compact
     Text(
         text,
         Modifier.background(Palette.bubbleUser).padding(horizontal = 16.dp, vertical = if (compact) 8.dp else 10.dp),
@@ -295,25 +315,26 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, thread: String?, openArtifact: (OpenArtifact) -> Unit) {
+@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, openArtifact: (OpenArtifact) -> Unit) {
     val context = LocalContext.current
     val files = entry.files
     val artifact = entry.artifact
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        ForwardedLabel(entry)
         // Artifact cards and downloaded files keep the original message's actions.
         if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store,
             Modifier.contextActions(reactions = reactionPick(entry, store),
                 onClick = { openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) {
-                messageMenu(context, entry, reply, openTrace, store) { store.quoteMessage(entry, thread) }
+                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
             })
         else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store)) {
-            messageMenu(context, entry, reply, openTrace, store) { store.quoteMessage(entry, thread) }
+            messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
         },
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (file in files) FileDownloadCard(entry, file, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).swipeToReply(reply)
             .contextActions(reactions = reactionPick(entry, store), preview = { AgentText(entry.text, selectable = true) }) {
-                messageMenu(context, entry, reply, openTrace, store) { store.quoteMessage(entry, thread) }
+                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
             }) { AgentText(entry.text, selectable = false) }
     }
 }

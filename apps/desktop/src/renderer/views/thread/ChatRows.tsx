@@ -37,14 +37,24 @@ export function quoteEntry(store: BotStore, entry: Entry) {
   store.composerDrafts.set(entry.botId, current ? `${current}\n${quoted}\n\n` : `${quoted}\n\n`)
 }
 
+/** Whether a message carries something to send on to another chat. */
+function hasForwardable(entry: Entry) {
+  return (
+    (entry.kind === 'user' || entry.kind === 'agent') &&
+    !!(entry.data.text?.trim() || entry.data.attachments?.length || entry.data.files?.length)
+  )
+}
+
 /** One chat-visible entry, with what can be done to it. */
-export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, openAgent, openApp, openArtifact, openThread }: {
+export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, onForward, openAgent, openApp, openArtifact, openThread }: {
   entry: Entry
   groupStart: boolean
   chat: Bot | null
   openTrace: () => void
   /** Quotes this message in the composer; absent where the computer can't take replies. */
   onReply?: (e: Entry) => void
+  /** Sends this message on to another chat; absent where the computer can't forward. */
+  onForward?: (e: Entry) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
   openAgent?: (botId: string) => void
   /** Opens a sandboxed mini-app from its chat card. */
@@ -56,11 +66,12 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
 }) {
   const host = useStore()
   const reply = onReply && (isReplyable(entry) || entry.data.memberQuestion) ? () => onReply(entry) : undefined
+  const forward = onForward && hasForwardable(entry) ? () => onForward(entry) : undefined
   switch (entry.kind) {
     case 'user':
       return (
         <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
-          <UserBubble entry={entry} botWorking={!!chat && isWorking(chat)} reply={reply} />
+          <UserBubble entry={entry} botWorking={!!chat && isWorking(chat)} reply={reply} forward={forward} />
           {entry.data.routineThread && openThread ? (
             <button className="thread-link press" onClick={() => openThread(entry.id)}>
               {entry.threadUnread ? <span className="thread-dot" aria-hidden /> : null}
@@ -74,7 +85,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       return (
         <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
-          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} openArtifact={openArtifact} />
+          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} forward={forward} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>
             <ReactionsRow entry={entry} />
           </VStack>
@@ -274,6 +285,17 @@ export function QuoteRow({ quote, className }: { quote: ReplyQuote; className?: 
   )
 }
 
+/** Said as forwarded from another chat: the author on top of the copy. */
+function ForwardedRow({ forwarded }: { forwarded: NonNullable<Entry['data']['forwardedFrom']> }) {
+  const tr = useTr()
+  return (
+    <HStack gap={6} className="bubble-quote">
+      <Icon name="arrowshape.turn.up.right" size={10} color="var(--secondary)" />
+      <Text size="footnote" tone="secondary" truncate grow>{`${tr('Forwarded from')} ${forwarded.author}`}</Text>
+    </HStack>
+  )
+}
+
 /** A message's text with a right-click menu (with quick reactions on top). */
 export function Bubble({ className, items, reactions, children }: { className: string; items: () => MenuItem[]; reactions?: ReactionPick; children: React.ReactNode }) {
   const menu = useContextMenu()
@@ -295,7 +317,7 @@ export function TimeSeparator({ date }: { date: number }) {
 
 const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
-export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWorking: boolean; reply?: () => void }) {
+export function UserBubble({ entry, botWorking, reply, forward }: { entry: Entry; botWorking: boolean; reply?: () => void; forward?: () => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const status = entry.data.status
@@ -313,9 +335,11 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
             { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
               { title: 'Bookmark', icon: 'bookmark', action: () => void store.saveBookmark(entry.botId, entry.id, entry.data.text ?? '', '', entry.data.author ?? 'user', entry.threadId ?? null) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+              ...(forward ? [{ title: 'Send to a channel…', icon: 'arrowshape.turn.up.right', action: forward }] : []),
               { title: 'Delete', icon: 'trash', destructive: true, action: () => void store.deleteEntry(entry.id) },
             ]}
           >
+            {entry.data.forwardedFrom ? <ForwardedRow forwarded={entry.data.forwardedFrom} /> : null}
             {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
             {entry.data.text}
           </Bubble>
@@ -351,7 +375,7 @@ function UserStatus({ entry, botWorking, hovering }: { entry: Entry; botWorking:
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void }) {
+export function AgentBubble({ entry, openTrace, reply, forward, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; forward?: () => void; openArtifact?: (artifactId: string) => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
@@ -365,10 +389,12 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
             { title: 'Copy', icon: 'square.on.square', action: copy },
               { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+              ...(forward ? [{ title: 'Send to a channel…', icon: 'arrowshape.turn.up.right', action: forward }] : []),
               { title: 'Delete', icon: 'trash', destructive: true, action: () => void store.deleteEntry(entry.id) },
             { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
           ]}
         >
+          {entry.data.forwardedFrom ? <ForwardedRow forwarded={entry.data.forwardedFrom} /> : null}
           {entry.data.artifact ? (
             <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
           ) : entry.data.files?.length ? (

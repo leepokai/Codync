@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { isWorkingIn } from '@shared/models'
+import { isWorkingIn, type Entry } from '@shared/models'
 import { Button } from '../../components/Controls'
 import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
 import { Text } from '../../components/Text'
@@ -7,6 +7,7 @@ import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
 import { buildChat, rowIn, useArrivals } from './chat-items'
 import { ChatRow } from './ChatRows'
+import { ForwardSheet } from './ForwardSheet'
 import { WorkingIndicator } from './WorkingIndicator'
 import { workingSteps } from './trace-turns'
 import { Composer } from './Composer'
@@ -24,6 +25,7 @@ export function RepliesView({ botId, rootId, close, documentTitle }: { botId: st
   const items = buildChat(replies)
   const arrivals = useArrivals([...items.map((i) => i.id), ...(live ? ['working'] : [])], true)
   const [showTrace, setShowTrace] = useState(false)
+  const [forwardEntry, setForwardEntry] = useState<Entry | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
@@ -57,7 +59,7 @@ export function RepliesView({ botId, rootId, close, documentTitle }: { botId: st
           {items.map((item) =>
             item.kind === 'entry' ? (
               <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
-                <ChatRow entry={item.entry} groupStart={item.groupStart} chat={chat} openTrace={openTrace} />
+                <ChatRow entry={item.entry} groupStart={item.groupStart} chat={chat} openTrace={openTrace} onForward={store.mismatch ? undefined : setForwardEntry} />
               </div>
             ) : null,
           )}
@@ -80,6 +82,9 @@ export function RepliesView({ botId, rootId, close, documentTitle }: { botId: st
       </div>
       <Sheet open={showTrace} onClose={() => setShowTrace(false)} width={620} height={560}>
         <TraceView botId={botId} thread={rootId} />
+      </Sheet>
+      <Sheet open={forwardEntry !== null} onClose={() => setForwardEntry(null)} width={420} height={520}>
+        {forwardEntry ? <ForwardSheet entry={forwardEntry} close={() => setForwardEntry(null)} /> : null}
       </Sheet>
     </SheetPage>
   )

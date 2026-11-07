@@ -21,6 +21,10 @@ pub fn of_entry(hub: &Hub, bot: &BotConfig, data: &Value) -> String {
     let text = data["text"].as_str().unwrap_or_default();
     let attachments = data["attachments"].as_array().map_or(&[][..], Vec::as_slice);
     let asked = of_message(&hub.store, &bot.skills, &uploads::root(bot), text, attachments);
+    let asked = match data["forwardedFrom"]["author"].as_str() {
+        Some(author) => format!("{}{asked}", crate::chat::forward::note(author)),
+        None => asked,
+    };
     match replies::note(hub, &bot.id, &data["replyTo"]) {
         Some(note) => format!("{note}\n{asked}"),
         None => asked,

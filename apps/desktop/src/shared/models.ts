@@ -394,6 +394,8 @@ export interface EntryData {
   routineThread?: string
   /** A bot asking the people of a group to answer (`ask_member`). */
   memberQuestion?: { status: string; answers: string[] }
+  /** A message sent on from another chat (the menu's "Send to a channel"). */
+  forwardedFrom?: { botId: string; entryId: string; author: string }
   /** notice: a bot-built interactive mini-app card (Idea 1). */
   botApp?: BotApp
   /** notice: human takeover request card (Idea 13). */

@@ -1706,5 +1706,10 @@
   "in the thread": "在线程中",
   "Needs a member": "需要一名成员",
   "Answer": "回答",
-  "A bot": "一个机器人"
+  "A bot": "一个机器人",
+  "Send to a channel…": "发送到频道…",
+  "Send to a channel": "发送到频道",
+  "The message arrives there as a forwarded copy.": "消息会以转发副本的形式到达那里。",
+  "Forwarded from": "转发自",
+  "No chats yet.": "还没有聊天。"
 }

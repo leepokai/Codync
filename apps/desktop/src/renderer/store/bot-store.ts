@@ -557,6 +557,11 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** Sends a message on to another chat; the host copies its files and marks it forwarded. */
+  async forward(entryId: string, botId: string) {
+    await (await this.ready()).call('forward', { entryId, botId })
+  }
+
   async save(draft: BotDraft) {
     const client = await this.ready()
     // A rule left blank in the editor is no rule.

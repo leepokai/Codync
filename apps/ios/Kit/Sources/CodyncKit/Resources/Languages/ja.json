@@ -1706,5 +1706,10 @@
   "in the thread": "スレッド内",
   "Needs a member": "メンバーが必要です",
   "Answer": "回答",
-  "A bot": "ボット"
+  "A bot": "ボット",
+  "Send to a channel…": "チャンネルに送る…",
+  "Send to a channel": "チャンネルに送る",
+  "The message arrives there as a forwarded copy.": "メッセージは転送されたコピーとして届きます。",
+  "Forwarded from": "転送元:",
+  "No chats yet.": "チャットはまだありません。"
 }

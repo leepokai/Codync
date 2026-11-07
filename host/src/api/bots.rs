@@ -326,6 +326,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             json!({"entry": crate::chat::messages::post_in_lane(hub, &row.config, lane, data)?})
         }
+        // A message sent on to another chat (the message menu's "Send to a channel").
+        "forward" => {
+            json!({"entry": crate::chat::forward::forward(hub, str_arg(&b, "entryId")?, str_arg(&b, "botId")?).await?})
+        }
         // A voice call is on (its audio flows): the lead speaks first.
         "callStarted" => {
             let call = b["callId"].as_str().map(crate::chat::calls::checked).transpose()?;

@@ -1,5 +1,6 @@
 import { VoiceReceipt } from './VoiceReceipt'
 import { RepliesView } from './RepliesView'
+import { ForwardSheet } from './ForwardSheet'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { draftOf, folderName, isGroup, isWorkingIn, sharedWorkspacePeers, type Bot, type BotApp, type BotDraft, type Entry } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
@@ -58,6 +59,8 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   /** The voice call whose conversation is open (its line's entry id). */
   const [callLine, setCallLine] = useState<string | null>(null)
   const [threadRoot, setThreadRoot] = useState<string | null>(null)
+  /** The message the forward picker is sending on. */
+  const [forwardEntry, setForwardEntry] = useState<Entry | null>(null)
   const [editingGroup, setEditingGroup] = useState(false)
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -127,6 +130,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   )
 
   const openTrace = useCallback(() => setShowTrace(true), [])
+  const openForward = useCallback((e: Entry) => setForwardEntry(e), [])
   const openArtifact = useCallback((id: string) => {
     setArtifactId(id)
     setCompactDetails(false)
@@ -190,7 +194,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
           </button>
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
-        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openApp={setActiveApp} openArtifact={openArtifact} openCall={setCallLine} openThread={setThreadRoot} />
+        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openForward={store.mismatch ? undefined : openForward} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openApp={setActiveApp} openArtifact={openArtifact} openCall={setCallLine} openThread={setThreadRoot} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
           {store.mismatch ? (
@@ -230,6 +234,9 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
       </Sheet>
       <Sheet open={botChat !== null} onClose={() => setBotChat(null)} width={620} height={560}>
         {botChat ? <BotConversationView botId={botId} peerId={botChat} /> : null}
+      </Sheet>
+      <Sheet open={forwardEntry !== null} onClose={() => setForwardEntry(null)} width={420} height={520}>
+        {forwardEntry ? <ForwardSheet entry={forwardEntry} close={() => setForwardEntry(null)} /> : null}
       </Sheet>
       <Sheet open={threadRoot !== null} onClose={() => setThreadRoot(null)} width={620} height={560}>
         {threadRoot ? <RepliesView botId={botId} rootId={threadRoot} close={() => setThreadRoot(null)} /> : null}
@@ -301,7 +308,7 @@ function ConnectionSubtitle() {
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
 
-const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openApp, openArtifact, openCall, openThread }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openApp?: (app: BotApp) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void; openThread: (rootId: string) => void }) {
+const Transcript = memo(function Transcript({ botId, openTrace, onReply, openForward, openRoutine, openAgent, openBotChat, openApp, openArtifact, openCall, openThread }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openForward?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openApp?: (app: BotApp) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void; openThread: (rootId: string) => void }) {
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
@@ -411,7 +418,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
           {items.length === 0 && bot ? <div className="transcript-intro">{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
-              <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openApp={openApp} openArtifact={openArtifact} openCall={openCall} openThread={openThread} />
+              <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openForward={openForward} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openApp={openApp} openArtifact={openArtifact} openCall={openCall} openThread={openThread} />
             </div>
           ))}
           {bot ? <SharedWorkspaceNotice bot={bot} /> : null}
@@ -437,7 +444,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   )
 })
 
-function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openApp, openArtifact, openCall, openThread }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openApp?: (app: BotApp) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void; openThread: (rootId: string) => void }) {
+function Row({ item, chat, openTrace, onReply, openForward, openRoutine, openAgent, openBotChat, openApp, openArtifact, openCall, openThread }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openForward?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openApp?: (app: BotApp) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void; openThread: (rootId: string) => void }) {
   if (item.kind === 'separator') {
     return <TimeSeparator date={item.date} />
   }
@@ -446,7 +453,7 @@ function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotCh
   if (e.kind === 'notice' && e.data.routineId) return <RoutineNotice entry={e} open={() => openRoutine(e.data.routineId!)} />
   if (e.kind === 'notice' && e.data.call) return <div className="chat-row notice"><VStack gap={8}><CallLineRow entry={e} open={() => openCall(e.id)} />{window.codync.platform === 'win32' && e.data.source === 'voice_receipt' ? <VoiceReceipt entry={e} /> : null}</VStack></div>
 
-  return <ChatRow entry={e} groupStart={item.groupStart} chat={chat} openTrace={openTrace} onReply={onReply} openAgent={openAgent} openApp={openApp} openArtifact={openArtifact} openThread={openThread} />
+  return <ChatRow entry={e} groupStart={item.groupStart} chat={chat} openTrace={openTrace} onReply={onReply} onForward={openForward} openAgent={openAgent} openApp={openApp} openArtifact={openArtifact} openThread={openThread} />
 }
 
 /** Warns when other bots are actively working in the same project workspace (N16). */

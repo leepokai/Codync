@@ -1706,5 +1706,10 @@
   "in the thread": "스레드에",
   "Needs a member": "멤버가 필요합니다",
   "Answer": "답변",
-  "A bot": "봇"
+  "A bot": "봇",
+  "Send to a channel…": "채널로 보내기…",
+  "Send to a channel": "채널로 보내기",
+  "The message arrives there as a forwarded copy.": "메시지는 전달된 사본으로 도착합니다.",
+  "Forwarded from": "전달한 사람:",
+  "No chats yet.": "아직 채팅이 없습니다."
 }

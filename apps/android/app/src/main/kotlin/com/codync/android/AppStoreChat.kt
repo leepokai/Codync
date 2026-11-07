@@ -173,6 +173,12 @@ internal suspend fun AppStore.savePending(send: PendingSend) {
 fun AppStore.continueTurn(entry: Entry) = action("continue:" + entry.id) {
     ready().call("continueTurn", body("entryId" to entry.id))
 }
+
+/** Sends a message on to another chat; the host copies its files and marks it forwarded. */
+internal fun AppStore.forwardEntry(entry: Entry, toBotId: String, done: () -> Unit = {}) = action("forward:" + entry.id) {
+    ready().call("forward", body("entryId" to entry.id, "botId" to toBotId))
+    done()
+}
 fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + entry.id) {
     // A command or a file change on the computer takes a thumb first; a deny never does.
     if (!Approvals.confirmCurrent(entry, option)) return@action

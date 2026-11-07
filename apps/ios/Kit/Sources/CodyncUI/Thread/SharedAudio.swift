@@ -31,9 +31,15 @@ final class SharedAudio {
     private(set) var failure = AnalyticsEvent.VoiceNoteFailure.load
     /// Fetches the sound's bytes; tests hold it open to stop the card mid-load.
     private let load: @MainActor (BotStore, SharedFile, String) async -> Data?
+    /// Hands the audio back to other apps; tests count it.
+    private let deactivate: @MainActor () -> Void
 
-    init(load: @escaping @MainActor (BotStore, SharedFile, String) async -> Data? = { await $0.sharedFileData($1, entryId: $2) }) {
+    init(load: @escaping @MainActor (BotStore, SharedFile, String) async -> Data? = { await $0.sharedFileData($1, entryId: $2) },
+         deactivate: @escaping @MainActor () -> Void = {
+             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+         }) {
         self.load = load
+        self.deactivate = deactivate
     }
 
     /// The card's one control: a tap while the sound loads is dropped, so it never starts a second player.
@@ -126,9 +132,8 @@ final class SharedAudio {
     private func releaseSession() {
         guard ownsSession else { return }
         ownsSession = false
-        let session = AVAudioSession.sharedInstance()
-        guard session.category == .playback else { return }
-        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        guard AVAudioSession.sharedInstance().category == .playback else { return }
+        deactivate()
     }
 
     private func prepared(_ file: SharedFile, entryId: String, model: BotStore) async throws -> AVAudioPlayer {

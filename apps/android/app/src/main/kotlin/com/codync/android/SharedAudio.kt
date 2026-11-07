@@ -71,6 +71,7 @@ internal class SharedAudio(
         }
         // Taps arrive on the main thread: one while the sound loads is dropped, so it never starts a second player.
         if (phase == AudioPhase.Loading) return
+        val fromStart = phase == AudioPhase.Idle || phase == AudioPhase.Failed
         phase = AudioPhase.Loading
         try {
             val ready = current ?: load().let { file ->
@@ -85,6 +86,8 @@ internal class SharedAudio(
             throw cancelled
         }
         catch (_: Exception) { drop(); phase = AudioPhase.Failed }
+        if (fromStart) Analytics.capture(AnalyticsEvent.VoiceNotePlayed(
+            if (phase == AudioPhase.Playing) VoiceNoteOutcome.Played else VoiceNoteOutcome.Failed))
     }
 
     /** Moves a loaded sound's playhead, held to its length; playing or paused, it stays so. */

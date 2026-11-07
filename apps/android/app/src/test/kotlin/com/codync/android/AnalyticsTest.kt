@@ -28,6 +28,7 @@ class AnalyticsTest {
         assertEquals("""{"reason":"declined"}""", json(AnalyticsEvent.AddToAccountFailed(AddToAccountFailure.Declined)))
         assertEquals("dev_server_action", AnalyticsEvent.DevServerAction(DevServerUse.Copy).name)
         assertEquals("""{"action":"copy"}""", json(AnalyticsEvent.DevServerAction(DevServerUse.Copy)))
+        assertEquals("""{"outcome":"failed"}""", json(AnalyticsEvent.VoiceNotePlayed(VoiceNoteOutcome.Failed)))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
         assertEquals("""{"computers":2,"keys":"moved"}""", json(AnalyticsEvent.SignedOutPairingsMoved(2, MovedKeys.Moved)))

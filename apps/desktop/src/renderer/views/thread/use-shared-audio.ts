@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SharedFile } from '@shared/models'
+import { analytics } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { SharedAudio, type AudioSnapshot, type Sound, type SoundEvents } from './shared-audio'
 
@@ -14,7 +15,17 @@ export function useSharedAudio(file: SharedFile, entryId: string) {
     open: (data, events) => audioElement(data, events),
   }, setSnapshot))
   useEffect(() => () => audio.dispose(), [audio])
-  return { snapshot, toggle: () => void audio.toggle(), seek: (seconds: number) => audio.seek(seconds) }
+  return { snapshot, toggle: () => void play(audio), seek: (seconds: number) => audio.seek(seconds) }
+}
+
+/** Taps the card's control; a start from the beginning reports whether the note played (never which note). */
+async function play(audio: SharedAudio) {
+  const fromStart = audio.snapshot.phase === 'idle' || audio.snapshot.phase === 'failed'
+  await audio.toggle()
+  const { phase } = audio.snapshot
+  if (fromStart && (phase === 'playing' || phase === 'failed')) {
+    analytics.track({ event: 'voice_note_played', outcome: phase === 'playing' ? 'played' : 'failed' })
+  }
 }
 
 function audioElement(data: Uint8Array, events: SoundEvents): Sound {

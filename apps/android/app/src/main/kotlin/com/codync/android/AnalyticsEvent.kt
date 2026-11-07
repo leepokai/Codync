@@ -97,6 +97,10 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class DevServerAction(val use: DevServerUse) : AnalyticsEvent("dev_server_action") {
         override val properties get() = mapOf("action" to use.json)
     }
+    /** A voice note started from its beginning, or couldn't play; never which note. */
+    data class VoiceNotePlayed(val outcome: VoiceNoteOutcome) : AnalyticsEvent("voice_note_played") {
+        override val properties get() = mapOf("outcome" to outcome.json)
+    }
 }
 
 /** One of a property's catalog values, as sent. */
@@ -204,6 +208,7 @@ internal enum class OutboundLink(override val wire: String) : CatalogValue {
 }
 
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }
+internal enum class VoiceNoteOutcome(override val wire: String) : CatalogValue { Played("played"), Failed("failed") }
 
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     OnDevice("on_device"), OpenAI("openai"), Gemini("gemini"),

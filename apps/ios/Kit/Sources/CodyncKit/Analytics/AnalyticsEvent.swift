@@ -36,6 +36,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case reviewLinkOpened
     /// A dev server opened, or its address copied; the host reports what it does itself.
     case devServerAction(DevServerUse)
+    /// A voice note started from its beginning, or couldn't play; never which note.
+    case voiceNotePlayed(VoiceNoteOutcome)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -51,6 +53,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
     public enum DevServerUse: String, Sendable { case open, copy }
+    public enum VoiceNoteOutcome: String, Sendable { case played, failed }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
     public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
@@ -150,6 +153,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
         case .devServerAction: "dev_server_action"
+        case .voiceNotePlayed: "voice_note_played"
         }
     }
 
@@ -186,6 +190,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
             return ["prompts": .int(prompts), "policy": .string("v2")]
         case .reviewLinkOpened: return ["source": .string("settings")]
         case let .devServerAction(use): return ["action": .string(use.rawValue)]
+        case let .voiceNotePlayed(outcome): return ["outcome": .string(outcome.rawValue)]
         case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
         }
     }

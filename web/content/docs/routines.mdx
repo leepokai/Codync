@@ -138,7 +138,7 @@ A workflow is a routine with a trigger and a chain of steps. Each step is anothe
 
 Add **Workflow Builder** from **Extensions → Agents** and describe the job, its trigger and the bots for each step. It creates the routine, links the bots, and runs one test when you agree. Open the workflow from the routine's canvas to watch the steps and their results. A workflow can start from a clock, a webhook, a watched file or URL, or a mention in Slack, Telegram or Discord; a GitHub webhook delivery can start one on an issue, pull request, review or failed check. Report what is still to connect before you rely on it: a webhook is not live until the sending service has its URL and key.
 
-A workflow can have **outputs** under **Outputs** in its editor: it delivers the last step's reply once, after that step, to a Slack channel, a Telegram chat, a Discord channel, as a Discord reaction on the message that started the run, or as a comment on the issue or pull request that started it. A GitHub comment needs a connected GitHub account (Settings → GitHub).
+A workflow can have **outputs** under **Outputs** in its editor: it delivers the last step's reply once, after that step, to a Slack channel, a Telegram chat, a Discord channel, as a Discord reaction on the message that started the run, as a comment, a label, an assignment or a review request on the issue or pull request that started it, or as a new issue. GitHub outputs need a connected GitHub account (Settings → GitHub).
 
 A workflow is still a routine at heart: it belongs to the first bot, it runs on your computer, and its results stay in the chats. A one-off task needs no workflow.
 

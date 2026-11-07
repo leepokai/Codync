@@ -25,6 +25,9 @@ pub struct Output {
     /// The Telegram bot to send as; other kinds ignore it.
     #[serde(default)]
     pub account: Option<String>,
+    /// Labels, reviewers, or the issue title; other kinds ignore it.
+    #[serde(default)]
+    pub value: Option<String>,
 }
 
 /// Why one output can't be saved, or `None` when it can.
@@ -39,8 +42,18 @@ pub fn problem(output: &Output) -> Option<String> {
         }
         "discordReact" if target.contains(char::is_whitespace) => Some("Use one emoji or name:id.".into()),
         "telegram" if target.parse::<i64>().is_err() => Some("Use a Telegram chat id.".into()),
-        "githubComment" if !github_repo(target) => Some("Use owner/name.".into()),
-        "slack" | "telegram" | "discord" | "discordReact" | "githubComment" => None,
+        "githubComment" | "githubIssue" if !github_repo(target) => Some("Use owner/name.".into()),
+        "githubLabel" | "githubAssign" | "githubReview" => {
+            if !github_repo(target) {
+                return Some("Use owner/name.".into());
+            }
+            let extra = output.value.as_deref().unwrap_or_default().trim();
+            if extra.is_empty() {
+                return Some(format!("{} needs a value.", output.kind));
+            }
+            None
+        }
+        "slack" | "telegram" | "discord" | "discordReact" | "githubComment" | "githubIssue" => None,
         _ => Some("Choose what kind of output it is.".into()),
     }
 }
@@ -71,6 +84,10 @@ pub fn parse(value: Option<&Value>) -> Result<Vec<Output>> {
 pub fn describe(output: &Output) -> String {
     match output.kind.as_str() {
         "githubComment" => format!("Comment on a {} issue or pull request", output.target),
+        "githubIssue" => format!("Open an issue in {}", output.target),
+        "githubLabel" => format!("Label a {} issue", output.target),
+        "githubAssign" => format!("Assign a {} issue", output.target),
+        "githubReview" => format!("Request a review in {}", output.target),
         "slack" => format!("Post in Slack {}", output.target),
         "telegram" => format!("Send to Telegram {}", output.target),
         "discord" => format!("Post in Discord {}", output.target),
@@ -85,7 +102,17 @@ pub async fn deliver(hub: &Arc<Hub>, routine: &str, outputs: &[RoutineOutput], e
         return;
     }
     for output in outputs {
-        if let Err(error) = one(hub, output, event, text).await {
+        let mut last = Ok(());
+        for attempt in 0..2 {
+            last = one(hub, output, event, text).await;
+            if last.is_ok() {
+                break;
+            }
+            if attempt == 0 {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+        if let Err(error) = last {
             tracing::warn!(routine, kind = output.kind, error = format!("{error:#}"), "workflow output failed");
         }
     }
@@ -130,28 +157,87 @@ async fn one(hub: &Arc<Hub>, output: &Output, event: &Value, text: &str) -> Resu
             crate::discord::react(&hub.store, channel, message, output.target.trim()).await?;
         }
         "githubComment" => github_comment(hub, output, event, text).await?,
+        "githubIssue" => github_issue(hub, output, text).await?,
+        "githubLabel" | "githubAssign" | "githubReview" => github_issue_action(hub, output, event).await?,
         other => bail!("Unknown output {other}."),
     }
     Ok(())
 }
 
 async fn github_comment(hub: &Arc<Hub>, output: &Output, event: &Value, text: &str) -> Result<()> {
-    let token = crate::github::connection(&hub.store)?.context("GitHub is not configured.")?.token;
-    let repo = if output.target.trim().is_empty() {
-        event["repo"].as_str().context("The run did not come from a repository.")?.to_owned()
-    } else {
-        output.target.trim().to_owned()
-    };
+    let repo = repo_of(output, event)?;
     let number = number(event).context("The run did not name an issue or pull request.")?;
-    let url = format!("https://api.github.com/repos/{repo}/issues/{number}/comments");
-    let client = crate::egress::client(crate::egress::Policy::Only(&["api.github.com"]), &url).await?;
+    github_call(
+        hub,
+        reqwest::Method::POST,
+        &format!("https://api.github.com/repos/{repo}/issues/{number}/comments"),
+        json!({"body": text}),
+    )
+    .await
+}
+
+/// The repository an output names, else the one the run came from.
+fn repo_of(output: &Output, event: &Value) -> Result<String> {
+    let named = output.target.trim();
+    if !named.is_empty() {
+        return Ok(named.to_owned());
+    }
+    Ok(event["repo"].as_str().context("The run did not come from a repository.")?.to_owned())
+}
+
+/// Opens an issue whose title is the reply's first line and whose body is the rest.
+async fn github_issue(hub: &Arc<Hub>, output: &Output, text: &str) -> Result<()> {
+    let repo = output.target.trim();
+    let title =
+        output.value.as_deref().map(str::trim).filter(|t| !t.is_empty()).map_or_else(
+            || text.lines().next().unwrap_or("Workflow result").chars().take(120).collect(),
+            str::to_owned,
+        );
+    github_call(
+        hub,
+        reqwest::Method::POST,
+        &format!("https://api.github.com/repos/{repo}/issues"),
+        json!({"title": title, "body": text}),
+    )
+    .await
+}
+
+/// Labels, assigns or asks for review on the issue or pull request that started the run.
+async fn github_issue_action(hub: &Arc<Hub>, output: &Output, event: &Value) -> Result<()> {
+    let repo = repo_of(output, event)?;
+    let number = number(event).context("The run did not name an issue or pull request.")?;
+    let names: Vec<&str> =
+        output.value.as_deref().unwrap_or_default().split(',').map(str::trim).filter(|v| !v.is_empty()).collect();
+    let (method, url, body) = match output.kind.as_str() {
+        "githubLabel" => (
+            reqwest::Method::POST,
+            format!("https://api.github.com/repos/{repo}/issues/{number}/labels"),
+            json!({"labels": names}),
+        ),
+        "githubAssign" => (
+            reqwest::Method::PATCH,
+            format!("https://api.github.com/repos/{repo}/issues/{number}"),
+            json!({"assignees": names}),
+        ),
+        _ => (
+            reqwest::Method::POST,
+            format!("https://api.github.com/repos/{repo}/pulls/{number}/requested_reviewers"),
+            json!({"reviewers": names}),
+        ),
+    };
+    github_call(hub, method, &url, body).await
+}
+
+async fn github_call(hub: &Arc<Hub>, method: reqwest::Method, url: &str, body: Value) -> Result<()> {
+    let token = crate::github::connection(&hub.store)?.context("GitHub is not configured.")?.token;
+    let client = crate::egress::client(crate::egress::Policy::Only(&["api.github.com"]), url).await?;
     let response = client
-        .post(&url)
+        .request(method, url)
         .header("authorization", format!("Bearer {token}"))
         .header("accept", "application/vnd.github+json")
         .header("x-github-api-version", "2022-11-28")
         .header("user-agent", "codync")
-        .json(&json!({"body": text}))
+        .json(&body)
         .timeout(Duration::from_secs(20))
         .send()
         .await?;
@@ -173,7 +259,7 @@ mod tests {
     use super::*;
 
     fn output(kind: &str, target: &str) -> Output {
-        Output { kind: kind.into(), target: target.into(), account: None }
+        Output { kind: kind.into(), target: target.into(), account: None, value: None }
     }
 
     #[test]

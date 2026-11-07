@@ -1684,5 +1684,16 @@
   "Anyone can write while this is empty. The owner always can.": "Solange das leer ist, kann jeder schreiben. Der Eigentümer immer.",
   "Allow": "Erlauben",
   "Discord reaction": "Discord-Reaktion",
-  "Use one emoji or name:id.": "Nutze ein Emoji oder name:id."
+  "Use one emoji or name:id.": "Nutze ein Emoji oder name:id.",
+  "GitHub issue": "GitHub-Issue",
+  "GitHub label": "GitHub-Label",
+  "GitHub assign": "Auf GitHub zuweisen",
+  "Request review": "Review anfordern",
+  "Issue title": "Issue-Titel",
+  "Issue title (optional)": "Issue-Titel (optional)",
+  "Labels": "Labels",
+  "People": "Personen",
+  "Labels, separated by commas": "Labels, durch Kommas getrennt",
+  "People, separated by commas": "Personen, durch Kommas getrennt",
+  "This output needs a value.": "Diese Ausgabe braucht einen Wert."
 }

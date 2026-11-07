@@ -22,6 +22,8 @@ export interface RoutineOutput {
   /** A channel id, a chat id, or the repository (`owner/name`). */
   target: string
   account?: string | null
+  /** Labels, reviewers, or the issue title. */
+  value?: string | null
 }
 
 export interface Routine {
@@ -241,6 +243,10 @@ export const outputKinds = [
   { id: 'discord', label: 'Discord' },
   { id: 'discordReact', label: 'Discord reaction' },
   { id: 'githubComment', label: 'GitHub comment' },
+  { id: 'githubIssue', label: 'GitHub issue' },
+  { id: 'githubLabel', label: 'GitHub label' },
+  { id: 'githubAssign', label: 'GitHub assign' },
+  { id: 'githubReview', label: 'Request review' },
 ] as const
 
 /** Why one output can't be saved, or null when it can; the same rules as the host's. */
@@ -251,5 +257,6 @@ export function outputProblem(output: RoutineOutput): string | null {
   if (output.kind === 'githubComment' && !/^[^/\s]+\/[^/\s]+$/.test(target)) return 'Use owner/name.'
   if ((output.kind === 'slack' || output.kind === 'discord') && /\s/.test(target)) return 'Use a channel id.'
   if (output.kind === 'discordReact' && /\s/.test(target)) return 'Use one emoji or name:id.'
+  if (['githubLabel', 'githubAssign', 'githubReview'].includes(output.kind) && !output.value?.trim()) return 'This output needs a value.'
   return null
 }

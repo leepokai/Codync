@@ -1684,5 +1684,16 @@
   "Anyone can write while this is empty. The owner always can.": "N'importe qui peut écrire tant que c'est vide. Le propriétaire peut toujours.",
   "Allow": "Autoriser",
   "Discord reaction": "Réaction Discord",
-  "Use one emoji or name:id.": "Utilisez un emoji ou nom:id."
+  "Use one emoji or name:id.": "Utilisez un emoji ou nom:id.",
+  "GitHub issue": "Ticket GitHub",
+  "GitHub label": "Étiquette GitHub",
+  "GitHub assign": "Assigner sur GitHub",
+  "Request review": "Demander une revue",
+  "Issue title": "Titre du ticket",
+  "Issue title (optional)": "Titre du ticket (facultatif)",
+  "Labels": "Étiquettes",
+  "People": "Personnes",
+  "Labels, separated by commas": "Étiquettes, séparées par des virgules",
+  "People, separated by commas": "Personnes, séparées par des virgules",
+  "This output needs a value.": "Cette sortie a besoin d'une valeur."
 }

@@ -1684,5 +1684,16 @@
   "Anyone can write while this is empty. The owner always can.": "為空時任何人都能寫信。擁有者始終可以。",
   "Allow": "允許",
   "Discord reaction": "Discord 反應",
-  "Use one emoji or name:id.": "使用一個表情或 name:id。"
+  "Use one emoji or name:id.": "使用一個表情或 name:id。",
+  "GitHub issue": "GitHub Issue",
+  "GitHub label": "GitHub 標籤",
+  "GitHub assign": "在 GitHub 指派",
+  "Request review": "請求審查",
+  "Issue title": "Issue 標題",
+  "Issue title (optional)": "Issue 標題（選填）",
+  "Labels": "標籤",
+  "People": "人員",
+  "Labels, separated by commas": "標籤，用逗號分隔",
+  "People, separated by commas": "人員，用逗號分隔",
+  "This output needs a value.": "此輸出需要一個值。"
 }

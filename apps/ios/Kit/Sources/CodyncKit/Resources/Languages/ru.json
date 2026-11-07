@@ -1684,5 +1684,16 @@
   "Anyone can write while this is empty. The owner always can.": "Пока список пуст, писать может любой. Владелец — всегда.",
   "Allow": "Разрешить",
   "Discord reaction": "Реакция в Discord",
-  "Use one emoji or name:id.": "Укажите эмодзи или name:id."
+  "Use one emoji or name:id.": "Укажите эмодзи или name:id.",
+  "GitHub issue": "Задача GitHub",
+  "GitHub label": "Метка GitHub",
+  "GitHub assign": "Назначить в GitHub",
+  "Request review": "Запросить ревью",
+  "Issue title": "Заголовок задачи",
+  "Issue title (optional)": "Заголовок задачи (необязательно)",
+  "Labels": "Метки",
+  "People": "Люди",
+  "Labels, separated by commas": "Метки через запятую",
+  "People, separated by commas": "Люди через запятую",
+  "This output needs a value.": "Этому выходу нужно значение."
 }

@@ -241,6 +241,15 @@ import kotlinx.coroutines.launch
                                 draft = draft.copy(outputs = draft.outputs.mapIndexed { i, o -> if (i == index) o.copy(account = account) else o })
                             }, "The bot it sends as, if there are several", fill = Palette.bubbleUser, capitalize = false)
                         }
+                        if (output.kind in listOf("githubLabel", "githubAssign", "githubReview", "githubIssue")) {
+                            FieldBox(output.value.orEmpty(), { value ->
+                                draft = draft.copy(outputs = draft.outputs.mapIndexed { i, o -> if (i == index) o.copy(value = value) else o })
+                            }, when (output.kind) {
+                                "githubIssue" -> "Issue title (optional)"
+                                "githubLabel" -> "Labels, separated by commas"
+                                else -> "People, separated by commas"
+                            }, fill = Palette.bubbleUser, capitalize = false)
+                        }
                         RoutineOutputs.problem(output)?.let { Text(it, style = Type.caption, color = Palette.danger) }
                     }
                     if (draft.outputs.size < 10) {

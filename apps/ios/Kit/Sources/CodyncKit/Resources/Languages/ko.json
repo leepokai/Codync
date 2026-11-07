@@ -1684,5 +1684,16 @@
   "Anyone can write while this is empty. The owner always can.": "비어 있는 동안 누구나 글을 쓸 수 있습니다. 소유자는 항상 가능합니다.",
   "Allow": "허용",
   "Discord reaction": "Discord 반응",
-  "Use one emoji or name:id.": "이모지 또는 name:id를 사용하세요."
+  "Use one emoji or name:id.": "이모지 또는 name:id를 사용하세요.",
+  "GitHub issue": "GitHub 이슈",
+  "GitHub label": "GitHub 라벨",
+  "GitHub assign": "GitHub에서 할당",
+  "Request review": "리뷰 요청",
+  "Issue title": "이슈 제목",
+  "Issue title (optional)": "이슈 제목(선택)",
+  "Labels": "라벨",
+  "People": "사람",
+  "Labels, separated by commas": "라벨을 쉼표로 구분",
+  "People, separated by commas": "사람을 쉼표로 구분",
+  "This output needs a value.": "이 출력에는 값이 필요합니다."
 }

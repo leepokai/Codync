@@ -8,6 +8,11 @@ import './routines.css'
 const placeholder = (kind: string) =>
   kind === 'githubComment' ? 'owner/name' : kind === 'telegram' ? '-1001234567890' : kind === 'discordReact' ? '👍' : '1234567890'
 
+const valuePlaceholder = (kind: string) =>
+  kind === 'githubIssue' ? 'Issue title (optional)' : kind === 'githubLabel' ? 'Labels, separated by commas' : 'People, separated by commas'
+
+const valueLabel = (kind: string) => (kind === 'githubIssue' ? 'Issue title' : kind === 'githubLabel' ? 'Labels' : 'People')
+
 /** Where a workflow's last reply goes: a channel, a chat, or the issue that started it. */
 export function RoutineOutputsFields({ outputs, update }: { outputs: RoutineOutput[]; update: (outputs: RoutineOutput[]) => void }) {
   const tr = useTr()
@@ -42,6 +47,16 @@ export function RoutineOutputsFields({ outputs, update }: { outputs: RoutineOutp
               placeholder={tr('The bot it sends as, if there are several')}
               spellCheck={false}
               onChange={(event) => change(index, { account: event.target.value })}
+            />
+          ) : null}
+          {['githubLabel', 'githubAssign', 'githubReview', 'githubIssue'].includes(output.kind) ? (
+            <input
+              className="schedule-input"
+              aria-label={tr(valueLabel(output.kind))}
+              value={output.value ?? ''}
+              placeholder={tr(valuePlaceholder(output.kind))}
+              spellCheck={false}
+              onChange={(event) => change(index, { value: event.target.value })}
             />
           ) : null}
           {outputProblem(output) ? <Text size="caption" tone="danger">{tr(outputProblem(output)!)}</Text> : null}

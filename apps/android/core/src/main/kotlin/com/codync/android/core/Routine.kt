@@ -131,17 +131,29 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 @Serializable data class RoutineWebhook(val url: String? = null, val localUrl: String, val key: String, val connected: Boolean)
 
 /** Where a workflow's last reply goes: a channel, a chat, or the issue that started it. */
-@Serializable data class RoutineOutput(val kind: String = "slack", val target: String = "", val account: String? = null)
+@Serializable data class RoutineOutput(
+    val kind: String = "slack",
+    val target: String = "",
+    val account: String? = null,
+    /** Labels, reviewers, or the issue title. */
+    val value: String? = null,
+)
 
 /** The output kinds the editor offers, and their destination rules (host `routines::outputs`). */
 object RoutineOutputs {
-    val kinds = listOf("slack" to "Slack", "telegram" to "Telegram", "discord" to "Discord", "discordReact" to "Discord reaction", "githubComment" to "GitHub comment")
+    val kinds = listOf(
+        "slack" to "Slack", "telegram" to "Telegram", "discord" to "Discord", "discordReact" to "Discord reaction",
+        "githubComment" to "GitHub comment", "githubIssue" to "GitHub issue", "githubLabel" to "GitHub label",
+        "githubAssign" to "GitHub assign", "githubReview" to "Request review",
+    )
 
     fun problem(output: RoutineOutput): String? {
         val target = output.target.trim()
         if (target.isEmpty()) return "An output needs a destination."
         if (output.kind == "telegram" && target.toLongOrNull() == null) return "Use a Telegram chat id."
-        if (output.kind == "githubComment" && !Regex("^[^/\\s]+/[^/\\s]+$").matches(target)) return "Use owner/name."
+        if (output.kind in listOf("githubComment", "githubIssue", "githubLabel", "githubAssign", "githubReview")
+            && !Regex("^[^/\\s]+/[^/\\s]+$").matches(target)) return "Use owner/name."
+        if (output.kind in listOf("githubLabel", "githubAssign", "githubReview") && output.value.isNullOrBlank()) return "This output needs a value."
         if (output.kind in listOf("slack", "discord") && target.any(Char::isWhitespace)) return "Use a channel id."
         if (output.kind == "discordReact" && target.any(Char::isWhitespace)) return "Use one emoji or name:id."
         return null

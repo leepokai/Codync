@@ -1684,5 +1684,16 @@
   "Anyone can write while this is empty. The owner always can.": "空の間は誰でも書き込めます。所有者は常に可能です。",
   "Allow": "許可",
   "Discord reaction": "Discord のリアクション",
-  "Use one emoji or name:id.": "絵文字または name:id を指定します。"
+  "Use one emoji or name:id.": "絵文字または name:id を指定します。",
+  "GitHub issue": "GitHub Issue",
+  "GitHub label": "GitHub ラベル",
+  "GitHub assign": "GitHub でアサイン",
+  "Request review": "レビューを依頼",
+  "Issue title": "Issue タイトル",
+  "Issue title (optional)": "Issue タイトル（任意）",
+  "Labels": "ラベル",
+  "People": "人",
+  "Labels, separated by commas": "ラベルをカンマ区切り",
+  "People, separated by commas": "人をカンマ区切り",
+  "This output needs a value.": "この出力には値が必要です。"
 }

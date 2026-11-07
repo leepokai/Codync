@@ -51,7 +51,7 @@ test('a phone with no account is asked about, on a computer in no account', asyn
 
 test('the welcome lets you go on without an account, and it stays that way', async () => {
   const { browser, page } = await attach()
-  const goOn = page.getByRole('button', { name: /^Continue on this/ })
+  const goOn = page.getByRole('button', { name: /^Continue without an account/ })
   const restore = async () => {
     await setPref(page, 'macAccountOnboardingCompleted', true)
     await setPref(page, 'withoutAccount', false)
@@ -64,6 +64,13 @@ test('the welcome lets you go on without an account, and it stays that way', asy
     test.skip(!(await goOn.isVisible({ timeout: 5_000 }).catch(() => false)), 'Needs the app signed out in a build with accounts.')
     await goOn.click()
     await expect(goOn).toHaveCount(0)
+    // Computer access goes back to the way of signing in.
+    await setPref(page, 'computerAccessSetup', null)
+    await page.getByRole('button', { name: 'Back' }).click()
+    await expect(goOn).toBeVisible()
+    await goOn.click()
+    await expect(goOn).toHaveCount(0)
+    await setPref(page, 'computerAccessSetup', 'later')
     await page.reload()
     await expect(page.locator('#root')).not.toBeEmpty()
     await expect(goOn).toHaveCount(0)

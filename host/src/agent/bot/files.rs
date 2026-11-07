@@ -147,6 +147,7 @@ impl Actor {
         )
         .ok_or_else(|| anyhow!("couldn't save the message"))?;
         self.sent.push(text.clone());
+        self.last_text = None;
         Ok(text)
     }
 }

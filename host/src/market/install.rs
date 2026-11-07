@@ -195,6 +195,7 @@ async fn install_server(
         url: None,
         headers: BTreeMap::new(),
         oauth: None,
+        auth_revision: String::new(),
     };
     match kind {
         "package" => {
@@ -330,6 +331,7 @@ async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
         url: None,
         headers: map(&b["headers"]),
         oauth: None,
+        auth_revision: String::new(),
     };
     let url =
         ["url", "serverUrl", "httpUrl"].iter().find_map(|k| b[*k].as_str()).map(str::trim).filter(|s| !s.is_empty());

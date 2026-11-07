@@ -79,8 +79,20 @@ even while the server can't start, `verify` is null in the answer and no bot res
 Otherwise the bots that have the connector on are told to rebuild their tools. An agent that
 can resume restarts whole before its next turn (not only this connector's process); one
 that can't keeps its session, and the old definition, until its next new session. A bot
-that can't be told is logged and doesn't fail the saved edit. Registry and remote
-connectors are refused (`host/src/market/connector_update.rs`).
+that can't be told is logged and doesn't fail the saved edit (`host/src/market/connector_update.rs`).
+
+Custom URL connectors use the same loopback-only method with `url` and `headers`.
+Remote connection changes are saved before verification, allowing sign-in against
+the new endpoint; failed verification leaves the edit saved and refreshes no bots.
+Metadata-only edits need no check. Explicit URL/header retries verify even when
+unchanged, so repeating the current URL after sign-in refreshes affected bots.
+The saved connection is checked before and after verification; token refreshes may
+advance the same grant, but intervening edits cannot supply its readiness result.
+URL changes require explicit replacement headers,
+and clear the old OAuth grant. URL or header changes advance the revision and
+invalidate pending sign-ins and running proxies.
+See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).
+Registry connectors are still refused.
 
 ## Conversation requests
 

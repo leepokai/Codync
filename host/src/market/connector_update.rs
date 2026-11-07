@@ -119,7 +119,7 @@ fn edited(before: &Connector, b: &Value) -> Result<Connector> {
 }
 
 /// A present text field: `None` when it isn't there, an error when it isn't a string.
-fn text(b: &Value, key: &str) -> Result<Option<String>> {
+pub(super) fn text(b: &Value, key: &str) -> Result<Option<String>> {
     match b.get(key) {
         None => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.trim().to_owned())),

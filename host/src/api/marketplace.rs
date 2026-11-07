@@ -141,10 +141,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "updateConnector" => {
             let id = str_arg(&b, "id")?;
-            let updated = market::connector_update::update_custom_connector(&hub.store, id, &b, hub.port).await?;
+            let updated = market::update_connector(&hub.store, id.trim(), &b, hub.port).await?;
             // Without a check how it runs didn't change, so no bot has anything to pick up.
             if !updated["verify"].is_null() {
-                refresh_tools_for_bots_using(hub, id);
+                refresh_tools_for_bots_using(hub, id.trim());
             }
             updated
         }

@@ -19,6 +19,35 @@ SQLite, Keychain and MCP subprocesses. `--network` additionally exercises live
 providers. `--slow` waits for the production 90-second handshake timeout.
 Failures produce a nonzero exit code; live provider failures are not skipped.
 
+## Editing a custom remote connector
+
+`updateConnector` also accepts `name`, `description`, `url` and `headers` for a
+custom URL connector. Omitted fields stay unchanged. At the same URL, headers
+merge case-insensitively and `null` removes a header; OAuth sign-in is retained.
+OAuth manages the Authorization header while a sign-in configuration exists.
+
+Changing the URL requires an explicit `headers` object, which replaces all old
+headers (`{}` clears them). The host clears OAuth registration and tokens,
+invalidates pending sign-ins and refreshes, and checks the new endpoint's sign-in
+requirements using only the newly supplied headers. Even changing away and back
+requires fresh sign-in. Existing proxies refuse further requests when the endpoint
+revision changes, so an old SSE posting URL or HTTP session never receives the
+replacement credentials. A fresh tool process uses the edited endpoint. HTTPS is required except for parsed loopback HTTP hosts;
+URLs with user information or fragments and invalid headers are refused.
+
+Discovery never overwrites a concurrent edit or credential refresh: the caller
+must reread and retry. Verification checks the saved definition before and after
+the handshake; another edit cannot supply its readiness result. Token refreshes
+may advance the same grant, but sign-out or a new registration invalidates the check.
+URL or header changes advance the revision, including when values are later restored. Remote URL or header changes are saved before
+verification so OAuth can use the new endpoint. A failed check leaves them saved
+without refreshing bots; local runtime edits instead check before saving.
+Changing only a name or description performs no check and returns `verify: null`.
+Explicit `url` or `headers` requests verification even when unchanged. After
+sign-in, repeat `updateConnector` with the current URL to verify and refresh bots
+without resending credential values. Registry
+connectors are still managed through reinstall, pending the registry-input work.
+
 ## Recorded result: 2026-10-05, macOS
 
 `python3 tools/check-connectors.py --network --slow`: **15/15 passed**.

@@ -79,27 +79,31 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   return (
     <div className="welcome">
       <VStack className="welcome-column">
-        <Spacer min={24} />
-        <WelcomeCrew shown={beat >= 1} />
-        <Spacer min={24} />
-        <div className="welcome-glimpse">
-          <WelcomeChatGlimpse shown={beat >= 2} />
-        </div>
-        <VStack gap={10} style={rise(beat >= 3)}>
-          <div className="welcome-title">{tr('Your coding agents,\nas teammates.')}</div>
-          <Text as="div" size="body" tone="secondary">{tr(`Give each one a name and a project. They work on your computer while you're away.`)}</Text>
+        {/* The way forward stays on screen at any size: the pitch above it gives way (account-welcome.css). */}
+        <VStack className="welcome-pitch">
+          <Spacer min={24} />
+          <WelcomeCrew shown={beat >= 1} />
+          <Spacer min={24} />
+          <div className="welcome-glimpse">
+            <WelcomeChatGlimpse shown={beat >= 2} />
+          </div>
+          <VStack gap={10} style={rise(beat >= 3)}>
+            <div className="welcome-title">{tr('Your coding agents,\nas teammates.')}</div>
+            <Text as="div" size="body" tone="secondary">{tr(`Give each one a name and a project. They work on your computer while you're away.`)}</Text>
+          </VStack>
         </VStack>
-        <Spacer min={32} />
-        <VStack gap={10} style={rise(beat >= 4)}>
+        <VStack gap={10} className="welcome-actions" style={rise(beat >= 4)}>
           <ProviderButton provider="apple" mark={<Icon name="apple.logo" size={20} />} title="Continue with Apple" />
           <ProviderButton provider="google" kind="secondary" mark={<img src={googleLogo} alt="" width={20} height={20} />} title="Continue with Google" />
           <ProviderButton provider="github" kind="secondary" mark={<Icon name="github.logo" size={20} />} title="Continue with GitHub" />
           <Button kind="secondary" onClick={onContinue} className="welcome-button">
-            {onThis}
+            {account.isConfigured ? (
+              <VStack as="span" align="center" gap={2}>
+                <Text size="subheadline" weight="medium">{tr('Continue without an account')}</Text>
+                <Text size="caption" weight="regular" className="welcome-continue-note">{tr('Phones then connect only over Wi-Fi or Tailscale.')}</Text>
+              </VStack>
+            ) : onThis}
           </Button>
-          {account.isConfigured ? (
-            <Text as="div" size="footnote" tone="tertiary">{tr('Phones then connect only over Wi-Fi or Tailscale.')}</Text>
-          ) : null}
           {!account.isConfigured ? (
             <Text as="div" size="footnote" tone="tertiary">{tr(deviceName === 'Mac' ? "Sign-in isn't configured in this build. You can still use Codync on this Mac." : "Sign-in isn't configured in this build. You can still use Codync on this computer.")}</Text>
           ) : null}

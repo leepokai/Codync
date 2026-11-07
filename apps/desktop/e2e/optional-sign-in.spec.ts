@@ -51,7 +51,7 @@ test('a phone with no account is asked about, on a computer in no account', asyn
 
 test('the welcome lets you go on without an account, and it stays that way', async () => {
   const { browser, page } = await attach()
-  const goOn = page.getByRole('button', { name: /^Continue on this/ })
+  const goOn = page.getByRole('button', { name: /^Continue without an account/ })
   const restore = async () => {
     await setPref(page, 'macAccountOnboardingCompleted', true)
     await setPref(page, 'withoutAccount', false)

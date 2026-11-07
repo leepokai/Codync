@@ -28,12 +28,14 @@ pub mod vault;
 pub mod verify;
 
 mod command_line;
+mod custom;
 mod install;
 mod registry;
 mod skills;
 mod updates;
 
-pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
+pub use custom::add_custom_connector;
+pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
 pub use skills::{
     add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,
@@ -287,6 +289,10 @@ pub fn update_connectors<T>(
 
 fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
     update_connectors(store, |all| {
+        if c.registry_name.is_none() {
+            // Recheck under the write lock: another install may have finished during OAuth discovery.
+            custom::ensure_name_available(&c.name, all)?;
+        }
         // A registry server is installed once: installing it again replaces it under the id the bots know.
         if let Some(name) = c.registry_name.as_deref()
             && let Some(existing) = all.iter_mut().find(|x| x.registry_name.as_deref() == Some(name))

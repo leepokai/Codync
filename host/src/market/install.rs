@@ -262,15 +262,6 @@ async fn install_server(
     add_connector(store, c)
 }
 
-/// A connector you describe yourself: a command line or an https URL.
-pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Result<Value> {
-    let name =
-        b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
-    let all = connectors(store)?;
-    let c = custom(name, b, &all).await?;
-    add_connector(store, c)
-}
-
 /// Adds every server in a pasted MCP config: the `mcpServers` / `servers` JSON that
 /// Claude, Cursor, VS Code and most READMEs use, or one server's own entry.
 pub async fn import_connectors(store: &crate::store::Store, config: &str) -> Result<Value> {
@@ -315,7 +306,7 @@ fn config_servers(v: &Value) -> Vec<(String, Value)> {
 
 /// A connector from `{command, args?, env?}` or `{url, headers?}`. A command without
 /// `args` is split like a shell would (quotes work).
-async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
+pub(super) async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
     let map = |v: &Value| -> BTreeMap<String, String> {
         v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned()))).collect()
     };

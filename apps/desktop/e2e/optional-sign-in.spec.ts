@@ -64,6 +64,13 @@ test('the welcome lets you go on without an account, and it stays that way', asy
     test.skip(!(await goOn.isVisible({ timeout: 5_000 }).catch(() => false)), 'Needs the app signed out in a build with accounts.')
     await goOn.click()
     await expect(goOn).toHaveCount(0)
+    // Computer access goes back to the way of signing in.
+    await setPref(page, 'computerAccessSetup', null)
+    await page.getByRole('button', { name: 'Back' }).click()
+    await expect(goOn).toBeVisible()
+    await goOn.click()
+    await expect(goOn).toHaveCount(0)
+    await setPref(page, 'computerAccessSetup', 'later')
     await page.reload()
     await expect(page.locator('#root')).not.toBeEmpty()
     await expect(goOn).toHaveCount(0)

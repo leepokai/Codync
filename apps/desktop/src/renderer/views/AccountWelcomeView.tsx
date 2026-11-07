@@ -16,7 +16,7 @@ import './account-welcome.css'
 
 const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 
-/** Whether the welcome covers the window (`showsWelcome`). `finish`: the first run's choice was made. */
+/** Whether the welcome covers the window (`showsWelcome`). `finish`: the first run's choice was made. `back`: make it again, while signed out. */
 export function useWelcomeGate() {
   const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
   const [withoutAccount, setWithoutAccount] = usePref(prefs.withoutAccount)
@@ -34,7 +34,8 @@ export function useWelcomeGate() {
   useEffect(() => {
     if (isSignedIn && withoutAccount) setWithoutAccount(false)
   }, [isSignedIn, withoutAccount, setWithoutAccount])
-  return { shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn, withoutAccount }), finish }
+  const back = isConfigured && !isSignedIn ? () => setWithoutAccount(false) : undefined
+  return { shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn, withoutAccount }), finish, back }
 }
 
 /** The welcome: signing in, or going on without an account. A restored session skips it as soon as it is back. */

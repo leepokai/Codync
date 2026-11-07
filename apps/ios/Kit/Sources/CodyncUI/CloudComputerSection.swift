@@ -1,8 +1,9 @@
 import CodyncKit
 import SwiftUI
 
-/// Computers → Codync Cloud: the account's cloud computer, where it runs and whether it's awake, with
-/// deleting its snapshots or the whole computer; or creating one. Hidden while this account can't have one.
+/// Computers → Codync Cloud: the key to the user's own Boat account, then the account's cloud computer, where it runs
+/// and whether it's awake, with deleting its snapshots or the whole computer; or creating one. Hidden while this
+/// account can't have one.
 public struct CloudComputerSection: View {
     let store: CloudMachineStore
     @State private var confirm: Confirm?
@@ -17,14 +18,22 @@ public struct CloudComputerSection: View {
         case .loading, .unavailable:
             EmptyView()
         case .creatable:
-            section { actionRow("Create cloud computer", icon: "plus", work: .creating, destructive: false) { Task { await store.create() } } }
+            section {
+                CloudKeyRows(store: store)
+                if store.canCreate {
+                    actionRow("Create cloud computer", icon: "plus", work: .creating, destructive: false) { Task { await store.create() } }
+                }
+            }
         case let .machine(machine):
-            section { machineRows(machine) }
+            section {
+                machineRows(machine)
+                CloudKeyRows(store: store)
+            }
         }
     }
 
     private func section(@ViewBuilder _ rows: () -> some View) -> some View {
-        CardSection("Codync Cloud", footer: "A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.") {
+        CardSection("Codync Cloud", footer: "Runs on your own Boat account, which bills you while it's awake. It sleeps when idle and wakes when you message it.") {
             rows()
             if let error = store.error {
                 Text(L10n.tr(error))

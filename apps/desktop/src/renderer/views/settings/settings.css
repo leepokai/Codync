@@ -258,3 +258,15 @@
 .settings-appear {
   animation: fade-in var(--layout) both;
 }
+
+/* Codync Cloud: the commands that make a Boat key, selectable, with their copy button. */
+.settings-commands {
+  padding: 8px 6px 8px 12px;
+  border-radius: 12px;
+  background: var(--bubble-user);
+}
+.settings-commands-text {
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

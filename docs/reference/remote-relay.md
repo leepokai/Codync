@@ -523,7 +523,9 @@ The route table below summarizes the contract. Executable schema and validation 
 - `DELETE /v1/access-requests/{id}` → `{}`（申請者取消 pending）
 - `GET /v1/computers/{id}/grants` → `{"grants":[{"grantId","deviceId","deviceName","platform","scopes","createdAt"}]}`
 - `DELETE /v1/computers/{id}/grants/{grantId}` → `{}`（`owner`）+ DO block + changed
-- `POST /v1/cloud-computers` → `{"cloudComputer":{"cloudComputerId","provider","providerName","region","state","computerId"|null,"backupAt"|null,"createdAt"}}`：建立這個帳號的雲端電腦（每帳號一台，已有就回傳那台）；付款未定前只開放 `CLOUD_COMPUTER_USERS` 名單，否則 `403 forbidden`。`GET` 回傳同一物件（含供應商的即時狀態）或 `null`，另有 `available`（這個帳號能不能建立；app 只在 `available` 或已有雲端電腦時顯示 Codync Cloud）；`DELETE` 刪除機器、所有快照與備份，並把電腦移出帳號。
+- `POST /v1/cloud-computers` → `{"cloudComputer":{"cloudComputerId","provider","providerName","region","state","computerId"|null,"backupAt"|null,"createdAt"}}`：用使用者自己的 Boat key，在他的 Boat 帳號建立這個帳號的雲端電腦（每帳號一台，已有就回傳那台）；只開放 `CLOUD_COMPUTER_USERS` 名單（Worker 也要設了 `CLOUD_SECRET_KEYS`），否則 `403 forbidden`；還沒存 key → `409 conflict`；Boat 拒絕這把 key（撤銷、過期、缺 action、沒有方案）→ `422 keyRefused`，訊息是要修什麼；Boat 忙或連不上 → `503 providerUnavailable`。`GET` 回傳同一物件（含供應商的即時狀態）或 `null`，另有 `available`（這個帳號能不能建立；app 只在 `available` 或已有雲端電腦時顯示 Codync Cloud）、`credential`（`{"provider","providerName","hint":"boat_…9abc","problem"|null,"updatedAt"}` 或 `null`，永遠不含 key 本身；`problem` 是 Boat 拒絕這把 key 時要使用者修的事，app 翻譯這句話）與 `keySetup`（`{"provider","providerName","page","commands"}`：建立 key 的指令，由 Worker 措辭，`available` 時才有）；`DELETE` 刪除機器、所有快照與備份，並把電腦移出帳號。
+- `PUT /v1/cloud-credentials/boat` `{"key"}` → `{"credential":…}`（同 `GET` 的 `credential`）：存下使用者自己的 Boat key（[bring your own cloud](../plans/codync-cloud.md#bring-your-own-cloud)），sealed 存進 D1、只寫不讀。只開放名單上的帳號（`403`）；每帳號每分鐘最多 5 次（`429 rateLimited`）。先跟 Boat 檢查：格式不對、Boat 不接受、能讀 webhooks 的 admin key、已有雲端電腦卻碰不到它（新 key 找不到電腦時，只有舊 key 也碰不到才收下）→ `422 keyRefused`，訊息是要修什麼；Boat 忙或連不上（含 admin 檢查沒有明確答案）→ `503 providerUnavailable`，不存。
+- `DELETE /v1/cloud-credentials/boat` → `{}`：忘掉 key；還有雲端電腦時 `409 conflict`（沒有 key 就沒辦法讓它睡、也刪不掉它）。
 - `DELETE /v1/cloud-computers/snapshots` → `{}`：刪除雲端電腦保存的歷史（較早的快照與備份），電腦保留；睡著時 `409 conflict`（那時快照就是電腦本身）。
 - `GET /v1/computers` 的每台電腦多一個 `cloud`：`{"provider","providerName","region","state"}`，自己的電腦是 `null`。
 
@@ -543,7 +545,7 @@ The route table below summarizes the contract. Executable schema and validation 
 - `POST /v1/host/access-requests/{id}/decision` `{"decision":"approve"|"deny"}` → `{"status","grantId"?}`（`cloud/src/routes/host.ts` 的原子更新；request 過期 → `410 requestExpired`；approve 要求 `device_nonce IS NOT NULL`，否則 `409`）
 - `POST /v1/host/unclaim` `{}` → `{}`（在電腦上移出帳號；同 `DELETE /v1/computers/{id}` 的效果）
 - `POST /v1/host/claim` `{"claimId", …claim 的 complete 欄位}` → `{"computer":<Computer>}`：雲端電腦用認主卡自己 claim（§4.2 A 末段）；`signKey` 必須等於簽章的 kid，帳號取自該 claim。
-- `POST /v1/host/sleep` `{"wakeAt": ms | null}` → `{}`：閒置的雲端電腦請求睡眠。DO 有裝置連線時 `409 conflict`；否則 DO 記下 `wakeAt`（alarm）、立刻把 host 視為離線（停機後的 socket 不會乾淨關閉），Worker 再呼叫供應商的 stop。DO 在 host 離線時，遇到裝置連線、mailbox 訊息、routine webhook 或 `wakeAt` 到期，就請供應商 resume（每分鐘最多一次；機器還在停止中或達到啟動上限時 20 秒後重試；機器根本沒停時把原本的 host socket 收回）。非雲端電腦沒有影響。
+- `POST /v1/host/sleep` `{"wakeAt": ms | null}` → `{}`：閒置的雲端電腦請求睡眠。DO 有裝置連線時 `409 conflict`；否則 DO 記下 `wakeAt`（alarm）、立刻把 host 視為離線（停機後的 socket 不會乾淨關閉），Worker 再用電腦主人的 key 呼叫供應商的 stop；Boat 拒絕這把 key 時回 `422 keyRefused`，並請 DO 把 host 標回上線（`/internal/awake`：機器沒停，喚醒也不會發現它在執行）。DO 在 host 離線時，遇到裝置連線、mailbox 訊息、routine webhook 或 `wakeAt` 到期，就請供應商 resume（每分鐘最多一次；機器還在停止中或達到啟動上限時 20 秒後重試；機器根本沒停時把原本的 host socket 收回）。非雲端電腦沒有影響。
 - `POST /v1/host/sleep` 在有更新的 release 適合帳號所有近期裝置時（`minApp` ≤ 最舊的 app、版本 ≥ 需要的 `minHost`，release 清單由 cron 從 GitHub 讀入 `host_releases`），回 `{"update": {"version", "force": false}}` 而不停機；host 安裝後重啟，下次閒置再睡。
 - `GET /v1/host/sleep` → `{"state"}`：雲端電腦最近一次的機器狀態。請求睡眠後還在執行的 host 每 3 秒問一次，狀態離開 `stopping`／`stopped` 就重新連上 relay（保留記憶體的快速喚醒會帶回同一個程序和舊 socket）。
 
@@ -551,7 +553,7 @@ The route table below summarizes the contract. Executable schema and validation 
 
 **Cloud assistant（MCP connector）**：`POST /mcp`、`GET /.well-known/oauth-protected-resource[/mcp]`、`GET /.well-known/oauth-authorization-server`，§7.9。
 
-**Relay**：§7.1。**Webhook**：`user.deleted` → accounts `status='deleted'`、devices 撤銷、grants 撤銷（`accountDeleted`）、computers owner=NULL、DO block + changed。
+**Relay**：§7.1。**Webhook**：`user.deleted` → accounts `status='deleted'`、devices 撤銷、grants 撤銷（`accountDeleted`）、computers owner=NULL、DO block + changed；雲端電腦用主人的 key 停機後，忘掉它和 key（Boat 忙時 webhook 回 500，Clerk 重送）。
 
 ## 9. Host integration
 

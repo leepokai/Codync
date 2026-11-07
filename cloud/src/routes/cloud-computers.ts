@@ -1,12 +1,14 @@
-// Codync Cloud: a cloud computer Codync runs for a signed-in user (docs/plans/codync-cloud.md). The Worker
-// creates the machine with a one-time claim ticket on its disk; the host claims itself on first boot
-// (`hostClaim`) and then shows up in the account's computers like any other. Its host-facing routes (sleep,
-// updates) are in `cloud-host.ts`.
+// Codync Cloud: a cloud computer Codync runs for a signed-in user on their own provider account, with the key they
+// gave it (docs/plans/codync-cloud.md; the key's routes are in `cloud-credentials.ts`). The Worker creates the
+// machine with a one-time claim ticket on its disk; the host claims itself on first boot (`hostClaim`) and then
+// shows up in the account's computers like any other. Its host-facing routes (sleep, updates) are in `cloud-host.ts`.
 
 import { boat, type Outcome } from "../../machines/src";
 import { randomId } from "../auth";
-import { autoStop, type CloudMachineRow, dropBackup, PROVIDERS, providerSend, setState, SIZE } from "../cloud-machines";
+import { credentialFor, credentialView, GROUP, keySetup, problemText, PROVIDERS, providerSend } from "../cloud-credentials";
+import { autoStop, type CloudMachineRow, dropBackup, machineOf, setState, SIZE } from "../cloud-machines";
 import { machineName, setupScript } from "../cloud-setup";
+import { canSeal } from "../secrets";
 import { ApiError, audit, unclaim, user, type Ctx } from "./common";
 
 /** Long enough for the machine to boot, install the host and register. */
@@ -28,30 +30,33 @@ const view = (r: CloudMachineRow) => ({
   createdAt: r.created_at,
 });
 
-/** An allowlist of Clerk user ids decides who may have one (`*`: everyone, for a local test cloud only). */
+/** An allowlist of Clerk user ids decides who may have one (`*`: everyone), on a Worker that can seal their keys. */
 const available = (c: Ctx, userId: string) => {
   const allowed = (c.env.CLOUD_COMPUTER_USERS ?? "").split(",").map((s) => s.trim());
-  return !!c.env.BOAT_API_KEY && (allowed.includes(userId) || allowed.includes("*"));
+  return canSeal(c.env) && (allowed.includes(userId) || allowed.includes("*"));
 };
 
-async function allowedUser(c: Ctx) {
+export async function allowedUser(c: Ctx) {
   const u = await user(c);
   if (!available(c, u.userId)) throw new ApiError("forbidden", "Codync Cloud isn't available for this account yet.");
   return u;
 }
 
+/** Boat busy or failing: another try may work. */
+export const unreachable = () => new ApiError("providerUnavailable", "Couldn't reach Boat. Try again in a minute.");
+
 export function value<T>(o: Outcome<T>): T {
   if (o.ok) return o.value;
   console.log(JSON.stringify({ msg: "cloud computer provider refused", code: o.code, message: o.message }));
-  throw new ApiError(o.retryable ? "rateLimited" : "internal", "The cloud provider couldn't do this right now. Try again in a minute.");
+  if (o.retryable) throw unreachable();
+  // The apps show the key's problem too; this says it where the user just tapped.
+  if (o.needsOwner) throw new ApiError("keyRefused", problemText(o.code));
+  throw new ApiError("internal", "The cloud provider couldn't do this right now. Try again in a minute.");
 }
-
-const current = (c: Ctx, userId: string) =>
-  c.env.DB.prepare("SELECT * FROM cloud_machines WHERE user_id = ? AND state != 'deleted'").bind(userId).first<CloudMachineRow>();
 
 async function mine(c: Ctx) {
   const u = await user(c);
-  const row = await current(c, u.userId);
+  const row = await machineOf(c.env, u.userId);
   if (!row) throw new ApiError("notFound");
   return { u, row };
 }
@@ -59,8 +64,10 @@ async function mine(c: Ctx) {
 /** `POST /v1/cloud-computers`: creates this user's cloud computer, or returns the one they have. */
 export async function createCloudComputer(c: Ctx) {
   const u = await allowedUser(c);
-  const existing = await current(c, u.userId);
+  const existing = await machineOf(c.env, u.userId);
   if (existing) return { cloudComputer: view(existing) };
+  // A key Boat turned down earlier is tried again: the owner may have fixed it at Boat (their plan, say).
+  if (!(await credentialFor(c.env, u.userId))) throw new ApiError("conflict", "Add your Boat API key first.");
 
   const claimId = randomId("clm_");
   const nonce = randomId();
@@ -71,11 +78,12 @@ export async function createCloudComputer(c: Ctx) {
   const spec = {
     name: machineName(c.env, u.userId),
     size: SIZE,
+    group: GROUP,
     files: [{ path: ".codync/managed.json", content: ticket }],
     setupScript: setupScript(c.env),
     autoStopSeconds: autoStop(c.env),
   };
-  const machine = value(boat.machine(await providerSend(c.env, boat.create(spec, claimId))));
+  const machine = value(boat.machine(await providerSend(c.env, u.userId, boat.create(spec, claimId), c.now)));
   const row: CloudMachineRow = {
     id: randomId("cm_"),
     user_id: u.userId,
@@ -100,26 +108,34 @@ export async function createCloudComputer(c: Ctx) {
 }
 
 /** `GET /v1/cloud-computers`: this user's cloud computer with its live state, or `null`; `available` says whether
- * this account may create one (the apps show Codync Cloud only then, or when it has one). */
+ * this account may create one (the apps show Codync Cloud only then, or when it has one); `credential` is their
+ * provider key as the apps may see it (its hint and any problem), or `null`; `keySetup`, how to make one. */
 export async function getCloudComputer(c: Ctx) {
   const u = await user(c);
-  const row = await current(c, u.userId);
-  if (!row) return { cloudComputer: null, available: available(c, u.userId) };
-  if (c.env.BOAT_API_KEY) {
-    const live = boat.machine(await providerSend(c.env, boat.get(row.provider_id)));
+  const row = await machineOf(c.env, u.userId);
+  if (row) {
+    const live = boat.machine(await providerSend(c.env, u.userId, boat.get(row.provider_id), c.now));
     if (live.ok && live.value.state !== row.state) {
       row.state = live.value.state;
       await setState(c.env, row.id, row.state, c.now);
     }
   }
-  return { cloudComputer: view(row), available: true };
+  // Read after the live check, which records a key the provider just turned down.
+  const key = await credentialFor(c.env, u.userId);
+  const open = !!row || available(c, u.userId);
+  return {
+    cloudComputer: row ? view(row) : null,
+    available: open,
+    credential: key ? credentialView(key) : null,
+    keySetup: open ? keySetup("boat") : null,
+  };
 }
 
 /** `DELETE /v1/cloud-computers`: erases the machine, its snapshots and its backup, and takes the computer out
  * of the account. */
 export async function deleteCloudComputer(c: Ctx) {
   const { u, row } = await mine(c);
-  value(boat.deleted(await providerSend(c.env, boat.destroy(row.provider_id))));
+  value(boat.deleted(await providerSend(c.env, u.userId, boat.destroy(row.provider_id), c.now)));
   if (!(await dropBackup(c.env, row))) console.error(JSON.stringify({ msg: "cloud computer backup left behind", machine: row.id, backup: row.backup }));
   if (row.computer_id) await unclaim(c.env, row.computer_id, u.userId, c.now);
   await c.env.DB.batch([
@@ -136,11 +152,11 @@ export async function deleteCloudComputer(c: Ctx) {
  */
 export async function deleteCloudSnapshots(c: Ctx) {
   const { u, row } = await mine(c);
-  const live = value(boat.machine(await providerSend(c.env, boat.get(row.provider_id))));
+  const live = value(boat.machine(await providerSend(c.env, u.userId, boat.get(row.provider_id), c.now)));
   if (live.state !== "running") {
     throw new ApiError("conflict", "Your cloud computer is asleep, and its snapshot is all it has. Open it first, or delete the computer.");
   }
-  value(boat.done(await providerSend(c.env, boat.deleteSnapshots(row.provider_id))));
+  value(boat.done(await providerSend(c.env, u.userId, boat.deleteSnapshots(row.provider_id), c.now)));
   if (!(await dropBackup(c.env, row))) throw new ApiError("internal", "The backup couldn't be deleted. Try again in a minute.");
   await audit(c.env, u.userId, "cloudComputer.deleteSnapshots", row.id, "ok", c.now).run();
   return {};

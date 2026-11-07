@@ -97,6 +97,42 @@ private final class UnavailableStub: CloudComputerStub {
     #expect(store.error == "Codync Cloud isn't available for this account yet.")
 }
 
+/// An account that may have a cloud computer but gave no Boat key yet. The first key it gives is refused.
+private final class KeyStub: CloudComputerStub {
+    static let puts = OSAllocatedUnfairLock(initialState: 0)
+
+    override class func answer(_ request: URLRequest) -> (Int, String) {
+        switch request.httpMethod {
+        case "PUT":
+            let n = puts.withLock { $0 += 1; return $0 }
+            return n == 1
+                ? (422, #"{"error":{"code":"keyRefused","message":"This key can manage your whole Boat account. Make one limited to Codync instead."}}"#)
+                : (200, #"{"credential":{"provider":"boat","providerName":"Boat","hint":"boat_…9abc","problem":null}}"#)
+        case "DELETE":
+            return (200, "{}")
+        default:
+            return (200, #"{"cloudComputer":null,"available":true,"credential":null,"keySetup":{"providerName":"Boat","page":"https://boat.dev/dashboard","commands":"boat env new codync"}}"#)
+        }
+    }
+}
+
+/// The user's own Boat key comes first: a refusal keeps the cloud's reason, a saved key shows only by its hint, and
+/// only then can a computer be made; with no computer on it, the key can go again.
+@MainActor @Test func cloudKeyComesBeforeTheComputer() async {
+    let store = CloudMachineStore(cloud: stubbedCloud(KeyStub.self))
+    await store.refresh()
+    #expect(store.lookup == .creatable)
+    #expect(store.keySetup?.commands == "boat env new codync")
+    #expect(!store.canCreate)
+    #expect(await store.saveKey("boat_admin_key") == false)
+    #expect(store.error == "This key can manage your whole Boat account. Make one limited to Codync instead.")
+    #expect(await store.saveKey(" boat_live_key9abc "))
+    #expect(store.credential?.hint == "boat_…9abc")
+    #expect(store.canCreate && store.canRemoveKey && store.error == nil)
+    await store.removeKey()
+    #expect(store.credential == nil && !store.canCreate)
+}
+
 /// A sleeping machine that hasn't claimed itself in yet; its snapshots can't be deleted while it sleeps.
 private final class PreparingStub: CloudComputerStub {
     static let claimed = OSAllocatedUnfairLock(initialState: false)

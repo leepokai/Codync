@@ -28,6 +28,9 @@ const STATUS: Record<string, number> = {
   conflict: 409,
   claimExpired: 410,
   requestExpired: 410,
+  /** The user's own provider key was turned down: only they can fix it (`cloud-credentials.ts`). */
+  keyRefused: 422,
+  providerUnavailable: 503,
   upgradeRequired: 426,
   tooLarge: 413,
   rateLimited: 429,

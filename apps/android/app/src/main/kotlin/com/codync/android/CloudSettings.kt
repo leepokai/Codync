@@ -30,8 +30,8 @@ private val CloudMachine.stateLabel: String get() = when (state) {
 }
 
 /**
- * Computers → Codync Cloud: the computer Codync runs for this account. Shown only to an account that has one or may
- * create one (the feature isn't public yet).
+ * Computers → Codync Cloud: the key to the user's own Boat account, then the computer Codync runs there for this
+ * account. Shown only to an account that has one or may create one (the feature isn't public yet).
  */
 @Composable internal fun CloudSettings(state: AccountContext, store: AccountStore) {
     LaunchedEffect(state.generation) { store.refreshCloudMachine() }
@@ -41,9 +41,12 @@ private val CloudMachine.stateLabel: String get() = when (state) {
     val machine = offer.cloudComputer
     if (machine == null && !offer.available) return
     val busy = "cloudMachine" in state.busy || "session" in state.busy
-    CardSection("Codync Cloud", "A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.") {
-        if (machine == null) row { CloudAction("cloud", "Create cloud computer", Palette.text, busy, spinning = busy, action = store::createCloudComputer) }
-        else {
+    val keyBusy = "cloudKey" in state.busy
+    CardSection("Codync Cloud", "Runs on your own Boat account, which bills you while it's awake. It sleeps when idle and wakes when you message it.") {
+        if (machine == null) {
+            row { CloudKeyRows(offer, keyBusy, canRemove = true, store) }
+            if (offer.canCreate) row { CloudAction("cloud", "Create cloud computer", Palette.text, busy, spinning = busy, action = store::createCloudComputer) }
+        } else {
             row {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Symbol("cloud", size = 20.dp, tint = Palette.text)
@@ -63,6 +66,7 @@ private val CloudMachine.stateLabel: String get() = when (state) {
             }
             row { CloudAction("clock.arrow.circlepath", "Delete snapshots", Palette.danger, busy) { confirmSnapshots = true } }
             row { CloudAction("trash", "Delete cloud computer", Palette.danger, busy) { confirmDelete = true } }
+            row { CloudKeyRows(offer, keyBusy, canRemove = false, store) }
         }
     }
     CodyncDialog("Delete snapshots?", confirmSnapshots, { confirmSnapshots = false },

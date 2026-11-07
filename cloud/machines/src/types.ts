@@ -38,6 +38,9 @@ export interface MachineFile {
 export interface CreateSpec {
   name: string;
   size: Size;
+  /** Where the provider groups the machine, so a key limited to that group reaches only these machines (Boat: an
+   * environment). Unset: the provider's default. */
+  group?: string;
   /** Written before the machine is ready, at its first start only. */
   files: MachineFile[];
   /** Runs once, in the background, after the machine is first ready. */
@@ -49,4 +52,12 @@ export interface CreateSpec {
 
 export type Outcome<T> =
   | { ok: true; value: T }
-  | { ok: false; code: string; message: string; retryable: boolean };
+  | {
+      ok: false;
+      code: string;
+      message: string;
+      retryable: boolean;
+      /** Only the provider account's owner can fix it: the key was refused, lacks an action or a group, or the
+       * account can't pay. Trying again won't help until they do. */
+      needsOwner: boolean;
+    };

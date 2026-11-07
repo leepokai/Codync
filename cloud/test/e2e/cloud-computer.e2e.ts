@@ -5,11 +5,14 @@
 // CODYNC_E2E_UPDATE_NOW=1 (same build), the owner updates it to the latest release from a phone. With
 // CODYNC_E2E_COLD=1 (a long run, about an hour): backups, a cold wake after CODYNC_E2E_COLD_MINUTES (31) asleep, a
 // restore from the backup once its own snapshot expired, and deleting the snapshot history.
-// Run with `npm run e2e:cloud`. Needs BOAT_API_KEY or BOAT_API_KEY_FILE (scoped key) and a logged-in `boat` CLI.
+// Run with `npm run e2e:cloud`. Needs BOAT_API_KEY or BOAT_API_KEY_FILE (a key made as users make theirs: limited to
+// the `codync` environment, with Codync's actions) and a logged-in `boat` CLI. The test user gives the cloud that key
+// as the apps do.
 // CODYNC_HOST_LINUX_BIN: the Linux x86_64 host to test, served to the machine at its first boot (without it, the
 // released host, which can't run every step until a release has them). Costs a few minutes of Boat compute; the
 // sandbox is deleted at the end, also when a step fails, and test machines older than two hours are swept.
 
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import * as ref from "../ref.ts";
 import { boatKey, boatProxy, deleteSandbox, keepForwarded, savedSnapshot, sh, sweep, TEST_PREFIX } from "./boat.ts";
@@ -38,11 +41,11 @@ let sandboxId: string | undefined;
 const replaced: string[] = [];
 
 async function main() {
-  step("1. local cloud with a Boat key");
+  step("1. local cloud; the user gives it their own Boat key");
   const swept = await sweep(key, 2 * 3600_000);
   if (swept.length) console.log(`  swept test machines left behind: ${swept.join(", ")}`);
   await cloud.start({
-    BOAT_API_KEY: key,
+    CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
     CLOUD_COMPUTER_USERS: USER_ID,
     // A machine a crashed run leaves behind stops by itself; two hours cover the long run.
     CLOUD_AUTO_STOP_SECONDS: "7200",
@@ -55,6 +58,11 @@ async function main() {
   });
   const token = await cloud.token(USER_ID);
   check((await cloud.call("POST", "/v1/cloud-computers", { token: await cloud.token("user_not_listed") })).status === 403, "a user off the list is refused");
+  check((await cloud.call("POST", "/v1/cloud-computers", { token })).status === 409, "no cloud computer before the user's own key");
+  const saved = await cloud.call("PUT", "/v1/cloud-credentials/boat", { token, body: { key } });
+  check(saved.body.credential?.hint === `${key.slice(0, key.indexOf("_") + 1)}…${key.slice(-4)}`, `Boat took the key; only its hint comes back (${saved.status})`);
+  const stored = (await cloud.d1(`SELECT sealed FROM cloud_credentials WHERE user_id = '${USER_ID}'`))[0]?.sealed as string;
+  check(!!stored && !stored.includes(key.slice(5)), "the cloud keeps it sealed");
 
   step("2. create the cloud computer");
   const started = Date.now();

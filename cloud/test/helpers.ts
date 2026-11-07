@@ -1,6 +1,7 @@
 // Shared test plumbing: Clerk tokens, signed requests, WebSocket wrappers, a registered host.
 
 import { SELF, type D1Migration } from "cloudflare:test";
+import { Webhook } from "svix";
 import { env as rawEnv } from "cloudflare:workers";
 import type { Env } from "../src/index";
 import { aclMessage, b64url, boxKey, computerId, enc, signKey, signRequest, type AclBody, type BoxKey, type SignKey } from "./ref";
@@ -82,6 +83,19 @@ export async function call(method: string, path: string, o: CallOptions = {}): P
   }
   const res = await SELF.fetch(ORIGIN + path, { method, headers, body: bytes.length ? bytes : undefined });
   return { status: res.status, body: await res.json() };
+}
+
+/** Delivers a Clerk webhook, signed with `secret`. */
+export function deliverClerk(id: string, payload: unknown, secret = env.CLERK_WEBHOOK_SECRET!) {
+  const now = new Date();
+  return call("POST", "/v1/webhooks/clerk", {
+    body: payload,
+    headers: {
+      "svix-id": id,
+      "svix-timestamp": String(Math.floor(now.getTime() / 1000)),
+      "svix-signature": new Webhook(secret).sign(id, now, JSON.stringify(payload)),
+    },
+  });
 }
 
 // ---- WebSockets ----

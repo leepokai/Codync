@@ -199,6 +199,37 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `the user's own Boat key is given trimmed, shown by its hint, refused with what to fix and removed`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":null,"available":true,"credential":{"provider":"boat","providerName":"Boat",
+                "hint":"boat_…9abc","problem":"This Boat key has expired. Make a new one.","updatedAt":5},
+                "keySetup":{"providerName":"Boat","page":"https://boat.dev/dashboard","commands":"boat env new codync"}}"""))
+            server.enqueue(MockResponse().setResponseCode(422).setBody("""{"error":{"code":"keyRefused","message":"That doesn't look like a Boat API key."}}"""))
+            server.enqueue(MockResponse().setBody("""{"credential":{"provider":"boat","providerName":"Boat","hint":"boat_…0001","problem":null,"updatedAt":6}}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            val offer = client.cloudComputer()
+            assertEquals(CloudCredential("boat", "Boat", "boat_…9abc", "This Boat key has expired. Make a new one."), offer.credential)
+            assertEquals(CloudKeySetup("Boat", "https://boat.dev/dashboard", "boat env new codync"), offer.keySetup)
+            assertTrue(offer.canCreate)
+            val refused = try { client.saveCloudKey("sk-1"); error("Expected a refusal") } catch (error: CloudError) { error }
+            assertEquals("keyRefused", refused.code)
+            assertEquals("That doesn't look like a Boat API key.", refused.message)
+            val saved = client.saveCloudKey(" boat_live_key0001 ")
+            assertEquals("boat_…0001", saved.hint)
+            assertNull(saved.problem)
+            client.deleteCloudKey()
+            server.takeRequest()
+            server.takeRequest()
+            val put = server.takeRequest()
+            assertEquals("PUT /v1/cloud-credentials/boat", put.requestLine.substringBeforeLast(' '))
+            assertEquals("""{"key":"boat_live_key0001"}""", put.body.readUtf8())
+            assertEquals("DELETE /v1/cloud-credentials/boat", server.takeRequest().requestLine.substringBeforeLast(' '))
+        } finally { server.shutdown() }
+    }
+
     @Test fun `refusals carry the cloud's own words, and an app floor asks for an update`() = runBlocking {
         val server = MockWebServer()
         server.start()

@@ -19,10 +19,29 @@ fun AccountStore.refreshCloudMachine() = action("cloudMachine") {
     awaitClaim()
 }
 
-/** `403` off the allowlist shows the cloud's own words. */
+/** Gives the cloud the key to the user's own Boat account; a refusal shows the cloud's words for what to fix. [saved] runs
+ * once it's kept. */
+fun AccountStore.saveCloudKey(key: String, saved: () -> Unit) = action("cloudKey") {
+    val credential = try { requireNotNull(cloud) { "Sign in to reach your account." }.saveCloudKey(key) }
+    catch (error: Exception) {
+        if (error !is CancellationException) Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.of(error)))
+        throw error
+    }
+    Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Saved))
+    mutableState.update { it.copy(cloudOffer = it.cloudOffer?.copy(credential = credential)) }
+    saved()
+}
+
+/** `409` while a cloud computer runs on it shows the cloud's own words. */
+fun AccountStore.removeCloudKey() = action("cloudKey") {
+    requireNotNull(cloud) { "Sign in to reach your account." }.deleteCloudKey()
+    mutableState.update { it.copy(cloudOffer = it.cloudOffer?.copy(credential = null)) }
+}
+
+/** `403` off the allowlist, or `409` without a key, shows the cloud's own words. */
 fun AccountStore.createCloudComputer() = action("cloudMachine") {
     val machine = requireNotNull(cloud) { "Sign in to reach your account." }.createCloudComputer()
-    mutableState.update { it.copy(cloudOffer = CloudOffer(machine, available = true)) }
+    mutableState.update { it.copy(cloudOffer = (it.cloudOffer ?: CloudOffer(available = true)).copy(cloudComputer = machine)) }
     awaitClaim()
 }
 

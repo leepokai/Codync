@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isPreparing, machineStatus, offlineCloudStatus, placementLine, type CloudMachine } from './cloud-computer.ts'
+import { cloudKeyOutcome, isPreparing, machineStatus, offlineCloudStatus, placementLine, type CloudMachine } from './cloud-computer.ts'
 
 const machine: CloudMachine = {
   cloudComputerId: 'cm_1', provider: 'boat', providerName: 'Boat', region: 'EU', state: 'running',
@@ -37,4 +37,11 @@ test('a claimed cloud computer shows its state', () => {
   assert.equal(machineStatus({ ...machine, state: 'stopping' }).text, 'Going to sleep')
   assert.equal(machineStatus({ ...machine, state: 'stopped' }).text, 'Sleeping')
   assert.deepEqual(machineStatus({ ...machine, state: 'failed' }), { text: 'Failed', error: true })
+})
+
+test('a refused Boat key is told apart from a save that failed', () => {
+  const refused = Object.assign(new Error('This Boat key has expired. Make a new one.'), { code: 'keyRefused' })
+  assert.equal(cloudKeyOutcome(refused), 'refused')
+  assert.equal(cloudKeyOutcome(Object.assign(new Error('Too many requests.'), { code: 'rateLimited' })), 'failed')
+  assert.equal(cloudKeyOutcome(new TypeError('fetch failed')), 'failed')
 })

@@ -1,29 +1,55 @@
-// Codync Cloud test helpers: Boat stubbed with a fetch spy, the Worker with Boat configured, and a claimed
-// cloud computer with its host connected.
+// Codync Cloud test helpers: Boat stubbed with a fetch spy, the Worker with `userId` allowed a cloud computer, the
+// user's own Boat key, and a claimed cloud computer with its host connected.
 
 import { expect, vi } from "vitest";
+import { saveCredential } from "../src/cloud-credentials";
 import worker from "../src/index";
 import { ORIGIN, call, clerkToken, env, hostSocket, newHost, type Json, type TestHost } from "./helpers";
 import * as ref from "./ref";
 
 export const uid = () => `user_cc_${ref.b64url(ref.random(6))}`;
 
-/** Calls `/v1/cloud-computers` (or `path`) with Boat configured and `userId` on the allowlist. */
-export async function cc(method: string, userId: string, allowed = userId, path = "/v1/cloud-computers") {
+/** The Boat key every test user brings. */
+export const KEY = "boat_live_test9abc";
+
+/** Calls `/v1/cloud-computers` (or `path`) with `userId` on the allowlist; `body` goes as JSON. */
+export async function cc(method: string, userId: string, allowed = userId, path = "/v1/cloud-computers", body?: unknown) {
+  const headers: Record<string, string> = { Authorization: `Bearer ${await clerkToken(userId)}` };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await worker.fetch(
-    new Request(`${ORIGIN}${path}`, { method, headers: { Authorization: `Bearer ${await clerkToken(userId)}` } }),
-    { ...env, BOAT_API_KEY: "boat_test", CLOUD_COMPUTER_USERS: `someone_else, ${allowed}` },
+    new Request(`${ORIGIN}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }),
+    { ...env, CLOUD_COMPUTER_USERS: `someone_else, ${allowed}` },
     {} as ExecutionContext,
   );
   return { status: res.status, body: (await res.json()) as Json };
 }
 
+/** Gives `userId` a Boat key, as saving one does once Boat took it (the account row comes with the first call). */
+export async function withKey(userId: string) {
+  await cc("GET", userId);
+  await saveCredential(env, userId, "boat", KEY, Date.now());
+}
+
 /** A fresh fetch spy (spying again returns the same spy, so earlier calls are cleared). */
 export const spyFetch = () => vi.spyOn(globalThis, "fetch").mockClear();
 
-/** Stubs Boat: every sandbox call answers `state`, and each request is recorded. */
-export function boat(state = "provisioning") {
-  return spyFetch().mockImplementation(async () => Response.json({ ok: true, sandbox: { id: "bx_test", state } }));
+type Answer = [status: number, body: unknown];
+
+/** Boat refusing a call with `code`. */
+export const forbidden = (code: string): Answer => [403, { ok: false, code, message: code }];
+
+/** Stubs Boat: `answers` by path and query (an answer, or one for the key sent, `undefined` for the usual), every
+ * other call a sandbox in `state`; each request is recorded. A key's webhooks are out of reach, as for the key a user
+ * makes for Codync. */
+export function boat(state = "provisioning", answers: Record<string, Answer | ((key: string) => Answer | undefined)> = {}) {
+  const answer: typeof answers = { "/webhooks": forbidden("api_key_action_forbidden"), ...answers };
+  return spyFetch().mockImplementation(async (url, init) => {
+    const { pathname, search } = new URL(String(url));
+    const a = answer[pathname.replace("/api/v1", "") + search];
+    const key = (init?.headers as Record<string, string> | undefined)?.authorization?.replace("Bearer ", "") ?? "";
+    const [status, body] = (typeof a === "function" ? a(key) : a) ?? [200, { ok: true, sandbox: { id: "bx_test", state } }];
+    return Response.json(body, { status });
+  });
 }
 
 /** The host's side of the ticket: the claim signed with its key, sent to `/v1/host/claim`. */
@@ -49,6 +75,7 @@ export function hostClaim(host: TestHost, ticket: { claimId: string; nonce: stri
 /** A claimed cloud computer whose host is connected with one authorized device key. */
 export async function cloudComputer() {
   const userId = uid();
+  await withKey(userId);
   const fetch = boat();
   const created = await cc("POST", userId);
   // Find the create among the calls: a relay from an earlier test may still be finishing a wake.

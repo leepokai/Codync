@@ -4,7 +4,8 @@
 
 import { boat } from "../../machines/src";
 import { softUpdate } from "../app-versions";
-import { machineFor, providerSend, setState } from "../cloud-machines";
+import { providerSend } from "../cloud-credentials";
+import { machineFor, setState } from "../cloud-machines";
 import { value } from "./cloud-computers";
 import { ApiError, body, host, type Ctx } from "./common";
 
@@ -18,18 +19,23 @@ export async function hostSleep(c: Ctx) {
   const comp = await host(c);
   const wakeAt = body(c).wakeAt ?? null;
   if (wakeAt !== null && (typeof wakeAt !== "number" || !Number.isSafeInteger(wakeAt))) throw new ApiError("badRequest", "Invalid wakeAt");
-  const row = c.env.BOAT_API_KEY ? await machineFor(c.env, comp.id) : null;
+  const row = await machineFor(c.env, comp.id);
   if (!row) throw new ApiError("notFound");
   const update = await softUpdate(c.env, comp, c.now);
   if (update) return { update };
-  const res = await c.env.RELAY.get(c.env.RELAY.idFromName(comp.id)).fetch("https://do/internal/sleep", {
-    method: "POST",
-    headers: { "X-Codync-Internal": "1", "Content-Type": "application/json" },
-    body: JSON.stringify({ wakeAt }),
-  });
+  const relay = (path: string, payload: unknown) =>
+    c.env.RELAY.get(c.env.RELAY.idFromName(comp.id)).fetch(`https://do/internal/${path}`, {
+      method: "POST",
+      headers: { "X-Codync-Internal": "1", "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  const res = await relay("sleep", { wakeAt });
   if (res.status === 409) throw new ApiError("conflict", "A device is connected.");
   if (!res.ok) throw new ApiError("internal");
-  value(boat.machine(await providerSend(c.env, boat.stop(row.provider_id))));
+  const stopped = boat.machine(await providerSend(c.env, row.user_id, boat.stop(row.provider_id), c.now));
+  // The owner's key was refused, so it surely didn't stop, and no wake can find it running either: back online now.
+  if (!stopped.ok && stopped.needsOwner) await relay("awake", {});
+  value(stopped);
   await setState(c.env, row.id, "stopping", c.now);
   return {};
 }

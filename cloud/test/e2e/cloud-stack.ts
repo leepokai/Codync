@@ -1,10 +1,12 @@
 // A local cloud for the real Codync Dev apps (iOS simulator, Android emulator, desktop sandbox), isolated from the
 // shared dev cloud (docs/guides/cloud-computer-testing.md): it accepts dev Clerk sign-ins, creates cloud computers
-// on Boat that boot the host under test, and forwards each new machine to this computer. Ctrl-C deletes the
+// on Boat that boot the host under test (with the Boat key each tester gives it in the app), and forwards each new
+// machine to this computer, with the BOAT_API_KEY of `npm run e2e:cloud`. Ctrl-C deletes the
 // machines and stops everything. Run with `npm run cloud:stack`; the same environment as `npm run e2e:cloud`, plus:
 // CLOUD_COMPUTER_USERS (dev Clerk user ids allowed a cloud computer, default `*`), CODYNC_STACK_PORT (a fixed port,
 // so a simulator launched once keeps working), CODYNC_SLEEP_IDLE_SECS (a short idle time to watch sleep happen).
 
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { boatKey, keepForwarded, sweep, TEST_PREFIX } from "./boat.ts";
 import { freePort, LocalCloud, lock, ROOT, serveFiles } from "./harness.ts";
@@ -21,7 +23,7 @@ const files = serveFiles({ ...(HOST_LINUX_BIN ? { "codync-host": HOST_LINUX_BIN 
 await sweep(key, 2 * 3600_000);
 await cloud.start(
   {
-    BOAT_API_KEY: key,
+    CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
     CLOUD_COMPUTER_USERS: process.env.CLOUD_COMPUTER_USERS ?? "*",
     CLOUD_AUTO_STOP_SECONDS: "7200",
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,
@@ -38,6 +40,7 @@ Local cloud for Codync Dev apps: ${cloud.url} (dev Clerk sign-ins; test account:
   Desktop sandbox:  CODYNC_CLOUD_URL=${cloud.url} npm run dev   (in apps/desktop)
   Android emulator: adb -s <serial> reverse tcp:${port} tcp:${port}, built with -PcodyncCloudUrl=${cloud.url}
 Cloud computers: ${HOST_LINUX_BIN ? `boot ${HOST_LINUX_BIN}` : "boot the released host"}; each new one is forwarded here. Ctrl-C to stop.
+Boat key to paste in the app: the one in BOAT_API_KEY_FILE (limited to the codync environment).
 `);
 
 const forwarded = new Set<string>();

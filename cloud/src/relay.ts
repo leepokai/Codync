@@ -73,6 +73,10 @@ export class ComputerRelay extends DurableObject<Env> {
     if (pathname === "/internal/hook" && req.method === "POST") return this.hook(req);
     if (pathname === "/internal/assistant" && req.method === "POST") return this.assistant(req);
     if (pathname === "/internal/sleep" && req.method === "POST") return this.sleep(req);
+    if (pathname === "/internal/awake" && req.method === "POST") {
+      await this.takeBackHost(Date.now());
+      return Response.json({});
+    }
     if (pathname === "/internal/changed" && req.method === "POST") {
       this.toHosts({ t: "cloud.changed" });
       // An access request: a sleeping cloud computer has to wake to answer it.
@@ -217,13 +221,18 @@ export class ComputerRelay extends DurableObject<Env> {
       return "retry" as const;
     });
     if (result === "running") {
-      // It never stopped (the stop failed): the host that asked to sleep is still connected and fine.
-      const [ws, a] = this.hosts().find(([, h]) => !h.ready) ?? [];
-      if (ws && a) await this.markReady(ws, a, now);
+      await this.takeBackHost(now);
     } else if (result === "retry") {
       this.setMeta("wokeAt", "0");
       await this.wakeLater(now + WAKE_RETRY_MS);
     }
+  }
+
+  /** It never stopped (the stop failed): the host that asked to sleep is still connected and fine
+   * (`POST /internal/awake`, or a wake that finds it running). */
+  private async takeBackHost(now: number): Promise<void> {
+    const [ws, a] = this.hosts().find(([, h]) => !h.ready) ?? [];
+    if (ws && a) await this.markReady(ws, a, now);
   }
 
   /** Wakes it from the alarm at `at`, unless a wake is already due by then. */

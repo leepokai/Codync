@@ -3,6 +3,7 @@
 
 import { compareVersions } from "./app-versions";
 import { saveBackups } from "./cloud-machines";
+import { canSeal } from "./secrets";
 import { syncReleases } from "./host-releases";
 import type { Env } from "./index";
 import { notify, type Ctx } from "./routes/common";
@@ -11,6 +12,7 @@ export { ApiError, type Ctx } from "./routes/common";
 export * from "./routes/account";
 export * from "./routes/assistant";
 export * from "./routes/cloud-computers";
+export * from "./routes/cloud-credentials";
 export * from "./routes/cloud-host";
 export * from "./routes/host";
 export * from "./routes/pairing-codes";
@@ -53,7 +55,7 @@ export async function sweep(env: Env, now: number): Promise<void> {
 /** Codync Cloud: the releases the soft update picks from, backups of long-asleep machines, and awake cloud
  * computers below an emergency floor told to read their update order now. Each part fails on its own. */
 async function cloudUpkeep(env: Env, now: number): Promise<void> {
-  if (!env.BOAT_API_KEY) return;
+  if (!canSeal(env)) return;
   const run = (what: string, job: Promise<void>) => job.catch((e) => console.error(`cloud upkeep: ${what}`, { error: String(e) }));
   await run("releases", syncReleases(env));
   await run("backups", saveBackups(env, now));

@@ -205,14 +205,26 @@ public struct CloudClient: Sendable {
 
     // MARK: Codync Cloud
 
-    /// The account's cloud computer, and whether this account may create one (the feature isn't public yet).
-    public func cloudMachine() async throws -> (machine: CloudMachine?, available: Bool) {
-        struct Res: Decodable { var cloudComputer: CloudMachine?; var available: Bool? }
-        let res: Res = try await request("GET", "v1/cloud-computers")
-        return (res.cloudComputer, res.available ?? false)
+    /// The account's cloud computer, whether this account may create one, and the provider key it gave.
+    public func cloudStatus() async throws -> CloudStatus {
+        try await request("GET", "v1/cloud-computers")
     }
 
-    /// Creates the account's cloud computer, or returns the one it has (`403 forbidden` off the allowlist).
+    /// Gives Codync Cloud the key to the user's own Boat account. The cloud checks it with Boat and keeps it sealed;
+    /// a refusal (`422 keyRefused`) says what to fix.
+    public func saveCloudKey(_ key: String) async throws -> CloudCredential {
+        struct Res: Decodable { var credential: CloudCredential }
+        let res: Res = try await request("PUT", "v1/cloud-credentials/boat", body: ["key": key])
+        return res.credential
+    }
+
+    /// Forgets the key (`409 conflict` while a cloud computer runs on it).
+    public func deleteCloudKey() async throws {
+        try await send("DELETE", "v1/cloud-credentials/boat")
+    }
+
+    /// Creates the account's cloud computer, or returns the one it has (`403 forbidden` off the allowlist, `409` without
+    /// a key).
     public func createCloudMachine() async throws -> CloudMachine {
         struct Res: Decodable { var cloudComputer: CloudMachine }
         let res: Res = try await request("POST", "v1/cloud-computers")

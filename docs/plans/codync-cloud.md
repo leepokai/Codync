@@ -4,15 +4,117 @@ Status (2026-10-31): steps 1–3 of the [build order](#build-order-on-boat) and 
 `feat/cloud-boat`, synced with `dev`, and passed end to end on Boat and the iPhone app.
 What's left before each release: [Delivery](#delivery). Owner decisions:
 
-- **Free, and users bring their own sandbox** (owner, 2026-11-06): Codync charges nothing, and users bring their own
-  sandbox and API key. How (which providers, where the key lives) isn't decided yet. Anything below that puts the
-  machine on Codync's own provider account predates this and changes with that decision.
+- **Free, and users bring their own cloud** (owner, 2026-11-06; how, 2026-11-08): Codync charges nothing; each user
+  connects their own Boat account with an API key they paste once, which Codync keeps sealed:
+  [Bring your own cloud](#bring-your-own-cloud). Paragraphs below that put the machine on Codync's own provider
+  account (one Worker key, Codync paying, TOS-8) predate this; the BYOC section wins where they differ.
 - **Backend: Boat (boat.dev) first** (owner, 2026-10-24): cheapest sleeping machine with the clearest terms
   (see [Boat first](#boat-first)). Asian VPSs for always-on tiers and Fly Machines stay the next adapters;
   InstaBox and Cloudflare are on hold.
 - **Signed-in users only** (owner, 2026-10-24): Codync Cloud is offered only to people signed in to a Codync account;
   the cloud computer is claimed to that account.
 - **A VPS you run yourself already works today**: [Linux servers](../guides/linux-servers.md).
+
+## Bring your own cloud
+
+Built 2026-11-08 on `feat/cloud-boat`. The user's cloud computer is a sandbox on **their own Boat account**: Boat
+bills them (its $20/month plan, paid back as compute), Codync bills nothing and has no provider account for users.
+Codync still runs it: creates it, claims it, puts it to sleep and wakes it.
+
+### Where each secret lives
+
+Rule: a secret lives in exactly one place, the one that has to use it while nobody is looking.
+
+| Secret | Lives in | Why there | Never seen by |
+|---|---|---|---|
+| Boat API key | the Worker, sealed in D1 (`cloud_credentials`) | wakes for routines, webhooks, mailbox messages and `wakeAt` happen with every device closed and the machine stopped | the machine, the relay, the apps once it's saved, logs |
+| Agent sign-ins and API keys (Claude Code, Codex…) | the cloud computer: the agent's own folders, or the host vault (`agent/auth.rs`) | the agent uses them; they go there over the end-to-end channel | Codync's servers |
+| Voice keys (OpenAI, Gemini) | the host vault on the cloud computer (already built) | the host mints per-call credentials | Codync's servers |
+| Device keys | each device's Keychain / Keystore (already built) | they sign the device's requests | everyone else |
+
+Places rejected for the Boat key: the phone (nothing could wake the computer for a routine or a webhook while the phone
+is closed); the machine itself (it's off exactly when it must be woken, and anyone with a shell there is root, agents
+included); Boat's own scoped-key minting from an admin key (Codync would receive an admin key, which Boat says never to
+give a third party, and `POST /api-keys/scoped` may not be enabled).
+
+### The key the user makes
+
+An environment `codync` and a key limited to it, with only the actions Codync uses and no expiry:
+
+```bash
+boat env new codync
+boat env set codync --safe-for-third-parties true
+boat env info codync   # its "id" goes after --env
+boat api-key create codync --env <id> --ttl never \
+  --actions sandbox.create,sandbox.read,sandbox.stop,sandbox.resume,sandbox.delete,snapshot.read,snapshot.write
+```
+
+`--env` takes the environment's id, not its name (Boat answers `api_key_sandbox_forbidden` to the name; checked
+2026-11-08). The apps show these lines as the Worker words them (`keySetup` in `GET /v1/cloud-computers`), with a
+link to Boat's dashboard, which does the same with a form.
+
+- It can't run commands, read or write files, SSH or stream the desktop (no `exec`, `file.*`, `ssh`, `desktop`),
+  reach the user's sandboxes outside `codync`, read billing, or make keys and webhooks.
+- Codync creates every cloud computer (and a restore from its backup) in environment `codync` (`GROUP` in
+  `cloud-credentials.ts`), still with `noEnv` and monitoring off.
+- `--ttl never`: an expiring key would leave the computer unable to wake with no warning a year later; revoking it at
+  Boat is the off switch and takes effect at once. Boat recommends expiring keys; this is the trade-off.
+
+### Saving it (`PUT /v1/cloud-credentials/boat {key}`)
+
+1. Only for accounts allowed Codync Cloud; at most 5 saves a minute per account (`CLOUD_KEY_LIMITER`), so the
+   endpoint can't be used to test other people's keys.
+2. Shape: `boat_…` (or `box_…`), letters, digits, `_`, `-`.
+3. `GET /sandboxes?limit=1` must succeed: the key works and reads sandboxes.
+4. `GET /webhooks` must be refused as out of the key's scope (403 `api_key_*`, or 404): a key that can read the
+   account's webhooks can run the whole account (an admin key, or one from before Boat had scopes), and is refused.
+   Any other answer (429, 5xx) says nothing, so the key isn't kept: `503 providerUnavailable`, try again.
+5. With a cloud computer already: `GET /sandboxes/<its id>` must succeed, so a replacement from another account or
+   environment can't lock the computer out. A 404 is taken only when the saved key can't reach the computer either
+   (deleted at Boat, or that key revoked): nothing is lost, and the new key lets the user delete the computer here.
+
+Then it is sealed and replaces the earlier key. Each refusal says what to fix, in sentences the apps translate.
+
+### Storage
+
+- `cloud_credentials(user_id, provider, sealed, key_id, hint, problem, …)`, one row per user and provider.
+- AES-256-GCM (WebCrypto, `src/secrets.ts`), a random 96-bit IV per seal, and the user id and provider as
+  associated data, so a row copied to another account doesn't open.
+- Keys: the Worker secret `CLOUD_SECRET_KEYS`, `id:base64` entries; the first seals, all open, and each row records
+  its `key_id`. Rotating = put a new key first. A row is sealed again only when its user saves their key again, so an
+  old entry stays while any row's `key_id` names it; a re-seal pass in the cron comes with the first real rotation.
+  `wrangler secret put` can't be read back: keep each environment's value in its `.env` file
+  ([local secrets](../guides/dev-app.md#local-secrets)), since losing it leaves every key unopenable.
+- `hint` (`boat_…9abc`, as Boat lists keys) is the only part ever returned or logged.
+- A D1 export, Time Travel copy or SQL read gives ciphertext. The running Worker can open it, as it must to wake a
+  computer unattended.
+
+### Using it
+
+- Every provider call goes out with the owner's key (`providerSend(env, userId, req)`), opened for that call only.
+- When Boat turns the key down (401, `api_key_*`, `unknown_environment`, `environment_forbidden`, 402 no plan),
+  the code is kept on the key (`problem`, only on the key that call used); `GET /v1/cloud-computers` shows it as a
+  sentence, the apps show the key row in red with *Replace*, and wakes stop retrying (only the owner can fix it). The
+  next call that shows it fixed clears it: any call that works, except that a missing action or the plan is cleared
+  only by a write that works (a read says nothing about them). *Create* stays offered: it tries again, for an owner
+  who fixed their plan at Boat.
+- A host whose stop is refused (the key) is put back online at once (`/internal/awake` on its relay): it never
+  stopped, and no wake would find it running.
+- Write-only API: `GET /v1/cloud-computers` adds `credential: {provider, providerName, hint, problem, updatedAt}` or
+  `null`; never the key. `DELETE /v1/cloud-credentials/boat` is refused while a cloud computer exists: without the
+  key Codync couldn't put it to sleep or delete it, and it would keep billing its owner.
+- Deleting the cloud computer keeps the key (for another one). Deleting the Codync account stops the computer, then
+  forgets it and the key: the sandbox stays in the user's Boat account for them to keep or delete. While Boat is busy
+  the webhook fails, so Clerk sends it again and the stop is retried with the key still there.
+- Audit rows: `cloudCredential.save`, `cloudCredential.delete` (never key material).
+
+### What Codync can still do
+
+The Worker, and so whoever controls Codync's Cloudflare account, can open the key and create, stop, resume and delete
+sandboxes in the user's `codync` environment, including a new one from the backup with its own setup script: that's
+how it provisions. It can't reach their other sandboxes or their account. Say so in the privacy policy. Follow-up: a
+refused key also means an idle computer can't be stopped and keeps billing; tell the owner by push, not only in the
+apps.
 
 ## What the user gets
 
@@ -230,15 +332,16 @@ the cloud; apps ask the host to catch up). Not adopted: the soft update above st
   with `noEnv`, so no Codync secret is inside. The claim ticket is single-use, short-lived and deleted after use.
 - Create user sandboxes with `monitoring: false`: by default Boat keeps command output for 90 days and other
   process output for 72 hours. Never pass secrets on a command line (Boat keeps command history); use `files`.
-- The Worker's Boat key is limited to the actions it needs (`sandbox.create/read/stop/resume/delete`,
-  `snapshot.read/write` for *Delete snapshots* and backups), stored as a Worker secret.
+- Each user's Boat key is limited to the `codync` environment and the actions Codync needs
+  (`sandbox.create/read/stop/resume/delete`, `snapshot.read/write` for *Delete snapshots* and backups), and sealed in
+  D1 ([Bring your own cloud](#bring-your-own-cloud)).
 - Disks: Boat snapshots the disk every minute while running and at every stop; resume restores the newest one.
   Boat documents no encryption at rest for sandbox disks, and snapshot copies may be stored outside the EU: say so
   in the privacy policy. SOC 2 is in progress at Boat; uptime 99.95%.
 - With `Approval::Auto`, whoever controls the Codync account (or Codync's cloud) can add a device: recommend MFA on
   the account; signed-in only keeps every machine tied to a person.
-- TOS-8 makes Codync answerable for what users run: an acceptable-use policy, CPU/abuse checks through Boat's
-  telemetry, and deletion on request (`DELETE` erases the sandbox and its snapshots).
+- On their own Boat account, users answer to Boat for what they run; Codync's part is deletion on request (`DELETE`
+  erases the sandbox and its snapshots).
 
 ## Architecture
 
@@ -309,11 +412,11 @@ request wakes a sleeping machine by itself.
 
 ## Trust and privacy
 
-Self-hosted Codync keeps the cloud unable to grant access. Codync Cloud can't: Codync's Worker can run
-commands on the user's machine (that is how it provisions), the machine runs `Approval::Auto`, and
-the provider operates the hardware. Say so in the product and the privacy policy: the user's code, agent
-sign-ins and transcripts live on a machine operated by Codync and its provider. Transit stays end-to-end
-encrypted; Codync doesn't read machines except to provision and delete them.
+Self-hosted Codync keeps the cloud unable to grant access. Codync Cloud can't: Codync's Worker provisions the
+user's machine (with their key, limited as in [What Codync can still do](#what-codync-can-still-do)), the machine
+runs `Approval::Auto`, and Boat operates the hardware. Say so in the product and the privacy policy: the user's code,
+agent sign-ins and transcripts live on a machine in their own Boat account that Codync provisions. Transit stays
+end-to-end encrypted; the key Codync holds can't run commands on or read the running machine.
 
 ## Costs
 
@@ -445,16 +548,16 @@ public.
 
 ## Delivery
 
-Three releases, each gated by the Worker (`BOAT_API_KEY` unset or the user not in `CLOUD_COMPUTER_USERS`: the
+Three releases, each gated by the Worker (`CLOUD_SECRET_KEYS` unset or the user not in `CLOUD_COMPUTER_USERS`: the
 apps show no Codync Cloud section, so shipping the code changes nothing for anyone else).
 
 1. **Dark merge into `dev`**: the branch split into reviewable commits that pass the pre-commit checks, the
    `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
-   with migrations `0007`/`0008` on the dev D1 and a dev Boat key, then `npm run e2e:cloud` and the iPhone and
+   with migrations `0007`–`0009` on the dev D1 and dev's own `CLOUD_SECRET_KEYS`, then `npm run e2e:cloud` and the iPhone and
    Android apps against dev.
-2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations, a Boat key
-   scoped to `sandbox.create/read/stop/resume/delete` + `snapshot.read/write`, `CLOUD_COMPUTER_USERS` = internal
-   accounts); Boat's $20 plan (on since 2026-10-31); MFA on the internal accounts.
+2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations up to `0009`,
+   production's own `CLOUD_SECRET_KEYS`, `CLOUD_COMPUTER_USERS` = internal accounts, each bringing its own Boat
+   key); MFA on the internal accounts.
 3. **Public launch**: terms, acceptable use and privacy policy, encryption at rest,
    memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
    screen's "Start a cloud computer", the user manual page.

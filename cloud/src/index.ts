@@ -41,10 +41,12 @@ export interface Env {
   RELAY_NEEDS_ACCOUNT?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
-  /** Codync Cloud: Boat API key (secret) and base URL; unset = no cloud computers. */
-  BOAT_API_KEY?: string;
+  /** Codync Cloud, on each user's own Boat account: the keys that seal the API keys users give it (`secrets.ts`;
+   * unset = no cloud computers), Boat's base URL (tests), and how often one account may save a key. */
+  CLOUD_SECRET_KEYS?: string;
   BOAT_API_URL?: string;
-  /** Comma-separated Clerk user ids allowed a cloud computer. */
+  CLOUD_KEY_LIMITER?: RateLimit;
+  /** Comma-separated Clerk user ids allowed a cloud computer (`*`: everyone). */
   CLOUD_COMPUTER_USERS?: string;
   /** Dev and test clouds (docs/guides/cloud-computer-testing.md): `CODYNC_…=value` pairs for a cloud computer's
    * host service (its cloud URL, analytics off, a short idle time); a host build to run instead of the release;
@@ -92,6 +94,8 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/v1\/cloud-computers$/, api.getCloudComputer],
   ["DELETE", /^\/v1\/cloud-computers$/, api.deleteCloudComputer],
   ["DELETE", /^\/v1\/cloud-computers\/snapshots$/, api.deleteCloudSnapshots],
+  ["PUT", new RegExp(`^/v1/cloud-credentials/${ID}$`), api.saveCloudCredential],
+  ["DELETE", new RegExp(`^/v1/cloud-credentials/${ID}$`), api.deleteCloudCredential],
   ["POST", new RegExp(`^/v1/claims/${ID}/complete$`), api.completeClaim],
   ["GET", /^\/v1\/computers$/, api.listComputers],
   ["PATCH", new RegExp(`^/v1/computers/${ID}$`), api.renameComputer],

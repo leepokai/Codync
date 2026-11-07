@@ -98,6 +98,9 @@ pub enum Reported {
     JoinOfferAnswered {
         outcome: JoinOutcome,
     },
+    CloudKeySaved {
+        outcome: CloudKeyOutcome,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
@@ -248,6 +251,17 @@ pub enum JoinOutcome {
     Other,
 }
 
+/// How giving Codync Cloud a Boat key ended: kept, turned down (the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudKeyOutcome {
+    Saved,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
 /// What the apps do with a dev server on their own (the host's methods report the rest).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -373,6 +387,7 @@ mod tests {
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
                 Event::JoinOfferAnswered,
             ),
+            (json!({"event": "cloud_key_saved", "app": "desktop", "outcome": "refused"}), Event::CloudKeySaved),
             (
                 json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),
                 Event::ReachAccountAnswered,

@@ -122,6 +122,8 @@ pub enum Event {
     ReachAccountAnswered,
     ContinuedWithoutAccount,
     JoinOfferAnswered,
+    /// The user gave Codync Cloud the key to their own Boat account (desktop; phones send their own).
+    CloudKeySaved,
     /// A paired phone asked to add this computer to its account, and the computer answered.
     JoinFromPhoneAnswered,
     /// Advertising on the local network failed, so a computer in no account can't be found at a new address.
@@ -204,6 +206,7 @@ impl Event {
             Self::ReachAccountAnswered => "reach_account_answered",
             Self::ContinuedWithoutAccount => "continued_without_account",
             Self::JoinOfferAnswered => "join_offer_answered",
+            Self::CloudKeySaved => "cloud_key_saved",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",
             Self::DiscoveryFailed => "discovery_failed",
             Self::HostUpdateInstalled => "host_update_installed",

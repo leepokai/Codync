@@ -8,16 +8,17 @@ import { machineStatus, placementLine, type CloudMachine } from '../../lib/cloud
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import { useAccount } from '../../store/account'
-import type { CloudComputerAction, CloudComputerModel } from '../../store/cloud-computer'
+import type { CloudComputerModel } from '../../store/cloud-computer'
 import type { BotStore } from '../../store/bot-store'
 import { useApp } from '../../store/context'
+import { CloudKeyRows } from './CloudKeyRows'
 import { CodyncVersionRow } from './CodyncVersionRow'
 
-type Confirming = Exclude<CloudComputerAction, 'create'> | null
+type Confirming = 'deleteSnapshots' | 'delete' | null
 
 /**
- * The account's cloud computer: create it, or see where it runs and delete its snapshots or itself. Shown only
- * to a signed-in account that may have one or has one.
+ * The key to the user's own Boat account, then the account's cloud computer: create it, or see where it runs and
+ * delete its snapshots or itself. Shown only to a signed-in account that may have one or has one.
  */
 export function CodyncCloudSection() {
   const app = useApp()
@@ -35,16 +36,25 @@ export function CodyncCloudSection() {
       <CardSection
         title="Codync Cloud"
         accessory={<IconButton title="Refresh" icon="arrow.clockwise" onClick={() => void model.refresh()} />}
-        footer={model.error ? <Text size="caption" tone="danger">{model.error}</Text> : null}
+        footer={
+          <Text size="caption" tone={model.error ? 'danger' : 'secondary'}>
+            {tr(model.error ?? "Runs on your own Boat account, which bills you while it's awake. It sleeps when idle and wakes when you message it.")}
+          </Text>
+        }
       >
-        {model.machine ? (
-          machineRows(model.machine, model, store, tr, setConfirming)
-        ) : (
-          <HStack gap={12} className="settings-row">
-            <Text size="callout" tone="secondary" grow>{tr('A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.')}</Text>
-            {model.busy === 'create' ? <Spinner /> : <Button onClick={() => void model.create()} disabled={model.busy !== null}>Create cloud computer</Button>}
-          </HStack>
-        )}
+        {model.machine
+          ? [...machineRows(model.machine, model, store, tr, setConfirming), <CloudKeyRows key="key" model={model} canRemove={false} />]
+          : [
+              <CloudKeyRows key="key" model={model} canRemove />,
+              ...(model.canCreate
+                ? [
+                    <HStack key="create" gap={12} className="settings-row">
+                      <RowLabel grow label="Create cloud computer" />
+                      {model.busy === 'create' ? <Spinner /> : <Button onClick={() => void model.create()} disabled={model.busy !== null}>Create</Button>}
+                    </HStack>,
+                  ]
+                : []),
+            ]}
       </CardSection>
       <Dialog
         open={confirming === 'deleteSnapshots'}

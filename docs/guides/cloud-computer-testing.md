@@ -1,6 +1,7 @@
 # Testing cloud computers (Codync Cloud)
 
-Codync Cloud runs a computer for a signed-in user on a provider (Boat first; [plan](../plans/codync-cloud.md)).
+Codync Cloud runs a computer for a signed-in user on their own provider account, with the key they give it (Boat
+first; [plan](../plans/codync-cloud.md)).
 Testing it touches real machines, a cloud Worker and accounts, so it runs on two levels, like the rest of the
 project ([Dev app isolation](dev-app.md)):
 
@@ -9,7 +10,7 @@ project ([Dev app isolation](dev-app.md)):
 | **Worktree** (ephemeral) | a feature branch, before it merges; deleted with the worktree | a local Worker per run (own D1, own relay), never `dev-api` | test tokens, or the dev Clerk instance with a test account | iOS simulator, Android emulator and desktop sandbox of that worktree | Boat, named `codync-e2e-…`, deleted at the end of every run |
 | **Dev** (persistent) | the remote side as it is on `dev`, always on | `dev-api.codync.dev` | real dev accounts (Codync Dev) | Codync Dev on a physical iPhone, Android and the shared desktop Codync Dev | Boat, named `codync-dev-…`, kept |
 
-Production uses neither: its key, machines and accounts are separate.
+Production uses neither: its sealing keys, machines and accounts are separate.
 
 ## Worktree: isolated end-to-end runs
 
@@ -17,10 +18,12 @@ Everything a run creates is its own and goes away with it:
 
 - **Cloud**: `cloud/test/e2e/harness.ts` starts `wrangler dev --env local` on a free port with a fresh D1 in a
   temporary folder.
-- **Machines**: the local cloud gets the test Boat key (`boat api-key create codync-cloud-e2e --ttl 7d --actions
+- **Machines**: the test user gives the local cloud a Boat key made the way users make theirs, limited to the
+  `codync` environment (`boat env new codync`, `boat env set codync --safe-for-third-parties true`, then
+  `boat api-key create codync-cloud-e2e --env <its id from boat env info codync> --ttl 7d --actions
   sandbox.create,sandbox.read,sandbox.stop,sandbox.resume,sandbox.delete,snapshot.read,snapshot.write`; without
-  the snapshot actions *Delete snapshots* and backups fail with `api_key_action_forbidden`) and
-  `CLOUD_MACHINE_PREFIX=codync-e2e`. Each run deletes its machine when it ends, also after a failure, and first
+  the snapshot actions *Delete snapshots* and backups fail with `api_key_action_forbidden`), through
+  `PUT /v1/cloud-credentials/boat`, and the cloud runs with `CLOUD_MACHINE_PREFIX=codync-e2e`. Each run deletes its machine when it ends, also after a failure, and first
   sweeps test machines older than two hours (a run that crashed before its cleanup). Runs take a lock
   (`~/.codync-e2e/boat.lock`), since several sessions share this computer: of two runs at once (2026-10-31), one
   timed out in its machine's first boot and the other in a wake, and each passed alone.
@@ -56,7 +59,8 @@ CODYNC_E2E_UPDATE_NOW=1 CODYNC_HOST_LINUX_BIN=<release build below the latest> �
 CODYNC_E2E_COLD=1 CODYNC_HOST_LINUX_BIN=<release build at the latest version> … npm run e2e:cloud
 ```
 
-A fake phone (`test/e2e/phone.ts`) walks: create → first boot → self-claim → access without a code → chat → idle
+A fake phone (`test/e2e/phone.ts`) walks: no computer without a key → the user's key is checked and kept sealed →
+create → first boot → self-claim → access without a code → chat → idle
 sleep → a mailbox message wakes it → an app that needs a newer host updates it first → the owner updates it to the
 latest release from the phone → delete. Results so far:
 [Boat trial log](../plans/codync-cloud-boat-trial.md).
@@ -79,7 +83,8 @@ local only), forwards each new machine, and prints how to point each app at it:
 
 Set `CODYNC_STACK_PORT` to keep the URL stable across runs. Ctrl-C deletes the machines.
 
-What to walk with the apps: Codync Cloud hidden for an account that isn't allowed; create → "Preparing your cloud
+What to walk with the apps: Codync Cloud hidden for an account that isn't allowed; a key that isn't one, an admin key
+and a revoked key refused with what to fix; the test key (`BOAT_API_KEY_FILE`) pasted and shown as its hint; create → "Preparing your cloud
 computer…" → claimed → each app (desktop included) gets access by itself → chat with a bot on it, and create and
 set up bots there from each app; on the desktop, hide the window → the channel closes and the computer can sleep; idle → "Sleeping · wakes when you
 message" → send → it wakes and answers; an app with a newer `minHost` → "Your cloud computer is updating…" →
@@ -96,11 +101,11 @@ devices. Its cloud computers stay, so sleep, wake and updates are seen over days
 
 Setup (once, then kept up with `dev`):
 
-1. Apply `cloud/migrations/0007_cloud_machines.sql` and `0008_app_versions.sql` to `codync-dev` (note the restore
+1. Apply `cloud/migrations/0007_cloud_machines.sql`, `0008_app_versions.sql` and `0009_cloud_credentials.sql` to `codync-dev` (note the restore
    point; [deployment procedure](environments-and-deployment.md#deployment-procedure)) before deploying Worker code
    that reads them: `/v1/computers` joins `cloud_machines`.
-2. Secrets on `--env dev`: `BOAT_API_KEY` (its own scoped key with the test key's actions, not the test key), `CLOUD_COMPUTER_USERS` (the dev
-   Clerk ids allowed; a secret, the repository is public).
+2. Secrets on `--env dev`: `CLOUD_SECRET_KEYS` (its own, never production's), `CLOUD_COMPUTER_USERS` (the dev
+   Clerk ids allowed; a secret, the repository is public). Each dev account pastes its own Boat key in the app.
 3. Vars in `[env.dev]`: `CLOUD_MACHINE_PREFIX = "codync-dev"`, `CLOUD_HOST_ENV = "CODYNC_CLOUD_URL=https://dev-api.codync.dev
    CODYNC_ANALYTICS_ENV=dev"` (released hosts are built for the production cloud and would report as `main`).
 4. Deploy with `npm run deploy:dev` from `dev`.

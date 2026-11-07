@@ -1,0 +1,129 @@
+# Computers → Codync Cloud's Boat key: how to make one, a key Boat turns down shows what to fix, a kept one shows
+# only its hint and offers a computer, a turned-down replacement keeps it, and removing it goes back to pasting one.
+# Needs a cloud that offers this account Codync Cloud (dev-api doesn't): `npm run cloud:stack` in cloud/
+# (docs/guides/cloud-computer-testing.md), the phone signed in with `npm run phone-account` and pointed at it (iPhone:
+# SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> on that command, which this flow's launch keeps; Android: built with
+# -PcodyncCloudUrl=<url>, plus adb reverse), an account with no cloud computer, and BOAT_KEY, a key its Boat takes.
+# Run it apart from `smoke`, whose welcome flow clears the sign-in.
+# One flow for iPhone and Android (docs/guides/test-stack.md):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags codync-cloud -e BOAT_KEY=<key> apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - codync-cloud
+env:
+  REFUSED_KEY: boat_e2e_revoked_key_0000
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: false
+# An account with no computer starts on first-run setup's install page, which it skips to reach the bots.
+- extendedWaitUntil:
+    visible: "(Install Codync.*|Skip|No bots yet|Manage computers)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Install Codync.*"
+    commands:
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Skip"
+          timeout: 10000
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+# The bot list's header is named Computers too, and opens a menu that leads there.
+- runFlow:
+    when:
+      notVisible: "Manage computers"
+    commands:
+      - tapOn: "Computers"
+- runFlow:
+    when:
+      visible: "Manage computers"
+    commands:
+      - tapOn: "Manage computers"
+- extendedWaitUntil:
+    visible: "Codync Cloud"
+    timeout: 20000
+# A key an earlier run left goes first.
+- runFlow:
+    when:
+      visible: "Remove key"
+    commands:
+      - tapOn: "Remove key"
+- scrollUntilVisible:
+    element: "Make a key limited to Codync.*"
+- assertNotVisible: "Create cloud computer"
+
+# Turned down: what to fix, and nothing to create.
+- tapOn: "(Boat API key|boat_…)"
+- inputText: ${REFUSED_KEY}
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Boat (didn't accept|refused) this key.*"
+    timeout: 15000
+# Android shows the reason in its error dialog (iPhone inside the card): OK closes it.
+- runFlow:
+    when:
+      visible: "Something went wrong"
+    commands:
+      - tapOn: "OK"
+- assertNotVisible: "Create cloud computer"
+
+# Kept: only its hint, and a computer can be made. The field still holds the refused key: on Android a tap puts the
+# caret where it lands, so a double tap selects the key (one word) before erasing.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "(Boat API key|boat_…)"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - doubleTapOn: "(Boat API key|boat_…)"
+- eraseText
+- inputText: ${BOAT_KEY}
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: ${BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
+    timeout: 15000
+- assertVisible: "Create cloud computer"
+
+# A replacement Boat turns down keeps the saved key; Cancel goes back to it.
+- tapOn: "Replace key"
+- tapOn: "(Boat API key|boat_…)"
+- inputText: ${REFUSED_KEY}
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Boat (didn't accept|refused) this key.*"
+    timeout: 15000
+# Android shows the reason in its error dialog (iPhone inside the card): OK closes it.
+- runFlow:
+    when:
+      visible: "Something went wrong"
+    commands:
+      - tapOn: "OK"
+# Save drops the iPhone's keyboard, so Cancel is in reach (Maestro's hideKeyboard leaves it half up, over Cancel).
+- tapOn: "Cancel"
+- assertVisible: ${BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
+
+# Removed: back to pasting one, and nothing to create.
+- tapOn: "Remove key"
+- extendedWaitUntil:
+    visible: "Make a key limited to Codync.*"
+    timeout: 15000
+- assertNotVisible: "Create cloud computer"

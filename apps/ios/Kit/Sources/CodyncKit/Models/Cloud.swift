@@ -70,6 +70,34 @@ public struct CloudMachine: Decodable, Hashable, Sendable {
     }
 }
 
+/// The account's Codync Cloud as the cloud describes it (`GET /v1/cloud-computers`).
+public struct CloudStatus: Decodable, Hashable, Sendable {
+    public var cloudComputer: CloudMachine?
+    /// Whether this account may have one (the feature isn't public yet).
+    public var available: Bool?
+    /// The key the account gave for its own provider account; nil until it gives one.
+    public var credential: CloudCredential?
+    /// How to make that key, as the cloud words it, so it changes without an app release.
+    public var keySetup: CloudKeySetup?
+}
+
+/// The provider key the account gave Codync Cloud, as the cloud shows it: never the key itself.
+public struct CloudCredential: Decodable, Hashable, Sendable {
+    public var provider: String
+    public var providerName: String
+    /// Its kind and last four, `boat_…9abc`.
+    public var hint: String
+    /// What the owner has to fix while the provider turns the key down, in a sentence the app translates.
+    public var problem: String?
+}
+
+/// How the user makes the key: commands to run, and the provider's page for doing it there instead.
+public struct CloudKeySetup: Decodable, Hashable, Sendable {
+    public var providerName: String
+    public var page: URL
+    public var commands: String
+}
+
 /// A started access request, after both nonces were exchanged: `code` is ready to show.
 public struct AccessTicket: Codable, Hashable, Sendable, Identifiable {
     public var requestId: String

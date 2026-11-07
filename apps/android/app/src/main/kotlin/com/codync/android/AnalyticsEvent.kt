@@ -50,6 +50,10 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class AddToAccountFailed(val reason: AddToAccountFailure) : AnalyticsEvent("add_to_account_failed") {
         override val properties get() = mapOf("reason" to reason.json)
     }
+    /** The user gave Codync Cloud the key to their own Boat account (iOS `cloudKeySaved`); never the key or its hint. */
+    data class CloudKeySaved(val outcome: CloudKeyOutcome) : AnalyticsEvent("cloud_key_saved") {
+        override val properties get() = mapOf("outcome" to outcome.json)
+    }
     /** Signing in took the signed-out pairings ([MovedKeys]). */
     data class SignedOutPairingsMoved(val computers: Int, val keys: MovedKeys) : AnalyticsEvent("signed_out_pairings_moved") {
         override val properties get() = mapOf("computers" to JsonPrimitive(computers), "keys" to keys.json)
@@ -128,6 +132,15 @@ internal enum class MovedKeys(override val wire: String) : CatalogValue { Moved(
 
 internal enum class SignInFailure(override val wire: String) : CatalogValue {
     Cancelled("cancelled"), Timeout("timeout"), Verification("verification"), Error("error")
+}
+
+/** [Saved]; [Refused]: the cloud or Boat turned the key down (what to fix was shown); [Failed]: anything else. */
+internal enum class CloudKeyOutcome(override val wire: String) : CatalogValue {
+    Saved("saved"), Refused("refused"), Failed("failed");
+
+    companion object {
+        fun of(error: Throwable): CloudKeyOutcome = if (error is CloudError && error.code == "keyRefused") Refused else Failed
+    }
 }
 
 internal enum class AddToAccountFailure(override val wire: String) : CatalogValue {

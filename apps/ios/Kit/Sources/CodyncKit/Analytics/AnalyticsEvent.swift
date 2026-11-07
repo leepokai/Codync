@@ -19,6 +19,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case addToAccountAsked
     case addToAccountCompleted
     case addToAccountFailed(AddToAccountFailure)
+    /// The user gave Codync Cloud the key to their own Boat account; never the key or its hint.
+    case cloudKeySaved(CloudKeyOutcome)
     case pairingFailed(PairingFailure)
     case computerPaired(via: PairVia, computer: ComputerID)
     case accessRequested
@@ -71,6 +73,15 @@ public enum AnalyticsEvent: Equatable, Sendable {
             case "failed": self = .failed
             default: return nil
             }
+        }
+    }
+
+    /// `saved`; `refused`: the cloud or Boat turned the key down (what to fix was shown); `failed`: anything else.
+    public enum CloudKeyOutcome: String, Sendable {
+        case saved, refused, failed
+
+        public init(_ error: any Error) {
+            self = (error as? CloudError)?.code == "keyRefused" ? .refused : .failed
         }
     }
 
@@ -136,6 +147,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .addToAccountAsked: "add_to_account_asked"
         case .addToAccountCompleted: "add_to_account_completed"
         case .addToAccountFailed: "add_to_account_failed"
+        case .cloudKeySaved: "cloud_key_saved"
         case .pairingFailed: "pairing_failed"
         case .computerPaired: "computer_paired"
         case .accessRequested: "access_requested"
@@ -167,6 +179,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
              .addToAccountCompleted: return [:]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
+        case let .cloudKeySaved(outcome): return ["outcome": .string(outcome.rawValue)]
         case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .computerPaired(via, computer):

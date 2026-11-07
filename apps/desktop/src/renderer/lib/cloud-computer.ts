@@ -1,4 +1,5 @@
-// Codync Cloud, as the apps show it: a computer Codync runs for the account (cloud/src/routes/cloud-computers.ts).
+// Codync Cloud, as the apps show it: a computer Codync runs for the account on the user's own Boat account, with the
+// key they gave it (cloud/src/routes/cloud-computers.ts, cloud-credentials.ts).
 
 export type CloudState = 'starting' | 'running' | 'stopping' | 'stopped' | 'failed'
 
@@ -17,6 +18,28 @@ export interface CloudMachine extends CloudPlacement {
   backupAt: number | null
   createdAt: number
 }
+
+/** The provider key the account gave, as the cloud shows it: never the key itself. */
+export interface CloudCredential {
+  provider: string
+  providerName: string
+  /** Its kind and last four, `boat_…9abc`. */
+  hint: string
+  /** What the owner has to fix while the provider turns the key down, in a sentence the app translates. */
+  problem: string | null
+}
+
+/** How the user makes the key, worded by the cloud so it changes without an app release. */
+export interface CloudKeySetup {
+  providerName: string
+  page: string
+  commands: string
+}
+
+/** `cloud_key_saved`'s outcome for a save that threw: `refused` when the cloud or Boat turned the key down (the app
+ * shows what to fix), `failed` for anything else. */
+export const cloudKeyOutcome = (error: unknown): 'refused' | 'failed' =>
+  error instanceof Error && 'code' in error && error.code === 'keyRefused' ? 'refused' : 'failed'
 
 export interface StatusLine {
   text: string

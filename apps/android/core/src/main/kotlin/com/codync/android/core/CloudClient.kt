@@ -41,9 +41,28 @@ data class CloudMachine(val provider: String, val providerName: String, val regi
     val failed: Boolean get() = state == "failed"
 }
 
-/** `/v1/cloud-computers`: the account's cloud computer, and whether it may have one (the feature isn't public yet). */
+/**
+ * `/v1/cloud-computers`: the account's cloud computer, whether it may have one (the feature isn't public yet), the key
+ * to the user's own provider account it gave, and how to make that key (iOS `CloudStatus`).
+ */
 @Serializable
-data class CloudOffer(val cloudComputer: CloudMachine? = null, val available: Boolean = false)
+data class CloudOffer(val cloudComputer: CloudMachine? = null, val available: Boolean = false,
+    val credential: CloudCredential? = null, val keySetup: CloudKeySetup? = null) {
+    /** A computer can be made once the account gave a key; creating it says what to fix if Boat still turns it down. */
+    val canCreate: Boolean get() = credential != null
+}
+
+/** The provider key the account gave Codync Cloud, as the cloud shows it: never the key itself. */
+@Serializable
+data class CloudCredential(val provider: String, val providerName: String,
+    /** Its kind and last four, `boat_…9abc`. */
+    val hint: String,
+    /** What the owner has to fix while the provider turns the key down, in a sentence the app translates. */
+    val problem: String? = null)
+
+/** How the user makes the key: commands to run, or the provider's page. Worded by the cloud, so it changes without a release. */
+@Serializable
+data class CloudKeySetup(val providerName: String, val page: String, val commands: String)
 
 data class AccessTicket(val requestId: String, val expiresAt: Long, val code: String, val computerId: String, val signKey: String)
 
@@ -203,7 +222,15 @@ class CloudClient private constructor(base: String, private val identity: Device
 
     /** The account's Codync Cloud computer, if any, and whether this account may create one. */
     suspend fun cloudComputer(): CloudOffer = json.decodeFromJsonElement(request("GET", listOf("v1", "cloud-computers")))
-    /** Creates the account's cloud computer, or returns the one it has (`403 forbidden` off the allowlist). */
+    /**
+     * Gives Codync Cloud the key to the user's own Boat account. The cloud checks it with Boat and keeps it sealed; a
+     * refusal (`422 keyRefused`) says what to fix.
+     */
+    suspend fun saveCloudKey(key: String): CloudCredential = json.decodeFromJsonElement(
+        request("PUT", listOf("v1", "cloud-credentials", "boat"), buildJsonObject { put("key", key.trim()) }).getValue("credential"))
+    /** Forgets the key (`409 conflict` while a cloud computer runs on it). */
+    suspend fun deleteCloudKey() { request("DELETE", listOf("v1", "cloud-credentials", "boat")) }
+    /** Creates the account's cloud computer, or returns the one it has (`403 forbidden` off the allowlist, `409` without a key). */
     suspend fun createCloudComputer(): CloudMachine = requireNotNull(json.decodeFromJsonElement<CloudOffer>(
         request("POST", listOf("v1", "cloud-computers"), JsonObject(emptyMap()))).cloudComputer) { "Invalid cloud computer" }
     /** Erases the machine, its snapshots and backup, and takes the computer out of the account. */

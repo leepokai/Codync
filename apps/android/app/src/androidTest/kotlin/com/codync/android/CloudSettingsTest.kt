@@ -49,10 +49,29 @@ class CloudSettingsTest {
         snapshot("preparing")
     }
 
+    private val setup = CloudKeySetup("Boat", "https://boat.dev/dashboard", "boat env new codync")
+
+    @Test fun theUsersOwnBoatKeyComesFirst() {
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true, keySetup = setup)), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("boat env new codync").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Open Boat").assertExists()
+        compose.onNodeWithText("Create cloud computer").assertDoesNotExist()
+        snapshot("key")
+    }
+
     @Test fun onlyAnAccountThatMayHaveOneCanCreateIt() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true)), emptyList(), viewModel(), {}, {}, {}) } }
+        val key = CloudCredential("boat", "Boat", "boat_…9abc")
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true, credential = key, keySetup = setup)), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("boat_…9abc").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Create cloud computer").performScrollTo().assertIsDisplayed()
         snapshot("create")
+    }
+
+    @Test fun aKeyBoatTurnsDownSaysWhatToFix() {
+        val key = CloudCredential("boat", "Boat", "boat_…9abc", problem = "This Boat key has expired. Make a new one.")
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("stopped"), true, credential = key)), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("This Boat key has expired. Make a new one.").performScrollTo().assertIsDisplayed()
+        snapshot("key-refused")
     }
 
     @Test fun aCloudOffForThisAccountIsHidden() {

@@ -1498,6 +1498,7 @@
   "Starting codync-host…": "codync-host を起動中…",
   "Couldn't install codync-host on {name}.": "{name} に codync-host をインストールできませんでした。",
   "codync-host isn't installed on {name}.": "codync-host は {name} にインストールされていません。",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "{name} に Codync アプリをインストールし、一度開いてください。codync-host も一緒に入ります。",
   "To keep codync-host running on {name} after you log out, run this there:": "ログアウト後も {name} で codync-host を動かし続けるには、そこで次を実行してください：",
   "Copy command": "コマンドをコピー",
   "Delete account": "アカウントを削除",

@@ -1,4 +1,4 @@
-import { SSH_LINGER_COMMAND, type SSHProfile, type SSHStatus } from '@shared/ssh'
+import { SSH_LINGER_COMMAND, isWindowsShell, type SSHProfile, type SSHStatus } from '@shared/ssh'
 import { Button, IconButton, Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
@@ -14,6 +14,8 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
   const bridge = window.codync.ssh
   // There's no released development host to install.
   const dev = window.codync.appScheme === 'codync-dev'
+  // On Windows the host ships inside the desktop app, so Codync can't install it over SSH.
+  const windows = status.kind === 'notInstalled' && isWindowsShell(status.shell)
   const named = (text: string) => tr(text).replaceAll('{name}', profile.host)
   const target = `${profile.user ? `${profile.user}@` : ''}${profile.host}${profile.port !== null ? `:${profile.port}` : ''}`
   const line = (() => {
@@ -34,6 +36,7 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
         return status.message
       case 'notInstalled':
         if (dev) return named('Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.')
+        if (windows) return named('Install the Codync app on {name} and open it once: it brings codync-host with it.')
         return named(status.failure ? "Couldn't install codync-host on {name}." : "codync-host isn't installed on {name}.")
     }
   })()
@@ -75,7 +78,7 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
           </VStack>
         ) : null}
       </Reveal>
-      <Reveal show={status.kind === 'notInstalled' && !dev}>
+      <Reveal show={status.kind === 'notInstalled' && !dev && !windows}>
         <HStack gap={8} className="settings-row">
           {status.kind === 'notInstalled' && status.failure?.output ? (
             <span className="settings-code settings-output selectable">{status.failure.output}</span>

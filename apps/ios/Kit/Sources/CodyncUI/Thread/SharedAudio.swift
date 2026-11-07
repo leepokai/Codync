@@ -60,8 +60,7 @@ final class SharedAudio {
         let started = generation
         failure = .load
         do {
-            let player = try await prepared(file, entryId: entryId, model: model)
-            guard generation == started else { state = .idle; return }
+            let player = try await prepared(file, entryId: entryId, model: model, for: started)
             failure = .playback
             if let other = Self.sounding, other !== self, other.state == .playing { other.pause() }
             // Heard with the ringer off too.
@@ -140,9 +139,13 @@ final class SharedAudio {
         deactivate()
     }
 
-    private func prepared(_ file: SharedFile, entryId: String, model: BotStore) async throws -> AVAudioPlayer {
+    /// The tap's player, loaded if it has none; a load the card outlived (`stop()` since `started`) throws before it
+    /// changes anything, so a newer tap's player and state stay.
+    private func prepared(_ file: SharedFile, entryId: String, model: BotStore, for started: Int) async throws -> AVAudioPlayer {
         if let player { return player }
-        guard let data = await load(model, file, entryId) else { throw CocoaError(.fileReadUnknown) }
+        let data = await load(model, file, entryId)
+        guard generation == started else { throw CancellationError() }
+        guard let data else { throw CocoaError(.fileReadUnknown) }
         let player = try AVAudioPlayer(data: data)
         duration = player.duration
         let done = PlayDone { [weak self] played in Task { @MainActor in played ? self?.finish() : self?.fail() } }

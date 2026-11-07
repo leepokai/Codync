@@ -4,21 +4,20 @@ import Testing
 @testable import CodyncKit
 @testable import CodyncUI
 
-/// A sound's fetch from the computer that the test answers when it chooses.
+/// A sound's fetches from the computer that the test answers when it chooses, newest first.
 @MainActor private final class HeldLoad {
-    private var waiting: CheckedContinuation<Data?, Never>?
+    private var waiting: [CheckedContinuation<Data?, Never>] = []
     private(set) var calls = 0
 
     func call() async -> Data? {
         calls += 1
-        return await withCheckedContinuation { waiting = $0 }
+        return await withCheckedContinuation { waiting.append($0) }
     }
 
-    func asked() async -> Bool { await until { self.waiting != nil } }
+    func asked() async -> Bool { await until { !self.waiting.isEmpty } }
 
     func answer(_ data: Data?) {
-        waiting?.resume(returning: data)
-        waiting = nil
+        waiting.popLast()?.resume(returning: data)
     }
 }
 
@@ -94,6 +93,24 @@ private func silentWAV() -> Data {
 
             #expect(audio.state == .idle)
             #expect(store.lastError == nil)
+        }
+    }
+
+    @Test func aStaleLoadFinishingAfterANewerTapLeavesThatTapPlaying() async {
+        await playing { audio, load, store, note in
+            let old = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            audio.stop()
+            let new = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await until { load.calls == 2 })
+            load.answer(silentWAV())
+            await new.value
+            load.answer(silentWAV())
+            await old.value
+
+            #expect(audio.state == .playing)
+            await audio.toggle(note, entryId: "entry", model: store)
+            #expect(audio.state == .paused)
         }
     }
 

@@ -1882,5 +1882,11 @@
   "Sign in there with {email} and add it to your account, and it shows up here.": "거기서 {email}(으)로 로그인하고 계정에 추가하면 여기에 표시됩니다.",
   "Scan with the Codync app or the iPhone Camera.": "Codync 앱 또는 iPhone 카메라로 스캔하세요.",
   "Phones paired without this account lose access and must pair again.": "이 계정으로 페어링하지 않은 휴대폰은 접근 권한을 잃으며 다시 페어링해야 합니다.",
-  "This message's files aren't on this device anymore. Delete it and attach them again.": "이 메시지의 파일이 더 이상 이 기기에 없습니다. 메시지를 삭제하고 파일을 다시 첨부하세요."
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "이 메시지의 파일이 더 이상 이 기기에 없습니다. 메시지를 삭제하고 파일을 다시 첨부하세요.",
+  "{received} of {size}": "{size} 중 {received}",
+  "Couldn't play. Tap to retry.": "재생할 수 없습니다. 탭하여 다시 시도하세요.",
+  "Downloaded": "다운로드됨",
+  "Tap to retry.": "탭하여 다시 시도하세요.",
+  "View": "보기",
+  "Voice note": "음성 메시지"
 }

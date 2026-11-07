@@ -1882,5 +1882,11 @@
   "Sign in there with {email} and add it to your account, and it shows up here.": "Connectez-vous-y avec {email} et ajoutez-le à votre compte : il apparaîtra ici.",
   "Scan with the Codync app or the iPhone Camera.": "Scannez avec l'app Codync ou l'appareil photo de l'iPhone.",
   "Phones paired without this account lose access and must pair again.": "Les téléphones jumelés sans ce compte perdent l'accès et devront être jumelés à nouveau.",
-  "This message's files aren't on this device anymore. Delete it and attach them again.": "Les fichiers de ce message ne sont plus sur cet appareil. Supprimez-le et joignez-les à nouveau."
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "Les fichiers de ce message ne sont plus sur cet appareil. Supprimez-le et joignez-les à nouveau.",
+  "{received} of {size}": "{received} sur {size}",
+  "Couldn't play. Tap to retry.": "Lecture impossible. Touchez pour réessayer.",
+  "Downloaded": "Téléchargé",
+  "Tap to retry.": "Touchez pour réessayer.",
+  "View": "Voir",
+  "Voice note": "Message vocal"
 }

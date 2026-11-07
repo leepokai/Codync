@@ -335,12 +335,3 @@ final class CloudSpeechEngine: VoiceEngine {
         return out
     }
 }
-
-/// Player delegate: a clip that played to its end moves on to the next one.
-private final class PlayDone: NSObject, AVAudioPlayerDelegate, Sendable {
-    let onFinish: @Sendable () -> Void
-
-    init(onFinish: @escaping @Sendable () -> Void) { self.onFinish = onFinish }
-
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { onFinish() }
-}

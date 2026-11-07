@@ -77,12 +77,12 @@ enum ImageData {
 /// The symbol for a file by its extension.
 enum AttachmentIcon {
     static func symbol(_ name: String) -> String {
-        switch (name as NSString).pathExtension.lowercased() {
-        case "png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp": "photo"
+        if Attachment.isImage(name) { return "photo" }
+        if Attachment.isAudio(name) { return "waveform" }
+        return switch (name as NSString).pathExtension.lowercased() {
         case "pdf": "doc.richtext"
         case "zip", "gz", "tar", "7z": "doc.zipper"
         case "mov", "mp4", "m4v": "film"
-        case "mp3", "m4a", "wav", "aac": "waveform"
         default: "doc"
         }
     }

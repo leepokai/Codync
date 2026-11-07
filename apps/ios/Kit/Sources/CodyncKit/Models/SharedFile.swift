@@ -14,8 +14,12 @@ public struct SharedFile: Codable, Hashable, Sendable, Identifiable {
         self.sha256 = sha256
     }
 
-    /// An image small enough to show in the chat (the phone fetches all of it).
-    public var showsAsImage: Bool { Attachment.isImage(name) && size <= 20 * 1024 * 1024 }
+    /// The largest shared file the phone fetches whole to show (an image) or play (a sound).
+    private static let inlineBytes: Int64 = 20 * 1024 * 1024
+    /// An image small enough to show in the chat.
+    public var showsAsImage: Bool { Attachment.isImage(name) && size <= Self.inlineBytes }
+    /// A voice note or other sound small enough to play in the chat.
+    public var showsAsAudio: Bool { Attachment.isAudio(name) && size <= Self.inlineBytes }
 
     public func validate() throws {
         guard size >= 0, size <= 100 * 1024 * 1024,

@@ -195,6 +195,8 @@ struct AgentBubble: View {
             Group {
                 if let artifact = entry.data.artifact {
                     ArtifactCard(botId: entry.botId, ref: artifact) { openArtifact?(artifact) }
+                } else if let voiceNote = entry.data.voiceNoteFile {
+                    VoiceNoteBubble(entry: entry, file: voiceNote)
                 } else if let files = entry.data.files, !files.isEmpty {
                     ForEach(files) { file in FileDownloadCard(entry: entry, file: file) }
                 } else {
@@ -210,11 +212,20 @@ struct AgentBubble: View {
                         MenuItem("Show what it did", icon: "list.bullet", action: openTrace),
                     ]
                     if let reply { items.insert(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply), at: 1) }
+                    if let voiceNote = entry.data.voiceNoteFile { items.insert(downloadItem(voiceNote), at: items.count - 1) }
                     return items
                 }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 40)
+    }
+
+    /// A voice-note bubble's Download row: the player's own action, on the menu.
+    private func downloadItem(_ file: SharedFile) -> MenuItem {
+        let downloading = model.fileDownloads.isDownloading(file.id)
+        return MenuItem(downloading ? "Cancel download" : "Download", icon: "arrow.down.to.line") {
+            model.fileDownloads.toggle(client: model.client, entry: entry, file: file)
+        }
     }
 }
 

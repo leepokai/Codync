@@ -42,27 +42,51 @@ data class CloudMachine(val provider: String, val providerName: String, val regi
 }
 
 /**
- * `/v1/cloud-computers`: the account's cloud computer, whether it may have one (the feature isn't public yet), the key
- * to the user's own provider account it gave, and how to make that key (iOS `CloudStatus`).
+ * `/v1/cloud-computers`: the account's cloud computer, whether it may have one (the feature isn't public yet), and every
+ * provider it can run on with the account's key for it (iOS `CloudStatus`).
  */
 @Serializable
 data class CloudOffer(val cloudComputer: CloudMachine? = null, val available: Boolean = false,
-    val credential: CloudCredential? = null, val keySetup: CloudKeySetup? = null) {
-    /** A computer can be made once the account gave a key; creating it says what to fix if Boat still turns it down. */
-    val canCreate: Boolean get() = credential != null
+    val providers: List<CloudProvider> = emptyList()) {
+    /** Where a computer can be created: the providers the account gave a key. Creating says what to fix if one still
+     * turns its key down. */
+    val connected: List<CloudProvider> get() = providers.filter { it.credential != null }
+
+    /** The Cloud providers row (iOS `providersSummary`): the connected providers' names, or what to do. */
+    val summary: Pair<String, Boolean> get() = when {
+        connected.any { it.credential?.problem != null } -> "Needs attention" to true
+        connected.isEmpty() -> "Connect one" to false
+        else -> connected.joinToString(", ") { it.name } to false
+    }
+
+    /** A key can go unless the computer runs on that provider (the cloud needs it to put the computer to sleep). */
+    fun canRemoveKey(provider: String) = cloudComputer?.provider != provider
+
+    fun withCredential(provider: String, credential: CloudCredential?) =
+        copy(providers = providers.map { if (it.provider == provider) it.copy(credential = credential) else it })
 }
 
-/** The provider key the account gave Codync Cloud, as the cloud shows it: never the key itself. */
+/**
+ * A provider the cloud can run the computer on, as it lists them: where it runs, how to make its key (worded by the
+ * cloud, so a new provider needs no app release) and the account's key for it.
+ */
 @Serializable
-data class CloudCredential(val provider: String, val providerName: String,
+data class CloudProvider(val provider: String, val name: String, val region: String,
+    /** What its keys start with, for the field's placeholder (`boat_…`). */
+    val keyPrompt: String,
+    val setup: CloudKeySetup, val credential: CloudCredential? = null)
+
+/** A key the account gave a provider, as the cloud shows it: never the key itself. */
+@Serializable
+data class CloudCredential(
     /** Its kind and last four, `boat_…9abc`. */
     val hint: String,
     /** What the owner has to fix while the provider turns the key down, in a sentence the app translates. */
     val problem: String? = null)
 
-/** How the user makes the key: commands to run, or the provider's page. Worded by the cloud, so it changes without a release. */
+/** How the user makes a provider's key: commands to run, or the provider's page. */
 @Serializable
-data class CloudKeySetup(val providerName: String, val page: String, val commands: String)
+data class CloudKeySetup(val page: String, val commands: String)
 
 data class AccessTicket(val requestId: String, val expiresAt: Long, val code: String, val computerId: String, val signKey: String)
 
@@ -223,16 +247,17 @@ class CloudClient private constructor(base: String, private val identity: Device
     /** The account's Codync Cloud computer, if any, and whether this account may create one. */
     suspend fun cloudComputer(): CloudOffer = json.decodeFromJsonElement(request("GET", listOf("v1", "cloud-computers")))
     /**
-     * Gives Codync Cloud the key to the user's own Boat account. The cloud checks it with Boat and keeps it sealed; a
-     * refusal (`422 keyRefused`) says what to fix.
+     * Gives Codync Cloud the key to the user's own account with [provider]. The cloud checks it there and keeps it
+     * sealed; a refusal (`422 keyRefused`) says what to fix.
      */
-    suspend fun saveCloudKey(key: String): CloudCredential = json.decodeFromJsonElement(
-        request("PUT", listOf("v1", "cloud-credentials", "boat"), buildJsonObject { put("key", key.trim()) }).getValue("credential"))
-    /** Forgets the key (`409 conflict` while a cloud computer runs on it). */
-    suspend fun deleteCloudKey() { request("DELETE", listOf("v1", "cloud-credentials", "boat")) }
-    /** Creates the account's cloud computer, or returns the one it has (`403 forbidden` off the allowlist, `409` without a key). */
-    suspend fun createCloudComputer(): CloudMachine = requireNotNull(json.decodeFromJsonElement<CloudOffer>(
-        request("POST", listOf("v1", "cloud-computers"), JsonObject(emptyMap()))).cloudComputer) { "Invalid cloud computer" }
+    suspend fun saveCloudKey(provider: String, key: String): CloudCredential = json.decodeFromJsonElement(
+        request("PUT", listOf("v1", "cloud-credentials", provider), buildJsonObject { put("key", key.trim()) }).getValue("credential"))
+    /** Forgets [provider]'s key (`409 conflict` while a cloud computer runs on it). */
+    suspend fun deleteCloudKey(provider: String) { request("DELETE", listOf("v1", "cloud-credentials", provider)) }
+    /** Creates the account's cloud computer on [provider], or returns the one it has (`403 forbidden` off the allowlist,
+     * `409` without that provider's key). */
+    suspend fun createCloudComputer(provider: String): CloudMachine = requireNotNull(json.decodeFromJsonElement<CloudOffer>(
+        request("POST", listOf("v1", "cloud-computers"), buildJsonObject { put("provider", provider) })).cloudComputer) { "Invalid cloud computer" }
     /** Erases the machine, its snapshots and backup, and takes the computer out of the account. */
     suspend fun deleteCloudComputer() { request("DELETE", listOf("v1", "cloud-computers")) }
     /** Erases its earlier saved states and backup, keeping the computer (`409 conflict` while it sleeps). */

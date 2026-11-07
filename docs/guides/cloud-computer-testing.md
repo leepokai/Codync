@@ -75,7 +75,8 @@ local only), forwards each new machine, and prints how to point each app at it:
   simulator no other session uses.
 - Desktop: `CODYNC_CLOUD_URL=<url> npm run dev` in the worktree (its sandbox host, signed in to its Clerk test
   account; a development build takes the local `http://127.0.0.1` cloud, a release build only HTTPS).
-- Android: `adb reverse tcp:<port> tcp:<port>` on its own emulator, built with `-PcodyncCloudUrl=<url>`.
+- Android: `adb reverse tcp:<port> tcp:<port>` on its own emulator, built with `-PcodyncCloudUrl=<url>` together with
+  `-PcodyncClerkPublishableKey=<dev pk_test>` and `-PcodyncPushRelayUrl=<relay>` (the build refuses one override alone).
 - Sign in with a Clerk test address (`anything+clerk_test@example.com`, code `424242`; the instance asks for a
   password at sign-up, so the test hook sets a random one): no mail, no personal account. The iPhone app's debug
   build signs it in at launch with `SIMCTL_CHILD_CODYNC_TEST_SIGN_IN=<address>`, creating it the first time; it

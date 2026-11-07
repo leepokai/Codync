@@ -49,7 +49,7 @@ export type WakeResult = "none" | "started" | "running" | "retry";
 export async function wake(env: Env, computerId: string, now: number): Promise<WakeResult> {
   const m = await machineFor(env, computerId);
   if (!m) return "none";
-  const live = boat.machine(await providerSend(env, m.user_id, boat.get(m.provider_id), now));
+  const live = boat.machine(await providerSend(env, m.user_id, m.provider, boat.get(m.provider_id), now));
   if (!live.ok) return live.needsOwner ? "none" : "retry";
   const state = live.value.state;
   if (state === "running" || state === "starting") {
@@ -61,7 +61,7 @@ export async function wake(env: Env, computerId: string, now: number): Promise<W
     console.error(JSON.stringify({ msg: "cloud computer can't wake", computerId, state }));
     return "none";
   }
-  const resumed = boat.machine(await providerSend(env, m.user_id, boat.resume(m.provider_id), now));
+  const resumed = boat.machine(await providerSend(env, m.user_id, m.provider, boat.resume(m.provider_id), now));
   if (resumed.ok) {
     await setState(env, m.id, resumed.value.state, now);
     return "started";
@@ -74,7 +74,7 @@ export async function wake(env: Env, computerId: string, now: number): Promise<W
 /** The machine's own snapshot expired: a new one from its backup takes its place (same disk, new provider id). */
 async function fromBackup(env: Env, m: CloudMachineRow, now: number): Promise<WakeResult> {
   const spec = { name: machineName(env, m.user_id), size: SIZE, group: GROUP, autoStopSeconds: autoStop(env) };
-  const made = boat.machine(await providerSend(env, m.user_id, boat.fromBackup(spec, m.backup!, `${m.id}-${m.backup_at}`), now));
+  const made = boat.machine(await providerSend(env, m.user_id, m.provider, boat.fromBackup(spec, m.backup!, `${m.id}-${m.backup_at}`), now));
   if (!made.ok) {
     console.error(JSON.stringify({ msg: "cloud computer restore from backup failed", machine: m.id, code: made.code }));
     return made.retryable ? "retry" : "none";
@@ -95,7 +95,7 @@ export async function saveBackups(env: Env, now: number): Promise<void> {
     .all<CloudMachineRow>();
   for (const m of results) {
     const name = m.backup ?? `codync-${crypto.randomUUID()}`;
-    const saved = boat.done(await providerSend(env, m.user_id, boat.saveBackup(m.provider_id, name), now));
+    const saved = boat.done(await providerSend(env, m.user_id, m.provider, boat.saveBackup(m.provider_id, name), now));
     if (!saved.ok) {
       console.error(JSON.stringify({ msg: "cloud computer backup failed", machine: m.id, code: saved.code }));
       continue;
@@ -107,7 +107,7 @@ export async function saveBackups(env: Env, now: number): Promise<void> {
 /** Deletes a machine's backup, if it has one; the backup outlives the machine otherwise. */
 export async function dropBackup(env: Env, m: CloudMachineRow): Promise<boolean> {
   if (!m.backup) return true;
-  const gone = boat.done(await providerSend(env, m.user_id, boat.deleteBackup(m.backup)));
+  const gone = boat.done(await providerSend(env, m.user_id, m.provider, boat.deleteBackup(m.backup)));
   if (!gone.ok && gone.code !== "http404") return false;
   await env.DB.prepare("UPDATE cloud_machines SET backup = NULL, backup_at = NULL WHERE id = ?").bind(m.id).run();
   return true;
@@ -121,7 +121,7 @@ export async function dropBackup(env: Env, m: CloudMachineRow): Promise<boolean>
 export async function forgetCloud(env: Env, userId: string, now: number): Promise<void> {
   const m = await machineOf(env, userId);
   if (m && m.state !== "stopped") {
-    const stopped = boat.machine(await providerSend(env, userId, boat.stop(m.provider_id), now));
+    const stopped = boat.machine(await providerSend(env, userId, m.provider, boat.stop(m.provider_id), now));
     if (!stopped.ok && stopped.retryable) throw new Error(`cloud computer ${m.id} couldn't be stopped yet: ${stopped.code}`);
     if (!stopped.ok) console.error(JSON.stringify({ msg: "cloud computer left running", machine: m.id, code: stopped.code }));
   }

@@ -1,25 +1,25 @@
-import { cloudKeyOutcome, isPreparing, type CloudCredential, type CloudKeySetup, type CloudMachine } from '../lib/cloud-computer'
+import { cloudKeyOutcome, connectedProviders, isPreparing, type CloudCredential, type CloudMachine, type CloudProvider } from '../lib/cloud-computer'
 import { Observable } from '../lib/observable'
 import { account } from './account'
 import { analytics } from './analytics'
 import { request, type CloudModel } from './cloud'
 
-export type CloudComputerAction = 'saveKey' | 'removeKey' | 'create' | 'deleteSnapshots' | 'delete'
+/** One action at a time; a key's carries its provider (`saveKey:boat`). */
+export type CloudComputerAction = 'create' | 'deleteSnapshots' | 'delete' | `saveKey:${string}` | `removeKey:${string}`
 
 /** Asked again this often while a new cloud computer claims itself (about 10 s), slower if it takes long. */
 const PREPARING_POLL_MS = 3_000
 const PREPARING_POLL_MAX_MS = 30_000
 
 /**
- * Computers → Codync Cloud: the key to the user's own Boat account, the account's cloud computer
- * (`/v1/cloud-computers`), creating it and deleting it or its snapshots. Once claimed it is an account computer like
- * any other (`CloudModel.computers`).
+ * Computers → Codync Cloud: the providers the cloud can run a computer on with the keys the user gave them, the
+ * account's cloud computer (`/v1/cloud-computers`), creating it and deleting it or its snapshots. Once claimed it is an
+ * account computer like any other (`CloudModel.computers`).
  */
 export class CloudComputerModel extends Observable {
   machine: CloudMachine | null = null
-  /** The key the account gave; null until it gives one. */
-  credential: CloudCredential | null = null
-  keySetup: CloudKeySetup | null = null
+  /** Every provider the cloud offers, each with the account's key for it, if any. */
+  providers: CloudProvider[] = []
   /** The first answer came back for this account. */
   loaded = false
   /** This account may create one (an allowlist of user ids). */
@@ -40,8 +40,7 @@ export class CloudComputerModel extends Observable {
     if (user === this.user) return
     this.user = user
     this.machine = null
-    this.credential = null
-    this.keySetup = null
+    this.providers = []
     this.loaded = false
     this.available = false
     this.busy = null
@@ -51,29 +50,32 @@ export class CloudComputerModel extends Observable {
 
   async refresh() {
     await this.run(null, async (current) => {
-      const res = await request<{ cloudComputer: CloudMachine | null; available?: boolean; credential?: CloudCredential | null; keySetup?: CloudKeySetup | null }>('GET', 'v1/cloud-computers')
+      const res = await request<{ cloudComputer: CloudMachine | null; available?: boolean; providers?: CloudProvider[] }>('GET', 'v1/cloud-computers')
       if (!current()) return
       this.available = res.available ?? false
-      this.credential = res.credential ?? null
-      this.keySetup = res.keySetup ?? null
+      this.providers = res.providers ?? []
       this.show(res.cloudComputer)
     })
   }
 
-  /** A computer can be made once the account gave a key; creating it says what to fix if Boat still turns it down. */
-  get canCreate() {
-    return this.credential !== null
+  /** Where a computer can be created: the providers the account gave a key. Creating says what to fix if one still
+   * turns its key down. */
+  get connected() {
+    return connectedProviders(this.providers)
   }
 
-  /** Gives the cloud the key; it checks it with Boat, keeps it sealed and answers what to fix if it won't. True once kept. */
-  async saveKey(key: string): Promise<boolean> {
+  /**
+   * Gives the cloud a key to the user's own account with `provider`; the cloud checks it there, keeps it sealed and
+   * answers what to fix if it won't. True once kept.
+   */
+  async saveKey(provider: string, key: string): Promise<boolean> {
     let saved = false
-    await this.run('saveKey', async (current) => {
+    await this.run(`saveKey:${provider}`, async (current) => {
       try {
-        const res = await request<{ credential: CloudCredential }>('PUT', 'v1/cloud-credentials/boat', { key: key.trim() })
+        const res = await request<{ credential: CloudCredential }>('PUT', `v1/cloud-credentials/${provider}`, { key: key.trim() })
         analytics.track({ event: 'cloud_key_saved', outcome: 'saved' })
         if (!current()) return
-        this.credential = res.credential
+        this.setCredential(provider, res.credential)
         saved = true
       } catch (error) {
         analytics.track({ event: 'cloud_key_saved', outcome: cloudKeyOutcome(error) })
@@ -83,17 +85,27 @@ export class CloudComputerModel extends Observable {
     return saved
   }
 
-  /** Refused (409) while a cloud computer runs on it. */
-  removeKey() {
-    return this.run('removeKey', async (current) => {
-      await request('DELETE', 'v1/cloud-credentials/boat')
-      if (current()) this.credential = null
+  /** The computer's key stays: without it the cloud couldn't put the computer to sleep. */
+  canRemoveKey(provider: string) {
+    return this.machine?.provider !== provider
+  }
+
+  /** Refused (409) while a cloud computer runs on that provider. */
+  removeKey(provider: string) {
+    return this.run(`removeKey:${provider}`, async (current) => {
+      await request('DELETE', `v1/cloud-credentials/${provider}`)
+      if (current()) this.setCredential(provider, null)
     })
   }
 
-  create() {
+  private setCredential(provider: string, credential: CloudCredential | null) {
+    this.providers = this.providers.map((p) => (p.provider === provider ? { ...p, credential } : p))
+  }
+
+  /** On `provider`, one of `connected`. */
+  create(provider: string) {
     return this.run('create', async (current) => {
-      const res = await request<{ cloudComputer: CloudMachine }>('POST', 'v1/cloud-computers', {})
+      const res = await request<{ cloudComputer: CloudMachine }>('POST', 'v1/cloud-computers', { provider })
       if (current()) this.show(res.cloudComputer)
     })
   }

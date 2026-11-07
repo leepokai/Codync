@@ -12,7 +12,8 @@ afterEach(() => vi.restoreAllMocks());
 const PATH = "/v1/cloud-credentials/boat";
 const keyed = (keys: string) => ({ ...env, CLOUD_SECRET_KEYS: keys });
 const k = (byte: number) => btoa(String.fromCharCode(...new Uint8Array(32).fill(byte)));
-const credential = async (userId: string) => (await cc("GET", userId)).body.credential;
+/** The user's Boat key as `GET /v1/cloud-computers` lists it with the providers. */
+const credential = async (userId: string) => (await cc("GET", userId)).body.providers[0].credential;
 
 describe("sealed secrets", () => {
   it("opens only for the owner and purpose it was sealed for", async () => {
@@ -43,7 +44,7 @@ describe("saving a Boat key", () => {
     const fetch = boat("ready");
     const saved = await cc("PUT", userId, userId, PATH, { key: ` ${KEY} ` });
     expect(saved.status).toBe(200);
-    expect(saved.body).toEqual({ credential: { provider: "boat", providerName: "Boat", hint: "boat_…9abc", problem: null, updatedAt: expect.any(Number) } });
+    expect(saved.body).toEqual({ credential: { hint: "boat_…9abc", problem: null, updatedAt: expect.any(Number) } });
     expect(fetch.mock.calls.map(([url, init]) => [String(url), (init!.headers as Record<string, string>).authorization])).toEqual([
       ["https://boat.dev/api/v1/sandboxes?limit=1", `Bearer ${KEY}`],
       ["https://boat.dev/api/v1/webhooks", `Bearer ${KEY}`],

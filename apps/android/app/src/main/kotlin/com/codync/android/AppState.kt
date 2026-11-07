@@ -27,6 +27,8 @@ data class AccountContext(
     val asking: Set<String> = emptySet(),
     /** The account's Codync Cloud computer and whether it may have one (Computers → Codync Cloud); null until asked. */
     val cloudOffer: CloudOffer? = null,
+    /** Computers → Codync Cloud → Cloud providers is open, showing the account's error itself. */
+    val cloudProvidersOpen: Boolean = false,
     /** The Codync cloud asked this app version to update (`426 appUpdateRequired`), with its reason. */
     val appFloor: String? = null,
     val tasks: Boolean = true,

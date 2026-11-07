@@ -32,7 +32,7 @@ export async function hostSleep(c: Ctx) {
   const res = await relay("sleep", { wakeAt });
   if (res.status === 409) throw new ApiError("conflict", "A device is connected.");
   if (!res.ok) throw new ApiError("internal");
-  const stopped = boat.machine(await providerSend(c.env, row.user_id, boat.stop(row.provider_id), c.now));
+  const stopped = boat.machine(await providerSend(c.env, row.user_id, row.provider, boat.stop(row.provider_id), c.now));
   // The owner's key was refused, so it surely didn't stop, and no wake can find it running either: back online now.
   if (!stopped.ok && stopped.needsOwner) await relay("awake", {});
   value(stopped);

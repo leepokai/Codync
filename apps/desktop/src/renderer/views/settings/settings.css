@@ -259,7 +259,7 @@
   animation: fade-in var(--layout) both;
 }
 
-/* Codync Cloud: the commands that make a Boat key, selectable, with their copy button. */
+/* Codync Cloud: the commands that make a provider's key, selectable, with their copy button. */
 .settings-commands {
   padding: 8px 6px 8px 12px;
   border-radius: 12px;
@@ -269,4 +269,15 @@
   user-select: text;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* Codync Cloud's Cloud providers row (opens the sheet) and the sheet itself. */
+.cloud-providers-row {
+  text-align: left;
+}
+.cloud-providers-sheet {
+  width: 520px;
+}
+.cloud-providers-body {
+  padding: 4px 20px 20px;
 }

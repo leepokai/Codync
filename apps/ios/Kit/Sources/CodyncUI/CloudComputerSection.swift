@@ -1,12 +1,13 @@
 import CodyncKit
 import SwiftUI
 
-/// Computers → Codync Cloud: the key to the user's own Boat account, then the account's cloud computer, where it runs
-/// and whether it's awake, with deleting its snapshots or the whole computer; or creating one. Hidden while this
-/// account can't have one.
+/// Computers → Codync Cloud: the account's cloud computer on the user's own provider account, where it runs and
+/// whether it's awake, with deleting its snapshots or the whole computer, or creating one on a connected provider; and
+/// the Cloud providers sheet with their keys. Hidden while this account can't have one.
 public struct CloudComputerSection: View {
     let store: CloudMachineStore
     @State private var confirm: Confirm?
+    @State private var showsProviders = false
 
     private enum Confirm { case snapshots, computer }
 
@@ -19,21 +20,61 @@ public struct CloudComputerSection: View {
             EmptyView()
         case .creatable:
             section {
-                CloudKeyRows(store: store)
-                if store.canCreate {
-                    actionRow("Create cloud computer", icon: "plus", work: .creating, destructive: false) { Task { await store.create() } }
-                }
+                providersRow
+                if !store.connected.isEmpty { createRow }
             }
         case let .machine(machine):
             section {
                 machineRows(machine)
-                CloudKeyRows(store: store)
+                providersRow
             }
         }
     }
 
+    /// Opens the Cloud providers sheet; says which providers have a key, or that one needs attention.
+    private var providersRow: some View {
+        let summary = store.providersSummary
+        return Button { showsProviders = true } label: {
+            HStack(spacing: 12) {
+                Label(L10n.tr("Cloud providers"), systemImage: "key.fill").foregroundStyle(Palette.text)
+                Spacer(minLength: 8)
+                Text(L10n.tr(summary.text))
+                    .foregroundStyle(summary.needsAttention ? Palette.danger : Palette.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Palette.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .codyncSheet(isPresented: $showsProviders) { CloudProvidersSheet(store: store) }
+    }
+
+    /// Creates the computer on the one connected provider, or on the one picked from the menu.
+    @ViewBuilder private var createRow: some View {
+        let connected = store.connected
+        if connected.count == 1, let only = connected.first {
+            actionRow("Create cloud computer", icon: "plus", work: .creating, destructive: false) {
+                Task { await store.create(on: only.provider) }
+            }
+        } else {
+            DropdownMenu {
+                connected.map { provider in
+                    MenuItem(L10n.fill(L10n.tr("On {provider}"), ["provider": provider.name]), verbatim: true) {
+                        Task { await store.create(on: provider.provider) }
+                    }
+                }
+            } label: {
+                actionLabel("Create cloud computer", icon: "plus", work: .creating, destructive: false)
+            }
+            .disabled(store.working != nil)
+        }
+    }
+
     private func section(@ViewBuilder _ rows: () -> some View) -> some View {
-        CardSection("Codync Cloud", footer: "Runs on your own Boat account, which bills you while it's awake. It sleeps when idle and wakes when you message it.") {
+        CardSection("Codync Cloud", footer: "Runs on your own account with a cloud provider, which bills you while it's awake. It sleeps when idle and wakes when you message it.") {
             rows()
             if let error = store.error {
                 Text(L10n.tr(error))
@@ -74,17 +115,19 @@ public struct CloudComputerSection: View {
 
     private func actionRow(_ title: String, icon: String, work: CloudMachineStore.Work, destructive: Bool = true,
                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Label(L10n.tr(title), systemImage: icon)
-                    .foregroundStyle(destructive ? Palette.danger : Palette.text)
-                Spacer(minLength: 8)
-                if store.working == work { Spinner() }
-            }
-            .contentShape(Rectangle())
+        Button(action: action) { actionLabel(title, icon: icon, work: work, destructive: destructive) }
+            .buttonStyle(.plain)
+            .disabled(store.working != nil)
+    }
+
+    private func actionLabel(_ title: String, icon: String, work: CloudMachineStore.Work, destructive: Bool) -> some View {
+        HStack {
+            Label(L10n.tr(title), systemImage: icon)
+                .foregroundStyle(destructive ? Palette.danger : Palette.text)
+            Spacer(minLength: 8)
+            if store.working == work { Spinner() }
         }
-        .buttonStyle(.plain)
-        .disabled(store.working != nil)
+        .contentShape(Rectangle())
     }
 }
 

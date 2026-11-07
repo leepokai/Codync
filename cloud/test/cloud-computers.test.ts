@@ -12,12 +12,16 @@ describe("cloud computers", () => {
   it("is refused for accounts off the allowlist", async () => {
     const fetch = boat();
     const other = uid();
-    expect((await cc("GET", other, "user_other")).body).toEqual({ cloudComputer: null, available: false, credential: null, keySetup: null });
+    expect((await cc("GET", other, "user_other")).body).toEqual({ cloudComputer: null, available: false, providers: [] });
     expect((await cc("POST", other, "user_other")).status).toBe(403);
     expect(fetch).not.toHaveBeenCalled();
     const open = (await cc("GET", uid())).body;
-    expect(open).toMatchObject({ cloudComputer: null, available: true, credential: null, keySetup: { providerName: "Boat", page: "https://boat.dev/dashboard" } });
-    expect(open.keySetup.commands).toContain("boat api-key create codync --env <id> --ttl never --actions sandbox.create,");
+    expect(open).toMatchObject({
+      cloudComputer: null,
+      available: true,
+      providers: [{ provider: "boat", name: "Boat", region: "EU", keyPrompt: "boat_…", setup: { page: "https://boat.dev/dashboard" }, credential: null }],
+    });
+    expect(open.providers[0].setup.commands).toContain("boat api-key create codync --env <id> --ttl never --actions sandbox.create,");
   });
 
   it("needs the user's own Boat key", async () => {
@@ -25,7 +29,8 @@ describe("cloud computers", () => {
     const fetch = boat();
     const refused = await cc("POST", userId);
     expect(refused.status).toBe(409);
-    expect(refused.body.error.message).toBe("Add your Boat API key first.");
+    expect(refused.body.error.message).toBe("Connect a cloud provider first.");
+    expect((await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "nimbus" })).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -33,7 +38,7 @@ describe("cloud computers", () => {
     const userId = uid();
     await withKey(userId);
     const fetch = boat();
-    const created = await cc("POST", userId);
+    const created = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" });
     expect(created.status).toBe(200);
     expect(created.body.cloudComputer).toMatchObject({ provider: "boat", providerName: "Boat", region: "EU", state: "starting", computerId: null });
 

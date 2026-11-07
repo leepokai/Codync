@@ -75,25 +75,34 @@ public struct CloudStatus: Decodable, Hashable, Sendable {
     public var cloudComputer: CloudMachine?
     /// Whether this account may have one (the feature isn't public yet).
     public var available: Bool?
-    /// The key the account gave for its own provider account; nil until it gives one.
-    public var credential: CloudCredential?
-    /// How to make that key, as the cloud words it, so it changes without an app release.
-    public var keySetup: CloudKeySetup?
+    /// Every provider the computer can run on, each with the account's key for it.
+    public var providers: [CloudProvider]?
 }
 
-/// The provider key the account gave Codync Cloud, as the cloud shows it: never the key itself.
-public struct CloudCredential: Decodable, Hashable, Sendable {
+/// A provider the cloud can run the computer on, as it lists them: where it runs, how to make its key (worded by the
+/// cloud, so a new provider needs no app release) and the account's key for it.
+public struct CloudProvider: Decodable, Hashable, Sendable, Identifiable {
     public var provider: String
-    public var providerName: String
+    public var name: String
+    public var region: String
+    /// What its keys start with, for the field's placeholder (`boat_…`).
+    public var keyPrompt: String
+    public var setup: CloudKeySetup
+    public var credential: CloudCredential?
+
+    public var id: String { provider }
+}
+
+/// A key the account gave a provider, as the cloud shows it: never the key itself.
+public struct CloudCredential: Decodable, Hashable, Sendable {
     /// Its kind and last four, `boat_…9abc`.
     public var hint: String
     /// What the owner has to fix while the provider turns the key down, in a sentence the app translates.
     public var problem: String?
 }
 
-/// How the user makes the key: commands to run, and the provider's page for doing it there instead.
+/// How the user makes a provider's key: commands to run, and the provider's page for doing it there instead.
 public struct CloudKeySetup: Decodable, Hashable, Sendable {
-    public var providerName: String
     public var page: URL
     public var commands: String
 }

@@ -38,7 +38,7 @@ console.log(`
 Local cloud for Codync Dev apps: ${cloud.url} (dev Clerk sign-ins; test account: any name+clerk_test@example.com, code 424242)
   iOS simulator:    SIMCTL_CHILD_CODYNC_CLOUD_URL=${cloud.url} xcrun simctl launch <udid> com.pokai.Codync.ios.dev
   Desktop sandbox:  CODYNC_CLOUD_URL=${cloud.url} npm run dev   (in apps/desktop)
-  Android emulator: adb -s <serial> reverse tcp:${port} tcp:${port}, built with -PcodyncCloudUrl=${cloud.url}
+  Android emulator: adb -s <serial> reverse tcp:${port} tcp:${port}, built with -PcodyncCloudUrl=${cloud.url} plus -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl
 Cloud computers: ${HOST_LINUX_BIN ? `boot ${HOST_LINUX_BIN}` : "boot the released host"}; each new one is forwarded here. Ctrl-C to stop.
 Boat key to paste in the app: the one in BOAT_API_KEY_FILE (limited to the codync environment).
 `);

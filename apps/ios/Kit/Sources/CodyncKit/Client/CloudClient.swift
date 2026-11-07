@@ -210,24 +210,24 @@ public struct CloudClient: Sendable {
         try await request("GET", "v1/cloud-computers")
     }
 
-    /// Gives Codync Cloud the key to the user's own Boat account. The cloud checks it with Boat and keeps it sealed;
-    /// a refusal (`422 keyRefused`) says what to fix.
-    public func saveCloudKey(_ key: String) async throws -> CloudCredential {
+    /// Gives Codync Cloud the key to the user's own account with `provider`. The cloud checks it there and keeps it
+    /// sealed; a refusal (`422 keyRefused`) says what to fix.
+    public func saveCloudKey(_ key: String, provider: String) async throws -> CloudCredential {
         struct Res: Decodable { var credential: CloudCredential }
-        let res: Res = try await request("PUT", "v1/cloud-credentials/boat", body: ["key": key])
+        let res: Res = try await request("PUT", "v1/cloud-credentials/\(provider)", body: ["key": key])
         return res.credential
     }
 
-    /// Forgets the key (`409 conflict` while a cloud computer runs on it).
-    public func deleteCloudKey() async throws {
-        try await send("DELETE", "v1/cloud-credentials/boat")
+    /// Forgets the key (`409 conflict` while a cloud computer runs on that provider).
+    public func deleteCloudKey(provider: String) async throws {
+        try await send("DELETE", "v1/cloud-credentials/\(provider)")
     }
 
-    /// Creates the account's cloud computer, or returns the one it has (`403 forbidden` off the allowlist, `409` without
-    /// a key).
-    public func createCloudMachine() async throws -> CloudMachine {
+    /// Creates the account's cloud computer on `provider`, or returns the one it has (`403 forbidden` off the
+    /// allowlist, `409` without that provider's key).
+    public func createCloudMachine(provider: String) async throws -> CloudMachine {
         struct Res: Decodable { var cloudComputer: CloudMachine }
-        let res: Res = try await request("POST", "v1/cloud-computers")
+        let res: Res = try await request("POST", "v1/cloud-computers", body: ["provider": provider])
         return res.cloudComputer
     }
 

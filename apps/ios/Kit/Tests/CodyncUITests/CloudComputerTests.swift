@@ -92,45 +92,53 @@ private final class UnavailableStub: CloudComputerStub {
     let store = CloudMachineStore(cloud: stubbedCloud(UnavailableStub.self))
     await store.refresh()
     #expect(store.lookup == .unavailable)
-    await store.create()
+    await store.create(on: "boat")
     #expect(store.lookup == .unavailable)
     #expect(store.error == "Codync Cloud isn't available for this account yet.")
 }
 
-/// An account that may have a cloud computer but gave no Boat key yet. The first key it gives is refused.
+/// An account that may have a cloud computer on two providers but gave neither a key yet. The first key it gives is
+/// refused; each request's path is kept.
 private final class KeyStub: CloudComputerStub {
     static let puts = OSAllocatedUnfairLock(initialState: 0)
+    static let paths = OSAllocatedUnfairLock(initialState: [String]())
 
     override class func answer(_ request: URLRequest) -> (Int, String) {
+        paths.withLock { $0.append("\(request.httpMethod ?? "") \(request.url?.path ?? "")") }
         switch request.httpMethod {
         case "PUT":
             let n = puts.withLock { $0 += 1; return $0 }
             return n == 1
                 ? (422, #"{"error":{"code":"keyRefused","message":"This key can manage your whole Boat account. Make one limited to Codync instead."}}"#)
-                : (200, #"{"credential":{"provider":"boat","providerName":"Boat","hint":"boat_…9abc","problem":null}}"#)
+                : (200, #"{"credential":{"hint":"boat_…9abc","problem":null}}"#)
         case "DELETE":
             return (200, "{}")
         default:
-            return (200, #"{"cloudComputer":null,"available":true,"credential":null,"keySetup":{"providerName":"Boat","page":"https://boat.dev/dashboard","commands":"boat env new codync"}}"#)
+            let setup = #""setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"},"credential":null"#
+            return (200, #"{"cloudComputer":null,"available":true,"providers":[{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",\#(setup)},"#
+                + #"{"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",\#(setup)}]}"#)
         }
     }
 }
 
-/// The user's own Boat key comes first: a refusal keeps the cloud's reason, a saved key shows only by its hint, and
-/// only then can a computer be made; with no computer on it, the key can go again.
+/// A provider's key comes first: a refusal keeps the cloud's reason, a saved key shows only by its hint, and only then
+/// can a computer be made, on that provider; with no computer on it, the key can go again.
 @MainActor @Test func cloudKeyComesBeforeTheComputer() async {
     let store = CloudMachineStore(cloud: stubbedCloud(KeyStub.self))
     await store.refresh()
     #expect(store.lookup == .creatable)
-    #expect(store.keySetup?.commands == "boat env new codync")
-    #expect(!store.canCreate)
-    #expect(await store.saveKey("boat_admin_key") == false)
+    #expect(store.providers.map(\.name) == ["Boat", "Nimbus"])
+    #expect(store.providers.first?.setup.commands == "boat env new codync")
+    #expect(store.connected.isEmpty && store.providersSummary.text == "Connect one")
+    #expect(await store.saveKey("boat_admin_key", provider: "boat") == false)
     #expect(store.error == "This key can manage your whole Boat account. Make one limited to Codync instead.")
-    #expect(await store.saveKey(" boat_live_key9abc "))
-    #expect(store.credential?.hint == "boat_…9abc")
-    #expect(store.canCreate && store.canRemoveKey && store.error == nil)
-    await store.removeKey()
-    #expect(store.credential == nil && !store.canCreate)
+    #expect(await store.saveKey(" boat_live_key9abc ", provider: "boat"))
+    #expect(store.connected.map(\.provider) == ["boat"] && store.providers.first?.credential?.hint == "boat_…9abc")
+    #expect(store.providersSummary.text == "Boat" && store.canRemoveKey("boat") && store.error == nil)
+    await store.removeKey(provider: "boat")
+    #expect(store.connected.isEmpty)
+    #expect(KeyStub.paths.withLock { $0 }.filter { !$0.hasPrefix("GET") }
+        == ["PUT /v1/cloud-credentials/boat", "PUT /v1/cloud-credentials/boat", "DELETE /v1/cloud-credentials/boat"])
 }
 
 /// A sleeping machine that hasn't claimed itself in yet; its snapshots can't be deleted while it sleeps.

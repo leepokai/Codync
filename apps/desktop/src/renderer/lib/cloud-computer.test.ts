@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cloudKeyOutcome, isPreparing, machineStatus, offlineCloudStatus, placementLine, type CloudMachine } from './cloud-computer.ts'
+import { cloudKeyOutcome, connectedProviders, isPreparing, machineStatus, offlineCloudStatus, placementLine, providersSummary, type CloudMachine, type CloudProvider } from './cloud-computer.ts'
 
 const machine: CloudMachine = {
   cloudComputerId: 'cm_1', provider: 'boat', providerName: 'Boat', region: 'EU', state: 'running',
@@ -44,4 +44,18 @@ test('a refused Boat key is told apart from a save that failed', () => {
   assert.equal(cloudKeyOutcome(refused), 'refused')
   assert.equal(cloudKeyOutcome(Object.assign(new Error('Too many requests.'), { code: 'rateLimited' })), 'failed')
   assert.equal(cloudKeyOutcome(new TypeError('fetch failed')), 'failed')
+})
+
+test('the Cloud providers row names the connected providers, or asks for one', () => {
+  const boat: CloudProvider = {
+    provider: 'boat', name: 'Boat', region: 'EU', keyPrompt: 'boat_…',
+    setup: { page: 'https://boat.dev/dashboard', commands: 'boat env new codync' }, credential: null,
+  }
+  const nimbus: CloudProvider = { ...boat, provider: 'nimbus', name: 'Nimbus' }
+  assert.deepEqual(connectedProviders([boat, nimbus]), [])
+  assert.deepEqual(providersSummary([boat, nimbus]), { text: 'Connect one', error: false })
+  const keyed = { ...boat, credential: { hint: 'boat_…9abc', problem: null } }
+  assert.deepEqual(connectedProviders([keyed, nimbus]), [keyed])
+  assert.deepEqual(providersSummary([keyed, { ...nimbus, credential: { hint: 'nim_…0001', problem: null } }]), { text: 'Boat, Nimbus', error: false })
+  assert.deepEqual(providersSummary([{ ...keyed, credential: { hint: 'boat_…9abc', problem: 'This Boat key has expired. Make a new one.' } }]), { text: 'Needs attention', error: true })
 })

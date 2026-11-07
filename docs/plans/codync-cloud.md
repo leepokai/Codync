@@ -50,8 +50,8 @@ boat api-key create codync --env <id> --ttl never \
 ```
 
 `--env` takes the environment's id, not its name (Boat answers `api_key_sandbox_forbidden` to the name; checked
-2026-11-08). The apps show these lines as the Worker words them (`keySetup` in `GET /v1/cloud-computers`), with a
-link to Boat's dashboard, which does the same with a form.
+2026-11-08). The apps show these lines as the Worker words them (each provider's `setup` in `GET /v1/cloud-computers`),
+with a link to Boat's dashboard, which does the same with a form.
 
 - It can't run commands, read or write files, SSH or stream the desktop (no `exec`, `file.*`, `ssh`, `desktop`),
   reach the user's sandboxes outside `codync`, read billing, or make keys and webhooks.
@@ -100,13 +100,33 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
   who fixed their plan at Boat.
 - A host whose stop is refused (the key) is put back online at once (`/internal/awake` on its relay): it never
   stopped, and no wake would find it running.
-- Write-only API: `GET /v1/cloud-computers` adds `credential: {provider, providerName, hint, problem, updatedAt}` or
-  `null`; never the key. `DELETE /v1/cloud-credentials/boat` is refused while a cloud computer exists: without the
-  key Codync couldn't put it to sleep or delete it, and it would keep billing its owner.
+- Write-only API: `GET /v1/cloud-computers` adds `providers`, each with its `credential` (`{hint, problem,
+  updatedAt}` or `null`), never the key. `DELETE /v1/cloud-credentials/:provider` is refused while the cloud computer
+  runs on that provider: without the key Codync couldn't put it to sleep or delete it, and it would keep billing its
+  owner.
 - Deleting the cloud computer keeps the key (for another one). Deleting the Codync account stops the computer, then
   forgets it and the key: the sandbox stays in the user's Boat account for them to keep or delete. While Boat is busy
   the webhook fails, so Clerk sends it again and the stop is retried with the key still there.
 - Audit rows: `cloudCredential.save`, `cloudCredential.delete` (never key material).
+
+### More than one provider
+
+Boat is the first; InstaBox (InsForge) and others may follow (owner, 2026-11-08: "不要直接在 UI 上面綁定死只有這一個").
+So nothing in the apps names a provider:
+
+- `GET /v1/cloud-computers` lists `providers`, each `{provider, name, region, keyPrompt, setup: {page, commands},
+  credential}`, from `PROVIDERS` in `cloud-credentials.ts`. A new provider shows up in every app with no release.
+- Keys are per provider (`PUT/DELETE /v1/cloud-credentials/:provider`, one `cloud_credentials` row each).
+  `POST /v1/cloud-computers {provider}` creates the computer on one the user gave a key; `provider` may be left out
+  when there is only one.
+- Apps: Computers → Codync Cloud has a *Cloud providers* row (the connected ones' names, *Connect one*, or *Needs
+  attention*) that opens a sheet with one card per provider: its key (last four, replace, remove) or a field to paste
+  one, and *How to make a key* folded under it. *Create cloud computer* creates on the one connected provider, or opens
+  a menu of them.
+- Adding a provider: its adapter in `cloud/machines/` (beside `boat.ts`), a `PROVIDERS` entry, its key checks in
+  `routes/cloud-credentials.ts`, its name in the two `provider` CHECKs (migration), and its requests built and sent
+  by its adapter (`providerSend` already opens the key of the machine's own provider; the requests are Boat's today).
+  Problem sentences in `PROBLEMS` name Boat.
 
 ### What Codync can still do
 

@@ -1,5 +1,5 @@
-// Codync Cloud, as the apps show it: a computer Codync runs for the account on the user's own Boat account, with the
-// key they gave it (cloud/src/routes/cloud-computers.ts, cloud-credentials.ts).
+// Codync Cloud, as the apps show it: a computer Codync runs for the account on the user's own account with a cloud
+// provider (Boat first), with the key they gave it (cloud/src/routes/cloud-computers.ts, cloud-credentials.ts).
 
 export type CloudState = 'starting' | 'running' | 'stopping' | 'stopped' | 'failed'
 
@@ -19,21 +19,36 @@ export interface CloudMachine extends CloudPlacement {
   createdAt: number
 }
 
-/** The provider key the account gave, as the cloud shows it: never the key itself. */
+/** A key the account gave a provider, as the cloud shows it: never the key itself. */
 export interface CloudCredential {
-  provider: string
-  providerName: string
   /** Its kind and last four, `boat_…9abc`. */
   hint: string
   /** What the owner has to fix while the provider turns the key down, in a sentence the app translates. */
   problem: string | null
 }
 
-/** How the user makes the key, worded by the cloud so it changes without an app release. */
-export interface CloudKeySetup {
-  providerName: string
-  page: string
-  commands: string
+/**
+ * A provider the cloud can run the computer on, as it lists them (`providers` in `GET /v1/cloud-computers`): where it
+ * runs, how to make its key (worded by the cloud, so a new provider needs no app release) and the account's key for it.
+ */
+export interface CloudProvider {
+  provider: string
+  name: string
+  region: string
+  /** What its keys start with, for the field's placeholder (`boat_…`). */
+  keyPrompt: string
+  setup: { page: string; commands: string }
+  credential: CloudCredential | null
+}
+
+/** The providers the account gave a key, where a computer can be created. */
+export const connectedProviders = (providers: CloudProvider[]) => providers.filter((p) => p.credential !== null)
+
+/** Computers → Codync Cloud's Cloud providers row: the connected providers' names, or what to do. */
+export function providersSummary(providers: CloudProvider[]): StatusLine {
+  const connected = connectedProviders(providers)
+  if (connected.some((p) => p.credential?.problem)) return { text: 'Needs attention', error: true }
+  return connected.length ? { text: connected.map((p) => p.name).join(', '), error: false } : { text: 'Connect one', error: false }
 }
 
 /** `cloud_key_saved`'s outcome for a save that threw: `refused` when the cloud or Boat turned the key down (the app

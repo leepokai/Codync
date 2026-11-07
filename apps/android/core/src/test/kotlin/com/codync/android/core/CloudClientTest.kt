@@ -184,7 +184,7 @@ class CloudClientTest {
             val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
             assertEquals(CloudOffer(null, available = false), client.cloudComputer())
             assertTrue(client.cloudComputer().available)
-            val created = client.createCloudComputer()
+            val created = client.createCloudComputer("boat")
             assertEquals("cm_1", created.cloudComputerId)
             assertNull(created.computerId)
             assertEquals(5L, created.createdAt)
@@ -193,34 +193,42 @@ class CloudClientTest {
             repeat(2) { assertEquals("GET /v1/cloud-computers", server.takeRequest().requestLine.substringBeforeLast(' ')) }
             val create = server.takeRequest()
             assertEquals("POST /v1/cloud-computers", create.requestLine.substringBeforeLast(' '))
+            assertEquals("""{"provider":"boat"}""", create.body.readUtf8())
             assertEquals("Bearer session", create.getHeader("Authorization"))
             assertEquals("DELETE /v1/cloud-computers/snapshots", server.takeRequest().requestLine.substringBeforeLast(' '))
             assertEquals("DELETE /v1/cloud-computers", server.takeRequest().requestLine.substringBeforeLast(' '))
         } finally { server.shutdown() }
     }
 
-    @Test fun `the user's own Boat key is given trimmed, shown by its hint, refused with what to fix and removed`() = runBlocking {
+    @Test fun `each provider's key is given trimmed, shown by its hint, refused with what to fix and removed`() = runBlocking {
         val server = MockWebServer()
         server.start()
         try {
-            server.enqueue(MockResponse().setBody("""{"cloudComputer":null,"available":true,"credential":{"provider":"boat","providerName":"Boat",
-                "hint":"boat_…9abc","problem":"This Boat key has expired. Make a new one.","updatedAt":5},
-                "keySetup":{"providerName":"Boat","page":"https://boat.dev/dashboard","commands":"boat env new codync"}}"""))
+            val setup = """"setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"}"""
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":null,"available":true,"providers":[
+                {"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",$setup,
+                 "credential":{"hint":"boat_…9abc","problem":"This Boat key has expired. Make a new one.","updatedAt":5}},
+                {"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",$setup,"credential":null}]}"""))
             server.enqueue(MockResponse().setResponseCode(422).setBody("""{"error":{"code":"keyRefused","message":"That doesn't look like a Boat API key."}}"""))
-            server.enqueue(MockResponse().setBody("""{"credential":{"provider":"boat","providerName":"Boat","hint":"boat_…0001","problem":null,"updatedAt":6}}"""))
+            server.enqueue(MockResponse().setBody("""{"credential":{"hint":"boat_…0001","problem":null,"updatedAt":6}}"""))
             server.enqueue(MockResponse().setBody("{}"))
             val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
             val offer = client.cloudComputer()
-            assertEquals(CloudCredential("boat", "Boat", "boat_…9abc", "This Boat key has expired. Make a new one."), offer.credential)
-            assertEquals(CloudKeySetup("Boat", "https://boat.dev/dashboard", "boat env new codync"), offer.keySetup)
-            assertTrue(offer.canCreate)
-            val refused = try { client.saveCloudKey("sk-1"); error("Expected a refusal") } catch (error: CloudError) { error }
+            assertEquals(listOf("Boat", "Nimbus"), offer.providers.map { it.name })
+            assertEquals(CloudCredential("boat_…9abc", "This Boat key has expired. Make a new one."), offer.providers[0].credential)
+            assertEquals(CloudKeySetup("https://boat.dev/dashboard", "boat env new codync"), offer.providers[0].setup)
+            assertEquals(listOf("boat"), offer.connected.map { it.provider })
+            assertEquals("Needs attention" to true, offer.summary)
+            assertEquals("Boat" to false, offer.withCredential("boat", CloudCredential("boat_…0001")).summary)
+            assertEquals("Connect one" to false, offer.withCredential("boat", null).summary)
+            assertTrue(offer.canRemoveKey("boat"))
+            val refused = try { client.saveCloudKey("boat", "sk-1"); error("Expected a refusal") } catch (error: CloudError) { error }
             assertEquals("keyRefused", refused.code)
             assertEquals("That doesn't look like a Boat API key.", refused.message)
-            val saved = client.saveCloudKey(" boat_live_key0001 ")
+            val saved = client.saveCloudKey("boat", " boat_live_key0001 ")
             assertEquals("boat_…0001", saved.hint)
             assertNull(saved.problem)
-            client.deleteCloudKey()
+            client.deleteCloudKey("boat")
             server.takeRequest()
             server.takeRequest()
             val put = server.takeRequest()
@@ -239,7 +247,7 @@ class CloudClientTest {
             server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":{"code":"appUpdateRequired","message":"Update Codync: security fix."}}"""))
             val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
             suspend fun refusal(call: suspend () -> Unit) = try { call(); error("Expected a refusal") } catch (error: CloudError) { error }
-            assertEquals("Codync Cloud isn't available for this account yet.", refusal { client.createCloudComputer() }.message)
+            assertEquals("Codync Cloud isn't available for this account yet.", refusal { client.createCloudComputer("boat") }.message)
             assertEquals("Your cloud computer is asleep.", refusal { client.deleteCloudSnapshots() }.message)
             val floor = refusal { client.computers() }
             assertEquals("appUpdateRequired", floor.code)

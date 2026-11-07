@@ -19,28 +19,36 @@ fun AccountStore.refreshCloudMachine() = action("cloudMachine") {
     awaitClaim()
 }
 
-/** Gives the cloud the key to the user's own Boat account; a refusal shows the cloud's words for what to fix. [saved] runs
- * once it's kept. */
-fun AccountStore.saveCloudKey(key: String, saved: () -> Unit) = action("cloudKey") {
-    val credential = try { requireNotNull(cloud) { "Sign in to reach your account." }.saveCloudKey(key) }
+/** Computers → Codync Cloud → Cloud providers opened or closed. Open, it shows the account's error itself (iOS too), so
+ * the app's error dialog waits; closed, that error was seen and goes. */
+internal fun AccountStore.cloudProvidersShown(open: Boolean) =
+    mutableState.update { it.copy(cloudProvidersOpen = open, error = if (open) it.error else null) }
+
+/** The busy key while [provider]'s key is saved or removed. */
+internal fun cloudKeyAction(provider: String) = "cloudKey:$provider"
+
+/** Gives the cloud the key to the user's own account with [provider]; a refusal shows the cloud's words for what to fix.
+ * [saved] runs once it's kept. */
+fun AccountStore.saveCloudKey(provider: String, key: String, saved: () -> Unit) = action(cloudKeyAction(provider)) {
+    val credential = try { requireNotNull(cloud) { "Sign in to reach your account." }.saveCloudKey(provider, key) }
     catch (error: Exception) {
         if (error !is CancellationException) Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.of(error)))
         throw error
     }
     Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Saved))
-    mutableState.update { it.copy(cloudOffer = it.cloudOffer?.copy(credential = credential)) }
+    mutableState.update { it.copy(cloudOffer = it.cloudOffer?.withCredential(provider, credential)) }
     saved()
 }
 
-/** `409` while a cloud computer runs on it shows the cloud's own words. */
-fun AccountStore.removeCloudKey() = action("cloudKey") {
-    requireNotNull(cloud) { "Sign in to reach your account." }.deleteCloudKey()
-    mutableState.update { it.copy(cloudOffer = it.cloudOffer?.copy(credential = null)) }
+/** `409` while a cloud computer runs on [provider] shows the cloud's own words. */
+fun AccountStore.removeCloudKey(provider: String) = action(cloudKeyAction(provider)) {
+    requireNotNull(cloud) { "Sign in to reach your account." }.deleteCloudKey(provider)
+    mutableState.update { it.copy(cloudOffer = it.cloudOffer?.withCredential(provider, null)) }
 }
 
-/** `403` off the allowlist, or `409` without a key, shows the cloud's own words. */
-fun AccountStore.createCloudComputer() = action("cloudMachine") {
-    val machine = requireNotNull(cloud) { "Sign in to reach your account." }.createCloudComputer()
+/** On [provider], one of the connected ones; `403` off the allowlist, or `409` without its key, shows the cloud's own words. */
+fun AccountStore.createCloudComputer(provider: String) = action("cloudMachine") {
+    val machine = requireNotNull(cloud) { "Sign in to reach your account." }.createCloudComputer(provider)
     mutableState.update { it.copy(cloudOffer = (it.cloudOffer ?: CloudOffer(available = true)).copy(cloudComputer = machine)) }
     awaitClaim()
 }

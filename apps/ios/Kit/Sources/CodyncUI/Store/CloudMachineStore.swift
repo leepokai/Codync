@@ -5,9 +5,9 @@ import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "CloudMachine")
 
-/// The account's Codync Cloud computer, for Computers → Codync Cloud: the key to the user's own Boat account,
-/// whether this account has or may create one, creating it, and deleting its snapshots or the whole machine
-/// (docs/plans/codync-cloud.md).
+/// The account's Codync Cloud computer, for Computers → Codync Cloud: the providers it can run on with the keys to the
+/// user's own accounts there, whether this account has or may create one, creating it on a connected provider, and
+/// deleting its snapshots or the whole machine (docs/plans/codync-cloud.md).
 @MainActor
 @Observable
 public final class CloudMachineStore {
@@ -20,13 +20,12 @@ public final class CloudMachineStore {
         case machine(CloudMachine)
     }
 
-    public enum Work: Equatable { case savingKey, removingKey, creating, deletingSnapshots, deleting }
+    /// One action at a time; a key's names its provider.
+    public enum Work: Equatable { case savingKey(String), removingKey(String), creating, deletingSnapshots, deleting }
 
     public private(set) var lookup = Lookup.loading
-    /// The key to the user's own provider account, as the cloud shows it; nil until they give one.
-    public private(set) var credential: CloudCredential?
-    /// How to make that key.
-    public private(set) var keySetup: CloudKeySetup?
+    /// Every provider the cloud offers, each with the account's key for it, if any.
+    public private(set) var providers: [CloudProvider] = []
     public private(set) var working: Work?
     /// Why the last action failed (the server's message where it gave one), shown in the section.
     public var error: String?
@@ -46,17 +45,26 @@ public final class CloudMachineStore {
         if case let .machine(machine) = lookup { machine.computerId == nil } else { false }
     }
 
-    /// A computer can be made once the account gave a key; creating it says what to fix if Boat still turns it down.
-    public var canCreate: Bool { credential != nil }
+    /// Where a computer can be created: the providers the account gave a key. Creating says what to fix if one still
+    /// turns its key down.
+    public var connected: [CloudProvider] { providers.filter { $0.credential != nil } }
 
-    /// The key can go while no computer runs on it (the cloud needs it to put one to sleep).
-    public var canRemoveKey: Bool { lookup == .creatable }
+    /// The Cloud providers row: the connected providers' names, or what to do.
+    public var providersSummary: (text: String, needsAttention: Bool) {
+        if connected.contains(where: { $0.credential?.problem != nil }) { return ("Needs attention", true) }
+        return connected.isEmpty ? ("Connect one", false) : (connected.map(\.name).joined(separator: ", "), false)
+    }
+
+    /// A key can go unless the computer runs on that provider (the cloud needs it to put the computer to sleep).
+    public func canRemoveKey(_ provider: String) -> Bool {
+        if case let .machine(machine) = lookup { machine.hosting.provider != provider } else { true }
+    }
 
     public func refresh() async {
         do {
             let status = try await cloud.cloudStatus()
-            if status.credential != credential { Motion.animate { credential = status.credential } }
-            keySetup = status.keySetup
+            let listed = status.providers ?? []
+            if listed != providers { Motion.animate { providers = listed } }
             show(status.cloudComputer.map(Lookup.machine) ?? (status.available == true ? .creatable : .unavailable))
         } catch {
             // Asked on every visit and while preparing: the next look settles it, the section shows no error.
@@ -64,14 +72,14 @@ public final class CloudMachineStore {
         }
     }
 
-    /// Saves the key; false when the cloud refused it (`error` says why).
+    /// Saves `provider`'s key; false when the cloud refused it (`error` says why).
     @discardableResult
-    public func saveKey(_ key: String) async -> Bool {
-        await run(.savingKey) { [cloud, weak self] in
+    public func saveKey(_ key: String, provider: String) async -> Bool {
+        await run(.savingKey(provider)) { [cloud, weak self] in
             do {
-                let saved = try await cloud.saveCloudKey(key.trimmingCharacters(in: .whitespacesAndNewlines))
+                let saved = try await cloud.saveCloudKey(key.trimmingCharacters(in: .whitespacesAndNewlines), provider: provider)
                 Analytics.shared.capture(.cloudKeySaved(.saved))
-                Motion.animate { self?.credential = saved }
+                self?.setCredential(saved, provider: provider)
             } catch {
                 Analytics.shared.capture(.cloudKeySaved(.init(error)))
                 throw error
@@ -80,16 +88,22 @@ public final class CloudMachineStore {
         }
     }
 
-    public func removeKey() async {
-        await run(.removingKey) { [cloud, weak self] in
-            try await cloud.deleteCloudKey()
-            Motion.animate { self?.credential = nil }
+    public func removeKey(provider: String) async {
+        await run(.removingKey(provider)) { [cloud, weak self] in
+            try await cloud.deleteCloudKey(provider: provider)
+            self?.setCredential(nil, provider: provider)
             return nil
         }
     }
 
-    public func create() async {
-        await run(.creating) { [cloud] in .machine(try await cloud.createCloudMachine()) }
+    private func setCredential(_ credential: CloudCredential?, provider: String) {
+        guard let i = providers.firstIndex(where: { $0.provider == provider }) else { return }
+        Motion.animate { providers[i].credential = credential }
+    }
+
+    /// On `provider`, one of `connected`.
+    public func create(on provider: String) async {
+        await run(.creating) { [cloud] in .machine(try await cloud.createCloudMachine(provider: provider)) }
     }
 
     public func deleteSnapshots() async {

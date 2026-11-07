@@ -49,28 +49,46 @@ class CloudSettingsTest {
         snapshot("preparing")
     }
 
-    private val setup = CloudKeySetup("Boat", "https://boat.dev/dashboard", "boat env new codync")
+    private val setup = CloudKeySetup("https://boat.dev/dashboard", "boat env new codync")
+    private fun boat(key: CloudCredential? = null) = CloudProvider("boat", "Boat", "EU", "boat_…", setup, key)
 
-    @Test fun theUsersOwnBoatKeyComesFirst() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true, keySetup = setup)), emptyList(), viewModel(), {}, {}, {}) } }
-        compose.onNodeWithText("boat env new codync").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Open Boat").assertExists()
+    @Test fun aProviderKeyComesFirst() {
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true, providers = listOf(boat()))), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("Connect one").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Create cloud computer").assertDoesNotExist()
-        snapshot("key")
+        snapshot("providers-none")
+        compose.onNodeWithText("Cloud providers").performClick()
+        compose.onNodeWithText("How to make a key").assertIsDisplayed().performClick()
+        compose.onNodeWithText("boat env new codync").assertIsDisplayed()
+        compose.onNodeWithText("Open Boat").assertExists()
+        snapshot("providers-sheet")
     }
 
     @Test fun onlyAnAccountThatMayHaveOneCanCreateIt() {
-        val key = CloudCredential("boat", "Boat", "boat_…9abc")
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(null, available = true, credential = key, keySetup = setup)), emptyList(), viewModel(), {}, {}, {}) } }
-        compose.onNodeWithText("boat_…9abc").performScrollTo().assertIsDisplayed()
+        val offer = CloudOffer(null, available = true, providers = listOf(boat(CloudCredential("boat_…9abc"))))
+        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("Boat").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Create cloud computer").performScrollTo().assertIsDisplayed()
         snapshot("create")
     }
 
-    @Test fun aKeyBoatTurnsDownSaysWhatToFix() {
-        val key = CloudCredential("boat", "Boat", "boat_…9abc", problem = "This Boat key has expired. Make a new one.")
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("stopped"), true, credential = key)), emptyList(), viewModel(), {}, {}, {}) } }
-        compose.onNodeWithText("This Boat key has expired. Make a new one.").performScrollTo().assertIsDisplayed()
+    @Test fun twoConnectedProvidersAskWhereToCreateIt() {
+        val key = CloudCredential("boat_…9abc")
+        val offer = CloudOffer(null, available = true, providers = listOf(boat(key), boat(key).copy(provider = "nimbus", name = "Nimbus")))
+        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("Create cloud computer").performScrollTo().performClick()
+        compose.onNodeWithText("On Boat").assertIsDisplayed()
+        compose.onNodeWithText("On Nimbus").assertIsDisplayed()
+        snapshot("create-menu")
+    }
+
+    @Test fun aKeyTheProviderTurnsDownSaysWhatToFix() {
+        val key = CloudCredential("boat_…9abc", problem = "This Boat key has expired. Make a new one.")
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("stopped"), true, listOf(boat(key)))), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("Needs attention").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Cloud providers").performClick()
+        compose.onNodeWithText("This Boat key has expired. Make a new one.").assertIsDisplayed()
+        compose.onNodeWithText("boat_…9abc").assertIsDisplayed()
         snapshot("key-refused")
     }
 

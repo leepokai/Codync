@@ -8,29 +8,37 @@ import { open, seal } from "./secrets";
 
 export type Provider = "boat";
 
-/** Shown in the apps: users see which provider runs their computer and where. */
-export const PROVIDERS = { boat: { name: "Boat", region: "EU" } } as const;
-
 /** The Boat environment every cloud computer is made in: the key users make for Codync is limited to it, so it
  * reaches no other sandbox of theirs. */
 export const GROUP = "codync";
 
-/** All Codync does with the key: no commands, files, SSH or account settings. */
-const ACTIONS = ["sandbox.create", "sandbox.read", "sandbox.stop", "sandbox.resume", "sandbox.delete", "snapshot.read", "snapshot.write"];
+/** All Codync does with a Boat key: no commands, files, SSH or account settings. */
+const BOAT_ACTIONS = ["sandbox.create", "sandbox.read", "sandbox.stop", "sandbox.resume", "sandbox.delete", "snapshot.read", "snapshot.write"];
 
-/** How a user makes that key, for the apps to show: from here, so it changes without an app release. A key is limited
- * to an environment by its id, not its name (Boat refuses the name with `api_key_sandbox_forbidden`). */
-export const keySetup = (p: Provider) => ({
-  provider: p,
-  providerName: PROVIDERS[p].name,
-  page: "https://boat.dev/dashboard",
-  commands: [
-    `boat env new ${GROUP}`,
-    `boat env set ${GROUP} --safe-for-third-parties true`,
-    `boat env info ${GROUP}   # its "id" goes after --env`,
-    `boat api-key create codync --env <id> --ttl never --actions ${ACTIONS.join(",")}`,
-  ].join("\n"),
-});
+/**
+ * Every provider the apps offer, in this order, with what they show: where it runs, and how to make the key (worded
+ * here, so a new provider or new steps reach every app without a release). Boat limits a key to an environment by its
+ * id, not its name (the name gets `api_key_sandbox_forbidden`).
+ */
+export const PROVIDERS: Record<Provider, { name: string; region: string; keyPrompt: string; setup: { page: string; commands: string } }> = {
+  boat: {
+    name: "Boat",
+    region: "EU",
+    keyPrompt: "boat_…",
+    setup: {
+      page: "https://boat.dev/dashboard",
+      commands: [
+        `boat env new ${GROUP}`,
+        `boat env set ${GROUP} --safe-for-third-parties true`,
+        `boat env info ${GROUP}   # its "id" goes after --env`,
+        `boat api-key create codync --env <id> --ttl never --actions ${BOAT_ACTIONS.join(",")}`,
+      ].join("\n"),
+    },
+  },
+};
+
+/** Whether a route or a body names a provider in `PROVIDERS`. */
+export const isProvider = (raw: unknown): raw is Provider => typeof raw === "string" && Object.hasOwn(PROVIDERS, raw);
 
 export interface CredentialRow {
   user_id: string;
@@ -63,17 +71,26 @@ const PROBLEMS: Record<string, string> = {
 
 export const problemText = (code: string) => PROBLEMS[code] ?? "Boat refused this key.";
 
-export const credentialFor = (env: Env, userId: string, provider: Provider = "boat") =>
+export const credentialFor = (env: Env, userId: string, provider: Provider) =>
   env.DB.prepare("SELECT * FROM cloud_credentials WHERE user_id = ? AND provider = ?").bind(userId, provider).first<CredentialRow>();
 
-/** The apps' view: never the key itself. */
+/** The user's keys, one per provider they gave one. */
+export const credentialsOf = async (env: Env, userId: string) =>
+  (await env.DB.prepare("SELECT * FROM cloud_credentials WHERE user_id = ?").bind(userId).all<CredentialRow>()).results;
+
+/** The apps' view of a key: never the key itself. */
 export const credentialView = (r: CredentialRow) => ({
-  provider: r.provider,
-  providerName: PROVIDERS[r.provider].name,
   hint: r.hint,
   problem: r.problem ? problemText(r.problem) : null,
   updatedAt: r.updated_at,
 });
+
+/** Each provider as the apps list it, with the user's key for it, if any. */
+export const providersView = (keys: CredentialRow[]) =>
+  (Object.keys(PROVIDERS) as Provider[]).map((p) => {
+    const key = keys.find((k) => k.provider === p);
+    return { provider: p, ...PROVIDERS[p], credential: key ? credentialView(key) : null };
+  });
 
 /** `boat_…9abc`: its kind and last four, as Boat lists keys. */
 export const hint = (key: string) => `${key.slice(0, key.indexOf("_") + 1)}…${key.slice(-4)}`;
@@ -99,11 +116,11 @@ function problemAfter(row: CredentialRow, req: HttpRequest, out: Outcome<null>):
 }
 
 /**
- * Sends `req` with this user's own key. A refusal only they can fix (the key, its scope, their plan) is kept on their
+ * Sends `req` with this user's own key for `provider`. A refusal only they can fix (the key, its scope, their plan) is kept on their
  * key for the apps to show, and cleared by the next call that shows it fixed.
  */
-export async function providerSend(env: Env, userId: string, req: HttpRequest, now = Date.now()): Promise<HttpResponse> {
-  const row = await credentialFor(env, userId);
+export async function providerSend(env: Env, userId: string, provider: Provider, req: HttpRequest, now = Date.now()): Promise<HttpResponse> {
+  const row = await credentialFor(env, userId, provider);
   const key = row && (await open(env, userId, row.provider, { sealed: row.sealed, keyId: row.key_id }));
   if (!row || !key) return { status: 401, body: { code: "noKey", message: "No usable Boat key" } };
   const res = await sendWith(env, key, req);

@@ -3,7 +3,7 @@
 // never comes back out (`GET /v1/cloud-computers` shows its hint).
 
 import { boat, type Outcome } from "../../machines/src";
-import { credentialFor, credentialView, forgetCredential, problemText, type Provider, providerSend, saveCredential, sendWith } from "../cloud-credentials";
+import { credentialFor, credentialView, forgetCredential, isProvider, problemText, type Provider, providerSend, saveCredential, sendWith } from "../cloud-credentials";
 import { type CloudMachineRow, machineOf } from "../cloud-machines";
 import { ApiError, audit, body, type Ctx, user } from "./common";
 import { allowedUser, unreachable } from "./cloud-computers";
@@ -12,7 +12,7 @@ import { allowedUser, unreachable } from "./cloud-computers";
 const KEY = /^(boat|box)_[A-Za-z0-9_-]{8,200}$/;
 
 const provider = (raw: string | undefined): Provider => {
-  if (raw !== "boat") throw new ApiError("notFound");
+  if (!isProvider(raw)) throw new ApiError("notFound");
   return raw;
 };
 
@@ -58,18 +58,18 @@ function check(out: Outcome<unknown>, otherwise?: string) {
 async function checkReaches(c: Ctx, userId: string, key: string, machine: CloudMachineRow) {
   const res = await sendWith(c.env, key, boat.get(machine.provider_id));
   if (res.status === 404) {
-    const saved = boat.done(await providerSend(c.env, userId, boat.get(machine.provider_id), c.now));
+    const saved = boat.done(await providerSend(c.env, userId, machine.provider, boat.get(machine.provider_id), c.now));
     if (!saved.ok && !saved.retryable) return;
   }
   check(boat.done(res), "api_key_sandbox_forbidden");
 }
 
-/** `DELETE /v1/cloud-credentials/boat`: forgets the key. Not while a cloud computer runs on it: without the key
+/** `DELETE /v1/cloud-credentials/:provider`: forgets the key. Not while a cloud computer runs on it: without the key
  * Codync couldn't put it to sleep or delete it, and it would keep billing its owner. */
 export async function deleteCloudCredential(c: Ctx, [raw]: string[]) {
   const p = provider(raw);
   const u = await user(c);
-  if (await machineOf(c.env, u.userId)) throw new ApiError("conflict", "Delete your cloud computer first: Codync needs the key to put it to sleep.");
+  if ((await machineOf(c.env, u.userId))?.provider === p) throw new ApiError("conflict", "Delete your cloud computer first: Codync needs the key to put it to sleep.");
   if (!(await credentialFor(c.env, u.userId, p))) return {};
   await c.env.DB.batch([forgetCredential(c.env, u.userId, p), audit(c.env, u.userId, "cloudCredential.delete", p, "ok", c.now)]);
   return {};

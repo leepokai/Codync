@@ -141,6 +141,8 @@ enum Sub {
     Cloud(cloud_cli::CloudArgs),
     /// Your other computers: create a network, invite them, see who is around.
     Network(network_cli::NetworkArgs),
+    /// Share or stop sharing usage analytics from the command line.
+    Analytics(analytics_cli::AnalyticsArgs),
     /// Install and start the host as a background service (launchd / systemd --user).
     Install {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -449,6 +451,7 @@ async fn main() -> Result<()> {
         Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
         Sub::Cloud(args) => cloud_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
+        Sub::Analytics(args) => analytics_cli::run(args).await,
         Sub::Install { port } => {
             open_store()?;
             // Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so

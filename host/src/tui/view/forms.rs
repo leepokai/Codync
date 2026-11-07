@@ -15,6 +15,17 @@ use super::overlay::input_line;
 use super::set_cursor;
 use super::style::{FACE, avatar, bot_color, face_style, theme};
 use super::time::{MONTHS, local, month_day};
+use codync_mem::compaction::Threshold;
+
+/// A compaction threshold as the apps name it: a choice, or the size as "120K".
+fn compaction_label(at: Threshold) -> String {
+    match at {
+        Threshold::Early => tr("Early (default)").into_owned(),
+        Threshold::NearLimit => tr("Near the limit").into_owned(),
+        Threshold::Off => tr("Only when full").into_owned(),
+        Threshold::Tokens(n) => format!("{}K", n / 1000),
+    }
+}
 
 /// "created by Lead · Oct 20" for a bot another bot created (`chat::manage`).
 fn created_by(app: &App, id: &str) -> Option<String> {
@@ -22,6 +33,53 @@ fn created_by(app: &App, id: &str) -> Option<String> {
     let creator = app.bots.get(bot.created_by.as_deref()?).map_or("a bot", |b| b.name.as_str());
     let (month, day) = month_day(local(bot.created_at).0);
     Some(format!("created by {creator} · {} {day}", MONTHS[month]))
+}
+
+/// The rows a field's value takes.
+fn field_rows(field: Field) -> u16 {
+    if field == Field::Instructions { 3 } else { 1 }
+}
+
+/// The line under the fields: why saving failed, else what the focused field does.
+fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> {
+    let t = theme();
+    if let Some(e) = &f.error {
+        return Some((e.clone(), t.red));
+    }
+    let line = match f.current() {
+        Field::Fast => match app.bots.get(&f.bot_id).and_then(super::super::app::Bot::fast_refusal) {
+            Some(why) => return Some((why, t.amber)),
+            None => tr("Faster replies for more usage, on models that offer it (Claude Code, Codex)").into_owned(),
+        },
+        Field::Computer => tr("Set up on the computer: Codync → Settings → Computer access").into_owned(),
+        Field::Fallbacks => tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
+            .replace("{agent}", agent_name),
+        Field::SelfFallbacks => {
+            tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.").into_owned()
+        }
+        Field::Approvals => {
+            let choice = app.approval(f);
+            [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ").trim().to_owned()
+        }
+        Field::Compaction if f.compaction.is_none() => tr("Claude Code and Codex bots only").into_owned(),
+        Field::Compaction => {
+            let about = tr(
+                "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.",
+            );
+            let sizes = if f.compaction_sizes.is_empty() { tr("Sizes show after the bot's next reply") } else { "".into() };
+            [about, sizes].join(" ").trim().to_owned()
+        }
+        Field::Team => {
+            "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.".to_owned()
+        }
+        Field::Network => tr("Offered to the network: bots on your other computers can see and message this bot.").into_owned(),
+        Field::Assistants => {
+            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.")
+                .into_owned()
+        }
+        _ => return None,
+    };
+    Some((line, t.dim))
 }
 
 pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
@@ -44,7 +102,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let vw = inner.right().saturating_sub(vx);
     let mut y = inner.y + 1;
     let agent_name = app.agent_name(&f.backend);
-    for (i, field) in FIELDS.iter().enumerate() {
+    // The form can outgrow the terminal: it starts as far down as keeps the focused field in sight.
+    let room = inner.bottom().saturating_sub(2).saturating_sub(y);
+    let mut first = 0;
+    while first < f.field && FIELDS[first..f.field].iter().map(|field| field_rows(*field) + 1).sum::<u16>() >= room {
+        first += 1;
+    }
+    for (i, field) in FIELDS.iter().enumerate().skip(first) {
         let active = i == f.field;
         let base = if active { t.sel } else { t.panel };
         let lab = match field {
@@ -58,6 +122,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::SelfFallbacks => "Bot edits",
             Field::Folder => "Workspace",
             Field::Approvals => "Approvals",
+            Field::Compaction => "Summarize",
             Field::Notify => "Notify",
             Field::Computer => "Use computer",
             Field::Team => "Manage team",
@@ -70,7 +135,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         };
         let label = tr(lab);
         put(buf, fx, y, label_w, &label, if active { t.bold } else { t.secondary }.patch(t.panel));
-        let rows = if *field == Field::Instructions { 3 } else { 1 };
+        let rows = field_rows(*field);
         if active {
             restyle(buf, Rect::new(vx.saturating_sub(1), y, vw + 1, rows), t.sel);
         }
@@ -213,6 +278,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 let label = app.approval(f).label;
                 put(buf, vx, y, vw, &format!("‹ {} ›", tr(&label)), t.text.patch(base));
             }
+            Field::Compaction => {
+                let (value, style) = match f.compaction {
+                    Some(at) => (format!("‹ {} ›", compaction_label(at)), t.text),
+                    None => ("—".to_owned(), t.dim),
+                };
+                put(buf, vx, y, vw, &value, style.patch(base));
+            }
             Field::Computer => {
                 let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
                 let status = super::computer_access::status(&app.screen, app.online);
@@ -279,48 +351,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         }
     }
     let by = inner.bottom() - 1;
-    if let Some(e) = &f.error {
-        put(buf, inner.x, by - 1, inner.width, e, t.red.patch(t.panel));
-    } else if f.current() == Field::Fast {
-        let refusal = app.bots.get(&f.bot_id).and_then(super::super::app::Bot::fast_refusal);
-        let (line, style) = match refusal {
-            Some(why) => (why, t.amber),
-            None => {
-                (tr("Faster replies for more usage, on models that offer it (Claude Code, Codex)").into_owned(), t.dim)
-            }
-        };
+    if let Some((line, style)) = field_help(app, f, &agent_name) {
         put(buf, inner.x, by - 1, inner.width, &line, style.patch(t.panel));
-    } else if f.current() == Field::Computer {
-        put(
-            buf,
-            inner.x,
-            by - 1,
-            inner.width,
-            &tr("Set up on the computer: Codync → Settings → Computer access"),
-            t.dim.patch(t.panel),
-        );
-    } else if f.current() == Field::Fallbacks {
-        let line = tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
-            .replace("{agent}", &agent_name);
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
-    } else if f.current() == Field::SelfFallbacks {
-        let line = tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.");
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
-    } else if f.current() == Field::Approvals {
-        let choice = app.approval(f);
-        let line = [choice.note.unwrap_or_default(), tr(choice.detail).into_owned()].join(" ");
-        put(buf, inner.x, by - 1, inner.width, line.trim(), t.dim.patch(t.panel));
-    } else if f.current() == Field::Team {
-        let line =
-            "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.";
-        put(buf, inner.x, by - 1, inner.width, line, t.dim.patch(t.panel));
-    } else if f.current() == Field::Network {
-        let line = tr("Offered to the network: bots on your other computers can see and message this bot.");
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
-    } else if f.current() == Field::Assistants {
-        let line =
-            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.");
-        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
     }
     let save = if f.saving {
         " … Saving "
@@ -344,6 +376,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         | Field::Color
         | Field::Shape
         | Field::Approvals
+        | Field::Compaction
         | Field::Notify
         | Field::Computer
         | Field::Team

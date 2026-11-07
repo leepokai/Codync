@@ -1888,5 +1888,14 @@
   "Downloaded": "Téléchargé",
   "Tap to retry.": "Touchez pour réessayer.",
   "View": "Voir",
-  "Voice note": "Message vocal"
+  "Voice note": "Message vocal",
+  "Summarize long chats": "Résumer les longues discussions",
+  "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.": "Quand Codync résume cette discussion pour qu’elle puisse continuer. Si la discussion se remplit avant, l’agent la résume lui-même.",
+  "Early (default)": "Tôt (par défaut)",
+  "Near the limit": "Près de la limite",
+  "Set a size": "Choisir une taille",
+  "Sizes show after the bot's next reply": "Les tailles apparaissent après la prochaine réponse du bot",
+  "Only when full": "Seulement quand c'est plein",
+  "Summarize": "Résumés",
+  "Claude Code and Codex bots only": "Uniquement pour les bots Claude Code et Codex"
 }

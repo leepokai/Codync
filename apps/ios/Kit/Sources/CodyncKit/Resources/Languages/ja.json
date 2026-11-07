@@ -1888,5 +1888,14 @@
   "Downloaded": "ダウンロード済み",
   "Tap to retry.": "タップして再試行。",
   "View": "表示",
-  "Voice note": "ボイスメッセージ"
+  "Voice note": "ボイスメッセージ",
+  "Summarize long chats": "長いチャットを要約",
+  "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.": "Codync がこのチャットを要約して続けられるようにするタイミングです。先にチャットがいっぱいになった場合は、エージェントが自分で要約します。",
+  "Early (default)": "早め（デフォルト）",
+  "Near the limit": "上限の手前",
+  "Set a size": "サイズを指定",
+  "Sizes show after the bot's next reply": "ボットの次の返信後にサイズを選べます",
+  "Only when full": "満杯になったときだけ",
+  "Summarize": "要約",
+  "Claude Code and Codex bots only": "Claude Code と Codex のボットのみ"
 }

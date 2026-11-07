@@ -1888,5 +1888,14 @@
   "Downloaded": "已下載",
   "Tap to retry.": "點一下重試。",
   "View": "檢視",
-  "Voice note": "語音訊息"
+  "Voice note": "語音訊息",
+  "Summarize long chats": "壓縮對話",
+  "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.": "Codync 何時把這個對話壓縮成摘要，好讓對話繼續下去。對話若先塞滿，agent 會自己壓縮。",
+  "Early (default)": "提早（預設）",
+  "Near the limit": "接近上限",
+  "Set a size": "指定數量",
+  "Sizes show after the bot's next reply": "Bot 下次回覆後就能指定數量",
+  "Only when full": "不主動壓縮",
+  "Summarize": "壓縮",
+  "Claude Code and Codex bots only": "只適用於 Claude Code 和 Codex 的 bot"
 }

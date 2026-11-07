@@ -1,5 +1,5 @@
 import type { SharedFile } from '@shared/models'
-import type { MenuItem } from '../../components/Overlay'
+import type { MenuItem } from '../../components/Menu'
 import type { DownloadState } from '../../store/file-downloads'
 import { trNow } from '../../lib/l10n.ts'
 import type { AudioSnapshot } from './shared-audio'

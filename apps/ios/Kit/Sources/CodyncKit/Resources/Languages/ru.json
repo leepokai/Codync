@@ -1888,5 +1888,14 @@
   "Downloaded": "Загружено",
   "Tap to retry.": "Нажмите, чтобы повторить.",
   "View": "Открыть",
-  "Voice note": "Голосовое сообщение"
+  "Voice note": "Голосовое сообщение",
+  "Summarize long chats": "Сжатие длинных чатов",
+  "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.": "Когда Codync сжимает этот чат в сводку, чтобы его можно было продолжить. Если чат заполнится раньше, агент сожмёт его сам.",
+  "Early (default)": "Рано (по умолчанию)",
+  "Near the limit": "У предела",
+  "Set a size": "Задать размер",
+  "Sizes show after the bot's next reply": "Размеры появятся после следующего ответа бота",
+  "Only when full": "Только когда заполнится",
+  "Summarize": "Сжатие",
+  "Claude Code and Codex bots only": "Только для ботов Claude Code и Codex"
 }

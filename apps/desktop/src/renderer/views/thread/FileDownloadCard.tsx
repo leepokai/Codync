@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { showsAsAudio, showsAsImage, type Entry, type SharedFile } from '@shared/models'
 import { useStore } from '../../store/context'
 import { Icon } from '../../components/Icon'
-import { AnchoredMenu, IconButtonBase, useContextMenu } from '../../components/Overlay'
+import { AnchoredMenu, useContextMenu } from '../../components/Menu'
+import { IconButtonBase } from '../../components/Overlay'
 import { Spinner } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -85,7 +86,7 @@ function useFileStop(entry: Entry, file: SharedFile, audio?: AudioSnapshot, togg
     if (!action) return
     e.preventDefault()
     if (action.kind === 'seek') seek?.(action.seconds)
-    else if (action.kind === 'first') actions()[0].action()
+    else if (action.kind === 'first') actions()[0].action?.()
     else {
       const { left, bottom } = e.currentTarget.getBoundingClientRect()
       menu.openAt({ x: left, y: bottom })
@@ -102,7 +103,7 @@ function useFileStop(entry: Entry, file: SharedFile, audio?: AudioSnapshot, togg
     props: {
       role: 'button',
       tabIndex: 0,
-      onClick: (e: React.MouseEvent) => clickRunsFirstAction(e.target as Element) && actions()[0].action(),
+      onClick: (e: React.MouseEvent) => clickRunsFirstAction(e.target as Element) && actions()[0].action?.(),
       onKeyDown,
       onContextMenu: menu.onContextMenu,
     },

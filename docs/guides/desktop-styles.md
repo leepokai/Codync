@@ -21,7 +21,7 @@ How the desktop renderer (`apps/desktop/src/renderer/`) styles its views. Views 
 | Reorder by dragging | `pointerDrag` (`lib/pointer-drag.ts`), not native drag and drop: the pointer holds a closed hand, and a roster row lifts as a smaller, translucent copy that settles into its slot |
 | A sheet's content | `<SheetPage>` with a `ModalHeader` (`Overlay.tsx`); `ModalHeader` takes an `icon` (an SF Symbol name on a tile, or a logo element), a title that wraps to two lines, a `subtitle` (up to two lines, the rest in its tooltip), and `onClose` when it heads a panel instead of a modal. A `Sheet` without `height` fits its content up to `maxHeight` (and the window); `FormSheet` does that unless `fixed` (content that fills the card or slides in pages that do: a terminal, an agent sheet) |
 | One line with an ellipsis on an element that isn't `Text` | `.truncate` |
-| Controls | `Controls.tsx`, `Overlay.tsx`, `Icon.tsx`; `Hairline`, `Pill`, `Switch` and `ProgressBar` take a `className` for a view's own sizing, and a panel beside an anchor is placed with `anchorPlacement` |
+| Controls | `Controls.tsx`, `Overlay.tsx`, `Menu.tsx`, `Icon.tsx`; `Hairline`, `Pill`, `Switch` and `ProgressBar` take a `className` for a view's own sizing, and a panel beside an anchor is placed with `anchorPlacement` |
 
 ## Where a style goes
 

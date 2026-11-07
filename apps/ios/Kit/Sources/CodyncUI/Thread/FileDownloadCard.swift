@@ -23,6 +23,7 @@ struct FileDownloadCard: View {
         // One element reads the whole card; its buttons become named actions.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(file.name), \(caption)")
+        .accessibilityAction { firstAction() }
         .accessibilityActions {
             if file.showsAsAudio {
                 Button(audio.state == .playing ? L10n.tr("Pause") : L10n.tr("Play"), action: play)
@@ -33,6 +34,12 @@ struct FileDownloadCard: View {
             Button(busy ? L10n.tr("Cancel download") : L10n.tr("Download"), action: self.download)
         }
         .audioSeekAdjustable(file.showsAsAudio ? audio : nil)
+    }
+
+    /// A double tap runs what the card leads with: play a sound, open a picture, else download (Android's and the
+    /// desktop's first action, the voice-note bubble's double tap).
+    private func firstAction() {
+        if file.showsAsAudio { play() } else if file.showsAsImage { viewing = true } else { download() }
     }
 
     /// The picture itself; tap for full size.

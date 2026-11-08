@@ -227,6 +227,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.mark_read(str_arg(&b, "botId")?)?;
             json!({})
         }
+        // A message and everything after it read unread again; the chat stays unread until opened.
+        "markUnread" => json!({"unread": hub.mark_unread(str_arg(&b, "botId")?, str_arg(&b, "entryId")?)?}),
         // One chunk of a file for a later `send` (`attachments`); base64 `data` at `offset`.
         "upload" => {
             use base64::Engine as _;

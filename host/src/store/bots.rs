@@ -133,18 +133,29 @@ impl Store {
         Ok(rev)
     }
 
+    /// Moves the read mark back to just before one message, so it and what follows read unread.
+    pub fn set_read_rev(&self, id: &str, read_rev: i64) -> Result<i64> {
+        let c = self.db.locked();
+        let rev = next_rev(&c)?;
+        c.execute("UPDATE bots SET read_rev = ?2, rev = ?3 WHERE id = ?1", params![id, read_rev, rev])?;
+        Ok(rev)
+    }
+
     /// Final agent messages + pending permission cards newer than what the user has read. A reacted-to message
     /// doesn't count again when it changes: the user reacted, so they have seen it. A bot's reaction isn't a change
     /// either (`contentRev`, see `Hub::bot_react`). Nor is a reply on a voice call: the user heard it.
+    /// A thread's replies count against the thread's own mark until the thread is read.
     pub fn unread(&self, id: &str, read_rev: i64) -> i64 {
         let c = self.db.locked();
         let n = c.query_row(
             &format!(
-                "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id IS NULL AND
+                "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND
                ((kind = 'agent' AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.call') IS NULL) OR
                 (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
                json_extract(data, '$.reactions') IS NULL AND
-               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2"
+               COALESCE(json_extract(data, '$.contentRev'), rev) >
+                 CASE WHEN thread_id IS NULL THEN ?2
+                      ELSE COALESCE((SELECT read_rev FROM thread_reads t WHERE t.thread_id = entries.thread_id), 0) END"
             ),
             params![id, read_rev],
             |r| r.get(0),
@@ -302,6 +313,20 @@ mod tests {
         let heard = serde_json::json!({"text": "heard on it", "final": true, "call": "c"});
         s.insert_entry(&Lane::main("b1"), EntryKind::Agent, 2, &heard).unwrap();
         assert_eq!((s.unread("b1", r), s.last_message("b1").unwrap().text.as_str()), (0, "yo!"));
+        // A thread's reply counts as unread on the bot, against the thread's own mark, until the thread is read.
+        let root = s
+            .insert_entry(&Lane::main("b1"), EntryKind::Agent, 2, &serde_json::json!({"text": "root", "final": true}))
+            .unwrap();
+        let thread = Lane::in_thread("b1", &root.id);
+        s.insert_entry(&thread, EntryKind::Agent, 2, &serde_json::json!({"text": "reply", "final": true})).unwrap();
+        let chat_read = s.mark_read("b1").unwrap();
+        assert_eq!(s.unread("b1", chat_read), 1, "reading the chat leaves the thread reply unread");
+        s.mark_thread_read(root.id.as_str()).unwrap();
+        assert_eq!(s.unread("b1", chat_read), 0, "reading the thread clears it");
+        // The read mark goes back to just before a message.
+        let mark = s.set_read_rev("b1", root.rev - 1).unwrap();
+        assert!(s.unread("b1", root.rev - 1) > 0);
+        assert!(mark > chat_read);
 
         let reply = serde_json::json!({"text": "done", "final": true});
         // A deleted bot stays deleted, and its winding-down actor leaves no lines behind.

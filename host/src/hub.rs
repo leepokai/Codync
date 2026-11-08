@@ -439,6 +439,22 @@ impl Hub {
         Ok(())
     }
 
+    /// Makes a message and everything after it unread again, as the desktop and the phone do.
+    /// Opening the chat clears it.
+    pub fn mark_unread(&self, bot: &str, entry: &str) -> Result<i64> {
+        let Some(row) = self.store.bot(bot)? else { bail!("unknown bot") };
+        let Some(target) = self.store.entry(entry).filter(|e| e.bot_id == bot) else { bail!("unknown entry") };
+        let read_rev = (target.rev - 1).max(0);
+        if row.read_rev != read_rev {
+            let _g = self.emit_lock.locked();
+            self.store.set_read_rev(bot, read_rev)?;
+            if let Some(v) = self.bot_value(bot) {
+                let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
+            }
+        }
+        Ok(self.store.unread(bot, read_rev))
+    }
+
     #[cfg(test)]
     pub fn bot_value_for_test(&self, id: &str) -> Value {
         self.bot_value(id).unwrap_or(Value::Null)

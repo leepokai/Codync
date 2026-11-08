@@ -114,6 +114,10 @@ win:
     # extraResources skips node_modules by default: name it, so the bridge's packages ship.
     - from: build/native/whatsapp/node_modules
       to: whatsapp/node_modules
+    # ComfyUI's portable (ComfyUI/ + python_embeded/, no models), unpacked by packaging/comfy/fetch.mjs;
+    # the host starts it from beside itself. Empty on Windows ARM64.
+    - from: build/native/comfy
+      to: comfy
     # The tray icon (template glyphs are for macOS).
     - from: resources/icon.png
       to: icon.png

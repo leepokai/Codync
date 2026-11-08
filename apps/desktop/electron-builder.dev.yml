@@ -52,5 +52,8 @@ win:
     # extraResources skips node_modules by default: name it, so the bridge's packages ship.
     - from: build/native/whatsapp/node_modules
       to: whatsapp/node_modules
+    # ComfyUI's portable, as in the base config (this list replaces the base one).
+    - from: build/native/comfy
+      to: comfy
     - from: resources/icon.png
       to: icon.png

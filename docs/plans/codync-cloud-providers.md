@@ -30,7 +30,7 @@ sleep/wake and terms below.
 
 | Provider | Isolation | Disk kept | Run limit | Sleep and wake | Price, 2 vCPU-ish | Terms for serving our users | Asia region |
 |---|---|---|---|---|---|---|---|
-| **InstaBox** (InsForge) | Firecracker | yes, root + `/data` | none | pause keeps memory; resume 8.3 s measured (dashboard), API or public-port visit wakes | 2 vCPU/4 GiB $15.3 always on; Team $500/month floor, Pro $20 (≤5 machines) | no reselling access; terms cover end users of your services (§4c): confirm | no (US) |
+| **InstaBox** (InsForge; rechecked 2026-11-08) | Firecracker, Debian 13, systemd, passwordless `sudo` | yes, root + `/data`; stopped machines never expire; named snapshots free and never expire | none on paid plans; Free pauses after 30 min idle (an open WebSocket counts as idle), 8 h per run | `stop` keeps the disk, `suspend` also keeps memory; resume 8.3 s measured (dashboard) | per second while running: 2 vCPU/4 GiB ≈ $12.4/month always on; plans Free (1 machine, 4/8 only), Pro $20, Builder $100, Team $500, each paid back as usage | BYOC: the user is the customer; Free forbids keep-alive tricks (§2e) | no (AWS us-west-2) |
 | **Fly Machines** | Firecracker | volume only; root disk reset on cold start | none | suspend keeps memory (≤2 GB), resume "hundreds of ms"; Fly proxy wakes on any request; stop/start otherwise | shared-cpu-2x 2 GB $13.4 (Virginia) / $17.5 (Tokyo) + $0.15/GB volume | "internal use" boilerplate, but Fly documents one app per user for user environments; MausBot sells this on Fly | Tokyo, Singapore |
 | **Fly Sprites** | Firecracker (hardware microVM) | yes, 100 GB | none, but sleeps after ~30 s idle; outbound sockets don't count | wake on URL, 0.1–2 s; keep awake with the Tasks API | usage-based CPU/RAM; idle ≈ $0.02/GB·month cold storage | same Fly terms | region not selectable |
 | **Vercel Sandbox** | Firecracker, own kernel, Ubuntu 26.04 | snapshot on stop (30-day default expiry, can be off) | 24 h per session (Pro), 45 min (Hobby) | resume through the SDK; wake by URL unconfirmed | active CPU $0.128/h + $0.0212/GB·h memory (~$71/month always on) | "make the Services available to any third party" forbidden | Tokyo, Singapore, Seoul, Hong Kong |
@@ -113,8 +113,40 @@ number to beat: measure our own image before choosing it.
   wake is a reboot (seconds, unmeasured for our image), and the account-wide daily start limit caps how many wakes a day
   we can sell before a bigger plan or a committed deal.
 - Left for a persistent, sleeping computer: **Fly Machines** (Asia regions, wake by request, a proven
-  per-user pattern), **InstaBox** (persistent root disk, cheapest units, US only, $500 floor) and
+  per-user pattern), **InstaBox** (persistent root disk, cheapest units, US only; see below) and
   **Cloudflare Containers + R2 backups** (our own platform, cold wakes, more to build), with Blaxel (terms
   allow it) and exe.dev (cheapest always-on, no resale) as outsiders.
 - Big clouds and VPSs work for an always-on machine with standard terms, but sleeping there means a full
   stop and boot.
+
+## InstaBox as the second BYOC provider (read 2026-11-08)
+
+From its own docs and OpenAPI (`https://api.instabox.sh/v1/openapi.json`); no account, so nothing was called.
+Everything the adapter needs exists: REST with `X-API-Key: ibk_…`, create/get/stop/suspend/start/delete, named
+snapshots (`POST /v1/machines/{id}/snapshots`, `DELETE /v1/snapshots/{id}`, create with `snapshotId`), exec, and a
+per-machine cost endpoint (`GET /v1/machines/{id}/usage`). What differs from Boat:
+
+- **Keys reach the whole workspace.** Scopes are per action (`machines:read/write/delete`, `images:*`,
+  `workspace:admin`), never per group of machines, and `machines:write` includes exec: Codync could run commands on
+  every machine in the user's workspace, not only its own. A second workspace costs extra. The owner decides whether
+  that is acceptable before this ships. Admin keys are told apart only by probing (`GET /v1/orgs/{id}/invites`: 200 =
+  admin, `403 missing_scope` = scoped), unverified.
+- **No files or setup script at create.** The Worker waits for `ready`, then provisions with
+  `POST /v1/machines/{id}/exec` (`sudo bash -s` on stdin, ≤1 MiB, ≤600 s): a new provisioning step in the machine's life.
+- **Lifecycle calls answer 202 with an operation** (`GET /v1/operations/{id}?wait=25s`) and all of them need an
+  `Idempotency-Key`, stop and delete too; delete also needs `X-Confirm-Delete: <id>`.
+- `suspended` is a state of its own (`stop` on it is refused); create must pass `vault: false, secrets: []` (a machine
+  with org secrets gets an HTTPS-intercepting proxy); snapshot names are unique (Boat overwrites).
+- Free plan: one machine per account, 4 vCPU/8 GiB only, templates `agent-browser`, `android`, `ci` only. Sign-up may
+  still have a waitlist.
+
+## Provider-neutral SDKs (read 2026-11-08)
+
+Keep one small adapter per provider. ComputeSDK (MIT, 59 providers, neither Boat nor InstaBox) wraps each vendor's
+Node SDK (E2B ~2.9 MB, Daytona pulls aws-sdk and OpenTelemetry, Modal uses gRPC), so it would send requests itself
+inside the Worker instead of our `providerSend`, and it has no key checks; the same verb also means different things
+per provider (its Daytona `pause()` stops). OpenAI Agents SDK sandbox clients, Rivet Sandbox Agent and Vercel eve
+abstract a short-lived agent workspace (create, exec, close, SDK-made workspace snapshots), not a machine that stops
+with its disk and keeps never-expiring snapshots. Worth borrowing: ComputeSDK's capability fields (whether a pause
+keeps memory, a snapshot's scope and whether it expires, the longest run) to describe each provider in
+`cloud/machines/src/types.ts`, and its per-provider source as notes on each API's quirks.

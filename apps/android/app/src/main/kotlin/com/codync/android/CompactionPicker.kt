@@ -33,7 +33,7 @@ import com.codync.android.design.*
 internal fun CardRows.compactionRow(bot: Bot?, draft: BotDraft, change: (BotDraft) -> Unit) {
     val choice = draft.compaction ?: return
     row {
-        ValueRow("Summarize long chats", detail = "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.") {
+        ValueRow("Summarize long chats", detail = "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.") {
             CompactionPicker(choice, bot?.compactionTokens) { change(draft.copy(compaction = it)) }
         }
     }
@@ -53,7 +53,7 @@ internal fun CardRows.compactionRow(bot: Bot?, draft: BotDraft, change: (BotDraf
 }
 
 private fun compactionRows(choice: Compaction, tokens: CompactionTokens?, select: (Compaction) -> Unit, custom: () -> Unit): List<MenuItem> {
-    val presets = listOf(Compaction.Early, Compaction.NearLimit, Compaction.Off).map { preset ->
+    val presets = listOf(Compaction.Off, Compaction.Early, Compaction.NearLimit).map { preset ->
         MenuItem(preset.label, selected = choice == preset) { select(preset) }
     }
     if (tokens == null) return presets + MenuItem("Sizes show after the bot's next reply", divider = true, enabled = false)

@@ -101,8 +101,9 @@ cargo add rusqlite@0.40 --features bundled
   run also tidies it into the notes of their topics.
 - `legacy`: the memory entries of codync-mem 0.1, read once to move them into files.
 - `evidence`: what counts as the user's own words (not pasted, quoted or forwarded text).
-- `compaction`: when to summarize a conversation ahead of time (by default or at the size the user picks), the loop
-  guard, the keep-list and the handoff to a fresh conversation.
+- `compaction`: when to summarize a conversation ahead of time (early, near the limit or at a size the user picks;
+  by default never, leaving it to the harness), the loop guard, the keep-list and the handoff to a fresh
+  conversation.
 - `tokens`: the token estimate the caps count in (one per CJK character, one per four others).
 
 ## License

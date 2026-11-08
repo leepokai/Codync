@@ -305,7 +305,7 @@ impl Form {
     /// When Codync summarizes the chat, in the order ← → steps through: the three choices, then the sizes a menu lists.
     pub fn compaction_choices(&self) -> Vec<Threshold> {
         let presets = self.compaction_sizes.iter().flat_map(|s| s.presets.iter().map(|&n| Threshold::Tokens(n)));
-        [Threshold::Early, Threshold::NearLimit, Threshold::Off].into_iter().chain(presets).collect()
+        [Threshold::Off, Threshold::Early, Threshold::NearLimit].into_iter().chain(presets).collect()
     }
 
     /// A digit typed into the size (thousands of tokens), or Backspace (`None`); held to the window's sizes on save.
@@ -435,10 +435,12 @@ mod tests {
         let mut app = test_app();
         let f = compaction_editor(&mut app, &json!("off"));
         let f = press(&mut app, f, [KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"compaction": "early"}), "auto first, then Codync's own");
+        let f = press(&mut app, f, [KeyCode::Right, KeyCode::Right]);
         assert_eq!(f.changes(), json!({"compaction": 100_000}));
-        let f = press(&mut app, f, [KeyCode::Left]);
+        let f = press(&mut app, f, [KeyCode::Left, KeyCode::Left, KeyCode::Left]);
         assert_eq!(f.changes(), json!({}));
-        assert_eq!(f.compaction_choices().len(), 5, "early, near the limit, only when full, 100K, 200K");
+        assert_eq!(f.compaction_choices().len(), 5, "auto, early, near the limit, 100K, 200K");
 
         for (key, next) in [(KeyCode::Right, 200_000), (KeyCode::Left, 100_000)] {
             let f = compaction_editor(&mut app, &json!(150_000));

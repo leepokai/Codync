@@ -21,9 +21,9 @@ use codync_mem::compaction::Threshold;
 /// A compaction threshold as the apps name it: a choice, or the size as "120K".
 fn compaction_label(at: Threshold) -> String {
     match at {
-        Threshold::Early => tr("Early (default)").into_owned(),
+        Threshold::Off => tr("Auto (default)").into_owned(),
+        Threshold::Early => tr("Early").into_owned(),
         Threshold::NearLimit => tr("Near the limit").into_owned(),
-        Threshold::Off => tr("Only when full").into_owned(),
         Threshold::Tokens(n) => format!("{}K", n / 1000),
     }
 }
@@ -68,7 +68,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         Field::Compaction if f.compaction.is_none() => tr("Claude Code and Codex bots only").into_owned(),
         Field::Compaction => {
             let about = tr(
-                "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.",
+                "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.",
             );
             let sizes = f.compaction_sizes.as_ref().map_or_else(
                 || tr("Sizes show after the bot's next reply").into_owned(),

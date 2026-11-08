@@ -31,8 +31,8 @@ fn harness_adapter(backend: &str) -> Adapter {
 }
 
 /// The user's threshold where Codync compacts the bot's chat: by the adapter running it, or with none running (a
-/// custom command released or not started yet) by what its agent last reported. Elsewhere rollovers follow the
-/// default's.
+/// custom command released or not started yet) by what its agent last reported. Elsewhere the default: the agent's
+/// own compaction, and no rollovers.
 fn threshold(store: &Store, cfg: &BotConfig, running: Option<Adapter>) -> Threshold {
     let compacts = running.map_or_else(|| offers_threshold(store, cfg), |adapter| adapter != Adapter::Other);
     if compacts { cfg.compaction } else { Threshold::default() }
@@ -380,12 +380,13 @@ mod tests {
         let path = std::env::temp_dir().join(format!("codync-threshold-{}.db", uuid::Uuid::new_v4()));
         let store = Store::open(&path).unwrap();
         let cfg: BotConfig =
-            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "custom", "compaction": "off"})).unwrap();
-        assert_eq!(threshold(&store, &cfg, None), Threshold::Early, "not known to run Claude's or Codex's adapter yet");
+            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "custom", "compaction": "nearLimit"}))
+                .unwrap();
+        assert_eq!(threshold(&store, &cfg, None), Threshold::Off, "not known to run Claude's or Codex's adapter yet");
         store.kv_set(&window_key("b"), "1000000").unwrap();
-        assert_eq!(threshold(&store, &cfg, None), Threshold::Off, "released after it reported its window");
-        assert_eq!(threshold(&store, &cfg, Some(Adapter::Claude)), Threshold::Off);
-        assert_eq!(threshold(&store, &cfg, Some(Adapter::Other)), Threshold::Early, "now running another adapter");
+        assert_eq!(threshold(&store, &cfg, None), Threshold::NearLimit, "released after it reported its window");
+        assert_eq!(threshold(&store, &cfg, Some(Adapter::Claude)), Threshold::NearLimit);
+        assert_eq!(threshold(&store, &cfg, Some(Adapter::Other)), Threshold::Off, "now running another adapter");
         let cold = Conversation { used: 150_000, size: 1_000_000, last_turn: 1, ..Conversation::default() };
         assert!(!rules::rollover_due(&cold, threshold(&store, &cfg, None), CacheLife::FiveMinutes, 2 * 3_600_000));
         std::fs::remove_file(&path).ok();

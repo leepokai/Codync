@@ -7,12 +7,13 @@ import org.junit.Test
 class CompactionTest {
     private fun bot(fields: String): Bot = WireJson.decodeFromString("""{"id": "b", "name": "B" $fields}""")
 
-    @Test fun `a bot reads each compaction choice, and a newer host's name as early`() {
+    @Test fun `a bot reads each compaction choice, and a newer host's name as the default`() {
         assertEquals(Compaction.Early, bot(""", "compaction": "early"""").compaction)
         assertEquals(Compaction.NearLimit, bot(""", "compaction": "nearLimit"""").compaction)
         assertEquals(Compaction.Off, bot(""", "compaction": "off"""").compaction)
         assertEquals(Compaction.Tokens(120_000), bot(""", "compaction": 120000""").compaction)
-        assertEquals(Compaction.Early, bot(""", "compaction": "later"""").compaction)
+        assertEquals("Auto, the default", Compaction.Off, bot(""", "compaction": "later"""").compaction)
+        assertEquals("Auto (default)", Compaction.Off.label)
         assertNull("no setting where Codync doesn't summarize", bot(""", "compaction": null""").compaction)
         assertNull(bot("").compaction)
     }

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// By default, compact past three quarters of the window or this many tokens, whichever is less: the summary needs
+/// Early compacts past three quarters of the window or this many tokens, whichever is less: the summary needs
 /// room, and a hot cache makes reading the history cheap.
 const TURN_END_CAP: u64 = 200_000;
 /// A size the user sets is a multiple of this...
@@ -20,11 +20,12 @@ const PRESET_STEP: u64 = 100_000;
 #[serde(from = "Wire", into = "Wire")]
 pub enum Threshold {
     /// At three quarters of the window or 200k, whichever is less; idle compaction and rollovers past 100k.
-    #[default]
     Early,
     /// At the largest size the window allows ([`sizes`]), never sooner than [`Threshold::Early`].
     NearLimit,
-    /// Never: the harness's own compaction, when a turn fills the window, is all there is.
+    /// Never: the harness's own compaction, when a turn fills the window, is all there is. The default (the apps call
+    /// it Auto): the agent decides unless the user chooses otherwise.
+    #[default]
     Off,
     /// At this many tokens, held to the [`sizes`] the window allows.
     Tokens(u64),
@@ -52,9 +53,9 @@ impl From<Wire> for Threshold {
     fn from(wire: Wire) -> Self {
         match wire {
             Wire::Tokens(n) => Self::Tokens(n),
-            Wire::Name(Name::Early) | Wire::Other(_) => Self::Early,
+            Wire::Name(Name::Early) => Self::Early,
             Wire::Name(Name::NearLimit) => Self::NearLimit,
-            Wire::Name(Name::Off) => Self::Off,
+            Wire::Name(Name::Off) | Wire::Other(_) => Self::Off,
         }
     }
 }
@@ -93,7 +94,7 @@ impl Threshold {
     }
 
     /// The context use that compacts a conversation in a window of `window` tokens at the end of a turn; `None` when
-    /// the user turned that off. A window too small for a size gets the default's.
+    /// the user turned that off. A window too small for a size gets Early's.
     pub(super) fn trigger(self, window: u64) -> Option<u64> {
         let early = (window / 4 * 3).min(TURN_END_CAP);
         let max = max_tokens(window);
@@ -155,7 +156,8 @@ mod tests {
             assert_eq!(serde_json::to_value(threshold).unwrap(), wire);
             assert_eq!(serde_json::from_value::<Threshold>(wire).unwrap(), threshold);
         }
-        assert_eq!(serde_json::from_value::<Threshold>(json!("later")).unwrap(), Threshold::Early, "a newer app's");
+        assert_eq!(serde_json::from_value::<Threshold>(json!("later")).unwrap(), Threshold::Off, "a newer app's");
+        assert_eq!(Threshold::default(), Threshold::Off, "the agent decides unless the user chooses");
     }
 
     #[test]
@@ -179,6 +181,6 @@ mod tests {
     fn near_the_limit_is_never_sooner_than_early() {
         assert_eq!(Threshold::NearLimit.trigger(1_000_000), Some(960_000));
         assert_eq!(Threshold::NearLimit.trigger(128_000), Some(96_000), "a small window: three quarters of it");
-        assert_eq!(Threshold::NearLimit.trigger(64_000), Some(48_000), "too small for a size: the default's");
+        assert_eq!(Threshold::NearLimit.trigger(64_000), Some(48_000), "too small for a size: Early's");
     }
 }

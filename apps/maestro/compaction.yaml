@@ -1,7 +1,7 @@
 # A bot's Summarize long chats setting on the phones, in the Agent card of its details: once its agent has replied and
-# told its window, the menu has the three choices and Set a size, which lists sizes by 100K up to what the window holds
-# and Custom size… for one typed in; a size picked or typed shows on the pill and the host keeps it, and so does a
-# choice. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# told its window, the menu has the three choices (Auto, the default, first) and Set a size, which lists sizes by 100K
+# up to what the window holds and Custom size… for one typed in; a size picked or typed shows on the pill and the host
+# keeps it, and so does a choice, which reopened details show again. The phone must already be signed in and paired with the host (a worktree's sandbox,
 # docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
 # makes its own bot there:
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags bot-settings \
@@ -45,9 +45,9 @@ onFlowComplete:
 - scrollUntilVisible:
     element: "Summarize long chats"
     centerElement: true
-- tapOn: "Early \\(default\\)"
+- tapOn: "Auto \\(default\\)"
+- assertVisible: "Early"
 - assertVisible: "Near the limit"
-- assertVisible: "Only when full"
 - tapOn: "Set a size"
 - assertVisible: "900K"
 - tapOn: "100K"
@@ -71,8 +71,22 @@ onFlowComplete:
     env:
       STORED: "350000"
 - tapOn: "350K"
-- tapOn: "Only when full"
-- assertVisible: "Only when full"
+- tapOn: "Early"
+- assertVisible: "Early"
+- runScript:
+    file: compaction.js
+    env:
+      STORED: "early"
+# Reopened, the details read the choice back from the host.
+- tapOn: "Close details"
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Details"
+- scrollUntilVisible:
+    element: "Summarize long chats"
+    centerElement: true
+- tapOn: "Early"
+- tapOn: "Auto \\(default\\)"
+- assertVisible: "Auto \\(default\\)"
 - runScript:
     file: compaction.js
     env:

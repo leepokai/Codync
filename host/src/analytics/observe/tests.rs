@@ -267,7 +267,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
     assert_eq!((&p["fields"], &p["compaction"]), (&json!(["compaction"]), &json!("tokens")), "the kind, not the size");
     // The apps send the whole form: an unchanged threshold in it isn't a pick.
     let (_, p) =
-        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "name": "c", "compaction": "early"}))
+        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "name": "c", "compaction": "off"}))
             .unwrap();
     assert_eq!(p["fields"], json!(["name"]));
     assert!(p.get("compaction").is_none());

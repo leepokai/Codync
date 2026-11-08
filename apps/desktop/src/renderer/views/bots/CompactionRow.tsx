@@ -14,12 +14,12 @@ export function CompactionRow({ draft, bot, onChange }: {
 }) {
   const tr = useTr()
   const [typing, setTyping] = useState<string | null>(null)
-  const selection = draft.compaction ?? bot.compaction ?? 'early'
+  const selection = draft.compaction ?? bot.compaction ?? 'off'
   const { title, verbatim } = compactionLabel(selection)
   const label = verbatim ? title : tr(title)
   const pick = (compaction: BotDraft['compaction']) => onChange((d) => ({ ...d, compaction }))
   return (
-    <ValueRow label="Summarize long chats" detail="When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.">
+    <ValueRow label="Summarize long chats" detail="Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.">
       <DropdownMenu
         title={label}
         className="choice-picker outlined"

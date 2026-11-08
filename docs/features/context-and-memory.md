@@ -160,7 +160,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   from `usage_update`, compactions, and when turns end. How long the provider keeps prompts cached is learned
   from turns that came after a pause (`cache.life.<bot>`); until then it is an hour for Claude on a subscription
   and five minutes otherwise. Each turn's cached read and write tokens are logged (`turn usage`).
-- **Compacting ahead of time**, in the bot's own chat only (never rooms, routines or bot requests):
+- **Compacting ahead of time**, when the user's threshold asks for it (Early's rules here), in the bot's own chat
+  only (never rooms, routines or bot requests):
   - at the end of a turn past three quarters of the window or 200k tokens, whichever is less;
   - while idle, with a one-hour cache and over 100k in use, five minutes before the cache expires.
 
@@ -169,10 +170,10 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   `CODEX_CONFIG` `compact_prompt`. Other harnesses compact on their own. The keep-list is also in the opening.
   A compaction queued behind another turn runs only if it is still due when its turn comes.
 - **The user's threshold** (*Summarize long chats* in a Claude Code or Codex bot's settings, the bot's
-  `compaction`): Early (the default above), Near the limit, Only when full (no compaction or rollover from the
-  host), or a size from 50k up to the window less 40k (the apps list 100k steps and take any other size typed,
-  rounded to 10k). A size or Near the limit also keeps idle compaction and the cold rollover away until the
-  context reaches it. The bot's JSON carries `compaction`
+  `compaction`): Auto (`"off"`, the default: no compaction or rollover from the host, the harness compacts on its
+  own), Early (the rules above), Near the limit, or a size from 50k up to the window less 40k (the apps list 100k
+  steps and take any other size typed, rounded to 10k). A size or Near the limit also keeps idle compaction and
+  the cold rollover away until the context reaches it. The bot's JSON carries `compaction`
   (`null` for other agents, or a custom command until it turns out to run Claude's or Codex's adapter) and
   `compactionTokens` (`{min, max, step, presets}`, `null` until the agent has reported the window, kept in
   `context.window.<bot>`). The rules and the table are in the [design](../design/bot-memory.md#compaction).

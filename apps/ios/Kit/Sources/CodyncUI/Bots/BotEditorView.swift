@@ -149,7 +149,7 @@ struct BotSettingsForm: View {
     /// Only where the host summarizes this bot's chat (its bot says).
     @ViewBuilder private var compactionPicker: some View {
         if bot?.compaction != nil, draft.compaction != nil {
-            CompactionPicker(selection: Binding(get: { draft.compaction ?? .early }, set: { draft.compaction = $0 }),
+            CompactionPicker(selection: Binding(get: { draft.compaction ?? .off }, set: { draft.compaction = $0 }),
                              range: bot?.compactionTokens)
         }
     }

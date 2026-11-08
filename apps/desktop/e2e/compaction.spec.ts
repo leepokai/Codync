@@ -30,13 +30,17 @@ test('before its first reply a Claude Code bot offers only the three choices', a
     botId = (await api<{ bot: Bot }>(page, 'createBot', { name, backend: 'claude', connectors: [], skills: [], notify: false })).bot.id
     const row = await summarizeRow(page, name)
     const pill = row.locator('.choice-picker')
-    await expect(pill).toHaveText('Early (default)')
+    await expect(pill).toHaveText('Auto (default)')
     await pill.click()
-    for (const title of ['Early (default)', 'Near the limit', 'Only when full']) await expect(menuRow(page, title)).toBeEnabled()
+    for (const title of ['Auto (default)', 'Early', 'Near the limit']) await expect(menuRow(page, title)).toBeEnabled()
     await expect(menuRow(page, "Sizes show after the bot's next reply")).toBeDisabled()
     await expect(menuRow(page, 'Set a size')).toHaveCount(0)
-    await menuRow(page, 'Only when full').click()
-    await expect(pill).toHaveText('Only when full')
+    await menuRow(page, 'Early').click()
+    await expect(pill).toHaveText('Early')
+    await expect.poll(() => stored(page, botId!)).toBe('early')
+    await pill.click()
+    await menuRow(page, 'Auto (default)').click()
+    await expect(pill).toHaveText('Auto (default)')
     await expect.poll(() => stored(page, botId!)).toBe('off')
 
     // It moved off the Settings tab.
@@ -62,7 +66,7 @@ test('once the agent tells its window, Set a size lists sizes by 100K and takes 
 
     await typeMessage(page, 'USAGE 10000 SIZE 1000000')
     const pill = row.locator('.choice-picker')
-    await expect(pill).toHaveText('Early (default)', { timeout: 20_000 })
+    await expect(pill).toHaveText('Auto (default)', { timeout: 20_000 })
     await pill.click()
     await menuRow(page, 'Set a size').click()
     await expect(menuRow(page, /^100K$/)).toBeVisible()

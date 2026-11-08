@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// When Codync summarizes the bot's chat ahead of time: early, near the limit, off, or a size its window holds.
+/// When the bot's chat is summarized: by the agent (auto), or by Codync early, near the limit or at a size its window holds.
 struct CompactionPicker: View {
     @Binding var selection: CompactionThreshold
     /// Nil until the agent has told its window.
@@ -10,11 +10,11 @@ struct CompactionPicker: View {
     @State private var typed = ""
 
     private static let presets: [(CompactionThreshold, String)] =
-        [(.early, "Early (default)"), (.nearLimit, "Near the limit"), (.off, "Only when full")]
+        [(.off, "Auto (default)"), (.early, "Early"), (.nearLimit, "Near the limit")]
 
     var body: some View {
         ValueRow("Summarize long chats",
-                 detail: "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.") {
+                 detail: "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.") {
             DropdownMenu { items } label: {
                 HStack(spacing: 6) {
                     Text(verbatim: label).lineLimit(1)

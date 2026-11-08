@@ -11,6 +11,13 @@ use common::host::Host;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
+/// A fixture bot that Codync summarizes for: Early, since by default the agent decides.
+async fn early_bot(host: &Host, name: &str, mode: &str) -> String {
+    let bot = host.fixture_bot(name, "instructions_agent.py", mode).await;
+    host.call("updateBot", json!({"id": bot, "compaction": "early"})).await;
+    bot
+}
+
 /// Waits until the bot's chat has a notice with this field, and returns the newest one.
 async fn notice(host: &Host, bot: &str, field: &str) -> Value {
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -27,7 +34,7 @@ async fn notice(host: &Host, bot: &str, field: &str) -> Value {
 #[tokio::test]
 async fn a_full_conversation_is_compacted_with_its_keep_list() {
     let host = Host::start().await;
-    let claude = host.fixture_bot("Claude-like", "instructions_agent.py", "claude").await;
+    let claude = early_bot(&host, "Claude-like", "claude").await;
     host.reply(&claude, "hello").await;
     host.write_memory(Some(&claude), "MEMORY.md", "- Allergic to peanuts\n");
     host.reply(&claude, "USAGE 210000 SIZE 1000000").await;
@@ -42,7 +49,7 @@ async fn a_full_conversation_is_compacted_with_its_keep_list() {
     let opening = loads.last().unwrap()["params"]["_meta"]["systemPrompt"]["append"].as_str().unwrap();
     assert!(opening.contains("Allergic to peanuts"), "{opening}");
 
-    let codex = host.fixture_bot("Codex-like", "instructions_agent.py", "codex").await;
+    let codex = early_bot(&host, "Codex-like", "codex").await;
     host.reply(&codex, "USAGE 150000 SIZE 200000").await;
     notice(&host, &codex, "compaction").await;
     assert!(host.prompts(&codex).iter().any(|p| p == "/compact"), "Codex's keep-list is in its config");
@@ -62,7 +69,7 @@ async fn the_users_threshold_decides_when_the_host_compacts() {
             break shown;
         }
     };
-    assert_eq!(shown["compaction"], "early");
+    assert_eq!(shown["compaction"], "off", "by default the agent decides");
     assert_eq!(
         shown["compactionTokens"],
         json!({"min": 50_000, "max": 960_000, "step": 10_000, "presets": (1..=9).map(|n| n * 100_000).collect::<Vec<u64>>()})
@@ -75,18 +82,17 @@ async fn the_users_threshold_decides_when_the_host_compacts() {
     host.reply(&bot, "USAGE 300000 SIZE 1000000").await;
     notice(&host, &bot, "compaction").await;
 
-    let off = host.fixture_bot("Off", "instructions_agent.py", "codex").await;
-    host.call("updateBot", json!({"id": off, "compaction": "off"})).await;
-    host.reply(&off, "USAGE 950000 SIZE 1000000").await;
-    host.reply(&off, "next").await;
-    assert!(!host.prompts(&off).iter().any(|p| p == "/compact"), "left to the agent's own compaction");
-    assert!(host.refused("updateBot", json!({"id": off, "compaction": 123_456})).await.contains("multiple of"));
+    let auto = host.fixture_bot("Auto", "instructions_agent.py", "codex").await;
+    host.reply(&auto, "USAGE 950000 SIZE 1000000").await;
+    host.reply(&auto, "next").await;
+    assert!(!host.prompts(&auto).iter().any(|p| p == "/compact"), "by default left to the agent's own compaction");
+    assert!(host.refused("updateBot", json!({"id": auto, "compaction": 123_456})).await.contains("multiple of"));
 }
 
 #[tokio::test]
 async fn compacting_too_often_turns_into_a_rollover_the_user_can_edit_or_turn_down() {
     let host = Host::start().await;
-    let bot = host.fixture_bot("Busy", "instructions_agent.py", "codex").await;
+    let bot = early_bot(&host, "Busy", "codex").await;
     host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
     notice(&host, &bot, "compaction").await;
     // Full again right after a compaction: compacting again wouldn't help.
@@ -134,7 +140,7 @@ async fn compacting_too_often_turns_into_a_rollover_the_user_can_edit_or_turn_do
 #[tokio::test]
 async fn turning_summaries_off_withdraws_a_fresh_conversation_already_drafted() {
     let host = Host::start().await;
-    let bot = host.fixture_bot("Changed", "instructions_agent.py", "codex").await;
+    let bot = early_bot(&host, "Changed", "codex").await;
     host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
     notice(&host, &bot, "compaction").await;
     host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
@@ -191,7 +197,7 @@ fn compactions(host: &Host, bot: &str) -> usize {
 async fn a_queued_compaction_runs_only_while_still_due() {
     let host = Host::start().await;
     // The second turn queues another compaction, but the first one makes room.
-    let busy = host.fixture_bot("Busy", "instructions_agent.py", "codex").await;
+    let busy = early_bot(&host, "Busy", "codex").await;
     compaction_queued_behind_a_turn(&host, &busy).await;
     release(&host, &busy);
     notice(&host, &busy, "compaction").await;
@@ -199,7 +205,7 @@ async fn a_queued_compaction_runs_only_while_still_due() {
     assert_eq!(compactions(&host, &busy), 1);
 
     // Summaries turned off while it waits.
-    let off = host.fixture_bot("Off", "instructions_agent.py", "codex").await;
+    let off = early_bot(&host, "Off", "codex").await;
     compaction_queued_behind_a_turn(&host, &off).await;
     host.call("updateBot", json!({"id": off, "compaction": "off"})).await;
     release(&host, &off);

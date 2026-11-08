@@ -12,6 +12,8 @@ export const BOT_AVATAR_LOOKS = [
   'owl',
   'pixel',
   'hex',
+  'plush',
+
   'astro',
   'cat',
 ] as const
@@ -135,6 +137,19 @@ function renderHead(look: BotAvatarLook): ReactNode {
           <circle cx="9.5" cy="12.5" r="1.4" fill="currentColor" />
           <circle cx="14.5" cy="12.5" r="1.4" fill="currentColor" />
           <path d="M10.5 15.6c.9.7 2.1.7 3 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </>
+      )
+    case 'plush':
+      return (
+        <>
+          {/* A felt face: the fur is a ring of short strokes, the eyes large and open. */}
+          <circle cx="12" cy="12" r="8.4" fill="currentColor" />
+          <circle cx="12" cy="12" r="9.6" fill="none" stroke="currentColor" strokeWidth="1.1" strokeDasharray="0.7 1.2" strokeLinecap="round" />
+          <circle cx="9" cy="11.2" r="2.1" fill="var(--background)" />
+          <circle cx="15" cy="11.2" r="2.1" fill="var(--background)" />
+          <circle cx="9" cy="11.4" r="0.95" fill="currentColor" />
+          <circle cx="15" cy="11.4" r="0.95" fill="currentColor" />
+          <path d="M10.2 15c1 .9 2.6.9 3.6 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />
         </>
       )
   }

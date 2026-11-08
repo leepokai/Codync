@@ -20,8 +20,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 
 val ROBOT_AVATAR_LOOKS: List<String> = listOf(
     "round", "visor", "dome", "boxy", "cyclops", "ears",
-    "scout", "owl", "pixel", "astro", "cat", "hex"
+    "scout", "owl", "pixel", "astro", "cat", "hex", "plush"
 )
 
 fun isRobotLook(look: String?): Boolean = look != null && look in ROBOT_AVATAR_LOOKS
@@ -123,6 +123,22 @@ fun RobotAvatar(
                     drawPath(path, color = fg, style = Stroke(width = 2f * s))
                     drawCircle(color = fg, radius = 1.8f * s, center = Offset(14f * s, 20f * s))
                     drawCircle(color = fg, radius = 1.8f * s, center = Offset(22f * s, 20f * s))
+                }
+                "plush" -> {
+                    // A felt face: short fur strokes around the blob and large open eyes.
+                    val center = Offset(18f * s, 18f * s)
+                    val fur = 12.2f * s
+                    for (i in 0 until 26) {
+                        val a = i / 26f * 2f * Math.PI
+                        val from = Offset(center.x + (fur * Math.cos(a)).toFloat(), center.y + (fur * Math.sin(a)).toFloat())
+                        val to = Offset(center.x + ((fur + 1.5f * s) * Math.cos(a)).toFloat(), center.y + ((fur + 1.5f * s) * Math.sin(a)).toFloat())
+                        drawLine(fg.copy(alpha = 0.7f), from, to, strokeWidth = 1.1f * s, cap = StrokeCap.Round)
+                    }
+                    drawCircle(fg, radius = 8.6f * s, center = center)
+                    drawCircle(bg, radius = 2.6f * s, center = Offset(14.5f * s, 17f * s))
+                    drawCircle(bg, radius = 2.6f * s, center = Offset(21.5f * s, 17f * s))
+                    drawCircle(fg, radius = 1.15f * s, center = Offset(14.5f * s, 17.2f * s))
+                    drawCircle(fg, radius = 1.15f * s, center = Offset(21.5f * s, 17.2f * s))
                 }
                 else -> {
                     drawLine(

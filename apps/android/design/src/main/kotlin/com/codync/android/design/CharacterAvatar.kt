@@ -34,8 +34,12 @@ object AvatarPalette {
 
 data class AvatarFace(val shape: String, val color: String, val status: String = "idle")
 
-/** Static system-widget drawing uses the same mask, palette and eyes as the app; [cells] is its grid (7, 9 or 13). */
-fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, highlight: Int? = null, cells: Int = 9): android.graphics.Bitmap {
+/**
+ * Static system-widget drawing uses the same mask, palette and eyes as the app; [cells] is its grid
+ * (7, 9 or 13) and [flat] drops the light, as the Flat avatar style does.
+ */
+fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, highlight: Int? = null, cells: Int = 9,
+    flat: Boolean = false): android.graphics.Bitmap {
     require(pixels in 1..256 && cells in listOf(7, 9, 13))
     val bitmap = android.graphics.Bitmap.createBitmap(pixels, pixels, android.graphics.Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
@@ -49,11 +53,11 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
         val x = (col + .5f) * step; val y = (row + .5f) * step
         val u = (x - half) / half; val v = (half - y) / half
         val z = sqrt(max(.2, 1.0 - u * u - v * v))
-        val shade = .3 + .7 * max(0.0, (u * lx + v * ly + z * lz) / (sqrt(u * u + v * v + z * z) * ll))
-        val radius = (step * .42 * (.55 + .45 * shade)).toFloat()
-        paint.color = ink; paint.alpha = (dotInk(cells, shade) * 255).roundToInt().coerceIn(0, 255)
+        val shade = if (flat) 1.0 else .3 + .7 * max(0.0, (u * lx + v * ly + z * lz) / (sqrt(u * u + v * v + z * z) * ll))
+        val radius = (step * .42 * (if (flat) 1.0 else .55 + .45 * shade)).toFloat()
+        paint.color = ink; paint.alpha = if (flat) 255 else (dotInk(cells, shade) * 255).roundToInt().coerceIn(0, 255)
         canvas.drawCircle(x, y, radius, paint)
-        if (shade > .6) {
+        if (!flat && shade > .6) {
             paint.color = highlight ?: (AvatarPalette.colors[color] ?: AvatarPalette.colors.getValue("blue")).toInt()
             paint.alpha = (((shade - .6) / .4) * 255).roundToInt().coerceIn(0, 255)
             canvas.drawCircle(x, y, radius, paint)
@@ -62,9 +66,13 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
     return bitmap
 }
 
-/** Port of CodyncKit's dotted character; the accompanying name/status supplies accessibility text. */
+/**
+ * Port of CodyncKit's dotted character; the accompanying name/status supplies accessibility text.
+ * Resting faces stay calm (half-lidded); only a working or needs-you face moves. [flat] draws even,
+ * unshaded dots instead (the Flat avatar style).
+ */
 @Composable fun CharacterAvatar(shape: String, color: String, size: Dp = 40.dp, status: String = "idle", monochrome: Color? = null,
-    highlight: Color? = null, blink: Boolean = false) {
+    highlight: Color? = null, blink: Boolean = false, flat: Boolean = LocalAvatarStyle.current == AvatarStyle.Flat) {
     val owner = LocalLifecycleOwner.current
     var active by remember(owner) { mutableStateOf(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     DisposableEffect(owner) {
@@ -87,31 +95,47 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
         val glance = if (status == "working" && time > 0) (sin(time * 2 * PI / 3.2) * 1.4).roundToInt() else 0
         val eyes = eyeColumns(cells).map { it + glance }
         val eyeRows = eyeRows(cells)
+        // A resting face is half-lidded; it opens when the bot works or needs you, and blinks either way.
+        val awake = status == "working" || status == "needsInput"
         val blinking = blink || (time > 0 && (time / 4.7) % 1 < 0.035)
+        val shownRows = if (awake && !blinking) eyeRows else eyeRows.takeLast(1)
         val yaw = if (status == "working" && time > 0) time * 1.4 else -0.7
         val lx = sin(yaw) * .8; val ly = .55; val lz = cos(yaw) * .5 + .6
         val ll = sqrt(lx * lx + ly * ly + lz * lz)
         for ((row, col) in dots) {
-            if (col in eyes && row in if (blinking) eyeRows.takeLast(1) else eyeRows) continue
+            if (col in eyes && row in shownRows) continue
             val center = Offset((col + .5f) * step, (row + .5f) * step)
             val u = (center.x - half) / half; val v = (half - center.y) / half
             val z = sqrt(max(.2, 1.0 - u * u - v * v))
             val nl = sqrt(u * u + v * v + z * z)
-            var shade = .3 + .7 * max(0.0, (u * lx + v * ly + z * lz) / (nl * ll))
-            if (status == "needsInput") shade *= .6 + .4 * (.5 + .5 * sin(sqrt((u * u + v * v).toDouble()) * 9 - time * 5))
-            val radius = (step * .42 * (.55 + .45 * shade)).toFloat()
-            drawCircle(ink.copy(alpha = dotInk(cells, shade).toFloat()), radius, center)
-            if (shade > .6) drawCircle(tint.copy(alpha = ((shade - .6) / .4).toFloat().coerceIn(0f, 1f)), radius, center)
+            var shade = if (flat) 1.0 else .3 + .7 * max(0.0, (u * lx + v * ly + z * lz) / (nl * ll))
+            if (!flat && status == "needsInput") shade *= .6 + .4 * (.5 + .5 * sin(sqrt((u * u + v * v).toDouble()) * 9 - time * 5))
+            val radius = (step * .42 * (if (flat) 1f else (.55 + .45 * shade).toFloat())).toFloat()
+            drawCircle(ink.copy(alpha = if (flat) 1f else dotInk(cells, shade).toFloat()), radius, center)
+            if (!flat && shade > .6) drawCircle(tint.copy(alpha = ((shade - .6) / .4).toFloat().coerceIn(0f, 1f)), radius, center)
         }
     }
 }
 
 @Composable fun GroupAvatar(faces: List<AvatarFace>, size: Dp = 40.dp) {
+    val owner = LocalLifecycleOwner.current
+    var active by remember(owner) { mutableStateOf(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, _ -> active = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    // Members drift up and down a little, each on its own beat, so a group reads as several people.
+    val float = if (active && faces.size > 1 && ValueAnimator.areAnimatorsEnabled()) {
+        val transition = rememberInfiniteTransition(label = "Group float")
+        transition.animateFloat(0f, 3600f, infiniteRepeatable(tween(3_600_000, easing = LinearEasing)), label = "Group float clock")
+    } else null
     Box(Modifier.size(size).clearAndSetSemantics { }) {
         fun side(fraction: Float) = size * fraction
         @Composable fun place(index: Int, fraction: Float, align: Alignment) {
             val face = faces[index]
-            Box(Modifier.align(align)) { CharacterAvatar(face.shape, face.color, side(fraction), face.status) }
+            val drift = float?.let { (sin(it.value / 2.4 + index * 1.9) * size.value * .02).dp } ?: 0.dp
+            Box(Modifier.align(align).offset(y = drift)) { CharacterAvatar(face.shape, face.color, side(fraction), face.status) }
         }
         when (faces.size) {
             0 -> Symbol("person.2", Modifier.align(Alignment.Center), size = size * 0.4f, tint = Palette.secondary)

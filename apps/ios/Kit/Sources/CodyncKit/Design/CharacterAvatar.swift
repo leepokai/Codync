@@ -78,6 +78,12 @@ struct DottedBody: View {
     let mood: CharacterAvatar.Mood
     let paused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(AvatarStyle.storageKey, store: UserDefaults(suiteName: SharedStore.appGroup)) private var avatarStyle = AvatarStyle.plush
+
+    /// Flat drops the light: every dot the same size and ink, no tint.
+    private var flat: Bool { avatarStyle == .flat }
+    /// A resting face is half-lidded; it opens while the bot works or needs you.
+    private var awake: Bool { mood != .idle }
 
     /// Where the light sits and where the eyes look.
     struct Pose: Equatable {
@@ -115,7 +121,7 @@ struct DottedBody: View {
             // One view per dot (not a Canvas), so the system interpolates each dot's size and
             // color between two poses, also inside a Live Activity.
             ZStack(alignment: .topLeading) {
-                ForEach(Self.inks(dots, grid: grid, step: step, size: size, pose: .still(mood)), id: \.dot.id) { d in
+                ForEach(Self.inks(dots, grid: grid, step: step, size: size, pose: .still(mood), flat: flat, awake: awake), id: \.dot.id) { d in
                     Circle()
                         .fill(Palette.text.opacity(d.ink))
                         .overlay(Circle().fill(color.opacity(d.tint)))
@@ -135,7 +141,7 @@ struct DottedBody: View {
                                 blinking: !still && (t / 4.7).truncatingRemainder(dividingBy: 1) < 0.035,
                                 ripple: mood == .needsInput ? t * 5 : nil)
                 Canvas { ctx, _ in
-                    for d in Self.inks(dots, grid: grid, step: step, size: size, pose: pose) where !d.eye {
+                    for d in Self.inks(dots, grid: grid, step: step, size: size, pose: pose, flat: flat, awake: awake) where !d.eye {
                         let p = d.dot.center, r = d.radius
                         let dot = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
                         ctx.fill(dot, with: .color(Palette.text.opacity(d.ink)))
@@ -160,9 +166,11 @@ struct DottedBody: View {
         }
     }
 
-    /// Shades the dots as a lit ball; the eyes stay hollow.
-    static func inks(_ dots: [Dot], grid: DotGrid, step: CGFloat, size: CGFloat, pose: Pose) -> [Ink] {
-        let eyeRows = pose.blinking ? Array(grid.eyeRows.suffix(1)) : grid.eyeRows
+    /// Shades the dots as a lit ball; the eyes stay hollow. A closed eye and a resting face
+    /// both show the half-lidded row; `flat` drops the light, so every dot is even.
+    static func inks(_ dots: [Dot], grid: DotGrid, step: CGFloat, size: CGFloat, pose: Pose,
+                     flat: Bool = false, awake: Bool = true) -> [Ink] {
+        let eyeRows = pose.blinking || !awake ? Array(grid.eyeRows.suffix(1)) : grid.eyeRows
         let eyeCols = grid.eyeColumns.map { $0 + pose.glance }
         let half = size / 2
         let lx = sin(pose.yaw) * 0.8, ly = 0.55, lz = cos(pose.yaw) * 0.5 + 0.6  // never fully behind
@@ -178,9 +186,9 @@ struct DottedBody: View {
                 shade *= 0.6 + 0.4 * ripple
             }
             return Ink(dot: d,
-                       radius: step * 0.42 * (0.55 + 0.45 * shade),
-                       ink: grid.cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * min(1, shade / 0.7),
-                       tint: shade > 0.6 ? (shade - 0.6) / 0.4 : 0,
+                       radius: step * 0.42 * (flat ? 1 : 0.55 + 0.45 * shade),
+                       ink: flat ? 1 : (grid.cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * min(1, shade / 0.7)),
+                       tint: flat ? 0 : (shade > 0.6 ? (shade - 0.6) / 0.4 : 0),
                        eye: eyeCols.contains(d.col) && eyeRows.contains(d.row))
         }
     }
@@ -273,6 +281,7 @@ public struct GroupAvatar: View {
     let members: [Bot]
     let size: CGFloat
     let animated: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(members: [Bot], size: CGFloat = 40, animated: Bool = true) {
         self.members = members
@@ -281,6 +290,25 @@ public struct GroupAvatar: View {
     }
 
     public var body: some View {
+        Group {
+            if animated && members.count > 1 && !reduceMotion {
+                TimelineView(.animation) { timeline in
+                    cluster(timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600))
+                }
+            } else {
+                cluster(0)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    /// Members drift up and down a little, each on its own beat, so a group reads as several people.
+    private func drift(_ index: Int, _ t: Double) -> CGFloat {
+        animated ? CGFloat(sin(t / 2.4 + Double(index) * 1.9)) * size * 0.02 : 0
+    }
+
+    @ViewBuilder private func cluster(_ t: Double) -> some View {
         ZStack {
             switch members.count {
             case 0:
@@ -290,18 +318,18 @@ public struct GroupAvatar: View {
             case 1:
                 CharacterAvatar(bot: members[0], size: size, animated: animated)
             case 2:
-                place(members[1], size * 0.66, .topTrailing)
-                place(members[0], size * 0.66, .bottomLeading)
+                place(members[1], size * 0.66, .topTrailing, index: 1, t: t)
+                place(members[0], size * 0.66, .bottomLeading, index: 0, t: t)
             case 3:
-                place(members[0], size * 0.55, .top)
-                place(members[1], size * 0.55, .bottomLeading)
-                place(members[2], size * 0.55, .bottomTrailing)
+                place(members[0], size * 0.55, .top, index: 0, t: t)
+                place(members[1], size * 0.55, .bottomLeading, index: 1, t: t)
+                place(members[2], size * 0.55, .bottomTrailing, index: 2, t: t)
             default:
-                place(members[0], size * 0.5, .topLeading)
-                place(members[1], size * 0.5, .topTrailing)
-                place(members[2], size * 0.5, .bottomLeading)
+                place(members[0], size * 0.5, .topLeading, index: 0, t: t)
+                place(members[1], size * 0.5, .topTrailing, index: 1, t: t)
+                place(members[2], size * 0.5, .bottomLeading, index: 2, t: t)
                 if members.count == 4 {
-                    place(members[3], size * 0.5, .bottomTrailing)
+                    place(members[3], size * 0.5, .bottomTrailing, index: 3, t: t)
                 } else {
                     Text(L10n.tr("+\(members.count - 3)"))
                         .font(.system(size: size * 0.24, weight: .bold, design: .rounded))
@@ -312,12 +340,12 @@ public struct GroupAvatar: View {
             }
         }
         .frame(width: size, height: size)
-        .accessibilityHidden(true)
     }
 
-    private func place(_ bot: Bot, _ side: CGFloat, _ corner: Alignment) -> some View {
+    private func place(_ bot: Bot, _ side: CGFloat, _ corner: Alignment, index: Int, t: Double) -> some View {
         CharacterAvatar(bot: bot, size: side, animated: animated)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: corner)
+            .offset(y: drift(index, t))
     }
 }
 

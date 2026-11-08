@@ -13,10 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.VoiceRates
 import com.codync.android.design.*
 
 /** How fast messages read aloud, shared with voice conversations. */
-internal val readingSpeeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+internal val readingSpeeds = VoiceRates.values
 
 internal fun speedLabel(rate: Float): String =
     (if (rate == rate.toInt().toFloat()) rate.toInt().toString() else rate.toString().trimEnd('0')) + "×"

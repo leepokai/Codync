@@ -53,8 +53,27 @@ enum class VoicePhase { Starting, Listening, Speaking, Reconnecting, Interrupted
 }
 /** Why a call's engine gave up, for analytics (`voice_call_quality`). */
 enum class VoiceFailureKind(val wire: String) { Microphone("microphone"), Connection("connection"), Provider("provider") }
+/** The silence that ends what you said: a slider from a quick "go" to time to think mid-sentence. */
+object VoicePause {
+    const val MIN = 600L
+    const val MAX = 3_000L
+    const val STEP = 100L
+
+    /** Every stop the slider offers, shortest first. */
+    val stops: List<Long> = (MIN..MAX step STEP).toList()
+
+    fun nearest(millis: Long): Long = stops.minByOrNull { kotlin.math.abs(it - millis) } ?: 1_500L
+}
+
+/** How fast replies are read aloud; a stored speed snaps to the nearest offered one. */
+object VoiceRates {
+    val values: List<Float> = listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)
+
+    fun nearest(rate: Float): Float = values.minByOrNull { kotlin.math.abs(it - rate) } ?: 1f
+}
+
 data class VoiceSettings(val pauseMillis: Long = 1_500, val rate: Float = 1f) {
-    init { require(pauseMillis in listOf(1_000L, 1_500L, 2_500L)); require(rate in .5f..2f) }
+    init { require(pauseMillis in VoicePause.MIN..VoicePause.MAX); require(rate in .5f..2f) }
 }
 data class VoiceState(val phase: VoicePhase = VoicePhase.Starting, val muted: Boolean = false,
     val heard: String = "", val said: String = "", val level: Float = 0f, val engine: String = "",

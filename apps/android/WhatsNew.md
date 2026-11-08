@@ -21,6 +21,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 新增 TickTick 等應用程式，以及每個代理程式的建立者、審核狀態、分類與更新日期。
 - WhatsApp 號碼可以用配對代碼連結，不必掃描 QR 碼。
 - 中斷的任務與失敗的例行工作可以用「取消任務」結束，訊息會保留。
+- 語音通話的停頓改成滑桿（0.6–3 秒），朗讀速度可選 0.5 倍到 2 倍。
+- Bot 頭像可選絨感或扁平，靜止時的表情更放鬆，群組頭像會輕輕浮動。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -34,6 +36,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - New apps such as TickTick, and each agent page now names its creator, review, category and update date.
 - A WhatsApp number can be linked by typing a pairing code instead of scanning a QR code.
 - A task that stopped halfway, or a routine run that failed, can be ended with Cancel task; its messages stay.
+- The voice call pause is a slider from 0.6 to 3 seconds, and read-aloud speed goes from 0.5× to 2×.
+- Bot avatars can be plush or flat, resting faces look calmer, and group avatars drift gently.
 
 ## 2.32.0
 

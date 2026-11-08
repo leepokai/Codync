@@ -58,9 +58,8 @@ import kotlinx.coroutines.launch
                 } else {
                     row { LanguageRow(store) }
                     row {
-                        ValueRow("Reading speed") {
-                            ChoicePicker(settings.rate, listOf(.84f to "Slower", 1f to "Normal", 1.12f to "Faster"),
-                                { change(settings.copy(rate = it)) }, label = "Reading speed")
+                        ValueRow("Reading speed", detail = tr("How fast replies are read aloud.")) {
+                            ChoicePicker(settings.rate, readingSpeedOptions, { change(settings.copy(rate = it)) }, label = "Reading speed")
                         }
                     }
                     row { PauseRow(settings, ::change) }
@@ -86,13 +85,18 @@ import kotlinx.coroutines.launch
     }
 }
 
-/** How long a silence ends what you say, before it's sent. */
+/** How long a silence ends what you say, before it's sent: a slider, so a pause can be tuned, not only picked. */
 @Composable private fun PauseRow(settings: VoiceSettings, change: (VoiceSettings) -> Unit) {
-    ValueRow("Send after a pause of", detail = "Longer leaves time to think mid-sentence.") {
-        ChoicePicker(settings.pauseMillis, listOf(1_000L to "1 s", 1_500L to "1.5 s", 2_500L to "2.5 s"),
-            { change(settings.copy(pauseMillis = it)) }, label = "Send after a pause of")
-    }
+    StepSlider("Send after a pause of", settings.pauseMillis, pauseStops, { change(settings.copy(pauseMillis = it)) },
+        detail = tr("Longer leaves time to think mid-sentence."))
 }
+
+/** The pauses the slider offers, in seconds. */
+private val pauseStops: List<Pair<Long, String>> =
+    VoicePause.stops.map { it to String.format(java.util.Locale.US, "%.1f s", it / 1000.0) }
+
+/** The reading speeds offered, in multiples of the normal one. */
+private val readingSpeedOptions: List<Pair<Float, String>> = readingSpeeds.map { it to speedLabel(it) }
 
 /**
  * One provider: the key the computer keeps, models, voice and this month's minutes. Keys are entered

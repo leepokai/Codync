@@ -144,6 +144,7 @@ function GeneralSettings() {
   const [language, setLanguage] = usePref(prefs.appLanguage)
   const systemLanguage = typeof navigator === 'undefined' ? 'en' : navigator.language
   const [usageIconStyle, setUsageIconStyle] = usePref(prefs.usageIconStyle)
+  const [avatarStyle, setAvatarStyle] = usePref(prefs.avatarStyle)
   const [compact, setCompact] = usePref(prefs.sidebarCompact)
   const [thinkingDetails, setThinkingDetails] = usePref(prefs.thinkingDetails)
   const [showInDock, setShowInDock] = useState(true)
@@ -201,6 +202,9 @@ function GeneralSettings() {
         </ValueRow>
         <ValueRow label="Usage icons">
           <ChoicePicker selection={usageIconStyle} options={[{ id: 'character', label: 'Character' }, { id: 'original', label: 'Original' }]} onChange={setUsageIconStyle} />
+        </ValueRow>
+        <ValueRow label="Bot avatars">
+          <ChoicePicker selection={avatarStyle} options={[{ id: 'plush', label: tr('Plush') }, { id: 'flat', label: tr('Flat') }]} onChange={setAvatarStyle} />
         </ValueRow>
         <Switch on={compact} onChange={setCompact}>
           Compact sidebar

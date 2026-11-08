@@ -44,12 +44,12 @@ function canvasImage(key: string, width: number, height: number, draw: (ctx: Can
   return image
 }
 
-function avatarIcon(bot: Bot) {
+function avatarIcon(bot: Bot, flat: boolean) {
   const bitmap = iconBitmap(bot.customIcon)?.image
-  const key = `bot|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
+  const key = `bot|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}|${flat}`
   return canvasImage(key, 20, 20, (ctx) => {
     const dark = isDark()
-    if (!drawIconBitmap(ctx, bot.customIcon, 20, avatarColor(bot.avatarColor))) drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true })
+    if (!drawIconBitmap(ctx, bot.customIcon, 20, avatarColor(bot.avatarColor))) drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true, flat })
     const badge = needsInput(bot) ? palette(dark).warning : bot.unread > 0 ? (dark ? '#FFFFFF' : '#000000') : null
     if (badge) {
       const r = needsInput(bot) ? 3.6 : 2.8
@@ -155,6 +155,7 @@ export function useTraySummary(app: AppModel) {
   useModels(stores)
   const [textSize] = usePref(prefs.textSize)
   const [iconStyle] = usePref(prefs.usageIconStyle)
+  const [avatarStyle] = usePref(prefs.avatarStyle)
   const [language] = usePref(prefs.appLanguage)
   useEffect(() => {
     let current = true
@@ -184,7 +185,7 @@ export function useTraySummary(app: AppModel) {
           detail: botDetail(i.bot),
           working: isWorking(i.bot),
           pinned: i.bot.pinned,
-          avatar: avatarIcon(i.bot),
+          avatar: avatarIcon(i.bot, avatarStyle === 'flat'),
         })),
         usage: (local?.usage.providers ?? []).map((p) => ({
           name: p.name,

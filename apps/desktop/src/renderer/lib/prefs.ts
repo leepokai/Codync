@@ -66,6 +66,8 @@ export const prefs = {
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
   collapsedProjects: pref<string[]>('collapsedProjects', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
+  /** Bot characters are shaded (plush) or even dots (flat), as the phones draw them. */
+  avatarStyle: pref<'plush' | 'flat'>('avatarStyle', 'plush'),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
   /** "Continue without an account" on the welcome: it stops covering the window until sign-out. */
   welcomeSkipped: pref('accountWelcomeSkipped', false),

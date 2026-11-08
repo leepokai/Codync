@@ -191,7 +191,9 @@ internal object VoicePreferences {
     private fun stored(context: Context) = context.getSharedPreferences("codync-voice", Context.MODE_PRIVATE)
     fun load(context: Context): VoiceSettings {
         val stored = stored(context)
-        return runCatching { VoiceSettings(stored.getLong("pause", 1_500), stored.getFloat("rate", 1f)) }.getOrDefault(VoiceSettings())
+        return runCatching {
+            VoiceSettings(VoicePause.nearest(stored.getLong("pause", 1_500)), VoiceRates.nearest(stored.getFloat("rate", 1f)))
+        }.getOrDefault(VoiceSettings())
     }
     fun save(context: Context, settings: VoiceSettings) {
         stored(context).edit { putLong("pause", settings.pauseMillis); putFloat("rate", settings.rate) }

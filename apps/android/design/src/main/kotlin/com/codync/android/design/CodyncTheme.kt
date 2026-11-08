@@ -122,6 +122,7 @@ fun CodyncTheme(
         LocalSurfaceStyle provides settings.surfaceStyle,
         LocalUiDensity provides settings.density,
         LocalChatTextScale provides settings.chatTextScale,
+        LocalAvatarStyle provides settings.avatarStyle,
         LocalCodyncHaptics provides haptics,
     ) {
         MaterialTheme(colorScheme = colors, typography = type) {

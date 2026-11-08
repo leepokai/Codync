@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, type CSSProperties } from 'react'
 import { isGroup, isWorking, needsInput, type Bot } from '@shared/models'
 import { DOT_RADIUS, dotGrid } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
+import { prefs, usePref } from '../lib/prefs'
 import { Icon } from './Icon'
 import { isRobotLook, RobotAvatar } from './RobotAvatar'
 import './avatar.css'
@@ -129,6 +130,8 @@ const GeneratedCharacterAvatar = memo(function GeneratedCharacterAvatar({ shape,
   const dark = useDark() || forceDark === true
   const reduce = useReduceMotion()
   const ratio = usePixelRatio()
+  const [avatarStyle] = usePref(prefs.avatarStyle)
+  const flat = avatarStyle === 'flat'
   const fill = tint ?? avatarColor(color)
   /** Where the pointer was last seen (screen coordinates): a working character looks at it. */
   const pointer = useRef<{ x: number; y: number } | null>(null)
@@ -172,6 +175,7 @@ const GeneratedCharacterAvatar = memo(function GeneratedCharacterAvatar({ shape,
           dark,
           t: still ? 0 : (time / 1000) % 3600,
           still,
+          flat,
           look: still ? { x: 0, y: 0 } : look(),
         })
       }
@@ -194,7 +198,7 @@ const GeneratedCharacterAvatar = memo(function GeneratedCharacterAvatar({ shape,
       onScreen.disconnect()
       cancelAnimationFrame(frame)
     }
-  }, [shape, fill, size, mood, dark, reduce, pixels])
+  }, [shape, fill, size, mood, dark, reduce, pixels, flat])
 
   return <canvas ref={canvas} aria-hidden style={{ width: pixels / ratio, height: pixels / ratio, display: 'block', flex: 'none' }} />
 })
@@ -202,7 +206,7 @@ const GeneratedCharacterAvatar = memo(function GeneratedCharacterAvatar({ shape,
 /** Draws one frame of a character at the context's origin (views and menu bar icons). */
 export function drawCharacter(
   ctx: CanvasRenderingContext2D,
-  { shape, fill, size, mood, dark, t, still, look = { x: 0, y: 0 } }: {
+  { shape, fill, size, mood, dark, t, still, flat = false, look = { x: 0, y: 0 } }: {
     shape: string
     fill: string
     size: number
@@ -210,6 +214,8 @@ export function drawCharacter(
     dark: boolean
     t: number
     still: boolean
+    /** Even, unshaded dots instead of the lit ball (the Flat avatar style). */
+    flat?: boolean
     /** Where the eyes turn, −1…1 per axis (a working character looks at the pointer). */
     look?: { x: number; y: number }
   },
@@ -223,12 +229,15 @@ export function drawCharacter(
   const n = parseInt(fill.slice(1), 16)
   const [cr, cg, cb] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
   const blinking = !still && (t / 4.7) % 1 < 0.035
-  const eyeRows = blinking ? eyeRowsAll.slice(-1) : eyeRowsAll
+  // A resting face is half-lidded; it opens while the bot works or needs you, and blinks either way.
+  const awake = mood === 'working' || mood === 'needsInput'
+  const lids = blinking || !awake
+  const eyeRows = lids ? eyeRowsAll.slice(-1) : eyeRowsAll
   // The openings move smoothly with the gaze rather than jumping cell to cell; blinking flattens them.
   const eyeY = (eyeRows[0]! + (eyeRows.length - 1) / 2 + 0.5) + look.y * 0.5
   const eyeX = eyeColumns.map((c) => c + 0.5 + look.x * 0.55)
   const eyeWidth = 0.62
-  const eyeHeight = (blinking ? 0.35 : eyeRows.length / 2) + 0.1
+  const eyeHeight = (lids ? 0.35 : eyeRows.length / 2) + 0.1
   /** Is this dot inside one of the two openings? */
   const inEye = (d: Dot) => {
     const u = (d.col + 0.5 - eyeX[0]!) / eyeWidth
@@ -265,17 +274,18 @@ export function drawCharacter(
     const z = Math.sqrt(Math.max(0.2, 1 - u * u - v * v))
     const nl = Math.hypot(u, v, z)
     let shade = 0.3 + 0.7 * Math.max(0, (u * lx + v * ly + z * lz) / (nl * ll))
-    if (mood === 'needsInput') {
+    if (flat) shade = 1
+    if (mood === 'needsInput' && !flat) {
       const ripple = 0.5 + 0.5 * Math.sin(Math.hypot(u, v) * 9 - t * 5)
       shade *= 0.6 + 0.4 * ripple
     }
-    const r = pitch * DOT_RADIUS * (0.55 + 0.45 * shade)
-    const ink = cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * Math.min(1, shade / 0.7)
+    const r = pitch * DOT_RADIUS * (flat ? 1 : 0.55 + 0.45 * shade)
+    const ink = flat ? 1 : cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * Math.min(1, shade / 0.7)
     ctx.beginPath()
     ctx.arc(first + d.col * pitch, first + d.row * pitch, r, 0, Math.PI * 2)
     ctx.fillStyle = `rgba(${tr},${tg},${tb},${ink})`
     ctx.fill()
-    if (shade > 0.6) {
+    if (!flat && shade > 0.6) {
       ctx.fillStyle = `rgba(${cr},${cg},${cb},${(shade - 0.6) / 0.4})`
       ctx.fill()
     }
@@ -302,8 +312,14 @@ export function BotAvatar({ bot, size = 40, animated = true }: { bot: Bot; size?
  * triangle, four in a 2×2 grid; past four the last cell counts the rest.
  */
 export function GroupAvatar({ members, size = 40, animated = true }: { members: Bot[]; size?: number; animated?: boolean }) {
-  const place = (bot: Bot, side: number, corner: CSSProperties) => (
-    <div key={bot.id} className="avatar-slot" style={corner}>
+  // Members drift a little, each on its own beat, so a group reads as several people.
+  const drift = animated && members.length > 1
+  const place = (bot: Bot, side: number, corner: CSSProperties, index: number) => (
+    <div
+      key={bot.id}
+      className={`avatar-slot${drift ? ' avatar-drift' : ''}`}
+      style={{ ...corner, '--drift': `${size * 0.02}px`, '--phase': `${index * -0.8}s` } as CSSProperties}
+    >
       <BotAvatar bot={bot} size={side} animated={animated} />
     </div>
   )
@@ -320,22 +336,22 @@ export function GroupAvatar({ members, size = 40, animated = true }: { members: 
       content = <BotAvatar bot={members[0]!} size={size} animated={animated} />
       break
     case 2:
-      content = [place(members[1]!, size * 0.66, { top: 0, right: 0 }), place(members[0]!, size * 0.66, { bottom: 0, left: 0 })]
+      content = [place(members[1]!, size * 0.66, { top: 0, right: 0 }, 1), place(members[0]!, size * 0.66, { bottom: 0, left: 0 }, 0)]
       break
     case 3:
       content = [
-        place(members[0]!, size * 0.55, { top: 0, left: (size - size * 0.55) / 2 }),
-        place(members[1]!, size * 0.55, { bottom: 0, left: 0 }),
-        place(members[2]!, size * 0.55, { bottom: 0, right: 0 }),
+        place(members[0]!, size * 0.55, { top: 0, left: (size - size * 0.55) / 2 }, 0),
+        place(members[1]!, size * 0.55, { bottom: 0, left: 0 }, 1),
+        place(members[2]!, size * 0.55, { bottom: 0, right: 0 }, 2),
       ]
       break
     default:
       content = [
-        place(members[0]!, size * 0.5, { top: 0, left: 0 }),
-        place(members[1]!, size * 0.5, { top: 0, right: 0 }),
-        place(members[2]!, size * 0.5, { bottom: 0, left: 0 }),
+        place(members[0]!, size * 0.5, { top: 0, left: 0 }, 0),
+        place(members[1]!, size * 0.5, { top: 0, right: 0 }, 1),
+        place(members[2]!, size * 0.5, { bottom: 0, left: 0 }, 2),
         members.length === 4 ? (
-          place(members[3]!, size * 0.5, { bottom: 0, right: 0 })
+          place(members[3]!, size * 0.5, { bottom: 0, right: 0 }, 3)
         ) : (
           <div key="more" className="avatar-more" style={{ width: size * 0.5, height: size * 0.5, fontSize: size * 0.24 }}>
             +{members.length - 3}

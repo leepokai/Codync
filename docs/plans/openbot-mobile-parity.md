@@ -70,8 +70,18 @@ Done from M2:
 | Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx` |
 | Cancel task on a stopped or failed task | Done | Codync has no channel tasks: a paused turn card and a failed routine notice stand in. host `pause::close` and `routines::retry::cancel` (one `cancelTask` method), `PausedTurnCard.kt`, `RoutineNotice`, desktop `ChatRows.tsx`/`RoutineNotice.tsx`, TUI `/cancel` and `E` |
 
-- **M5/M6**: Voice pause slider and reply speed choice, Plush/Flat avatar style, calmer resting
+- **M5/M6**: voice pause slider, reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.
+
+Done from M5/M6:
+
+| Item | Status | Files |
+| --- | --- | --- |
+| Voice pause is a slider, not three fixed choices | Done | `VoicePause`, `StepSlider.kt`, `VoiceChatSettings.kt` |
+| Reading speed is six stops, 0.5× to 2×, shared with read aloud | Done | `VoiceRates`, `ReadingSpeedSheet.kt` |
+| Plush or Flat bot avatar, on all three clients, widgets included | Done | `AvatarStyle`, `CharacterAvatar` (`flat`), iOS `Appearance.swift`, desktop `Avatar.tsx` and its tray icons |
+| Calmer resting faces and a group float | Done | half-lidded idle eyes in each `CharacterAvatar`; drift in `GroupAvatar` |
+
 - **M1/M7**: marketplace connectors (Coinbase, RevenueCat, TickTick, Proton Pass, Higgsfield),
   the Apps connector list with status, marketplace Load more, the spent usage window under a
   model.

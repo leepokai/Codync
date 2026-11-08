@@ -72,6 +72,16 @@ enum class UiDensity(val id: String, val label: String) {
     }
 }
 
+/** How a bot's character is drawn: plush (shaded dots under a light) or flat (even dots, no light). */
+enum class AvatarStyle(val id: String, val label: String) {
+    Plush("plush", "Plush"),
+    Flat("flat", "Flat");
+
+    companion object {
+        fun fromId(id: String?): AvatarStyle = entries.firstOrNull { it.id == id } ?: Plush
+    }
+}
+
 /** Discrete chat text scale options aligned with the desktop app's `TEXT_SIZES` semantics. */
 object ChatTextScale {
     const val MIN = 0.85f
@@ -108,6 +118,7 @@ data class AppearanceSettings(
     val chatTextScale: Float = ChatTextScale.DEFAULT,
     val density: UiDensity = UiDensity.Standard,
     val hapticsEnabled: Boolean = true,
+    val avatarStyle: AvatarStyle = AvatarStyle.Plush,
 )
 
 /** Observable device-scoped appearance preferences, persisted in SharedPreferences. */
@@ -125,6 +136,7 @@ class AppearancePreferences(private val prefs: SharedPreferences?) {
             chatTextScale = ChatTextScale.clamp(p.getFloat("chatTextScale", ChatTextScale.DEFAULT)),
             density = UiDensity.fromId(p.getString("density", UiDensity.Standard.id)),
             hapticsEnabled = p.getBoolean("hapticsEnabled", true),
+            avatarStyle = AvatarStyle.fromId(p.getString("avatarStyle", AvatarStyle.Plush.id)),
         )
     }
 
@@ -139,6 +151,7 @@ class AppearancePreferences(private val prefs: SharedPreferences?) {
             ?.putFloat("chatTextScale", next.chatTextScale)
             ?.putString("density", next.density.id)
             ?.putBoolean("hapticsEnabled", next.hapticsEnabled)
+            ?.putString("avatarStyle", next.avatarStyle.id)
             ?.apply()
     }
 
@@ -149,6 +162,7 @@ class AppearancePreferences(private val prefs: SharedPreferences?) {
     fun setChatTextScale(scale: Float) = update { it.copy(chatTextScale = scale) }
     fun setDensity(density: UiDensity) = update { it.copy(density = density) }
     fun setHapticsEnabled(enabled: Boolean) = update { it.copy(hapticsEnabled = enabled) }
+    fun setAvatarStyle(style: AvatarStyle) = update { it.copy(avatarStyle = style) }
 
     companion object {
         @Volatile private var instance: AppearancePreferences? = null
@@ -332,4 +346,5 @@ val LocalAppearance = staticCompositionLocalOf { AppearanceSettings() }
 val LocalSurfaceStyle = staticCompositionLocalOf { SurfaceStyle.Glass }
 val LocalUiDensity = staticCompositionLocalOf { UiDensity.Standard }
 val LocalChatTextScale = staticCompositionLocalOf { ChatTextScale.DEFAULT }
+val LocalAvatarStyle = staticCompositionLocalOf { AvatarStyle.Plush }
 val LocalPalette = staticCompositionLocalOf { resolvePalette(systemDark = false) }

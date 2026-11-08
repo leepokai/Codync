@@ -58,6 +58,7 @@ class MainActivity : FragmentActivity() {
         )
         applyWindowOrientation(resources.configuration)
         AppearancePreferences.get(applicationContext)
+        AppLock.started(applicationContext)
         ThinkingDetails.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
@@ -87,8 +88,10 @@ class MainActivity : FragmentActivity() {
             val images = remember(state.contextId, state.generation) { AccountImages.open(applicationContext, state.contextId) }
             DisposableEffect(images) { onDispose { AccountImages.close(images) } }
             CompositionLocalProvider(LocalNetworkImages provides images) {
-                key(state.contextId, state.generation) {
-                    CodyncTheme { OverlayRoot { CodyncApp(state, store); if (demo) DemoBadge(); LaunchLayer(state.loading) } }
+                LanguageRoot {
+                    key(state.contextId, state.generation) {
+                        CodyncTheme { OverlayRoot { CodyncApp(state, store); if (demo) DemoBadge(); LaunchLayer(state.loading); if (AppLock.locked) AppLockGate(store) } }
+                    }
                 }
             }
         }
@@ -129,9 +132,10 @@ class MainActivity : FragmentActivity() {
         unregisterReceiver(screenOn)
         super.onDestroy()
     }
-    override fun onStart() { super.onStart(); store.setForeground(true); Analytics.becameActive(this) }
+    override fun onStart() { super.onStart(); AppLock.returned(applicationContext); store.setForeground(true); Analytics.becameActive(this) }
     override fun onStop() {
         store.setForeground(false)
+        if (!isChangingConfigurations) AppLock.left(applicationContext)
         if (!isChangingConfigurations) SensitiveAccess.revoke()
         // A rotation isn't a trip to the background.
         if (!isChangingConfigurations) Analytics.enteredBackground()
@@ -146,7 +150,7 @@ class MainActivity : FragmentActivity() {
         val uris = if (intent.action == Intent.ACTION_SEND) listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
             else IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
         val text = ShareIntake.draftText(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString())
-        if (text.isNotEmpty() || uris.isNotEmpty()) store.receiveShare(text, uris)
+        if (text.isNotEmpty() || uris.isNotEmpty()) store.receiveShare(text, uris, BotShares.botOf(intent))
         return true
     }
     private fun handle(intent: Intent?) {

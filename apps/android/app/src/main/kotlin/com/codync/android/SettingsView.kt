@@ -62,17 +62,17 @@ import com.codync.android.design.*
     CardForm(Modifier.background(Palette.background).statusBarsPadding(), PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = bottomInset), scroll) {
         Text(tr("Settings"), Modifier.semantics { heading() }, style = Type.largeTitle.bold, color = Palette.text)
         if (computers != null) CardSection {
-            row { RowLabel("Computer management", "desktopcomputer", chevron = true, modifier = Modifier.plainButton(action = computers)) }
-            row { RowLabel("Channels", "paperplane", chevron = true, modifier = Modifier.plainButton { channels = true }) }
+            row { RowLabel(tr("Computer management"), "desktopcomputer", chevron = true, modifier = Modifier.plainButton(action = computers)) }
+            row { RowLabel(tr("Channels"), "paperplane", chevron = true, modifier = Modifier.plainButton { channels = true }) }
         }
         AppearanceSection()
         val appLanguage = LocalAppLanguage.current
         val setAppLanguage = LocalSetAppLanguage.current
         val systemChinese = LocalSystemChinese.current
         val phrases = LocalPhrases.current
-        CardSection("Language", footer = "Choose the language for this device. Unsupported system languages use English.") {
+        CardSection(tr("Language"), footer = tr("Choose the language for this device. Unsupported system languages use English.")) {
             row {
-                ValueRow("App language") {
+                ValueRow(tr("App language")) {
                     ChoicePicker(appLanguage, AppLanguage.entries.map {
                         it to AppLanguage.menuTitle(it, appLanguage, systemChinese, phrases)
                     }, setAppLanguage)
@@ -80,22 +80,23 @@ import com.codync.android.design.*
             }
         }
         ThinkingDetailsSettings()
-        CardSection("Navigation", "Pick how the tab bar sits at the bottom of the screen on phones.") {
+        CardSection(tr("Navigation"), tr("Pick how the tab bar sits at the bottom of the screen on phones.")) {
             row {
-                ValueRow("Bar style") {
+                ValueRow(tr("Bar style")) {
                     ChoicePicker(
                         navStyle,
                         NavBarStyle.entries.map { it to it.title },
                         { NavigationPreferences.setStyle(context, it) },
-                        label = "Bar style",
+                        label = tr("Bar style"),
                     )
                 }
             }
             row {
-                SwitchRow("Hide bar on scroll", isOn = navAutoHide, onChange = { NavigationPreferences.setAutoHide(context, it) })
+                SwitchRow(tr("Hide bar on scroll"), isOn = navAutoHide, onChange = { NavigationPreferences.setAutoHide(context, it) })
             }
         }
         SecuritySection()
+        AppLockSection()
         NotificationsSection()
         CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
             row {

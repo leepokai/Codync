@@ -48,6 +48,9 @@ struct CodyncApp: App {
                 .environment(\.locale, AppLanguage.locale(
                     preference: AppLanguage(rawValue: appLanguageRaw) ?? .system,
                     systemIsChinese: AppLanguage.systemIsChinese()))
+                // Arabic: the window mirrors; each paragraph still follows its own text.
+                .environment(\.layoutDirection, AppLanguage.readsRightToLeft(preference: AppLanguage(rawValue: appLanguageRaw) ?? .system)
+                    ? .rightToLeft : .leftToRight)
                 .onChange(of: appLanguageRaw) { _, _ in WidgetCenter.shared.reloadAllTimelines() }
                 // No scroll indicators anywhere in the app.
                 .scrollIndicators(.never)

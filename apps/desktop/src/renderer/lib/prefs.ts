@@ -1,4 +1,5 @@
-import type { AppLanguage } from './l10n'
+import type { AppLanguage } from './l10n.ts'
+import { resolvedLanguage } from './l10n.ts'
 import { useSyncExternalStore } from 'react'
 import type { StarAsk } from './star-ask'
 
@@ -90,3 +91,12 @@ export function applyTextSize(size: number) {
 }
 
 prefs.textSize.subscribe(() => applyTextSize(prefs.textSize.get()))
+
+/** The window mirrors for Arabic; paragraphs still follow their own text. */
+export function applyDirection(language: AppLanguage) {
+  if (typeof document === 'undefined') return
+  document.documentElement.dir = resolvedLanguage(language, typeof navigator === 'undefined' ? 'en' : navigator.language) === 'ar' ? 'rtl' : 'ltr'
+}
+
+prefs.appLanguage.subscribe(() => applyDirection(prefs.appLanguage.get()))
+applyDirection(prefs.appLanguage.get())

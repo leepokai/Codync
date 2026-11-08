@@ -99,6 +99,30 @@ Done from M1/M7:
 - **M8 and X1–X7**: queue panel (Edit, Steer, Delete), pins shared with the desktop, paragraph
   direction, task-thread member names, and the Android adaptations of the iOS-only entries.
 
+Done from M8:
+
+| Item | Status | Files |
+| --- | --- | --- |
+| A queue strip above the composer with Edit, Steer and Delete | Done | host `Cmd::{Steer,EditQueued,DeleteQueued}`, `queue.rs`, `queue_tests.rs`, `api`, `QueuedMessages.kt`, desktop `QueuedStrip.tsx` + `queued-preview.ts`, iOS `QueuedMessages.swift`, TUI `/steer` `/unqueue` `/edit` |
+| Pins shared with the desktop | Already present | host pins and all clients |
+| Each chat paragraph in the direction of its own text; code always left to right | Done | `MarkdownText.kt` `byText()`, `ChatRows.kt`, desktop `Markdown.tsx` `dir="auto"`, iOS `ParagraphDirection.swift` |
+| Task-thread member names | Done | `ChatRows.kt` `AuthorLabel` read `name` as "A deleted bot" |
+
+iOS-only entries, each adapted to Android:
+
+| Item | Adaptation | Status | Files |
+| --- | --- | --- | --- |
+| X1 Arabic and right-to-left layout | A real Arabic interface language, the whole layout mirrored, and each paragraph in its own direction | Done | `L10n.kt` `AppLanguage.Ar`, `LanguageRoot.kt`, `ar.json`; iOS `AppLanguage.ar` + `layoutDirection`; desktop `ar` + `document.dir` |
+| X2 Live Activities | Android 16 live updates with a status bar chip; an ongoing notification before that | Already present | `LiveUpdateGallery.kt`, `PushService.task` |
+| X3 App-icon quick action | Launcher shortcuts to the pinned agents | Already present | `LauncherShortcuts.kt` |
+| X4 Share-sheet agent targets | Long-lived Direct Share shortcuts that send into an agent | Done | `BotShares.kt`, `LauncherShortcuts.kt`, `AppStoreShare.receiveShare` |
+| X5 App lock (PIN, then face or fingerprint, four-try backoff, ten → sign out) | The same lock, with the same PIN backoff and sign-out | Done | `AppLock.kt`, `SensitiveAccess.ask`, `MainActivity` |
+| X6 iPhone Duo and foldable split | Master-detail from 600 × 360 dp with the rail | Already present | `MainNavigation.isExpandedWindow`, `configChanges` |
+| X7 Agent picture in notifications | The face as the notification's large icon | Already present | `AlertNotification.kt` `notificationFace` |
+
+Parity owed by this work (iOS cannot be compiled here): a Support page, the WhatsApp pairing
+code, routine outputs, and a `2.39.0` section in `apps/ios/WhatsNew.md`.
+
 ## Validation
 
 Each merge-ready chunk runs the Gradle gate plus emulator walks (phone, tablet, foldable) and

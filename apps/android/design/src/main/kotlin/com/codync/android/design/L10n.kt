@@ -16,7 +16,8 @@ fun systemScript(tag: String): ChineseScript? {
 /** The language of this app's own interface. Chats and bots are not translated. `Zh` stays stored as "zh". */
 enum class AppLanguage(val stored: String, val title: String) {
     System("system", "Follow system"), En("en", "English"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"),
-    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español");
+    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"),
+    Ar("ar", "العربية");
 
     fun resolved(systemTag: String): AppLanguage {
         if (this != System) return this
@@ -24,6 +25,9 @@ enum class AppLanguage(val stored: String, val title: String) {
         if (base == "zh") return if (systemScript(systemTag) == ChineseScript.Hant) ZhHant else Zh
         return entries.firstOrNull { it != System && it.stored == base } ?: En
     }
+
+    /** Arabic reads right to left: the whole layout mirrors, while each paragraph follows its own text. */
+    fun readsRightToLeft(systemTag: String): Boolean = resolved(systemTag) == Ar
 
     fun usesChinese(systemIsChinese: Boolean): Boolean = this == Zh || this == ZhHant || (this == System && systemIsChinese)
 
@@ -123,7 +127,7 @@ private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map
 }
 
 fun translate(text: String, preference: AppLanguage, systemIsChinese: Boolean, phrases: Map<String, String>): String {
-    if (preference == AppLanguage.En || (preference == AppLanguage.System && !systemIsChinese)) return text
+    if (preference == AppLanguage.En) return text
     phrases[text]?.let { return it }
     templated(text, phrases)?.let { return it }
     val trimmed = text.trim()

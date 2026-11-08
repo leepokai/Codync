@@ -72,8 +72,8 @@ never billed, 4 vCPU/8 GiB, pauses after 30 idle minutes). Its machines can't be
 (InstaBox's SSH forwards one way only), so `INSTABOX_API_KEY_FILE=~/.codync-e2e/instabox-key npm run cloud:stack`
 also opens a Cloudflare quick tunnel to the local cloud (`cloudflared`, run with an empty config so a
 `~/.cloudflared/config.yml` of another tunnel can't answer for it) and gives the hosts its `https://….trycloudflare.com`
-URL: the Worker sees that host, which is the one the host signs. They boot the released host (the file server isn't
-reachable from there). This Mac's resolver may cache the new tunnel name as missing for a minute; the machines resolve
+URL: the Worker sees that host, which is the one the host signs. They boot `CODYNC_HOST_LINUX_BIN` through a second
+tunnel to the file server (x86_64, built on an InstaBox machine: its template has Rust), else the released host. This Mac's resolver may cache the new tunnel name as missing for a minute; the machines resolve
 it at once. The scripted run (`npm run e2e:cloud`) is Boat's only.
 
 ### Real apps against a local cloud

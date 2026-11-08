@@ -33,12 +33,12 @@ export async function sweepInstabox(key: string, olderThanMs: number): Promise<s
   return stale.map((m) => m.id);
 }
 
-/** A Cloudflare quick tunnel to the local cloud: its `https://….trycloudflare.com` URL. Runs with an empty config, so a
- * `~/.cloudflared/config.yml` of the user's own tunnel can't answer for it. */
-export async function tunnel(cloud: LocalCloud): Promise<string> {
+/** A Cloudflare quick tunnel to the local cloud (or another local `url`): its `https://….trycloudflare.com` URL. Runs
+ * with an empty config, so a `~/.cloudflared/config.yml` of the user's own tunnel can't answer for it. */
+export async function tunnel(cloud: LocalCloud, url = cloud.url): Promise<string> {
   const config = join(cloud.tmp, "cloudflared.yml");
   writeFileSync(config, "");
-  const child = cloud.run("cloudflared", ["tunnel", "--config", config, "--no-autoupdate", "--url", cloud.url]);
+  const child = cloud.run("cloudflared", ["tunnel", "--config", config, "--no-autoupdate", "--url", url]);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("no tunnel URL from cloudflared in 60 s")), 60_000);
     child.stderr?.on("data", (d: Buffer) => {

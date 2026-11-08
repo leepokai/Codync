@@ -8,12 +8,15 @@ use crate::routines::{Routine, default_timeout};
 use crate::store::{FlowLink, now_ms};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 /// The sample reply a flow test hands on when the caller gives none.
 const SAMPLE_REPLY: &str = "This is a test of the routine's flow: a sample reply from the routine's own bot.";
 const MAX_ID_CHARS: usize = 200;
+/// How many model options (effort and the like) a link may set.
+const MAX_MODEL_OPTIONS: usize = 10;
 
 pub const METHODS: &[&str] = &[
     "routineFlowCanvas",
@@ -46,6 +49,42 @@ fn id_arg<'a>(b: &'a Value, key: &str) -> Result<&'a str> {
         bail!("`{key}` must be an id of 1 to {MAX_ID_CHARS} characters");
     }
     Ok(id)
+}
+
+/// The model a link's step runs on, when it names one instead of the target bot's own.
+fn model_arg(b: &Value) -> Result<Option<String>> {
+    let model = match b.get("model") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::String(model)) => model.trim(),
+        _ => bail!("`model` must be text"),
+    };
+    if model.is_empty() {
+        return Ok(None);
+    }
+    if model.chars().count() > MAX_ID_CHARS || model.chars().any(char::is_control) {
+        bail!("`model` must be a model id of at most {MAX_ID_CHARS} characters");
+    }
+    Ok(Some(model.to_owned()))
+}
+
+/// A link's model options (effort…): short option ids and values, a handful at most.
+fn model_options_arg(b: &Value) -> Result<BTreeMap<String, String>> {
+    let Some(value) = b.get("modelOptions").filter(|v| !v.is_null()) else { return Ok(BTreeMap::new()) };
+    let Some(options) = value.as_object() else { bail!("`modelOptions` must be an object of option ids to values") };
+    if options.len() > MAX_MODEL_OPTIONS {
+        bail!("`modelOptions` must have at most {MAX_MODEL_OPTIONS} options");
+    }
+    options
+        .iter()
+        .map(|(id, value)| {
+            let Some(value) = value.as_str() else { bail!("`modelOptions` values must be text") };
+            let short = |s: &str| !s.is_empty() && s.chars().count() <= MAX_ID_CHARS;
+            if !short(id) || !short(value) {
+                bail!("`modelOptions` ids and values must be 1 to {MAX_ID_CHARS} characters");
+            }
+            Ok((id.clone(), value.to_owned()))
+        })
+        .collect()
 }
 
 fn instruction_arg(b: &Value, required: bool) -> Result<String> {
@@ -96,6 +135,8 @@ pub(super) fn connect(hub: &Hub, routine: &Routine, from: &str, to: &str, instru
         from_bot_id: from.to_owned(),
         to_bot_id: to.to_owned(),
         instruction,
+        model: None,
+        model_options: BTreeMap::new(),
         created_at: now_ms(),
     };
     let max = super::max_depth();
@@ -211,9 +252,15 @@ pub fn call(hub: &Arc<Hub>, method: &str, b: &Value) -> Result<Option<Value>> {
         }
         "updateRoutineFlowLink" => {
             let (id, instruction) = (id_arg(b, "linkId")?, instruction_arg(b, true)?);
-            let updated = hub.emit_flow_change(|| match hub.store.flow_update_link(id, &instruction)? {
-                Some((link, change)) => Ok((Some(link), Some(change))),
-                None => Ok((None, None)),
+            let current = hub.store.flow_link(id)?.context("link not found")?;
+            // Left out, each keeps what the link already had; given empty, it clears.
+            let model = if b.get("model").is_some() { model_arg(b)? } else { current.model };
+            let options = if b.get("modelOptions").is_some() { model_options_arg(b)? } else { current.model_options };
+            let updated = hub.emit_flow_change(|| {
+                match hub.store.flow_update_link(id, &instruction, model.as_deref(), &options)? {
+                    Some((link, change)) => Ok((Some(link), Some(change))),
+                    None => Ok((None, None)),
+                }
             })?;
             json!({"link": updated.context("link not found")?})
         }

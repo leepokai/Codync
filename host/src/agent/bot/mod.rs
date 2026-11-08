@@ -24,6 +24,7 @@ mod fast_mode;
 mod files;
 mod launch;
 mod lifecycle;
+mod model_override;
 mod outcome;
 pub(crate) mod pause;
 mod proactive;
@@ -131,6 +132,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         turn: None,
         queue: VecDeque::new(),
         active_request: None,
+        turn_model: None,
         reply_hops: None,
         active_prompt: false,
         proactive_turn: false,
@@ -213,6 +215,9 @@ pub(crate) struct Conn {
     opening: bool,
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
+    /// Each live session's config options, as the agent last listed them: a step's model switch reads the
+    /// model option's id from here.
+    config_options: HashMap<String, Value>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
     /// Each session's context use and window size at its last `usage_update`.
@@ -313,6 +318,8 @@ struct Actor {
     turn_done: Option<Done>,
     queue: VecDeque<Queued>,
     active_request: Option<crate::chat::team::BotRequest>,
+    /// The session the last flow step switched to its link's model, to put the bot's own back first.
+    turn_model: Option<String>,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`).

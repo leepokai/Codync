@@ -8,7 +8,8 @@ use std::sync::Mutex;
 
 /// Current schema version (kv `schema`).
 /// 7: the account a device joined with (devices.account).
-const SCHEMA: i64 = 7;
+/// 8: a flow link's own model and effort (`routine_flow_links.model`, `.model_options`).
+const SCHEMA: i64 = 8;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -33,7 +34,8 @@ fn migrate(c: &Connection) -> Result<()> {
         migrate_5(c)?;
     }
     migrate_6(c)?;
-    migrate_7(c)
+    migrate_7(c)?;
+    migrate_8(c)
 }
 
 fn migrate_3(c: &Connection) -> Result<()> {
@@ -133,6 +135,19 @@ fn migrate_7(c: &Connection) -> Result<()> {
     c.execute_batch(
         "BEGIN;
          INSERT INTO kv(k, v) VALUES('schema', '7') ON CONFLICT(k) DO UPDATE SET v = '7';
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+/// A flow link can carry its own model and effort, so a step runs as its link says rather than as its bot does.
+fn migrate_8(c: &Connection) -> Result<()> {
+    // A table built by this version already has the columns (`flows::open`).
+    let _ = c.execute("ALTER TABLE routine_flow_links ADD COLUMN model TEXT", []);
+    let _ = c.execute("ALTER TABLE routine_flow_links ADD COLUMN model_options TEXT NOT NULL DEFAULT '{}'", []);
+    c.execute_batch(
+        "BEGIN;
+         INSERT INTO kv(k, v) VALUES('schema', '8') ON CONFLICT(k) DO UPDATE SET v = '8';
          COMMIT;",
     )?;
     Ok(())
@@ -238,7 +253,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("7"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -261,7 +276,7 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("7"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
     }
 
     #[test]

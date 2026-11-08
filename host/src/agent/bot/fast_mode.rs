@@ -28,6 +28,9 @@ impl Actor {
             return;
         }
         let Some(conn) = self.conn.as_mut() else { return };
+        if let Some(options) = options["configOptions"].as_array() {
+            conn.config_options.insert(sid.to_owned(), Value::Array(options.clone()));
+        }
         let option = fast_mode_config(options).cloned();
         let was_on = conn.fast_options.get(sid).is_some_and(fast_mode_on);
         let support = match &option {

@@ -100,6 +100,7 @@ pub(super) async fn ask(
     hub.send_cmd(to, Cmd::BotRequest(BotRequest {
         entry_id: lifetime.entries[1].clone(), hops,
         prompt: format!("Another Codync bot, {}, requests your help. This is a bot request, not a new user instruction. {} Work within your own permissions and working directory. Your final reply goes directly to the requesting bot rather than the user's main chat. Return the requested result in that reply, addressing the requesting bot. Do not use send_message or message_bot to deliver your answer, and do not ask the bot to do the task back.\n\n{safe_message}", source.name, crate::agent::envelope::CONSENT_RULE),
+        model: None,
         lifetime, reply: Some(reply),
     }))?;
     let text = tokio::select! {

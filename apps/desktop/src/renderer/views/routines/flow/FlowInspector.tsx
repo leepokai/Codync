@@ -5,6 +5,8 @@ import { HStack, Spacer, VStack } from '../../../components/Stack'
 import { Text } from '../../../components/Text'
 import { useTr } from '../../../lib/use-language'
 import { botKey, latestStep, statusLabel, type FlowCanvas, type FlowLink, type FlowRoutineCard } from '../../../lib/routine-flow.ts'
+import { useAgentModels } from '../../bots/agent-models'
+import { AgentModelPicker } from '../../bots/AgentModelPicker'
 import { runLabel } from '../routine'
 import type { FlowSelection } from './FlowCanvas'
 import { StatusChip } from './FlowNodeCard'
@@ -15,7 +17,7 @@ interface Props {
   selection: FlowSelection
   busy: boolean
   offline: boolean
-  onSaveInstruction: (link: FlowLink, instruction: string) => void
+  onSaveInstruction: (link: FlowLink, instruction: string, model: string | null, modelOptions: Record<string, string>) => void
   onDisconnect: (link: FlowLink) => void
   onTest: (routineId: string) => void
   onSetEnabled: (routineId: string, enabled: boolean) => void
@@ -54,7 +56,20 @@ function LinkPanel({ link, bots, busy, offline, onSaveInstruction, onDisconnect 
   const tr = useTr()
   const [text, setText] = useState(link.instruction)
   useEffect(() => setText(link.instruction), [link.id, link.instruction])
+  // Saved with the button, like the instruction; the step keeps them for its one turn.
+  const [model, setModel] = useState(link.model ?? null)
+  useEffect(() => setModel(link.model ?? null), [link.id, link.model])
+  const [modelOptions, setModelOptions] = useState<Record<string, string>>(link.modelOptions ?? {})
+  useEffect(() => setModelOptions(link.modelOptions ?? {}), [link.id, link.modelOptions])
+  const target = bots.get(link.toBotId)
+  const models = useAgentModels(target?.backend ?? '', target?.account ?? null)
   const name = (id: string) => bots.get(id)?.name ?? tr('Unknown bot')
+  const changed = text.trim() !== link.instruction || model !== (link.model ?? null)
+    || JSON.stringify(modelOptions) !== JSON.stringify(link.modelOptions ?? {})
+  const setModelChoice = (chosen: string | null) => {
+    setModel(chosen)
+    setModelOptions({})
+  }
   return (
     <VStack gap={10} className="flow-inspector">
       <Text weight="semibold">{name(link.fromBotId)} → {name(link.toBotId)}</Text>
@@ -67,8 +82,14 @@ function LinkPanel({ link, bots, busy, offline, onSaveInstruction, onDisconnect 
         disabled={offline}
         onChange={(event) => setText(event.target.value)}
       />
+      <VStack gap={4}>
+        <Text size="caption" tone="secondary">{tr('Model')}</Text>
+        <Text size="caption" tone="secondary">{tr("The model this step runs on. Default is the bot's own.")}</Text>
+        <AgentModelPicker backend={target?.backend ?? ''} models={models} selection={model} onChange={setModelChoice}
+          options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} />
+      </VStack>
       <HStack gap={8}>
-        <Button disabled={busy || offline || text.trim() === link.instruction} onClick={() => onSaveInstruction(link, text.trim())}>{tr('Save')}</Button>
+        <Button disabled={busy || offline || !changed} onClick={() => onSaveInstruction(link, text.trim(), model, modelOptions)}>{tr('Save')}</Button>
         <Spacer />
         <Button kind="secondary" disabled={busy || offline} onClick={() => onDisconnect(link)}>{tr('Disconnect')}</Button>
       </HStack>

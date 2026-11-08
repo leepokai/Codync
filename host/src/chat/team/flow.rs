@@ -4,7 +4,7 @@
 //! no turn of the sender's and joins no wait graph: nobody waits for it but the flow engine.
 
 use super::blocking::PendingAsk;
-use super::{Back, BotRequest, Exchange, MAX_MESSAGE_BYTES, MessageLifetime, assignments, visible_bot};
+use super::{Back, BotRequest, Exchange, MAX_MESSAGE_BYTES, MessageLifetime, ModelOverride, assignments, visible_bot};
 use crate::agent::bot::Cmd;
 use crate::agent::envelope::{CONSENT_RULE, escape_envelope};
 use crate::hub::Hub;
@@ -21,6 +21,8 @@ pub struct Handoff<'a> {
     pub to: &'a str,
     /// The previous reply or replies and the link's instruction.
     pub body: &'a str,
+    /// The link's own model and options, when it names them.
+    pub model: Option<ModelOverride>,
     /// How many hops into the flow the recipient is; it bounds what the recipient may chain on.
     pub hops: u8,
     pub timeout: Duration,
@@ -59,7 +61,14 @@ pub async fn handoff(hub: &Arc<Hub>, h: Handoff<'_>, sent: impl FnOnce(&str)) ->
     let _pending = PendingAsk::new(hub, &id, &target.id);
     hub.send_cmd(
         &target.id,
-        Cmd::BotRequest(BotRequest { entry_id, prompt, hops: h.hops, lifetime, reply: Some(reply) }),
+        Cmd::BotRequest(BotRequest {
+            entry_id,
+            prompt,
+            model: h.model.map(Box::new),
+            hops: h.hops,
+            lifetime,
+            reply: Some(reply),
+        }),
     )?;
     sent(&id);
     tokio::select! {

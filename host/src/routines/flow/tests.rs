@@ -4,6 +4,7 @@ use crate::api::devices::{Caller, Forbidden};
 use crate::hub::Hub;
 use crate::store::{BotConfig, FlowLink, NewStep, StepStatus, Store, now_ms};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,6 +56,8 @@ impl Fixture {
             from_bot_id: from.into(),
             to_bot_id: to.into(),
             instruction: instruction.into(),
+            model: None,
+            model_options: BTreeMap::default(),
             created_at: 1,
         };
         self.hub.store.flow_add_link(&link, |_| Ok(())).unwrap();
@@ -303,10 +306,54 @@ async fn the_api_validates_every_input_and_connects_valid_links() {
     let id = link["link"]["id"].as_str().unwrap();
     let updated = f.call("updateRoutineFlowLink", json!({"linkId": id, "instruction": "Better"})).await.unwrap();
     assert_eq!(updated["link"]["instruction"], "Better");
+    let with_model = f
+        .call(
+            "updateRoutineFlowLink",
+            json!({"linkId": id, "instruction": "Better", "model": "opus", "modelOptions": {"effort": "high"}}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(with_model["link"]["model"], "opus");
+    assert_eq!(with_model["link"]["modelOptions"]["effort"], "high");
+    // Leaving them out of an edit keeps them; empty values clear them.
+    let kept = f.call("updateRoutineFlowLink", json!({"linkId": id, "instruction": "Best"})).await.unwrap();
+    assert_eq!(kept["link"]["model"], "opus");
+    let cleared = f
+        .call("updateRoutineFlowLink", json!({"linkId": id, "instruction": "Best", "model": null, "modelOptions": {}}))
+        .await
+        .unwrap();
+    assert!(cleared["link"]["model"].is_null());
+    assert!(cleared["link"]["modelOptions"].as_object().unwrap().is_empty());
+    assert!(
+        f.call("updateRoutineFlowLink", json!({"linkId": id, "instruction": "x", "modelOptions": {"effort": 3}}))
+            .await
+            .is_err()
+    );
     assert!(f.call("updateRoutineFlowLink", json!({"linkId": "nope", "instruction": ""})).await.is_err());
     f.call("disconnectRoutineFlow", json!({"linkId": id})).await.unwrap();
     assert_eq!(f.hub.store.flow_links(&r).unwrap().len(), 1);
     f.shutdown().await;
+}
+
+#[test]
+fn a_links_model_and_effort_ride_its_step_alone() {
+    let mut link = FlowLink {
+        id: "l".into(),
+        routine_id: "r".into(),
+        owner_bot_id: "a".into(),
+        from_bot_id: "a".into(),
+        to_bot_id: "b".into(),
+        instruction: String::new(),
+        model: None,
+        model_options: BTreeMap::default(),
+        created_at: 0,
+    };
+    assert!(engine::override_of(&link).is_none());
+    link.model = Some("opus".into());
+    link.model_options.insert("effort".into(), "high".into());
+    let over = engine::override_of(&link).unwrap();
+    assert_eq!(over.model.as_deref(), Some("opus"));
+    assert_eq!(over.options["effort"], "high");
 }
 
 #[tokio::test]

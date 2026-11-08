@@ -13,6 +13,9 @@ export interface FlowLink {
   fromBotId: string
   toBotId: string
   instruction: string
+  /** The model this step runs on instead of the next bot's own, and its options (effort…). */
+  model?: string | null
+  modelOptions?: Record<string, string>
   createdAt: number
 }
 

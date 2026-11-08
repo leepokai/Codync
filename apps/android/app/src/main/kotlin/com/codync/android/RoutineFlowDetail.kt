@@ -55,8 +55,9 @@ internal sealed interface FlowSelection {
 }
 
 /** The sheet over the canvas or the list: what the selected routine, bot or link says, and the actions on it. */
-@Composable internal fun FlowDetail(owner: Bot, canvas: FlowCanvas, bots: Map<String, Bot>, takers: List<Bot>, selection: FlowSelection,
-    online: Boolean, busy: Boolean, store: AppStore, note: (String?) -> Unit, reselect: (FlowSelection) -> Unit, close: () -> Unit) {
+@Composable internal fun FlowDetail(state: AppState, owner: Bot, canvas: FlowCanvas, bots: Map<String, Bot>, takers: List<Bot>,
+    selection: FlowSelection, online: Boolean, busy: Boolean, store: AppStore, note: (String?) -> Unit,
+    reselect: (FlowSelection) -> Unit, close: () -> Unit) {
     val unknownBot = tr("Unknown bot")
     val name = { id: String -> bots[id]?.name ?: unknownBot }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
@@ -67,7 +68,7 @@ internal sealed interface FlowSelection {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when (selection) {
                 is FlowSelection.OfLink -> canvas.links.firstOrNull { it.id == selection.id }?.let { link ->
-                    LinkPanel(owner, link, name, online, busy, store, close)
+                    LinkPanel(state, owner, link, bots[link.toBotId], name, online, busy, store, close)
                 } ?: Text(tr("This link is gone."), style = Type.footnote, color = Palette.secondary)
                 is FlowSelection.OfNode -> {
                     val id = selection.key.substringAfter(':')
@@ -80,14 +81,27 @@ internal sealed interface FlowSelection {
     }
 }
 
-@Composable private fun LinkPanel(owner: Bot, link: FlowLink, name: (String) -> String, online: Boolean, busy: Boolean, store: AppStore, close: () -> Unit) {
+@Composable private fun LinkPanel(state: AppState, owner: Bot, link: FlowLink, target: Bot?, name: (String) -> String,
+    online: Boolean, busy: Boolean, store: AppStore, close: () -> Unit) {
     var text by remember(link.id) { mutableStateOf(link.instruction) }
     LaunchedEffect(link.instruction) { text = link.instruction }
+    // Saved with the button, like the instruction; the step keeps them for its one turn.
+    var model by remember(link.id) { mutableStateOf(link.model) }
+    LaunchedEffect(link.model) { model = link.model }
+    var options by remember(link.id) { mutableStateOf(link.modelOptions) }
+    LaunchedEffect(link.modelOptions) { options = link.modelOptions }
     Text("${name(link.fromBotId)} → ${name(link.toBotId)}", style = Type.headline, color = Palette.text)
     Text(tr("What the next bot is asked to do with the reply. It can be empty."), style = Type.caption, color = Palette.secondary)
     Field("Instruction") { FieldBox(text, { text = it.take(8000) }, "e.g. Summarize it in three lines", 3, 8, fill = Palette.bubbleUser) }
-    PrimaryButton(tr("Save"), Modifier.fillMaxWidth(), enabled = online && !busy && text.trim() != link.instruction) {
-        store.updateFlowLink(owner.id, link.id, text.trim())
+    Field("Model", "The model this step runs on. Default is the bot's own.") {
+        androidx.compose.runtime.key(state.generation, state.computer?.id, target?.backend) {
+            AgentModelPicker(state, { backend -> store.agentModels(backend, target?.account) }, target?.backend.orEmpty(),
+                model, options, false, target, { chosen, next -> model = chosen; options = next }, null)
+        }
+    }
+    val changed = text.trim() != link.instruction || model != link.model || options != link.modelOptions
+    PrimaryButton(tr("Save"), Modifier.fillMaxWidth(), enabled = online && !busy && changed) {
+        store.updateFlowLink(owner.id, link.id, text.trim(), model, options)
     }
     SecondaryButton(tr("Disconnect"), Modifier.fillMaxWidth(), enabled = online && !busy) { store.disconnectFlow(owner.id, link.id); close() }
 }

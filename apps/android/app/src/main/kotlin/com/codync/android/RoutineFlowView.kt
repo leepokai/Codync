@@ -83,7 +83,7 @@ private fun Context.screenReaderOn(): Boolean =
 
     val shown = selection
     CodyncSheet(shown != null, { selection = null }, setOf(SheetDetent.Medium, SheetDetent.Expanded)) {
-        if (canvas != null && shown != null) FlowDetail(bot, canvas, byId, takers, shown, online, busy, store,
+        if (canvas != null && shown != null) FlowDetail(state, bot, canvas, byId, takers, shown, online, busy, store,
             { text -> note = text }, { selection = it }, { selection = null })
     }
 }

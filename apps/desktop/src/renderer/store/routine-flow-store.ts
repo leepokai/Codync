@@ -107,8 +107,9 @@ export class RoutineFlowStore extends Observable {
     return answer?.link ?? null
   }
 
-  async updateLink(linkId: string, instruction: string) {
-    await this.change('updateRoutineFlowLink', { linkId, instruction })
+  /** Saves the instruction and the model the step runs on; a null model is the next bot's own. */
+  async updateLink(linkId: string, instruction: string, model: string | null, modelOptions: Record<string, string>) {
+    await this.change('updateRoutineFlowLink', { linkId, instruction, model, modelOptions })
   }
 
   async disconnect(linkId: string) {

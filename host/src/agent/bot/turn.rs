@@ -101,6 +101,8 @@ impl Actor {
     ) -> Result<()> {
         // A computer short of memory takes on no new work; the person is told why (`start_failed`).
         self.hub.health.admit(now_ms())?;
+        // A step's own model never outlives its turn: the bot's own goes back before anything else.
+        self.restore_turn_model().await;
         self.proactive_turn = self.proactive_batch(entry_ids);
         self.continuation = if self.continue_batch(entry_ids) { self.continuation + 1 } else { 0 };
         // A routine run keeps the turn its notice took when it began (`Routines::begin`).
@@ -208,6 +210,10 @@ impl Actor {
         self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
         if let Some(sid) = session {
             self.sync_fast_mode(&sid).await;
+            // The link's own model and effort, when it names them, last through this step only.
+            if let Some(over) = self.active_request.as_ref().and_then(|r| r.model.as_deref().cloned()) {
+                self.apply_turn_model(&sid, &over).await;
+            }
         }
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
         let snapshot = self.snapshot(&sid).await?;

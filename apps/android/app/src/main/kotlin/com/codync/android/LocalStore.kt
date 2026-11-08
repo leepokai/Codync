@@ -1,8 +1,6 @@
 package com.codync.android
 
 import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import com.codync.android.core.Computer
 import com.codync.android.core.DeviceIdentity
@@ -11,7 +9,6 @@ import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import kotlinx.serialization.json.Json
@@ -22,7 +19,6 @@ class LocalStore(context: Context, val contextId: String = "local") {
         .joinToString("") { "%02x".format(it) }
     val referenceId = referenceId(contextId)
     internal val directory = File(context.noBackupFilesDir, scopeId).apply { mkdirs() }
-    private val alias = "codync.identity.$scopeId"
     private val json = Json { ignoreUnknownKeys = true }
 
     @Synchronized
@@ -49,16 +45,7 @@ class LocalStore(context: Context, val contextId: String = "local") {
         } finally { seeds.fill(0) }
     }
 
-    private fun wrappingKey(): SecretKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = keyStore.getKey(alias, null) as? SecretKey
-        if (existing != null) return existing
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256).build())
-        return generator.generateKey()
-    }
+    private fun wrappingKey(): SecretKey = ScopeKey.get(scopeId)
 
     fun computers(): List<Computer> {
         val file = AtomicFile(File(directory, "computers.json"))
@@ -85,7 +72,7 @@ class LocalStore(context: Context, val contextId: String = "local") {
     fun erase() {
         check(directory.deleteRecursively()) { "Couldn't erase this phone's local data." }
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.deleteEntry(alias)
+        keyStore.deleteEntry(ScopeKey.alias(scopeId))
         check(directory.mkdirs()) { "Couldn't create new local storage." }
     }
 

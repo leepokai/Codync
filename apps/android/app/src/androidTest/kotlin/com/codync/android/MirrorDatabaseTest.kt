@@ -104,6 +104,21 @@ class MirrorDatabaseTest {
         assertEquals(1, mirror.snapshot().entries.size)
     }
 
+    @Test fun payloadsAreSealedInTheFileAndOpenAgainAfterReopening() {
+        mirror.receive(Bot("bot", "Sealed roster", rev = 2))
+        mirror.save(PendingSend("unsent", "bot", text = "an aside", createdAt = 1))
+        mirror.apply(MirrorEvent.EntryChanged(entry(3, "private words")))
+        mirror.close()
+        val raw = File(directory, "mirror-$computer.db").readBytes().toString(Charsets.ISO_8859_1)
+        assertFalse(raw.contains("private words"))
+        assertFalse(raw.contains("Sealed roster"))
+        assertFalse(raw.contains("an aside"))
+        mirror = MirrorDatabase(context, directory, computer)
+        assertEquals("private words", mirror.snapshot().entries.single().text)
+        assertEquals("Sealed roster", mirror.snapshot().bots.single().name)
+        assertEquals("an aside", mirror.snapshot().pending.single().text)
+    }
+
     @Test fun upgradingTheMirrorFetchesTheConversationAgainAndKeepsUnsentMessages() {
         mirror.close()
         val path = File(directory, "mirror-$computer.db")
@@ -115,6 +130,9 @@ class MirrorDatabaseTest {
             db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
             db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
             db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", "3") })
+            db.insertOrThrow("bots", null, ContentValues().apply {
+                put("id", "bot"); put("rev", 3); put("deleted", 0); put("payload", WireJson.encodeToString(Bot("bot", "Cached roster", rev = 3)))
+            })
             db.insertOrThrow("entries", null, ContentValues().apply {
                 put("id", "message"); put("bot_id", "bot"); put("thread_id", "root"); put("seq", 1); put("rev", 3)
                 put("payload", WireJson.encodeToString(entry(3)))
@@ -124,15 +142,28 @@ class MirrorDatabaseTest {
                 put("payload", """{"nonce":"unsent","botId":"bot","threadId":"root","text":"aside","createdAt":1}""")
             })
             db.insertOrThrow("history", null, ContentValues().apply { put("lane", "bot") })
-            db.version = 2
+            db.version = 3
         }
         mirror = MirrorDatabase(context, directory, computer)
         val snapshot = mirror.snapshot()
+        assertTrue(snapshot.bots.isEmpty())
         assertTrue(snapshot.entries.isEmpty())
         assertEquals(0, snapshot.rev)
         assertFalse(mirror.historyComplete("bot"))
         assertEquals("aside", snapshot.pending.single().text)
         mirror.apply(MirrorEvent.EntryChanged(entry(4, nonce = "unsent")))
         assertTrue(mirror.snapshot().pending.isEmpty())
+    }
+
+    @Test fun messageTextIsNeverStoredInTheClear() {
+        mirror.apply(MirrorEvent.BotChanged(Bot("bot", "Hidden name", rev = 2)))
+        mirror.save(PendingSend("unsent", "bot", text = "secret words", createdAt = 1))
+        for (table in listOf("bots", "pending")) {
+            val payload = mirror.readableDatabase.rawQuery("SELECT payload FROM $table", null).use {
+                it.moveToFirst(); it.getString(0)
+            }
+            assertTrue(payload, payload.matches(Regex("[A-Za-z0-9+/=]+")))
+            assertFalse(payload, payload.contains("Hidden name") || payload.contains("secret words"))
+        }
     }
 }

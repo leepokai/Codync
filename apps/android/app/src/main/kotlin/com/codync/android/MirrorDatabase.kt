@@ -17,10 +17,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
-/** All entity writes, send reconciliation and the event cursor commit together. */
+/**
+ * All entity writes, send reconciliation and the event cursor commit together. Payloads are sealed
+ * (`MirrorSealer`), so the database file holds no readable message or bot text.
+ */
 class MirrorDatabase(context: Context, directory: File, computerId: String) :
-    SQLiteOpenHelper(context, File(directory, "mirror-$computerId.db").absolutePath, null, 3) {
+    SQLiteOpenHelper(context, File(directory, "mirror-$computerId.db").absolutePath, null, 4) {
     init { require(computerId.matches(Regex("[A-Za-z0-9_-]{22}"))) }
+    private val sealer = MirrorSealer(directory.name)
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
@@ -28,12 +32,31 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         createConversation(db)
         db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
     }
-    /** The conversation is a cache of the computer's: an older schema's is dropped and fetched again; unsent messages stay. */
+    /**
+     * The conversation is a cache of the computer's: an older schema's is dropped and fetched again; unsent
+     * messages stay. Version 4 seals the payloads, so pending messages are read back and sealed again.
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 4) resealPending(db)
+        db.delete("bots", null, null)
         db.execSQL("DROP TABLE IF EXISTS entries")
         db.execSQL("DROP TABLE IF EXISTS history")
         createConversation(db)
         setMeta(db, "rev", "0")
+    }
+    /** Version 3 kept plain-text payloads: read them before they are overwritten sealed. */
+    private fun resealPending(db: SQLiteDatabase) {
+        val sends = buildList {
+            db.rawQuery("SELECT nonce, created, payload FROM pending", null).use {
+                while (it.moveToNext()) add(Triple(it.getString(0), it.getLong(1), it.getString(2)))
+            }
+        }
+        db.delete("pending", null, null)
+        for ((nonce, created, payload) in sends) {
+            db.insertWithOnConflict("pending", null, ContentValues().apply {
+                put("nonce", nonce); put("created", created); put("payload", sealer.seal("pending", payload))
+            }, SQLiteDatabase.CONFLICT_REPLACE)
+        }
     }
     private fun createConversation(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
@@ -45,9 +68,9 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     @Synchronized fun snapshot(): MirrorSnapshot {
         val db = readableDatabase
         return MirrorSnapshot(
-            rows(db, "SELECT payload FROM bots WHERE deleted=0") { WireJson.decodeFromString<Bot>(it) },
-            rows(db, "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) },
-            rows(db, "SELECT payload FROM pending ORDER BY created") { WireJson.decodeFromString<PendingSend>(it) },
+            rows(db, "bots", "SELECT payload FROM bots WHERE deleted=0") { WireJson.decodeFromString<Bot>(it) },
+            rows(db, "entries", "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) },
+            rows(db, "pending", "SELECT payload FROM pending ORDER BY created") { WireJson.decodeFromString<PendingSend>(it) },
             meta(db, "rev")?.toLong() ?: 0,
             meta(db, "usage")?.let { WireJson.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap()),
             meta(db, "screen")?.let { WireJson.parseToJsonElement(it).jsonObject },
@@ -90,7 +113,6 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
             is MirrorEvent.EntryDeleted -> { db.delete("entries", "id=?", arrayOf(event.id)); bump(db, event.rev) }
             is MirrorEvent.ThreadUnread -> readEntry(db, event.threadId)?.let { writeEntry(db, it.copy(threadUnread = event.unread)) }
-            is MirrorEvent.ThreadUnread -> readEntry(db, event.threadId)?.let { writeEntry(db, it.copy(threadUnread = event.unread)) }
             is MirrorEvent.Icons -> setMeta(db, "icons", kotlinx.serialization.json.Json.encodeToString(event.icons))
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
@@ -115,12 +137,12 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         val exists = db.rawQuery("SELECT 1 FROM pending WHERE nonce=?", arrayOf(send.nonce)).use { it.moveToFirst() }
         require(exists || count < 200) { "Too many pending messages. Retry or discard older messages first." }
         check(db.insertWithOnConflict("pending", null, ContentValues().apply {
-            put("nonce", send.nonce); put("created", send.createdAt); put("payload", WireJson.encodeToString(send))
+            put("nonce", send.nonce); put("created", send.createdAt); put("payload", sealer.seal("pending", WireJson.encodeToString(send)))
         }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Couldn't save the pending message." }
     }
     @Synchronized fun discard(nonce: String) = transaction { it.delete("pending", "nonce=?", arrayOf(nonce)) }
     @Synchronized fun recoverInterrupted() = transaction { db ->
-        rows(db, "SELECT payload FROM pending") { WireJson.decodeFromString<PendingSend>(it) }
+        rows(db, "pending", "SELECT payload FROM pending") { WireJson.decodeFromString<PendingSend>(it) }
             .filter { it.status == SendStatus.Sending }.forEach { writePending(db, it.copy(status = SendStatus.Failed,
                 error = "Sending was interrupted. Retry uses the same message ID.")) }
     }
@@ -134,18 +156,18 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         val revision = db.rawQuery("SELECT rev FROM bots WHERE id=?", arrayOf(bot.id)).use { if (it.moveToFirst()) it.getLong(0) else -1 }
         if (revision > bot.rev) return
         check(db.insertWithOnConflict("bots", null, ContentValues().apply {
-            put("id", bot.id); put("rev", bot.rev); put("deleted", if (bot.deleted) 1 else 0); put("payload", WireJson.encodeToString(bot))
+            put("id", bot.id); put("rev", bot.rev); put("deleted", if (bot.deleted) 1 else 0); put("payload", sealer.seal("bots", WireJson.encodeToString(bot)))
         }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Couldn't save the bot update." }
         if (bot.deleted) {
             db.delete("entries", "bot_id=?", arrayOf(bot.id))
-            rows(db, "SELECT payload FROM pending") { WireJson.decodeFromString<PendingSend>(it) }
+            rows(db, "pending", "SELECT payload FROM pending") { WireJson.decodeFromString<PendingSend>(it) }
                 .filter { it.botId == bot.id }.forEach { db.delete("pending", "nonce=?", arrayOf(it.nonce)) }
             db.delete("history", "lane=?", arrayOf(bot.id))
         }
     }
     private fun readEntry(db: SQLiteDatabase, id: String): Entry? =
         db.rawQuery("SELECT payload FROM entries WHERE id=?", arrayOf(id)).use {
-            if (it.moveToFirst()) Entry.decode(Json.parseToJsonElement(it.getString(0)).jsonObject) else null
+            if (it.moveToFirst()) Entry.decode(Json.parseToJsonElement(sealer.open("entries", it.getString(0))).jsonObject) else null
         }
     private fun writeEntry(db: SQLiteDatabase, entry: Entry) {
         val deleted = db.rawQuery("SELECT deleted FROM bots WHERE id=?", arrayOf(entry.botId)).use { it.moveToFirst() && it.getInt(0) == 1 }
@@ -154,7 +176,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         if (revision > entry.rev) return
         check(db.insertWithOnConflict("entries", null, ContentValues().apply {
             put("id", entry.id); put("bot_id", entry.botId)
-            put("seq", entry.seq); put("rev", entry.rev); put("payload", WireJson.encodeToString(entry))
+            put("seq", entry.seq); put("rev", entry.rev); put("payload", sealer.seal("entries", WireJson.encodeToString(entry)))
             put("nonce", entry.clientNonce?.takeIf { entry.kind == "user" })
         }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Couldn't save the conversation update." }
         entry.clientNonce?.takeIf { entry.kind == "user" && it.isNotEmpty() }?.let { db.delete("pending", "nonce=?", arrayOf(it)) }
@@ -177,8 +199,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             "Couldn't save the conversation checkpoint."
         }
     }
-    private fun <T> rows(db: SQLiteDatabase, query: String, decode: (String) -> T): List<T> = db.rawQuery(query, null).use {
-        buildList { while (it.moveToNext()) add(decode(it.getString(0))) }
+    private fun <T> rows(db: SQLiteDatabase, column: String, query: String, decode: (String) -> T): List<T> = db.rawQuery(query, null).use {
+        buildList { while (it.moveToNext()) add(decode(sealer.open(column, it.getString(0)))) }
     }
     private fun <T> transaction(block: (SQLiteDatabase) -> T): T {
         val db = writableDatabase

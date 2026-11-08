@@ -62,6 +62,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     internal val sends = mutableSetOf<String>()
     internal val actions = mutableMapOf<String, Job>()
     internal var pluginsRefreshAgain = false
+    internal var messageSpeech: MessageSpeech? = null
     internal var widgetOwner: WidgetOwner? = null
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
@@ -273,6 +274,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         state.value.voice?.id?.let { VoiceService.stop(getApplication(), it) }
         voiceBinding?.engine?.end()
+        messageSpeech?.shutdown()
         channel?.close()
         val old = database
         val retiring = contextJob

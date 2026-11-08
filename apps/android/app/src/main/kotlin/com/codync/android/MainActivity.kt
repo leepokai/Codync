@@ -171,7 +171,7 @@ internal object AccountImages {
         retire()
         val images = ImageLoader.Builder(context).diskCache {
             DiskCache.Builder().directory(File(context.cacheDir, "codync-images-$id").toOkioPath()).maxSizeBytes(64L * 1024 * 1024).build()
-        }.build()
+        }.components { add(coil3.svg.SvgDecoder.Factory()) }.build()
         current = images
         return images
     }

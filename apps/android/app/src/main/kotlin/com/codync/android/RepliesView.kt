@@ -57,6 +57,18 @@ import com.codync.android.design.*
             }
             Box(Modifier.fillMaxWidth().height(0.5.dp).background(Palette.border))
             val items = chatItems(replies, pending)
+            // The replies unread when the thread opened; reading it clears them, so keep the count for this visit.
+            val unread = remember(rootId) {
+                (root?.data?.get("thread") as? kotlinx.serialization.json.JsonObject)
+                    ?.get("unread")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() } ?: 0
+            }
+            val rows = remember(items, unread) {
+                if (unread <= 0) items else {
+                    val indexes = items.withIndex().filter { it.value is ChatItem.Message }.map { it.index }
+                    val cut = indexes.getOrNull(indexes.size - unread) ?: return@remember items
+                    items.toMutableList().apply { add(cut, ChatItem.NewLine("new-$rootId")) }
+                }
+            }
             Box(Modifier.weight(1f)) { ConversationList(scroll, replies.map { it.id }, items.lastOrNull()?.id, replies.lastOrNull()?.rev, working,
                 PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
                 if (root != null) {
@@ -78,10 +90,11 @@ import com.codync.android.design.*
                         if (state.error != null) LinkButton("Retry loading conversation") { store.loadDocumentConversation(bot.id, rootId) }
                     }
                 }
-                items(items.filter { it !is ChatItem.Separator }, key = { it.id }) { item ->
+                items(rows.filter { it !is ChatItem.Separator }, key = { it.id }) { item ->
                     when (item) {
                         is ChatItem.Message -> ChatRow(item.entry, item.groupStart, bot, state, store, openTrace = openTrace, reply = null, connect = connect, thread = rootId)
                         is ChatItem.Pending -> PendingBubble(item.send, item.groupStart, state, store)
+                        is ChatItem.NewLine -> NewLineRow(null)
                         is ChatItem.Separator, is ChatItem.Exchanges -> {}
                     }
                 }

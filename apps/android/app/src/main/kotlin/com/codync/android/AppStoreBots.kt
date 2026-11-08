@@ -71,6 +71,10 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
 internal fun AppStore.deleteEntry(entry: com.codync.android.core.Entry) =
     command("deleteEntry", body("entryId" to entry.id), "delete:" + entry.id)
 
+/** Makes this message and the ones after it unread; opening the chat clears them. */
+internal fun AppStore.markUnread(entry: Entry) =
+    command("markUnread", body("botId" to entry.botId, "entryId" to entry.id), "unread:" + entry.id)
+
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
 

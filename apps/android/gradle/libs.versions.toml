@@ -58,6 +58,7 @@ commonmark-strikethrough = { module = "org.commonmark:commonmark-ext-gfm-striket
 desugar = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 clerk = { module = "com.clerk:clerk-android-api", version.ref = "clerk" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }

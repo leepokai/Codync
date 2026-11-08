@@ -11,12 +11,12 @@ import kotlinx.serialization.json.*
 // Conversations: opening a bot or thread, history, sending and its retries.
 
 fun AppStore.openBot(id: String?, thread: String? = null) {
+    if (id != state.value.selectedBot) stopReading()
     mutableState.update { it.copy(selectedBot = id, thread = thread, trace = false, removedComputer = false) }
     if (id != null) {
         acknowledgeVisible()
         if (thread != null) action("thread:" + thread) {
-            val active = ready()
-            val response = active.call("thread", body("botId" to id, "rootId" to thread))
+            val response = chatRead("thread", body("botId" to id, "rootId" to thread))
             receiveEntries(response)
         }
     }
@@ -73,6 +73,11 @@ internal fun entriesOf(response: JsonElement): List<Entry> =
 internal suspend fun AppStore.callEntries(botId: String, call: String): List<Entry> =
     entriesOf(hostCall("callEntries", buildJsonObject { put("botId", botId); put("callId", call) }, 20_000))
 
+/** The chat read the open thread starts with; 15 s after which it says why it gave up. */
+internal suspend fun AppStore.chatRead(method: String, body: JsonObject): JsonElement =
+    try { withTimeout(15_000) { ready().call(method, body) } }
+    catch (timeout: TimeoutCancellationException) { throw IOException("The computer took too long to answer. Tap to try again.") }
+
 fun AppStore.loadHistory() {
     val id = state.value.selectedBot ?: return
     action("history") {
@@ -82,8 +87,7 @@ fun AppStore.loadHistory() {
             return@action
         }
         val before = withContext(Dispatchers.IO) { mirror.oldestEntrySeq(id) } ?: Long.MAX_VALUE
-        val active = ready()
-        val response = active.call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
+        val response = chatRead("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
         val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
         withContext(Dispatchers.IO) {
             mirror.receive(entries)
@@ -178,6 +182,23 @@ fun AppStore.continueTurn(entry: Entry) = action("continue:" + entry.id) {
 internal fun AppStore.forwardEntry(entry: Entry, toBotId: String, done: () -> Unit = {}) = action("forward:" + entry.id) {
     ready().call("forward", body("entryId" to entry.id, "botId" to toBotId))
     done()
+}
+
+/** Reads a message aloud, or stops it when it's the one reading. */
+internal fun AppStore.readAloud(entry: Entry) {
+    val speech = messageSpeech ?: MessageSpeech(getApplication()).also { messageSpeech = it }
+    if (speech.reading.value == entry.id) speech.stop() else speech.speak(entry.id, entry.text)
+}
+
+internal fun AppStore.stopReading() { messageSpeech?.stop() }
+
+/** The speed messages read at, shared with voice conversations. */
+fun AppStore.readingSpeed(): Float = VoicePreferences.load(getApplication()).rate
+
+/** The speed of messages read aloud, shared with voice conversations (0.75× to 2×). */
+fun AppStore.setReadingSpeed(rate: Float) {
+    voiceSettings(VoicePreferences.load(getApplication()).copy(rate = rate))
+    messageSpeech?.setRate(rate)
 }
 fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + entry.id) {
     // A command or a file change on the computer takes a thumb first; a deny never does.

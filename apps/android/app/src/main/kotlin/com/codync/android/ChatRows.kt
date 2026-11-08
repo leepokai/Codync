@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -43,6 +44,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -74,10 +77,19 @@ import kotlinx.serialization.json.longOrNull
 internal sealed interface ChatItem {
     val id: String
     data class Separator(override val id: String, val at: Long) : ChatItem
+    /** The line above the first message unread when the chat opened. */
+    data class NewLine(override val id: String) : ChatItem
     data class Message(override val id: String, val entry: Entry, val groupStart: Boolean) : ChatItem
     data class Pending(override val id: String, val send: PendingSend, val groupStart: Boolean) : ChatItem
     /** Consecutive bot-to-bot exchanges with one peer, as one line. */
     data class Exchanges(override val id: String, val group: BotExchangeGroup) : ChatItem
+}
+
+/** `items` with the NEW line above the first message newer than the read mark. */
+internal fun withUnreadLine(items: List<ChatItem>, unreadMark: Long?): List<ChatItem> {
+    if (unreadMark == null) return items
+    val first = items.firstOrNull { it is ChatItem.Message && it.entry.rev > unreadMark } ?: return items
+    return buildList { for (item in items) { if (item === first) add(ChatItem.NewLine("new-${item.id}")); add(item) } }
 }
 
 /** Chat-visible entries plus time separators (gaps over an hour) and author grouping. */
@@ -122,6 +134,19 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
         color = Palette.tertiary, textAlign = TextAlign.Center)
 }
 
+/** The line above the first message unread when the chat opened; it grows in from its label. */
+@Composable internal fun NewLineRow(color: Color?) {
+    val grow = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { grow.animateTo(1f, Motion.spring(0.5f)) }
+    val tint = color ?: Palette.secondary
+    Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp).semantics { contentDescription = "New messages" },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("NEW", Modifier.graphicsLayer { alpha = grow.value }, style = Type.caption2.bold, color = tint)
+        Box(Modifier.weight(1f).height(1.dp).background(tint)
+            .graphicsLayer { scaleX = grow.value; transformOrigin = TransformOrigin(0f, .5f) })
+    }
+}
+
 /** One chat-visible entry, with what can be done to it. `reply` quotes it in the composer; `addFallback` opens a bot's fallbacks;
  *  `openArtifact` opens an artifact card's artifact. */
 @Composable internal fun ChatRow(entry: Entry, groupStart: Boolean, chat: Bot?, state: AppState, store: AppStore,
@@ -131,15 +156,17 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
     val topGroupGap = if (compact) 8.dp else 12.dp
     val topSameGap = if (compact) 2.dp else 4.dp
     val haptics = LocalCodyncHaptics.current
-    // The message picked to send on to another chat.
+    // The message picked to send on to another chat, and the speed sheet.
     var forwardEntry by remember { mutableStateOf<Entry?>(null) }
+    var showSpeeds by remember { mutableStateOf(false) }
+    val speeds: (() -> Unit)? = { showSpeeds = true }
     val forward: (() -> Unit)? = if (entry.text.isNotBlank() || entry.files.isNotEmpty() || entry.data["attachments"]?.jsonArray?.isNotEmpty() == true) {
         { forwardEntry = entry }
     } else null
     when (entry.kind) {
         "user" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            UserBubble(entry, state, store, reply, forward, thread)
+            UserBubble(entry, state, store, reply, forward, thread, speeds)
             ReactionsRow(entry, store)
             ThreadChip(entry, state, reply)
             RoutineThreadChip(entry, store)
@@ -147,7 +174,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
         "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
-            AgentBubble(entry, state, store, openTrace, reply, forward, thread, openArtifact)
+            AgentBubble(entry, state, store, openTrace, reply, forward, thread, openArtifact, speeds)
             Column(Modifier.padding(start = if (group) 34.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ReactionsRow(entry, store)
                 ThreadChip(entry, state, reply)
@@ -179,6 +206,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
     CodyncSheet(forwardEntry, { forwardEntry = null }) { picked ->
         ForwardSheet(picked, state, store) { forwardEntry = null }
     }
+    CodyncSheet(showSpeeds, { showSpeeds = false }) { ReadingSpeedSheet(store) { showSpeeds = false } }
 }
 
 /** What a connection request in the chat opens. */
@@ -194,7 +222,7 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 }
 
 /** The menu a message opens on long press: copy, quote, reply in its thread, what the agent did. */
-private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?, store: AppStore? = null, quote: (() -> Unit)?, forward: (() -> Unit)? = null) = buildList {
+private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?, store: AppStore? = null, quote: (() -> Unit)?, forward: (() -> Unit)? = null, speeds: (() -> Unit)? = null) = buildList {
     add(MenuItem("Copy", icon = "square.on.square") {
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", entry.text))
     })
@@ -203,6 +231,16 @@ private fun messageMenu(context: android.content.Context, entry: Entry, reply: (
         store.command("saveBookmark", body("botId" to entry.botId, "entryId" to entry.id, "preview" to entry.text, "author" to entry.replyQuote.author), "bookmark:" + entry.id)
     })
     if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
+    if (store != null && entry.kind == "agent") {
+        add(MenuItem("Mark unread", icon = "envelope.fill") { store.markUnread(entry) })
+        if (entry.text.isNotBlank()) {
+            val reading = store.messageSpeech?.reading?.value == entry.id
+            add(MenuItem(if (reading) "Stop reading" else "Read aloud", icon = if (reading) "stop.fill" else "play.circle") {
+                store.readAloud(entry)
+            })
+            if (speeds != null) add(MenuItem("Reading speed…", icon = "waveform", action = speeds))
+        }
+    }
     if (forward != null) add(MenuItem("Send to a channel…", icon = "arrowshape.turn.up.right", action = forward))
     if (store != null) add(MenuItem("Delete", icon = "trash") { store.deleteEntry(entry) })
     if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
@@ -235,7 +273,7 @@ private fun reactionPick(entry: Entry, store: AppStore) = ReactionPick(quickReac
 
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
-@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?) {
+@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, speeds: (() -> Unit)?) {
     val context = LocalContext.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -247,7 +285,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         }
         if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser).swipeToReply(reply)
             .contextActions(reactions = reactionPick(entry, store), preview = { SelectionContainer { UserText(entry.text) } }) {
-                messageMenu(context, entry, reply, null, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
+                messageMenu(context, entry, reply, null, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
             }) { UserText(entry.text) }
         SendStatusLine(entry.status, state.bots.firstOrNull { it.id == entry.botId }?.status == "working")
     }
@@ -315,7 +353,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, openArtifact: (OpenArtifact) -> Unit) {
+@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, openArtifact: (OpenArtifact) -> Unit, speeds: (() -> Unit)?) {
     val context = LocalContext.current
     val files = entry.files
     val artifact = entry.artifact
@@ -325,16 +363,16 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store,
             Modifier.contextActions(reactions = reactionPick(entry, store),
                 onClick = { openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) {
-                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
+                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
             })
         else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store)) {
-            messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
+            messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
         },
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (file in files) FileDownloadCard(entry, file, state, store)
+            SharedFilesList(entry, files, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).swipeToReply(reply)
             .contextActions(reactions = reactionPick(entry, store), preview = { AgentText(entry.text, selectable = true) }) {
-                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward)
+                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
             }) { AgentText(entry.text, selectable = false) }
     }
 }

@@ -55,6 +55,10 @@ internal object SensitiveAccess {
         return unlocked
     }
 
+    /** Asks for the phone unlock whatever the secrets switch says (the app lock has its own switch). */
+    suspend fun ask(context: Context, reason: String): Boolean =
+        if (available(context)) prompt(context, reason) else false
+
     private suspend fun prompt(context: Context, reason: String): Boolean = suspendCancellableCoroutine { continuation ->
         val cancel = CancellationSignal()
         continuation.invokeOnCancellation { cancel.cancel() }

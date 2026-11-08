@@ -189,6 +189,17 @@ function Summaries() {
   const app = useApp()
   useTraySummary(app)
   useIslandSummary(app)
+  // A quit with an unsent draft asks first (the main process shows it).
+  useEffect(() => {
+    const sync = () => window.codync.app.setDraftsDirty([...app.stores.values()].some((store) => store.composerDrafts.dirty))
+    sync()
+    const stops = [...app.stores.values()].map((store) => store.composerDrafts.subscribe(sync))
+    const unsubscribe = app.subscribe(sync)
+    return () => {
+      for (const stop of stops) stop()
+      unsubscribe()
+    }
+  }, [app])
   return null
 }
 

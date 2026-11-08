@@ -52,6 +52,9 @@ const updates = new Updates(host)
 let chat: BrowserWindow | null = null
 let pairing: BrowserWindow | null = null
 const quitLifecycle = new QuitLifecycle(app, autoUpdater)
+/** A message box holds an unsent draft; quitting asks once before going. */
+let draftsDirty = false
+let quittingWithDrafts = false
 const isMac = process.platform === 'darwin'
 
 function rendererURL(page: string) {
@@ -250,6 +253,30 @@ if (yieldsToInstall()) {
     }
   })
   app.on('activate', () => openChat())
+  ipcMain.on('app:draftsDirty', (_e, dirty: unknown) => {
+    draftsDirty = dirty === true
+  })
+  app.on('before-quit', (event) => {
+    if (!draftsDirty || quittingWithDrafts) return
+    event.preventDefault()
+    const window = chat
+    const options = {
+      type: 'question' as const,
+      buttons: ['Quit', 'Keep editing'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Quit Codync?',
+      message: 'A message box holds an unsent draft.',
+      detail: 'Drafts are saved on this computer; you will find them next time.',
+    }
+    const asked = window ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options)
+    void asked.then((answer) => {
+      if (answer.response !== 0) return
+      quittingWithDrafts = true
+      quitLifecycle.beginQuit()
+      app.quit()
+    })
+  })
   app.on('window-all-closed', () => {
     // A menu bar app: it keeps running with no window.
   })

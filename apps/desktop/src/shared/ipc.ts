@@ -284,6 +284,8 @@ export interface CodyncBridge {
     onCommand(cb: (command: WindowCommand) => void): () => void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>
+    /** Whether any message box holds an unsent draft, for the quit prompt. */
+    setDraftsDirty(dirty: boolean): void
     appearance(): Promise<Appearance>
     setAppearance(value: Appearance): Promise<Appearance>
     showWindow(): void

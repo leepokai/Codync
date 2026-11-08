@@ -42,6 +42,11 @@ export class ComposerDrafts {
     return this.values.get(bot) ?? ''
   }
 
+  /** Whether any chat holds text to send. */
+  get dirty() {
+    return [...this.values.values()].some((text) => text.trim().length > 0)
+  }
+
   set(bot: string, text: string) {
     if (this.retired) return
     if (text) this.values.set(bot, text)

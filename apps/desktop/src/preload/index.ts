@@ -148,6 +148,7 @@ const bridge: CodyncBridge = {
     onCommand: (cb: (c: WindowCommand) => void) => listen('app:command', cb),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
     setLaunchAtLogin: (on) => ipcRenderer.invoke('app:setLaunchAtLogin', on),
+    setDraftsDirty: (dirty) => ipcRenderer.send('app:draftsDirty', dirty),
     appearance: () => ipcRenderer.invoke('app:appearance'),
     setAppearance: (value) => ipcRenderer.invoke('app:setAppearance', value),
     showInDock: () => ipcRenderer.invoke('app:showInDock'),

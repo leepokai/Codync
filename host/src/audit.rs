@@ -33,9 +33,9 @@ pub fn action(method: &str) -> Option<&'static str> {
 pub fn detail(method: &str, body: &Value) -> String {
     let at = |key: &str| body[key].as_str().unwrap_or_default().to_owned();
     match method {
-        "setApproval" => body["mode"].as_str().unwrap_or_default().to_owned(),
+        "setApproval" => body["approval"].as_str().or_else(|| body["mode"].as_str()).unwrap_or_default().to_owned(),
         "setAssistants" => {
-            if body["on"] == true {
+            if body["on"] == true || body["enabled"] == true {
                 "on".into()
             } else {
                 "off".into()
@@ -106,8 +106,8 @@ mod tests {
     #[test]
     fn a_detail_names_ids_but_no_text() {
         assert_eq!(detail("decideAccessRequest", &json!({"key": "abc", "allowed": true})), "allowed abc");
-        assert_eq!(detail("setApproval", &json!({"mode": "ask"})), "ask");
+        assert_eq!(detail("setApproval", &json!({"approval": "auto", "mode": "ask"})), "auto");
         assert_eq!(detail("networkRemove", &json!({"peer": "n2a_x"})), "n2a_x");
-        assert_eq!(detail("setAssistants", &json!({"on": false})), "off");
+        assert_eq!(detail("setAssistants", &json!({"enabled": false})), "off");
     }
 }

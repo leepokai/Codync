@@ -9,7 +9,7 @@ use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -141,6 +141,8 @@ impl Actor {
         self.turn_memory_revision.clear();
         self.announce = None;
         self.first_prompt = None;
+        self.steering = 0;
+        self.turn_done = None;
         self.stop_requested = false;
         self.cancel_deadline = None;
         let team_turn = if let Some(request) = &self.active_request {
@@ -270,12 +272,13 @@ impl Actor {
         }
         let done_tx = done_tx.clone();
         tokio::spawn(async move {
-            let _ = done_tx.send(answer.response().await.and_then(acp::codebuddy::prompt_result));
+            let value = answer.response().await.and_then(acp::codebuddy::prompt_result);
+            let _ = done_tx.send(Done { value, steer: false });
         });
         Ok(())
     }
 
-    pub(super) fn finish_turn(&mut self, done: &Done) {
+    pub(super) fn finish_turn(&mut self, done: &Result<Value>) {
         if self.turn.is_none() {
             return;
         }

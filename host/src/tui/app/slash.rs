@@ -5,7 +5,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
 
-use super::{After, App, Bot, Editor};
+use super::{After, App, Bot, Editor, Kind};
 
 /// What picking a command does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +15,12 @@ pub enum SlashAction {
     Continue,
     /// Ends a stopped or failed task (`cancelTask`).
     Cancel,
+    /// Hands the next waiting message to the running turn (`steer`).
+    Steer,
+    /// Drops the next waiting message (`deleteQueued`).
+    Unqueue,
+    /// Rewrites the next waiting message in the box (`editQueued`).
+    Edit,
     Skill,
 }
 
@@ -33,9 +39,12 @@ impl SlashCommand {
         match self.action {
             SlashAction::Skill if self.detail.is_empty() => self.title.clone(),
             SlashAction::Skill => self.detail.replace('\n', " "),
-            SlashAction::Fast | SlashAction::Continue | SlashAction::Cancel => {
-                format!("{} · {}", self.title, self.detail)
-            }
+            SlashAction::Fast
+            | SlashAction::Continue
+            | SlashAction::Cancel
+            | SlashAction::Steer
+            | SlashAction::Unqueue
+            | SlashAction::Edit => format!("{} · {}", self.title, self.detail),
         }
     }
 }
@@ -71,6 +80,15 @@ impl App {
             .find_map(|e| (e.data["pausedTurn"]["status"] == "waiting").then(|| e.id.clone()))
     }
 
+    /// The oldest message waiting behind the running turn in the selected bot's chat, with its text.
+    fn next_queued(&self) -> Option<(String, String)> {
+        let bot = self.bot().filter(|b| !b.group)?;
+        self.entries.get(&bot.id)?.values().find_map(|e| {
+            (e.kind == Kind::User && e.data["status"] == "queued")
+                .then(|| (e.id.clone(), e.data["text"].as_str().unwrap_or_default().to_owned()))
+        })
+    }
+
     /// Continuing a half-done turn, when the selected bot has one; and Fast mode, when the bot (or any member of
     /// a group) offers it.
     fn built_in(&self) -> Vec<SlashCommand> {
@@ -89,6 +107,26 @@ impl App {
                 title: "Cancel task".into(),
                 detail: "End the turn that stopped half done, keeping its messages".into(),
                 action: SlashAction::Cancel,
+            });
+        }
+        if let Some((.., queued)) = self.next_queued() {
+            commands.push(SlashCommand {
+                name: "steer".into(),
+                title: "Steer the next message in".into(),
+                detail: "Hand the message waiting to be sent to the bot now".into(),
+                action: SlashAction::Steer,
+            });
+            commands.push(SlashCommand {
+                name: "unqueue".into(),
+                title: "Drop the next message".into(),
+                detail: format!("Don't send it: {}", one_line(&queued)),
+                action: SlashAction::Unqueue,
+            });
+            commands.push(SlashCommand {
+                name: "edit".into(),
+                title: "Edit the next message".into(),
+                detail: format!("Rewrite it in the box before it goes: {}", one_line(&queued)),
+                action: SlashAction::Edit,
             });
         }
         let bots = self.fast_bots();
@@ -195,6 +233,30 @@ impl App {
                 }
                 String::new()
             }
+            SlashAction::Steer => {
+                if let Some((entry, ..)) = self.next_queued() {
+                    self.call("steer", json!({"entryId": entry.clone()}), After::Answered(entry));
+                    self.flash("Steering it in");
+                }
+                String::new()
+            }
+            SlashAction::Unqueue => {
+                if let Some((entry, ..)) = self.next_queued() {
+                    self.call("deleteQueued", json!({"entryId": entry.clone()}), After::Answered(entry));
+                    self.flash("Dropped it");
+                }
+                String::new()
+            }
+            // The box takes the message over; Enter saves it instead of sending a new one.
+            SlashAction::Edit => {
+                if let (Some((entry, text)), Some(bot)) = (self.next_queued(), self.selected.clone()) {
+                    self.pending_edit = Some((bot, entry));
+                    self.flash("Enter saves the change; esc then ^c drops it");
+                    text
+                } else {
+                    String::new()
+                }
+            }
             SlashAction::Skill => format!("/{} ", command.name),
         };
         if let Some(key) = self.selected.clone() {
@@ -208,6 +270,11 @@ impl App {
             self.call("skills", json!({}), After::Skills);
         }
     }
+}
+
+/// One line of a waiting message, for a command's detail.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// A group's Fast mode: on when every member offering it has it on; then the first member whose
@@ -284,6 +351,30 @@ mod tests {
         assert_eq!(names(&app), ["cancel"], "a card that reached its limit can still be ended");
         app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "closed", false));
         assert!(names(&app).is_empty(), "a closed card offers nothing");
+    }
+
+    #[tokio::test]
+    async fn a_waiting_message_offers_steer_unqueue_and_edit() {
+        let mut app = app_with(&json!({"id": "b", "name": "Bot", "skills": [], "fastModeSupport": "unsupported"}));
+        let queued = |seq: i64, status: &str| super::super::Entry {
+            id: format!("q{seq}"),
+            seq,
+            turn: 1,
+            kind: super::super::Kind::User,
+            data: json!({"text": format!("word {seq}"), "status": status}),
+            created_at: 0,
+        };
+        app.drafts.insert("b".into(), super::Editor::with("/"));
+        assert!(names(&app).is_empty(), "nothing waits, nothing on offer");
+        app.entries.entry("b".into()).or_default().insert(1, queued(1, "queued"));
+        app.entries.entry("b".into()).or_default().insert(2, queued(2, "queued"));
+        app.entries.entry("b".into()).or_default().insert(3, queued(3, "sent"));
+        assert_eq!(names(&app), ["steer", "unqueue", "edit"], "the message already sent is past");
+        let detail = |app: &super::App| app.slash_commands().remove(1).detail;
+        assert_eq!(detail(&app), "Don't send it: word 1", "the oldest waiting one, on one line");
+        assert!(app.built_in_command("/edit"));
+        assert_eq!(app.pending_edit.as_ref().map(|(bot, _)| bot.as_str()), Some("b"));
+        assert_eq!(app.draft().text, "word 1", "the box takes the message over");
     }
 
     #[tokio::test]

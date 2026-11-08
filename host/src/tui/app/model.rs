@@ -33,6 +33,8 @@ pub enum After {
     /// A permission card's answer arrived (or couldn't).
     Answered(String),
     Sent(String),
+    /// `editQueued` for bot `.0`, entry `.1`, of text `.2`: a waiting message the box rewrote.
+    QueuedEdited(String, String, String),
     Connection(String, super::super::connections::Step),
     Hello,
     /// `testApprovalRule`: what the host says about a command tried in the rules sheet.

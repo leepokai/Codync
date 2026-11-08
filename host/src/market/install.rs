@@ -463,7 +463,7 @@ mod tests {
         other["name"] = json!("Other");
         other["command"] = json!("uvx");
         add_custom_connector(&store, &other).await.expect("add again");
-        assert!(login("Other").is_empty());
+        assert_eq!(login("Other"), Vec::<String>::new());
     }
 
     #[test]

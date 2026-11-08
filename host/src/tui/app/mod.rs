@@ -127,6 +127,8 @@ pub struct App {
     pub chat_top: bool,
     /// The message the next one sent replies to (`r` on a picked message; esc cancels).
     pub reply: Option<String>,
+    /// A message waiting in the queue that the box is rewriting (`/edit`): the send becomes `editQueued`.
+    pub pending_edit: Option<(String, String)>,
     /// A message picked to act on: reply, react, copy, save its files (`r`, then j/k and ↵).
     pub pick: Option<String>,
     /// Chat lines showing their full text: a handoff (`o` on the picked line).
@@ -211,6 +213,7 @@ impl App {
             chat_height: 20,
             chat_top: false,
             reply: None,
+            pending_edit: None,
             pick: None,
             unfolded: HashSet::new(),
             call_entries: HashMap::new(),

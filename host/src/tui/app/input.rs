@@ -119,6 +119,20 @@ impl App {
                 if files.is_empty() && self.built_in_command(&text) {
                     return;
                 }
+                // A waiting message the box took over (`/edit`): this send saves it, it doesn't post another.
+                if files.is_empty()
+                    && let Some((bot, entry)) = self.pending_edit.clone()
+                    && bot == key
+                {
+                    self.pending_edit = None;
+                    self.call(
+                        "editQueued",
+                        json!({"botId": key, "entryId": entry}),
+                        After::QueuedEdited(key, entry, text),
+                    );
+                    self.flash("Saving the change…");
+                    return;
+                }
                 if let Some(m) = &self.mismatch {
                     // The draft stays; it sends once the update is done.
                     let why = mismatch_text(m, &self.host);
@@ -164,6 +178,7 @@ impl App {
                     self.flash("esc then s stops the bot");
                 } else {
                     draft.clear();
+                    self.pending_edit = None;
                 }
             }
             KeyCode::Up if draft.text.is_empty() => self.scroll_chat(1),

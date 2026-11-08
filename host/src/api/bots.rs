@@ -328,6 +328,33 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             json!({"entry": crate::chat::messages::post_in_lane(hub, &row.config, lane, data)?})
         }
+        // A waiting message goes into the running turn now, instead of after it.
+        "steer" => {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            hub.send_cmd(str_arg(&b, "botId")?, Cmd::Steer { entry_id: str_arg(&b, "entryId")?.to_owned(), reply })?;
+            answer.await??;
+            json!({})
+        }
+        // A waiting message rewritten before it goes out.
+        "editQueued" => {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            let cmd = Cmd::EditQueued {
+                entry_id: str_arg(&b, "entryId")?.to_owned(),
+                text: b["text"].as_str().unwrap_or_default().to_owned(),
+                reply,
+            };
+            hub.send_cmd(str_arg(&b, "botId")?, cmd)?;
+            answer.await??;
+            json!({})
+        }
+        // A waiting message dropped: the agent never hears it.
+        "deleteQueued" => {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            let cmd = Cmd::DeleteQueued { entry_id: str_arg(&b, "entryId")?.to_owned(), reply };
+            hub.send_cmd(str_arg(&b, "botId")?, cmd)?;
+            answer.await??;
+            json!({})
+        }
         // A message sent on to another chat (the message menu's "Send to a channel").
         "forward" => {
             json!({"entry": crate::chat::forward::forward(hub, str_arg(&b, "entryId")?, str_arg(&b, "botId")?).await?})

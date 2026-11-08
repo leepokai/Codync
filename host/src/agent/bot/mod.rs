@@ -30,6 +30,8 @@ mod proactive;
 #[cfg(test)]
 mod proactive_tests;
 mod queue;
+#[cfg(test)]
+mod queue_tests;
 mod refuse;
 mod results;
 mod session;
@@ -149,6 +151,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         exit_tail: None,
         tools_changed: false,
         restart_after_turn: false,
+        steering: 0,
+        turn_done: None,
         fast_support,
         idle_checked: Instant::now(),
         loop_guard: stall::LoopGuard::default(),
@@ -303,6 +307,10 @@ struct Actor {
     /// The snapshot of a new session's first prompt, marked delivered once the agent answered it.
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
+    /// Steered prompts still waiting on the agent: the turn outlives its own prompt answer until they are done.
+    steering: usize,
+    /// The turn's own prompt answer while a steered one is still out.
+    turn_done: Option<Done>,
     queue: VecDeque<Queued>,
     active_request: Option<crate::chat::team::BotRequest>,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
@@ -359,9 +367,55 @@ struct RoutineCompletion {
     timed_out: bool,
 }
 
-type Done = Result<Value>;
+/// How one `session/prompt` of a turn ended.
+pub(super) struct Done {
+    value: Result<Value>,
+    /// The answer to a steered prompt that went out while the turn was running: the turn goes on until it's back.
+    steer: bool,
+}
 
 impl Actor {
+    /// One `session/prompt` of the turn answered. A steered prompt keeps the turn open: the turn's own answer
+    /// waits in `turn_done` until the last steered one is back.
+    async fn on_done(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
+        if done.steer {
+            self.steering = self.steering.saturating_sub(1);
+            // The turn goes on from where its own prompt left off; the next message retries a failing agent.
+            if let Err(error) = self.verified(done.value).await {
+                tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "a steered prompt failed");
+            } else if self.steering == 0
+                && let Some(held) = self.turn_done.take()
+            {
+                self.end_turn(held, done_tx).await;
+            }
+            return;
+        }
+        if self.steering > 0 {
+            self.turn_done = Some(done);
+            return;
+        }
+        self.end_turn(done, done_tx).await;
+    }
+
+    /// Wraps the turn up: the answer decides whether it failed, and the queue moves on.
+    async fn end_turn(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
+        let done = self.verified(done.value).await;
+        if let Err(error) = &done
+            && self.fall_back(error, done_tx).await
+        {
+            return;
+        }
+        let (session, routine) = (self.turn_session.clone(), self.active_routine.is_some());
+        let failed = done.as_ref().is_err_and(acp::may_end_session);
+        self.finish_turn(&done);
+        match session {
+            Some(sid) if routine => self.release_spent(&sid).await,
+            Some(sid) if failed => self.close_reloadable(&sid).await,
+            _ => {}
+        }
+        self.next_in_queue(done_tx).await;
+    }
+
     /// `interrupted`: the previous host process stopped a turn in the bot's chat; resume it first.
     async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, interrupted: Option<Lane>) {
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
@@ -386,19 +440,7 @@ impl Actor {
                     while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
                         self.on_incoming(Some(inc)).await;
                     }
-                    let done = self.verified(done).await;
-                    if let Err(error) = &done && self.fall_back(error, &done_tx).await {
-                        continue;
-                    }
-                    let (session, routine) = (self.turn_session.clone(), self.active_routine.is_some());
-                    let failed = done.as_ref().is_err_and(acp::may_end_session);
-                    self.finish_turn(&done);
-                    match session {
-                        Some(sid) if routine => self.release_spent(&sid).await,
-                        Some(sid) if failed => self.close_reloadable(&sid).await,
-                        _ => {}
-                    }
-                    self.next_in_queue(&done_tx).await;
+                    self.on_done(done, &done_tx).await;
                 }
                 _ = flush_tick.tick() => {
                     self.flush(false);

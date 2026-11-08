@@ -162,6 +162,10 @@ impl App {
             self.sent(&key, r);
             return;
         }
+        if let After::QueuedEdited(key, entry, text) = after {
+            self.queued_edited(&key, &entry, &text, r);
+            return;
+        }
         if let After::Answered(entry) = after {
             self.answering.remove(&entry);
             if let Err(e) = r {
@@ -229,6 +233,7 @@ impl App {
             | After::Sheet(_)
             | After::Network(_)
             | After::Sent(_)
+            | After::QueuedEdited(_, _, _)
             | After::Connection(_, _)
             | After::Roster(_, _)
             | After::RosterStopped(_) => {}
@@ -353,6 +358,22 @@ impl App {
         }
     }
 
+    /// A waiting message the box rewrote: the draft goes when it saved, and stays (with the target) when it didn't.
+    fn queued_edited(&mut self, key: &str, entry: &str, text: &str, result: Result<Value, String>) {
+        match result {
+            Ok(_) => {
+                if self.drafts.get(key).is_some_and(|d| d.text.trim() == text) {
+                    self.drafts.remove(key);
+                }
+                self.flash("Message changed");
+            }
+            Err(error) => {
+                self.pending_edit = Some((key.to_owned(), entry.to_owned()));
+                self.flash(&format!("{error} Draft kept; Enter retries, ^c clears it."));
+            }
+        }
+    }
+
     fn sent(&mut self, key: &str, result: Result<Value, String>) {
         let Some(sent) = self.sends.get_mut(key) else { return };
         sent.busy = false;
@@ -462,6 +483,18 @@ mod tests {
         app.on_reply(After::Sent(key.into()), Ok(json!({})));
         assert!(!app.drafts.contains_key(key));
         assert!(!app.files.contains_key(key));
+    }
+
+    #[test]
+    fn an_edit_failure_keeps_the_draft_and_its_target_for_retry() {
+        let mut app = test_app();
+        app.drafts.insert("bot".into(), Editor::with("rewritten"));
+        app.on_reply(After::QueuedEdited("bot".into(), "e1".into(), "rewritten".into()), Err("Disconnected".into()));
+        assert_eq!(app.drafts["bot"].text, "rewritten");
+        assert_eq!(app.pending_edit, Some(("bot".into(), "e1".into())));
+        app.on_reply(After::QueuedEdited("bot".into(), "e1".into(), "rewritten".into()), Ok(json!({})));
+        assert!(!app.drafts.contains_key("bot"), "saved, so the box clears");
+        assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("Message changed"));
     }
 
     #[test]

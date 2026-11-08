@@ -43,7 +43,7 @@ export function AuditLogSection() {
       {lines.map((line, index) => (
         <div key={`${line.at}-${index}`} className="settings-row">
           <Text grow>{tr(line.action)}</Text>
-          <Text size="caption" tone="tertiary" selectable>{line.detail || '—'}</Text>
+          <Text size="caption" tone="tertiary">{line.detail || '—'}</Text>
           <Text size="caption" tone="tertiary">{new Date(line.at).toLocaleString()}</Text>
         </div>
       ))}

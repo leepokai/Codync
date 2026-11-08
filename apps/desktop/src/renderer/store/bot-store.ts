@@ -87,6 +87,9 @@ export class BotStore extends BotSync {
 
   private outgoingFiles = new Map<string, OutgoingFile[]>()
 
+  /** How much of a file the computer has, by the file's own id (shown in the composer while it uploads). */
+  readonly uploadPercents = new Map<string, number>()
+
   send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, thread = null, call = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
@@ -112,8 +115,13 @@ export class BotStore extends BotSync {
             ids = []
             for (const file of pending) {
               const id = crypto.randomUUID()
-              await client.upload(botId, id, file.name, file.data)
+              await client.upload(botId, id, file.name, file.data, (sent) => {
+                this.uploadPercents.set(file.id, Math.min(99, Math.floor((sent * 100) / Math.max(1, file.data.length))))
+                this.changed()
+              })
               cacheAttachment(id, file.data)
+              this.uploadPercents.delete(file.id)
+              this.changed()
               ids.push(id)
             }
           }
@@ -124,6 +132,7 @@ export class BotStore extends BotSync {
         this.changed()
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
+        for (const file of this.outgoingFiles.get(nonce) ?? []) this.uploadPercents.delete(file.id)
         this.markLocal(nonce, botId, 'failed')
       }
     })()

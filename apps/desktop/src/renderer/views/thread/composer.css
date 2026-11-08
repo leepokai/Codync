@@ -55,6 +55,14 @@
   height: 100%;
   object-fit: contain;
 }
+.attachment-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
 .attachment-remove {
   position: absolute;
   top: 4px;

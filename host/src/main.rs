@@ -6,8 +6,9 @@ mod agent;
 mod analytics;
 mod analytics_cli;
 mod api;
-mod background;
 #[allow(dead_code, unused_imports, reason = "OpenMausBot scaffolding, not wired into the host yet")]
+mod audit;
+mod background;
 mod browser;
 mod budget;
 mod bundle;

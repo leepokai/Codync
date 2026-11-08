@@ -69,3 +69,12 @@ internal suspend fun AppStore.importBots(bundle: String, cwd: String): Int {
     val answer = hostCall("importBots", buildJsonObject { put("bundle", parsed); put("cwd", cwd) })
     return (answer.jsonObject["bots"] as? JsonArray)?.size ?: 0
 }
+
+/** The security decisions made on the computer, newest first. */
+internal suspend fun AppStore.auditLog(): List<Pair<Long, Pair<String, String>>> = hostCall("auditLog", buildJsonObject {}).jsonObject["lines"]!!.jsonArray.map {
+    val line = it.jsonObject
+    line["at"]!!.jsonPrimitive.long to (line["action"]!!.jsonPrimitive.content to (line["detail"]?.jsonPrimitive?.content ?: ""))
+}
+
+/** Clears the computer's audit log. */
+internal suspend fun AppStore.clearAuditLog() { hostCall("clearAuditLog", buildJsonObject {}) }

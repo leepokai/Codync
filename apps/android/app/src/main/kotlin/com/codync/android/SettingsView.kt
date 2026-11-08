@@ -96,6 +96,7 @@ import com.codync.android.design.*
         }
         SecuritySection()
         NotificationsSection()
+        AuditLogSection(state, store)
         CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
             row {
                 val analyticsLabel = tr("Share usage analytics")

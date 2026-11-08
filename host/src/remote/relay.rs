@@ -140,7 +140,7 @@ async fn supervise(hub: &Arc<Hub>, address: &cloud::Address) {
             register_wait.reset();
         }
         let started = Instant::now();
-        let outcome = session(hub, address).await;
+        let outcome = Box::pin(session(hub, address)).await;
         cloud::update_status(hub, |s| s.connected = false);
         match outcome {
             Ok(Some(REPLACED)) => {

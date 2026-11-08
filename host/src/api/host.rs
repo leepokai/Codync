@@ -16,6 +16,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     Ok(ControlFlow::Break(match method {
         "hostUpdateStatus" => crate::update::status()?,
         "hostHealth" => crate::health::value(hub),
+        // The security decisions made on this computer.
+        "auditLog" => crate::audit::list(hub),
+        "clearAuditLog" => {
+            crate::audit::clear(hub)?;
+            json!({})
+        }
         // Palettes from the person's own theme files; a phone may read them, only the computer chooses one.
         "themeThemes" => json!({"themes": crate::theme::list(), "active": crate::theme::active(&hub.store)}),
         "setTheme" => {

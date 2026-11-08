@@ -68,7 +68,11 @@ fn str_arg<'a>(b: &'a Value, k: &str) -> Result<&'a str> {
 pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<Value> {
     devices::permit(caller, method)?;
     let observed = crate::analytics::observe_call(hub, caller, method, &b);
+    let audited = b.clone();
     let result = route(hub, caller, method, b).await;
+    if result.is_ok() {
+        crate::audit::record(hub, method, &audited);
+    }
     if method == "createBot" && result.as_ref().is_ok_and(|value| value["bot"]["kind"] != "group") {
         crate::analytics::setup::ready(hub);
     }

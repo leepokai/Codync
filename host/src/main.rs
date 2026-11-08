@@ -52,6 +52,7 @@ mod slack;
 mod store;
 mod telegram;
 mod theme;
+mod tools;
 mod tui;
 mod update;
 mod usage;
@@ -154,7 +155,11 @@ enum Sub {
         port: u16,
     },
     /// Stop and remove the background service.
-    Uninstall,
+    Uninstall {
+        /// Also delete the user's ComfyUI data: models, custom nodes, images and settings.
+        #[arg(long)]
+        remove_comfy: bool,
+    },
     /// Stop the background service, keeping its configuration and all data.
     Stop,
     /// Update a standalone host, or inspect/configure its automatic updates.
@@ -328,6 +333,13 @@ enum McpServer {
     },
     /// Create bots and change any bot's setup, for a bot that may manage the team.
     Manage {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Make images with the ComfyUI on this computer, for a bot whose owner turned it on.
+    Comfy {
         #[arg(long)]
         bot: String,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -520,8 +532,12 @@ async fn main() -> Result<()> {
             println!("Codync host stopped.");
             Ok(())
         }
-        Sub::Uninstall => {
+        Sub::Uninstall { remove_comfy } => {
             service::uninstall();
+            if remove_comfy {
+                tokio::task::spawn_blocking(tools::comfy::remove_data).await??;
+                println!("ComfyUI data removed.");
+            }
             if environment::Environment::current() == environment::Environment::Main
                 && let Some(home) = dirs::home_dir()
                 && let Err(e) = service::restore_statusline(&home.join(".claude/settings.json"))
@@ -606,6 +622,7 @@ async fn main() -> Result<()> {
         Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
         Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,
         Sub::Mcp { server: McpServer::Memory { bot, port } } => mcp::serve(bot, port, mcp::Server::Memory).await,
+        Sub::Mcp { server: McpServer::Comfy { bot, port } } => mcp::serve(bot, port, mcp::Server::Comfy).await,
         Sub::Mcp { server: McpServer::Composio { bot, port } } => mcp::serve(bot, port, mcp::Server::Composio).await,
         Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,

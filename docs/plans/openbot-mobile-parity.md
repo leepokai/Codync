@@ -37,7 +37,7 @@ before connect (`openMirror`), sign-out erasure (`LocalStore.erase`), bounded im
 | Rotation, unfold and window resize keep the screen (no recreation) | Present | `AndroidManifest.xml` `configChanges` |
 | The blinking launch mark draws no frames between blinks | Done | `LaunchSplash.kt`, `CharacterAvatar(blink)` |
 | Resting faces stay still (only working and needs-you faces move) | Present | `CharacterAvatar.kt` |
-| Encrypted copy of agents and chats, deleted on sign-out | Partial: the mirror lives in `noBackupFilesDir`, which is private but not encrypted; the key is Keystore-owned | `LocalStore.kt`, `MirrorDatabase.kt` |
+| Encrypted copy of agents and chats, deleted on sign-out | Done: every mirror payload is AES-GCM sealed under the account's Keystore key, which sign-out deletes with the folder | `ScopeKey.kt`, `MirrorSealer.kt`, `MirrorDatabase.kt`, `LocalStore.kt` |
 
 ## 3. Support (M4)
 
@@ -60,7 +60,7 @@ same two hooks in its transport.
 
 Kept in the owner's order:
 
-- **M2**: workflow editor (Condition model and effort, WhatsApp numbers).
+- **M2**: workflow editor (a step's model and effort, WhatsApp numbers) — done.
 
 Done from M2:
 
@@ -69,13 +69,13 @@ Done from M2:
 | A routine can start from a WhatsApp message or group mention | Done | host `routines::events`, `RoutinesView.kt` (catalog from the host) |
 | A WhatsApp chat as an output | Done | host `routines::outputs`, `Routine.kt`, `RoutinesView.kt`, iOS `RoutineOutput` + editor, desktop `routine.ts` |
 | A routine can run in a thread | Done | host `Routine::thread`, `routines::mod`, `Run in a thread` on the three clients |
-| Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx`; the iPhone has no channel UI yet |
+| Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx`, iOS `WhatsAppSheet.swift` (marketplace pin and a computer's WhatsApp row) |
+| Channels on the phone: pair someone to a Telegram bot, take them out, see Discord, Slack and GitHub | Done | `ChannelsSheet.kt`/`AppStoreChannels.kt`; iOS `ChannelsSheet.swift`, `HostClient+Channels.swift`, `BotStore+Channels.swift`, Settings row |
 | Cancel task on a stopped or failed task | Done | Codync has no channel tasks: a paused turn card and a failed routine notice stand in. host `pause::close` and `routines::retry::cancel` (one `cancelTask` method), `PausedTurnCard.kt`, `RoutineNotice`, desktop `ChatRows.tsx`/`RoutineNotice.tsx`, TUI `/cancel` and `E` |
+| A step's own Model and Effort | Done: a link carries a model and its options into the next bot's one turn, then the bot's own come back. Codync's canvas has no Condition step type; a link is the step. host schema 8, `chat::team::ModelOverride`, `agent::bot::model_override`, Android + desktop link panels; the iPhone has no flow canvas yet | `store/flows.rs`, `routines/flow`, `ModelOverride`, `RoutineFlowDetail.kt`, `FlowInspector.tsx` |
 
-Left from M2: a Condition step's own Model and Effort. Codync's canvas has no Condition step
-type; a step is a bot, and it already runs on that bot's model. Giving a link its own model and
-effort means carrying an override into the target bot's turn (`chat::team::BotRequest` →
-`agent::bot::turn`), in the host before any client shows it, so it is its own change.
+Every M2 item is done; the iPhone has no flow canvas yet, so a link's model is set from Android or
+the desktop app.
 
 - **M5/M6**: voice pause slider, reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.

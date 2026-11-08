@@ -32,6 +32,9 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 介面新增阿拉伯文，並把整個版面鏡像；每段文字仍依自己的方向閱讀。
 - 佇列訊息顯示在輸入框上方，可先編輯、插話或刪除。
 - 例行工作可以選擇在子討論串中執行。
+- 頻道畫面會顯示這台電腦的 Telegram 機器人、Discord、Slack 與 GitHub；可以替機器人配對對象或把人移除。
+- WhatsApp 現在有自己的一列，從電腦管理或擴充功能市集都能開啟連結畫面。
+- 工作流程的連線可以指定目標機器人那一輪要用的模型與選項。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -57,3 +60,6 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - The interface is available in Arabic and mirrors right to left, while each paragraph still reads in its own direction.
 - Queued messages sit above the composer, ready to edit, steer or delete.
 - A routine can run in a thread.
+- Channels shows the computer's Telegram bots, Discord, Slack and GitHub from this iPhone; pair someone to a bot or take them out.
+- WhatsApp has its own row in computer management, beside its row in the marketplace.
+- A workflow link can name the model and its options for the target bot's turn.

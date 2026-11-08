@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var confirmStartOver = false
     @State private var aboutAnalytics = false
     @State private var support = false
+    @State private var channels = false
 
     var body: some View {
         CardForm {
@@ -29,6 +30,15 @@ struct SettingsView: View {
             ThinkingDetailsSettings()
 
             ShortcutLeadSettings()
+
+            if app.currentStore != nil {
+                CardSection {
+                    Button { channels = true } label: {
+                        RowLabel("Channels", systemImage: "paperplane", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
             CardSection("Notifications", footer: "Get a result summary, a request for input, or a failure notice. Notification previews follow your iOS settings.") {
                 notificationsRow
@@ -97,6 +107,11 @@ struct SettingsView: View {
         }
         .codyncSheet(isPresented: $aboutAnalytics) { AnalyticsSheet() }
         .codyncSheet(isPresented: $support) { SupportView() }
+        .codyncSheet(isPresented: $channels) {
+            if let store = app.currentStore {
+                ChannelsSheet().environment(store)
+            }
+        }
     }
 
     private var notificationsRow: some View {

@@ -27,6 +27,7 @@ public struct MarketplaceView: View {
     @State var section = ExtensionSection.apps
     @State var showInstalled = false
     @State var showCredentials = false
+    @State var showWhatsApp = false
     @State var addedApps: Set<String> = []
     @State var addedAgents: Set<String> = []
     @Environment(\.dismissModal) private var dismiss
@@ -98,6 +99,7 @@ public struct MarketplaceView: View {
             InstallConnectorSheet(item: item, addsAtOnce: false) { Task { await loadConnectors() } }
         }
         .codyncSheet(isPresented: $showCredentials) { CredentialsView() }
+        .codyncSheet(isPresented: $showWhatsApp) { WhatsAppSheet() }
         .codyncSheet(isPresented: $addingConnector) { CustomConnectorSheet() }
         .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
         .codyncSheet(isPresented: $writingSkill) { NewSkillSheet() }

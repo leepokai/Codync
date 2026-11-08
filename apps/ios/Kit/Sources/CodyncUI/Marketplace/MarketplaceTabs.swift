@@ -56,6 +56,11 @@ extension MarketplaceView {
         } add: {
             addingConnector = true
         }
+        MarketRow(title: "WhatsApp", subtitle: "Link a WhatsApp number and let your bots work from it.", added: false, addLabel: "Link") {
+            TileIcon(systemName: "bubble.left.and.bubble.right")
+        } add: {
+            showWhatsApp = true
+        }
         if !shownApps.isEmpty {
             ForEach(groups(shownApps, category: \.category, featured: \.featured), id: \.0) { title, group in
                 MarketSection(title: title) {

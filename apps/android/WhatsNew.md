@@ -35,6 +35,9 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 每段文字依自己的方向閱讀，程式碼一律由左至右；介面可以選阿拉伯文並由右至左排列。
 - 可以用 PIN 或手機的指紋、臉部、螢幕鎖定鎖住 App，離開後依設定重新鎖上。
 - 從其他 App 分享時，分享面板會直接列出釘選的代理程式。
+- 頻道畫面會顯示這台電腦的 Telegram 機器人、Discord、Slack 與 GitHub；可以替機器人配對對象或把人移除。
+- WhatsApp 現在有自己的一列，從擴充功能市集也能開啟連結畫面。
+- 工作流程的連線可以指定目標機器人那一輪要用的模型與選項。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -62,6 +65,9 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Each paragraph reads in its own direction and code always reads left to right; the interface comes in Arabic, right to left.
 - Lock Codync behind a PIN or the phone's fingerprint, face or screen lock, and it locks again after the chosen time away.
 - Sharing from another app offers your pinned agents in the share sheet.
+- Channels shows the computer's Telegram bots, Discord, Slack and GitHub from this phone; pair someone to a bot or take them out.
+- WhatsApp has its own row in Extensions, and the linked number stays reachable from computer management.
+- A workflow link can name the model and its options for the target bot's turn.
 
 ## 2.32.0
 

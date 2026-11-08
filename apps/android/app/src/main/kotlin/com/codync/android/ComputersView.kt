@@ -56,6 +56,8 @@ import kotlinx.serialization.json.put
     var confirmRevoke by remember { mutableStateOf<CloudComputer?>(null) }
     var coloring by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(false) }
+    var channels by remember { mutableStateOf(false) }
+    var whatsapp by remember { mutableStateOf(false) }
     var network by remember { mutableStateOf(false) }
     LaunchedEffect(state.contextId) { store.refreshCloud() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
@@ -66,6 +68,7 @@ import kotlinx.serialization.json.put
                 val inAccount = state.cloudComputers.firstOrNull { it.computerId == paired.id }
                 CardSection {
                     computerRows(state, store, inAccount != null, ComputerActions(extensions, store::openScreen, voice = { voice = true },
+                        channels = { channels = true }, whatsapp = { whatsapp = true },
                         network = { network = true }, color = { coloring = true }, ask = inAccount?.let { c -> { ask(c) } },
                         revoke = inAccount?.takeIf { it.isGranted }?.let { c -> { confirmRevoke = c } }) { confirmForget = true })
                 }
@@ -95,6 +98,8 @@ import kotlinx.serialization.json.put
         } }
     }
     CodyncSheet(voice, { voice = false }) { VoiceChatSettings(state, store) }
+    CodyncSheet(channels, { channels = false }) { ChannelsSheet(state, store) }
+    CodyncSheet(whatsapp, { whatsapp = false }) { WhatsAppSheet(state, store) }
     CodyncSheet(network, { network = false }) { state.network?.let { NetworkSheet(it, store::refreshNetwork) } }
     SwatchPanel(coloring, paired?.color, { coloring = false }, store::setColor)
     CodyncDialog(tr("Remove {name}?").replace("{name}", paired?.name ?: "computer"), confirmForget, { confirmForget = false },
@@ -108,12 +113,13 @@ import kotlinx.serialization.json.put
 }
 
 /** What the paired computer's row and its menu open; `revoke` is set when this phone's account access can be revoked. */
-private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val network: () -> Unit, val color: () -> Unit,
+private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val channels: () -> Unit,
+    val whatsapp: () -> Unit, val network: () -> Unit, val color: () -> Unit,
     val ask: (() -> Unit)?, val revoke: (() -> Unit)?, val remove: () -> Unit)
 
 /**
  * The paired computer as the rows of its card: its connection and whether it's in the account, then
- * Extensions, Voice chat (its keys live on the computer), Screen, whether it sends push alerts here
+ * Extensions, Voice chat (its keys live on the computer), Channels, WhatsApp, Screen, whether it sends push alerts here
  * (saved with the computer, so another account's computer keeps its own), how it's reached, the Codync it runs
  * (and its update) and, for a stale pairing, Remove (iOS `ComputerRows`).
  */
@@ -122,6 +128,8 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     if (state.connection is LinkState.Ready) {
         row { RowLabel("Extensions", "square.grid.2x2", chevron = true, modifier = Modifier.plainButton(action = actions.extensions)) }
         row { RowLabel("Voice chat", "waveform", chevron = true, modifier = Modifier.plainButton(action = actions.voice)) }
+        row { RowLabel("Channels", "paperplane", chevron = true, modifier = Modifier.plainButton(action = actions.channels)) }
+        row { RowLabel("WhatsApp", "bubble.left.and.bubble.right", chevron = true, modifier = Modifier.plainButton(action = actions.whatsapp)) }
         if (state.screen != null) row { RowLabel("Screen", "display", chevron = true, modifier = Modifier.plainButton(action = actions.screen)) }
         if (state.network?.shown == true) row { RowLabel("Network", NETWORK_ICON, chevron = true, modifier = Modifier.plainButton(action = actions.network)) }
     }
@@ -149,6 +157,8 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
             MenuItem("Color", icon = "paintpalette", action = actions.color),
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = actions.extensions) else null,
             if (online) MenuItem("Voice chat", icon = "waveform", action = actions.voice) else null,
+            if (online) MenuItem("Channels", icon = "paperplane", action = actions.channels) else null,
+            if (online) MenuItem("WhatsApp", icon = "bubble.left.and.bubble.right", action = actions.whatsapp) else null,
             if (online && state.screen != null) MenuItem("Screen", icon = "display", action = actions.screen) else null,
             if (online && state.network?.shown == true) MenuItem("Network", icon = NETWORK_ICON, action = actions.network) else null,
             actions.revoke?.let { MenuItem("Revoke this phone's access", icon = "lock.slash", destructive = true, divider = true, action = it) },

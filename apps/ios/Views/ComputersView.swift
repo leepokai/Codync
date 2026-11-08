@@ -140,8 +140,8 @@ struct ComputersView: View {
 }
 
 /// A computer this iPhone can use, as the rows of its card: its connection and whether it's in the account,
-/// then Extensions, Voice chat (its keys live on the computer), Screen, whether it sends push alerts here,
-/// how it's reached, the Codync it runs (and its update) and, for a stale pairing, Remove.
+/// then Extensions, Voice chat (its keys live on the computer), Channels, WhatsApp, Screen, whether it sends
+/// push alerts here, how it's reached, the Codync it runs (and its update) and, for a stale pairing, Remove.
 private struct ComputerRows: View {
     let store: BotStore
     let inAccount: CloudComputer?
@@ -156,6 +156,8 @@ private struct ComputerRows: View {
     @State private var coloring = false
     @State private var voiceSettings = false
     @State private var networkSheet = false
+    @State private var channels = false
+    @State private var whatsapp = false
 
     var body: some View {
         summary
@@ -163,6 +165,10 @@ private struct ComputerRows: View {
             Button(action: openMarketplace) { RowLabel("Extensions", systemImage: "square.grid.2x2", chevron: true) }
                 .buttonStyle(.plain)
             Button { voiceSettings = true } label: { RowLabel("Voice chat", systemImage: "waveform", chevron: true) }
+                .buttonStyle(.plain)
+            Button { channels = true } label: { RowLabel("Channels", systemImage: "paperplane", chevron: true) }
+                .buttonStyle(.plain)
+            Button { whatsapp = true } label: { RowLabel("WhatsApp", systemImage: "bubble.left.and.bubble.right", chevron: true) }
                 .buttonStyle(.plain)
             if store.screen != nil {
                 Button(action: openScreen) { RowLabel("Screen", systemImage: "display", chevron: true) }
@@ -212,6 +218,8 @@ private struct ComputerRows: View {
             if store.connection == .online {
                 items.append(MenuItem("Extensions", icon: "square.grid.2x2", action: openMarketplace))
                 items.append(MenuItem("Voice chat", icon: "waveform") { voiceSettings = true })
+                items.append(MenuItem("Channels", icon: "paperplane") { channels = true })
+                items.append(MenuItem("WhatsApp", icon: "bubble.left.and.bubble.right") { whatsapp = true })
             }
             if store.screen != nil, store.connection == .online {
                 items.append(MenuItem("Screen", icon: "display", action: openScreen))
@@ -229,6 +237,8 @@ private struct ComputerRows: View {
         }
         .codyncSheet(isPresented: $voiceSettings) { VoiceChatSettingsView().environment(store) }
         .codyncSheet(isPresented: $networkSheet) { NetworkSheet().environment(store) }
+        .codyncSheet(isPresented: $channels) { ChannelsSheet().environment(store) }
+        .codyncSheet(isPresented: $whatsapp) { WhatsAppSheet().environment(store) }
         .codyncOverlay(isPresented: $coloring) { close in
             ZStack {
                 Color.black.opacity(0.35).ignoresSafeArea().onTapGesture(perform: close)

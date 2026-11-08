@@ -71,7 +71,7 @@ import kotlinx.coroutines.launch
                                 }
                             }
                             pairing?.takeIf { it.first == bot.name }?.let { (_, code) ->
-                                Text("${tr(Channels.pairingInstruction(code, bot.username))} $code", style = Type.footnote, color = Palette.text)
+                                Text(tr(Channels.pairingInstruction(code, bot.username)), style = Type.footnote, color = Palette.text)
                             }
                             SecondaryButton("Pair someone", enabled = !busy) {
                                 act {

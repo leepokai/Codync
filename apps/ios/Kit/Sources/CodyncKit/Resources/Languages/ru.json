@@ -1725,5 +1725,7 @@
   "Error": "Ошибка",
   "Open artifacts": "Открытые артефакты",
   "Artifact": "Артефакт",
-  "Close tab": "Закрыть вкладку"
+  "Close tab": "Закрыть вкладку",
+  "Channel picture": "Картинка канала",
+  "Member faces": "Лица участников"
 }

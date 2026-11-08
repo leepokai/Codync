@@ -11,7 +11,7 @@ class ChannelsTest {
     @Test fun `the host's status becomes bots without ever carrying a token`() {
         val bots = Channels.decodeTelegram(parse("""{"configured":true,"bots":[{"name":"home","username":"home_bot","botId":"b1","botName":"Agent",
             "allowed":[42],"state":"ok","lastReceivedAt":1000,"pairingExpiresAt":null,"extra":1}],"result":{}}"""))
-        assertEquals(listOf(TelegramBot("home", "home_bot", "b1", "Agent", listOf(42L), "", "ok", 1000L, null)), bots)
+        assertEquals(listOf(TelegramBot("home", "home_bot", "b1", "Agent", listOf(42L), "", "", "ok", 1000L, null)), bots)
     }
 
     @Test fun `a status with nothing configured is empty`() {

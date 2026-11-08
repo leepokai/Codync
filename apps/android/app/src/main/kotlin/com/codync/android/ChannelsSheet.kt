@@ -1,6 +1,16 @@
 package com.codync.android
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.kyant.shapes.RoundedRectangle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,6 +83,9 @@ import kotlinx.coroutines.launch
                             pairing?.takeIf { it.first == bot.name }?.let { (_, code) ->
                                 Text("${tr(Channels.pairingInstruction(code, bot.username))} $code", style = Type.footnote, color = Palette.text)
                             }
+                            ChannelIconRow(bot.icon) { icon ->
+                                act { store.setChannelIcon("telegram", bot.name, icon); bots = store.telegramBots() ?: bots }
+                            }
                             ChannelMemoryField(bot.name, bot.memory) { memory ->
                                 act { store.setChannelMemory("telegram", bot.name, memory); bots = store.telegramBots() ?: bots }
                             }
@@ -100,6 +113,9 @@ import kotlinx.coroutines.launch
                         connected?.bindings?.forEach { binding ->
                             Text("${binding.channelId} · ${binding.allowedUsers.size} ${tr("people allowed")}",
                                 style = Type.caption, color = Palette.tertiary)
+                            ChannelIconRow(binding.icon) { icon ->
+                                act { store.setChannelIcon("discord", binding.channelId, icon); discord = store.discordStatus() }
+                            }
                             ChannelMemoryField(binding.channelId, binding.memory) { memory ->
                                 act { store.setChannelMemory("discord", binding.channelId, memory); discord = store.discordStatus() }
                             }
@@ -151,8 +167,14 @@ import kotlinx.coroutines.launch
                 }
                 if (!slack?.bindings.isNullOrEmpty()) row {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (binding in slack?.bindings.orEmpty()) ChannelMemoryField(binding.channelId, binding.memory) { memory ->
-                            act { store.setChannelMemory("slack", binding.channelId, memory); slack = store.slackStatus() }
+                        for (binding in slack?.bindings.orEmpty()) {
+                            Text(binding.channelId, style = Type.caption, color = Palette.tertiary)
+                            ChannelIconRow(binding.icon) { icon ->
+                                act { store.setChannelIcon("slack", binding.channelId, icon); slack = store.slackStatus() }
+                            }
+                            ChannelMemoryField(binding.channelId, binding.memory) { memory ->
+                                act { store.setChannelMemory("slack", binding.channelId, memory); slack = store.slackStatus() }
+                            }
                         }
                     }
                 }
@@ -174,6 +196,26 @@ import kotlinx.coroutines.launch
             text.trim() != value.trim() -> SecondaryButton("Save memory") {
                 saving = true
                 scope.launch { try { save(text.trim()) } finally { saving = false } }
+            }
+        }
+    }
+}
+
+private val CHANNEL_ICONS = listOf(
+    "bubble.left", "book", "hammer", "globe", "person.2", "bolt", "gearshape", "photo", "key", "pin",
+    "folder", "calendar", "clock", "bell.badge", "star", "terminal", "sparkles", "shippingbox", "brain", "safari",
+)
+
+/** The pictures a channel can wear; the first clears it. */
+@Composable private fun ChannelIconRow(value: String, save: suspend (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (icon in listOf("") + CHANNEL_ICONS) {
+            val chosen = icon == value
+            Box(Modifier.size(30.dp).clip(RoundedRectangle(8.dp)).background(if (chosen) Palette.accentFill else Palette.bubbleUser)
+                .semantics { contentDescription = if (icon.isEmpty()) "Member faces" else icon }
+                .plainButton { scope.launch { save(icon) } }, contentAlignment = Alignment.Center) {
+                Symbol(if (icon.isEmpty()) "person.2" else icon, size = 14.dp, tint = if (chosen) Palette.onAccent else Palette.secondary)
             }
         }
     }

@@ -7,6 +7,7 @@ import { useTr } from '../../lib/use-language'
 import { Field } from '../marketplace/pieces'
 import type { ChannelsStore } from '../../store/channels-store'
 import { ChannelMemory } from './ChannelMemory'
+import { ChannelIconPicker } from './ChannelIconPicker'
 
 interface BindingDraft {
   channelId: string
@@ -51,6 +52,7 @@ export function DiscordChannel({ status, model, bots }: {
             <Text size="caption" tone="tertiary">
               {binding.channelId} → {bots.find((b) => b.id === binding.botId)?.label ?? tr('Unknown bot')} · {binding.allowedUsers.length} {tr('people allowed')}
             </Text>
+            <ChannelIconPicker value={binding.icon ?? ''} save={(icon) => model.setIcon('discord', binding.channelId, icon)} />
             <ChannelMemory value={binding.memory ?? ''} save={(memory) => model.setMemory('discord', binding.channelId, memory)} />
           </VStack>
         ))}

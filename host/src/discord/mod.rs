@@ -20,7 +20,8 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 const SLOT: &str = "discord.channel";
-pub const METHODS: &[&str] = &["discordStatus", "setDiscordChannel", "disconnectDiscord", "setChannelMemory"];
+pub const METHODS: &[&str] =
+    &["discordStatus", "setDiscordChannel", "disconnectDiscord", "setChannelMemory", "setChannelIcon"];
 const MAX_BINDINGS: usize = 50;
 const MAX_ALLOWED: usize = 100;
 
@@ -29,9 +30,12 @@ const MAX_ALLOWED: usize = 100;
 pub(super) struct Binding {
     pub channel_id: String,
     pub bot_id: String,
-    /// What the bot should know about this channel (the channel's memory).
+
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub memory: String,
+    /// An SF Symbol shown as the channel's picture, or empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
     pub allowed_users: Vec<String>,
 }
 
@@ -223,6 +227,15 @@ pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Va
             let binding =
                 config.bindings.iter_mut().find(|b| b.channel_id == channel).context("Unknown Discord channel.")?;
             binding.memory = memory;
+            save(&hub.store, &config)?;
+        }
+        "setChannelIcon" => {
+            let channel = body["channel"].as_str().context("channel is required.")?;
+            let icon = crate::channels::icon_arg(&body)?;
+            let mut config = load(&hub.store)?.context("Discord is not configured.")?;
+            let binding =
+                config.bindings.iter_mut().find(|b| b.channel_id == channel).context("Unknown Discord channel.")?;
+            binding.icon = icon;
             save(&hub.store, &config)?;
         }
         "discordStatus" => {}

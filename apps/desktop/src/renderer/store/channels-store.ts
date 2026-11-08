@@ -75,6 +75,17 @@ export class ChannelsStore extends Observable {
     } catch (error) { if (this.active) this.error = String(error); return false }
     finally { if (this.active) { this.busy = false; this.changed() } }
   }
+
+  /** Gives a channel a picture (an SF Symbol name), or clears it. */
+  async setIcon(provider: 'slack' | 'discord' | 'telegram', channel: string, icon: string) {
+    if (!this.active || this.busy) return false
+    this.busy = true; this.error = null; this.changed()
+    try {
+      await (await this.client()).call('setChannelIcon', { provider, channel, icon })
+      return true
+    } catch (error) { if (this.active) this.error = String(error); return false }
+    finally { if (this.active) { this.busy = false; this.changed() } }
+  }
   async disconnectSlack() {
     if (!this.active || this.busy) return
     this.busy = true; this.error = null; this.changed()

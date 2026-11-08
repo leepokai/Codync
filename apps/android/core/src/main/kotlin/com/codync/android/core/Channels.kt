@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
     val botName: String = "",
     val allowed: List<Long> = emptyList(),
     val memory: String = "",
+    val icon: String = "",
     /** `ok`, `starting`, or `error: …`. */
     val state: String = "starting",
     val lastReceivedAt: Long? = null,
@@ -19,12 +20,12 @@ import kotlinx.serialization.json.jsonObject
 )
 
 /** The Slack connection, as `slackStatus` reports it. */
-@Serializable data class SlackBinding(val channelId: String, val botId: String = "", val allowedUsers: List<String> = emptyList(), val memory: String = "")
+@Serializable data class SlackBinding(val channelId: String, val botId: String = "", val allowedUsers: List<String> = emptyList(), val memory: String = "", val icon: String = "")
 
 @Serializable data class SlackStatus(val configured: Boolean = false, val socketMode: Boolean = false, val workspaceId: String? = null, val bindings: List<SlackBinding>? = null)
 
 /** One bound Discord channel: the host bot that answers it and the people allowed in it. */
-@Serializable data class DiscordBinding(val channelId: String, val botId: String = "", val allowedUsers: List<String> = emptyList(), val memory: String = "")
+@Serializable data class DiscordBinding(val channelId: String, val botId: String = "", val allowedUsers: List<String> = emptyList(), val memory: String = "", val icon: String = "")
 
 /** The Discord connection, as `discordStatus` reports it. */
 @Serializable data class DiscordStatus(

@@ -1725,5 +1725,7 @@
   "Error": "エラー",
   "Open artifacts": "開いているアーティファクト",
   "Artifact": "アーティファクト",
-  "Close tab": "タブを閉じる"
+  "Close tab": "タブを閉じる",
+  "Channel picture": "チャンネルの画像",
+  "Member faces": "メンバーの顔"
 }

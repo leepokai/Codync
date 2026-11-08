@@ -48,6 +48,7 @@ fn fixture(app_token: &str, signing_secret: &str) -> Fixture {
             channel_id: "C1".into(),
             bot_id: "b1".into(),
             memory: String::new(),
+            icon: String::new(),
             allowed_users: vec!["U1".into()],
         }],
         generation: "g1".into(),

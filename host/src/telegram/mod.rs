@@ -29,6 +29,7 @@ pub const METHODS: &[&str] = &[
     "pairTelegram",
     "setTelegramAllowed",
     "setChannelMemory",
+    "setChannelIcon",
 ];
 /// Telegram bots a host talks through; more is a mistake.
 const MAX_BOTS: usize = 10;
@@ -48,9 +49,12 @@ struct TgBot {
     /// Telegram user ids allowed to talk to it.
     #[serde(default)]
     allowed: Vec<i64>,
-    /// What the bot should know about this channel (the channel's memory).
+
     #[serde(default, skip_serializing_if = "String::is_empty")]
     memory: String,
+    /// An SF Symbol shown as the bot's picture, or empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    icon: String,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -168,6 +172,7 @@ async fn call_with(hub: &Arc<Hub>, ep: &Endpoint, method: &str, body: Value) -> 
                 bot_id: add.bot_id,
                 allowed,
                 memory: String::new(),
+                icon: String::new(),
             });
             save(&hub.store, &config)?;
         }
@@ -199,6 +204,12 @@ async fn call_with(hub: &Arc<Hub>, ep: &Endpoint, method: &str, body: Value) -> 
             let memory = crate::channels::memory_arg(&body)?;
             let bot = config.bots.iter_mut().find(|b| b.name == name).context("Unknown Telegram bot.")?;
             bot.memory = memory;
+            save(&hub.store, &config)?;
+        }
+        "setChannelIcon" => {
+            let icon = crate::channels::icon_arg(&body)?;
+            let bot = config.bots.iter_mut().find(|b| b.name == name).context("Unknown Telegram bot.")?;
+            bot.icon = icon;
             save(&hub.store, &config)?;
         }
         "telegramStatus" => {}

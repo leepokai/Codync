@@ -276,3 +276,18 @@
 .n8n-dot.error { background: var(--danger); }
 @keyframes n8n-dot { 50% { opacity: .35; } }
 
+
+/* A channel's picture, in a compact wrapped row. */
+.channel-icons { gap: 4px; }
+.channel-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--secondary);
+}
+.channel-icon:hover { color: var(--text); }
+.channel-icon.chosen { background: var(--accent-fill); color: var(--on-accent); }

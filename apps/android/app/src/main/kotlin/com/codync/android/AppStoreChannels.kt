@@ -35,3 +35,11 @@ suspend fun AppStore.setChannelMemory(provider: String, channel: String, memory:
         put("channel", channel)
         put("memory", memory)
     })
+
+/** Gives a channel a picture (an SF Symbol name), or clears it. */
+suspend fun AppStore.setChannelIcon(provider: String, channel: String, icon: String): JsonElement =
+    hostQuery("setChannelIcon", buildJsonObject {
+        put("provider", provider)
+        put("channel", channel)
+        put("icon", icon)
+    })

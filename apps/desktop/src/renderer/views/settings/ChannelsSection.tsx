@@ -10,6 +10,7 @@ import { ChannelsStore } from '../../store/channels-store'
 import { ErrorText, Field } from '../marketplace/pieces'
 import { DiscordChannel } from './DiscordChannel'
 import { ChannelMemory } from './ChannelMemory'
+import { ChannelIconPicker } from './ChannelIconPicker'
 
 /** Telegram bots (add, pair, who may write, which bot answers, state) and the Slack connection of this computer's host. */
 export function ChannelsSection() {
@@ -35,7 +36,13 @@ export function ChannelsSection() {
     {slack?.configured ? <VStack gap={4} className="settings-stack">
       <Text>Slack {slack.socketMode ? '· Socket Mode' : '· HTTP endpoint'}</Text>
       <Text size="caption" tone="tertiary">{slack.workspaceId} · {slack.bindings?.length ?? 0} channel{slack.bindings?.length === 1 ? '' : 's'} bound</Text>
-      {slack.bindings?.map((b) => <ChannelMemory key={b.channelId} label={b.channelId} value={b.memory ?? ''} save={(memory) => model.setMemory('slack', b.channelId, memory)} />)}
+      {slack.bindings?.map((b) => (
+        <VStack key={b.channelId} gap={4} className="settings-stack">
+          <Text size="caption" tone="tertiary">{b.channelId}</Text>
+          <ChannelIconPicker value={b.icon ?? ''} save={(icon) => model.setIcon('slack', b.channelId, icon)} />
+          <ChannelMemory value={b.memory ?? ''} save={(memory) => model.setMemory('slack', b.channelId, memory)} />
+        </VStack>
+      ))}
       <Button kind="secondary" disabled={model.busy} onClick={() => setDisconnecting(true)}>Disconnect Slack</Button>
     </VStack> : <Text size="caption" tone="tertiary">Slack is connected with the host’s setSlackChannel call; see docs/guides/slack-manual-checklist.md.</Text>}
     {model.error && <ErrorText text={model.error} />}
@@ -49,6 +56,7 @@ function TelegramRow({ bot, model, onRemove }: { bot: TelegramBotStatus; model: 
   return <VStack gap={6} className="settings-stack">
     <Text>{bot.name}{bot.username ? ` · @${bot.username}` : ''} → {bot.botName}</Text>
     <Text size="caption" tone={bot.state === 'ok' ? 'secondary' : 'tertiary'}>{telegramStateText(bot.state)} · {lastReceivedText(bot.lastReceivedAt, Date.now())} · {allowedText(bot.allowed.length)}</Text>
+    <ChannelIconPicker value={bot.icon ?? ''} save={(icon) => model.setIcon('telegram', bot.name, icon)} />
     <ChannelMemory value={bot.memory ?? ''} save={(memory) => model.setMemory('telegram', bot.name, memory)} />
     {bot.allowed.map((id) => <div key={id} className="settings-row">
       <Text grow>Telegram user {id}</Text>
@@ -76,3 +84,5 @@ function AddTelegram({ model, bots }: { model: ChannelsStore; bots: { id: string
     <Button disabled={model.busy || !ready} onClick={() => void add()}>{model.busy ? 'Adding…' : 'Add Telegram bot'}</Button>
   </VStack>
 }
+
+/** The channel's picture picker sits in a tight row; the chosen one takes the accent. */

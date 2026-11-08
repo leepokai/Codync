@@ -17,16 +17,20 @@ pub(crate) async fn run(hub: Arc<Hub>) {
     tokio::join!(worker::run(hub.clone()), socket::run(hub, socket::Endpoint::slack()));
 }
 const SLOT: &str = "slack.channel";
-pub const METHODS: &[&str] = &["slackStatus", "setSlackChannel", "disconnectSlack", "setChannelMemory"];
+pub const METHODS: &[&str] =
+    &["slackStatus", "setSlackChannel", "disconnectSlack", "setChannelMemory", "setChannelIcon"];
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Binding {
     channel_id: String,
     bot_id: String,
-    /// What the bot should know about this channel (the channel's memory).
+
     #[serde(default, skip_serializing_if = "String::is_empty")]
     memory: String,
+    /// An SF Symbol shown as the channel's picture, or empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    icon: String,
     allowed_users: Vec<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -149,6 +153,15 @@ pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Va
             let binding =
                 config.bindings.iter_mut().find(|b| b.channel_id == channel).context("Unknown Slack channel.")?;
             binding.memory = memory;
+            crate::market::vault::write(&hub.store, SLOT, &serde_json::to_string(&config)?)?;
+        }
+        "setChannelIcon" => {
+            let channel = body["channel"].as_str().context("channel is required.")?;
+            let icon = crate::channels::icon_arg(&body)?;
+            let mut config = load(&hub.store)?.context("Slack is not configured.")?;
+            let binding =
+                config.bindings.iter_mut().find(|b| b.channel_id == channel).context("Unknown Slack channel.")?;
+            binding.icon = icon;
             crate::market::vault::write(&hub.store, SLOT, &serde_json::to_string(&config)?)?;
         }
         _ => bail!("Unknown Slack method."),

@@ -33,6 +33,37 @@ impl Incoming {
     }
 }
 
+/// The pictures a channel can wear, as SF Symbols both clients already draw.
+pub const ICONS: &[&str] = &[
+    "bubble.left",
+    "book",
+    "hammer",
+    "globe",
+    "person.2",
+    "bolt",
+    "gearshape",
+    "photo",
+    "key",
+    "pin",
+    "folder",
+    "calendar",
+    "clock",
+    "bell.badge",
+    "star",
+    "terminal",
+    "sparkles",
+    "shippingbox",
+    "brain",
+    "safari",
+];
+
+/// The icon a channel is given, or an empty one for its default.
+pub fn icon_arg(body: &Value) -> anyhow::Result<String> {
+    let icon = body["icon"].as_str().unwrap_or_default().trim();
+    anyhow::ensure!(icon.is_empty() || ICONS.contains(&icon), "Unknown channel picture.");
+    Ok(icon.to_owned())
+}
+
 /// A memory note kept with a channel and given to the bot before each message from it.
 pub fn memory_arg(body: &Value) -> anyhow::Result<String> {
     let memory = body["memory"].as_str().unwrap_or_default().trim();

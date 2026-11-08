@@ -40,6 +40,7 @@ fn fixture() -> Fixture {
             channel_id: CHANNEL.into(),
             bot_id: "b1".into(),
             memory: String::new(),
+            icon: String::new(),
             allowed_users: vec![MINE.into()],
         }],
         generation: "g1".into(),

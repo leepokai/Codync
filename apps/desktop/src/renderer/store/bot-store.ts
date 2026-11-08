@@ -562,6 +562,11 @@ export class BotStore extends BotSync {
     await (await this.ready()).call('forward', { entryId, botId })
   }
 
+  /** Turns a model off or back on in the picker. */
+  async setModelHidden(backend: string, model: string, hidden: boolean) {
+    await (await this.ready()).call('setModelHidden', { backend, model, hidden })
+  }
+
   async save(draft: BotDraft) {
     const client = await this.ready()
     // A rule left blank in the editor is no rule.

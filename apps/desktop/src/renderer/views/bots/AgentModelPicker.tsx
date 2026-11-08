@@ -32,6 +32,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const store = useStore()
   const [stage, setStage] = useState<Stage>('closed')
   const [query, setQuery] = useState('')
+  const [showHidden, setShowHidden] = useState(false)
   const { catalog, loading, failure } = models
 
   // A different agent starts on its own default model.
@@ -43,7 +44,8 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   }, [backend, onChange])
 
   const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
-  const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
+  const hidden = new Set(catalog?.hidden ?? [])
+  const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id && (showHidden || !hidden.has(m.id)))
   const current = catalog?.models.find((m) => m.id === catalog.currentModelId)
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
   const selected = catalog?.models.find((m) => m.id === (value || agentDefault?.id || catalog.currentModelId))
@@ -72,6 +74,10 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
     else next[id] = value
     onOptionsChange(next)
   }
+  const toggleHidden = async (id: string) => {
+    await store.setModelHidden(backend, id, !hidden.has(id))
+    models.reload()
+  }
   return (
     <VStack gap={8} className="agent-picker">
       <button className="agent-picker-summary" title={[agent?.label ?? backend, modelName, summary, fast ? tr("Fast") : ""].filter(Boolean).join(" · ")} aria-expanded={stage !== 'closed'} onClick={() => open(stage === 'closed' ? 'models' : 'closed')}>
@@ -92,10 +98,19 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
             {stage === 'models' && onAgentChange ? <IconButton title="Back" icon="chevron.left" onClick={() => open('agents')} /> : <Icon name="magnifyingglass" size={14} />}
             <input aria-label={tr(stage === 'agents' ? 'Search agents' : 'Search models')} placeholder={tr(stage === 'agents' ? 'Search agents' : 'Search models')} value={query} onChange={(e) => setQuery(e.target.value)} />
             {loading ? <Spinner size={12} /> : <IconButton title={failure ? 'Retry model list' : 'Refresh model list'} icon="arrow.clockwise" onClick={models.reload} />}
+            {stage === 'models' && hidden.size > 0 ? <IconButton title={showHidden ? 'Hide hidden models' : 'Show hidden models'} icon={showHidden ? 'eye.slash' : 'eye'} onClick={() => setShowHidden((s) => !s)} /> : null}
           </HStack>
           <div className="agent-picker-list">
-            {choices.map((o) => <button key={o.id} className="agent-picker-item" aria-pressed={o.id === (stage === 'agents' ? backend : value)} onClick={() => pick(o.id)}>
-              {o.leading}<Text className="agent-picker-result-name">{tr(o.label)}</Text><Spacer />{o.status}{o.id === (stage === 'agents' ? backend : value) && <Icon name="checkmark" size={12} />}
+            {choices.map((o) => <button key={o.id} className={hidden.has(o.id) ? 'agent-picker-item hidden-model' : 'agent-picker-item'} aria-pressed={o.id === (stage === 'agents' ? backend : value)} onClick={() => pick(o.id)}>
+              {o.leading}<Text className="agent-picker-result-name">{tr(o.label)}</Text><Spacer />{o.status}
+              {stage === 'models' && o.id ? (
+                <span role="button" tabIndex={0} className="agent-picker-eye" title={tr(hidden.has(o.id) ? 'Show this model' : 'Hide this model')}
+                  onClick={(e) => { e.stopPropagation(); void toggleHidden(o.id) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); void toggleHidden(o.id) } }}>
+                  <Icon name={hidden.has(o.id) ? 'eye.slash' : 'eye'} size={12} />
+                </span>
+              ) : null}
+              {o.id === (stage === 'agents' ? backend : value) && <Icon name="checkmark" size={12} />}
             </button>)}
             {!choices.length && <Text size="caption" tone="secondary">{tr('No results')}</Text>}
           </div>

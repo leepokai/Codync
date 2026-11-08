@@ -70,7 +70,8 @@ internal fun agentNotice(backend: JsonObject?): String? = when {
         }
         key(state.generation, state.computer?.id, draft.backend) {
             AgentModelPicker(state, { backend -> store.agentModels(backend, draft.account) }, draft.backend, draft.model, draft.modelOptions, false, null,
-                { model, options -> change(draft.copy(model = model, modelOptions = options)) }, null)
+                { model, options -> change(draft.copy(model = model, modelOptions = options)) }, null,
+                onHide = { model, hidden -> store.setModelHidden(draft.backend, model, hidden) })
         }
     }
 }

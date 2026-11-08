@@ -12,11 +12,11 @@ import kotlinx.serialization.Serializable
 @Serializable data class ModelOptionValue(val id: String, val name: String)
 @Serializable data class AgentModel(val id: String, val name: String, val description: String? = null, val options: List<ModelOption>? = null, val optionsError: String? = null)
 /** `fastMode`: the agent offers Fast mode (absent on older hosts). */
-@Serializable data class AgentModels(val models: List<AgentModel>, val modes: List<AgentMode>? = null, val currentModelId: String? = null, val fastMode: Boolean? = null, val defaultModelOptions: Boolean? = null) {
+@Serializable data class AgentModels(val models: List<AgentModel>, val modes: List<AgentMode>? = null, val currentModelId: String? = null, val fastMode: Boolean? = null, val defaultModelOptions: Boolean? = null, val hidden: List<String> = emptyList()) {
     val agentDefault: AgentModel? get() = models.firstOrNull { it.name.lowercase().startsWith("default") }
-    fun options(selected: String?): List<ModelChoice> {
+    fun options(selected: String?, includeHidden: Boolean = false): List<ModelChoice> {
         val default = agentDefault
-        val available = models.filter { it.id != default?.id }
+        val available = models.filter { it.id != default?.id && (includeHidden || it.id !in hidden) }
         val current = available.firstOrNull { it.id == currentModelId }
         val choices = mutableListOf(ModelChoice(null, default?.name ?: current?.let { "Default · ${it.name}" } ?: "Default", default?.description))
         choices += available.map { ModelChoice(it.id, it.name, it.description) }

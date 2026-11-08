@@ -239,3 +239,7 @@ suspend fun AppStore.appRequest(address: MiniAppAddress, method: String, path: S
         "botId" to address.botId, "slug" to address.slug, "token" to address.token,
         "method" to method, "path" to path, "body" to payload,
     )))
+
+/** Turns a model off or back on in the picker for one provider. */
+internal suspend fun AppStore.setModelHidden(backend: String, model: String, hidden: Boolean) =
+    ready().call("setModelHidden", buildJsonObject { put("backend", backend); put("model", model); put("hidden", hidden) })

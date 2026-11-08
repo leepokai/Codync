@@ -16,6 +16,8 @@ export interface ModelOption {
 export interface AgentModels {
   models: { id: string; name: string; description?: string | null; options?: ModelOption[]; optionsError?: string }[]
   currentModelId?: string | null
+  /** Models turned off in the picker for this provider (host-saved, shared by devices). */
+  hidden?: string[]
   /** The agent offers Fast mode (absent on older hosts). */
   fastMode?: boolean
   defaultModelOptions?: boolean

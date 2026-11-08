@@ -35,6 +35,9 @@
 .agent-picker-choice:hover { background: var(--surface); }
 .agent-picker-default { border: 0; background: transparent; color: var(--secondary); font-size: var(--text-caption); padding: 3px 0; }
 .agent-picker-default:hover { color: var(--text); }
+.agent-picker-eye { display: flex; padding: 2px; color: var(--secondary); border-radius: var(--radius-xs); }
+.agent-picker-eye:hover { color: var(--text); }
+.agent-picker-item.hidden-model { color: var(--secondary); }
 .agent-picker-setting { padding-top: 4px; }
 .agent-picker-options .segmented { width: 100%; }
 .agent-picker-options .segmented-option { min-width: 0; padding-inline: 5px; font-size: var(--text-caption); white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }

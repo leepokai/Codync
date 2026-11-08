@@ -27,7 +27,7 @@ pub async fn models(store: &Store, backend: &str, account: Option<&str>) -> Resu
                 }
             }
         };
-        // Cursor lists each model's options (effort, fast…) only through its own method.
+        // Cursor lists each model's options (effort, fastâ€¦) only through its own method.
         let options = if backend == "cursor" {
             acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default()
         } else {
@@ -191,6 +191,37 @@ fn collect_values(options: &Value, out: &mut Vec<Value>) {
     }
 }
 
+const KV_HIDDEN: &str = "models.hidden";
+
+fn hidden_map(store: &Store) -> std::collections::HashMap<String, Vec<String>> {
+    store.kv_read(KV_HIDDEN).ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+}
+
+/// The models of `backend` turned off in the picker.
+pub fn hidden(store: &Store, backend: &str) -> Vec<String> {
+    hidden_map(store).remove(backend).unwrap_or_default()
+}
+
+/// Turns one model off or back on in the picker.
+pub fn set_hidden(store: &Store, backend: &str, model: &str, hidden: bool) -> Result<()> {
+    if backend.is_empty() || backend.len() > 80 || model.is_empty() || model.len() > 200 {
+        bail!("invalid model or provider");
+    }
+    let mut map = hidden_map(store);
+    let list = map.entry(backend.to_owned()).or_default();
+    list.retain(|id| id != model);
+    if hidden {
+        if list.len() >= 5_000 {
+            bail!("too many hidden models");
+        }
+        list.push(model.to_owned());
+    }
+    if list.is_empty() {
+        map.remove(backend);
+    }
+    store.kv_set(KV_HIDDEN, &serde_json::to_string(&map)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,4 +332,14 @@ mod tests {
         assert_eq!(model_config(&session).unwrap()["id"], "engine");
         assert!(model_config(&json!({"configOptions": [{"id": "model", "type": "boolean"}]})).is_none());
     }
+}
+
+#[test]
+fn hidden_models_are_saved_and_forgotten() {
+    let store = Store::open(std::path::Path::new(":memory:")).expect("store");
+    set_hidden(&store, "claude", "m1", true).expect("hide");
+    assert_eq!(hidden(&store, "claude"), ["m1"]);
+    assert!(hidden(&store, "codex").is_empty());
+    set_hidden(&store, "claude", "m1", false).expect("show");
+    assert!(hidden(&store, "claude").is_empty());
 }

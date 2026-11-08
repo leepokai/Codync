@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,7 @@ import com.codync.android.core.Bot
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 private enum class PickerStage { Closed, Agents, Models, Settings }
 
@@ -46,6 +48,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
 @Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
     agents: List<AgentChoice> = emptyList(), chooseAgent: ((String) -> Unit)? = null, onOpenAgents: (() -> Unit)? = null,
+    onHide: (suspend (String, Boolean) -> Unit)? = null,
     agentDetails: @Composable () -> Unit = {}) {
     val online = state.actualConnection is LinkState.Ready
     var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
@@ -64,13 +67,15 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
     }
     var stage by remember { mutableStateOf(PickerStage.Closed) }
     var query by remember { mutableStateOf("") }
+    var showHidden by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     fun open(next: PickerStage) { query = ""; if (next == PickerStage.Agents) onOpenAgents?.invoke(); stage = next }
     // The agent's own "Default" entry is the same choice as no model.
     val agentDefault = catalog?.agentDefault
     val value = if (selection == agentDefault?.id) "" else selection.orEmpty()
     val selectedModel = catalog?.models?.firstOrNull { it.id == (selection ?: agentDefault?.id ?: catalog?.currentModelId) }
     val modelOptions = if (value.isNotEmpty() || catalog?.defaultModelOptions == true) selectedModel?.options.orEmpty() else emptyList()
-    val modelChoices = catalog?.options(selection)?.map { AgentChoice(it.id.orEmpty(), it.name) } ?: listOf(AgentChoice("", "Default"))
+    val modelChoices = catalog?.options(selection, showHidden)?.map { AgentChoice(it.id.orEmpty(), it.name) } ?: listOf(AgentChoice("", "Default"))
     val agentName = agents.firstOrNull { it.id == backend }?.name ?: backend
     val modelName = if (value.isEmpty()) "Default" else modelChoices.firstOrNull { it.id == value }?.name ?: value
     val levels = modelOptions.mapNotNull { option -> option.values.firstOrNull { it.id == (options[option.id] ?: option.default) }?.name }
@@ -96,6 +101,12 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                     if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++ }
                 }
                 val choices = (if (stage == PickerStage.Agents) agents else modelChoices).filter { it.name.contains(query, ignoreCase = true) }
+                if (stage == PickerStage.Models && onHide != null && !catalog?.hidden.isNullOrEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LinkButton(if (showHidden) "Hide hidden models" else "Show hidden models") { showHidden = !showHidden }
+                        Text("${catalog?.hidden?.size ?: 0} hidden", style = Type.caption, color = Palette.secondary)
+                    }
+                }
                 Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
                     for (c in choices) Row(Modifier.fillMaxWidth().clickable {
                         if (stage == PickerStage.Agents) { if (c.id != backend) chooseAgent?.invoke(c.id); open(PickerStage.Models) }
@@ -106,6 +117,12 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                             Symbol("checkmark", size = 9.dp, tint = Palette.onAccent)
                         }
                         c.status?.let { Text(it, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        if (stage == PickerStage.Models && onHide != null && c.id.isNotEmpty()) {
+                            val hidden = c.id in (catalog?.hidden ?: emptyList())
+                            IconButton(if (hidden) "Show this model" else "Hide this model", if (hidden) "eye.slash" else "eye") {
+                                scope.launch { onHide(c.id, !hidden); retry++ }
+                            }
+                        }
                         if (c.id == if (stage == PickerStage.Agents) backend else value) Symbol("checkmark", size = 12.dp, tint = Palette.text)
                     }
                     if (choices.isEmpty()) Text("No results", style = Type.caption, color = Palette.secondary)

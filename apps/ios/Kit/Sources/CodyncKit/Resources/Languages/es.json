@@ -1758,5 +1758,17 @@
   "Value": "Valor",
   "Save key": "Guardar clave",
   "Remove {name}": "Quitar {name}",
-  "Agent keys, for every bot": "Claves del agente, para todos los bots"
+  "Agent keys, for every bot": "Claves del agente, para todos los bots",
+  "Company sign-in": "Inicio de sesión de empresa",
+  "An OpenID Connect provider such as Microsoft Entra ID, Okta or Google Workspace. Its discovery document is checked before saving.": "Un proveedor OpenID Connect como Microsoft Entra ID, Okta o Google Workspace. Su documento de descubrimiento se comprueba antes de guardar.",
+  "Issuer": "Emisor",
+  "Client id": "Id de cliente",
+  "Email domains": "Dominios de correo",
+  "Connect provider": "Conectar proveedor",
+  "Checking…": "Comprobando…",
+  "New SCIM token": "Nuevo token SCIM",
+  "Copy SCIM URL": "Copiar URL SCIM",
+  "Disconnect": "Desconectar",
+  "SCIM token (shown once)": "Token SCIM (se muestra una vez)",
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "Las personas con un correo de estos dominios entran por la empresa. SCIM lista el propietario y los dispositivos de este equipo; es de solo lectura hasta que existan cuentas de miembros."
 }

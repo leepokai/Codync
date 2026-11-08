@@ -39,6 +39,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
           "Talk to a bot from Telegram, Slack or Discord, let specific people in, and teach it what a channel needs.",
       },
       {
+        slug: "company",
+        title: "Company sign-in",
+        description:
+          "Record the company's OpenID Connect provider and give a SCIM client a token for user sync.",
+      },
+      {
         slug: "groups",
         title: "Group chats",
         description:

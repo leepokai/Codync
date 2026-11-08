@@ -28,6 +28,7 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/hooks/routines/{id}", post(routine_hook))
         .route("/hooks/slack", post(crate::slack::ingress::receive))
         .route("/events", get(events))
+        .route("/scim/v2/Users", get(scim_users))
         .route("/api/{method}", post(command))
         .route("/api/setIcon", post(icon_command).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/term/{id}", get(term_stream))
@@ -75,6 +76,18 @@ fn authorized(hub: &Hub, headers: &HeaderMap, peer: SocketAddr) -> bool {
 
 fn unauthorized() -> ApiError {
     ApiError(StatusCode::UNAUTHORIZED, "invalid token".into())
+}
+
+/// `GET /scim/v2/Users`: the owner and this computer's paired devices, for a provisioning client with the SCIM
+/// bearer token from Settings.
+async fn scim_users(State(hub): State<Arc<Hub>>, headers: HeaderMap) -> Result<Json<serde_json::Value>, ApiError> {
+    let header = headers.get("authorization").and_then(|h| h.to_str().ok());
+    if !crate::enterprise::scim_allowed(&hub.store, header) {
+        return Err(unauthorized());
+    }
+    crate::enterprise::scim_users(&hub)
+        .map(Json)
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))
 }
 
 struct ApiError(StatusCode, String);

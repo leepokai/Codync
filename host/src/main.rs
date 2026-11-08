@@ -22,6 +22,7 @@ mod discord;
 mod doctor;
 mod documents;
 mod egress;
+mod enterprise;
 mod environment;
 mod external;
 mod github;

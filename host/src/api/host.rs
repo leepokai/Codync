@@ -18,6 +18,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "hostHealth" => crate::health::value(hub),
         // The security decisions made on this computer.
         "auditLog" => crate::audit::list(hub),
+        "enterpriseStatus" => crate::enterprise::status(&hub.store)?,
+        "setEnterprise" => crate::enterprise::set(hub, &b).await?,
+        "disconnectEnterprise" => crate::enterprise::disconnect(&hub.store)?,
+        "rotateScim" => json!({"token": crate::enterprise::rotate_scim(&hub.store)?}),
         "clearAuditLog" => {
             crate::audit::clear(hub)?;
             json!({})

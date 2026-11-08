@@ -1758,5 +1758,17 @@
   "Value": "値",
   "Save key": "キーを保存",
   "Remove {name}": "{name} を削除",
-  "Agent keys, for every bot": "エージェントのキー（すべてのボット用）"
+  "Agent keys, for every bot": "エージェントのキー（すべてのボット用）",
+  "Company sign-in": "会社のサインイン",
+  "An OpenID Connect provider such as Microsoft Entra ID, Okta or Google Workspace. Its discovery document is checked before saving.": "Microsoft Entra ID、Okta、Google Workspace などの OpenID Connect プロバイダー。保存前にディスカバリ文書を確認します。",
+  "Issuer": "発行者",
+  "Client id": "クライアント ID",
+  "Email domains": "メールドメイン",
+  "Connect provider": "プロバイダーを接続",
+  "Checking…": "確認中…",
+  "New SCIM token": "新しい SCIM トークン",
+  "Copy SCIM URL": "SCIM URL をコピー",
+  "Disconnect": "切断",
+  "SCIM token (shown once)": "SCIM トークン（一度だけ表示）",
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "これらのドメインのメールを持つ人は会社経由でサインインします。SCIM は所有者とこのコンピューターのデバイスを一覧します。メンバーアカウントができるまでは読み取り専用です。"
 }

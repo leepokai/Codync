@@ -22,6 +22,7 @@ import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
 import { UsageLimits } from './UsageLimits'
 import { ThemePaletteSection } from './ThemePaletteSection'
+import { EnterpriseSection } from './EnterpriseSection'
 import { WeekSummaryView } from './WeekSummaryView'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
@@ -207,6 +208,7 @@ function GeneralSettings() {
           Compact sidebar
         </Switch>
       </CardSection>
+      <EnterpriseSection />
       <ThemePaletteSection />
       <CardSection
         title="Language"

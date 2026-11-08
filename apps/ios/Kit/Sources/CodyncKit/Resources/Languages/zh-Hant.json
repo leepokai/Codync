@@ -1758,5 +1758,17 @@
   "Value": "值",
   "Save key": "儲存金鑰",
   "Remove {name}": "移除 {name}",
-  "Agent keys, for every bot": "代理金鑰，適用於所有機器人"
+  "Agent keys, for every bot": "代理金鑰，適用於所有機器人",
+  "Company sign-in": "公司登入",
+  "An OpenID Connect provider such as Microsoft Entra ID, Okta or Google Workspace. Its discovery document is checked before saving.": "Microsoft Entra ID、Okta 或 Google Workspace 等 OpenID Connect 提供者。儲存前會檢查其探索文件。",
+  "Issuer": "簽發者",
+  "Client id": "用戶端 ID",
+  "Email domains": "電子郵件網域",
+  "Connect provider": "連線提供者",
+  "Checking…": "檢查中…",
+  "New SCIM token": "新增 SCIM 權杖",
+  "Copy SCIM URL": "複製 SCIM URL",
+  "Disconnect": "中斷連線",
+  "SCIM token (shown once)": "SCIM 權杖（只顯示一次）",
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "使用這些網域信箱的人透過公司登入。SCIM 列出擁有者與此電腦的裝置；在成員帳號出現前為唯讀。"
 }

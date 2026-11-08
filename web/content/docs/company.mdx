@@ -1,0 +1,15 @@
+A company can let its people sign in with the provider it already runs, and connect a provisioning client through SCIM. Both are set on the computer, under **Settings → General → Company sign-in**; tokens stay in the computer's vault.
+
+## Company sign-in
+
+Codync accepts any OpenID Connect provider, such as Microsoft Entra ID, Okta or Google Workspace. Enter the issuer address and the client id from the provider's application, plus the email domains allowed. Codync fetches the provider's `/.well-known/openid-configuration` and refuses an issuer whose discovery is missing or broken, then keeps the endpoints it answered.
+
+**Today**, the saved configuration and endpoints are shown here, and the account owner signs in as before; the redirect between the provider and a Codync account is still handled by Codync's cloud account page. Treat this as the company's record of the provider, not a per-member switch yet.
+
+## SCIM
+
+**New SCIM token** makes a bearer token, shown once; the old one stops working at once. Point the provisioning client at `http://127.0.0.1:<host port>/scim/v2/Users` with `Authorization: Bearer <token>`. It lists the account owner and this computer's paired devices in SCIM form, read-only.
+
+## Audit
+
+Enabling, replacing and disconnecting the provider appear in the [audit log](/docs/privacy), like other security decisions.

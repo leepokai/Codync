@@ -49,7 +49,7 @@ Two things that look like failures but aren't the app's:
 
 ## What Computer Use covers
 
-Computer Use (cluadex, in the background) checks only these steps. Tag them `@native` in the change's e2e list. Everything else uses Playwright or Maestro. If cluadex fails, stop and ask the user to reconnect it with `/mcp`; don't switch to cua-driver.
+Computer Use (cua-driver, in the background: never bring an app to the front) checks only these steps. Tag them `@native` in the change's e2e list. Everything else uses Playwright or Maestro. If cua-driver fails, stop and ask the user to reconnect it with `/mcp`.
 
 - **Desktop**: the tray or menu bar icon and its menu; the approval island's global shortcut; system notification banners; macOS privacy prompts (screen recording, notifications); Clerk sign-in in the system browser and the `codync-dev://` callback back into the app; anything that needs the packaged `Codync Dev.app` (Codync Screen, computer use, `SMAppService`).
 - **Phones**: how system alerts and notification banners look; the desktop QR pairing (Computer Use reads the QR on the Mac, Maestro finishes on the phone); widgets, Live Activity and the Dynamic Island.

@@ -36,6 +36,7 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::Queued;
+pub use compaction::{context_window, offers_threshold};
 pub(crate) use launch::{launch_commands, select_model, start_agent, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};

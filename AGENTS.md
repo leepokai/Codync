@@ -36,7 +36,7 @@ Keep only the latest build: in this checkout, Apple builds go to `build/dd` only
 
 ## End-to-end test every change
 
-After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Playwright (`npm run e2e` against the sandbox) and the iPhone app (iOS Simulator) and Android app (the one shared emulator, never a second: [test devices](docs/guides/dev-app.md#worktree-sandboxes)) with one Maestro run (`apps/maestro`); Computer Use only for the native steps they can't reach: [test stack](docs/guides/test-stack.md). Report any check that could not run and why.
+After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Playwright (`npm run e2e` against the sandbox) and the iPhone app (iOS Simulator) and Android app (the one shared emulator, never a second: [test devices](docs/guides/dev-app.md#worktree-sandboxes)) with one Maestro run (`apps/maestro`); Computer Use (cua-driver, in the background) only for the native steps they can't reach: [test stack](docs/guides/test-stack.md). Report any check that could not run and why.
 - **Minimal e2e** (default): only the platform of the computer you test on (on the Mac: macOS).
 - **Full e2e** (large changes: platform code, packaging, the desktop main process; or when asked): macOS, Linux (Lima `codync-linux`) and Windows (UTM, [Windows testing](docs/guides/windows-testing.md)). A platform whose VM isn't installed is skipped and reported, not set up.
 

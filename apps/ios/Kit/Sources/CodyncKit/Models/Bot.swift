@@ -66,6 +66,11 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI):
     /// every bot on it shares it. Nil from an older host.
     public var harnessMemoryShared: Bool?
+    /// When Codync summarizes its chat ahead of time. Nil where it doesn't (an agent it can't ask, a group, an
+    /// older host): no setting to show.
+    public var compaction: CompactionThreshold?
+    /// The sizes `compaction` may take; nil until the agent has told its context window.
+    public var compactionTokens: TokenRange?
     /// Moves whenever memory changes, so an open memory screen fetches it again.
     public var memoryRev: Int64?
     /// Created without a name: the host names it after its first few conversations.
@@ -144,6 +149,8 @@ extension Bot {
         sharedMemory = try c.decodeIfPresent(Bool.self, forKey: .sharedMemory)
         harnessMemory = try c.decodeIfPresent(Bool.self, forKey: .harnessMemory)
         harnessMemoryShared = try c.decodeIfPresent(Bool.self, forKey: .harnessMemoryShared)
+        compaction = try c.decodeIfPresent(CompactionThreshold.self, forKey: .compaction)
+        compactionTokens = try? c.decodeIfPresent(TokenRange.self, forKey: .compactionTokens)
         memoryRev = try c.decodeIfPresent(Int64.self, forKey: .memoryRev)
         autoName = try c.decodeIfPresent(Bool.self, forKey: .autoName) ?? false
         createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0

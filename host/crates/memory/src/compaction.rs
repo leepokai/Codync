@@ -2,7 +2,12 @@
 //!
 //! The harness writes the summary, because it knows the work; the caller decides when, because it knows how full the
 //! context is, whether the user is around and whether the prompt cache is still warm. The caller reports what it
-//! sees into a [`Conversation`] and asks [`at_turn_end`], [`while_idle`] and [`rollover_due`].
+//! sees into a [`Conversation`] and asks [`at_turn_end`], [`while_idle`] and [`rollover_due`], with the user's
+//! [`Threshold`] for it.
+
+mod threshold;
+
+pub use threshold::{Sizes, Threshold, sizes};
 
 use serde::{Deserialize, Serialize};
 
@@ -10,9 +15,6 @@ const MINUTE_MS: i64 = 60_000;
 const HOUR_MS: i64 = 60 * MINUTE_MS;
 const DAY_MS: i64 = 24 * HOUR_MS;
 
-/// At the end of a turn, compact past three quarters of the window or this many tokens, whichever is less: the
-/// summary needs room, and a hot cache makes reading the history cheap.
-const TURN_END_CAP: u64 = 200_000;
 /// Idle compaction and rollover only pay for themselves past this much context.
 const LARGE: u64 = 100_000;
 /// How long before a one-hour cache expires an idle conversation is compacted.
@@ -116,49 +118,59 @@ impl Conversation {
         self.idle_compacted |= idle;
     }
 
-    fn trigger(&self) -> u64 {
-        (self.size / 4 * 3).min(TURN_END_CAP)
+    /// The context use past which idle compaction and a cold rollover pay off. With a size the user chose, never short
+    /// of it: nothing summarizes the conversation or starts it over sooner.
+    fn large(&self, at: Threshold) -> Option<u64> {
+        match at {
+            Threshold::Early => Some(LARGE),
+            _ => at.trigger(self.size).map(|trigger| trigger.max(LARGE)),
+        }
     }
 
     /// Compacting again wouldn't help: too many today, too little gained last time, or too soon after the last.
-    fn thrashing(&self, now: i64) -> bool {
+    fn thrashing(&self, trigger: u64, now: i64) -> bool {
         let today = self.host_compactions.iter().filter(|at| now - **at < DAY_MS).count();
         today >= PER_DAY
-            || self.after.is_some_and(|after| after * 100 >= self.trigger() * THRASH_PERCENT)
+            || self.after.is_some_and(|after| after * 100 >= trigger * THRASH_PERCENT)
             || (self.compactions > 0 && self.turns_since < THRASH_TURNS)
     }
 }
 
 /// At the end of a turn in the conversation the user returns to.
-pub fn at_turn_end(c: &Conversation, now: i64) -> Decision {
-    if c.size == 0 || c.used < c.trigger() {
-        Decision::Keep
-    } else if c.thrashing(now) {
-        Decision::Rollover
-    } else {
-        Decision::Compact
+pub fn at_turn_end(c: &Conversation, at: Threshold, now: i64) -> Decision {
+    match at.trigger(c.size) {
+        Some(trigger) if c.size > 0 && c.used >= trigger => {
+            if c.thrashing(trigger, now) {
+                Decision::Rollover
+            } else {
+                Decision::Compact
+            }
+        }
+        _ => Decision::Keep,
     }
 }
 
 /// While nothing runs: compact a large conversation just before a one-hour cache expires, which is cheaper than
 /// reading it cold when the user returns. A five-minute cache expires before this pays off.
-pub fn while_idle(c: &Conversation, life: CacheLife, now: i64) -> Decision {
+pub fn while_idle(c: &Conversation, at: Threshold, life: CacheLife, now: i64) -> Decision {
+    let (Some(trigger), Some(large)) = (at.trigger(c.size), c.large(at)) else { return Decision::Keep };
     let idle = now - c.last_turn;
     let due = life == CacheLife::OneHour
-        && c.used >= LARGE
+        && c.used >= large
         && !c.idle_compacted
         && idle >= life.ms() - BEFORE_EXPIRY_MS
         && idle < life.ms();
-    if due && !c.thrashing(now) { Decision::Compact } else { Decision::Keep }
+    if due && !c.thrashing(trigger, now) { Decision::Compact } else { Decision::Keep }
 }
 
 /// Whether the next message should start a new conversation from a handoff instead of carrying on: a large context
-/// whose cache went cold, or a long absence after several compactions.
-pub fn rollover_due(c: &Conversation, life: CacheLife, now: i64) -> bool {
+/// whose cache went cold, or a long absence after several compactions. Never when the user turned compaction off.
+pub fn rollover_due(c: &Conversation, at: Threshold, life: CacheLife, now: i64) -> bool {
+    let Some(large) = c.large(at) else { return false };
     let away = now - c.last_turn;
     c.last_turn > 0
         && !c.rollover_declined
-        && ((away >= life.ms() && c.used >= LARGE) || (away >= AWAY_MS && c.compactions >= AWAY_COMPACTIONS))
+        && ((away >= life.ms() && c.used >= large) || (away >= AWAY_MS && c.compactions >= AWAY_COMPACTIONS))
 }
 
 /// What a summary must keep. It goes with every compaction the caller starts, and in the opening for the ones the
@@ -240,6 +252,7 @@ mod tests {
     use super::*;
 
     const NOW: i64 = 100 * DAY_MS;
+    const E: Threshold = Threshold::Early;
 
     fn full() -> Conversation {
         Conversation { used: 210_000, size: 1_000_000, last_turn: NOW, turns_since: 9, ..Conversation::default() }
@@ -247,12 +260,12 @@ mod tests {
 
     #[test]
     fn a_turn_ending_past_the_trigger_compacts() {
-        assert_eq!(at_turn_end(&full(), NOW), Decision::Compact);
+        assert_eq!(at_turn_end(&full(), E, NOW), Decision::Compact);
         let small = Conversation { used: 150_000, size: 200_000, ..full() };
-        assert_eq!(at_turn_end(&small, NOW), Decision::Compact, "three quarters of a smaller window");
+        assert_eq!(at_turn_end(&small, E, NOW), Decision::Compact, "three quarters of a smaller window");
         let room = Conversation { used: 120_000, ..full() };
-        assert_eq!(at_turn_end(&room, NOW), Decision::Keep);
-        assert_eq!(at_turn_end(&Conversation::default(), NOW), Decision::Keep, "no usage reported yet");
+        assert_eq!(at_turn_end(&room, E, NOW), Decision::Keep);
+        assert_eq!(at_turn_end(&Conversation::default(), E, NOW), Decision::Keep, "no usage reported yet");
     }
 
     #[test]
@@ -264,14 +277,14 @@ mod tests {
             c.turn_ended(NOW);
         }
         c.used = 210_000;
-        assert_eq!(at_turn_end(&c, NOW), Decision::Rollover, "the last one left 65% of the trigger");
+        assert_eq!(at_turn_end(&c, E, NOW), Decision::Rollover, "the last one left 65% of the trigger");
 
         let mut c = full();
         c.compacted(true, false, NOW);
         c.usage(20_000, 1_000_000);
         c.turn_ended(NOW);
         c.used = 210_000;
-        assert_eq!(at_turn_end(&c, NOW), Decision::Rollover, "two compactions within five turns");
+        assert_eq!(at_turn_end(&c, E, NOW), Decision::Rollover, "two compactions within five turns");
 
         let mut c = full();
         for hour in 0..3 {
@@ -280,40 +293,78 @@ mod tests {
         c.usage(20_000, 1_000_000);
         c.turns_since = 9;
         c.used = 210_000;
-        assert_eq!(at_turn_end(&c, NOW), Decision::Rollover, "three today");
-        assert_eq!(at_turn_end(&c, NOW + DAY_MS), Decision::Compact, "a day later");
+        assert_eq!(at_turn_end(&c, E, NOW), Decision::Rollover, "three today");
+        assert_eq!(at_turn_end(&c, E, NOW + DAY_MS), Decision::Compact, "a day later");
     }
 
     #[test]
     fn idle_compaction_runs_just_before_a_one_hour_cache_expires() {
         let c = Conversation { used: 120_000, ..full() };
-        let at = |minutes: i64| while_idle(&c, CacheLife::OneHour, NOW + minutes * MINUTE_MS);
+        let at = |minutes: i64| while_idle(&c, E, CacheLife::OneHour, NOW + minutes * MINUTE_MS);
         assert_eq!(at(30), Decision::Keep);
         assert_eq!(at(56), Decision::Compact);
         assert_eq!(at(61), Decision::Keep, "already cold");
-        assert_eq!(while_idle(&c, CacheLife::FiveMinutes, NOW + 4 * MINUTE_MS), Decision::Keep);
+        assert_eq!(while_idle(&c, E, CacheLife::FiveMinutes, NOW + 4 * MINUTE_MS), Decision::Keep);
         let small = Conversation { used: 60_000, ..c.clone() };
-        assert_eq!(while_idle(&small, CacheLife::OneHour, NOW + 56 * MINUTE_MS), Decision::Keep);
+        assert_eq!(while_idle(&small, E, CacheLife::OneHour, NOW + 56 * MINUTE_MS), Decision::Keep);
         let mut done = c;
         done.compacted(true, true, NOW + 56 * MINUTE_MS);
-        assert_eq!(while_idle(&done, CacheLife::OneHour, NOW + 57 * MINUTE_MS), Decision::Keep, "once");
+        assert_eq!(while_idle(&done, E, CacheLife::OneHour, NOW + 57 * MINUTE_MS), Decision::Keep, "once");
     }
 
     #[test]
     fn a_cold_large_or_long_away_conversation_rolls_over() {
         let c = Conversation { used: 120_000, ..full() };
-        assert!(!rollover_due(&c, CacheLife::OneHour, NOW + 30 * MINUTE_MS));
-        assert!(rollover_due(&c, CacheLife::OneHour, NOW + 61 * MINUTE_MS));
-        assert!(rollover_due(&c, CacheLife::FiveMinutes, NOW + 6 * MINUTE_MS));
+        assert!(!rollover_due(&c, E, CacheLife::OneHour, NOW + 30 * MINUTE_MS));
+        assert!(rollover_due(&c, E, CacheLife::OneHour, NOW + 61 * MINUTE_MS));
+        assert!(rollover_due(&c, E, CacheLife::FiveMinutes, NOW + 6 * MINUTE_MS));
         let small = Conversation { used: 30_000, ..full() };
-        assert!(!rollover_due(&small, CacheLife::FiveMinutes, NOW + 6 * HOUR_MS));
+        assert!(!rollover_due(&small, E, CacheLife::FiveMinutes, NOW + 6 * HOUR_MS));
         let summarized = Conversation { compactions: 3, ..small };
-        assert!(rollover_due(&summarized, CacheLife::FiveMinutes, NOW + 9 * HOUR_MS));
-        assert!(!rollover_due(&Conversation::default(), CacheLife::OneHour, NOW), "never used");
+        assert!(rollover_due(&summarized, E, CacheLife::FiveMinutes, NOW + 9 * HOUR_MS));
+        assert!(!rollover_due(&Conversation::default(), E, CacheLife::OneHour, NOW), "never used");
         let mut kept = Conversation { rollover_declined: true, ..c.clone() };
-        assert!(!rollover_due(&kept, CacheLife::OneHour, NOW + 61 * MINUTE_MS), "the user carried on");
+        assert!(!rollover_due(&kept, E, CacheLife::OneHour, NOW + 61 * MINUTE_MS), "the user carried on");
         kept.turn_ended(NOW + 62 * MINUTE_MS);
-        assert!(rollover_due(&kept, CacheLife::OneHour, NOW + 130 * MINUTE_MS), "until the next quiet spell");
+        assert!(rollover_due(&kept, E, CacheLife::OneHour, NOW + 130 * MINUTE_MS), "until the next quiet spell");
+    }
+
+    #[test]
+    fn the_users_threshold_moves_the_trigger_within_the_window() {
+        let at = |used: u64, size: u64, threshold: Threshold| {
+            at_turn_end(&Conversation { used, size, ..full() }, threshold, NOW)
+        };
+        assert_eq!(at(500_000, 1_000_000, Threshold::Tokens(600_000)), Decision::Keep);
+        assert_eq!(at(600_000, 1_000_000, Threshold::Tokens(600_000)), Decision::Compact);
+        assert_eq!(at(950_000, 1_000_000, Threshold::NearLimit), Decision::Keep, "960k is the most a 1M window allows");
+        assert_eq!(at(960_000, 1_000_000, Threshold::NearLimit), Decision::Compact);
+        assert_eq!(at(160_000, 200_000, Threshold::Tokens(900_000)), Decision::Compact, "held to the smaller window");
+        assert_eq!(at(50_000, 1_000_000, Threshold::Tokens(10_000)), Decision::Compact, "never below the minimum");
+        assert_eq!(at(40_000, 1_000_000, Threshold::Tokens(10_000)), Decision::Keep);
+        assert_eq!(at(990_000, 1_000_000, Threshold::Off), Decision::Keep, "left to the harness");
+        assert_eq!(at(60_000, 64_000, Threshold::NearLimit), Decision::Compact, "too small a window: the default's");
+    }
+
+    #[test]
+    fn a_size_of_the_users_own_keeps_idle_compaction_and_cold_rollovers_away_until_it() {
+        let c = Conversation { used: 300_000, ..full() };
+        let idle = NOW + 56 * MINUTE_MS;
+        let cold = NOW + 61 * MINUTE_MS;
+        assert_eq!(while_idle(&c, E, CacheLife::OneHour, idle), Decision::Compact);
+        assert!(rollover_due(&c, E, CacheLife::OneHour, cold));
+        for threshold in [Threshold::Tokens(500_000), Threshold::NearLimit, Threshold::Off] {
+            assert_eq!(while_idle(&c, threshold, CacheLife::OneHour, idle), Decision::Keep, "{threshold:?}");
+            assert!(!rollover_due(&c, threshold, CacheLife::OneHour, cold), "{threshold:?}");
+        }
+        let low = Threshold::Tokens(60_000);
+        assert_eq!(while_idle(&c, low, CacheLife::OneHour, idle), Decision::Compact, "past 100k, as by default");
+        let summarized = Conversation { used: 30_000, compactions: 3, ..full() };
+        let away = NOW + 9 * HOUR_MS;
+        assert!(
+            rollover_due(&summarized, Threshold::NearLimit, CacheLife::FiveMinutes, away),
+            "summaries of summaries"
+        );
+        assert!(!rollover_due(&summarized, Threshold::Off, CacheLife::FiveMinutes, away));
     }
 
     #[test]

@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.41.1"
+version = "2.42.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -788,7 +788,7 @@ dependencies = [
 
 [[package]]
 name = "codync-mem"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "rusqlite",
  "serde",

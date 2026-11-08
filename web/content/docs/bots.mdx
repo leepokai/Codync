@@ -81,6 +81,19 @@ The same setting covers changes a bot makes to other bots with **Manage the team
 
 How approval cards work: [Conversations](/docs/conversations#approval-cards).
 
+## Summarize long chats
+
+For a Claude Code or Codex bot, **Summarize long chats** decides when Codync summarizes the bot's chat so the conversation can go on with room to spare. It sits in the Agent section, under the agent and its fallbacks (on the Details page of a chat's details).
+
+| Setting | When Codync summarizes |
+| --- | --- |
+| **Early** (default) | Once the chat uses three quarters of the model's window or 200K tokens, whichever is less. It may also summarize a chat over 100K just before its cache expires, or start a [fresh conversation](/docs/conversations#fresh-conversations) when you come back after the cache went cold. |
+| **Near the limit** | Just before the window fills: 40K short of it (960K on a 1M window), and never sooner than Early. |
+| **Only when full** | Never ahead of time. The agent summarizes on its own when a chat fills its window. |
+| **Set a size** | At the size you pick: 100K, 200K and so on up to the largest the window allows, or **Custom size…** to type your own, in thousands of tokens (from 50K, rounded to 10K). |
+
+With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
+
 ## Activity
 
 - **Notifications:** notify you when this bot finishes, fails or needs you. Turn it off to keep the bot quiet.

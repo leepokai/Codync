@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Dialog } from '../components/Overlay'
+import { Dialog, DialogField } from '../components/Overlay'
 import { limitSectionName, sectionName } from '../lib/roster-sections'
 import { useTr } from '../lib/use-language'
 import type { SectionNaming } from './section-menus'
@@ -21,11 +21,8 @@ export function SectionNameDialog({ naming, onClose }: { naming: SectionNaming |
   return (
     <Dialog open={naming !== null} title={naming ? tr(naming.title) : ''} actions={[{ title: 'Save', action: save }]} onClose={onClose}>
       {/* The host refuses longer names; the field stops there first. */}
-      <input className="dialog-field" data-autofocus value={name} placeholder={tr('Section name')} aria-label={tr('Section name')} spellCheck={false}
-        onChange={(e) => setName(limitSectionName(e.target.value))}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
-          e.preventDefault()
+      <DialogField value={name} placeholder={tr('Section name')} label={tr('Section name')} onChange={(text) => setName(limitSectionName(text))}
+        onSubmit={() => {
           onClose()
           save()
         }} />

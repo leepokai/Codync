@@ -14,6 +14,7 @@ import { BotRow } from './BotRow'
 import { ComputerHeadingLabel, ComputerRosterSection } from './ComputerRosterSection'
 import { UpdateNeededCard } from './UpdateNeededCard'
 import { RosterControls, RosterPreview } from './RosterControls'
+import { RosterSection } from './RosterSection'
 import { RosterStops } from '../store/roster-query'
 import { rosterProject, rosterProjectLabel } from '../lib/roster-query'
 import { prefs, usePref } from '../lib/prefs'
@@ -244,17 +245,36 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
       children.push(item)
       projects.set(project, children)
     }
-    const rows = [...projects].map(([project, children]) => {
-      const key = JSON.stringify([store.contextId, computer.id, project])
-      const folded = collapsedProjects.includes(key)
-      return <div key={key}>
-        {project ? <button className="roster-project" aria-expanded={!folded} title={project}
-          style={roster.grouping === 'project' ? undefined : { marginLeft: sectionDepth(project) * 12 }}
-          onClick={() => setCollapsedProjects(folded ? collapsedProjects.filter((id) => id !== key) : [...collapsedProjects, key])}
-          onContextMenu={(e) => { e.preventDefault(); onSectionContext(project, store, e.clientX, e.clientY) }}>{roster.grouping === 'project' ? rosterProjectLabel(children[0].bot) : sectionLeaf(project)}</button> : null}
-        {!folded || !project ? children.map((item) => row(item, items)) : null}
-      </div>
-    })
+    const rows = roster.grouping === 'project'
+      ? [...projects].map(([project, children]) => {
+        const key = JSON.stringify([store.contextId, computer.id, project])
+        const folded = collapsedProjects.includes(key)
+        return <div key={key}>
+          {project ? <button className="roster-project" aria-expanded={!folded} title={project}
+            onClick={() => setCollapsedProjects(folded ? collapsedProjects.filter((id) => id !== key) : [...collapsedProjects, key])}
+            onContextMenu={(e) => { e.preventDefault(); onSectionContext(project, store, e.clientX, e.clientY) }}>{rosterProjectLabel(children[0].bot)}</button> : null}
+          {!folded || !project ? children.map((item) => row(item, items)) : null}
+        </div>
+      })
+      : (() => {
+        const bySection = new Map<string, RosterItem[]>()
+        for (const item of ordered(computer.id, items)) {
+          const name = item.bot.section ?? ''
+          bySection.set(name, [...(bySection.get(name) ?? []), item])
+        }
+        return [...bySection].map(([name, children]) => {
+          if (!name) return <div key="none">{children.map((item) => row(item, items))}</div>
+          const key = JSON.stringify([store.contextId, computer.id, name])
+          const folded = collapsedProjects.includes(key)
+          return <div key={key} className="nested-section" style={{ marginLeft: sectionDepth(name) * 12 }}>
+            <RosterSection name={sectionLeaf(name)} count={children.length} unread={0} folded={folded} compact={compact}
+              toggle={() => setCollapsedProjects(folded ? collapsedProjects.filter((id) => id !== key) : [...collapsedProjects, key])}
+              onContext={(x, y) => onSectionContext(name, store, x, y)}>
+              {children.map((item) => row(item, items))}
+            </RosterSection>
+          </div>
+        })
+      })()
     if (!roster.grouped) return <div key={computer.id}>{notice}{rows}</div>
     return (
       <ComputerRosterSection key={computer.id} store={store} compact={compact}

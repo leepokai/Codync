@@ -27,7 +27,7 @@ impl Actor {
                 }) {
                     return true;
                 }
-                self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
+                self.enqueue(Queued::User { lane, entry_id, text, queued_at: Instant::now() }, done_tx).await;
             }
             Cmd::Group(turn) => {
                 // The room asks again: this turn answers for any still waiting there.
@@ -318,7 +318,14 @@ impl Actor {
                 && self.proactive_input(entry_id) == proactive
                 && (!proactive || batch.is_empty())
             {
-                if let Some(Queued::User { entry_id, text, .. }) = self.queue.pop_front() {
+                let ahead = self.queue.len().saturating_sub(1);
+                if let Some(Queued::User { entry_id, text, queued_at, .. }) = self.queue.pop_front() {
+                    crate::analytics::turn_queued(
+                        &self.hub,
+                        &self.cfg.id,
+                        i64::try_from(queued_at.elapsed().as_millis()).unwrap_or(i64::MAX),
+                        ahead,
+                    );
                     if self.hub.store.entry(&entry_id).is_some_and(|e| e.data["source"] == "slack") {
                         match crate::slack::claim_prompt(&self.hub, &entry_id) {
                             Ok(true) => {}

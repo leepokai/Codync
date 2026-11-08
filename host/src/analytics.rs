@@ -25,7 +25,7 @@ mod turns;
 pub use lifecycle::{KV_STARTED, Via, device_paired, host_started, phone_connected};
 pub use observe::{answered, observe_call};
 pub use reported::track;
-pub use turns::{TurnOutcome, TurnSource, agent_fell_back, turn_finished};
+pub use turns::{TurnOutcome, TurnSource, agent_fell_back, turn_finished, turn_queued};
 
 const KV_ENABLED: &str = "analytics_enabled";
 /// The account the install id was last merged into (one `$identify` per account).
@@ -67,6 +67,8 @@ pub enum Event {
     SectionRenamed,
     BotDeleted,
     MessageSent,
+    /// A user message that waited behind other work before its turn began.
+    TurnQueued,
     TurnStopped,
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
@@ -141,6 +143,7 @@ impl Event {
             Self::SectionRenamed => "section_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
+            Self::TurnQueued => "turn_queued",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",

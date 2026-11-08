@@ -5,6 +5,7 @@ use crate::store::{BotConfig, Lane};
 use anyhow::Result;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub enum Cmd {
     RefreshTools,
@@ -88,6 +89,8 @@ pub(super) enum Queued {
         lane: Lane,
         entry_id: String,
         text: String,
+        /// When the message arrived, so a wait behind other work can be measured.
+        queued_at: Instant,
     },
     BotRequest(crate::chat::team::BotRequest),
     BotReply(crate::chat::team::BotReply),

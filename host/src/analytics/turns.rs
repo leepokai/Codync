@@ -150,6 +150,17 @@ fn reason_of(message: &str) -> &'static str {
     REASONS.iter().find(|(_, patterns)| patterns.iter().any(|w| says(w))).map_or("unknown", |(reason, _)| reason)
 }
 
+pub fn turn_queued(hub: &Hub, agent: &str, wait_ms: i64, ahead: usize) {
+    capture(
+        hub,
+        Event::TurnQueued,
+        json!({"agent": agent, "wait_ms": wait_ms.clamp(0, 86_400_000), "ahead": ahead.min(100)})
+            .as_object()
+            .cloned()
+            .unwrap_or_default(),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

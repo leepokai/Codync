@@ -5,7 +5,8 @@ Android app is a 1:1 port of the iPhone app: each screen
 is built from its iOS source (`apps/ios/Views`, `apps/ios/Kit/Sources/CodyncUI`) with the
 Android `design` module (see the [Android README](../../apps/android/README.md)). Product
 logic stays in the host. This checklist tracks what's still different and what still needs
-acceptance on real devices.
+acceptance on real devices. What OpenBot Mobile still owes this app, and in which order, is
+tracked separately in [OpenBot Mobile inventory](openbot-mobile-parity.md).
 
 ## Coverage
 

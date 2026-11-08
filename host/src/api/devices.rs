@@ -57,6 +57,8 @@ const LOCAL_ONLY: &[&str] = &[
     "memoryCall",
     "routineCall",
     "composioCall",
+    // The bots' ComfyUI tools: they act as a bot and read files on this computer.
+    "comfyCall",
     "connectorTarget",
     "connectorRuntime",
     "connectorCall",

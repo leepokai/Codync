@@ -8,12 +8,14 @@
 //! here are those of `comfy/cli_args.py` and the folder keys those of `extra_model_paths.yaml.example`.
 
 use super::runner::Launch;
+use crate::LockExt;
 use crate::service;
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 /// The id of the connector that turns the `comfyui` MCP tools on for a bot.
 pub const CONNECTOR_ID: &str = "comfyui";
@@ -82,7 +84,13 @@ pub enum Compute {
 }
 
 impl Compute {
-    pub fn detect() -> Self {
+    /// Asked once per host run: a graphics card doesn't come and go while it runs.
+    pub fn current() -> Self {
+        static CURRENT: OnceLock<Compute> = OnceLock::new();
+        *CURRENT.get_or_init(Self::detect)
+    }
+
+    fn detect() -> Self {
         let found = std::process::Command::new("nvidia-smi")
             .arg("-L")
             .stdin(std::process::Stdio::null())
@@ -169,7 +177,7 @@ pub fn launch(port: u16) -> Result<Launch> {
     }
     args.push(arg("--extra-model-paths-config"));
     args.push(yaml.into_os_string());
-    if Compute::detect() == Compute::Cpu {
+    if Compute::current() == Compute::Cpu {
         args.push(arg("--cpu"));
     }
     Ok(Launch {
@@ -190,20 +198,39 @@ pub fn remove_data() -> Result<()> {
     Ok(())
 }
 
-/// Bytes under `dir`, for the card's "space used".
+/// How often the card's "space used" is measured again: walking a models folder is slow.
+const USED_REFRESH: Duration = Duration::from_secs(30);
+
+/// Bytes under `dir`, for the card's "space used". Links are not followed: a models folder linked in
+/// from elsewhere is not this app's space, and a link loop must not recurse forever.
 pub fn used_bytes(dir: &Path) -> u64 {
     let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
     entries
         .filter_map(Result::ok)
-        .map(|e| match e.metadata() {
-            Ok(m) if m.is_dir() => used_bytes(&e.path()),
-            Ok(m) => m.len(),
+        .map(|e| match e.file_type() {
+            Ok(t) if t.is_symlink() => 0,
+            Ok(t) if t.is_dir() => used_bytes(&e.path()),
+            Ok(_) => e.metadata().map_or(0, |m| m.len()),
             Err(_) => 0,
         })
         .sum()
 }
 
-/// What the card shows beside the runner's state.
+/// [`used_bytes`] of the data folder, measured at most every [`USED_REFRESH`].
+fn used_bytes_recent() -> u64 {
+    static LAST: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
+    if let Some((at, bytes)) = *LAST.locked()
+        && at.elapsed() < USED_REFRESH
+    {
+        return bytes;
+    }
+    let bytes = used_bytes(&data_dir());
+    *LAST.locked() = Some((Instant::now(), bytes));
+    bytes
+}
+
+/// What the card shows beside the runner's state. Blocking (it measures the data folder): call it
+/// through `spawn_blocking`.
 pub fn card() -> Value {
     json!({
         "version": pin().version,
@@ -211,8 +238,8 @@ pub fn card() -> Value {
         "dataDir": data_dir().to_string_lossy(),
         "modelsDir": checkpoints_dir().to_string_lossy(),
         "modelsUrl": MODELS_URL,
-        "usedBytes": used_bytes(&data_dir()),
-        "notice": Compute::detect().notice(),
+        "usedBytes": used_bytes_recent(),
+        "notice": Compute::current().notice(),
     })
 }
 
@@ -244,6 +271,17 @@ mod tests {
         assert!(!data.exists() && neighbour.is_file());
         remove_data().expect("removing nothing is fine");
         let _ = std::fs::remove_file(neighbour);
+    }
+
+    #[test]
+    fn the_space_used_counts_every_file_below() {
+        let dir = std::env::temp_dir().join(format!("codync-comfy-used-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("models/checkpoints")).expect("folders");
+        std::fs::write(dir.join("a.bin"), [0_u8; 10]).expect("a file");
+        std::fs::write(dir.join("models/checkpoints/b.safetensors"), [0_u8; 32]).expect("a nested file");
+        assert_eq!(used_bytes(&dir), 42);
+        assert_eq!(used_bytes(&dir.join("missing")), 0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

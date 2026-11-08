@@ -52,7 +52,7 @@ impl Tools {
     }
 
     /// What clients show for one tool.
-    pub fn status(&self, store: &Store, id: &str) -> Result<Value> {
+    pub async fn status(&self, store: &Store, id: &str) -> Result<Value> {
         let runner = self.runner(id)?;
         let state = runner.state();
         let mut status = json!({
@@ -66,7 +66,7 @@ impl Tools {
             "logTail": runner.log().tail(),
         });
         if id == COMFY.id {
-            status["comfy"] = comfy::card();
+            status["comfy"] = tokio::task::spawn_blocking(comfy::card).await?;
             status["job"] = self.jobs.status();
         }
         Ok(status)

@@ -347,14 +347,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.n8n.set_port(&hub.store, u16::try_from(port).context("`port` must be 1024 or higher")?).await?;
             hub.n8n.state()
         }
-        "toolStatus" => hub.tools.status(&hub.store, str_arg(&b, "id")?)?,
+        "toolStatus" => hub.tools.status(&hub.store, str_arg(&b, "id")?).await?,
         "toolStart" => {
             hub.tools.start(hub, str_arg(&b, "id")?)?;
-            hub.tools.status(&hub.store, str_arg(&b, "id")?)?
+            hub.tools.status(&hub.store, str_arg(&b, "id")?).await?
         }
         "toolStop" => {
             hub.tools.stop(&hub.store, str_arg(&b, "id")?).await?;
-            hub.tools.status(&hub.store, str_arg(&b, "id")?)?
+            hub.tools.status(&hub.store, str_arg(&b, "id")?).await?
         }
         "comfyCall" => {
             let args = b.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));

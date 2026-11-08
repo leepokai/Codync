@@ -6,188 +6,54 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.30.0
+## 2.39.0
 
 ### zh-Hant
-- 擴充功能現在有應用程式、代理與技能三個分頁。應用程式把服務連到你的電腦：用瀏覽器登入或貼上金鑰即可，還能加入任何 MCP 伺服器。
-- 代理分頁有現成的代理，各有自己的指示、技能與例行工作。點進去看它們做什麼，再按「加入代理」建立 Bot。
-- 技能分頁有依類別整理的技能，包含 OpenBot 的整套技能。安裝後每個 Bot 都能使用。
-- 現成的 Bot 與團隊移到代理分頁，與其他代理並列。
+- 「擴充功能」成為市集：應用程式、代理與技能三個分頁，加上精選與分類。
+- 加入代理會建立一個帶指示、外觀、技能與例行工作的 Bot；先看它的頁面再決定。
+- 內建的技能可離線安裝，目錄中的應用程式一步接好連接器。
+- 新的工作流程編輯器把觸發、步驟與結果畫成一張會自己展開的畫布。
+- 每個 Bot 可以指定瀏覽器設定檔，登入與 Cookie 都留在該設定檔裡。
+- Slack、Telegram 與 Discord 的提及、GitHub 的 issue、PR 與失敗檢查都能啟動工作流程；WhatsApp 訊息也能。
+- 任何訊息都能從選單刪除，並在所有裝置上消失。
+- 每個 Bot 的聊天可以有各自的顏色，方便分辨。
+- WhatsApp 可以輸入配對碼連結，不必掃 QR 碼；也能回答核准並限制誰能寫入。
+- 中斷或失敗的任務、失敗的例行工作可以用「取消任務」結束，訊息會保留。
+- Bot 頭像可選蓬鬆或平面，靜止表情更平靜，群組頭像會輕輕漂移。
+- Proton Pass 進入目錄：貼上個人存取權杖，Bot 就能讀取它開啟的保險箱。
+- 被用完的額度會說明原因，並在額度回來時提示。
+- 使用量頁面有「你的一週」，也能挑選背景工作用的模型並切換省電。
+- Bot 可以被要求在說完成前先檢查，也能設定它的個性。
+- 長按聊天可標為未讀；再次打開會看到「新訊息」線，聊天也會列出它的媒體與檔案。
+- 連線不穩或系統中止後 Codync 會自己重連，省電模式不再中斷串流回覆。
+- 設定新增「支援」：Discord、GitHub，以及可分頁、可清除的支援記錄。
+- 例行工作可以從 WhatsApp 訊息或群組提及開始，也能把 WhatsApp 聊天當成輸出的去處。
+- 工作流程接受 Slack 觸發與輸出。
+- 介面新增阿拉伯文，並把整個版面鏡像；每段文字仍依自己的方向閱讀。
+- 佇列訊息顯示在輸入框上方，可先編輯、插話或刪除。
+- 例行工作可以選擇在子討論串中執行。
 
 ### en-US
-- Extensions now has Apps, Agents and Skills tabs. Apps connect a service to your computer with a browser sign-in or a key, and custom connectors add any MCP server.
-- The Agents tab has ready-made agents, each with its own instructions, skills and routines. Open one to see its work, then Add agent to create the bot.
-- The Skills tab groups skills by category, including the whole OpenBot set. Every bot can use an installed skill.
-- Ready-made bots and teams moved under Agents, beside the other agents.
-
-## 2.29.0
-
-### zh-Hant
-- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
-- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
-- 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
-
-### en-US
-- Agent, model, reasoning effort and Fast mode now share compact, expandable settings. Each bot keeps its own effort preference, with the default level shown.
-- Rating invitations wait until you have used Codync for a while, viewed a bot's result, and returned to the list. You can also rate Codync anytime from Settings.
-- Settings is now its own tab, next to State, with only this iPhone's own settings. Each computer's Extensions, Voice chat, Screen, Push notifications and Connection are on its card in Manage computers, and push can be turned off for each computer.
-- Codync at the bottom of a computer's card shows the version it runs; when a newer one is out, tap Update to have that computer update from your phone.
-- A network button (beta) on each computer's card: a computer can be in several networks, and it shows each one's computers, whether each answers, the bots it offers, who may message the bots here, and whether cloud assistants are on. You set up and invite computers in Codync on a computer.
-- Bot settings have Offered to the network and Reachable by cloud assistants, so you choose whether bots on your other computers, ChatGPT or Claude can find a bot.
-
-## 2.28.0
-
-### zh-Hant
-- 主助理的頭像右下角新增金色星星；點一下詳細頁的星星，即可了解它如何追蹤目標、協調 bots 與定時關心進度。
-- 你的電腦連成一個網路後（在電腦上執行 codync-host network），Bot 可以請其他電腦上的 Bot 幫忙；聊天裡會寫出對方 Bot 和它在哪台電腦。
-- 可以把 Codync 加進 ChatGPT 或 Claude 當聯結器，從那裡請你的 Bot 做事；Bot 的聊天會顯示「Message from Cloud assistant」。
-
-### en-US
-- Your lead agent now has a gold star on its avatar. Tap the larger star in its details to learn how it follows your goals, coordinates bots, and checks in.
-- Once your computers share a network (codync-host network on each), a bot can ask a bot on another computer; the chat names that bot and its computer.
-- Add Codync to ChatGPT or Claude as a connector to give your bots tasks from there; the bot's chat shows Message from Cloud assistant.
-
-## 2.27.0
-
-### zh-Hant
-- 此版本起需要 iOS 26 或更新版本。
-- 修正送出文字、清空或替換聊天草稿時可能閃退的問題。
-- 擴充套件的列表改回往下捲動，不再分頁；聯結器捲到底會自動從 MCP Registry 載入更多。
-- 點聯結器或智慧體只會打開詳情，要按「Add」或「Set up」才會加入或下載。
-- 用量也會顯示這台電腦上其他 agent 的額度，包括 oh-my-pi、Amp、Kiro、Kimi、Antigravity、OpenCode、Mistral Vibe 和 Junie。Cursor 會用本機已登入的帳號向 cursor.com 查詢用量。
-
-### en-US
-- This version requires iOS 26 or later.
-- Fixed a possible crash when sending text or clearing or replacing a chat draft.
-- Extensions lists scroll again instead of paging; connectors load more from the MCP Registry as you reach the end.
-- Tapping a connector or agent only opens its details; nothing is added or downloaded until you press Add or Set up.
-- Usage limits now include the other agents installed on your computer: oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie. Cursor asks cursor.com with the sign-in saved on that computer.
-
-## 2.26.2
-
-### zh-Hant
-- Bot 傳來的圖片會直接顯示在聊天裡，點一下可以放大看，不用先下載。
-- 電腦上的 Codync 版本太舊時，更新提示多了「Update now」按鈕，直接從手機叫那台電腦更新。
-- 擴充套件一次顯示一個分類：智慧體、聯結器或技能，每個列表都分頁。點列表兩側的圓形按鈕或左右滑動就能翻頁，下方可選每頁 6、10、20 或 50 筆，並顯示目前在第幾頁。
-- 聯結器翻到還沒載入的頁面時，會從 MCP Registry 接著載入。
-- 「憑證」移到上方電腦名稱旁；「自定義聯結器」和「自己的技能」放在各自分類的列表上方。
-- 電腦使用自建中繼時，設定和連線狀態會顯示該中繼的地址，不再一律寫成 Cloudflare。
-- 可以建立使用 WorkBuddy 的 Bot：Codync 會使用 WorkBuddy 桌面 App 內附的 CLI，並在聊天裡請你登入。
-
-### en-US
-- Images a bot sends now show right in the chat; tap one to see it full size, no download needed.
-- When a computer's Codync is too old for this app, Update now on the notice updates that computer from your phone.
-- Extensions shows one section at a time: Agents, Connectors or Skills, each in pages. Tap the round buttons beside the list or swipe left or right to turn the page; under it, pick 6, 10, 20 or 50 per page and see which page you're on.
-- Connectors keep loading from the MCP Registry as you page past what's loaded.
-- Credentials sits beside the computer's name at the top, and Custom connector and Your own skill sit above their lists.
-- When a computer uses a private relay, Settings and connection status show that relay's address instead of always saying Cloudflare.
-- Create bots that run WorkBuddy: Codync uses the CLI inside the WorkBuddy desktop app and asks you to sign in from the chat.
-
-## 2.26.1
-
-### zh-Hant
-- 在背景從即時動態或鎖定畫面掛斷通話時，聊天裡也會留下這通電話的紀錄，回到 App 不再顯示連不上電腦。
-
-### en-US
-- A call you end from its Live Activity or the Lock Screen, with the app in the background, still leaves its line in the chat, and coming back no longer says your computer can't be reached.
-
-## 2.26.0
-
-### zh-Hant
-
-- 配對電腦時可選擇 Windows，並查看安裝與掃描配對碼的步驟。
-- 配對指引更清楚說明如何在兩台裝置使用相同的 Codync 或 Codync Dev 版本。
-- 支援的 Antigravity 代理程式可回報各帳號與模型群組的方案用量。
-- Bot 工作時，Gemini 與 OpenAI 的語音會主動告訴你它在做什麼、有沒有等你核准或遇到問題，做完就念出結果。
-- 通話中短暫斷線再連上時，錯過的回覆會補念給你聽。
-- Gemini 或 OpenAI 通話斷線時會自動重新連上並接著聊，不必重打；來電、Siri 或其他 App 佔用聲音時通話會暫停，結束後自動繼續，也可以點一下通話列下方繼續。
-- 通話中，Bot 的即時動態會在鎖定畫面和動態島顯示通話時長和它正在做的事，還能直接靜音或結束通話，不用打開 App。
-- Gemini 與 OpenAI 的語音用你正在說的語言回答，你換語言它就跟著換。
-
-### en-US
-
-- Choose Windows when pairing a computer and follow the installation and QR scanning steps.
-- Clearer instructions for using matching Codync or Codync Dev apps on both devices when pairing.
-- Supported Antigravity adapters report plan usage separately for each account and model group.
-- While the bot works, the Gemini and OpenAI voice keeps you posted on what it's doing, tells you when an approval waits or something fails, and reads the result when it's done.
-- A reply that arrives while a call briefly loses its connection is read once it's back.
-- A Gemini or OpenAI call that loses its connection reconnects and carries on without hanging up; a phone call, Siri or another app's audio pauses the call, which picks up again when it ends, or with a tap under the call bar.
-- During a call, the bot's Live Activity on the Lock Screen and in the Dynamic Island shows how long the call has run and what the bot is doing, with buttons to mute or end it without opening Codync.
-- The Gemini and OpenAI voice answers in the language you speak and follows when you switch.
-
-## 2.25.0
-
-### zh-Hant
-
-- 新增文件庫、Markdown 編輯與自動儲存，可審閱機器人提出的文件變更並查看電腦操作紀錄。
-- 可依專案分組及篩選機器人，搜尋完整訊息紀錄，並預覽最近三則訊息而不標記已讀。
-- 可在模型選單搜尋模型名稱與說明。
-- 可為 Antigravity 機器人選擇獨立帳號。
-- 機器人可透過安全卡片向你索取 API 金鑰或指令變數，值不會進入對話；可在「Credentials」中查看並移除。
-- 改善遠端螢幕連線與例行工作通知的可靠性。
-- 每台電腦都有一個主助理，固定在 Bot 列表最上面、帶著星星：它會主動跟進你在做的事，每天兩次看看有沒有該提醒你或能先幫你做的，需要時請你授權 Gmail、行事曆等服務；打電話給它時由它先開口。
-- Bot 可以做 Artifact：報告、追蹤表、儀表板這類要回來看的內容會以卡片出現在聊天裡，點開看完整內容，直接在下方留言請它改，改好就自動更新。
-- 每個 Bot 的「資料庫」收齊它做的 Artifact，以及聊天裡分享過的檔案和圖片。
-- 可以建立使用 Hermes Agent 的 Bot。
-- Bot 之間交辦工作不必等待，對方的回覆會回到發問的 Bot，再由它回覆你。
-- 鎖定畫面的即時動態加上進度條，四格依任務進度填滿，顏色跟著狀態走。
-- 帳號選單裡的「電腦與設定」和它打開的頁面同名。
-- 新增聯結器失敗後再試一次，會使用你改好的金鑰。
-- 使用 Hermes Agent 或 Gemini CLI 的 Bot，記憶頁會說明它們自己的記憶由所有用同一個 agent 的 Bot 共用，Codync 沒辦法關掉。
-- 在設定的「對話」開啟「顯示思考細節」後，Bot 工作中點一下狀態膠囊，就能在對話裡展開這一輪的思考、工具與 MCP 呼叫，太長時在膠囊內捲動。
-- 新增「Open Live Mode」捷徑，選擇 Bot 後直接開啟語音聊天；不選 Bot 就打給主助理，也可以對 Siri 說「Talk to Codync」。
-- 新增「Send Text to Bot」捷徑，可選擇 Bot 並傳送文字；預設在背景傳送，也可開啟「Open Chat」顯示對話。
-- 點對話上方的 Bot 會打開它的詳情、資料庫、記憶與設定；「新會話」改到 Bot 列表的長按選單。
-- 用 Gemini 即時語音通話時，Gemini 聽得到你說話並會回答，也會念出 Bot 的回覆；先前通話可能一直沒有聲音、也沒有回應。
-- 通話中在設定換了語音（例如從本機換成 Gemini），關掉設定後通話就改用新的語音繼續，不必掛斷重打。
-- 語音通話連線中，通話列會顯示一條左右來回的線，真正連上、聽得到你說話後才換回音量點點。
-- 有多台電腦時，Bot 列表中每台電腦的標題列都有自己的「擴充套件」按鈕，電腦的連線狀態也靠右對齊；擴充套件裡不再能切換電腦。
-- 通話內容不再塞滿聊天：結束後只留一行，標題寫著這通電話在談什麼，點開可以看完整逐字稿；Bot 的記憶也會記住你在通話裡說的話。
-- Gemini 與 OpenAI 的語音是 Bot 的轉接者：它知道你的記憶、Bot 的設定、專案現況和最近的對話，轉給 Bot 時附上你說的原話，也能停止 Bot、查 Bot 的記憶。
-
-### en-US
-
-- Keep Markdown documents with each bot, edit with autosave and conflict recovery, review proposed changes, and inspect computer activity.
-- Filter bots, group them by project, search message history, and preview the last three messages without marking them read.
-- Search model names and descriptions in the model picker.
-- Choose a separate Antigravity account for each bot.
-- Bots can ask for an API key or command variable on a secure card, and the value never enters the chat; review and remove them in Credentials.
-- Improved remote screen connections and routine notification reliability.
-- Every computer has a lead bot, starred on top of the Bots list: it follows up on what you're working on, checks in twice a day for anything worth a reminder or a head start, asks for access to services like Gmail or your calendar when it would help, and speaks first when you call it.
-- Bots can make artifacts: reports, trackers and dashboards you come back to show as a card in the chat. Open one full screen and message the bot below it to change it; it updates in place.
-- Each bot's Library collects its artifacts and the files and images shared in the chat.
-- Create bots that run Hermes Agent.
-- Bots hand work to each other without waiting; the answer comes back to the bot that asked, which then replies to you.
-- Live Activities on the Lock Screen show a progress line that fills as the task moves, in the state's color.
-- The account sheet's Computers & settings row now has the same name as the page it opens.
-- Trying again after adding a connector failed uses the key you corrected.
-- For bots that run Hermes Agent or Gemini CLI, Memory explains that the agent's own memory is shared by every bot that runs it and Codync can't turn it off.
-- Turn on Show thinking details in Settings › Chat, then tap a working bot's status pill to unfold this turn's thinking, tool and MCP calls right in the chat; a long turn scrolls inside the pill.
-- Use Open Live Mode in Shortcuts to choose a bot and start voice chat; leave the bot out to call your lead bot, or say "Talk to Codync" to Siri.
-- Use Send Text to Bot to choose a bot and send text in the background by default, or enable Open Chat to show the conversation.
-- Tapping the bot at the top of its chat opens its Details, Library, Memory and Settings; New session moved to the bot's touch-and-hold menu in the list.
-- Gemini realtime voice calls hear you, answer and read the bot's replies aloud; before, a call could stay silent with no reply.
-- Pick another voice in the call settings mid-call (on-device to Gemini, say) and the call carries on with it once you close them.
-- While a voice call connects, the call bar shows a line gliding back and forth until the voice can really hear you.
-- With several computers, each computer's heading in the Bots list has its own Extensions button, with its connection status on the right; Extensions no longer switches computers.
-- Calls no longer fill the chat: each one leaves a single line titled with what it was about; tap it for the full transcript. The bot's memory keeps what you said on the call.
-- The Gemini and OpenAI voice relays to your bot: it knows your memory, the bot's setup, the project and the recent conversation, passes your own words along, and can stop the bot or look up what it remembers.
-
-## 2.24.0
-
-### zh-Hant
-- 設定與語音聊天的標題加入清楚的圖示。
-- 可在設定中自行選擇英文、簡體中文、繁體中文、日語、韓語、法語、德語或西班牙語，也可跟隨系統語言。
-- 語言偏好保留在這台裝置，聊天內容維持原文。
-
-### en-US
-- Identify Settings and Voice chat with clearer header icons.
-- Choose English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, German or Spanish in Settings, or follow your system language.
-- Keep your language preference on this device without translating your conversations.
-
-## 2.23.1
-
-### zh-Hant
-- 點一下聊天訊息或空白區域即可收起鍵盤，保留正常捲動與按鈕操作
-- 聊天停在底部時，鍵盤開啟後仍保持最後一則訊息可見
-- 回到最新訊息按鈕改用系統 Liquid Glass
+- Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
+- Adding an agent creates a bot with its instructions, look, skills and routines; read its page first.
+- Bundled skills install offline, and catalogued apps add their connector in one step.
+- The new Workflow Builder turns a trigger, steps and a result into a workflow that draws itself on the canvas.
+- Each bot can name a browser profile, keeping sign-ins and cookies inside that profile.
+- Slack, Telegram and Discord mentions can start a workflow, as can GitHub issues, pull requests and failed checks, and WhatsApp messages.
+- Any message can be deleted from its menu and disappears on every device.
+- Each bot's chat can have its own color, so it is easy to tell apart.
+- A WhatsApp number can be linked by typing a pairing code instead of scanning a QR code; approvals can be answered and who writes restricted.
+- A task that stopped halfway, or a routine run that failed, can be ended with Cancel task; its messages stay.
+- Bot avatars can be plush or flat, resting faces look calmer, and group avatars drift gently.
+- Proton Pass joins the catalog: add its personal access token and your bots can read the vault it opens.
+- A model stopped by a spent plan limit says so, and when the limit comes back.
+- Usage shows your week, and a model can be picked for background work with a Saver switch.
+- A bot can be asked to check its work before saying it is done, and its character can be set.
+- Long-press a chat to mark it unread; opening it again shows a New messages line, and the chat lists its media and files.
+- Codync reconnects on its own after a flaky connection or the system stopping it, and battery saver no longer cuts a streaming reply.
+- Settings has Support: Discord, GitHub and a paged support log you can clear.
+- A routine can start from a WhatsApp message or group mention, and a WhatsApp chat can be a routine output.
+- Workflows accept Slack triggers and outputs.
+- The interface is available in Arabic and mirrors right to left, while each paragraph still reads in its own direction.
+- Queued messages sit above the composer, ready to edit, steer or delete.
+- A routine can run in a thread.

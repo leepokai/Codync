@@ -53,11 +53,12 @@ paged 100 at a time when read; Apple-style crash reporting was already in `Crash
 | Save log file through the share sheet, and Clear log with a confirmation | Done | `AppStoreSupport.kt`, `SupportView.kt` |
 | Log kept across restarts, deleted only from the page | Done | `SupportLog.kt` |
 
-Parity owed: the iPhone app has no Support page yet (`apps/ios`).
+Parity: the iPhone app has the same page and log (`SupportView.swift`, `SupportLog.swift`), fed by the
+same two hooks in its transport.
 
 ## 4. Queue, then the rest
 
-Not started, in order:
+Kept in the owner's order:
 
 - **M2**: workflow editor (Condition model and effort, WhatsApp numbers).
 
@@ -66,9 +67,15 @@ Done from M2:
 | Item | Status | Files |
 | --- | --- | --- |
 | A routine can start from a WhatsApp message or group mention | Done | host `routines::events`, `RoutinesView.kt` (catalog from the host) |
-| A WhatsApp chat as an output | Done | host `routines::outputs`, `Routine.kt`, `RoutinesView.kt`, desktop `routine.ts` |
-| Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx` |
+| A WhatsApp chat as an output | Done | host `routines::outputs`, `Routine.kt`, `RoutinesView.kt`, iOS `RoutineOutput` + editor, desktop `routine.ts` |
+| A routine can run in a thread | Done | host `Routine::thread`, `routines::mod`, `Run in a thread` on the three clients |
+| Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx`; the iPhone has no channel UI yet |
 | Cancel task on a stopped or failed task | Done | Codync has no channel tasks: a paused turn card and a failed routine notice stand in. host `pause::close` and `routines::retry::cancel` (one `cancelTask` method), `PausedTurnCard.kt`, `RoutineNotice`, desktop `ChatRows.tsx`/`RoutineNotice.tsx`, TUI `/cancel` and `E` |
+
+Left from M2: a Condition step's own Model and Effort. Codync's canvas has no Condition step
+type; a step is a bot, and it already runs on that bot's model. Giving a link its own model and
+effort means carrying an override into the target bot's turn (`chat::team::BotRequest` →
+`agent::bot::turn`), in the host before any client shows it, so it is its own change.
 
 - **M5/M6**: voice pause slider, reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.
@@ -120,8 +127,9 @@ iOS-only entries, each adapted to Android:
 | X6 iPhone Duo and foldable split | Master-detail from 600 × 360 dp with the rail | Already present | `MainNavigation.isExpandedWindow`, `configChanges` |
 | X7 Agent picture in notifications | The face as the notification's large icon | Already present | `AlertNotification.kt` `notificationFace` |
 
-Parity owed by this work (iOS cannot be compiled here): a Support page, the WhatsApp pairing
-code, routine outputs, and a `2.39.0` section in `apps/ios/WhatsNew.md`.
+Parity owed by this work: the iPhone app has no chat-channel UI at all (Telegram, Slack, Discord,
+WhatsApp), so the pairing code waits for that screen; the Support page, routine outputs and the
+`2.39.0` App Store notes are in.
 
 ## Validation
 

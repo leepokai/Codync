@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Entry } from '@shared/models'
-import type { MenuItem, ReactionPick } from '../../components/Overlay'
+import type { MenuItem, ReactionPick } from '../../components/Menu'
 import type { ImageFailure, ImageFrom } from '../../../shared/analytics.ts'
 import { copyImage } from '../../lib/image-clipboard'
 import { copyFailure, imageActionEvent } from '../../lib/image-analytics.ts'

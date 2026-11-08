@@ -31,7 +31,7 @@ test('in the viewer a menu item closes the viewer before it acts, and the reacti
   const order: string[] = []
   const reactions = { emoji: ['👍'], chosen: [], toggle: () => order.push('react') }
   const menu = leavingViewer({ items: () => [{ title: 'Reply', action: () => order.push('reply') }], reactions }, () => order.push('close'))
-  menu.items()[0].action()
+  menu.items()[0].action?.()
   assert.deepEqual(order, ['close', 'reply'])
   assert.equal(menu.reactions, reactions)
 })

@@ -1,5 +1,6 @@
 import { isImageName, showsAsImage, type Entry } from '../../../shared/models.ts'
 import type { ImageSource } from './Attachments'
+import type { MenuItem } from '../../components/Menu'
 import type { MessageMenu } from './use-image-actions'
 
 /**
@@ -16,5 +17,9 @@ export function copiedPicture(entry: Entry): ImageSource | null {
 
 /** A message's menu inside the open viewer: what its items do leaves the viewer first (Reply, what it did); reactions stay. */
 export function leavingViewer(menu: MessageMenu, close: () => void): MessageMenu {
-  return { ...menu, items: () => menu.items().map((item) => ({ ...item, action: () => { close(); item.action() } })) }
+  const leave = (item: MenuItem): MenuItem => {
+    if (item.submenu) return { ...item, submenu: item.submenu.map(leave) }
+    return { ...item, action: () => { close(); item.action() } }
+  }
+  return { ...menu, items: () => menu.items().map(leave) }
 }

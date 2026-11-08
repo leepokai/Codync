@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AnchoredMenu, useContextMenu } from '../../components/Overlay'
+import { AnchoredMenu, useContextMenu } from '../../components/Menu'
 import { useStoreRef } from '../../store/context'
 import type { ImageSource } from './Attachments'
 import { Text } from '../../components/Text'

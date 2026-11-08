@@ -309,6 +309,11 @@ export interface CodyncBridge {
     /** The computer this screen window was opened for. Null when the window is stale. */
     target(computerId: string): Promise<ScreenView | null>
   }
+  /** The Browser panel's page: a Codync-owned browser with tabs, shown while the host owns it. */
+  browser: {
+    /** Opens (or focuses) the panel's window, from the chat window. */
+    open(): Promise<void>
+  }
   /** The n8n window: the n8n editor, or this window's start page while the host brings it up. */
   n8n: {
     /** Opens (or focuses) the window, from the chat window. */

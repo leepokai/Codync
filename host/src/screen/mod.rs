@@ -33,6 +33,8 @@
 //! `text`, `key` in display points, plus `down`/`up` for touch drags and `clipboard {text}`.
 
 mod activity;
+#[cfg(windows)]
+pub mod browser_panel;
 mod computer;
 mod cua;
 mod helper;
@@ -134,6 +136,8 @@ pub struct Screen {
     #[cfg(windows)]
     protected_browser: tokio::sync::Mutex<Option<protected_browser::Browser>>,
     #[cfg(windows)]
+    panel: tokio::sync::Mutex<Option<browser_panel::Panel>>,
+    #[cfg(windows)]
     protected_operation: tokio::sync::Mutex<()>,
     snapshots: Mutex<snapshots::SnapshotState>,
     sessions: Mutex<HashMap<String, Viewer>>,
@@ -156,6 +160,8 @@ impl Screen {
             protected: Mutex::default(),
             #[cfg(windows)]
             protected_browser: tokio::sync::Mutex::default(),
+            #[cfg(windows)]
+            panel: tokio::sync::Mutex::default(),
             #[cfg(windows)]
             protected_operation: tokio::sync::Mutex::default(),
             snapshots: Mutex::default(),

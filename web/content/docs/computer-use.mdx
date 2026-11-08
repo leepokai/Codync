@@ -112,3 +112,9 @@ Profile names are local to the bot and to the computer. Clearing the name starts
 
 A profile can also use its own **browser proxy**, set beside the profile name: `socks5://user:password@host:1080`, `http://host:3128`, `user:password@host:port` or `host:port:user:password`. The password is kept in the credential vault and masked afterwards, and the browser's traffic leaves through the proxy, including its sign-in, which Chromium cannot do by itself. Without a proxy the browser uses this computer's network.
 
+
+## Browser panel
+
+The desktop app's rail has a **Browser** button: it opens a browser of Codync's own, with a tab strip and an address bar, and mirrors the page it shows. Typing and clicking happen in the browser's window; the panel keeps its tabs, so a sign-in flow that opens several pages stays in one place. Up to twelve tabs; **Close all tabs** ends the browser.
+
+The panel runs on Windows for now, uses the same isolated profile folder as protected entries, and keeps no cookies between runs beyond that folder. The phone's Settings screen shows the same tabs and page picture over the computer connection.

@@ -430,6 +430,7 @@ function ChatSplitView() {
             }}
             onUsage={() => setSettings('usage')}
             onN8n={() => window.codync.n8n.open()}
+            onBrowser={() => void window.codync.browser.open()}
             onExtensions={openMarketplace}
             onSettings={() => setSettings('general')}
             onAccount={() => setShowAccount((s) => !s)}

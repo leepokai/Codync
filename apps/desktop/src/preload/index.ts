@@ -164,6 +164,9 @@ const bridge: CodyncBridge = {
     open: (request) => ipcRenderer.invoke('screen:open', request),
     target: (computerId) => ipcRenderer.invoke('screen:target', computerId),
   },
+  browser: {
+    open: () => ipcRenderer.invoke('browser:open'),
+  },
   n8n: {
     open: () => ipcRenderer.invoke('n8n:open'),
     gotoEditor: () => ipcRenderer.invoke('n8n:gotoEditor'),

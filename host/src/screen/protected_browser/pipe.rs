@@ -13,13 +13,13 @@ const MAX_SAFE_ID: u64 = (1 << 53) - 1;
 /// Largest request or reply line, in bytes.
 const MAX_MESSAGE: usize = 256 * 1024;
 
-pub(super) struct Pipe {
+pub(crate) struct Pipe {
     input: ChildStdin,
     output: BufReader<ChildStdout>,
     next: u64,
     poisoned: bool,
 }
-pub(super) fn spawn(browser: &Path, folder: &Path, proxy: Option<&str>) -> Result<(Process, Pipe)> {
+pub(crate) fn spawn(browser: &Path, folder: &Path, proxy: Option<&str>) -> Result<(Process, Pipe)> {
     let node = crate::agent::backends::which("node")
         .or_else(|| {
             crate::agent::node::search_dirs().iter().map(|dir| dir.join("node.exe")).find(|path| path.is_file())
@@ -50,11 +50,8 @@ pub(super) fn spawn(browser: &Path, folder: &Path, proxy: Option<&str>) -> Resul
     let process = Process::new(child)?;
     Ok((process, Pipe { input, output, next: 0, poisoned: false }))
 }
-pub(super) async fn rpc(pipe: &mut Pipe, method: &str, params: Value, session: Option<&str>) -> Result<Value> {
-    ensure!(
-        !pipe.poisoned,
-        "Private browser transport was interrupted; finish this protected entry before starting again"
-    );
+pub(crate) async fn rpc(pipe: &mut Pipe, method: &str, params: Value, session: Option<&str>) -> Result<Value> {
+    ensure!(!pipe.poisoned, "Private browser transport was interrupted; start the browser again");
     pipe.next = pipe
         .next
         .checked_add(1)
@@ -79,11 +76,12 @@ pub(super) async fn rpc(pipe: &mut Pipe, method: &str, params: Value, session: O
         if value["id"] != id {
             continue;
         }
+        // The reply arrived whole, so the stream is usable even when the browser refused the operation.
+        pipe.poisoned = false;
         ensure!(
             value.get("error").is_none() && value["result"].get("exceptionDetails").is_none(),
             "Private browser refused the operation; no secret detail is returned"
         );
-        pipe.poisoned = false;
         return Ok(value["result"].clone());
     }
 }

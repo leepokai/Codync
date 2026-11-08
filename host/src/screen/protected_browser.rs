@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{path::PathBuf, time::Duration};
-mod pipe;
+pub(crate) mod pipe;
 use pipe::rpc;
 const FILL: &str = include_str!("protected-fill.js");
 pub(super) struct Browser {
@@ -295,7 +295,7 @@ fn profile_slug(value: &str) -> String {
         .take(40)
         .collect()
 }
-fn browser_executable() -> Option<PathBuf> {
+pub(crate) fn browser_executable() -> Option<PathBuf> {
     for root in ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"] {
         let Some(root) = std::env::var_os(root) else { continue };
         for path in ["Microsoft/Edge/Application/msedge.exe", "Google/Chrome/Application/chrome.exe"] {

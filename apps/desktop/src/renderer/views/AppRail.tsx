@@ -46,12 +46,13 @@ function n8nStatus(n8n: N8nState | null | undefined): string {
  * pages in the middle, and the account and settings at the bottom. The list
  * panel beside it changes with the page.
  */
-export function AppRail({ active, onBots, onCanvas, onUsage, onN8n, onExtensions, onSettings, onAccount, accountOpen, update, account, n8n }: {
+export function AppRail({ active, onBots, onCanvas, onUsage, onN8n, onBrowser, onExtensions, onSettings, onAccount, accountOpen, update, account, n8n }: {
   active: AppRailPage
   onBots: () => void
   onCanvas: () => void
   onUsage: () => void
   onN8n: () => void
+  onBrowser: () => void
   onExtensions: () => void
   onSettings: () => void
   onAccount: () => void
@@ -76,6 +77,7 @@ export function AppRail({ active, onBots, onCanvas, onUsage, onN8n, onExtensions
           onClick={onN8n}
           status={n8nStatus(n8n)}
         />
+        <RailButton label={tr('Browser')} icon="globe" onClick={onBrowser} />
         <RailButton label={tr('Extensions')} icon="square.grid.2x2" current={active === 'marketplace'} onClick={onExtensions} />
       </div>
       <div className="app-rail-group app-rail-bottom">

@@ -138,6 +138,10 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
     if matches!(method, "openProtectedBrowser" | "fillProtectedLogin" | "fillProtectedCode") {
         return crate::screen::protected_browser::call(hub, method, b).await;
     }
+    #[cfg(windows)]
+    if method.starts_with("browserPanel") {
+        return crate::screen::browser_panel::call(hub, method, &b).await;
+    }
     if crate::computer::panel::METHODS.contains(&method) {
         let (kind, id) = match caller {
             Caller::Device { key, .. } => ("device", key.as_str()),

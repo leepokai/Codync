@@ -4,6 +4,7 @@ import './styles/theme.css'
 import { ChatWindow } from './views/ChatWindow'
 import { ScreenWindow } from './views/screen/ScreenWindow'
 import { N8nWindow } from './views/n8n/N8nWindow'
+import { BrowserWindow } from './views/browser/BrowserWindow'
 import { PairingWindow } from './views/PairingWindow'
 import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
@@ -71,6 +72,11 @@ if (page === 'screen') {
 } else if (page === 'n8n') {
   // The start page: it talks to the host itself, no mirror of the bots.
   root.render(<N8nWindow />)
+} else if (page === 'browser') {
+  // The Browser panel: it talks to the host itself, like n8n.
+  const app = new AppModel(true)
+  void app.start()
+  root.render(<AppContext.Provider value={app}><BrowserWindow /></AppContext.Provider>)
 } else if (page === 'island') {
   // The island only draws what the chat window sends it: no host connection of its own.
   const island = new IslandModel()

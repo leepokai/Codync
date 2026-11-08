@@ -26,6 +26,8 @@ export class CloudComputerModel extends Observable {
   available = false
   busy: CloudComputerAction | null = null
   error: string | null = null
+  /** The action `error` came from (null: the lookup). */
+  private failed: CloudComputerAction | null = null
   private user = account.user?.userId ?? null
   private polling = false
 
@@ -73,16 +75,25 @@ export class CloudComputerModel extends Observable {
     await this.run(`saveKey:${provider}`, async (current) => {
       try {
         const res = await request<{ credential: CloudCredential }>('PUT', `v1/cloud-credentials/${provider}`, { key: key.trim() })
-        analytics.track({ event: 'cloud_key_saved', outcome: 'saved' })
+        analytics.track({ event: 'cloud_key_saved', outcome: 'saved', provider })
         if (!current()) return
         this.setCredential(provider, res.credential)
         saved = true
       } catch (error) {
-        analytics.track({ event: 'cloud_key_saved', outcome: cloudKeyOutcome(error) })
+        analytics.track({ event: 'cloud_key_saved', outcome: cloudKeyOutcome(error), provider })
         throw error
       }
     })
     return saved
+  }
+
+  /**
+   * `error` where the providers sheet shows it: under `provider`'s key when saving or removing that key failed, else
+   * (null) below every provider.
+   */
+  errorFor(provider: string | null) {
+    const keyOf = this.failed?.match(/^(?:saveKey|removeKey):(.+)$/)?.[1] ?? null
+    return keyOf === provider ? this.error : null
   }
 
   /** The computer's key stays: without it the cloud couldn't put the computer to sleep. */
@@ -136,13 +147,17 @@ export class CloudComputerModel extends Observable {
     if (action) {
       this.busy = action
       this.error = null
+      this.failed = null
       this.changed()
     }
     try {
       await work(current)
       if (current() && !action) this.error = null
     } catch (error) {
-      if (current()) this.error = error instanceof Error ? error.message : String(error)
+      if (current()) {
+        this.error = error instanceof Error ? error.message : String(error)
+        this.failed = action
+      }
     } finally {
       if (current()) {
         if (action) this.busy = null

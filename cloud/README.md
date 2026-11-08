@@ -75,10 +75,10 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 | `CLERK_JWT_KEY` | var, dev/e2e only | public key for networkless verification |
 | `ASSISTANT_LIMITER` | rate limit binding | cloud assistant (MCP connector) requests per account, 120 per minute |
 | `PAIRING_CODE_LIMITER` | rate limit binding | short pairing codes typed per account and per IP, 10 per minute, a miss counting twice |
-| `CLOUD_SECRET_KEYS` | secret, optional | Codync Cloud: `id:base64` AES-256 keys (space-separated, the first seals) that seal the Boat keys users give it (`src/secrets.ts`; [bring your own cloud](../docs/plans/codync-cloud.md#bring-your-own-cloud)); unset = no cloud computers. Make one with `echo "k1:$(openssl rand -base64 32)"`; never reuse one across environments |
+| `CLOUD_SECRET_KEYS` | secret, optional | Codync Cloud: `id:base64` AES-256 keys (space-separated, the first seals) that seal the provider keys users give it (`src/secrets.ts`; [bring your own cloud](../docs/plans/codync-cloud.md#bring-your-own-cloud)); unset = no cloud computers. Make one with `echo "k1:$(openssl rand -base64 32)"`; never reuse one across environments |
 | `CLOUD_KEY_LIMITER` | rate limit binding | provider keys saved per account (each save calls the provider), 5 per minute |
 | `CLOUD_COMPUTER_USERS` | var, optional | comma-separated Clerk user ids allowed a cloud computer (`*`: everyone) |
-| `BOAT_API_URL`, `CLOUD_AUTO_STOP_SECONDS` | var, dev/e2e only | Boat base URL; provider auto-stop (Boat's trial needs ≤ 7200) |
+| `BOAT_API_URL`, `INSTABOX_API_URL`, `CLOUD_AUTO_STOP_SECONDS` | var, dev/e2e only | Boat and InstaBox base URLs; provider auto-stop (Boat's trial needs ≤ 7200; InstaBox ignores it and pauses a machine idle for 30 minutes) |
 | `CLOUD_HOST_ENV`, `CLOUD_HOST_BINARY_URL`, `CLOUD_MACHINE_PREFIX` | var, dev/e2e only | a cloud computer's host service environment (`CODYNC_…=value`, e.g. its cloud URL, analytics off); a host build to boot instead of the release; the machine name prefix ([cloud computer testing](../docs/guides/cloud-computer-testing.md)) |
 | `HOST_FLOOR`, `HOST_FLOOR_REASON` | var, emergencies only | cloud hosts below it update at once; self-hosted ones below it get `426 hostUpdateRequired` at registration |
 | `APP_FLOOR_IOS`, `APP_FLOOR_ANDROID`, `APP_FLOOR_DESKTOP`, `APP_FLOOR_REASON` | var, emergencies only | apps below their platform's floor get `426 appUpdateRequired` on every request |

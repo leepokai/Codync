@@ -2,6 +2,7 @@
 // clouds only, a host build under test and the environment its service starts with
 // (docs/guides/cloud-computer-testing.md).
 
+import type { Setup } from "../machines/src";
 import type { Env } from "./index";
 
 const INSTALL = "https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh";
@@ -42,6 +43,13 @@ export function setupScript(env: Env): string {
   }
   lines.push("codync-host install");
   return `${lines.join("\n")}\n`;
+}
+
+/** What a new cloud computer gets: its one-time claim ticket (the host claims itself with it on first boot) and the
+ * setup script. */
+export function machineSetup(env: Env, claimId: string, nonce: string, userId: string): Setup {
+  const ticket = JSON.stringify({ claimId, nonce, userId, approval: "auto" });
+  return { files: [{ path: ".codync/managed.json", content: ticket }], setupScript: setupScript(env) };
 }
 
 /** The provider's name for a user's machine; test clouds use their own prefix so leftovers are easy to find. */

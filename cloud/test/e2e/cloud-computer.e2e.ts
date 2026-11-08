@@ -15,8 +15,8 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import * as ref from "../ref.ts";
-import { boatKey, boatProxy, deleteSandbox, keepForwarded, savedSnapshot, sh, sweep, TEST_PREFIX } from "./boat.ts";
-import { check, freePort, LocalCloud, lock, ROOT, serveFiles, step } from "./harness.ts";
+import { boatKey, boatProxy, deleteSandbox, keepForwarded, savedSnapshot, sh, sweep } from "./boat.ts";
+import { check, freePort, LocalCloud, lock, ROOT, serveFiles, step, TEST_PREFIX } from "./harness.ts";
 import { Channel, FakePhone, waitFor, type Json } from "./phone.ts";
 
 const HOST_LINUX_BIN = process.env.CODYNC_HOST_LINUX_BIN;

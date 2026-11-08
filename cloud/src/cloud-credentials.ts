@@ -2,11 +2,15 @@
 // they paste once is sealed in D1 (`secrets.ts`) and opened only to call the provider. It is never returned and never
 // logged: the apps see its hint (`boat_…9abc`) and, when the provider turns it down, what the owner has to fix.
 
-import { boat, type HttpRequest, type HttpResponse, type Outcome } from "../machines/src";
+import { drivers, type Failure, type HttpRequest, type HttpResponse, type Outcome, type ProviderId } from "../machines/src";
 import type { Env } from "./index";
 import { open, seal } from "./secrets";
 
-export type Provider = "boat";
+export type Provider = ProviderId;
+
+/** Why a key was turned down: the provider's refusal, or Codync's own (it can run the whole account, or it isn't one of
+ * this provider's keys). */
+export type KeyProblem = Failure | "admin" | "format";
 
 /** The Boat environment every cloud computer is made in: the key users make for Codync is limited to it, so it
  * reaches no other sandbox of theirs. */
@@ -14,6 +18,10 @@ export const GROUP = "codync";
 
 /** All Codync does with a Boat key: no commands, files, SSH or account settings. */
 const BOAT_ACTIONS = ["sandbox.create", "sandbox.read", "sandbox.stop", "sandbox.resume", "sandbox.delete", "snapshot.read", "snapshot.write"];
+
+/** All Codync does with an InstaBox key: its machines (exec included, which is how it installs the host), no snapshots,
+ * Secrets or workspace settings. InstaBox can't limit a key to some machines. */
+const INSTABOX_SCOPES = ["machines:read", "machines:write", "machines:delete"];
 
 /**
  * Every provider the apps offer, in this order, with what they show: where it runs, and how to make the key (worded
@@ -35,6 +43,20 @@ export const PROVIDERS: Record<Provider, { name: string; region: string; keyProm
       ].join("\n"),
     },
   },
+  instabox: {
+    name: "InstaBox",
+    region: "US",
+    keyPrompt: "ibk_…",
+    setup: {
+      page: "https://dashboard.instabox.sh/dashboard/api-keys",
+      commands: [
+        "npm install -g instabox",
+        "instabox login",
+        `instabox keys create --name codync --scope ${INSTABOX_SCOPES.join(",")}`,
+        "# The key reaches every machine in this workspace",
+      ].join("\n"),
+    },
+  },
 };
 
 /** Whether a route or a body names a provider in `PROVIDERS`. */
@@ -46,30 +68,29 @@ export interface CredentialRow {
   sealed: string;
   key_id: string;
   hint: string;
-  /** The provider's code when it last turned the key down; null while it takes it. */
-  problem: string | null;
+  /** Why the provider last turned the key down; null while it takes it. */
+  problem: KeyProblem | null;
   created_at: number;
   updated_at: number;
 }
 
-/** What the owner reads, by the provider's code. The apps translate these exact sentences. */
-const PROBLEMS: Record<string, string> = {
-  unauthorized: "Boat didn't accept this key. It may have been revoked.",
-  http401: "Boat didn't accept this key. It may have been revoked.",
-  noKey: "Add your Boat API key again.",
-  api_key_expired: "This Boat key has expired. Make a new one.",
-  api_key_action_forbidden: "This Boat key is missing an action Codync needs. Make it with the actions shown.",
-  api_key_sandbox_forbidden: "This Boat key can't reach your cloud computer.",
-  http404: "This Boat key can't reach your cloud computer.",
-  unknown_environment: "Your Boat account has no codync environment. Create it first.",
-  environment_forbidden: "This Boat key can't use the codync environment.",
-  http402: "Your Boat account needs an active plan.",
-  machine_class_plan_required: "Your Boat account needs an active plan.",
-  admin: "This key can manage your whole Boat account. Make one limited to Codync instead.",
-  format: "That doesn't look like a Boat API key.",
+/** What the owner reads, by why the key was turned down. The apps translate these exact sentences; they show under
+ * the provider's name, so only a provider's own words (Boat's environment) name it. */
+const PROBLEMS: Partial<Record<KeyProblem, string>> = {
+  keyRejected: "This key wasn't accepted. It may have been revoked.",
+  keyExpired: "This key has expired. Make a new one.",
+  keyMissingAction: "This key is missing a permission Codync needs. Make it as shown.",
+  keyCantReach: "This key can't reach your cloud computer.",
+  noGroup: "Your Boat account has no codync environment. Create it first.",
+  groupForbidden: "This Boat key can't use the codync environment.",
+  planRequired: "This account needs an active plan.",
+  machineLimit: "This account has as many machines as its plan allows. Delete one there or upgrade.",
+  freeHoursUsed: "This account used its free hours for the month.",
+  admin: "This key can manage your whole account. Make one limited to Codync instead.",
+  format: "That doesn't look like an API key from this provider.",
 };
 
-export const problemText = (code: string) => PROBLEMS[code] ?? "Boat refused this key.";
+export const problemText = (code: KeyProblem) => PROBLEMS[code] ?? "The provider refused this key.";
 
 export const credentialFor = (env: Env, userId: string, provider: Provider) =>
   env.DB.prepare("SELECT * FROM cloud_credentials WHERE user_id = ? AND provider = ?").bind(userId, provider).first<CredentialRow>();
@@ -92,12 +113,12 @@ export const providersView = (keys: CredentialRow[]) =>
     return { provider: p, ...PROVIDERS[p], credential: key ? credentialView(key) : null };
   });
 
-/** `boat_…9abc`: its kind and last four, as Boat lists keys. */
+/** `boat_…9abc`: its kind and last four, as the providers list keys. */
 export const hint = (key: string) => `${key.slice(0, key.indexOf("_") + 1)}…${key.slice(-4)}`;
 
-/** Sends `req` to the provider with `key`. */
-export async function sendWith(env: Env, key: string, req: HttpRequest): Promise<HttpResponse> {
-  const base = env.BOAT_API_URL ?? boat.BOAT_API_URL;
+/** Sends `req` to `provider` with `key`. */
+export async function sendWith(env: Env, provider: Provider, key: string, req: HttpRequest): Promise<HttpResponse> {
+  const base = { boat: env.BOAT_API_URL, instabox: env.INSTABOX_API_URL }[provider] ?? drivers[provider].url;
   const res = await fetch(`${base}${req.path}`, {
     method: req.method,
     headers: { ...req.headers, authorization: `Bearer ${key}`, "content-type": "application/json" },
@@ -107,10 +128,10 @@ export async function sendWith(env: Env, key: string, req: HttpRequest): Promise
 }
 
 /** Problems about one action or the plan, which a read that works can't rule out: only a write that works clears them. */
-const WRITE_PROBLEMS = new Set(["api_key_action_forbidden", "http402", "machine_class_plan_required"]);
+const WRITE_PROBLEMS: ReadonlySet<KeyProblem> = new Set(["keyMissingAction", "planRequired", "machineLimit", "freeHoursUsed"]);
 
 /** The key's problem after `req` got `out`: a refusal only its owner can fix replaces it, a call that works clears it. */
-function problemAfter(row: CredentialRow, req: HttpRequest, out: Outcome<null>): string | null {
+function problemAfter(row: CredentialRow, req: HttpRequest, out: Outcome<null>): KeyProblem | null {
   if (!out.ok) return out.needsOwner ? out.code : row.problem;
   return req.method === "GET" && row.problem && WRITE_PROBLEMS.has(row.problem) ? row.problem : null;
 }
@@ -122,9 +143,10 @@ function problemAfter(row: CredentialRow, req: HttpRequest, out: Outcome<null>):
 export async function providerSend(env: Env, userId: string, provider: Provider, req: HttpRequest, now = Date.now()): Promise<HttpResponse> {
   const row = await credentialFor(env, userId, provider);
   const key = row && (await open(env, userId, row.provider, { sealed: row.sealed, keyId: row.key_id }));
-  if (!row || !key) return { status: 401, body: { code: "noKey", message: "No usable Boat key" } };
-  const res = await sendWith(env, key, req);
-  const problem = problemAfter(row, req, boat.done(res));
+  // Read by the provider's driver as a refused key.
+  if (!row || !key) return { status: 401, body: null };
+  const res = await sendWith(env, provider, key, req);
+  const problem = problemAfter(row, req, drivers[provider].done(res));
   if (problem !== row.problem) {
     if (problem) console.log(JSON.stringify({ msg: "cloud key refused", provider: row.provider, hint: row.hint, code: problem }));
     // Only on the key this call went out with: one saved meanwhile starts clean.

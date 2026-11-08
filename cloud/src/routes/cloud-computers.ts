@@ -1,18 +1,16 @@
 // Codync Cloud: a cloud computer Codync runs for a signed-in user on their own provider account, with the key they
 // gave it (docs/plans/codync-cloud.md; the key's routes are in `cloud-credentials.ts`). The Worker creates the
-// machine with a one-time claim ticket on its disk; the host claims itself on first boot (`hostClaim`) and then
-// shows up in the account's computers like any other. Its host-facing routes (sleep, updates) are in `cloud-host.ts`.
+// machine with a one-time claim ticket on its disk (in the create call, or once it runs: `setUp`); the host claims
+// itself on first boot (`hostClaim`) and then shows up in the account's computers like any other. Its host-facing
+// routes (sleep, updates) are in `cloud-host.ts`.
 
-import { boat, type Outcome } from "../../machines/src";
+import { drivers, type Outcome } from "../../machines/src";
 import { randomId } from "../auth";
 import { credentialsOf, GROUP, isProvider, problemText, PROVIDERS, providersView, providerSend } from "../cloud-credentials";
-import { autoStop, type CloudMachineRow, dropBackup, machineOf, setState, SIZE } from "../cloud-machines";
-import { machineName, setupScript } from "../cloud-setup";
+import { autoStop, CLOUD_CLAIM_TTL_MS, type CloudMachineRow, dropBackup, liveMachine, machineOf, newClaim, refresh, setUp, SIZE } from "../cloud-machines";
+import { machineName, machineSetup } from "../cloud-setup";
 import { canSeal } from "../secrets";
 import { ApiError, audit, body, type Ctx, unclaim, user } from "./common";
-
-/** Long enough for the machine to boot, install the host and register. */
-const CLAIM_TTL_MS = 30 * 60_000;
 
 /** What the apps show: also in `/v1/computers` as each cloud computer's `cloud`. */
 export const cloudView = (r: Pick<CloudMachineRow, "provider" | "state">) => ({
@@ -27,6 +25,8 @@ const view = (r: CloudMachineRow) => ({
   ...cloudView(r),
   computerId: r.computer_id,
   backupAt: r.backup_at,
+  // Whether *Delete snapshots* has anything to erase: the provider's history of earlier states, or a backup.
+  snapshots: !!(drivers[r.provider].deleteHistory || drivers[r.provider].backup),
   createdAt: r.created_at,
 });
 
@@ -42,12 +42,12 @@ export async function allowedUser(c: Ctx) {
   return u;
 }
 
-/** Boat busy or failing: another try may work. */
-export const unreachable = () => new ApiError("providerUnavailable", "Couldn't reach Boat. Try again in a minute.");
+/** The provider busy or failing: another try may work. */
+export const unreachable = () => new ApiError("providerUnavailable", "Couldn't reach the cloud provider. Try again in a minute.");
 
 export function value<T>(o: Outcome<T>): T {
   if (o.ok) return o.value;
-  console.log(JSON.stringify({ msg: "cloud computer provider refused", code: o.code, message: o.message }));
+  console.log(JSON.stringify({ msg: "cloud computer provider refused", code: o.detail, message: o.message }));
   if (o.retryable) throw unreachable();
   // The apps show the key's problem too; this says it where the user just tapped.
   if (o.needsOwner) throw new ApiError("keyRefused", problemText(o.code));
@@ -76,21 +76,16 @@ export async function createCloudComputer(c: Ctx) {
   const key = asked ? keys.find((k) => k.provider === asked) : keys.length === 1 ? keys[0] : undefined;
   if (!key) throw new ApiError("conflict", keys.length ? "Choose the provider to create it on." : "Connect a cloud provider first.");
 
-  const claimId = randomId("clm_");
-  const nonce = randomId();
-  await c.env.DB.prepare("INSERT INTO claims(id, user_id, nonce, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(claimId, u.userId, nonce, c.now + CLAIM_TTL_MS)
-    .run();
-  const ticket = JSON.stringify({ claimId, nonce, userId: u.userId, approval: "auto" });
+  const { claimId, nonce } = await newClaim(c.env, u.userId, c.now + CLOUD_CLAIM_TTL_MS);
+  const d = drivers[key.provider];
   const spec = {
     name: machineName(c.env, u.userId),
     size: SIZE,
     group: GROUP,
-    files: [{ path: ".codync/managed.json", content: ticket }],
-    setupScript: setupScript(c.env),
+    ...machineSetup(c.env, claimId, nonce, u.userId),
     autoStopSeconds: autoStop(c.env),
   };
-  const machine = value(boat.machine(await providerSend(c.env, u.userId, key.provider, boat.create(spec, claimId), c.now)));
+  const machine = value(d.machine(await providerSend(c.env, u.userId, key.provider, d.create(spec, claimId), c.now)));
   const row: CloudMachineRow = {
     id: randomId("cm_"),
     user_id: u.userId,
@@ -101,14 +96,16 @@ export async function createCloudComputer(c: Ctx) {
     state: machine.state,
     backup: null,
     backup_at: null,
+    // Set up by the create, unless its provider takes nothing then (`setUp`, once it runs).
+    setup_at: d.setup ? null : c.now,
     created_at: c.now,
     updated_at: c.now,
   };
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO cloud_machines(id, user_id, provider, provider_id, claim_id, state, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)`,
-    ).bind(row.id, row.user_id, row.provider, row.provider_id, row.claim_id, row.state, c.now),
+      `INSERT INTO cloud_machines(id, user_id, provider, provider_id, claim_id, state, setup_at, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)`,
+    ).bind(row.id, row.user_id, row.provider, row.provider_id, row.claim_id, row.state, row.setup_at, c.now),
     audit(c.env, u.userId, "cloudComputer.create", row.id, "ok", c.now),
   ]);
   return { cloudComputer: view(row) };
@@ -121,11 +118,8 @@ export async function getCloudComputer(c: Ctx) {
   const u = await user(c);
   const row = await machineOf(c.env, u.userId);
   if (row) {
-    const live = boat.machine(await providerSend(c.env, u.userId, row.provider, boat.get(row.provider_id), c.now));
-    if (live.ok && live.value.state !== row.state) {
-      row.state = live.value.state;
-      await setState(c.env, row.id, row.state, c.now);
-    }
+    const live = await refresh(c.env, row, c.now);
+    if (live.ok) await setUp(c.env, row, live.value.state, c.now);
   }
   const open = !!row || available(c, u.userId);
   return {
@@ -140,7 +134,8 @@ export async function getCloudComputer(c: Ctx) {
  * of the account. */
 export async function deleteCloudComputer(c: Ctx) {
   const { u, row } = await mine(c);
-  value(boat.deleted(await providerSend(c.env, u.userId, row.provider, boat.destroy(row.provider_id), c.now)));
+  const d = drivers[row.provider];
+  value(d.deleted(await providerSend(c.env, u.userId, row.provider, d.destroy(row.provider_id, crypto.randomUUID()), c.now)));
   if (!(await dropBackup(c.env, row))) console.error(JSON.stringify({ msg: "cloud computer backup left behind", machine: row.id, backup: row.backup }));
   if (row.computer_id) await unclaim(c.env, row.computer_id, u.userId, c.now);
   await c.env.DB.batch([
@@ -153,15 +148,19 @@ export async function deleteCloudComputer(c: Ctx) {
 /**
  * `DELETE /v1/cloud-computers/snapshots`: erases the computer's saved history (the provider's snapshots of
  * earlier states, and its backup) and keeps the computer. Only while it is awake: asleep, its latest snapshot
- * is the computer itself (deleting the computer erases everything).
+ * is the computer itself (deleting the computer erases everything). A provider that keeps no history has only the
+ * backup to erase, if any.
  */
 export async function deleteCloudSnapshots(c: Ctx) {
   const { u, row } = await mine(c);
-  const live = value(boat.machine(await providerSend(c.env, u.userId, row.provider, boat.get(row.provider_id), c.now)));
-  if (live.state !== "running") {
-    throw new ApiError("conflict", "Your cloud computer is asleep, and its snapshot is all it has. Open it first, or delete the computer.");
+  const d = drivers[row.provider];
+  if (d.deleteHistory) {
+    const live = value(await liveMachine(c.env, row, c.now));
+    if (live.state !== "running") {
+      throw new ApiError("conflict", "Your cloud computer is asleep, and its snapshot is all it has. Open it first, or delete the computer.");
+    }
+    value(d.done(await providerSend(c.env, u.userId, row.provider, d.deleteHistory(row.provider_id), c.now)));
   }
-  value(boat.done(await providerSend(c.env, u.userId, row.provider, boat.deleteSnapshots(row.provider_id), c.now)));
   if (!(await dropBackup(c.env, row))) throw new ApiError("internal", "The backup couldn't be deleted. Try again in a minute.");
   await audit(c.env, u.userId, "cloudComputer.deleteSnapshots", row.id, "ok", c.now).run();
   return {};

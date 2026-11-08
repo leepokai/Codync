@@ -97,3 +97,37 @@ export function stoppedBoat() {
 
 export const calls = (spy: ReturnType<typeof stoppedBoat>) => spy.mock.calls.map(([url, init]) => `${init?.method} ${url}`);
 export const relay = (host: TestHost) => env.RELAY.get(env.RELAY.idFromName(host.cid));
+
+/** The InstaBox key test users bring (`ibk_` and 52 of a–z, 2–7). */
+export const IBX_KEY = `ibk_${"a2".repeat(26)}`;
+
+/** Gives `userId` an InstaBox key, as saving one does once InstaBox took it. */
+export async function withInstaboxKey(userId: string) {
+  await cc("GET", userId);
+  await saveCredential(env, userId, "instabox", IBX_KEY, Date.now());
+}
+
+/** Stubs InstaBox: `answers` by "METHOD /path?query" first; then a personal key (not a workspace admin's), a machine
+ * in `state` (ready or not) for reads, an exec that exits 0, and an accepted operation for every change. */
+export function instaboxApi(state = "running", answers: Record<string, Answer> = {}, ready = true) {
+  return spyFetch().mockImplementation(async (url, init) => {
+    const { pathname, search } = new URL(String(url));
+    const method = init?.method ?? "GET";
+    const a = answers[`${method} ${pathname}${search}`];
+    if (a) return Response.json(a[1], { status: a[0] });
+    if (pathname === "/v1/me") return Response.json({ orgId: "org_1" });
+    if (pathname.endsWith("/invites")) return Response.json({ error: { code: "missing_scope" } }, { status: 403 });
+    if (pathname.endsWith("/exec")) return Response.json({ stdout: "", stderr: "", exitCode: 0 });
+    if (method === "GET") return Response.json({ id: "m_test", state, runtime: { ready } });
+    const type = method === "DELETE" ? "delete" : pathname === "/v1/machines" ? "create" : pathname.split("/").pop();
+    return Response.json({ id: "op_1", machineId: "m_test", type, state: "queued", error: null }, { status: 202 });
+  });
+}
+
+/** The claim ticket an InstaBox setup exec writes to `.codync/managed.json`. */
+export function instaboxTicket(spy: ReturnType<typeof instaboxApi>) {
+  const [, init] = spy.mock.calls.find(([url]) => String(url).endsWith("/exec"))!;
+  const stdin: string = JSON.parse(init!.body as string).stdin;
+  const b64 = /printf %s '([A-Za-z0-9+/=]+)' \| base64 -d > '\.codync\/managed\.json'/.exec(stdin)![1]!;
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))));
+}

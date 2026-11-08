@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
  * on, each with the key to the user's own account there. A key is pasted once, checked and kept encrypted by the cloud,
  * and shown afterwards only by its last four; while the provider turns it down, what to fix shows under it.
  */
-@Composable internal fun CloudProvidersSheet(offer: CloudOffer, busy: Set<String>, error: String?, store: AccountStore) {
+@Composable internal fun CloudProvidersSheet(offer: CloudOffer, state: AccountContext, store: AccountStore) {
     DisposableEffect(store) {
         store.cloudProvidersShown(true)
         onDispose { store.cloudProvidersShown(false) }
@@ -48,17 +48,18 @@ import kotlinx.coroutines.launch
             CardSection(footer = "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {}
             for (provider in offer.providers) {
                 CardSection(provider.name, accessory = { Text(provider.region, style = Type.footnote, color = Palette.secondary) }) {
-                    row { KeyRow(provider, cloudKeyAction(provider.provider) in busy, offer.canRemoveKey(provider.provider), store) }
+                    row { KeyRow(provider, cloudKeyAction(provider.provider) in state.busy, offer.canRemoveKey(provider.provider), state.cloudErrorFor(provider.provider), store) }
                     row { SetupRow(provider) }
                 }
             }
-            error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
+            state.cloudErrorFor(null)?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
         }
     }
 }
 
-/** One provider's key: its last four with replace and remove, or a field to paste it. */
-@Composable private fun KeyRow(provider: CloudProvider, busy: Boolean, canRemove: Boolean, store: AccountStore) {
+/** One provider's key: its last four with replace and remove, or a field to paste it; [error] when saving or removing
+ * it failed, under the key (below every provider it would be off screen). */
+@Composable private fun KeyRow(provider: CloudProvider, busy: Boolean, canRemove: Boolean, error: String?, store: AccountStore) {
     var replacing by remember { mutableStateOf(false) }
     val credential = provider.credential
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -70,6 +71,7 @@ import kotlinx.coroutines.launch
                 store.saveCloudKey(provider.provider, key) { replacing = false; done() }
             }
         }
+        error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
     }
 }
 
@@ -112,7 +114,7 @@ import kotlinx.coroutines.launch
     var open by remember { mutableStateOf(false) }
     Disclosure(open, { open = !open }, label = { Text(tr("How to make a key"), style = Type.body, color = Palette.text) }) {
         Column(Modifier.padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(tr("Make a key limited to Codync in your {provider} account, then paste it above.").replace("{provider}", provider.name),
+            Text(tr("Make a key with only what Codync needs in your {provider} account, then paste it above.").replace("{provider}", provider.name),
                 style = Type.footnote, color = Palette.secondary)
             Commands(provider.setup.commands)
             WebLink(tr("Open {provider}").replace("{provider}", provider.name), provider.setup.page, Type.footnote)

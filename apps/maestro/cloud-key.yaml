@@ -1,6 +1,6 @@
-# Computers → Codync Cloud → Cloud providers, the Boat key: how to make one, a key Boat turns down shows what to fix, a
-# kept one shows only its hint and offers a computer, a turned-down replacement keeps it, and removing it goes back to
-# pasting one.
+# Computers → Codync Cloud → Cloud providers: InstaBox's card with its own key field and steps, and the Boat key: how to
+# make one, a key Boat turns down shows what to fix, a kept one shows only its hint and offers a computer, a turned-down
+# replacement keeps it, and removing it goes back to pasting one.
 # Needs a cloud that offers this account Codync Cloud (dev-api doesn't): `npm run cloud:stack` in cloud/
 # (docs/guides/cloud-computer-testing.md), the phone signed in with `npm run phone-account` and pointed at it (iPhone:
 # SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> on that command, which this flow's launch keeps; Android: built with
@@ -65,21 +65,37 @@ env:
 - extendedWaitUntil:
     visible: "How to make a key"
     timeout: 10000
-# A key an earlier run left goes first.
-- runFlow:
-    when:
+# Keys an earlier run left go first.
+- repeat:
+    while:
       visible: "Remove key"
     commands:
       - tapOn: "Remove key"
+      - waitForAnimationToEnd
 - tapOn: "How to make a key"
-- assertVisible: "Make a key limited to Codync.*"
+- assertVisible: "Make a key with only what Codync needs.*"
+
+# InstaBox has a card of its own: its key field, and its own steps (the command lines are one text; on the iPhone they
+# scroll sideways, wider than the screen, so the text is never all in view).
+- scrollUntilVisible:
+    element: "(InstaBox API key|ibk_…)"
+- tapOn:
+    text: "How to make a key"
+    below: "(InstaBox API key|ibk_…)"
+- scrollUntilVisible:
+    element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
+    visibilityPercentage: 25
+- assertVisible: "(?s).*# The key reaches every machine in this workspace.*"
+- scrollUntilVisible:
+    element: "(Boat API key|boat_…)"
+    direction: UP
 
 # Turned down: what to fix.
 - tapOn: "(Boat API key|boat_…)"
 - inputText: ${REFUSED_KEY}
 - tapOn: "Save"
 - extendedWaitUntil:
-    visible: "Boat (didn't accept|refused) this key.*"
+    visible: "(This key wasn't accepted|The provider refused this key).*"
     timeout: 15000
 
 # Kept: only its hint. The field still holds the refused key: on Android a tap puts the caret where it lands, so a
@@ -107,7 +123,7 @@ env:
 - inputText: ${REFUSED_KEY}
 - tapOn: "Save"
 - extendedWaitUntil:
-    visible: "Boat (didn't accept|refused) this key.*"
+    visible: "(This key wasn't accepted|The provider refused this key).*"
     timeout: 15000
 # Save drops the keyboard, so Cancel is in reach (Maestro's hideKeyboard leaves it half up, over Cancel).
 - tapOn: "Cancel"

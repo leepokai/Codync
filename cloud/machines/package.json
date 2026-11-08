@@ -6,5 +6,5 @@
   "type": "module",
   "repository": "https://github.com/leepokai/Codync",
   "exports": { ".": "./src/index.ts" },
-  "keywords": ["sandbox", "vm", "agents", "boat"]
+  "keywords": ["sandbox", "vm", "agents", "boat", "instabox"]
 }

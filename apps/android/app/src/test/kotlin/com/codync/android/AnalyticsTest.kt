@@ -51,10 +51,10 @@ class AnalyticsTest {
     }
 
     @Test fun `a refused Boat key is told apart from a save that failed`() {
-        assertEquals(CloudKeyOutcome.Refused, CloudKeyOutcome.of(CloudError(422, "keyRefused", "This Boat key has expired. Make a new one.")))
+        assertEquals(CloudKeyOutcome.Refused, CloudKeyOutcome.of(CloudError(422, "keyRefused", "This key has expired. Make a new one.")))
         assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(CloudError(429, "rateLimited")))
         assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(IOException("Offline")))
-        assertEquals("""{"outcome":"refused"}""", JsonObject(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Refused).properties).toString())
+        assertEquals("""{"outcome":"refused","provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Refused, "instabox").properties).toString())
     }
 
     @Test fun `a crash keeps its type and Codync frames but never its message`() {

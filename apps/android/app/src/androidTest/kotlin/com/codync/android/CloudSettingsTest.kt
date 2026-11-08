@@ -43,6 +43,14 @@ class CloudSettingsTest {
         snapshot("delete")
     }
 
+    @Test fun aProviderThatKeepsNoSnapshotsOffersOnlyDeletingTheComputer() {
+        val instabox = CloudMachine("instabox", "InstaBox", "US", "stopped", "cm_1", "cloud", snapshots = false)
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(instabox, true)), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithText("Runs on InstaBox · US").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Delete cloud computer").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Delete snapshots").assertDoesNotExist()
+    }
+
     @Test fun aNewCloudComputerIsPreparedUntilItJoinsTheAccount() {
         compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("starting", computerId = null), true)), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Preparing your cloud computer…").performScrollTo().assertIsDisplayed()
@@ -83,11 +91,11 @@ class CloudSettingsTest {
     }
 
     @Test fun aKeyTheProviderTurnsDownSaysWhatToFix() {
-        val key = CloudCredential("boat_…9abc", problem = "This Boat key has expired. Make a new one.")
+        val key = CloudCredential("boat_…9abc", problem = "This key has expired. Make a new one.")
         compose.setContent { Hosted { ComputersView(fixture(CloudOffer(machine("stopped"), true, listOf(boat(key)))), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithText("Needs attention").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Cloud providers").performClick()
-        compose.onNodeWithText("This Boat key has expired. Make a new one.").assertIsDisplayed()
+        compose.onNodeWithText("This key has expired. Make a new one.").assertIsDisplayed()
         compose.onNodeWithText("boat_…9abc").assertIsDisplayed()
         snapshot("key-refused")
     }

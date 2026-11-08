@@ -17,8 +17,8 @@ What's left before each release: [Delivery](#delivery). Owner decisions:
 
 ## Bring your own cloud
 
-Built 2026-11-08 on `feat/cloud-boat`. The user's cloud computer is a sandbox on **their own Boat account**: Boat
-bills them (its $20/month plan, paid back as compute), Codync bills nothing and has no provider account for users.
+Built 2026-11-08 on `feat/cloud-boat`. The user's cloud computer is a machine on **their own account with a cloud
+provider** (Boat or InstaBox): the provider bills them, Codync bills nothing and has no provider account for users.
 Codync still runs it: creates it, claims it, puts it to sleep and wakes it.
 
 ### Where each secret lives
@@ -27,19 +27,19 @@ Rule: a secret lives in exactly one place, the one that has to use it while nobo
 
 | Secret | Lives in | Why there | Never seen by |
 |---|---|---|---|
-| Boat API key | the Worker, sealed in D1 (`cloud_credentials`) | wakes for routines, webhooks, mailbox messages and `wakeAt` happen with every device closed and the machine stopped | the machine, the relay, the apps once it's saved, logs |
+| The provider's API key (Boat, InstaBox) | the Worker, sealed in D1 (`cloud_credentials`) | wakes for routines, webhooks, mailbox messages and `wakeAt` happen with every device closed and the machine stopped | the machine, the relay, the apps once it's saved, logs |
 | Agent sign-ins and API keys (Claude Code, Codex…) | the cloud computer: the agent's own folders, or the host vault (`agent/auth.rs`) | the agent uses them; they go there over the end-to-end channel | Codync's servers |
 | Voice keys (OpenAI, Gemini) | the host vault on the cloud computer (already built) | the host mints per-call credentials | Codync's servers |
 | Device keys | each device's Keychain / Keystore (already built) | they sign the device's requests | everyone else |
 
-Places rejected for the Boat key: the phone (nothing could wake the computer for a routine or a webhook while the phone
+Places rejected for the provider key: the phone (nothing could wake the computer for a routine or a webhook while the phone
 is closed); the machine itself (it's off exactly when it must be woken, and anyone with a shell there is root, agents
 included); Boat's own scoped-key minting from an admin key (Codync would receive an admin key, which Boat says never to
 give a third party, and `POST /api-keys/scoped` may not be enabled).
 
 ### The key the user makes
 
-An environment `codync` and a key limited to it, with only the actions Codync uses and no expiry:
+**Boat**: an environment `codync` and a key limited to it, with only the actions Codync uses and no expiry:
 
 ```bash
 boat env new codync
@@ -60,18 +60,30 @@ with a link to Boat's dashboard, which does the same with a form.
 - `--ttl never`: an expiring key would leave the computer unable to wake with no warning a year later; revoking it at
   Boat is the off switch and takes effect at once. Boat recommends expiring keys; this is the trade-off.
 
-### Saving it (`PUT /v1/cloud-credentials/boat {key}`)
+**InstaBox**: a key with only the machine scopes, no expiry (`instabox keys create --name codync --scope
+machines:read,machines:write,machines:delete`, or *API keys → Create Key → Restricted* in its dashboard). InstaBox
+can't limit a key to some machines: it reaches every machine of its workspace, and `machines:write` includes `exec`,
+which is how Codync installs the host (below). The owner chose to offer it anyway (2026-11-08); the setup lines say so,
+and a user who wants it narrower makes the key in a workspace of its own. A personal workspace's keys can never be a
+workspace admin's.
+
+### Saving it (`PUT /v1/cloud-credentials/:provider {key}`)
 
 1. Only for accounts allowed Codync Cloud; at most 5 saves a minute per account (`CLOUD_KEY_LIMITER`), so the
    endpoint can't be used to test other people's keys.
-2. Shape: `boat_…` (or `box_…`), letters, digits, `_`, `-`.
-3. `GET /sandboxes?limit=1` must succeed: the key works and reads sandboxes.
-4. `GET /webhooks` must be refused as out of the key's scope (403 `api_key_*`, or 404): a key that can read the
-   account's webhooks can run the whole account (an admin key, or one from before Boat had scopes), and is refused.
-   Any other answer (429, 5xx) says nothing, so the key isn't kept: `503 providerUnavailable`, try again.
-5. With a cloud computer already: `GET /sandboxes/<its id>` must succeed, so a replacement from another account or
+2. Shape (the driver's `keyPattern`): Boat `boat_…` (or `box_…`), letters, digits, `_`, `-`; InstaBox `ibk_` and 52
+   of a–z, 2–7.
+3. A read must succeed (`checkKey`): Boat `GET /sandboxes?limit=1` (the key works and reads sandboxes), InstaBox
+   `GET /v1/me`.
+4. The key must not run the whole account (`checkAdmin`): Boat `GET /webhooks` must be refused as out of the key's
+   scope (403 `api_key_*`, or 404), since a key that can read the webhooks is an admin key (or one from before Boat
+   had scopes); InstaBox `GET /v1/orgs/<the key's workspace>/invites` must be refused `missing_scope` (a workspace
+   admin's key gets it). Any other answer (429, 5xx) says nothing, so the key isn't kept: `503 providerUnavailable`,
+   try again.
+5. With a cloud computer on that provider already: reading it must succeed, so a replacement from another account or
    environment can't lock the computer out. A 404 is taken only when the saved key can't reach the computer either
-   (deleted at Boat, or that key revoked): nothing is lost, and the new key lets the user delete the computer here.
+   (deleted at the provider, or that key revoked): nothing is lost, and the new key lets the user delete the computer
+   here.
 
 Then it is sealed and replaces the earlier key. Each refusal says what to fix, in sentences the apps translate.
 
@@ -91,13 +103,17 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
 
 ### Using it
 
-- Every provider call goes out with the owner's key (`providerSend(env, userId, req)`), opened for that call only.
-- When Boat turns the key down (401, `api_key_*`, `unknown_environment`, `environment_forbidden`, 402 no plan),
-  the code is kept on the key (`problem`, only on the key that call used); `GET /v1/cloud-computers` shows it as a
-  sentence, the apps show the key row in red with *Replace*, and wakes stop retrying (only the owner can fix it). The
-  next call that shows it fixed clears it: any call that works, except that a missing action or the plan is cleared
-  only by a write that works (a read says nothing about them). *Create* stays offered: it tries again, for an owner
-  who fixed their plan at Boat.
+- Every provider call goes out with the owner's key (`providerSend(env, userId, provider, req)`), opened for that call
+  only.
+- Each driver turns its provider's refusals into Codync's `Failure`s (`cloud/machines/src/types.ts`): `keyRejected`,
+  `keyExpired`, `keyMissingAction`, `keyCantReach`, `noGroup`/`groupForbidden` (Boat's environment), `planRequired`,
+  `machineLimit`, `freeHoursUsed`, and the ones that aren't the owner's to fix (`busy`, `unavailable`, `notFound`, …).
+- When the provider turns the key down for one the owner must fix, that `Failure` is kept on the key (`problem`, only
+  on the key that call used); `GET /v1/cloud-computers` shows it as a sentence (`PROBLEMS`: no provider named, since it
+  shows under the provider's name; Boat's environment sentences are Boat's own), the apps show the key row in red with
+  *Replace*, and wakes stop retrying. The next call that shows it fixed clears it: any call that works, except that a
+  missing action, the plan or the account's limits are cleared only by a write that works (a read says nothing about
+  them). *Create* stays offered: it tries again, for an owner who fixed their plan there.
 - A host whose stop is refused (the key) is put back online at once (`/internal/awake` on its relay): it never
   stopped, and no wake would find it running.
 - Write-only API: `GET /v1/cloud-computers` adds `providers`, each with its `credential` (`{hint, problem,
@@ -105,14 +121,14 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
   runs on that provider: without the key Codync couldn't put it to sleep or delete it, and it would keep billing its
   owner.
 - Deleting the cloud computer keeps the key (for another one). Deleting the Codync account stops the computer, then
-  forgets it and the key: the sandbox stays in the user's Boat account for them to keep or delete. While Boat is busy
-  the webhook fails, so Clerk sends it again and the stop is retried with the key still there.
+  forgets it and the key: the machine stays in the user's provider account for them to keep or delete. While the
+  provider is busy the webhook fails, so Clerk sends it again and the stop is retried with the key still there.
 - Audit rows: `cloudCredential.save`, `cloudCredential.delete` (never key material).
 
 ### More than one provider
 
-Boat is the first; InstaBox (InsForge) and others may follow (owner, 2026-11-08: "不要直接在 UI 上面綁定死只有這一個").
-So nothing in the apps names a provider:
+Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要直接在 UI 上面綁定死只有這一個", then
+"幫我支援一下這個 cloud 服務"). Nothing in the apps names a provider:
 
 - `GET /v1/cloud-computers` lists `providers`, each `{provider, name, region, keyPrompt, setup: {page, commands},
   credential}`, from `PROVIDERS` in `cloud-credentials.ts`. A new provider shows up in every app with no release.
@@ -123,16 +139,31 @@ So nothing in the apps names a provider:
   attention*) that opens a sheet with one card per provider: its key (last four, replace, remove) or a field to paste
   one, and *How to make a key* folded under it. *Create cloud computer* creates on the one connected provider, or opens
   a menu of them.
-- Adding a provider: its adapter in `cloud/machines/` (beside `boat.ts`), a `PROVIDERS` entry, its key checks in
-  `routes/cloud-credentials.ts`, its name in the two `provider` CHECKs (migration), and its requests built and sent
-  by its adapter (`providerSend` already opens the key of the machine's own provider; the requests are Boat's today).
-  Problem sentences in `PROBLEMS` name Boat.
+- The Worker speaks to providers only through a `Driver` (`cloud/machines/src/types.ts`; `drivers` in its index): the
+  same verbs for each (`create`, `get`, `sleep`, `wake`, `destroy`, `checkKey`, `checkAdmin`, and readers that turn
+  answers into `Machine`/`Outcome`), plus members present or not for what differs in kind, which the Worker decides
+  from, never from a provider's name:
+  - `setup`: Boat has none and takes the claim ticket and setup script in the create call; InstaBox takes nothing at
+    create, so once the machine runs (`setUp`, on the apps' reads while it prepares and the cron's) one `exec` writes a
+    new ticket (the host has its whole 30 minutes to install and claim) and starts the script detached. One InstaBox
+    paused before it got them is started again for it.
+  - `backup`: Boat drops a stopped sandbox's own snapshot after 14 days, so it gets a never-expiring backup on day 10
+    and comes back from it; InstaBox keeps a stopped or paused machine's disks until it is deleted, so it has none.
+  - `deleteHistory`: Boat keeps automatic snapshots of earlier states (*Delete snapshots* erases them); InstaBox keeps
+    none, so there is only the backup (if any) to erase.
+  - Sleep: Boat stops (the disk is kept, memory isn't); InstaBox pauses (memory and processes kept, back in seconds).
+    InstaBox also pauses a machine idle for 30 minutes on its own (a free machine can't turn that off): the next wake
+    starts it, as after Codync's own sleep.
+- Adding a provider: a driver beside `boat.ts` and `instabox.ts`, registered in `drivers`, a `PROVIDERS` entry (name,
+  region, key prompt, how to make the key) and its base URL override for tests in `sendWith`. No migration: no CHECK
+  names providers. `cloud/machines/test/` holds each driver's request and answer tests.
 
 ### What Codync can still do
 
 The Worker, and so whoever controls Codync's Cloudflare account, can open the key and create, stop, resume and delete
-sandboxes in the user's `codync` environment, including a new one from the backup with its own setup script: that's
-how it provisions. It can't reach their other sandboxes or their account. Say so in the privacy policy. Follow-up: a
+sandboxes in the user's `codync` environment on Boat, including a new one from the backup with its own setup script:
+that's how it provisions. It can't reach their other Boat sandboxes or their account. On InstaBox it can do the same
+to every machine of the key's workspace, and run commands there (`exec`). Say so in the privacy policy. Follow-up: a
 refused key also means an idle computer can't be stopped and keeps billing; tell the owner by push, not only in the
 apps.
 
@@ -235,6 +266,9 @@ second" on Fly) with no app release needed for the provider itself.
   and the backup) and keeps the computer, only while it is awake (asleep, its snapshot is all it has).
   *Delete cloud computer* erases the machine, all its snapshots and the backup (Boat keeps saved snapshots after
   their sandbox is deleted, so the Worker deletes the backup itself).
+- A provider that keeps no history of earlier states and no backup (InstaBox: a stopped or paused machine keeps its
+  disks until it is deleted) has nothing for *Delete snapshots* to erase: the cloud computer's `snapshots` is false and
+  the apps don't offer it.
 
 ### Versions the user's apps can handle
 
@@ -434,9 +468,11 @@ request wakes a sleeping machine by itself.
 
 Self-hosted Codync keeps the cloud unable to grant access. Codync Cloud can't: Codync's Worker provisions the
 user's machine (with their key, limited as in [What Codync can still do](#what-codync-can-still-do)), the machine
-runs `Approval::Auto`, and Boat operates the hardware. Say so in the product and the privacy policy: the user's code,
-agent sign-ins and transcripts live on a machine in their own Boat account that Codync provisions. Transit stays
-end-to-end encrypted; the key Codync holds can't run commands on or read the running machine.
+runs `Approval::Auto`, and the provider operates the hardware. Say so in the product and the privacy policy: the
+user's code, agent sign-ins and transcripts live on a machine in their own account with the provider that Codync
+provisions. Transit stays end-to-end encrypted. What the key Codync holds can do differs by provider: a Boat key can't
+run commands on or read the running machine; an InstaBox key can run commands on every machine of its workspace,
+which is how Codync installs the host there.
 
 ## Costs
 

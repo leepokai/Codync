@@ -106,10 +106,12 @@ public struct CloudComputerSection: View {
         } else {
             ValueRow(runsOn, value: machine.hosting.state.label)
         }
-        actionRow("Delete snapshots", icon: "clock.arrow.circlepath", work: .deletingSnapshots) {
-            confirm = .snapshots
+        if machine.snapshots {
+            actionRow("Delete snapshots", icon: "clock.arrow.circlepath", work: .deletingSnapshots) {
+                confirm = .snapshots
+            }
+            .disabled(store.isPreparing)
         }
-        .disabled(store.isPreparing)
         actionRow("Delete cloud computer", icon: "trash", work: .deleting) { confirm = .computer }
     }
 

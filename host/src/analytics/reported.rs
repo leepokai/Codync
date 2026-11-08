@@ -100,6 +100,9 @@ pub enum Reported {
     },
     CloudKeySaved {
         outcome: CloudKeyOutcome,
+        /// Older desktop builds don't say.
+        #[serde(default)]
+        provider: CloudProvider,
     },
 }
 
@@ -251,13 +254,24 @@ pub enum JoinOutcome {
     Other,
 }
 
-/// How giving Codync Cloud a Boat key ended: kept, turned down (the user was told what to fix), or failed otherwise.
+/// How giving Codync Cloud a provider's key ended: kept, turned down (the user was told what to fix), or failed otherwise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CloudKeyOutcome {
     Saved,
     Refused,
     Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// The cloud provider a Codync Cloud key is for (the cloud's id for it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudProvider {
+    Boat,
+    Instabox,
+    #[default]
     #[serde(other)]
     Other,
 }
@@ -387,7 +401,10 @@ mod tests {
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
                 Event::JoinOfferAnswered,
             ),
-            (json!({"event": "cloud_key_saved", "app": "desktop", "outcome": "refused"}), Event::CloudKeySaved),
+            (
+                json!({"event": "cloud_key_saved", "app": "desktop", "outcome": "refused", "provider": "instabox"}),
+                Event::CloudKeySaved,
+            ),
             (
                 json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),
                 Event::ReachAccountAnswered,

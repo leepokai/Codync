@@ -41,10 +41,11 @@ export interface Env {
   RELAY_NEEDS_ACCOUNT?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
-  /** Codync Cloud, on each user's own Boat account: the keys that seal the API keys users give it (`secrets.ts`;
-   * unset = no cloud computers), Boat's base URL (tests), and how often one account may save a key. */
+  /** Codync Cloud, on each user's own provider account: the keys that seal the API keys users give it (`secrets.ts`;
+   * unset = no cloud computers), the providers' base URLs (tests), and how often one account may save a key. */
   CLOUD_SECRET_KEYS?: string;
   BOAT_API_URL?: string;
+  INSTABOX_API_URL?: string;
   CLOUD_KEY_LIMITER?: RateLimit;
   /** Comma-separated Clerk user ids allowed a cloud computer (`*`: everyone). */
   CLOUD_COMPUTER_USERS?: string;

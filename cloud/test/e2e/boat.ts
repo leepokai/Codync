@@ -7,12 +7,10 @@ import { createServer, type Server } from "node:http";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { LocalCloud } from "./harness.ts";
+import { type LocalCloud, TEST_PREFIX } from "./harness.ts";
 
 const BOAT = process.env.BOAT_BIN ?? join(homedir(), ".ascii/bin/boat");
 const API = "https://boat.dev/api/v1";
-/** Test machines are named with this prefix (the cloud's `CLOUD_MACHINE_PREFIX`). */
-export const TEST_PREFIX = "codync-e2e";
 
 /** The scoped key from BOAT_API_KEY or BOAT_API_KEY_FILE; removed from the environment, so the CLI uses its login. */
 export function boatKey(): string {

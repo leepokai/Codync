@@ -78,6 +78,7 @@ import Testing
     #expect(try json(.linkOpened(.installLink)) == #"{"link":"install_link"}"#)
     #expect(try json(.onboardingStepViewed(.choose)) == #"{"step":"choose"}"#)
     #expect(try json(.signedOutPairingsMoved(computers: 2, keys: .rescan)) == #"{"computers":2,"keys":"rescan"}"#)
+    #expect(try json(.cloudKeySaved(.refused, provider: "instabox")) == #"{"outcome":"refused","provider":"instabox"}"#)
     #expect(AnalyticsEvent.notificationOpened(.needsInput).name == "notification_opened")
     #expect(AnalyticsEvent.NotificationKind(category: "needsInput") == .needsInput)
     #expect(AnalyticsEvent.NotificationKind(category: "other") == nil)

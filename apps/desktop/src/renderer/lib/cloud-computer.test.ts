@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cloudKeyOutcome, connectedProviders, isPreparing, machineStatus, offlineCloudStatus, placementLine, providersSummary, type CloudMachine, type CloudProvider } from './cloud-computer.ts'
+import { cloudKeyOutcome, connectedProviders, deleteRows, isPreparing, machineStatus, offlineCloudStatus, placementLine, providersSummary, type CloudMachine, type CloudProvider } from './cloud-computer.ts'
 
 const machine: CloudMachine = {
   cloudComputerId: 'cm_1', provider: 'boat', providerName: 'Boat', region: 'EU', state: 'running',
@@ -18,6 +18,12 @@ test('an offline cloud computer that sleeps is not offline, and one that failed 
   assert.equal(offlineCloudStatus({ ...machine, state: 'starting' }), null)
   assert.equal(offlineCloudStatus(null), null)
   assert.equal(offlineCloudStatus(undefined), null)
+})
+
+test('a provider that keeps no snapshots offers only deleting the computer; older clouds do not say, and all kept some', () => {
+  assert.deepEqual(deleteRows(machine).map((r) => r.action), ['deleteSnapshots', 'delete'])
+  assert.deepEqual(deleteRows({ ...machine, snapshots: true }).map((r) => r.action), ['deleteSnapshots', 'delete'])
+  assert.deepEqual(deleteRows({ ...machine, provider: 'instabox', snapshots: false }), [{ action: 'delete', label: 'Delete cloud computer' }])
 })
 
 test('a new cloud computer is preparing until it joins the account', () => {
@@ -40,7 +46,7 @@ test('a claimed cloud computer shows its state', () => {
 })
 
 test('a refused Boat key is told apart from a save that failed', () => {
-  const refused = Object.assign(new Error('This Boat key has expired. Make a new one.'), { code: 'keyRefused' })
+  const refused = Object.assign(new Error('This key has expired. Make a new one.'), { code: 'keyRefused' })
   assert.equal(cloudKeyOutcome(refused), 'refused')
   assert.equal(cloudKeyOutcome(Object.assign(new Error('Too many requests.'), { code: 'rateLimited' })), 'failed')
   assert.equal(cloudKeyOutcome(new TypeError('fetch failed')), 'failed')
@@ -57,5 +63,5 @@ test('the Cloud providers row names the connected providers, or asks for one', (
   const keyed = { ...boat, credential: { hint: 'boat_…9abc', problem: null } }
   assert.deepEqual(connectedProviders([keyed, nimbus]), [keyed])
   assert.deepEqual(providersSummary([keyed, { ...nimbus, credential: { hint: 'nim_…0001', problem: null } }]), { text: 'Boat, Nimbus', error: false })
-  assert.deepEqual(providersSummary([{ ...keyed, credential: { hint: 'boat_…9abc', problem: 'This Boat key has expired. Make a new one.' } }]), { text: 'Needs attention', error: true })
+  assert.deepEqual(providersSummary([{ ...keyed, credential: { hint: 'boat_…9abc', problem: 'This key has expired. Make a new one.' } }]), { text: 'Needs attention', error: true })
 })

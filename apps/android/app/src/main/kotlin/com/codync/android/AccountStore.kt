@@ -279,11 +279,11 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
     /** Runs [operation] as [key], its error shown; not while loading or while [key] still runs. Whether it started. */
     internal fun action(key: String, operation: suspend () -> Unit): Boolean {
         if (state.value.loading || key in state.value.busy) return false
-        mutableState.update { it.copy(busy = it.busy + key, error = null) }
+        mutableState.update { it.copy(busy = it.busy + key, error = null, failedAction = null) }
         val job = contextScope.launch(start = CoroutineStart.LAZY) {
             try { operation() }
             catch (error: CancellationException) { throw error }
-            catch (error: Exception) { showError(error) }
+            catch (error: Exception) { showError(error, key) }
             finally { actions.remove(key); mutableState.update { it.copy(busy = it.busy - key) } }
         }
         actions[key] = job
@@ -291,12 +291,13 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    internal fun showError(error: Exception) {
+    /** [action]: the [AccountStore.action] key [error] came from, if any. */
+    internal fun showError(error: Exception, action: String? = null) {
         // Not an error to dismiss: every computer's Update this app card says it and stays.
         if (error is CloudError && error.code == "appUpdateRequired") {
             mutableState.update { it.copy(loading = false, appFloor = error.message) }
             shareAccountView()
-        } else mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.") }
+        } else mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.", failedAction = action) }
     }
 
     /** Every computer registers (or drops) this phone's push again, after the permission changed. */

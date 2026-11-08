@@ -22,16 +22,25 @@ public struct CloudProvidersSheet: View {
                         Text(verbatim: provider.region).font(.footnote).foregroundStyle(Palette.secondary)
                     }
                 }
-                if let error = store.error {
-                    Text(L10n.tr(error))
-                        .font(.footnote)
-                        .foregroundStyle(Palette.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
-                }
+                if let error = store.error(forKey: nil) { ErrorText(error) }
             }
         }
         .background(Palette.background)
+    }
+}
+
+/// Why the last action failed.
+private struct ErrorText: View {
+    let error: String
+
+    init(_ error: String) { self.error = error }
+
+    var body: some View {
+        Text(L10n.tr(error))
+            .font(.footnote)
+            .foregroundStyle(Palette.danger)
+            .fixedSize(horizontal: false, vertical: true)
+            .transition(.opacity)
     }
 }
 
@@ -58,6 +67,8 @@ private struct CloudKeyRow: View {
             } else {
                 entry
             }
+            // Under the key it's about: below every provider it would be off screen.
+            if let error = store.error(forKey: provider.provider) { ErrorText(error) }
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: replacing)
     }
@@ -130,7 +141,7 @@ private struct CloudKeySetupRow: View {
     var body: some View {
         Disclosure(isExpanded: $open) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.fill(L10n.tr("Make a key limited to Codync in your {provider} account, then paste it above."), ["provider": provider.name]))
+                Text(L10n.fill(L10n.tr("Make a key with only what Codync needs in your {provider} account, then paste it above."), ["provider": provider.name]))
                     .font(.footnote)
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)

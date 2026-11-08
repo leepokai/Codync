@@ -19,8 +19,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case addToAccountAsked
     case addToAccountCompleted
     case addToAccountFailed(AddToAccountFailure)
-    /// The user gave Codync Cloud the key to their own Boat account; never the key or its hint.
-    case cloudKeySaved(CloudKeyOutcome)
+    /// The user gave Codync Cloud the key to their own account with a cloud provider (`provider`: the cloud's id for it,
+    /// such as `boat`); never the key or its hint.
+    case cloudKeySaved(CloudKeyOutcome, provider: String)
     case pairingFailed(PairingFailure)
     case computerPaired(via: PairVia, computer: ComputerID)
     case accessRequested
@@ -76,7 +77,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         }
     }
 
-    /// `saved`; `refused`: the cloud or Boat turned the key down (what to fix was shown); `failed`: anything else.
+    /// `saved`; `refused`: the cloud or the provider turned the key down (what to fix was shown); `failed`: anything else.
     public enum CloudKeyOutcome: String, Sendable {
         case saved, refused, failed
 
@@ -179,7 +180,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
              .addToAccountCompleted: return [:]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
-        case let .cloudKeySaved(outcome): return ["outcome": .string(outcome.rawValue)]
+        case let .cloudKeySaved(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
         case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .computerPaired(via, computer):

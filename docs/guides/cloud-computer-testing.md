@@ -1,13 +1,13 @@
 # Testing cloud computers (Codync Cloud)
 
-Codync Cloud runs a computer for a signed-in user on their own provider account, with the key they give it (Boat
-first; [plan](../plans/codync-cloud.md)).
+Codync Cloud runs a computer for a signed-in user on their own provider account, with the key they give it (Boat or
+InstaBox; [plan](../plans/codync-cloud.md)).
 Testing it touches real machines, a cloud Worker and accounts, so it runs on two levels, like the rest of the
 project ([Dev app isolation](dev-app.md)):
 
 | Level | What it is for | Cloud | Accounts | Apps | Machines |
 |---|---|---|---|---|---|
-| **Worktree** (ephemeral) | a feature branch, before it merges; deleted with the worktree | a local Worker per run (own D1, own relay), never `dev-api` | test tokens, or the dev Clerk instance with a test account | iOS simulator, Android emulator and desktop sandbox of that worktree | Boat, named `codync-e2e-…`, deleted at the end of every run |
+| **Worktree** (ephemeral) | a feature branch, before it merges; deleted with the worktree | a local Worker per run (own D1, own relay), never `dev-api` | test tokens, or the dev Clerk instance with a test account | iOS simulator, Android emulator and desktop sandbox of that worktree | Boat or InstaBox, named `codync-e2e-…`, deleted at the end of every run |
 | **Dev** (persistent) | the remote side as it is on `dev`, always on | `dev-api.codync.dev` | real dev accounts (Codync Dev) | Codync Dev on a physical iPhone, Android and the shared desktop Codync Dev | Boat, named `codync-dev-…`, kept |
 
 Production uses neither: its sealing keys, machines and accounts are separate.
@@ -65,6 +65,17 @@ sleep → a mailbox message wakes it → an app that needs a newer host updates 
 latest release from the phone → delete. Results so far:
 [Boat trial log](../plans/codync-cloud-boat-trial.md).
 
+### InstaBox
+
+The InstaBox key lives in `~/.codync-e2e/instabox-key` (machine scopes only, the owner's free personal workspace:
+never billed, 4 vCPU/8 GiB, pauses after 30 idle minutes). Its machines can't be reached by a reverse forward
+(InstaBox's SSH forwards one way only), so `INSTABOX_API_KEY_FILE=~/.codync-e2e/instabox-key npm run cloud:stack`
+also opens a Cloudflare quick tunnel to the local cloud (`cloudflared`, run with an empty config so a
+`~/.cloudflared/config.yml` of another tunnel can't answer for it) and gives the hosts its `https://….trycloudflare.com`
+URL: the Worker sees that host, which is the one the host signs. They boot the released host (the file server isn't
+reachable from there). This Mac's resolver may cache the new tunnel name as missing for a minute; the machines resolve
+it at once. The scripted run (`npm run e2e:cloud`) is Boat's only.
+
 ### Real apps against a local cloud
 
 `npm run cloud:stack` starts the same local cloud, accepting **dev Clerk** sessions (it reads the dev issuer from
@@ -85,7 +96,8 @@ local only), forwards each new machine, and prints how to point each app at it:
 Set `CODYNC_STACK_PORT` to keep the URL stable across runs. Ctrl-C deletes the machines.
 
 What to walk with the apps: Codync Cloud hidden for an account that isn't allowed; a key that isn't one, an admin key
-and a revoked key refused with what to fix; the test key (`BOAT_API_KEY_FILE`) pasted and shown as its hint; create → "Preparing your cloud
+and a revoked key refused with what to fix; the test key (`BOAT_API_KEY_FILE`, or `INSTABOX_API_KEY_FILE` under
+InstaBox) pasted and shown as its hint; create → "Preparing your cloud
 computer…" → claimed → each app (desktop included) gets access by itself → chat with a bot on it, and create and
 set up bots there from each app; on the desktop, hide the window → the channel closes and the computer can sleep; idle → "Sleeping · wakes when you
 message" → send → it wakes and answers; an app with a newer `minHost` → "Your cloud computer is updating…" →

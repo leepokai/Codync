@@ -13,7 +13,7 @@ const PATH = "/v1/cloud-credentials/boat";
 const keyed = (keys: string) => ({ ...env, CLOUD_SECRET_KEYS: keys });
 const k = (byte: number) => btoa(String.fromCharCode(...new Uint8Array(32).fill(byte)));
 /** The user's Boat key as `GET /v1/cloud-computers` lists it with the providers. */
-const credential = async (userId: string) => (await cc("GET", userId)).body.providers[0].credential;
+const credential = async (userId: string) => (await cc("GET", userId)).body.providers.find((p: { provider: string }) => p.provider === "boat").credential;
 
 describe("sealed secrets", () => {
   it("opens only for the owner and purpose it was sealed for", async () => {
@@ -60,20 +60,20 @@ describe("saving a Boat key", () => {
     const userId = uid();
     const fetch = boat("ready");
     const notAKey = await cc("PUT", userId, userId, PATH, { key: "sk-proj-123" });
-    expect(notAKey.body.error).toEqual({ code: "keyRefused", message: "That doesn't look like a Boat API key." });
+    expect(notAKey.body.error).toEqual({ code: "keyRefused", message: "That doesn't look like an API key from this provider." });
     expect(fetch).not.toHaveBeenCalled();
 
     boat("ready", { "/sandboxes?limit=1": [401, { ok: false, code: "unauthorized", message: "Unauthorized" }] });
-    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).body.error.message).toBe("Boat didn't accept this key. It may have been revoked.");
+    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).body.error.message).toBe("This key wasn't accepted. It may have been revoked.");
 
     boat("ready", { "/sandboxes?limit=1": forbidden("api_key_action_forbidden") });
-    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).body.error.message).toContain("missing an action Codync needs");
+    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).body.error.message).toContain("missing a permission Codync needs");
 
     // An admin key (or one from before scopes) can read the account's webhooks.
     boat("ready", { "/webhooks": [200, { webhooks: [] }] });
     const admin = await cc("PUT", userId, userId, PATH, { key: KEY });
     expect(admin.status).toBe(422);
-    expect(admin.body.error.message).toBe("This key can manage your whole Boat account. Make one limited to Codync instead.");
+    expect(admin.body.error.message).toBe("This key can manage your whole account. Make one limited to Codync instead.");
     expect(await credential(userId)).toBeNull();
   });
 
@@ -98,7 +98,7 @@ describe("saving a Boat key", () => {
     // The saved key reaches the computer; one from another account doesn't find it.
     boat("ready", { "/sandboxes/bx_test": (key) => (key === KEY ? undefined : [404, { code: "not_found" }]) });
     const other = await cc("PUT", userId, userId, PATH, { key: "boat_live_otheraccount1" });
-    expect(other.body.error.message).toBe("This Boat key can't reach your cloud computer.");
+    expect(other.body.error.message).toBe("This key can't reach your cloud computer.");
     expect((await credential(userId)).hint).toBe("boat_…9abc");
 
     boat("ready");
@@ -125,7 +125,7 @@ describe("a key Boat turns down later", () => {
   it("shows what to fix, stops waking the computer, and clears once Boat takes it again", async () => {
     const { userId, host } = await cloudComputer();
     boat("ready", { "/sandboxes/bx_test": forbidden("api_key_expired") });
-    expect((await credential(userId)).problem).toBe("This Boat key has expired. Make a new one.");
+    expect((await credential(userId)).problem).toBe("This key has expired. Make a new one.");
     // Only the owner can fix it: a wake doesn't keep trying, unlike a busy Boat.
     expect(await wake(env, host.cid, Date.now())).toBe("none");
     boat("ready", { "/sandboxes/bx_test": [503, { code: "unavailable" }] });
@@ -139,7 +139,7 @@ describe("a key Boat turns down later", () => {
     const { userId, host } = await cloudComputer();
     boat("archived", { "/sandboxes/bx_test/resume": forbidden("api_key_action_forbidden") });
     expect(await wake(env, host.cid, Date.now())).toBe("none");
-    expect((await credential(userId)).problem).toContain("missing an action Codync needs");
+    expect((await credential(userId)).problem).toContain("missing a permission Codync needs");
   });
 
   it("lets a computer be created again once the owner fixed what Boat refused", async () => {
@@ -147,8 +147,8 @@ describe("a key Boat turns down later", () => {
     await withKey(userId);
     boat("provisioning", { "/sandboxes": [402, { code: "payment_required" }] });
     const refused = await cc("POST", userId);
-    expect(refused.body.error).toEqual({ code: "keyRefused", message: "Your Boat account needs an active plan." });
-    expect((await credential(userId)).problem).toBe("Your Boat account needs an active plan.");
+    expect(refused.body.error).toEqual({ code: "keyRefused", message: "This account needs an active plan." });
+    expect((await credential(userId)).problem).toBe("This account needs an active plan.");
     boat();
     expect((await cc("POST", userId)).status).toBe(200);
     expect((await credential(userId)).problem).toBeNull();

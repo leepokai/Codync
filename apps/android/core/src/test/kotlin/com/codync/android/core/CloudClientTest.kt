@@ -178,7 +178,7 @@ class CloudClientTest {
             server.enqueue(MockResponse().setBody("""{"cloudComputer":null}"""))
             server.enqueue(MockResponse().setBody("""{"cloudComputer":null,"available":true}"""))
             server.enqueue(MockResponse().setBody("""{"cloudComputer":{"cloudComputerId":"cm_1","provider":"boat","providerName":"Boat",
-                "region":"EU","state":"starting","computerId":null,"backupAt":null,"createdAt":5}}"""))
+                "region":"EU","state":"starting","computerId":null,"backupAt":null,"snapshots":false,"createdAt":5}}"""))
             server.enqueue(MockResponse().setBody("{}"))
             server.enqueue(MockResponse().setBody("{}"))
             val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
@@ -188,6 +188,8 @@ class CloudClientTest {
             assertEquals("cm_1", created.cloudComputerId)
             assertNull(created.computerId)
             assertEquals(5L, created.createdAt)
+            assertFalse(created.snapshots)
+            assertTrue(CloudMachine("boat", "Boat", "EU", "running").snapshots)
             client.deleteCloudSnapshots()
             client.deleteCloudComputer()
             repeat(2) { assertEquals("GET /v1/cloud-computers", server.takeRequest().requestLine.substringBeforeLast(' ')) }
@@ -207,15 +209,15 @@ class CloudClientTest {
             val setup = """"setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"}"""
             server.enqueue(MockResponse().setBody("""{"cloudComputer":null,"available":true,"providers":[
                 {"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",$setup,
-                 "credential":{"hint":"boat_…9abc","problem":"This Boat key has expired. Make a new one.","updatedAt":5}},
+                 "credential":{"hint":"boat_…9abc","problem":"This key has expired. Make a new one.","updatedAt":5}},
                 {"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",$setup,"credential":null}]}"""))
-            server.enqueue(MockResponse().setResponseCode(422).setBody("""{"error":{"code":"keyRefused","message":"That doesn't look like a Boat API key."}}"""))
+            server.enqueue(MockResponse().setResponseCode(422).setBody("""{"error":{"code":"keyRefused","message":"That doesn't look like an API key from this provider."}}"""))
             server.enqueue(MockResponse().setBody("""{"credential":{"hint":"boat_…0001","problem":null,"updatedAt":6}}"""))
             server.enqueue(MockResponse().setBody("{}"))
             val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
             val offer = client.cloudComputer()
             assertEquals(listOf("Boat", "Nimbus"), offer.providers.map { it.name })
-            assertEquals(CloudCredential("boat_…9abc", "This Boat key has expired. Make a new one."), offer.providers[0].credential)
+            assertEquals(CloudCredential("boat_…9abc", "This key has expired. Make a new one."), offer.providers[0].credential)
             assertEquals(CloudKeySetup("https://boat.dev/dashboard", "boat env new codync"), offer.providers[0].setup)
             assertEquals(listOf("boat"), offer.connected.map { it.provider })
             assertEquals("Needs attention" to true, offer.summary)
@@ -224,7 +226,7 @@ class CloudClientTest {
             assertTrue(offer.canRemoveKey("boat"))
             val refused = try { client.saveCloudKey("boat", "sk-1"); error("Expected a refusal") } catch (error: CloudError) { error }
             assertEquals("keyRefused", refused.code)
-            assertEquals("That doesn't look like a Boat API key.", refused.message)
+            assertEquals("That doesn't look like an API key from this provider.", refused.message)
             val saved = client.saveCloudKey("boat", " boat_live_key0001 ")
             assertEquals("boat_…0001", saved.hint)
             assertNull(saved.problem)

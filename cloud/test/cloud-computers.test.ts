@@ -19,9 +19,13 @@ describe("cloud computers", () => {
     expect(open).toMatchObject({
       cloudComputer: null,
       available: true,
-      providers: [{ provider: "boat", name: "Boat", region: "EU", keyPrompt: "boat_…", setup: { page: "https://boat.dev/dashboard" }, credential: null }],
+      providers: [
+        { provider: "boat", name: "Boat", region: "EU", keyPrompt: "boat_…", setup: { page: "https://boat.dev/dashboard" }, credential: null },
+        { provider: "instabox", name: "InstaBox", region: "US", keyPrompt: "ibk_…", setup: { page: "https://dashboard.instabox.sh/dashboard/api-keys" }, credential: null },
+      ],
     });
     expect(open.providers[0].setup.commands).toContain("boat api-key create codync --env <id> --ttl never --actions sandbox.create,");
+    expect(open.providers[1].setup.commands).toContain("instabox keys create --name codync --scope machines:read,machines:write,machines:delete");
   });
 
   it("needs the user's own Boat key", async () => {
@@ -40,7 +44,7 @@ describe("cloud computers", () => {
     const fetch = boat();
     const created = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" });
     expect(created.status).toBe(200);
-    expect(created.body.cloudComputer).toMatchObject({ provider: "boat", providerName: "Boat", region: "EU", state: "starting", computerId: null });
+    expect(created.body.cloudComputer).toMatchObject({ provider: "boat", providerName: "Boat", region: "EU", state: "starting", computerId: null, snapshots: true });
 
     const [url, init] = fetch.mock.calls[0]!;
     expect(url).toBe("https://boat.dev/api/v1/sandboxes");

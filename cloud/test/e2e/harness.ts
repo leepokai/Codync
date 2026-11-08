@@ -15,6 +15,8 @@ import { waitFor, type Json } from "./phone.ts";
 
 export const CLOUD_DIR = fileURLToPath(new URL("../..", import.meta.url));
 export const ROOT = join(CLOUD_DIR, "..");
+/** Test machines are named with this prefix (the cloud's `CLOUD_MACHINE_PREFIX`), on every provider. */
+export const TEST_PREFIX = "codync-e2e";
 const WRANGLER = join(CLOUD_DIR, "node_modules/.bin/wrangler");
 const ISSUER = "https://clerk.test.local"; // [env.local] CLERK_ISSUER
 

@@ -4,7 +4,7 @@ import { Icon } from '../../components/Icon'
 import { Dialog, Sheet } from '../../components/Overlay'
 import { HStack, Spacer } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { machineStatus, placementLine, providersSummary, type CloudMachine } from '../../lib/cloud-computer'
+import { deleteRows, machineStatus, placementLine, providersSummary, type CloudDeletion, type CloudMachine } from '../../lib/cloud-computer'
 import { fill } from '../../lib/fill'
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
@@ -15,7 +15,7 @@ import { useApp } from '../../store/context'
 import { CloudProvidersSheet } from './CloudProvidersSheet'
 import { CodyncVersionRow } from './CodyncVersionRow'
 
-type Confirming = 'deleteSnapshots' | 'delete' | null
+type Confirming = CloudDeletion | null
 
 /**
  * The account's cloud computer on the user's own provider account: where it runs, deleting its snapshots or itself, or
@@ -81,7 +81,7 @@ export function CodyncCloudSection() {
 /** One card row each (CardSection puts hairlines between its children). */
 function machineRows(machine: CloudMachine, model: CloudComputerModel, store: BotStore | null, tr: (s: string) => string, confirm: (c: Confirming) => void): ReactNode[] {
   const status = machineStatus(machine)
-  const deleteRow = (action: Exclude<Confirming, null>, label: string) => (
+  const deleteRow = (action: CloudDeletion, label: string) => (
     <HStack key={action} gap={12} className="settings-row">
       <RowLabel grow label={label} />
       {model.busy === action ? <Spinner /> : <IconButton title={label} icon="trash" onClick={() => confirm(action)} disabled={model.busy !== null} />}
@@ -96,8 +96,7 @@ function machineRows(machine: CloudMachine, model: CloudComputerModel, store: Bo
       <Text tone={status.error ? 'danger' : 'secondary'}>{tr(status.text)}</Text>
     </ValueRow>,
     ...(store ? [<CodyncVersionRow key="codync" store={store} />] : []),
-    deleteRow('deleteSnapshots', 'Delete snapshots'),
-    deleteRow('delete', 'Delete cloud computer'),
+    ...deleteRows(machine).map((row) => deleteRow(row.action, row.label)),
   ]
 }
 

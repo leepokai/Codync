@@ -21,7 +21,17 @@ public final class CloudMachineStore {
     }
 
     /// One action at a time; a key's names its provider.
-    public enum Work: Equatable { case savingKey(String), removingKey(String), creating, deletingSnapshots, deleting }
+    public enum Work: Equatable {
+        case savingKey(String), removingKey(String), creating, deletingSnapshots, deleting
+
+        /// The provider a key's work is for.
+        var keyProvider: String? {
+            switch self {
+            case let .savingKey(provider), let .removingKey(provider): provider
+            case .creating, .deletingSnapshots, .deleting: nil
+            }
+        }
+    }
 
     public private(set) var lookup = Lookup.loading
     /// Every provider the cloud offers, each with the account's key for it, if any.
@@ -29,6 +39,8 @@ public final class CloudMachineStore {
     public private(set) var working: Work?
     /// Why the last action failed (the server's message where it gave one), shown in the section.
     public var error: String?
+    /// The action `error` came from.
+    private var failed: Work?
 
     /// The account's computers changed: a new machine claimed itself in, or `removed` went with it.
     var onAccountChanged: (@MainActor (_ removed: ComputerID?) async -> Void)?
@@ -44,6 +56,10 @@ public final class CloudMachineStore {
     public var isPreparing: Bool {
         if case let .machine(machine) = lookup { machine.computerId == nil } else { false }
     }
+
+    /// `error` where the providers sheet shows it: under `provider`'s key when saving or removing that key failed, else
+    /// (nil) below every provider.
+    public func error(forKey provider: String?) -> String? { failed?.keyProvider == provider ? error : nil }
 
     /// Where a computer can be created: the providers the account gave a key. Creating says what to fix if one still
     /// turns its key down.
@@ -78,10 +94,10 @@ public final class CloudMachineStore {
         await run(.savingKey(provider)) { [cloud, weak self] in
             do {
                 let saved = try await cloud.saveCloudKey(key.trimmingCharacters(in: .whitespacesAndNewlines), provider: provider)
-                Analytics.shared.capture(.cloudKeySaved(.saved))
+                Analytics.shared.capture(.cloudKeySaved(.saved, provider: provider))
                 self?.setCredential(saved, provider: provider)
             } catch {
-                Analytics.shared.capture(.cloudKeySaved(.init(error)))
+                Analytics.shared.capture(.cloudKeySaved(.init(error), provider: provider))
                 throw error
             }
             return nil
@@ -132,6 +148,7 @@ public final class CloudMachineStore {
     private func run(_ work: Work, _ action: @escaping @MainActor () async throws -> Lookup?) async -> Bool {
         guard working == nil else { return false }
         error = nil
+        failed = nil
         Motion.animate { working = work }
         defer { Motion.animate { working = nil } }
         do {
@@ -139,6 +156,7 @@ public final class CloudMachineStore {
             return true
         } catch {
             self.error = error.localizedDescription
+            failed = work
             return false
         }
     }

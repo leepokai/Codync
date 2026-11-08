@@ -60,11 +60,16 @@ public struct CloudMachine: Decodable, Hashable, Sendable {
     public var hosting: CloudHosting
     /// Nil until the machine has booted and claimed itself into the account.
     public var computerId: ComputerID?
+    /// Whether its provider keeps snapshots (earlier states, a backup) that *Delete snapshots* erases; older clouds
+    /// don't say, and they all did.
+    public var snapshots: Bool
 
-    private enum CodingKeys: String, CodingKey { case computerId }
+    private enum CodingKeys: String, CodingKey { case computerId, snapshots }
 
     public init(from decoder: any Decoder) throws {
-        computerId = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(ComputerID.self, forKey: .computerId)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        computerId = try c.decodeIfPresent(ComputerID.self, forKey: .computerId)
+        snapshots = try c.decodeIfPresent(Bool.self, forKey: .snapshots) ?? true
         // Provider, region and state sit beside `computerId`.
         hosting = try CloudHosting(from: decoder)
     }

@@ -3,7 +3,7 @@
 import { parseApp, recordApp } from "../app-versions";
 import { computerIdFor, fromB64url, randomId, utf8, verifyEd25519 } from "../auth";
 import { CERT_TTL_MS, certify } from "../certificate";
-import { machineFor, type CloudMachineRow } from "../cloud-machines";
+import { machineFor, newClaim, type CloudMachineRow } from "../cloud-machines";
 import { cloudView } from "./cloud-computers";
 import {
   ApiError,
@@ -168,13 +168,8 @@ export async function revokeDevice(c: Ctx, [deviceId]: string[]) {
 
 export async function createClaim(c: Ctx) {
   const u = await user(c);
-  const claimId = randomId("clm_");
-  const nonce = randomId();
   const expiresAt = c.now + CLAIM_TTL_MS;
-  await c.env.DB.prepare("INSERT INTO claims(id, user_id, nonce, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(claimId, u.userId, nonce, expiresAt)
-    .run();
-  return { claimId, nonce, expiresAt };
+  return { ...(await newClaim(c.env, u.userId, expiresAt)), expiresAt };
 }
 
 export async function completeClaim(c: Ctx, [claimId]: string[]) {
@@ -256,7 +251,7 @@ export async function listComputers(c: Ctx) {
      WHERE c.owner_user_id = ?2 ORDER BY c.claimed_at`,
   )
     .bind(deviceId, u.userId, c.now)
-    .all<ComputerRow & { access: string | null; cloud_provider: "boat" | null; cloud_state: CloudMachineRow["state"] | null }>();
+    .all<ComputerRow & { access: string | null; cloud_provider: CloudMachineRow["provider"] | null; cloud_state: CloudMachineRow["state"] | null }>();
   return {
     computers: results.map((r) => ({
       ...computerView(r),

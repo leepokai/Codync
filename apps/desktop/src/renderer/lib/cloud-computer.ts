@@ -16,6 +16,9 @@ export interface CloudMachine extends CloudPlacement {
   cloudComputerId: string
   computerId: string | null
   backupAt: number | null
+  /** Whether its provider keeps snapshots (earlier states, a backup) that *Delete snapshots* erases; older clouds don't
+   * say, and they all did. */
+  snapshots?: boolean
   createdAt: number
 }
 
@@ -51,7 +54,7 @@ export function providersSummary(providers: CloudProvider[]): StatusLine {
   return connected.length ? { text: connected.map((p) => p.name).join(', '), error: false } : { text: 'Connect one', error: false }
 }
 
-/** `cloud_key_saved`'s outcome for a save that threw: `refused` when the cloud or Boat turned the key down (the app
+/** `cloud_key_saved`'s outcome for a save that threw: `refused` when the cloud or the provider turned the key down (the app
  * shows what to fix), `failed` for anything else. */
 export const cloudKeyOutcome = (error: unknown): 'refused' | 'failed' =>
   error instanceof Error && 'code' in error && error.code === 'keyRefused' ? 'refused' : 'failed'
@@ -77,6 +80,14 @@ export function offlineCloudStatus(cloud: CloudPlacement | null | undefined): St
 export const isPreparing = (m: CloudMachine | null) => m !== null && m.computerId === null && m.state !== 'failed'
 
 const stateNames: Record<CloudState, string> = { starting: 'Starting', running: 'Running', stopping: 'Going to sleep', stopped: 'Sleeping', failed: 'Failed' }
+
+export type CloudDeletion = 'deleteSnapshots' | 'delete'
+
+/** What Computers → Codync Cloud offers to delete: *Delete snapshots* only when its provider keeps any. */
+export function deleteRows(m: CloudMachine): { action: CloudDeletion; label: string }[] {
+  const computer = { action: 'delete', label: 'Delete cloud computer' } as const
+  return m.snapshots === false ? [computer] : [{ action: 'deleteSnapshots', label: 'Delete snapshots' }, computer]
+}
 
 /** Computers → Codync Cloud's State. */
 export function machineStatus(m: CloudMachine): StatusLine {

@@ -53,7 +53,7 @@ host answers and sends it once the host is up.
 | `join_from_phone_answered` | host (`joinAccount`) | The computer answered a paired phone's **Add to account** | `outcome` (`approved`/`declined`) |
 | `discovery_failed` | host | A computer in no account couldn't advertise on the local network, reported once per host run | `stage` (`start`/`update`) |
 | `join_offer_answered` | host `track` (desktop) | The ask to add a computer to the signed-in account ended | `outcome` (`added`/`kept_out`/`failed`) |
-| `cloud_key_saved` | iOS, Android, host `track` (desktop) | The user gave Codync Cloud the key to their own Boat account (never the key or its hint) | `outcome` (`saved`; `refused`: the cloud or Boat turned it down and the app said what to fix; `failed`: anything else) |
+| `cloud_key_saved` | iOS, Android, host `track` (desktop) | The user gave Codync Cloud the key to their own account with a cloud provider (never the key or its hint) | `outcome` (`saved`; `refused`: the cloud or the provider turned it down and the app said what to fix; `failed`: anything else), `provider` (the cloud's id for it: `boat`/`instabox`; the host reads one it doesn't know yet as `other`) |
 | `computer_found_on_network` | iOS, Android | A phone reached a computer in no account at an address it found on the local network | — |
 | `pairing_code_created` | host (`pairing`) | A pairing QR code is made (desktop, terminal UI, `codync-host pair`), including each new one an open pairing screen makes when its code expires: count persons, not events | `client` |
 | `pairing_failed` | iOS, Android | A pairing attempt fails | `reason` (`not_pairing_link`/`outdated_host`/`invalid`/`expired`/`unauthorized`/`unreachable`/`timeout`/`upgrade_required`/`other`) |

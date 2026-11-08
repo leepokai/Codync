@@ -109,7 +109,7 @@ private final class KeyStub: CloudComputerStub {
         case "PUT":
             let n = puts.withLock { $0 += 1; return $0 }
             return n == 1
-                ? (422, #"{"error":{"code":"keyRefused","message":"This key can manage your whole Boat account. Make one limited to Codync instead."}}"#)
+                ? (422, #"{"error":{"code":"keyRefused","message":"This key can manage your whole account. Make one limited to Codync instead."}}"#)
                 : (200, #"{"credential":{"hint":"boat_…9abc","problem":null}}"#)
         case "DELETE":
             return (200, "{}")
@@ -131,7 +131,9 @@ private final class KeyStub: CloudComputerStub {
     #expect(store.providers.first?.setup.commands == "boat env new codync")
     #expect(store.connected.isEmpty && store.providersSummary.text == "Connect one")
     #expect(await store.saveKey("boat_admin_key", provider: "boat") == false)
-    #expect(store.error == "This key can manage your whole Boat account. Make one limited to Codync instead.")
+    #expect(store.error == "This key can manage your whole account. Make one limited to Codync instead.")
+    // Shown under Boat's key, not below every provider.
+    #expect(store.error(forKey: "boat") == store.error && store.error(forKey: "nimbus") == nil && store.error(forKey: nil) == nil)
     #expect(await store.saveKey(" boat_live_key9abc ", provider: "boat"))
     #expect(store.connected.map(\.provider) == ["boat"] && store.providers.first?.credential?.hint == "boat_…9abc")
     #expect(store.providersSummary.text == "Boat" && store.canRemoveKey("boat") && store.error == nil)
@@ -176,7 +178,7 @@ private final class PreparingStub: CloudComputerStub {
     #expect(changed.withLock { $0 })
 
     await store.deleteSnapshots()
-    #expect(store.error == "Your cloud computer is asleep.")
+    #expect(store.error == "Your cloud computer is asleep." && store.error(forKey: nil) == store.error)
     guard case let .machine(machine) = store.lookup else { Issue.record("machine gone"); return }
     #expect(machine.computerId == "abc")
     #expect(machine.hosting.state == .stopped)
@@ -195,4 +197,12 @@ private final class FloorStub: CloudComputerStub {
     let cloud = stubbedCloud(FloorStub.self, floor: floor)
     await #expect(throws: CloudError.self) { try await cloud.computers() }
     #expect(floor.reason == "This version has a security problem.")
+}
+
+/// A provider that keeps no snapshots (InstaBox) says so, for the apps to leave *Delete snapshots* out; older clouds
+/// don't say, and all of theirs kept some.
+@Test func cloudMachineSaysWhetherItKeepsSnapshots() throws {
+    let decode = { (json: String) in try JSONDecoder().decode(CloudMachine.self, from: Data(json.utf8)) }
+    #expect(try decode(#"{"provider":"instabox","providerName":"InstaBox","region":"US","state":"running","snapshots":false}"#).snapshots == false)
+    #expect(try decode(#"{"provider":"boat","providerName":"Boat","region":"EU","state":"running"}"#).snapshots)
 }

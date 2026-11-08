@@ -119,26 +119,31 @@ number to beat: measure our own image before choosing it.
 - Big clouds and VPSs work for an always-on machine with standard terms, but sleeping there means a full
   stop and boot.
 
-## InstaBox as the second BYOC provider (read 2026-11-08)
+## InstaBox as the second BYOC provider (built 2026-11-08)
 
-From its own docs and OpenAPI (`https://api.instabox.sh/v1/openapi.json`); no account, so nothing was called.
-Everything the adapter needs exists: REST with `X-API-Key: ibk_…`, create/get/stop/suspend/start/delete, named
-snapshots (`POST /v1/machines/{id}/snapshots`, `DELETE /v1/snapshots/{id}`, create with `snapshotId`), exec, and a
-per-machine cost endpoint (`GET /v1/machines/{id}/usage`). What differs from Boat:
+Built on `feat/cloud-boat` ([plan](codync-cloud.md#more-than-one-provider)), checked against the live API with the
+owner's free personal workspace: REST with `X-API-Key: ibk_…` or `Authorization: Bearer ibk_…`, create/get/suspend/
+start/stop/delete, named snapshots (never needed: a stopped or paused machine keeps its disks until deleted), exec,
+and a per-machine cost endpoint (`GET /v1/machines/{id}/usage`). What it took:
 
 - **Keys reach the whole workspace.** Scopes are per action (`machines:read/write/delete`, `images:*`,
-  `workspace:admin`), never per group of machines, and `machines:write` includes exec: Codync could run commands on
-  every machine in the user's workspace, not only its own. A second workspace costs extra. The owner decides whether
-  that is acceptable before this ships. Admin keys are told apart only by probing (`GET /v1/orgs/{id}/invites`: 200 =
-  admin, `403 missing_scope` = scoped), unverified.
-- **No files or setup script at create.** The Worker waits for `ready`, then provisions with
-  `POST /v1/machines/{id}/exec` (`sudo bash -s` on stdin, ≤1 MiB, ≤600 s): a new provisioning step in the machine's life.
-- **Lifecycle calls answer 202 with an operation** (`GET /v1/operations/{id}?wait=25s`) and all of them need an
-  `Idempotency-Key`, stop and delete too; delete also needs `X-Confirm-Delete: <id>`.
-- `suspended` is a state of its own (`stop` on it is refused); create must pass `vault: false, secrets: []` (a machine
-  with org secrets gets an HTTPS-intercepting proxy); snapshot names are unique (Boat overwrites).
-- Free plan: one machine per account, 4 vCPU/8 GiB only, templates `agent-browser`, `android`, `ci` only. Sign-up may
-  still have a waitlist.
+  `workspace:admin`), never per group of machines, and `machines:write` includes exec. The owner accepted it; the
+  setup lines say so. A workspace admin's key is refused: `GET /v1/orgs/{id}/invites` answers 200 to it and `403
+  missing_scope` to any other (checked: a personal workspace's key gets `missing_scope`, "a personal org's API key
+  cannot carry workspace:admin").
+- **No files or setup script at create.** Once the machine runs and is ready (`runtime.ready`), one
+  `POST /v1/machines/{id}/exec` (`bash -s` on stdin, as the guest user `user`, home `/data/home` on the kept disk,
+  linger already on, passwordless sudo) writes the claim ticket and starts the setup with `setsid nohup`, which
+  outlives the exec (checked). Machines were ready about 3 s after the create.
+- **Every change answers 202 with an operation** and needs an `Idempotency-Key`, stop and delete too; delete also takes
+  `X-Confirm-Delete: <id>`. A pause took about 6 s, a start from a pause about 4 s with the processes kept (checked).
+  A paused machine refuses a stop (`409 operation_conflict`).
+- Create passes `vault: false, secrets: []` (a machine with org secrets gets an HTTPS-intercepting proxy) and the
+  `agent-browser` template: a free workspace creates only from `agent-browser`, `android` or `ci` (`403
+  template_not_allowed` for `universal`). Snapshot names are unique (`409` for a second one).
+- Free plan: never billed, 4 vCPU/8 GiB only, pauses after 30 idle minutes (another `autoSuspendAfterSeconds` is
+  refused) and after 2 running hours (extended by activity up to 8 h), then a cooldown. The owner's workspace showed
+  "1 / 5" machines.
 
 ## Provider-neutral SDKs (read 2026-11-08)
 

@@ -35,7 +35,10 @@ data class CloudComputer(val computerId: String, val name: String, val signKey: 
  */
 @Serializable
 data class CloudMachine(val provider: String, val providerName: String, val region: String, val state: String,
-    val cloudComputerId: String? = null, val computerId: String? = null, val backupAt: Long? = null, val createdAt: Long? = null) {
+    val cloudComputerId: String? = null, val computerId: String? = null, val backupAt: Long? = null, val createdAt: Long? = null,
+    /** Whether its provider keeps snapshots (earlier states, a backup) that Delete snapshots erases; older clouds don't
+     * say, and they all did. */
+    val snapshots: Boolean = true) {
     /** Asleep, or going to sleep: it wakes when a device connects or a message arrives. */
     val asleep: Boolean get() = state == "stopped" || state == "stopping"
     val failed: Boolean get() = state == "failed"

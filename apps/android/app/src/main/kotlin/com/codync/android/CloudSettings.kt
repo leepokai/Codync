@@ -68,12 +68,12 @@ private val CloudMachine.stateLabel: String get() = when (state) {
                     Text(tr(machine.stateLabel), style = Type.body, color = if (machine.failed) Palette.danger else Palette.secondary)
                 }
             }
-            row { CloudAction("clock.arrow.circlepath", "Delete snapshots", Palette.danger, busy) { confirmSnapshots = true } }
+            if (machine.snapshots) row { CloudAction("clock.arrow.circlepath", "Delete snapshots", Palette.danger, busy) { confirmSnapshots = true } }
             row { CloudAction("trash", "Delete cloud computer", Palette.danger, busy) { confirmDelete = true } }
             row { ProvidersRow(offer) { showsProviders = true } }
         }
     }
-    CodyncSheet(showsProviders, { showsProviders = false }) { CloudProvidersSheet(offer, state.busy, state.error, store) }
+    CodyncSheet(showsProviders, { showsProviders = false }) { CloudProvidersSheet(offer, state, store) }
     CodyncDialog("Delete snapshots?", confirmSnapshots, { confirmSnapshots = false },
         "Erases your cloud computer's earlier saved states and its backup. The computer and what's on it now stay.") {
         listOf(DialogAction("Delete", destructive = true, action = store::deleteCloudSnapshots))

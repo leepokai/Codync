@@ -24,18 +24,25 @@ fun AccountStore.refreshCloudMachine() = action("cloudMachine") {
 internal fun AccountStore.cloudProvidersShown(open: Boolean) =
     mutableState.update { it.copy(cloudProvidersOpen = open, error = if (open) it.error else null) }
 
+private const val CLOUD_KEY = "cloudKey:"
+
 /** The busy key while [provider]'s key is saved or removed. */
-internal fun cloudKeyAction(provider: String) = "cloudKey:$provider"
+internal fun cloudKeyAction(provider: String) = "$CLOUD_KEY$provider"
+
+/** [AccountContext.error] where Cloud providers shows it: under [provider]'s key when saving or removing that key failed,
+ * else (null) below every provider (iOS `CloudMachineStore.error(forKey:)`). */
+internal fun AccountContext.cloudErrorFor(provider: String?): String? =
+    error.takeIf { failedAction?.takeIf { it.startsWith(CLOUD_KEY) }?.removePrefix(CLOUD_KEY) == provider }
 
 /** Gives the cloud the key to the user's own account with [provider]; a refusal shows the cloud's words for what to fix.
  * [saved] runs once it's kept. */
 fun AccountStore.saveCloudKey(provider: String, key: String, saved: () -> Unit) = action(cloudKeyAction(provider)) {
     val credential = try { requireNotNull(cloud) { "Sign in to reach your account." }.saveCloudKey(provider, key) }
     catch (error: Exception) {
-        if (error !is CancellationException) Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.of(error)))
+        if (error !is CancellationException) Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.of(error), provider))
         throw error
     }
-    Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Saved))
+    Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Saved, provider))
     mutableState.update { it.copy(cloudOffer = it.cloudOffer?.withCredential(provider, credential)) }
     saved()
 }

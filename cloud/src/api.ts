@@ -2,7 +2,7 @@
 // `routes/`; this module is what the router and the cron call.
 
 import { compareVersions } from "./app-versions";
-import { saveBackups } from "./cloud-machines";
+import { saveBackups, setUpPending } from "./cloud-machines";
 import { canSeal } from "./secrets";
 import { syncReleases } from "./host-releases";
 import type { Env } from "./index";
@@ -52,12 +52,14 @@ export async function sweep(env: Env, now: number): Promise<void> {
   await cloudUpkeep(env, now);
 }
 
-/** Codync Cloud: the releases the soft update picks from, backups of long-asleep machines, and awake cloud
- * computers below an emergency floor told to read their update order now. Each part fails on its own. */
+/** Codync Cloud: the releases the soft update picks from, new machines still waiting for their setup, backups of
+ * long-asleep machines, and awake cloud computers below an emergency floor told to read their update order now. Each
+ * part fails on its own. */
 async function cloudUpkeep(env: Env, now: number): Promise<void> {
   if (!canSeal(env)) return;
   const run = (what: string, job: Promise<void>) => job.catch((e) => console.error(`cloud upkeep: ${what}`, { error: String(e) }));
   await run("releases", syncReleases(env));
+  await run("setups", setUpPending(env, now));
   await run("backups", saveBackups(env, now));
   const floor = env.HOST_FLOOR;
   if (floor) {

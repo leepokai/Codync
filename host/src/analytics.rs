@@ -122,7 +122,7 @@ pub enum Event {
     ReachAccountAnswered,
     ContinuedWithoutAccount,
     JoinOfferAnswered,
-    /// The user gave Codync Cloud the key to their own Boat account (desktop; phones send their own).
+    /// The user gave Codync Cloud the key to their own account with a cloud provider (desktop; phones send their own).
     CloudKeySaved,
     /// A paired phone asked to add this computer to its account, and the computer answered.
     JoinFromPhoneAnswered,

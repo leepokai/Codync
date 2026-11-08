@@ -57,6 +57,8 @@ data class AccountContext(
     val navigationPage: LinkPage = LinkPage.Bots,
     val busy: Set<String> = emptySet(),
     val error: String? = null,
+    /** The [AccountStore.action] key [error] came from, when it came from one. */
+    val failedAction: String? = null,
 ) {
     /** The computer Usage acts on: the last active one, else the first. */
     val currentComputerId: String? get() = computers.currentId(lastComputerId)

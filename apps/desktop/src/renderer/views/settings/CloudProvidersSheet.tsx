@@ -30,17 +30,32 @@ export function CloudProvidersSheet({ model }: { model: CloudComputerModel }) {
             <SetupRow provider={p} />
           </CardSection>
         ))}
-        {model.error ? <Text size="caption" tone="danger">{tr(model.error)}</Text> : null}
+        <ErrorText error={model.errorFor(null)} />
       </VStack>
     </VStack>
   )
 }
 
+/** Why the last action failed. */
+function ErrorText({ error }: { error: string | null }) {
+  const tr = useTr()
+  return error ? <Text size="caption" tone="danger">{tr(error)}</Text> : null
+}
+
 function KeyRow({ provider, model }: { provider: CloudProvider; model: CloudComputerModel }) {
   const [replacing, setReplacing] = useState(false)
   const credential = provider.credential
-  if (credential && !replacing) return <SavedKey provider={provider} credential={credential} model={model} replace={() => setReplacing(true)} />
-  return <KeyEntry provider={provider} model={model} cancel={replacing ? () => setReplacing(false) : null} />
+  return (
+    <VStack gap={6}>
+      {credential && !replacing ? (
+        <SavedKey provider={provider} credential={credential} model={model} replace={() => setReplacing(true)} />
+      ) : (
+        <KeyEntry provider={provider} model={model} cancel={replacing ? () => setReplacing(false) : null} />
+      )}
+      {/* Under the key it's about: below every provider it would be out of view. */}
+      <ErrorText error={model.errorFor(provider.provider)} />
+    </VStack>
+  )
 }
 
 function SavedKey({ provider, credential, model, replace }: { provider: CloudProvider; credential: CloudCredential; model: CloudComputerModel; replace: () => void }) {
@@ -108,7 +123,7 @@ function SetupRow({ provider }: { provider: CloudProvider }) {
   return (
     <Disclosure expanded={open} onToggle={() => setOpen((o) => !o)} label={<Text tone="text">{tr('How to make a key')}</Text>}>
       <VStack gap={10}>
-        <Text size="footnote" tone="secondary">{fill(tr('Make a key limited to Codync in your {provider} account, then paste it above.'), { provider: provider.name })}</Text>
+        <Text size="footnote" tone="secondary">{fill(tr('Make a key with only what Codync needs in your {provider} account, then paste it above.'), { provider: provider.name })}</Text>
         <HStack gap={8} align="start" className="settings-commands">
           <Text size="caption" mono grow className="settings-commands-text">{provider.setup.commands}</Text>
           <IconButton

@@ -31,14 +31,17 @@ export function ToolWindow({ id }: { id: ToolId }) {
       .finally(() => setBusy(false))
   }
 
+  // A Codync built without the tool (Windows ARM64, a quick development package) can only say so.
+  const missing = state?.comfy?.bundled === false
+
   // Opening the window means "bring it up": start it if the host has it stopped.
   useEffect(() => {
-    if (state?.state === 'stopped' && !startedOnce.current) {
+    if (state?.state === 'stopped' && !missing && !startedOnce.current) {
       startedOnce.current = true
       start()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.state])
+  }, [state?.state, missing])
 
   useEffect(() => {
     if (state?.state === 'running') void window.codync.tools.gotoEditor(id).catch(() => {})
@@ -57,6 +60,8 @@ export function ToolWindow({ id }: { id: ToolId }) {
             <Spinner size={20} />
             <p className="tool-detail">{tr("Waiting for this computer's host…")}</p>
           </>
+        ) : missing ? (
+          <p className="tool-detail">{tr('This build of Codync does not include ComfyUI.')}</p>
         ) : error ? (
           <>
             <p className="tool-detail tool-error">{error}</p>

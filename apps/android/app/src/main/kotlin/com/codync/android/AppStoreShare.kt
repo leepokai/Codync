@@ -13,10 +13,11 @@ data class IncomingShare(val text: String, val files: List<OutgoingFile>)
 
 /**
  * A system share arrived (`ACTION_SEND` / `ACTION_SEND_MULTIPLE`). Files are copied while the provider's grant is
- * alive; then the user chooses the bot. A share meant for an account that has since been replaced, or one an
- * older share finished after, is discarded instead of replacing what is staged.
+ * alive; then the user chooses the bot, or [botId] sends it straight to the agent the Sharesheet named. A share meant
+ * for an account that has since been replaced, or one an older share finished after, is discarded instead of
+ * replacing what is staged.
  */
-fun AppStore.receiveShare(text: String, uris: List<Uri>) {
+fun AppStore.receiveShare(text: String, uris: List<Uri>, botId: String? = null) {
     val asked = shareRequests.incrementAndGet()
     viewModelScope.launch {
         val activated = withTimeoutOrNull(30_000) { activated() }
@@ -33,6 +34,8 @@ fun AppStore.receiveShare(text: String, uris: List<Uri>) {
             check(asked == shareRequests.get()) { "A newer share replaced this one." }
             clearShare()
             mutableState.update { it.copy(incomingShare = IncomingShare(text, imported.toList())) }
+            // The Sharesheet already asked which agent: no picker, the share lands in its draft.
+            if (botId != null && state.value.bots.any { it.id == botId }) deliverShare(botId)
         } catch (error: CancellationException) {
             withContext(NonCancellable + Dispatchers.IO) { imported.forEach(attachments::discard) }
             throw error

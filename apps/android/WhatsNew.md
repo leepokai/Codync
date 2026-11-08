@@ -10,9 +10,11 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ## 2.42.1
 ### zh-Hant
 - bot 詳情「智慧體」區塊的「壓縮對話」預設改為「自動」：交給 Claude Code 或 Codex 在對話快滿時自己壓縮。想讓 Codync 提早壓縮，可以改選提早、接近上限或指定數量（從 100K、200K… 裡挑，或自己輸入）。已經是「提早」的 bot 會保留原設定，想交給智慧體自己壓縮可以改選「自動」。
+- 登入到一半離開登入頁面，不會再跳出「Error occurred with unknown message.」；真的登入失敗時，會提示檢查網路後再試一次。
 
 ### en-US
 - Summarize long chats, in a bot's Agent section, now defaults to Auto: Claude Code or Codex summarizes a chat on its own once it fills up. Pick Early, Near the limit or a size (100K, 200K and so on, or one you type) to have Codync summarize sooner. Bots already on Early keep it; pick Auto to leave it to the agent.
+- Leaving the sign-in page partway no longer shows "Error occurred with unknown message." A sign-in that really fails asks you to check your connection and try again.
 
 ## 2.42.0
 ### zh-Hant

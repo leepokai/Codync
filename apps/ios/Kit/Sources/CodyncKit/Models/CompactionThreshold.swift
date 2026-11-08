@@ -1,7 +1,8 @@
 import Foundation
 
 /// When Codync summarizes a bot's chat ahead of time (the bot's `compaction`): `"early"`, `"nearLimit"`, `"off"`, or a
-/// size in tokens. A value from a newer host reads as the default.
+/// size in tokens. `"off"` (the apps' Auto) is the default: the agent summarizes on its own. A value from a newer host
+/// reads as the default.
 public enum CompactionThreshold: Codable, Hashable, Sendable {
     case early, nearLimit, off
     case tokens(Int)
@@ -13,9 +14,9 @@ public enum CompactionThreshold: Codable, Hashable, Sendable {
             return
         }
         switch try? c.decode(String.self) {
+        case "early": self = .early
         case "nearLimit": self = .nearLimit
-        case "off": self = .off
-        default: self = .early
+        default: self = .off
         }
     }
 

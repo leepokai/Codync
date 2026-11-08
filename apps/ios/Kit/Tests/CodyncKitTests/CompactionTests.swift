@@ -11,7 +11,7 @@ private func bot(_ extra: String) throws -> Bot {
     #expect(try bot(#","compaction":"nearLimit""#).compaction == .nearLimit)
     #expect(try bot(#","compaction":"off""#).compaction == .off)
     #expect(try bot(#","compaction":120000"#).compaction == .tokens(120_000))
-    #expect(try bot(#","compaction":"later""#).compaction == .early, "a newer host's value reads as the default")
+    #expect(try bot(#","compaction":"later""#).compaction == .off, "a newer host's value reads as the default, Auto")
     #expect(try bot(#","compaction":null"#).compaction == nil, "no setting where Codync can't summarize")
     #expect(try bot("").compaction == nil, "an older host")
 

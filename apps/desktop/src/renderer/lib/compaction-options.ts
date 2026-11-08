@@ -2,9 +2,9 @@ import type { CompactionSizes, CompactionThreshold } from '@shared/models'
 import type { MenuItem } from '../components/Menu'
 
 const PRESETS: { id: Exclude<CompactionThreshold, number>; title: string }[] = [
-  { id: 'early', title: 'Early (default)' },
+  { id: 'off', title: 'Auto (default)' },
+  { id: 'early', title: 'Early' },
   { id: 'nearLimit', title: 'Near the limit' },
-  { id: 'off', title: 'Only when full' },
 ]
 
 /** A size as the apps show it: thousands of tokens, `120K`. */

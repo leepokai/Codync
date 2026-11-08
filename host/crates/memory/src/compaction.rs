@@ -342,7 +342,7 @@ mod tests {
         assert_eq!(at(50_000, 1_000_000, Threshold::Tokens(10_000)), Decision::Compact, "never below the minimum");
         assert_eq!(at(40_000, 1_000_000, Threshold::Tokens(10_000)), Decision::Keep);
         assert_eq!(at(990_000, 1_000_000, Threshold::Off), Decision::Keep, "left to the harness");
-        assert_eq!(at(60_000, 64_000, Threshold::NearLimit), Decision::Compact, "too small a window: the default's");
+        assert_eq!(at(60_000, 64_000, Threshold::NearLimit), Decision::Compact, "too small a window: Early's");
     }
 
     #[test]
@@ -357,7 +357,7 @@ mod tests {
             assert!(!rollover_due(&c, threshold, CacheLife::OneHour, cold), "{threshold:?}");
         }
         let low = Threshold::Tokens(60_000);
-        assert_eq!(while_idle(&c, low, CacheLife::OneHour, idle), Decision::Compact, "past 100k, as by default");
+        assert_eq!(while_idle(&c, low, CacheLife::OneHour, idle), Decision::Compact, "past 100k, as Early");
         let summarized = Conversation { used: 30_000, compactions: 3, ..full() };
         let away = NOW + 9 * HOUR_MS;
         assert!(

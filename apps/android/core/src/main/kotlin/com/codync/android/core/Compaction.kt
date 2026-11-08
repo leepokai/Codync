@@ -11,8 +11,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 /**
- * When Codync summarizes a bot's chat so it can go on (the host's `compaction`): early by default, near the limit of
- * the agent's window, never (the agent still does when the chat fills up), or at a size the user picked.
+ * When a bot's chat is summarized so it can go on (the host's `compaction`): by the agent on its own (off, shown as
+ * Auto, the default), or by Codync early, near the limit of the agent's window, or at a size the user picked.
  */
 @Serializable(with = CompactionSerializer::class)
 sealed interface Compaction {
@@ -23,9 +23,9 @@ sealed interface Compaction {
 
     /** As its menu row and the pill show it: a phrase to translate, or a size such as "120K" shown as it is. */
     val label: String get() = when (this) {
-        Early -> "Early (default)"
+        Off -> "Auto (default)"
+        Early -> "Early"
         NearLimit -> "Near the limit"
-        Off -> "Only when full"
         is Tokens -> sizeLabel(tokens)
     }
 
@@ -51,7 +51,7 @@ data class CompactionTokens(val min: Long, val max: Long, val step: Long, val pr
     }
 }
 
-/** `"early"`, `"nearLimit"`, `"off"` or a number of tokens; a name from a newer host reads as early, rather than losing the bot. */
+/** `"early"`, `"nearLimit"`, `"off"` or a number of tokens; a name from a newer host reads as the default (off), rather than losing the bot. */
 internal object CompactionSerializer : KSerializer<Compaction> {
     override val descriptor = buildClassSerialDescriptor("Compaction")
     override fun serialize(encoder: Encoder, value: Compaction) {
@@ -64,12 +64,12 @@ internal object CompactionSerializer : KSerializer<Compaction> {
         (encoder as JsonEncoder).encodeJsonElement(wire)
     }
     override fun deserialize(decoder: Decoder): Compaction {
-        val wire = (decoder as JsonDecoder).decodeJsonElement() as? JsonPrimitive ?: return Compaction.Early
+        val wire = (decoder as JsonDecoder).decodeJsonElement() as? JsonPrimitive ?: return Compaction.Off
         if (!wire.isString) wire.longOrNull?.let { return Compaction.Tokens(it) }
         return when (wire.content) {
+            "early" -> Compaction.Early
             "nearLimit" -> Compaction.NearLimit
-            "off" -> Compaction.Off
-            else -> Compaction.Early
+            else -> Compaction.Off
         }
     }
 }

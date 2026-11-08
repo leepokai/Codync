@@ -1412,6 +1412,8 @@
   "Usage": "使用量",
   "Usage analytics": "使用状況分析",
   "Usage icons": "使用状況アイコン",
+  "Usage limit reached": "利用上限に達しました",
+  "Usage limit reached · {reset}": "利用上限に達しました · {reset}",
   "Usage limits": "使用制限",
   "Usage reported by your computer": "コンピュータによって報告された使用状況",
   "Usage shows up once a computer is connected.": "コンピュータが接続されると使用状況が表示されます。",

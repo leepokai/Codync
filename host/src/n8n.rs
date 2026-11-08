@@ -492,6 +492,7 @@ impl N8n {
             catalog: None,
             command: None,
             args: vec![],
+            login: vec![],
             env: BTreeMap::new(),
             url: Some(format!("http://127.0.0.1:{port}/mcp-server/http")),
             headers,

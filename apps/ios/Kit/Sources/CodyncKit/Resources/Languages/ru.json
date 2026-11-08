@@ -1412,6 +1412,8 @@
   "Usage": "Использование",
   "Usage analytics": "Аналитика использования",
   "Usage icons": "Значки использования",
+  "Usage limit reached": "Лимит использования исчерпан",
+  "Usage limit reached · {reset}": "Лимит использования исчерпан · {reset}",
   "Usage limits": "Лимиты использования",
   "Usage reported by your computer": "Использование по данным вашего компьютера",
   "Usage shows up once a computer is connected.": "Использование появится, когда подключится компьютер.",

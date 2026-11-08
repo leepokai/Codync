@@ -192,6 +192,7 @@ async fn install_server(
         catalog: None,
         command: None,
         args: vec![],
+        login: vec![],
         env: BTreeMap::new(),
         url: None,
         headers: BTreeMap::new(),
@@ -271,6 +272,13 @@ pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Res
     let all = connectors(store)?;
     let mut c = custom(name, b, &all).await?;
     c.catalog = b["catalog"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
+    // A catalog app may need its local server signed in before it starts (Proton Pass).
+    if let Some(app) = c.catalog.as_deref().and_then(|id| super::openbot::apps().iter().find(|a| a.id == id))
+        && c.command.is_some()
+        && app.server.command == c.command
+    {
+        c.login.clone_from(&app.server.login);
+    }
     add_connector(store, c)
 }
 
@@ -330,6 +338,7 @@ async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
         catalog: None,
         command: None,
         args: vec![],
+        login: vec![],
         env: map(&b["env"]),
         url: None,
         headers: map(&b["headers"]),
@@ -430,6 +439,31 @@ mod tests {
         install_server(&store, &server, name, "package:1", &json!({})).await.expect("another runtime");
         assert_eq!(only().command.as_deref(), Some("uvx"));
         assert_eq!(connectors(&store).expect("read").len(), 1);
+    }
+
+    /// Proton Pass is the only app that signs itself in before each start.
+    #[tokio::test]
+    async fn a_catalog_apps_sign_in_command_reaches_its_connector() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
+        let app = super::super::openbot::apps().iter().find(|a| a.id == "proton-pass").expect("catalog app");
+        let b = json!({
+            "name": app.server.name,
+            "command": app.server.command,
+            "args": app.server.args,
+            "env": {"PROTON_PASS_PERSONAL_ACCESS_TOKEN": "token"},
+            "catalog": app.id,
+        });
+        add_custom_connector(&store, &b).await.expect("add");
+        let login = |name: &str| {
+            connectors(&store).expect("read").into_iter().find(|c| c.name == name).expect("connector").login
+        };
+        assert_eq!(login(&app.server.name), app.server.login);
+        // Another app's command, under this app's id, is left without a sign-in.
+        let mut other = b.clone();
+        other["name"] = json!("Other");
+        other["command"] = json!("uvx");
+        add_custom_connector(&store, &other).await.expect("add again");
+        assert!(login("Other").is_empty());
     }
 
     #[test]

@@ -75,6 +75,11 @@ export function AppSheet({ app, added, onAdded, onError }: { app: MarketApp; add
         ) : null}
         {app.setup === 'key' ? (
           <CardSection title={tr('Setup')} footer={tr('Keys are saved on {name} only.').replaceAll('{name}', store.hostName)}>
+            {app.steps.length ? (
+              <ol className="market-steps">
+                {app.steps.map((step) => <li key={step}>{step}</li>)}
+              </ol>
+            ) : null}
             {app.fields.map((field) => (
               <VStack key={field.id} gap={4}>
                 <Field

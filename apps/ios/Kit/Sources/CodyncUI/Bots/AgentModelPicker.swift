@@ -110,6 +110,9 @@ struct AgentModelPicker: View {
             }
             .buttonStyle(.plain)
             .accessibilityValue(stage == .closed ? "Collapsed" : "Expanded")
+            if let note = store.usage.spentNote(for: backend) {
+                Text(note).font(.caption).foregroundStyle(Palette.secondary)
+            }
             if stage != .closed {
                 HStack {
                     if onAgentChange != nil {

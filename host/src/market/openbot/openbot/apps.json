@@ -922,6 +922,66 @@
       ]
     },
     {
+      "id": "proton-pass",
+      "name": "Proton Pass",
+      "tagline": "Sign in to sites with saved logins",
+      "description": "Proton Pass lets agents read the logins of one or more shared vaults and sign in to sites for you. Items stay end-to-end encrypted and every read names its reason in the token's activity log. The connector runs the Proton Pass CLI through a community MCP server on this computer. Reads need a viewer token, and editors can also add and change items. It needs a paid Proton plan.",
+      "category": "other",
+      "creator": "Proton",
+      "version": "1.0.0",
+      "updated": "2026-11-08",
+      "icon": "https://proton.me/favicon.ico",
+      "website": "https://proton.me/pass",
+      "featured": false,
+      "setup": "key",
+      "server": {
+        "name": "proton-pass",
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "proton-pass-community-mcp",
+          "--allow-version-drift"
+        ],
+        "login": [
+          "pass-cli",
+          "login"
+        ]
+      },
+      "fields": [
+        {
+          "id": "token",
+          "label": "Access token",
+          "env": "PROTON_PASS_PERSONAL_ACCESS_TOKEN",
+          "url": false,
+          "placeholder": "pst_…",
+          "hint": "Install the Proton Pass CLI first. In pass.proton.me, open Settings → Access tokens, create a token with the Use for AI agent switch on, and grant it the vaults agents may read.",
+          "required": true
+        }
+      ],
+      "steps": [
+        "Install the Proton Pass CLI from protonpass.github.io and keep it on your PATH. It needs a paid Proton plan.",
+        "Create an access token in the Proton Pass web app: Settings → Access tokens, then grant it the vaults agents may read.",
+        "The token signs the CLI in again before each start, so a two-hour session is never a wall."
+      ],
+      "docsUrl": "https://proton.me/support/pass-access-tokens",
+      "docsLabel": "Create a token",
+      "prompts": [
+        {
+          "id": "prompt-site",
+          "text": "Sign in to the staging dashboard with my saved login."
+        },
+        {
+          "id": "prompt-find",
+          "text": "Which logins do I have for services on this domain?"
+        },
+        {
+          "id": "prompt-note",
+          "text": "Add a login for this site to my shared vault."
+        }
+      ]
+    },
+    {
       "id": "railway",
       "name": "Railway",
       "tagline": "Projects, services and deployments",

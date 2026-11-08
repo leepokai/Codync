@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.AgentModels
 import com.codync.android.core.Bot
 import com.codync.android.core.LinkState
+import com.codync.android.core.UsageReport
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
 
@@ -75,6 +76,9 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
     val modelName = if (value.isEmpty()) "Default" else modelChoices.firstOrNull { it.id == value }?.name ?: value
     val levels = modelOptions.mapNotNull { option -> option.values.firstOrNull { it.id == (options[option.id] ?: option.default) }?.name }
     val summary = (listOf(agentName, modelName) + levels + if (fastMode) listOf("Fast") else emptyList()).joinToString(" · ")
+    // A spent plan window stops this agent's models: say so, and when it comes back (Usage screen).
+    val usage = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() }
+    val spent = usage?.spentWindow(backend)
     Column(Modifier.fillMaxWidth().animateContentSize(Motion.layoutSize), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth().clickable { open(if (stage == PickerStage.Closed) PickerStage.Models else PickerStage.Closed) }.padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -82,6 +86,11 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                 Text(text, style = Type.subheadline, color = Palette.text)
             }
             Symbol(if (stage == PickerStage.Closed) "chevron.down" else "chevron.up", size = 12.dp, tint = Palette.secondary)
+        }
+        spent?.let { window ->
+            val reset = window.resetsShort()
+            Text(reset?.let { tr("Usage limit reached · {reset}").replace("{reset}", resetLine(it)) } ?: tr("Usage limit reached"),
+                style = Type.caption, color = Palette.secondary)
         }
         if (stage != PickerStage.Closed) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

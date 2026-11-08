@@ -12,6 +12,7 @@ fn connector(command: &str, args: &[&str]) -> Connector {
         catalog: None,
         command: Some(command.into()),
         args: args.iter().map(|arg| (*arg).into()).collect(),
+        login: vec![],
         env: BTreeMap::from([("TOKEN".into(), "secret".into())]),
         url: None,
         headers: BTreeMap::new(),

@@ -23,6 +23,9 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 中斷的任務與失敗的例行工作可以用「取消任務」結束，訊息會保留。
 - 語音通話的停頓改成滑桿（0.6–3 秒），朗讀速度可選 0.5 倍到 2 倍。
 - Bot 頭像可選絨感或扁平，靜止時的表情更放鬆，群組頭像會輕輕浮動。
+- Proton Pass 加入目錄：填入個人存取權杖後，Bot 即可讀取它開啟的保險庫。
+- Composio 的應用程式在擴充功能中列出並顯示連線狀態，捲動時會繼續載入。
+- 被用完的方案額度擋住的模型會說明原因，以及額度恢復的時間。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -38,6 +41,9 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - A task that stopped halfway, or a routine run that failed, can be ended with Cancel task; its messages stay.
 - The voice call pause is a slider from 0.6 to 3 seconds, and read-aloud speed goes from 0.5× to 2×.
 - Bot avatars can be plush or flat, resting faces look calmer, and group avatars drift gently.
+- Proton Pass joins the catalog: add its personal access token and your bots can read the vault it opens.
+- Composio's apps are listed in Extensions with their connection status and load as you scroll.
+- A model stopped by a spent plan limit says so, and when the limit comes back.
 
 ## 2.32.0
 

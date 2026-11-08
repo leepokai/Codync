@@ -1412,6 +1412,8 @@
   "Usage": "用量",
   "Usage analytics": "用量分析",
   "Usage icons": "用量圖示",
+  "Usage limit reached": "已達使用上限",
+  "Usage limit reached · {reset}": "已達使用上限 · {reset}",
   "Usage limits": "用量上限",
   "Usage reported by your computer": "用量由你的電腦報告",
   "Usage shows up once a computer is connected.": "連上電腦後會顯示用量。",

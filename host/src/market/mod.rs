@@ -21,6 +21,7 @@ pub mod agent_sign_in;
 pub mod bot_secrets;
 pub mod catalog;
 pub mod composio;
+pub mod login;
 pub mod logins;
 pub mod oauth;
 pub mod openbot;
@@ -90,6 +91,9 @@ pub struct Connector {
     pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    /// A command run with `env` before each start, to sign a local server in (Proton Pass).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub login: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     /// Remote (streamable HTTP) servers.
@@ -374,6 +378,7 @@ mod tests {
             catalog: None,
             command: Some("npx".into()),
             args: vec!["-y".into(), "pkg@1".into()],
+            login: vec![],
             env: BTreeMap::from([("TOKEN".into(), "x".into())]),
             url: None,
             headers: BTreeMap::new(),

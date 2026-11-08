@@ -73,6 +73,25 @@ public extension UsageWindow {
     }
 }
 
+public extension Usage {
+    /// The spent window that stops a model of `backend` (an account's provider id before its
+    /// colon, or the provider's source), until its reset comes.
+    func spentWindow(for backend: String, now: Date = .now) -> UsageWindow? {
+        providers
+            .filter { $0.id.split(separator: ":", maxSplits: 1).first.map(String.init) == backend || $0.source == backend }
+            .flatMap(\.limits)
+            .filter { $0.percent >= 100 && ($0.resetDate.map { $0 > now } ?? true) }
+            .max { $0.percent < $1.percent }
+    }
+
+    /// "Usage limit reached · resets 3h 20m", when a spent window stops a model of `backend`.
+    func spentNote(for backend: String, now: Date = .now) -> String? {
+        guard let window = spentWindow(for: backend, now: now) else { return nil }
+        guard let reset = window.resetsShort(now: now) else { return L10n.tr("Usage limit reached") }
+        return L10n.tr("Usage limit reached · {reset}").replacingOccurrences(of: "{reset}", with: reset)
+    }
+}
+
 /// A provider's character, with a red "!" once any of its limits is nearly used up.
 public struct ProviderMascot: View {
     let provider: UsageProvider

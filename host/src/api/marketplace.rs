@@ -73,9 +73,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .find(|c| c.id == id)
                 .ok_or_else(|| anyhow!("Unknown connector"))?;
             let mut env = serde_json::Map::new();
+            let mut resolved = std::collections::BTreeMap::new();
             for (k, v) in &c.env {
-                env.insert(k.clone(), market::passwords::resolve(&hub.store, v).await?.into());
+                let value = market::passwords::resolve(&hub.store, v).await?;
+                resolved.insert(k.clone(), value.clone());
+                env.insert(k.clone(), value.into());
             }
+            // A local server that signs in first (Proton Pass) gets a fresh session: its
+            // access token expires after two hours, and its login command reads it from `env`.
+            market::login::run(&c.login, &resolved).await;
             json!({"command":c.command,"args":c.args,"env":env,"fingerprint":crate::mcp::policy_management::fingerprint_value(&c)?})
         }
         "connectorCall" => {

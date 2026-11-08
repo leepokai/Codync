@@ -1412,6 +1412,8 @@
   "Usage": "사용량",
   "Usage analytics": "사용 분석",
   "Usage icons": "사용량 아이콘",
+  "Usage limit reached": "사용 한도에 도달했습니다",
+  "Usage limit reached · {reset}": "사용 한도에 도달했습니다 · {reset}",
   "Usage limits": "사용량 한도",
   "Usage reported by your computer": "컴퓨터에서 보고한 사용량",
   "Usage shows up once a computer is connected.": "컴퓨터가 연결되면 사용량이 표시됩니다.",

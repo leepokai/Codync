@@ -85,6 +85,17 @@ Done from M5/M6:
 - **M1/M7**: marketplace connectors (Coinbase, RevenueCat, TickTick, Proton Pass, Higgsfield),
   the Apps connector list with status, marketplace Load more, the spent usage window under a
   model.
+
+Done from M1/M7:
+
+| Item | Status | Files |
+| --- | --- | --- |
+| Coinbase, RevenueCat, TickTick, Proton Pass and Higgsfield in the catalog | Done | `host/src/market/openbot/apps.json`, `tools/import-openbot-catalog.mjs` |
+| Proton Pass's short session: its token is re-entered into a login run before each start | Done | `host/src/market/login.rs`, `Connector.login`, `install.rs`, `api/marketplace.rs` |
+| An Apps connector list with its status, paged like the registry | Done | `ComposioViews.kt`, iOS `ComposioViews.swift`, desktop `ComposioSection.tsx`; key setup sheet on all three |
+| Key-setup steps above the fields | Done | `MarketplaceSheets.kt`, `MarketplaceDetailSheets.swift`, `AppSheet.tsx` |
+| The spent plan window under the model, with its reset, gone once it resets | Done | `UsageReport.spentWindow`, `AgentModelPicker` on all three, `spentNote` |
+
 - **M8 and X1–X7**: queue panel (Edit, Steer, Delete), pins shared with the desktop, paragraph
   direction, task-thread member names, and the Android adaptations of the iOS-only entries.
 

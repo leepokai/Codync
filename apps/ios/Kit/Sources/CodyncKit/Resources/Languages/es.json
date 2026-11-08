@@ -1412,6 +1412,8 @@
   "Usage": "Uso",
   "Usage analytics": "Análisis de uso",
   "Usage icons": "Iconos de uso",
+  "Usage limit reached": "Límite de uso alcanzado",
+  "Usage limit reached · {reset}": "Límite de uso alcanzado · {reset}",
   "Usage limits": "Límites de uso",
   "Usage reported by your computer": "Uso informado por tu computadora",
   "Usage shows up once a computer is connected.": "El uso aparece una vez que se conecta una computadora.",

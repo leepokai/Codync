@@ -96,6 +96,11 @@ fun AppStore.discard(send: PendingSend) = action("discard:" + send.nonce) {
     refresh()
 }
 fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
+    if (discardsOnPhone(state.value.computer.cloud, send.status)) {
+        withContext(Dispatchers.IO) { requireNotNull(database).discard(send.nonce) }
+        refresh()
+        return@action
+    }
     val active = requireNotNull(channel) { "Reconnect to the relay to cancel this message." }
     when (active.cancelQueued(send.nonce)) {
         "cancelled" -> { withContext(Dispatchers.IO) { requireNotNull(database).discard(send.nonce) }; refresh() }
@@ -146,12 +151,27 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
         withContext(NonCancellable) { savePending(send.copy(status = SendStatus.Failed, error = "Sending was interrupted. Retry uses the same message ID.")) }
         throw error
     } catch (error: Exception) {
-        savePending(send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send."))
+        savePending(afterFailure(send, state.value.computer.cloud, error))
     } finally {
         sends.remove(send.nonce)
         mutableState.update { it.copy(uploadProgress = it.uploadProgress - send.nonce) }
     }
 }
+
+/** A send that failed. With no relay holding it, a message waits here until the computer can be reached (`reconcileMailbox`). */
+internal fun afterFailure(send: PendingSend, cloud: String?, error: Exception): PendingSend =
+    if (cloud == null && error is IOException && error !is HostError) send.copy(status = SendStatus.Held)
+    else send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send.")
+
+/** Can't reach a computer with no relay: text waits on this phone until it can (iOS `BotStore.holdsOnPhone`). */
+internal fun holdsOnPhone(cloud: String?, link: LinkState): Boolean = cloud == null && when (link) {
+    LinkState.Connecting -> true
+    is LinkState.Failed -> link.status !in listOf(403, 426)
+    else -> false
+}
+
+/** No relay holds it, so taking it back touches only this phone (iOS `BotStore.cancelQueued`). */
+internal fun discardsOnPhone(cloud: String?, status: SendStatus): Boolean = cloud == null || status == SendStatus.Held
 
 internal suspend fun AppStore.savePending(send: PendingSend) {
     withContext(Dispatchers.IO) { requireNotNull(database).save(send) }
@@ -162,6 +182,25 @@ fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + ent
     active.call("respondPermission", body("entryId" to entry.id, "optionId" to option))
     delay(2_000)
 }
+
+/** A queued message goes now: into the running turn when the agent can take it, else as the next turn (the host decides). */
+internal fun AppStore.steer(entry: Entry) = command("steer", body("botId" to entry.botId, "entryId" to entry.id), "steer:" + entry.id)
+
+/** A queued message never goes out: gone at once, back if the computer refuses (its error shows). */
+internal fun AppStore.unqueue(entry: Entry) {
+    pendingRemovals[entry.id] = entry.rev
+    mutableState.update { it.copy(entries = withRemovals(it.entries, pendingRemovals)) }
+    command("unqueue", body("botId" to entry.botId, "entryId" to entry.id), "unqueue:" + entry.id, onFailure = {
+        pendingRemovals.remove(entry.id)
+        contextScope.launch { refresh() }
+    })
+}
+
+/** [entries] as the screens read them, without the messages taken back: for good once the computer says so (the mirror keeps
+ *  its copy, for its rev guard), and those [pending] (with the `rev` each had) until its newer copy says what became of them
+ *  (removed, or sent because the agent had taken it first). */
+internal fun withRemovals(entries: List<Entry>, pending: Map<String, Long>): List<Entry> =
+    entries.filterNot { it.isRemoved || pending[it.id] == it.rev }
 
 /** Carries on with the bot's current conversation instead of the handoff. */
 internal fun AppStore.keepConversation(entry: Entry) = command("keepConversation", body("entryId" to entry.id), "handoff:" + entry.id)

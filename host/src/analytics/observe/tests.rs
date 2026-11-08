@@ -1,5 +1,5 @@
 use super::*;
-use crate::store::{Device, DeviceSource, Store};
+use crate::store::{Device, DeviceAccount, DeviceSource, Store};
 use serde_json::json;
 
 fn temp_hub() -> (std::sync::Arc<Hub>, std::path::PathBuf) {
@@ -84,10 +84,18 @@ fn settings_routines_screen_and_devices() {
     );
     assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
     assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
+    assert_eq!(
+        setting("setUsageOrder", json!({"ids": ["codex", "claude"]})),
+        Some((Event::SettingChanged, json!("usage_order"), json!(true)))
+    );
 
     assert_eq!(
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
         Some((Event::RoutineToggled, json!({"enabled": false, "client": "local"})))
+    );
+    assert_eq!(
+        props("devServerRestart", &json!({"botId": "b", "id": "s"})),
+        Some((Event::DevServerAction, json!({"action": "restart", "client": "local"})))
     );
     assert_eq!(props("screenTakeover", &json!({"on": true})).map(|(e, _)| e), Some(Event::ScreenTakenOver));
     assert!(props("screenTakeover", &json!({"on": false})).is_none(), "handing it back");
@@ -102,6 +110,36 @@ fn settings_routines_screen_and_devices() {
     );
     assert_eq!(props("revokeDevice", &json!({"key": "k"})), Some((Event::DeviceRevoked, json!({"client": "local"}))));
     assert_eq!(props("installHostUpdate", &json!({"force": true})).map(|(e, _)| e), Some(Event::HostUpdateInstalled));
+}
+
+#[test]
+fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
+    use crate::market::connector_update::EditFailure;
+    let edit = json!({"id": "mine", "command": "/Users/me/bin/server", "env": {"API_KEY": "secret"}});
+    let (event, p) = observe(&Caller::Local, "updateConnector", &edit).expect("tracked");
+    assert_eq!(event, Event::ConnectorUpdated);
+    let saved = |answer: Value| Value::Object(answered(event, p.clone(), &answer).expect("reported"));
+    let checked = json!({"connector": {"id": "mine"}, "verify": {"status": "ready"}});
+    assert_eq!(saved(checked), json!({"client": "local", "outcome": "ready"}));
+    let unchecked = json!({"connector": {"id": "mine"}, "verify": null});
+    assert_eq!(saved(unchecked), json!({"client": "local", "outcome": "saved"}));
+
+    let refused = |error: anyhow::Error| {
+        let (event, p) = failed(event, p.clone(), &error).expect("reported");
+        assert_eq!(event, Event::ConnectorUpdated);
+        Value::Object(p)
+    };
+    for (failure, category) in [
+        (EditFailure::Invalid, "invalid"),
+        (EditFailure::Refused, "refused"),
+        (EditFailure::WontStart, "wont_start"),
+        (EditFailure::Conflict, "conflict"),
+    ] {
+        let reported = refused(failure.error("/Users/me/bin/server won't start"));
+        assert_eq!(reported, json!({"client": "local", "outcome": "failed", "error": category}));
+    }
+    let locked = refused(anyhow::anyhow!("the vault is locked"));
+    assert_eq!(locked, json!({"client": "local", "outcome": "failed", "error": "other"}));
 }
 
 #[test]
@@ -224,6 +262,15 @@ async fn store_lookups_add_fields_choice_and_platform() {
     hub.store.save_bot(&cfg).unwrap();
     let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "permission": "auto"})).unwrap();
     assert_eq!(p["fields"], json!(["permission"]));
+    assert!(p.get("compaction").is_none());
+    let (_, p) = observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "compaction": 120_000})).unwrap();
+    assert_eq!((&p["fields"], &p["compaction"]), (&json!(["compaction"]), &json!("tokens")), "the kind, not the size");
+    // The apps send the whole form: an unchanged threshold in it isn't a pick.
+    let (_, p) =
+        observe_call(&hub, &Caller::Local, "updateBot", &json!({"id": "b1", "name": "c", "compaction": "off"}))
+            .unwrap();
+    assert_eq!(p["fields"], json!(["name"]));
+    assert!(p.get("compaction").is_none());
 
     let card = json!({"status": "pending", "options": [{"optionId": "o1", "name": "Allow", "kind": "allow_always"}]});
     let e =
@@ -242,6 +289,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
             lease_until: None,
             created_at: 0,
             last_seen_at: None,
+            account: DeviceAccount::Unrecorded,
         })
         .unwrap();
     let (event, p) = observe_call(&hub, &phone, "respondPermission", &answer).unwrap();
@@ -259,7 +307,7 @@ async fn store_lookups_add_fields_choice_and_platform() {
 fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
     let failed_call = |method: &str, b: &Value| {
         let (event, p) = observe(&Caller::Local, method, b)?;
-        failed(event, p).map(|(e, p)| (e, Value::Object(p)))
+        failed(event, p, &anyhow::anyhow!("refused")).map(|(e, p)| (e, Value::Object(p)))
     };
     assert_eq!(
         failed_call("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),

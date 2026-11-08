@@ -3,34 +3,33 @@ import { groupFastMode } from '@shared/fast-mode'
 import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
 import { isGroup, isWorkingIn, quoteOf, type Bot, type Entry } from '@shared/models'
 import type { PickedFile } from '@shared/ipc'
-import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { IconButton } from '../../components/Controls'
 import { RecordingPill } from '../../components/RecordingPill'
 import { Sheet, usePresence } from '../../components/Overlay'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
 import { HStack, VStack } from '../../components/Stack'
-import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
-import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/bot-store'
+import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/outgoing-files'
 import { pluginsFor } from '../marketplace/plugins'
 import { pastedFiles, readPicked } from './composer-files'
 import { composerEnter } from './composer-keyboard'
-import { CommandMenu, useCommandMenu } from './CommandMenu'
+import { CommandMenu, MentionMenu, useComposerMenu } from './ComposerMenu'
 import { ComposerAttachment } from './ComposerAttachment'
 import { QuoteRow } from './ChatRows'
 import { useDictation } from './dictation-platform'
 import { DictationEngineMenu } from './DictationEngineMenu'
-import { builtInCommand, slashCommands, slashQuery, type SlashCommand } from './slash-commands'
+import { mentionSuggestions, returnMentions, withMention } from './mentions'
+import { builtInCommand, returnRuns, slashCommands, slashQuery, type SlashCommand } from './slash-commands'
 import { useVoiceShortcut } from './voice-shortcut-keys'
 
 type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
 
 /**
  * The message box under a chat: send, or stop while the bot (or the group) is working there. A leading `/` lists
- * the commands (a group's are its bots'); in a group, typing `@` suggests its bots. While `reply` is set, the
+ * the commands (a group's are its bots'); in a group, typing `@` lists its bots. While `reply` is set, the
  * message it quotes sits at the top of the box and goes out with the next send. Under an artifact, `about` is the
  * artifact: the box keeps a draft of its own, and every message replies to the artifact's card.
  */
@@ -111,23 +110,12 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
     return () => observer.disconnect()
   }, [])
 
-  const mentionQuery = (() => {
-    if (!bot || !isGroup(bot)) return null
-    const at = draft.lastIndexOf('@')
-    if (at < 0) return null
-    if (at > 0 && !/\s/.test(draft[at - 1]!)) return null
-    const query = draft.slice(at + 1)
-    return /\n/.test(query) || query.length > 24 ? null : query
-  })()
-  const suggestions: Bot[] =
-    mentionQuery !== null ? members.filter((m) => !mentionQuery || m.name.toLowerCase().includes(mentionQuery.toLowerCase())) : []
-
+  const suggestions = mentionSuggestions(draft, members)
   const mention = (member: Bot) => {
-    const at = draft.lastIndexOf('@')
-    if (at < 0) return
-    setDraft(`${draft.slice(0, at)}@${member.name} `)
+    setDraft(withMention(draft, member))
     field.current?.focus()
   }
+  const mentionMenu = useComposerMenu(draft, suggestions, mention, returnMentions)
 
   const slash = slashQuery(draft)
   const commands = slash === null ? [] : slashCommands(bot, slash, plugins.installedSkills, members)
@@ -151,14 +139,14 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
     }
     field.current?.focus()
   }
-  const menu = useCommandMenu(draft, commands, run)
+  const commandMenu = useComposerMenu(draft, commands, run, returnRuns)
 
   const append = (incoming: PickedFile[]) => {
     if (!canAttach) return
     const accepted: OutgoingFile[] = []
     for (const f of incoming) {
       if (f.data.length > MAX_FILE_SIZE) {
-        store.setError(`${f.name} is larger than 100 MB.`)
+        store.setError(tr('{name} is larger than 100 MB.').replaceAll('{name}', () => f.name))
         continue
       }
       accepted.push({ id: crypto.randomUUID(), name: f.name, data: f.data })
@@ -184,24 +172,14 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const trailing: Trailing = onInterrupt && !draft && !files.length ? 'interrupt' : working && !draft && !files.length ? 'stop' : onCall && !draft && !files.length ? 'call' : 'send'
   const [symbol, label] = ({
     interrupt: ['stop.fill', 'Interrupt'],
-    stop: ['stop.fill', 'Stop'],
-    call: ['waveform', 'Call'],
+    stop: ['stop.fill', tr('Stop')],
+    call: ['waveform', tr('Call')],
     send: ['arrow.up', 'Send'],
   } as const)[trailing]
   const enabled = trailing !== 'send' || canSend
 
   return (
     <VStack>
-      <ComposerReveal open={suggestions.length > 0}>
-        <div className="mentions">
-          {suggestions.map((m) => (
-            <button key={m.id} className="press mention" onClick={() => mention(m)}>
-              <BotAvatar bot={m} size={18} animated={false} />
-              <Text size="subheadline" tone="text">{m.name}</Text>
-            </button>
-          ))}
-        </div>
-      </ComposerReveal>
       <div
         className="composer"
         onDragOver={(e) => {
@@ -214,7 +192,8 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
         }}
       >
         <div className="composer-surface">
-          <CommandMenu commands={menu.shown} index={menu.index} hover={menu.hover} pick={run} />
+          <CommandMenu menu={commandMenu} />
+          <MentionMenu menu={mentionMenu} />
           <ComposerReveal open={!!reply}>
             {reply ? (
               <HStack gap={4} className="composer-reply">
@@ -245,7 +224,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
                 value={draft}
                 placeholder={placeholder}
                 spellCheck
-                aria-label={reply ? 'Reply' : 'Message'}
+                aria-label={tr(reply ? 'Reply' : 'Message')}
                 aria-keyshortcuts="Enter Shift+Enter"
                 onCompositionStart={() => { composing.current = true }}
                 onCompositionEnd={() => { composing.current = false }}
@@ -255,7 +234,8 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
                   if (bot && e.target.value === '/') void plugins.refresh()
                 }}
                 onKeyDown={(e) => {
-                  if (menu.onKey(e, composing.current || e.nativeEvent.isComposing || e.keyCode === 229)) return
+                  const inInputMethod = composing.current || e.nativeEvent.isComposing || e.keyCode === 229
+                  if (commandMenu.onKey(e, inInputMethod) || mentionMenu.onKey(e, inInputMethod)) return
                   if (e.key === 'Escape' && reply) {
                     e.preventDefault()
                     cancelReply?.()
@@ -327,7 +307,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
 }
 
 /** Keep the outgoing row until its height/fade transition finishes. */
-function ComposerReveal({ open, children }: { open: boolean; children: ReactNode }) {
+export function ComposerReveal({ open, children }: { open: boolean; children: ReactNode }) {
   const { mounted, shown } = usePresence(open)
   const last = useRef(children)
   if (open) last.current = children

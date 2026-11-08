@@ -22,7 +22,7 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 
 ## Where to change a bot's settings
 
-- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
+- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its [dev servers](/docs/dev-servers), instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
 - **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
 - **Android:** the same sheet and tabs as the iPhone.
 - **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
@@ -43,6 +43,8 @@ You can also ask a bot in its chat to rename itself or change its own instructio
 - **Fallbacks:** other agents that carry on when this one runs out of usage or can't answer. See [Agent fallbacks](/docs/agent-fallbacks).
 
 Changing the agent or the model starts a new agent session. The chat history stays.
+
+When a computer's bots use more than one agent, the bot list shows each bot's agent logo at the bottom-left of its avatar (the agent it runs on right now, a fallback included), so you can tell your Claude Code bots from your Codex ones at a glance. To hide the logos, turn off **Show agent logos** in Settings, under **Appearance** (desktop: **Settings → General**). It only changes the device you set it on. The terminal UI doesn't show agent logos.
 
 ## Workspace: its own folder or a project
 
@@ -75,9 +77,22 @@ The **Permissions** setting decides how much the agent does on its own before it
 
 Bots made before Codync 2.34 keep the setting they had. With any setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals**, and ←/→ goes through the same choices.
 
-The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting.
+The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting. It also covers [starting a dev server](/docs/dev-servers#start-one): unless it's Approve automatically, the start waits for your Allow.
 
 How approval cards work: [Conversations](/docs/conversations#approval-cards).
+
+## Summarize long chats
+
+For a Claude Code or Codex bot, **Summarize long chats** decides who summarizes the bot's chat so the conversation can go on with room to spare, and when. It sits in the Agent section, under the agent and its fallbacks (on the Details page of a chat's details).
+
+| Setting | When Codync summarizes |
+| --- | --- |
+| **Auto** (default) | The agent summarizes on its own when a chat fills its window. Codync doesn't summarize ahead of time or start fresh conversations. |
+| **Early** | Once the chat uses three quarters of the model's window or 200K tokens, whichever is less. It may also summarize a chat over 100K just before its cache expires, or start a [fresh conversation](/docs/conversations#fresh-conversations) when you come back after the cache went cold. |
+| **Near the limit** | Just before the window fills: 40K short of it (960K on a 1M window), and never sooner than Early. |
+| **Set a size** | At the size you pick: 100K, 200K and so on up to the largest the window allows, or **Custom size…** to type your own, in thousands of tokens (from 50K, rounded to 10K). |
+
+With Near the limit or a size, nothing summarizes the chat or starts it over before it reaches that size, except that a chat already summarized three times starts fresh after eight hours away. The sizes appear once the bot has replied and its agent has said how large its window is. A size larger than a new model's window counts as that window's largest. A longer chat costs more usage on every turn, because the agent reads all of it each time. In the terminal UI this field is called **Summarize** and sits under the fallbacks: ←/→ goes through the same choices, then each listed size, and typing digits sets a size of your own in K.
 
 ## Activity
 
@@ -122,7 +137,7 @@ Sections group a computer's bots under headings you name, such as Work and Perso
 
 A bot's chat and its agent's session are two different things. The chat is the permanent record you scroll through. The session is the agent's working context: what the model currently remembers of the conversation.
 
-You never start a session yourself. Codync starts a fresh one on its own when a long conversation needs one; the chat then shows a card with a summary you can edit or skip. See [Fresh conversations](/docs/conversations#fresh-conversations). A new session also starts when you change the bot's agent, model or folder. Either way the chat history stays where it is, and so do the bot's memory, settings and files.
+You never start a session yourself. For a Claude Code or Codex bot whose [Summarize long chats](#summarize-long-chats) isn't Auto, Codync starts a fresh one on its own when a long conversation needs one; the chat then shows a card with a summary you can edit or skip. See [Fresh conversations](/docs/conversations#fresh-conversations). A new session also starts when you change the bot's agent, model or folder. Either way the chat history stays where it is, and so do the bot's memory, settings and files.
 
 ## Delete a bot
 
@@ -130,7 +145,7 @@ You never start a session yourself. Codync starts a fresh one on its own when a 
 - **Desktop:** right-click the bot in the sidebar, then **Delete**.
 - **Terminal UI:** press `x`.
 
-Confirm with **Delete bot and its conversation**. Deleting your lead bot leaves you without one until you pick another; Open Live Mode then asks which bot. The bot's chat and settings go away and it leaves any group chats it was in. Files it changed on your computer stay as they are, and so does its personal workspace folder.
+Confirm with **Delete bot and its conversation**. Deleting your lead bot leaves you without one until you pick another; Open Live Mode then asks which bot. The bot's chat and settings go away and it leaves any group chats it was in. Its [dev servers](/docs/dev-servers) stop and are removed. Files it changed on your computer stay as they are, and so does its personal workspace folder.
 
 ## Copy a bot's setup
 

@@ -190,6 +190,12 @@ jobs:
   windows:
     needs: check
     if: needs.check.outputs.package == 'true'
+    # The bundled host's Cargo profile (tools/native-host.mjs). Dry runs on PRs into dev build `dev-app`:
+    # release minus thin LTO and the single codegen unit, about 3 minutes less per build. Tags and
+    # release PRs into main build the `release` profile that ships. The macOS job stays on `release`,
+    # the only profile in the cache rust-cache.yml saves for it.
+    env:
+      CODYNC_HOST_PROFILE: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' && 'dev-app' || 'release' }}
     strategy:
       fail-fast: false
       matrix:
@@ -216,6 +222,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host
+          # A fully matched cache is never saved again, so each profile keeps its own.
+          key: ${{ env.CODYNC_HOST_PROFILE }}
       - name: Initialize Windows networking provider
         shell: powershell
         # The first CIM query on a fresh ARM runner can exceed the SSH tool's 30-second timeout.

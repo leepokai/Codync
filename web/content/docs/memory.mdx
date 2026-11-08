@@ -109,7 +109,7 @@ The bot's chat, its memory and the agent's session are separate things.
 
 - **New session** gives the agent a fresh context. The chat stays in the app, and memory carries over: every new session starts with MEMORY.md in full and the list of notes.
 - **During a session,** when memory changes (by this bot, another bot sharing About you, dreaming, or your own edit), the bot gets the new memory with its next message.
-- **Compaction:** when a conversation in the bot's own chat gets long, Codync has the agent summarize it to make room. Dreaming runs first, so what you said reaches memory before it's summarized. Afterwards the bot's instructions and memory are applied again. Sometimes Codync starts a fresh conversation with a summary card instead. See [Fresh conversations](/docs/conversations#fresh-conversations).
+- **Compaction:** on Auto, the default, the agent summarizes a full conversation itself, and the bot then gets its instructions and memory again. With another [Summarize long chats](/docs/bots#summarize-long-chats) choice, Codync has the agent summarize sooner: dreaming runs first, so what you said reaches memory before it's summarized, and afterwards the bot's instructions and memory are applied again. Sometimes Codync starts a fresh conversation with a summary card instead. See [Fresh conversations](/docs/conversations#fresh-conversations).
 - If the agent has deleted an old session, the bot starts fresh, and its memory is still there.
 
 ## Limits

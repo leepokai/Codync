@@ -15,6 +15,19 @@ pub enum Cmd {
         entry_id: String,
         text: String,
     },
+    /// The user wants a queued message of theirs handled now (`steer`).
+    Steer {
+        entry_id: String,
+    },
+    /// What the agent made of a steered message (`_session/steering`).
+    Steered {
+        entry_id: String,
+        outcome: Result<Value>,
+    },
+    /// The user took back a queued message of theirs (`unqueue`).
+    Unqueue {
+        entry_id: String,
+    },
     BotRequest(crate::chat::team::BotRequest),
     /// How a request this bot sent came out: a turn of its own, with any others that arrive meanwhile.
     BotReply(crate::chat::team::BotReply),

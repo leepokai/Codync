@@ -1,3 +1,5 @@
+import { trNow } from '../../lib/l10n.ts'
+
 // Routines (kit Routine.swift, RoutineScheduleDraft.swift). The host hydrates, compiles,
 // validates and describes schedules; the app only keeps form values.
 
@@ -45,18 +47,21 @@ export const isActiveRun = (run: RoutineRun) => ['pending', 'starting', 'running
 export function runLabel(run: RoutineRun, now = Date.now()) {
   switch (run.status) {
     case 'pending':
-      if (run.notBefore && run.notBefore > now) return `Retrying at ${new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })}`
-      return run.notBefore ? 'Retrying' : 'Queued'
+      if (run.notBefore && run.notBefore > now) {
+        const at = new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })
+        return trNow('Retrying at {time}').replaceAll('{time}', () => at)
+      }
+      return run.notBefore ? trNow('Retrying') : trNow('Queued')
     case 'starting':
-      return 'Starting'
+      return trNow('Starting')
     case 'running':
-      return 'Running'
+      return trNow('Running')
     case 'recovering':
-      return 'Resuming after restart'
+      return trNow('Resuming after restart')
     case 'failed':
-      return 'Failed'
+      return trNow('Failed')
     case 'interrupted':
-      return 'Interrupted'
+      return trNow('Interrupted')
     default:
       return run.status.charAt(0).toUpperCase() + run.status.slice(1)
   }
@@ -73,6 +78,8 @@ export interface RoutineWebhook {
   localUrl: string
   key: string
   connected: boolean
+  /** In no account, so public deliveries can't reach it. */
+  needsAccount?: boolean
 }
 
 /** Form values only. */

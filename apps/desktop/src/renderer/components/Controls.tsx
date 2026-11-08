@@ -1,6 +1,7 @@
 import { Children, Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Icon } from './Icon'
-import { AnchoredMenu, IconButtonBase, usePresence, type MenuItem } from './Overlay'
+import { IconButtonBase, usePresence } from './Overlay'
+import { AnchoredMenu, type MenuItem } from './Menu'
 import { HStack, Spacer, VStack } from './Stack'
 import { useTr } from '../lib/use-language'
 import { Text } from './Text'
@@ -290,8 +291,8 @@ export function Disclosure({ expanded, onToggle, label, children }: { expanded: 
 }
 
 /** Keeps `children` mounted while it fades and folds away. */
-export function Reveal({ show, children }: { show: boolean; children: ReactNode }) {
-  const { mounted, shown } = usePresence(show)
+export function Reveal({ show, animateOnMount, children }: { show: boolean; animateOnMount?: boolean; children: ReactNode }) {
+  const { mounted, shown } = usePresence(show, undefined, animateOnMount)
   if (!mounted) return null
   return (
     <div className={`reveal ${shown ? 'shown' : ''}`}>

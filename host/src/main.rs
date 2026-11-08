@@ -2,11 +2,13 @@
 
 mod agent;
 mod analytics;
+mod analytics_cli;
 mod api;
 mod background;
 mod chat;
 mod cloud_cli;
 mod compat;
+mod dev_servers;
 mod environment;
 mod hub;
 mod icons;
@@ -17,10 +19,11 @@ mod market;
 mod mcp;
 mod network;
 mod network_cli;
+mod pair_cli;
+mod prompt;
 mod remote;
 mod routines;
 mod screen;
-mod secret_prompt;
 mod send_cli;
 mod service;
 mod shell;
@@ -108,15 +111,18 @@ enum Sub {
         #[command(subcommand)]
         action: Option<DevicesAction>,
     },
-    /// List, approve or deny account devices asking to use this computer.
+    /// List, approve or deny devices asking to use this computer: account devices, and phones pairing with a
+    /// computer in no account.
     Access {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
         #[command(subcommand)]
-        action: Option<AccessAction>,
+        action: Option<pair_cli::AccessAction>,
     },
     /// Show or change the Codync cloud (reach this computer from anywhere).
     Cloud(cloud_cli::CloudArgs),
+    /// Turn this computer's usage analytics on or off, as Settings does (the Windows installer asks with it).
+    Analytics(analytics_cli::AnalyticsArgs),
     /// Your other computers: create a network, invite them, see who is around.
     Network(network_cli::NetworkArgs),
     /// Import bots from another app's export file (`--skill` prints the skill that writes one in Grok Bot).
@@ -207,16 +213,6 @@ enum DevicesAction {
     List,
     /// Remove a device's access; it disconnects at once.
     Revoke { key: String },
-}
-
-#[derive(Subcommand)]
-enum AccessAction {
-    /// Show pending requests with the code each device shows (the default).
-    List,
-    /// Approve a request, by its id or by the 6-digit code shown on the device.
-    Approve { request: String },
-    /// Deny a request.
-    Deny { request: String },
 }
 
 #[derive(Subcommand)]
@@ -352,7 +348,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: "0.0.0.0".into() }) {
         Sub::Serve { port, bind } => serve(&bind, port).await,
-        Sub::Pair { port, json } => pair(port, json).await,
+        Sub::Pair { port, json } => pair_cli::pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
         Sub::Send(args) => send_cli::run(args).await,
         Sub::Import(args) => import_cli::run(args).await,
@@ -377,8 +373,9 @@ async fn main() -> Result<()> {
                 Ok(())
             }
         },
-        Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
+        Sub::Access { port, action } => pair_cli::access(port, action.unwrap_or(pair_cli::AccessAction::List)).await,
         Sub::Cloud(args) => cloud_cli::run(args).await,
+        Sub::Analytics(args) => analytics_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
         Sub::Install { port } => {
             open_store()?;
@@ -493,9 +490,7 @@ async fn main() -> Result<()> {
         Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
         Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
-        Sub::Tui { url, token, port } => {
-            tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
-        }
+        Sub::Tui { url, token, port } => tui::run(url, port, token).await,
     }
 }
 
@@ -532,7 +527,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     hub.start()?;
     network::start(&hub).await;
     analytics::host_started(&hub, service::started_by_service());
-    background::start(&hub);
+    let agent_checks = background::start(&hub);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");
     // Peer addresses: some settings may only be changed from this computer.
     let app = api::router(hub.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
@@ -545,7 +540,8 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
         () = shutdown_signal() => {},
     }
     hub.shutdown().await;
-    agent::acp::stopped().await;
+    background::stop_agent_checks(agent_checks).await;
+    agent::acp::stop_all().await;
     analytics::flush_before_exit(&hub).await;
     tracing::info!("codync-host stopped");
     // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.
@@ -578,73 +574,6 @@ async fn shutdown_signal() {
         () = ctrl_c => {}
         () = term => {}
     }
-}
-
-async fn pair(port: u16, as_json: bool) -> Result<()> {
-    let hello = local_call(port, "hello", json!({})).await?;
-    let p = local_call(port, "pairing", json!({})).await?;
-    if as_json {
-        println!(
-            "{}",
-            json!({
-                "name": hello["name"], "computerId": hello["computerId"], "signKey": hello["signKey"],
-                "boxKey": hello["boxKey"], "urls": p["urls"], "cloud": hello["cloud"],
-                "pairingUrl": p["pairingUrl"], "expiresAt": p["expiresAt"],
-            })
-        );
-        return Ok(());
-    }
-    let url = p["pairingUrl"].as_str().unwrap_or_default();
-    let code = qrcode::QrCode::new(url.as_bytes())?;
-    println!("{}", code.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
-    println!("Scan with the Codync iOS app within 10 minutes, or open this link on the phone:\n{url}\n");
-    if hello["cloud"].is_null()
-        && p["urls"].as_array().is_none_or(|u| {
-            !u.iter().any(|u| {
-                u.as_str().is_some_and(|u| u.contains("://100.") || u.contains(".ts.net") || u.starts_with("https://"))
-            })
-        })
-    {
-        println!(
-            "Tip: the phone reaches this computer on the same network only. Turn on the Codync cloud or Tailscale to reach it from anywhere."
-        );
-    }
-    Ok(())
-}
-
-async fn access(port: u16, action: AccessAction) -> Result<()> {
-    let list = local_call(port, "accessRequests", json!({})).await?;
-    let requests = list["requests"].as_array().cloned().unwrap_or_default();
-    let (request, approve) = match action {
-        AccessAction::List => {
-            if requests.is_empty() {
-                println!("No devices are asking for access.");
-            }
-            for r in &requests {
-                println!(
-                    "{}  {} ({}, {})  code {}",
-                    r["requestId"].as_str().unwrap_or_default(),
-                    r["deviceName"].as_str().unwrap_or_default(),
-                    r["platform"].as_str().unwrap_or_default(),
-                    r["email"].as_str().unwrap_or("no email"),
-                    r["code"].as_str().unwrap_or("(waiting for the device)"),
-                );
-            }
-            return Ok(());
-        }
-        AccessAction::Approve { request } => (request, true),
-        AccessAction::Deny { request } => (request, false),
-    };
-    // A 6-digit code picks the request showing it; it must be the only one.
-    let matching: Vec<&serde_json::Value> =
-        requests.iter().filter(|r| r["requestId"] == request.as_str() || r["code"] == request.as_str()).collect();
-    let [r] = matching.as_slice() else {
-        anyhow::bail!("No single request matches {request}. See `codync-host access list`.");
-    };
-    let id = r["requestId"].as_str().unwrap_or_default();
-    local_call(port, "decideAccessRequest", json!({"requestId": id, "approve": approve})).await?;
-    println!("{}", if approve { "Approved." } else { "Denied." });
-    Ok(())
 }
 
 /// Reads the identity and token only; never creates them (that's `serve`'s job).

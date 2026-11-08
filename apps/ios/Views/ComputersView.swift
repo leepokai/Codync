@@ -174,7 +174,8 @@ private struct ComputerRows: View {
             }
         }
         ComputerNotificationsRow(store: store)
-        connection
+        ComputerConnectionRow(store: store)
+        AddToAccountRow(store: store)
         // Kept while an update asked from here restarts the computer: its spinner says it's updating.
         if store.connection == .online || store.isUpdating, store.hello != nil {
             CodyncVersionRow(store: store)
@@ -243,36 +244,11 @@ private struct ComputerRows: View {
         }
     }
 
-    /// How this iPhone reaches the computer: the short name on the row, the whole route in the menu.
-    private var connection: some View {
-        DropdownMenu {
-            ConnectionRoute.allCases.map { route in
-                MenuItem(RelayCopy.routeTitle(route, cloud: store.computer.cloud), icon: route.icon, selected: route == preference) {
-                    accounts.setRoute(store.computer.id, route)
-                }
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: preference.icon).font(.system(size: 17)).frame(width: 26)
-                Text(L10n.tr("Connection"))
-                Spacer(minLength: 8)
-                Text(L10n.tr(RelayCopy.routeShortTitle(preference, cloud: store.computer.cloud)))
-                    .foregroundStyle(Palette.secondary)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
-            }
-            .foregroundStyle(Palette.text)
-            .contentShape(Rectangle())
-        }
-    }
-
     private var connectionDetail: some View {
         Text(L10n.tr(detail)).font(.footnote)
             .foregroundStyle(store.isOffline && !store.isUpdating ? Palette.warning : Palette.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
-
-    private var preference: ConnectionRoute { store.computer.route ?? .automatic }
 
     /// In a network of the user's computers, or cloud assistants on (hosts before it say nothing).
     private var showsNetwork: Bool { store.network?.hasContent == true }
@@ -326,11 +302,12 @@ private struct CodyncVersionRow: View {
 }
 
 /// A computer in the account that this iPhone can't use yet.
-private struct AccountComputerRow: View {
+struct AccountComputerRow: View {
     let computer: CloudComputer
     let ticket: AccessTicket?
     let ask: () -> Void
-    let revoke: () -> Void
+    /// Takes back an earlier install's approval first; without it, asking offers to replace that approval.
+    var revoke: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -343,7 +320,7 @@ private struct AccountComputerRow: View {
             Spacer()
             if ticket != nil {
                 Button(L10n.tr("Code"), action: ask).buttonStyle(.secondary)
-            } else if computer.isGranted {
+            } else if computer.isGranted, let revoke {
                 Button(L10n.tr("Revoke"), role: .destructive, action: revoke).buttonStyle(.secondary)
             } else {
                 Button(L10n.tr("Ask for access"), action: ask).buttonStyle(.secondary)
@@ -356,7 +333,7 @@ private struct AccountComputerRow: View {
         let online = computer.isOnline ? "Online" : "Offline"
         if let ticket { return "Waiting for your OK on the computer · \(ticket.code)" }
         return switch computer.access {
-        case "granted": "Approved for an earlier install of Codync. Revoke it, then ask again."
+        case "granted" where revoke != nil: "Approved for an earlier install of Codync. Revoke it, then ask again."
         case "pending": "\(online) · A request is waiting"
         default: "\(online) · In your account"
         }
@@ -409,16 +386,6 @@ private struct SwatchPanel: View {
             }
         }
         .padding(14)
-    }
-}
-
-private extension ConnectionRoute {
-    var icon: String {
-        switch self {
-        case .automatic: "arrow.triangle.branch"
-        case .cloudflareFirst: "cloud"
-        case .directOnly: "wifi"
-        }
     }
 }
 

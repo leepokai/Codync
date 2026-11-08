@@ -17,7 +17,7 @@ const same = [
 ];
 
 const different = [
-  ["100% free, no hidden fees", "Apache 2.0 licensed. No subscription, no paid tier, no in-app purchases, no account required."],
+  ["100% free, no hidden fees", "Apache 2.0 licensed. No subscription, no paid tier, no in-app purchases."],
   ["Any coding agent, over ACP", "Speaks the Agent Client Protocol, so Claude Code, Codex, Cursor, Gemini, Copilot and 40+ more just work, with the logins you already have. Mix them in one room."],
   ["Built in Rust", "One small, fast binary hosts every bot. Bots, transcripts and memory stay on your computer; the phone reaches it end-to-end encrypted."],
   ["Mac, Windows and Linux", "The same host runs on macOS, Windows and Linux (a static binary on any distro, desktop or headless server). All three get the same desktop app, with a menu bar or tray icon and a chat window."],

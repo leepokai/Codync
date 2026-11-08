@@ -31,6 +31,13 @@ public struct Pairing: Hashable, Sendable {
         self = p
     }
 
+    /// A short code `codync-host pair` prints (`QRTX-4821`: 4 letters, an optional dash or space, 4 digits) as the
+    /// cloud takes it, or nil for anything else. The cloud resolves it to the pairing link.
+    public static func shortCode(_ text: String) -> String? {
+        guard let match = text.trimmingCharacters(in: .whitespacesAndNewlines).wholeMatch(of: /([A-Za-z]{4})[- ]?([0-9]{4})/) else { return nil }
+        return "\(match.1.uppercased())-\(match.2)"
+    }
+
     public static func parse(_ string: String) throws(Problem) -> Pairing {
         guard let url = URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw .notPairingLink }
         return try parse(url)
@@ -62,6 +69,16 @@ public struct Pairing: Hashable, Sendable {
         self.code = code
     }
 
+    /// As a phone with no account uses it: the Codync relay is for signed-in phones. A private relay is the user's own.
+    public var withoutRelay: Pairing {
+        var computer = computer
+        if RelayCopy.host(of: computer.cloud) == nil { computer.cloud = nil }
+        return Pairing(computer: computer, code: code)
+    }
+
+    /// The 6 digits the computer shows if it asks whether to let `identity` in.
+    public func checkCode(for identity: DeviceIdentity) -> String { computer.checkCode(for: identity) }
+
     /// The relay's pairing socket parameter.
     var offerId: String? { Data(base64URL: code).map(RelayCrypto.offerId(code:)) }
 
@@ -88,5 +105,12 @@ public struct Pairing: Hashable, Sendable {
         #else
         return false
         #endif
+    }
+}
+
+extension Computer {
+    /// The 6 digits this computer shows if it asks about `identity`.
+    public func checkCode(for identity: DeviceIdentity) -> String {
+        RelayCrypto.pairCheck(deviceKey: identity.deviceKey, hostSignKey: Data(base64URL: signKey) ?? Data())
     }
 }

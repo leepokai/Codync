@@ -11,6 +11,11 @@ ipcRenderer.on('host:stream:end', (_e, id: string, error: CallError | null) => {
   streams.delete(id)
   s?.onEnd(error)
 })
+// A page that goes (a reload, its window closing) closes its streams: the next page numbers its own from 1 again.
+window.addEventListener('pagehide', () => {
+  for (const id of streams.keys()) ipcRenderer.send('host:stream:close', id)
+  streams.clear()
+})
 
 function listen<T>(channel: string, cb: (value: T) => void) {
   const handler = (_e: IpcRendererEvent, value: T) => cb(value)
@@ -75,6 +80,7 @@ const bridge: CodyncBridge = {
     onChange: (cb) => listen('account:change', cb),
     signIn: (provider) => ipcRenderer.invoke('account:signIn', provider),
     signOut: () => ipcRenderer.invoke('account:signOut'),
+    deleteAccount: () => ipcRenderer.invoke('account:delete'),
     token: () => ipcRenderer.invoke('account:token'),
   },
   speech: {
@@ -137,6 +143,7 @@ const bridge: CodyncBridge = {
     pickExport: () => ipcRenderer.invoke('app:pickExport'),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),
     setTraySummary: (summary: TraySummary) => ipcRenderer.send('app:traySummary', summary),
+    showWindow: () => ipcRenderer.send('app:showWindow'),
     onCommand: (cb: (c: WindowCommand) => void) => listen('app:command', cb),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
     setLaunchAtLogin: (on) => ipcRenderer.invoke('app:setLaunchAtLogin', on),

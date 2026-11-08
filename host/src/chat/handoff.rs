@@ -16,6 +16,8 @@ const MAX_CHARS: usize = 20_000;
 const REQUESTS: usize = 4;
 /// Main-chat entries read to build one.
 const READ: i64 = 120;
+/// A card's line once the old conversation goes on.
+const KEPT: &str = "Kept this conversation.";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -144,6 +146,13 @@ pub fn sent(hub: &Hub, bot: &str, id: &str) {
     let _ = hub.store.kv_delete(&key(bot));
 }
 
+/// The setting that called for the card changed: the old conversation goes on, without counting as the user turning
+/// a fresh one down.
+pub fn withdraw(hub: &Hub, bot: &str, id: &str) {
+    set_status(hub, id, Status::Kept, KEPT);
+    let _ = hub.store.kv_delete(&key(bot));
+}
+
 fn set_status(hub: &Hub, id: &str, status: Status, line: &str) -> Option<Entry> {
     let mut data = hub.store.entry(id)?.data;
     data["handoff"]["status"] = json!(status);
@@ -169,8 +178,36 @@ pub fn call(hub: &Hub, method: &str, b: &Value) -> Result<Value> {
             data["handoff"]["text"] = text.into();
             hub.set_entry(id, &data)
         }
-        "keepConversation" => set_status(hub, id, Status::Kept, "Kept this conversation."),
+        "keepConversation" => set_status(hub, id, Status::Kept, KEPT),
         _ => bail!("unknown method {method}"),
     };
     Ok(json!({"entry": entry}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::remote::identity::Identity;
+
+    #[test]
+    fn a_withdrawn_card_is_not_the_user_keeping_the_conversation() {
+        let dir = std::env::temp_dir().join(format!("codync-handoff-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "codex"})).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        store.save_bot(&cfg).unwrap();
+        let hub = Hub::new(store, "test".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0);
+
+        let card = draft(&hub, &cfg, "s1", Reason::Cold).unwrap();
+        withdraw(&hub, "b", &card.id);
+        assert_eq!(hub.store.entry(&card.id).unwrap().data["handoff"]["status"], json!(Status::Kept));
+        assert!(pending(&hub.store, "b").is_none());
+        assert!(!kept(&hub.store, "b"), "the setting took it back, not the user");
+
+        let card = draft(&hub, &cfg, "s1", Reason::Cold).unwrap();
+        call(&hub, "keepConversation", &json!({"entryId": card.id})).unwrap();
+        assert!(kept(&hub.store, "b"));
+        drop(hub);
+        std::fs::remove_dir_all(dir).ok();
+    }
 }

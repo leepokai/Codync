@@ -1,8 +1,7 @@
 import type { Bot } from '@shared/models'
-import type { MenuItem } from '../components/Overlay'
+import type { MenuItem } from '../components/Menu'
 import { sectionNames } from '../lib/roster-sections.ts'
 import type { BotStore } from '../store/bot-store'
-import type { ActionItem } from './DesktopActionMenu'
 
 /** An open section name dialog: its title, the name it starts with, and what Save does with the typed one. */
 export interface SectionNaming {
@@ -12,7 +11,7 @@ export interface SectionNaming {
 }
 
 /** A bot row's "Move to section"; none while its computer runs a host without sections. */
-export function moveToSectionItems(bot: Bot, store: BotStore, askName: (naming: SectionNaming) => void): ActionItem[] {
+export function moveToSectionItems(bot: Bot, store: BotStore, askName: (naming: SectionNaming) => void): MenuItem[] {
   if (!store.hasRosterSections) return []
   const others = sectionNames(store.bots.values()).filter((name) => name !== bot.section)
   const submenu: MenuItem[] = [

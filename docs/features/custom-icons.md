@@ -58,7 +58,7 @@ snapshot and removals clear the reference. No client renders arbitrary remote SV
 ## Live Activity and Dynamic Island
 
 Custom images remain static. Built-in characters keep their existing animation mechanism.
-iOS stores content-addressed PNGs in an account-scoped App Group directory (erased on sign-out); ActivityKit carries only the filename.
+iOS stores content-addressed PNGs in an account-scoped App Group directory (kept on sign-out; erased by Start over or Delete account); ActivityKit carries only the filename.
 A small per-computer/bot local pointer lets a running activity follow replacement/removal.
 Local state revisions trigger redraws without putting image bytes into APNs payloads.
 An offline activity keeps its last cached image until the app reconnects and receives the new snapshot.

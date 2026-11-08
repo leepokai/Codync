@@ -3,35 +3,52 @@
 //! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
 //! Codex: the CLI's live account rate limits. The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
-//! `kiro-cli /usage`, a `kimi` screen, Antigravity's language server, OpenCode's
-//! database, Vibe's session logs, and the `JetBrains` IDE quota file.
+//! `hermes usage`, `auggie account status`, `kilo profile`, `kiro-cli /usage`, a `kimi`
+//! screen, Antigravity's ACP `/usage` command or its IDE's language server, Copilot's
+//! headless server, Grok's ACP billing extension, OpenCode's database, Vibe's session logs,
+//! and the `JetBrains` IDE quota file. Which of them get read and shown: [`services`].
+//! Failures: [`reading`].
 //!
 //! Cursor's saved CLI or app login reads the dashboard service's weekly unified
 //! allowance, or the website's usage summary for legacy monthly plans. These are
 //! the only provider requests, and the token is never logged.
 
+mod acp_read;
 mod amp;
 mod antigravity;
+mod auggie;
 mod claude;
 mod codex;
 mod command;
+mod copilot;
 mod cursor;
+mod grok;
+mod hermes;
 mod junie;
+mod kilo;
 mod kimi;
 mod kiro;
 mod omp;
 mod opencode;
+mod reading;
+mod services;
 mod vibe;
 
 pub use claude::{ingest_claude_rate_limit, ingest_statusline};
+pub(crate) use command::strip_ansi;
+pub use services::{bots_changed, set_order, set_shown};
 
 use crate::LockExt;
 use crate::hub::Hub;
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde::Serialize;
+use services::{Reader, Service};
 use std::sync::Arc;
 use std::time::Duration;
 
 const POLL_EVERY: Duration = Duration::from_mins(5);
+/// How long a forced refresh holds up whoever asked. A slower reader lands through `usage` events.
+const REFRESH_WAIT: Duration = Duration::from_mins(1);
 /// Usage of a plan above which background work (dreaming, the lead's check-ins) waits.
 const HEADROOM_PERCENT: f64 = 75.0;
 
@@ -49,6 +66,8 @@ fn over_headroom(windows: &[Window]) -> bool {
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Usage {
     pub providers: Vec<Provider>,
+    /// The agents the user can choose among in the Usage screen.
+    pub services: Vec<Service>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -56,6 +75,9 @@ pub struct Usage {
 pub struct Provider {
     pub id: &'static str,
     pub name: &'static str,
+    /// The agent's ACP registry id, which its logo goes by. Without one, its `id`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry: Option<&'static str>,
     pub windows: Vec<Window>,
     /// Where the numbers came from: `claude` (CLI), `statusline`, `agent`, `sessions`,
     /// or a short phrase for the other agents.
@@ -93,6 +115,16 @@ impl Window {
 }
 
 impl Usage {
+    /// What the apps get: without the readings of the agents the user doesn't show.
+    pub fn visible(&self) -> Self {
+        let hidden = |id: &str| self.services.iter().any(|service| service.id == id && !service.shown);
+        let rank = |id: &str| self.services.iter().position(|service| service.id == id).unwrap_or(usize::MAX);
+        let mut providers: Vec<Provider> =
+            self.providers.iter().filter(|provider| !hidden(provider.id)).cloned().collect();
+        providers.sort_by_key(|provider| rank(provider.id));
+        Self { providers, services: self.services.clone() }
+    }
+
     /// One window at a time, for Claude's status line and rate-limit events.
     /// The provider's other windows stay.
     fn merge(&mut self, id: &'static str, name: &'static str, source: &'static str, new: Vec<Window>) {
@@ -101,7 +133,7 @@ impl Usage {
         windows.extend(new);
         windows.sort_by(|a, b| a.id.cmp(&b.id));
         self.providers.retain(|p| p.id != id);
-        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
+        self.providers.push(Provider::new(id, name, source, windows));
         self.providers.sort_by_key(|p| p.id);
     }
 
@@ -114,65 +146,80 @@ impl Usage {
         }
         let mut windows = new;
         windows.sort_by(|a, b| a.id.cmp(&b.id));
-        self.providers.push(Provider { id, name, windows, source, updated_at: crate::store::now_ms() });
+        self.providers.push(Provider::new(id, name, source, windows));
         self.providers.sort_by_key(|p| p.id);
     }
 }
 
+impl Provider {
+    fn new(id: &'static str, name: &'static str, source: &'static str, windows: Vec<Window>) -> Self {
+        Self { id, name, registry: services::registry(id), windows, source, updated_at: crate::store::now_ms() }
+    }
+}
+
 pub(super) fn merge(hub: &Hub, id: &'static str, name: &'static str, source: &'static str, windows: Vec<Window>) {
-    let mut usage = hub.usage.locked().clone();
-    usage.merge(id, name, source, windows);
-    hub.set_usage(usage);
+    hub.update_usage(|usage| usage.merge(id, name, source, windows));
 }
 
 pub async fn poll(hub: Arc<Hub>) {
     loop {
-        refresh(&hub).await;
-        tokio::time::sleep(POLL_EVERY).await;
+        read_all(&hub).await;
+        let next = tokio::time::Instant::now() + POLL_EVERY;
+        // An agent that just became wanted (a new bot's, one the user turned on) reads right away.
+        while tokio::time::timeout_at(next, hub.usage_wake.notified()).await.is_ok() {
+            read(&hub, readers(&hub, services::unread_readers).await).await;
+        }
     }
 }
 
-pub async fn refresh(hub: &Hub) {
-    let (
-        codex,
-        claude,
-        omp_windows,
-        amp_windows,
-        kiro_windows,
-        kimi_windows,
-        antigravity,
-        opencode,
-        vibe_notes,
-        junie,
-        cursor_windows,
-    ) = tokio::join!(
-        codex::collect(),
-        claude::collect(),
-        omp::collect(),
-        amp::collect(),
-        kiro::collect(),
-        tokio::task::spawn_blocking(kimi::collect),
-        antigravity::collect(),
-        tokio::task::spawn_blocking(opencode::collect),
-        tokio::task::spawn_blocking(vibe::collect),
-        tokio::task::spawn_blocking(junie::collect),
-        cursor::collect(),
-    );
-    apply(hub, codex, "codex", "Codex", "Codex CLI");
-    apply(hub, claude, "claude", "Claude", "claude");
-    apply(hub, omp_windows, "omp", "oh-my-pi", "omp usage");
-    apply(hub, amp_windows, "amp", "Amp", "amp usage");
-    apply(hub, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
-    apply(hub, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
-    apply(hub, antigravity, "antigravity", "Google Antigravity", "antigravity");
-    apply(hub, joined(opencode), "opencode", "OpenCode", "opencode database");
-    apply(hub, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
-    apply(hub, joined(junie), "junie", "Junie", "JetBrains IDE");
-    apply(hub, cursor_windows, "cursor", "Cursor", "Cursor");
+/// A forced read for a caller that's waiting, which gets what has landed by [`REFRESH_WAIT`].
+pub async fn refresh(hub: &Arc<Hub>) {
+    let reading = tokio::spawn({
+        let hub = hub.clone();
+        async move { read_all(&hub).await }
+    });
+    // Past the wait the reading carries on by itself.
+    if let Ok(Err(error)) = tokio::time::timeout(REFRESH_WAIT, reading).await {
+        tracing::warn!(%error, "a usage refresh failed");
+    }
 }
 
-fn joined(result: Result<Option<Vec<Window>>, tokio::task::JoinError>) -> Option<Vec<Window>> {
-    result.ok().flatten()
+async fn read_all(hub: &Arc<Hub>) {
+    let wanted = |hub: &Hub| {
+        services::sync(hub);
+        services::wanted_readers(&hub.store)
+    };
+    read(hub, readers(hub, wanted).await).await;
+}
+
+/// The readers `pick` names, away from the async workers: it goes to the database and the disk.
+async fn readers(hub: &Arc<Hub>, pick: fn(&Hub) -> Vec<&'static Reader>) -> Vec<&'static Reader> {
+    let hub = hub.clone();
+    tokio::task::spawn_blocking(move || pick(&hub)).await.unwrap_or_else(|error| {
+        tracing::warn!(%error, "couldn't list the agents to read");
+        Vec::new()
+    })
+}
+
+/// Each reading lands as it comes in: a slow agent doesn't hold back the others.
+async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
+    if crate::agent::backends::agent_checks_off() {
+        return;
+    }
+    let mut readings: FuturesUnordered<_> =
+        readers.into_iter().map(|reader| async move { (reader, (reader.read)(hub).await) }).collect();
+    while let Some((reader, windows)) = readings.next().await {
+        apply(hub, windows, reader.id, reader.name, reader.source);
+    }
+}
+
+fn iso_ms(text: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(text).ok().map(|at| at.timestamp_millis())
+}
+
+/// A window id made from its label.
+fn slug(label: &str) -> String {
+    label.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
 }
 
 pub(super) fn finite_i64(n: f64) -> Option<i64> {
@@ -191,9 +238,7 @@ pub(super) fn finite_i64(n: f64) -> Option<i64> {
 
 fn apply(hub: &Hub, windows: Option<Vec<Window>>, id: &'static str, name: &'static str, source: &'static str) {
     let Some(windows) = windows else { return };
-    let mut usage = hub.usage.locked().clone();
-    usage.replace(id, name, source, windows);
-    hub.set_usage(usage);
+    hub.update_usage(|usage| usage.replace(id, name, source, windows));
 }
 
 #[cfg(test)]
@@ -240,6 +285,34 @@ mod tests {
         assert_eq!(value["text"], "$1.50");
         assert_eq!(value["percent"], 0.0);
         assert!(value.get("resetsText").is_none());
+    }
+
+    #[test]
+    fn the_apps_get_only_what_the_user_shows() {
+        let window = Window::new("weekly", "Weekly", 10.0, None);
+        let provider = |id| Provider { windows: vec![window.clone()], ..Provider::new(id, id, "test", Vec::new()) };
+        let usage = Usage {
+            providers: vec![provider("claude"), provider("cursor"), provider("codex")],
+            services: vec![
+                Service { id: "claude", name: "Claude", registry: None, shown: true },
+                Service { id: "cursor", name: "Cursor", registry: None, shown: false },
+            ],
+        };
+        let visible = usage.visible();
+        let ids: Vec<_> = visible.providers.iter().map(|p| p.id).collect();
+        // A reading with no row yet (a status line before the first sync) isn't lost.
+        assert_eq!(ids, ["claude", "codex"]);
+        assert_eq!(visible.services.len(), 2, "the chooser still lists the hidden one");
+    }
+
+    #[test]
+    fn a_reading_names_the_registry_id_its_logo_goes_by() {
+        let mut u = Usage::default();
+        u.replace("copilot", "GitHub Copilot", "test", vec![Window::note("plan", "Plan", "Unlimited")]);
+        u.replace("hermes", "Hermes Agent", "test", vec![Window::note("plan", "Plan", "Unlimited")]);
+        let value = serde_json::to_value(&u).unwrap();
+        assert_eq!(value["providers"][0]["registry"], "github-copilot-cli");
+        assert!(value["providers"][1].get("registry").is_none(), "no registry entry: clients use the id");
     }
 
     #[test]

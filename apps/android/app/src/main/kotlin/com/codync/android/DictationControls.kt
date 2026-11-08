@@ -104,7 +104,7 @@ import kotlinx.coroutines.delay
             LaunchedEffect(dictation.startedAt) { while (true) { now = SystemClock.elapsedRealtime(); delay(500) } }
             val seconds = ((now - dictation.startedAt) / 1000).coerceAtLeast(0)
             Text("%d:%02d".format(seconds / 60, seconds % 60), style = Type.subheadline.monospacedDigit, color = Palette.text)
-            LevelDots(dictation.level, speaking = false, working = false, connecting = false, color = Palette.text,
+            LevelDots(dictation.level, speaking = false, working = false, connecting = false,
                 modifier = Modifier.size(32.dp, 12.dp).semantics { contentDescription = "Listening" })
         }
     }

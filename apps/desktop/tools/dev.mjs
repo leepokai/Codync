@@ -6,7 +6,7 @@
 // the sandbox of that name, --cloud lets the sandbox host use the dev cloud, --cdp opens the
 // DevTools protocol on the sandbox port + 10000, --onboarding shows the welcome flow (a sandbox
 // starts past it), --list shows every sandbox, --prune deletes the ones whose worktree is gone
-// (and their Clerk test accounts).
+// (and their Clerk test accounts and iPhone simulators).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -16,7 +16,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { deleteTestAccount, mintTicket, secretKey } from './dev-account.mjs'
-import { SANDBOX_PREFIX, sandboxName, sandboxPorts } from '../src/shared/dev-sandbox.ts'
+import { SANDBOX_PREFIX, sandboxName, sandboxPorts, sandboxSimulator } from '../src/shared/dev-sandbox.ts'
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const root = resolve(desktop, '../..')
@@ -93,21 +93,62 @@ function startApp(env = process.env) {
   return { child, stop }
 }
 
+function simctl(...args) {
+  const r = spawnSync('xcrun', ['simctl', ...args], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`xcrun simctl ${args[0]}: ${r.error?.message ?? (r.stderr || r.stdout).trim()}`)
+  return r.stdout
+}
+
+/** The sandbox's iPhone simulators: none off macOS or without Xcode (the Command Line Tools have no simctl). */
+function sandboxSimulators(name) {
+  if (process.platform !== 'darwin' || spawnSync('xcrun', ['--find', 'simctl']).status !== 0) return []
+  return Object.values(JSON.parse(simctl('list', 'devices', '--json')).devices).flat().filter((d) => d.name === sandboxSimulator(name))
+}
+
+/** Deletes the sandbox's iPhone simulators; true when there were any. Async, so a failure reaches the prune step's `.catch`. */
+async function deleteSimulators(name) {
+  const mine = sandboxSimulators(name)
+  for (const { udid, state } of mine) {
+    if (state !== 'Shutdown') simctl('shutdown', udid)
+    simctl('delete', udid)
+  }
+  return mine.length > 0
+}
+
+/** The sandbox's simulator once it exists (its udid is what `phone-account --ios` takes), else the command that creates it, to run once: simctl allows two of a name. */
+function simulatorHint(name) {
+  try {
+    const [existing] = sandboxSimulators(name)
+    if (existing) return `"${existing.name}" ${existing.udid}`
+  } catch (e) {
+    console.error(`Simulator lookup skipped: ${e.message}`)
+  }
+  return `xcrun simctl create "${sandboxSimulator(name)}" "iPhone 17"`
+}
+
+/** For a prune step's `.catch`: the error, saying what stays. */
+const notDeleted = (what) => (e) => {
+  throw new Error(`${what} wasn't deleted (${e.message})`)
+}
+
 async function listAndPrune() {
   for (const s of sandboxes()) {
     const running = await answers(s.port)
     const gone = !existsSync(s.worktree)
     if (flags.prune && gone && !running) {
       let account = false
+      let simulator = false
       try {
-        account = await deleteTestAccount(s.name)
+        account = await deleteTestAccount(s.name).catch(notDeleted('its Clerk test account'))
+        simulator = await deleteSimulators(s.name).catch(notDeleted('its simulator'))
       } catch (e) {
-        // The sandbox folder is how a later --prune finds the account again.
-        console.error(`Kept the sandbox ${s.name}: its Clerk test account wasn't deleted (${e.message}). Fix that, then run --prune again.`)
+        // The sandbox folder is how a later --prune finds the account and the simulator again.
+        console.error(`Kept the sandbox ${s.name}: ${e.message}. Fix that, then run --prune again.`)
         continue
       }
       rmSync(s.home, { recursive: true, force: true })
-      console.log(`Deleted the sandbox ${s.name} (${s.home})${account ? ' and its Clerk test account' : ''}`)
+      const extras = [account && 'its Clerk test account', simulator && `its simulator "${sandboxSimulator(s.name)}"`].filter(Boolean)
+      console.log(`Deleted the sandbox ${s.name} (${s.home})${extras.map((e) => ` and ${e}`).join('')}`)
       if (!account && !secretKey()) console.log(`  Without CODYNC_CLERK_SECRET_KEY its Clerk test account stays; delete ${s.name}'s sandbox-*+clerk_test user in the Clerk dashboard.`)
     } else if (flags.list) {
       console.log(`${s.name.padEnd(28)} ${String(s.port).padEnd(6)} ${(running ? 'running' : 'stopped').padEnd(8)} ${s.worktree}${gone ? ' (gone)' : ''}`)
@@ -130,7 +171,8 @@ async function sandbox() {
 
   const host = buildHost()
   const log = join(home, 'host.log')
-  const hostEnv = { ...childEnv(), CODYNC_HOME: home, ...(flags.cloud ? {} : { CODYNC_CLOUD: 'off' }) }
+  // CODYNC_VAULT: the credential key goes with the sandbox folder, so Keychain neither keeps it nor asks about it.
+  const hostEnv = { ...childEnv(), CODYNC_HOME: home, CODYNC_VAULT: 'folder', ...(flags.cloud ? {} : { CODYNC_CLOUD: 'off' }) }
   const out = openSync(log, 'a')
   const hostProcess = spawn(host, ['serve', '--port', String(port)], { env: hostEnv, stdio: ['ignore', out, out] })
   hostProcess.on('error', (e) => fail(`Couldn't start ${host}: ${e.message}`))
@@ -161,6 +203,7 @@ async function sandbox() {
   const command = `CODYNC_HOME="${home}" "${host}"`
   console.log(`\nCodync Dev (${name}): a sandbox on port ${port}, data in ${home}${flags.cloud ? '' : ', dev cloud off'}`)
   console.log(`  pair a phone or simulator  ${command} pair --port ${port}`)
+  if (process.platform === 'darwin') console.log(`  its iPhone simulator       ${simulatorHint(name)}`)
   console.log(`  terminal UI                ${command} tui --port ${port}`)
   if (cdp) console.log(`  DevTools protocol          127.0.0.1:${cdp}`)
   console.log('')

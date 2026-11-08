@@ -62,6 +62,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
             Row::Installed(c) => {
                 let right = match s(c, "auth") {
                     "signedOut" => tr("↵ sign in"),
+                    _ if c["canSignIn"] == true => tr("↵ sign in instead of the token"),
                     _ if c["kind"] == "composio" => std::borrow::Cow::Borrowed("Composio"),
                     _ => tr("installed"),
                 };

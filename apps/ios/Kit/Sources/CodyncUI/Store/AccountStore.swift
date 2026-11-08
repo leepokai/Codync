@@ -1,6 +1,7 @@
 import CodyncKit
 import Foundation
 import Observation
+import UIKit
 import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Account")
@@ -29,11 +30,16 @@ public final class AccountStore {
     public private(set) var stores: [ComputerID: BotStore] = [:]
     /// Everything in the account, including computers this device isn't authorized on yet.
     public private(set) var cloudComputers: [CloudComputer] = []
+    /// The account answered (or failed to) at least once, so an empty `cloudComputers` means what it says.
+    /// True from the start without a cloud: there's nothing to wait for.
+    public private(set) var cloudListLoaded: Bool
     /// Access requests waiting for approval on the computer, with the SAS to show.
     public private(set) var pendingAccess: [ComputerID: AccessTicket] = [:]
     /// The actual request approved most recently, distinct from a previously paired computer.
     public private(set) var approvedAccess: [ComputerID: String] = [:]
     public var lastError: String?
+    /// While pairing: the code the computer shows if it asks whether to let this phone in.
+    public internal(set) var pairingCheck: String?
     public var selection: BotReference? {
         didSet {
             guard !retired else { return }
@@ -50,18 +56,24 @@ public final class AccountStore {
     /// The combined roster changed: a bot came, changed or went, or a computer did.
     public var onRosterChanged: (@MainActor ([RosterItem]) -> Void)?
 
-    private let cloud: CloudClient?
+    let cloud: CloudClient?
     private let computerOrder: ComputerOrderStore
     private let makeStore: @MainActor (Computer) -> BotStore
     /// Persisted in the context (channel route).
-    private var saved: [Computer]
+    var saved: [Computer]
     private var accessPolls: [ComputerID: Task<Void, Never>] = [:]
     /// A list that comes back after a newer request was started is out of date.
     private var cloudListVersion = 0
     /// Access requests still waiting for their code, joined by a second ask.
     private var asks: [ComputerID: Task<AccessTicket, any Error>] = [:]
+    /// The account's word for this device's key, kept in memory for this context.
+    var certificate: DeviceCertificate?
+    /// Computers joining this account (`joinAccount`).
+    var joining: Set<ComputerID> = []
+    /// Computers asked from here to join this account, with the code they show meanwhile.
+    var addingToAccount: [ComputerID: String] = [:]
     private var isActive = true
-    private var retired = false
+    private(set) var retired = false
 
     public convenience init(storage: SharedStore.Context, cloud: CloudClient?) {
         self.init(storage: storage, cloud: cloud) { computer in
@@ -73,6 +85,7 @@ public final class AccountStore {
          makeStore: @escaping @MainActor (Computer) -> BotStore) {
         self.storage = storage
         self.cloud = cloud
+        cloudListLoaded = cloud == nil
         computerOrder = ComputerOrderStore(storage: storage)
         self.makeStore = makeStore
         saved = storage.computers.filter(\.isConsistent)
@@ -96,17 +109,6 @@ public final class AccountStore {
     public func store(for id: ComputerID) -> BotStore? { stores[id] }
 
     // MARK: computers
-
-    /// QR pairing (§4.1); the computer is saved in this context and connected.
-    public func pair(_ pairing: Pairing, deviceName: String, platform: String) async throws -> Computer {
-        let identity = try DeviceIdentity.load(context: storage)
-        var computer = try await HostConnector.pair(pairing, identity: identity, deviceName: deviceName, platform: platform)
-        guard !retired else { throw CancellationError() }
-        if let previous = saved.first(where: { $0.id == computer.id }) { computer.keepDevicePicks(from: previous) }
-        save(computer)
-        open(computer)
-        return computer
-    }
 
     public func forget(_ id: ComputerID) {
         saved.removeAll { $0.id == id }
@@ -153,16 +155,32 @@ public final class AccountStore {
         guard let cloud, !retired else { return }
         cloudListVersion += 1
         let version = cloudListVersion
+        defer { if version == cloudListVersion { cloudListLoaded = true } }
         do {
+            // Every refresh, as on Android: signing back in clears the account's signed-out mark, or its computers
+            // drop this iPhone's push tickets again on their next state pull.
+            try await cloud.registerDevice(name: UIDevice.current.name, platform: "ios")
             let list = try await cloud.computers()
             guard !retired, version == cloudListVersion else { return }
             if list != cloudComputers { Motion.animate { cloudComputers = list } }
+            learnRelay(from: list, cloud: cloud)
         } catch let error as CloudError where !error.isTransient {
             lastError = error.localizedDescription
         } catch {
             // Runs on every launch and foreground: a dropped connection, a busy cloud or a token
             // not ready yet fixes itself on the next refresh, so only answers that stay reach the dialog.
             log.info("cloud refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// A computer that joined this account while this phone couldn't hear its `hello` still has the relay, or a phone
+    /// away from its network could never reach it to find out. Listed online, it's on the relay; a phone connected to it
+    /// goes by its `hello`.
+    private func learnRelay(from list: [CloudComputer], cloud: CloudClient) {
+        for computer in saved where computer.cloud == nil && stores[computer.id]?.connection != .online
+            && list.contains(where: { $0.computerId == computer.id && $0.isOnline }) {
+            updateSaved(computer.id) { $0.cloud = cloud.baseURL }
+            stores[computer.id]?.restartStream()
         }
     }
 
@@ -352,7 +370,7 @@ public final class AccountStore {
 
     // MARK: plumbing
 
-    private func open(_ computer: Computer) {
+    func open(_ computer: Computer) {
         close(computer.id)
         let store = makeStore(computer)
         let id = computer.id
@@ -387,7 +405,7 @@ public final class AccountStore {
         refreshList()
     }
 
-    private func save(_ computer: Computer) {
+    func save(_ computer: Computer) {
         saved.removeAll { $0.id == computer.id }
         saved.insert(computer, at: 0)
         persist()

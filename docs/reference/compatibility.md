@@ -42,6 +42,11 @@ The iPhone and desktop apps also treat **undecodable data from a newer host** as
 that stays undecodable after the one rewind, or a `hello` whose other fields can't be decoded
 (its `version` and `minApp` are still read). From an older or equal host it's only logged.
 
+Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud` is null there, which they save, and they have no **Add to account** row. They reach it over Wi-Fi or Tailscale until the computer joins an account some other way, and `hello.joinAccount` stays `false` so they never call `joinAccount`, which takes a certificate now. It raises no floor: a computer in an account is unchanged for them.
+
+Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
+chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
+
 ## Changing what crosses the wire
 
 The policy is to move people forward rather than carry old formats: a breaking change ships
@@ -141,6 +146,7 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.36.0 | 2.36.0 | 2.26.0 (unchanged) | Pairing proves the phone's account with a cloud-signed device certificate; older apps send none, so the host rejects their `pair` with `unsupportedVersion`. |
 | 2.34.0 | 2.34.0 | 2.26.0 (iPhone, Android, desktop) | Custom icons are for bots only: `setIcon` rejects `agent:` targets, so older apps' agent icon editor would fail. |
 | 2.26.0 | 2.21.0 | 2.26.0 (iPhone, Android, desktop) | What a call's voice hears comes from the host as `call` events (replies, approvals, failures, progress); the apps no longer derive it from the chat, so on an older host a call would never hear the bot. |
 | 2.25.0 | 2.21.0 | 2.25.0 (iPhone, Android, desktop) | Voice calls run on the host: the apps start a call, run the voice's tools and end it through `startCall`, `callTool`, `callLines` and `endCall`, which older hosts lack (a Linux desktop or an SSH computer can run one). `logCall` stays for older apps. |

@@ -1,11 +1,11 @@
 import { FileDownloadCard } from './FileDownloadCard'
 import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
-import { groupBotReactions, isGroup, isReplyable, isWorking, type Bot, type Entry, type ReplyQuote } from '@shared/models'
+import { groupBotReactions, isGroup, isReplyable, type Bot, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Overlay'
+import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Menu'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
@@ -14,7 +14,7 @@ import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
-import { relativeTime } from './chat-items'
+import { callLength, relativeTime } from './chat-items'
 import { MarkdownText, PlainText } from './Markdown'
 import { PermissionCard } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
@@ -42,7 +42,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
     case 'user':
       return (
         <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
-          <UserBubble entry={entry} botWorking={!!chat && isWorking(chat)} reply={reply} />
+          <UserBubble entry={entry} reply={reply} />
           <ReactionsRow entry={entry} />
         </VStack>
       )
@@ -120,7 +120,7 @@ export function TimeSeparator({ date }: { date: number }) {
 
 const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
-export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWorking: boolean; reply?: () => void }) {
+export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const status = entry.data.status
@@ -142,7 +142,7 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
             {entry.data.text ? <PlainText text={entry.data.text} /> : null}
           </Bubble>
         ) : null}
-        {status && status !== 'sent' ? <UserStatus entry={entry} botWorking={botWorking} hovering={hovering} /> : null}
+        {status && status !== 'sent' ? <UserStatus entry={entry} hovering={hovering} /> : null}
         {/* Beside the bubble, inside its hover region: showing them never changes the height. */}
         <MessageActions className="leading" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} copy={copy} />
       </div>
@@ -150,14 +150,12 @@ export function UserBubble({ entry, botWorking, reply }: { entry: Entry; botWork
   )
 }
 
-function UserStatus({ entry, botWorking, hovering }: { entry: Entry; botWorking: boolean; hovering: boolean }) {
+function UserStatus({ entry, hovering }: { entry: Entry; hovering: boolean }) {
   const tr = useTr()
   const store = useStore()
   switch (entry.data.status) {
     case 'sending':
       return <Text size="caption2" tone="tertiary">{tr(`Sending…`)}</Text>
-    case 'queued':
-      return <Text size="caption2" tone="tertiary">{botWorking ? tr(`Queued until this response finishes`) : tr(`Queued`)}</Text>
     case 'failed':
       return (
         <HStack as="span" gap={2}>
@@ -204,13 +202,13 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
 }
 
 export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: () => void }) {
-  const text = entry.data.text ?? ''
+  const tr = useTr()
+  const text = tr(entry.data.text ?? '')
   if (entry.data.callSeconds !== undefined) {
-    const s = entry.data.callSeconds
     return (
       <HStack justify="center" gap={6}>
         <Icon name="waveform" size={10} color="var(--secondary)" />
-        <Text size="footnote" tone="secondary" tabular>{`${text} · ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`}</Text>
+        <Text size="footnote" tone="secondary" tabular>{text + callLength(entry.data.callSeconds)}</Text>
       </HStack>
     )
   }
@@ -221,7 +219,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" />
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
-            {addFallback ? <Button kind="secondary" onClick={addFallback}>Add a fallback</Button> : null}
+            {addFallback ? <Button kind="secondary" onClick={addFallback}>{tr('Add a fallback')}</Button> : null}
           </VStack>
         </HStack>
       )

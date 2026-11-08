@@ -18,7 +18,7 @@ export function ProviderMascot({ provider, size, style = 'character' }: { provid
   if (style === 'original') {
     return (
       <span className="usage-mascot-logo" style={{ width: size, height: size }}>
-        <AgentIcon registry={providerRegistry(provider.id)} size={size * 0.84} color={providerTintCSS(provider.id)} />
+        <AgentIcon registry={providerRegistry(provider)} size={size * 0.84} color={providerTintCSS(provider.id)} />
       </span>
     )
   }
@@ -40,7 +40,7 @@ const loaded = new Map<string, HTMLImageElement>()
 export function drawMascot(ctx: CanvasRenderingContext2D, provider: UsageProvider, size: number, style: 'character' | 'original', dark: boolean): boolean {
   const tint = provider.id === 'claude' ? '#D97757' : dark ? '#FFFFFF' : '#000000'
   if (style === 'original') {
-    const url = agentIconURL(providerRegistry(provider.id))
+    const url = agentIconURL(providerRegistry(provider))
     if (!url) return false
     const image = loaded.get(url)
     if (!image) {

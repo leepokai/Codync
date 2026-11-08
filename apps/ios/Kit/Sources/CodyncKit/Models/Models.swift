@@ -94,7 +94,24 @@ public struct PlanItem: Codable, Hashable, Sendable {
 
 public struct Usage: Codable, Hashable, Sendable {
     public var providers: [UsageProvider]
-    public init(providers: [UsageProvider] = []) { self.providers = providers }
+    /// The agents the Usage screen can show or hide. Absent from a host older than the chooser.
+    public var services: [UsageService]?
+    public init(providers: [UsageProvider] = [], services: [UsageService]? = nil) {
+        self.providers = providers
+        self.services = services
+    }
+}
+
+/// An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it.
+public struct UsageService: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var shown: Bool
+    /// The agent's ACP registry id, which its logo goes by. Without one, its `id`.
+    public var registry: String? = nil
+
+    /// What a mascot needs of an agent that may have no reading.
+    public var provider: UsageProvider { UsageProvider(id: id, name: name, windows: [], source: "", updatedAt: 0, registry: registry) }
 }
 
 public struct UsageProvider: Codable, Hashable, Sendable, Identifiable {
@@ -103,6 +120,8 @@ public struct UsageProvider: Codable, Hashable, Sendable, Identifiable {
     public var windows: [UsageWindow]
     public var source: String
     public var updatedAt: Int64
+    /// The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it.
+    public var registry: String? = nil
 }
 
 public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {
@@ -243,6 +262,8 @@ public struct Hello: Codable, Sendable {
     public var canUpdate: Bool?
     /// The latest release the computer found; nil while unknown (development builds, older hosts).
     public var latestVersion: String?
+    /// The computer could join an account: a signed-in phone may offer to add it (`HostClient.joinAccount`).
+    public var canJoinAccount: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {
@@ -325,6 +346,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var sharedMemory: Bool?
     /// Only sent when the user changes it.
     public var harnessMemory: Bool?
+    /// Nil where the host offers no setting (a new bot, an agent it can't ask), so it isn't sent.
+    public var compaction: CompactionThreshold?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -364,6 +387,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         manageTeam = bot.manageTeam
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
+        compaction = bot.compaction
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -379,6 +403,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
+        follow(\.compaction)
         return draft
     }
 }

@@ -64,7 +64,7 @@ pub(super) fn name_style(color: &str) -> Style {
 pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     let t = theme();
     let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
-    let entries = app.lane(&b.id);
+    let entries = app.chat(&b.id);
     let info = turn_info(&entries);
     if entries.is_empty() {
         intro(&mut out, app, b, width);
@@ -154,10 +154,8 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(" you", t.secondary.add_modifier(Modifier::BOLD)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ];
-            match e.data["status"].as_str() {
-                Some("queued") => head.push(Span::styled(" · queued", t.dim)),
-                Some("cancelled") => head.push(Span::styled(" · not sent", t.red)),
-                _ => {}
+            if e.data["status"] == "cancelled" {
+                head.push(Span::styled(" · not sent", t.red));
             }
             out.lines.push(Line::from(head));
             out.lines.extend(quote_line(e, width));

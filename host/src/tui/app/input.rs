@@ -330,6 +330,8 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char('S') => self.steer_next(),
+            KeyCode::Char('D') => self.unqueue_last(),
             KeyCode::Char('*') => self.make_lead(),
             KeyCode::Char('x') => {
                 // An older host keeps its lead.
@@ -413,6 +415,7 @@ impl App {
                             tracing::warn!("couldn't open a link in the browser");
                         }
                     }
+                    Some(Click::DevServers) => self.open_dev_servers(),
                     Some(Click::Section(name)) => {
                         self.click_section(&name);
                         self.focus = Focus::Roster;

@@ -11,6 +11,7 @@ import {
 } from './market-models'
 import { AppLogo, ErrorText, Field, filled } from './pieces'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 
 
 /**
@@ -67,11 +68,11 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
             return
           }
           if (state.status === 'failed' || state.status === 'expired') {
-            setError(`Signing in to ${app.name} didn't work (${state.status}). Close and try again.`)
+            setError(fill(tr("Signing in to {name} didn't work ({status}). Close and try again."), { name: app.name, status: String(state.status) }))
             return
           }
         }
-        setError('Timed out waiting for the sign-in.')
+        setError(tr('Timed out waiting for the sign-in.'))
       } catch (e) {
         if (!cancelled) setError(errorText(e))
       }
@@ -93,7 +94,7 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
         if (requestId) await market.finishConnectionRequest(client, requestId, { connectorId: `composio-${app.slug}` })
         markConnected()
       } else {
-        setError(`${app.name} says the connection is ${state.status}.`)
+        setError(fill(tr('{name} says the connection is {status}.'), { name: app.name, status: String(state.status) }))
       }
     } catch (e) {
       setError(errorText(e))
@@ -119,7 +120,7 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
 
   return (
     <SheetPage>
-      <ModalHeader title={`Connect ${app.name}`} trailing={trailing} />
+      <ModalHeader title={tr('Connect {name}').replaceAll('{name}', () => app.name)} trailing={trailing} />
       <CardForm>
         <CardSection>
           <HStack gap={14} className="market-card-header">
@@ -131,14 +132,14 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
           </HStack>
         </CardSection>
         {connected ? (
-          <CardSection footer={`Turn ${app.name} on for a bot in the bot's settings, under Connectors.`}>
+          <CardSection footer={tr("Turn {name} on for a bot in the bot's settings, under Connectors.").replaceAll('{name}', () => app.name)}>
             <HStack as="span" gap={6} className="composio-connected">
               <Icon name="checkmark.circle.fill" size={12} />
               Connected
             </HStack>
           </CardSection>
         ) : needsFields ? (
-          <CardSection footer={`Sent to Composio, which keeps it for ${app.name}.`}>
+          <CardSection footer={tr('Sent to Composio, which keeps it for {name}.').replaceAll('{name}', () => app.name)}>
             {(plan?.fields ?? []).map((f) => (
               <VStack key={f.name} gap={4}>
                 <Field label={f.label} value={values[f.name] ?? ''} secret={f.secret} placeholder={f.label} onChange={(v) => setValues((old) => ({ ...old, [f.name]: v }))} />

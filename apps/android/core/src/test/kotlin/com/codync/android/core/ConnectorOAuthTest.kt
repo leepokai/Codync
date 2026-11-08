@@ -1,5 +1,8 @@
 package com.codync.android.core
 
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -15,6 +18,34 @@ class ConnectorOAuthTest {
             try { pending.validate(callback, computer, now); fail("Wrong or expired callback must be rejected") }
             catch (_: IllegalArgumentException) { }
         }
+    }
+    @Test fun aSignInWithACodeCarriesTheCode() {
+        val plan = WireJson.decodeFromString<ConnectorSignIn>("""{"url":"https://github.com/login/device","callback":"host","code":"ABCD-1234"}""")
+        assertEquals("ABCD-1234", plan.code)
+        assertNull(WireJson.decodeFromString<ConnectorSignIn>("""{"url":"https://a.example","callback":"app"}""").code)
+    }
+    @Test fun copyAndOpenAnswersYesWhicheverCloseComesFirstAndCancelAnswersNo() = runBlocking {
+        val prompt = SignInCodeAnswer()
+        val later = mutableListOf<() -> Unit>()
+        fun ask() = async(start = CoroutineStart.UNDISPATCHED) { prompt.ask() }
+        fun nextTurn() { later.forEach { it() }; later.clear() }
+        // The dialog closes, then Copy and open acts: the close's no comes a turn later.
+        var answer = ask()
+        prompt.dismissed { later += it }
+        prompt.open()
+        nextTurn()
+        assertTrue(answer.await())
+        // Copy and open, then the dialog closes.
+        answer = ask()
+        prompt.open()
+        prompt.dismissed { later += it }
+        nextTurn()
+        assertTrue(answer.await())
+        // Cancel.
+        answer = ask()
+        prompt.dismissed { later += it }
+        nextTurn()
+        assertFalse(answer.await())
     }
     @Test fun callbackParsingRejectsRepeatedFieldsMixedResultsAndOtherDestinations() {
         val cancelled = OAuthReturn.parse("codync://oauth?state=fixture&error=access_denied&error_description=User+cancelled", "codync")

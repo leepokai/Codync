@@ -28,12 +28,16 @@ connects to its local host; neither has this phone access-request screen.
 
 The iOS app uses `apps/ios/App/AccountSession.swift`. Public keys and cloud URLs come from `apps/shared/Config/<env>.plist`, copied into the bundle as `AccountConfig.plist` by `project.yml`; `iOS Dev` (`DevDebug` / `DevRelease`) selects dev and `iOS` (`Debug` / `Release`) selects main. The desktop app reads the same plist through `node apps/desktop/tools/account-config.mjs <env>` (run by `npm run dev` and `npm run dist:*:<env>`), which writes `resources/account-config.json` (`CODYNC_CLERK_PUBLISHABLE_KEY` / `CODYNC_CLOUD_URL` override it). See [environments](environments-and-deployment.md).
 
-Confirm Apple and Google sign-in, Native API and the native app registrations in the intended Clerk instance. The desktop app uses `com.pokai.Codync`, iOS uses `com.pokai.Codync.ios`, with their matching `://callback` URLs. Dashboard configuration and actual OAuth consent must be verified independently of the checked-in plist. Do not bundle Clerk secret keys.
+Confirm Apple, Google and GitHub sign-in, Native API and the native app registrations in the intended Clerk instance. The desktop app uses `com.pokai.Codync`, iOS uses `com.pokai.Codync.ios`, with their matching `://callback` URLs. Dashboard configuration and actual OAuth consent must be verified independently of the checked-in plist. Do not bundle Clerk secret keys.
+
+### GitHub sign-in
+
+**Continue with GitHub** sits under Google on every sign-in surface (welcome, account menu, custom icon dialog; desktop Settings → General → Account). It is Clerk's built-in GitHub connection, run like Google: `oauth_github` through the system browser on the desktop, `clerk.auth.signInWithOAuth(provider: .github)` on iOS, `OAuthProvider.GITHUB` on Android. GitHub gives Clerk the account's verified email, so nothing in `cloud/` changes. The development instance can use Clerk's shared credentials; production needs a GitHub OAuth App (GitHub → Settings → Developer settings → OAuth Apps) whose callback URL is the one Clerk shows under SSO connections → GitHub → Use custom credentials, with its Client ID and secret pasted there. Enable it in production before a release with the button ships.
 
 ### Desktop Sign in with Apple
 
 The welcome screen (`apps/desktop/src/renderer/views/AccountWelcomeView.tsx`) offers
-**Continue with Apple** and **Continue with Google**; **Settings → General → Account**
+**Continue with Apple**, **Continue with Google** and **Continue with GitHub**; **Settings → General → Account**
 has Sign out.
 
 On the desktop, `AccountService.signIn('apple')` starts Clerk's `oauth_apple` sign-in
@@ -68,9 +72,9 @@ still need to be checked on a release build.
 ### iOS Sign in with Apple
 
 The welcome, pairing and account screens offer **Continue with Apple** alongside
-Google, with matching headline typography and button sizing. Apple's native
+Google and GitHub, with matching headline typography and button sizing. Apple's native
 authorization is presented by Clerk. Adding another account lets the user choose
-either provider. `AccountSession.signIn(provider: .apple)` calls
+any provider. `AccountSession.signIn(provider: .apple)` calls
 `clerk.auth.signInWithApple()`; Clerk owns Apple's credential exchange, new-user
 transfer, session activation and persistence. Cancellation is silent and
 incomplete sign-in/sign-up results remain explicit errors.
@@ -103,9 +107,19 @@ returning-user login, cancellation, restoration, account switching and sign-out
 on a real device before release. Build success and enabled dashboard settings do
 not prove that an Apple authorization completed successfully.
 
-QR pairing does not require matching email addresses or even a signed-in computer.
-The iPhone's scan step always offers **Skip**, including when signed out or when
-the account has no computers. Skipping finishes onboarding and opens the main
+Signing in is optional on the phone and the desktop app ([optional sign-in](../plans/optional-sign-in.md)).
+A signed-in phone proves its account with a device certificate from the cloud (or a self-hosted cloud, with
+`CODYNC_DEVICE_CERT_KEY` on the host). A signed-out phone, and any phone in a build without Clerk, pairs without one,
+only with a computer in no account and only directly. A computer in an account lets in phones of that account only
+(phase 2, below). First-run setup on the phones waits for the account's answer, then starts
+from it. With computers in the account, the first page lists them (**Ask for access**: nothing
+is requested until the tap, since the user may be here to set up another computer) next to
+**Pair a new computer**, which leads to the install page. With none, or only older copies, setup
+goes straight to the install page. That page has a button that copies the website's link,
+to open on the computer. A computer that joins the account meanwhile brings up the first page the next
+time the app is opened, unless the user already chose to pair or moved on to scanning. Only
+reaching a computer or **Skip** finishes setup. The first page and the scan step always offer
+**Skip**. Skipping finishes onboarding and opens the main
 tabs; this choice survives relaunches and account changes. The empty Bots screen
 offers **Computers** to pair later. Skipping while adding a computer from settings
 only closes that pairing sheet. It does not grant access to a computer or change
@@ -121,10 +135,16 @@ and phones and the desktop app see it as an older copy once the new one is reach
 joined the account) and offer to remove it; pair again or ask for access to reach the new one.
 
 On the computer, open Codync in the menu bar and choose **Pair iPhone…**, then scan the
-code on the phone (or paste its `codync://pair` link). The host approves the phone's
-device key; the phone saves the computer in its current account context. This
-works when the phone uses Apple Hide My Email and the computer uses Google. Automatic
-account discovery, in contrast, requires the same Clerk user ID on both devices.
+code on the phone (or paste its `codync://pair` link, or type the short code
+`codync-host pair` prints). The phone sends a device certificate from the cloud with
+`pair`, and the host checks it offline: a computer in an account lets in phones of that
+Clerk user only and turns others away with the owner's masked email (*k•••@gmail.com*);
+a computer in no account asks first (desktop dialog, terminal UI, `codync-host pair`,
+or `codync-host access approve <code>`), both showing the same 6-digit code, then joins
+the phone's account. Apple Hide My Email and Google are different Clerk users, so a phone
+on Hide My Email doesn't pair with a computer whose desktop app uses Google: that
+refusal is correct, not a regression. Account discovery likewise requires the same
+Clerk user ID on both devices.
 
 On 2026-09-30, the production dashboard confirmed a successful Apple registration
 with a private relay address. The subsequent native `/v1/devices` and
@@ -160,12 +180,12 @@ computer approves each device after comparing a 6-digit code
   desktop app with `npm run dev` in `apps/desktop/`.
 - Open the account menu from either sidebar layout; test arrows, Return, Escape
   and clicking outside the panel.
-- Sign in with Apple and Google test users, verify the avatar/email, restart the app and
+- Sign in with Apple, Google and GitHub test users, verify the avatar/email, restart the app and
   verify session restoration, then log out and verify the anonymous state.
 - Cancel the browser flow and verify no error; retry with networking unavailable
   and verify that the application stays usable.
 
-Dashboard creation and the end-to-end Apple/Google flows require the user's browser
+Dashboard creation and the end-to-end Apple/Google/GitHub flows require the user's browser
 consent; compilation alone does not verify those steps.
 
 References:
@@ -183,17 +203,25 @@ instance with bundle ID `com.pokai.Codync.ios` and its own callback
 `apps/shared/Config/<env>.plist`. The repository configuration does not prove
 that the corresponding Clerk Dashboard registration has been completed.
 
-To retain several accounts at once, enable multi-session support in the Clerk
-instance. The UI reads `authConfig.singleSessionMode`: with multi-session enabled,
+Both Clerk instances stay single-session: why, and what has to change before
+multi-session is turned on, is in
+[accounts on a phone](../architecture/connections.md#accounts-on-a-phone).
+The UI reads `authConfig.singleSessionMode`: with multi-session enabled,
 it lists active SDK sessions and switches with `auth.setActive(sessionId:)`; with
 single-session enabled, it asks the user to sign out before using another account.
 Signing out passes the current session ID, rather than signing out all accounts.
 
 Computers, device keys and caches are partitioned by the Clerk user ID on this
-iPhone (`SharedStore.Context`). Computers paired with a code while signed out stay
-in the local context and are not claimed by a newly signed-in user. Each account
-context gets its own `AccountStore`, retired when changing accounts; signing out
-erases that account's computers, device and push keys and caches from the iPhone.
+iPhone (`SharedStore.Context`). Computers paired with a code while signed out
+(before sign-in was required) move into the first account used on the phone:
+with the device and push keys when that account's context is new on the phone,
+otherwise as computers to pair again. Each account context gets its own
+`AccountStore`, retired when changing accounts; once Clerk has signed out,
+signing out keeps the account's device key, computers and caches and only stops
+its alerts (`unregisterDevice` on reachable computers, `POST /v1/devices/sign-out`
+on a token taken before). **Start over** and **Delete account** (which deletes the
+Clerk user first) hand the key back (`forgetDevice`, the cloud revokes the device)
+and erase the data.
 Signed in, the Computers screen also lists the account's computers from the cloud;
 asking one for access shows the 6-digit code to compare on the computer.
 
@@ -211,18 +239,21 @@ directly (the encrypted channel wasn't ported to the desktop app), so their
 confirmed first), so a computer that was reset or given away can be cleaned up even when its
 name changed. Offline may only mean asleep, so the dialog says what removal does: account-approved
 devices lose access, and the computer's own app doesn't add it back by itself. The phones have no
-such action: adding a computer to the account or removing it is desktop-only, and phones manage
-only their own access (pair or forget, revoke, ask). See [desktop app](../architecture/desktop-app.md).
+such action: removing a computer from the account takes the desktop app (or `codync-host cloud --leave`
+on that computer), and phones manage only their own access (pair or forget, revoke, ask). See [desktop app](../architecture/desktop-app.md).
 
 **Computers & devices** (Settings) shows, for this computer and each SSH computer:
-*Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud),
+*Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud; when the host's
+`cloudStatus` says `joinsAccountOnEnable`, read from what it saved since the status names no owner or
+relay with the cloud off, turning it on first asks: *Add to account* turns it on too, *Use your own
+relay* turns it on and keeps this identity from being asked about (`keptOutOfAccount`) until the address is saved; older hosts just turn on),
 *Relay address* and, for a private relay, a write-only *Relay token* (`setCloudUrl`; the
 host's `cloudStatus` says `relay: "private"` and `tokenSet`, and there the account rows are hidden
-and auto-claim never runs), *Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and
+and nothing asks about an account), *Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and
 *Remove from account* (`unclaim`), a pairing QR, and, for this computer only, the computers it can use (its SSH computers, each with its own settings) and the devices that can use it, with revoke.
-Signed in, this computer joins the account on its own once per host identity; an identity
-that was already in the account and was removed (here or from a phone) is never re-added
-silently, only through *Add to account*. Signed in with a different account than the one this
+Signed in, the app asks once per host identity whether to add this computer to the account
+(`JoinAccountPrompt`, `lib/join-offer.ts`); an identity that was already in the account and was
+removed (here or from a phone) isn't asked about again, only added through *Add to account*. Signed in with a different account than the one this
 computer is in, the app asks once to move it (`mayOfferMove`): *Move here* leaves the old account
 (`unclaim`, which revokes that account's grants) and claims it for this one; *Keep it there* is
 remembered for this account (`keptOutOfAccount`). Out of an account, by any path, the host turns
@@ -248,6 +279,14 @@ so development sandboxes stay separate. Windows inspects native OpenSSH
 processes and terminates only tunnels whose executable and quoted known-hosts
 path match this app. It uses Windows' OpenSSH Client feature and the device's
 existing SSH config and agent.
+
+A computer without the host shows *Install* on its card (production app only; there is no
+released development host): two SSH commands from `main/ssh-command.ts`, the released
+host into `~/.local/bin` (`packaging/install.sh --host-only`), then `codync-host install`
+on the profile's port. On Linux that step also turns on linger without sudo when it can;
+when it can't, the card shows the one `sudo loginctl enable-linger "$USER"` command. Once
+the installed computer connects, the app asks whether to add it to the account when it is signed in
+and the computer is in no account and not on a private relay (`CloudModel.joinAfterInstall`).
 
 *Over SSH* also offers the `Host` entries of `~/.ssh/config` and the files it `Include`s
 (`main/ssh-config.ts`, parser in `shared/ssh-config.ts`): named hosts only, not patterns, `Match`

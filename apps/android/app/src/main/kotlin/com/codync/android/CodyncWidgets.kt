@@ -164,7 +164,7 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
     val top = provider.tightest
     Column(GlanceModifier.fillMaxSize()) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            val logo = agentIconRes(provider.registry)
+            val logo = agentIconRes(provider.logoRegistry)
             if (WidgetStore.originalIcons(context) && logo != null) Image(ImageProvider(logo), provider.name, GlanceModifier.size(22.dp),
                 colorFilter = ColorFilter.tint(if (provider.id == "claude") ColorProvider(day = Color(0xFFD97757), night = Color(0xFFD97757)) else ink))
             else Face(context, if (provider.id == "codex") "hex" else "blob", "gray", 22.dp,

@@ -17,7 +17,7 @@ import kotlin.coroutines.coroutineContext
 
 /** Copies provider streams into this account's private storage before it owns a send. */
 class AttachmentFiles(private val context: Context, private val directory: File) {
-    private val outgoing = File(directory, "outgoing").apply { mkdirs() }
+    private val outgoing = outgoingFolder(directory).apply { mkdirs() }
     private val downloads = File(directory, "attachments").apply { mkdirs() }
 
     suspend fun import(uri: Uri): OutgoingFile = withContext(Dispatchers.IO) {
@@ -65,8 +65,7 @@ class AttachmentFiles(private val context: Context, private val directory: File)
     }
 
     fun discard(file: OutgoingFile) {
-        val path = File(file.path)
-        if (path.parentFile?.canonicalFile == outgoing.canonicalFile) path.delete()
+        if (inOutgoing(directory, file.path)) File(file.path).delete()
     }
     fun retainPending(files: List<OutgoingFile>) {
         val paths = files.map { File(it.path).canonicalPath }.toSet()
@@ -107,6 +106,14 @@ class AttachmentFiles(private val context: Context, private val directory: File)
     }
 
     companion object {
+        /** Where account folder [directory] keeps the files its drafts and queued messages send. */
+        fun outgoingFolder(directory: File) = File(directory, "outgoing")
+        fun inOutgoing(directory: File, path: String) = File(path).canonicalFile.parentFile == outgoingFolder(directory).canonicalFile
+
+        /** [file] saved in account folder [from], pointed at its copy in [to] (`LocalStore.adopt`); others stay as they are. */
+        fun moved(file: OutgoingFile, from: File, to: File): OutgoingFile =
+            if (inOutgoing(from, file.path)) file.copy(path = File(outgoingFolder(to), File(file.path).name).path) else file
+
         fun cleanName(value: String): String {
             val name = value.substringAfterLast('/').substringAfterLast('\\').trim().trimStart('.').filter { !it.isISOControl() }
             val usable = name.ifBlank { "file" }

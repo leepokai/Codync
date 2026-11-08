@@ -339,7 +339,7 @@ fn hidden_models_are_saved_and_forgotten() {
     let store = Store::open(std::path::Path::new(":memory:")).expect("store");
     set_hidden(&store, "claude", "m1", true).expect("hide");
     assert_eq!(hidden(&store, "claude"), ["m1"]);
-    assert!(hidden(&store, "codex").is_empty());
+    assert_eq!(hidden(&store, "codex"), Vec::<String>::new());
     set_hidden(&store, "claude", "m1", false).expect("show");
-    assert!(hidden(&store, "claude").is_empty());
+    assert_eq!(hidden(&store, "claude"), Vec::<String>::new());
 }

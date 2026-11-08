@@ -336,8 +336,7 @@ impl Monitor {
                 growth.push((agent.bot_id.clone(), agent.pid, agent.rss, verdict));
             }
         }
-        let free_pct =
-            if reading.disk_total == 0 { 100 } else { reading.disk_free.saturating_mul(100) / reading.disk_total };
+        let free_pct = reading.disk_free.saturating_mul(100).checked_div(reading.disk_total).unwrap_or(100);
         // Warn at 10 % free, and stop saying so only once 12 % is free again.
         let disk_low = if state.disk_low { free_pct <= 12 } else { free_pct <= 10 };
         let disk = (disk_low != state.disk_low).then_some(disk_low);

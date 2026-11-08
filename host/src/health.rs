@@ -239,6 +239,8 @@ struct State {
     thresholds: Thresholds,
     last: Option<Snapshot>,
     tracks: HashMap<u32, Track>,
+    /// The disk was low on the previous sample: keeps an episode from adding a line per reading.
+    disk_low: bool,
 }
 
 /// What a sample found that the host must act on.
@@ -247,6 +249,8 @@ pub struct Findings {
     /// The level changed from the first to the second.
     pub level_changed: Option<(Level, Level)>,
     pub growth: Vec<(String, u32, u64, Growth)>,
+    /// The disk crossed into or out of being low (`true` is low).
+    pub disk: Option<bool>,
 }
 
 pub struct Monitor {
@@ -258,7 +262,13 @@ impl Monitor {
     pub fn new(source: Box<dyn Source>, thresholds: Thresholds) -> Self {
         Self {
             source: Mutex::new(source),
-            state: Mutex::new(State { agents: HashMap::new(), thresholds, last: None, tracks: HashMap::new() }),
+            state: Mutex::new(State {
+                agents: HashMap::new(),
+                thresholds,
+                last: None,
+                tracks: HashMap::new(),
+                disk_low: false,
+            }),
         }
     }
 
@@ -326,8 +336,14 @@ impl Monitor {
                 growth.push((agent.bot_id.clone(), agent.pid, agent.rss, verdict));
             }
         }
+        let free_pct =
+            if reading.disk_total == 0 { 100 } else { reading.disk_free.saturating_mul(100) / reading.disk_total };
+        // Warn at 10 % free, and stop saying so only once 12 % is free again.
+        let disk_low = if state.disk_low { free_pct <= 12 } else { free_pct <= 10 };
+        let disk = (disk_low != state.disk_low).then_some(disk_low);
+        state.disk_low = disk_low;
         state.last = Some(Snapshot { reading, ram_used_percent: used, level, thresholds, at: now });
-        Findings { level_changed: (level != before).then_some((before, level)), growth }
+        Findings { level_changed: (level != before).then_some((before, level)), growth, disk }
     }
 
     /// The last reading, for the screens.
@@ -464,6 +480,22 @@ fn act(hub: &Arc<Hub>, findings: &Findings) {
             for bot in &working {
                 let _ = hub.send_cmd(bot, Cmd::FreeMemory);
             }
+        }
+    }
+    if let Some(low) = findings.disk {
+        let free = gib(snapshot.reading.disk_free);
+        for bot in &working {
+            let (text, style) = if low {
+                (
+                    format!(
+                        "This computer's disk is almost full ({free} free). Free space, or saving and agent work may fail."
+                    ),
+                    NoticeStyle::Error,
+                )
+            } else {
+                (format!("This computer's disk has room again ({free} free)."), NoticeStyle::Info)
+            };
+            say(hub, bot, &text, style);
         }
     }
     for (bot, _, rss, growth) in &findings.growth {

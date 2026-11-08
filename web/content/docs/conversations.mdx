@@ -150,6 +150,10 @@ You don't get one when:
 
 Routine runs notify you too. A group chat sends one "done" once its bots have finished answering your message.
 
+## Computer health
+
+When the computer's memory or disk gets tight, the chats of the bots that are working say so. From **85 %** of memory (70 % is the warning) Codync stops starting new turns and frees idle agents until it recovers. When less than **10 %** of the disk is free, it says how much is left, since saving and agent work can fail; the line turns into a recovery line once 12 % is free again.
+
 If system notification permission is off, **Push notifications** in **Manage computers** shows **Turn on notifications in Settings** instead of a switch. Tap it to allow notifications, or open iOS Settings if you previously denied permission. Returning to Codync refreshes the status in both Settings and Computer management. Your saved preference for that computer stays unchanged.
 
 To turn notifications off on the iPhone, tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and switch off **Push notifications** on the computer whose alerts you don't want; each computer has its own switch. Previews, sounds and Focus follow your iOS settings. The push relay and Apple see only a generic line ("Your task is complete. Open Codync to read the result.") plus routing IDs. The bot's name and the message text are encrypted to your iPhone's key and decrypted on the phone. See [Privacy](/docs/privacy).

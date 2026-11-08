@@ -25,6 +25,13 @@ impl Simulated {
         reading.agents.retain(|a| a.pid != pid);
         reading.agents.push(AgentUse { bot_id: bot.into(), pid, rss });
     }
+
+    /// The disk with `free_percent` of its space left.
+    fn disk(&self, free_percent: u64) {
+        let mut reading = self.0.locked();
+        reading.disk_total = 100 * GB;
+        reading.disk_free = free_percent * GB;
+    }
 }
 
 impl Source for Simulated {
@@ -38,6 +45,21 @@ impl Source for Simulated {
 
 fn monitor(simulated: &Simulated) -> Monitor {
     Monitor::new(Box::new(simulated.clone()), Thresholds::DEFAULT)
+}
+
+#[test]
+fn a_low_disk_is_said_once_and_recovered_once() {
+    let simulated = Simulated::default();
+    let monitor = monitor(&simulated);
+    simulated.memory(10);
+    simulated.disk(50);
+    assert_eq!(monitor.sample(1).disk, None, "plenty of room says nothing");
+    simulated.disk(5);
+    assert_eq!(monitor.sample(2).disk, Some(true));
+    simulated.disk(6);
+    assert_eq!(monitor.sample(3).disk, None, "an episode is not repeated every sample");
+    simulated.disk(20);
+    assert_eq!(monitor.sample(4).disk, Some(false));
 }
 
 #[test]

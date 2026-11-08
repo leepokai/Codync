@@ -1883,5 +1883,20 @@
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "Questo account ha già una propria chiave su questo telefono. Scansiona di nuovo il codice di ogni computer associato senza account; i tuoi messaggi restano.",
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} vuole usare questo computer, che poi entra nell'account di {email}.",
   "Sign in there with {email} and add it to your account, and it shows up here.": "Accedi lì con {email} e aggiungilo al tuo account: comparirà qui.",
-  "Scan with the Codync app or the iPhone Camera.": "Scansiona con l'app Codync o la fotocamera dell'iPhone."
+  "Scan with the Codync app or the iPhone Camera.": "Scansiona con l'app Codync o la fotocamera dell'iPhone.",
+  "Phones paired without this account lose access and must pair again.": "I telefoni associati senza questo account perdono l'accesso e devono essere associati di nuovo.",
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "I file di questo messaggio non sono più su questo dispositivo. Eliminalo e allega di nuovo i file.",
+  "Summarize long chats": "Riassunto delle chat lunghe",
+  "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.": "«Automatico» lascia fare all’agente, che riassume quando la chat è piena. Con le altre scelte Codync lo fa prima.",
+  "Early": "Presto",
+  "Near the limit": "Vicino al limite",
+  "Set a size": "Imposta una dimensione",
+  "Sizes show after the bot's next reply": "Le dimensioni compaiono dopo la prossima risposta del bot",
+  "Auto (default)": "Automatico (predefinito)",
+  "Summarize": "Riassunti",
+  "Claude Code and Codex bots only": "Solo per i bot di Claude Code e Codex",
+  "Custom size…": "Dimensione personalizzata…",
+  "Custom size": "Dimensione personalizzata",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "In migliaia di token, arrotondato a 10K, fino a quanto il modello può contenere.",
+  "Or type a size in K:": "Oppure digita una dimensione in K:"
 }

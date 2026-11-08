@@ -1883,5 +1883,20 @@
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "Dieses Konto hat auf diesem Telefon bereits einen eigenen Schlüssel. Scanne den Code jedes Computers erneut, den du ohne Konto gekoppelt hast. Deine Nachrichten bleiben erhalten.",
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} möchte diesen Computer verwenden, der dann dem Konto von {email} beitritt.",
   "Sign in there with {email} and add it to your account, and it shows up here.": "Melde dich dort mit {email} an und füge ihn deinem Konto hinzu, dann erscheint er hier.",
-  "Scan with the Codync app or the iPhone Camera.": "Scanne mit der Codync-App oder der iPhone-Kamera."
+  "Scan with the Codync app or the iPhone Camera.": "Scanne mit der Codync-App oder der iPhone-Kamera.",
+  "Phones paired without this account lose access and must pair again.": "Nicht mit diesem Konto gekoppelte Telefone verlieren den Zugriff und müssen neu gekoppelt werden.",
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "Die Dateien dieser Nachricht sind nicht mehr auf diesem Gerät. Lösche sie und hänge die Dateien erneut an.",
+  "Summarize long chats": "Lange Chats zusammenfassen",
+  "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.": "„Automatisch“ überlässt es dem Agenten, der zusammenfasst, sobald der Chat voll ist. Bei den anderen tut Codync es früher.",
+  "Early": "Früh",
+  "Near the limit": "Kurz vor dem Limit",
+  "Set a size": "Größe festlegen",
+  "Sizes show after the bot's next reply": "Größen erscheinen nach der nächsten Antwort des Bots",
+  "Auto (default)": "Automatisch (Standard)",
+  "Summarize": "Verdichten",
+  "Claude Code and Codex bots only": "Nur für Claude-Code- und Codex-Bots",
+  "Custom size…": "Eigene Größe…",
+  "Custom size": "Eigene Größe",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "In Tausend Tokens, auf 10K gerundet, bis zu dem, was das Modell fasst.",
+  "Or type a size in K:": "Oder eine Größe in K eingeben:"
 }

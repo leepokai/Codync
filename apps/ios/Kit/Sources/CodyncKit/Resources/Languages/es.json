@@ -1883,5 +1883,20 @@
   "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept.": "Esta cuenta ya tiene su propia clave en este teléfono. Vuelve a escanear el código de cada ordenador que emparejaste sin cuenta; tus mensajes se conservan.",
   "{email} wants to use this computer, which then joins {email}'s account.": "{email} quiere usar este ordenador, que luego se une a la cuenta de {email}.",
   "Sign in there with {email} and add it to your account, and it shows up here.": "Inicia sesión allí con {email} y añádelo a tu cuenta, y aparecerá aquí.",
-  "Scan with the Codync app or the iPhone Camera.": "Escanea con la app de Codync o la cámara del iPhone."
+  "Scan with the Codync app or the iPhone Camera.": "Escanea con la app de Codync o la cámara del iPhone.",
+  "Phones paired without this account lose access and must pair again.": "Los teléfonos emparejados sin esta cuenta pierden el acceso y deben emparejarse de nuevo.",
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "Los archivos de este mensaje ya no están en este dispositivo. Elimínalo y vuelve a adjuntarlos.",
+  "Summarize long chats": "Resumir chats largos",
+  "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.": "«Automático» lo deja en manos del agente, que resume cuando el chat se llena. Con las demás, Codync lo hace antes.",
+  "Early": "Pronto",
+  "Near the limit": "Cerca del límite",
+  "Set a size": "Elegir un tamaño",
+  "Sizes show after the bot's next reply": "Los tamaños aparecen tras la próxima respuesta del bot",
+  "Auto (default)": "Automático (predeterminado)",
+  "Summarize": "Resumir",
+  "Claude Code and Codex bots only": "Solo para bots de Claude Code y Codex",
+  "Custom size…": "Tamaño personalizado…",
+  "Custom size": "Tamaño personalizado",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "En miles de tokens, redondeado a 10K, hasta lo que admite el modelo.",
+  "Or type a size in K:": "O escribe un tamaño en K:"
 }

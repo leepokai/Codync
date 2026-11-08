@@ -10,6 +10,8 @@
     "event:bot.bot.avatarShape": "string",
     "event:bot.bot.backend": "string",
     "event:bot.bot.command": "string",
+    "event:bot.bot.compaction": "null",
+    "event:bot.bot.compactionTokens": "null",
     "event:bot.bot.computer": "bool",
     "event:bot.bot.connectors": "array",
     "event:bot.bot.createdAt": "number",

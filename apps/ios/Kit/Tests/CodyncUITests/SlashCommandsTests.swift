@@ -67,6 +67,18 @@ private let installed = [("pdf", "PDF"), ("code-review", "Code Review"), ("xlsx"
     #expect(SlashCommands.builtIn(for: try bot(#"{"id":"b","fastModeSupport":"unsupported"}"#), draft: "/fast") == nil, "without Fast mode it reaches the agent")
 }
 
+@Test func aMentionStartsAfterASpaceAndAFullNameEndsIt() throws {
+    let members = [try bot(#"{"id":"a","name":"Alpha"}"#), try bot(#"{"id":"t","name":"Alpha Two"}"#)]
+    #expect(mentionQuery("@", members: members) == "")
+    #expect(mentionQuery("hi @Re", members: members) == "Re")
+    #expect(mentionQuery("mail@host", members: members) == nil)
+    #expect(mentionQuery("@" + String(repeating: "x", count: 25), members: members) == nil)
+    #expect(mentionQuery("@Alpha\nnext", members: members) == nil)
+    #expect(mentionQuery("meet @ home", members: members) == nil, "an @ and a space is ordinary text")
+    #expect(mentionQuery("@alpha ", members: members) == nil)
+    #expect(mentionQuery("@Alpha T", members: members) == "Alpha T", "a longer name can still be typed")
+}
+
 @MainActor @Test func theCommandListHugsItsRowsAndScrollsPastItsCap() {
     func height(_ count: Int) -> CGFloat {
         let commands = (0..<count).map {

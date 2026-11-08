@@ -289,7 +289,8 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
         title={tr('Add {name} to your account first').replaceAll('{name}', () => name)}
         message={withJoinRemoves(tr, tr('Your phone reaches {name} from anywhere through your account. Adding it also turns this on.').replaceAll('{name}', () => name), joinRemoves)}
         actions={[
-          { title: 'Add to account', action: () => void run(() => app.cloud.addFromReach(store)) },
+          // Not before it says which phones this removes.
+          { title: 'Add to account', disabled: joinRemoves === undefined, action: () => void run(() => app.cloud.addFromReach(store)) },
           { title: 'Use your own relay', action: () => void run(() => app.cloud.useOwnRelay(store)) },
         ]}
         onCancel={() => analytics.track({ event: 'reach_account_answered', outcome: 'cancelled' })}

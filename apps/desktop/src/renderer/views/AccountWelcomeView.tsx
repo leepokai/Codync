@@ -80,7 +80,7 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   return (
     <div className="welcome">
       <VStack className="welcome-column">
-        {/* The way forward stays on screen at any size: the pitch above it gives way (account-welcome.css). */}
+        {/* The way forward stays on screen at any size: the pitch scrolls above it in a short window (account-welcome.css). */}
         <VStack className="welcome-pitch">
           <Spacer min={24} />
           <WelcomeCrew shown={beat >= 1} />
@@ -97,14 +97,16 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
           <ProviderButton provider="apple" mark={<Icon name="apple.logo" size={20} />} title="Continue with Apple" />
           <ProviderButton provider="google" kind="secondary" mark={<img src={googleLogo} alt="" width={20} height={20} />} title="Continue with Google" />
           <ProviderButton provider="github" kind="secondary" mark={<Icon name="github.logo" size={20} />} title="Continue with GitHub" />
-          <Button kind="secondary" onClick={onContinue} className="welcome-button">
-            {account.isConfigured ? (
+          {account.isConfigured ? (
+            <button className="welcome-continue" onClick={onContinue}>
               <VStack as="span" align="center" gap={2}>
-                <Text size="subheadline" weight="medium">{tr('Continue without an account')}</Text>
-                <Text size="caption" weight="regular" className="welcome-continue-note">{tr('Phones then connect only over Wi-Fi or Tailscale.')}</Text>
+                <Text size="footnote" weight="medium">{tr('Continue without an account')}</Text>
+                <Text size="caption2" tone="secondary">{tr('Phones then connect only over Wi-Fi or Tailscale.')}</Text>
               </VStack>
-            ) : onThis}
-          </Button>
+            </button>
+          ) : (
+            <Button kind="secondary" onClick={onContinue} className="welcome-button">{onThis}</Button>
+          )}
           {!account.isConfigured ? (
             <Text as="div" size="footnote" tone="tertiary">{tr(deviceName === 'Mac' ? "Sign-in isn't configured in this build. You can still use Codync on this Mac." : "Sign-in isn't configured in this build. You can still use Codync on this computer.")}</Text>
           ) : null}

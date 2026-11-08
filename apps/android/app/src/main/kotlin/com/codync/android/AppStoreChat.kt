@@ -96,8 +96,7 @@ fun AppStore.discard(send: PendingSend) = action("discard:" + send.nonce) {
     refresh()
 }
 fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
-    if (state.value.computer.cloud == null) {
-        // No relay holds it: it only waits on this phone.
+    if (discardsOnPhone(state.value.computer.cloud, send.status)) {
         withContext(Dispatchers.IO) { requireNotNull(database).discard(send.nonce) }
         refresh()
         return@action
@@ -161,7 +160,7 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
 
 /** A send that failed. With no relay holding it, a message waits here until the computer can be reached (`reconcileMailbox`). */
 internal fun afterFailure(send: PendingSend, cloud: String?, error: Exception): PendingSend =
-    if (cloud == null && error is IOException && error !is HostError) send.copy(status = SendStatus.Waiting)
+    if (cloud == null && error is IOException && error !is HostError) send.copy(status = SendStatus.Held)
     else send.copy(status = SendStatus.Failed, error = error.message ?: "Couldn't send.")
 
 /** Can't reach a computer with no relay: text waits on this phone until it can (iOS `BotStore.holdsOnPhone`). */
@@ -170,6 +169,9 @@ internal fun holdsOnPhone(cloud: String?, link: LinkState): Boolean = cloud == n
     is LinkState.Failed -> link.status !in listOf(403, 426)
     else -> false
 }
+
+/** No relay holds it, so taking it back touches only this phone (iOS `BotStore.cancelQueued`). */
+internal fun discardsOnPhone(cloud: String?, status: SendStatus): Boolean = cloud == null || status == SendStatus.Held
 
 internal suspend fun AppStore.savePending(send: PendingSend) {
     withContext(Dispatchers.IO) { requireNotNull(database).save(send) }

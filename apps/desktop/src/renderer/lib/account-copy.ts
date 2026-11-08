@@ -12,9 +12,9 @@ export function joinRemovesText(tr: Tr, names: readonly string[] | null | undefi
   return names?.length ? fill(tr('These phones lose access and must pair again: {names}.'), { names: names.join(', ') }) : ''
 }
 
-/** `text`, then the phones a join removes. */
+/** `text`, then the phones a join removes. `null`: the computer couldn't say, so the warning stays general. */
 export const withJoinRemoves = (tr: Tr, text: string, names: readonly string[] | null | undefined) =>
-  [text, joinRemovesText(tr, names)].filter(Boolean).join(' ')
+  [text, names === null ? tr('Phones paired without this account lose access and must pair again.') : joinRemovesText(tr, names)].filter(Boolean).join(' ')
 
 /**
  * A phone scanned a computer in no account, or a paired phone asks to add it to its account. A signed-in phone may

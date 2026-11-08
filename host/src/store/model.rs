@@ -146,6 +146,10 @@ pub struct BotConfig {
     /// it got it sends `null` where there is no switch.
     #[serde(default, deserialize_with = "null_as_false")]
     pub harness_memory: bool,
+    /// When Codync summarizes the bot's chat ahead of time (see `agent::bot::compaction`); only for an agent it can
+    /// ask to, and the apps show it only there. `null` and values from a newer app read as the default.
+    #[serde(default)]
+    pub compaction: codync_mem::compaction::Threshold,
     /// Created without a name: the host names it from its first conversations (see `naming`)
     /// until the user renames it.
     #[serde(default)]

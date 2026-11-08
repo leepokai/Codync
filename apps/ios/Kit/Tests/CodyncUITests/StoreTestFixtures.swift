@@ -156,7 +156,16 @@ actor FakeRemote: RemoteTransport {
         AsyncStream { c in Task { await self.addState(c) } }
     }
 
-    nonisolated func computerUpdates() -> AsyncStream<Computer> { AsyncStream { _ in } }
+    private var computerSinks: [AsyncStream<Computer>.Continuation] = []
+    private func addComputer(_ c: AsyncStream<Computer>.Continuation) { computerSinks.append(c) }
+    /// What the host's `hello` says about the computer, once the link is up.
+    func emit(_ computer: Computer) {
+        for s in computerSinks { s.yield(computer) }
+    }
+
+    nonisolated func computerUpdates() -> AsyncStream<Computer> {
+        AsyncStream { c in Task { await self.addComputer(c) } }
+    }
 
     private var enqueueError: (any Error)?
     /// Every later `enqueue` throws `error`.

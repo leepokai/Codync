@@ -7,6 +7,7 @@ import type { IslandRect, IslandScreen, IslandSummary } from './island'
 import type { VoiceKey, VoiceShortcut } from './voice-shortcut'
 import type { ErrorReport } from './error-report'
 import type { Appearance } from './appearance'
+import type { ToolId } from './tools'
 
 // The bridge between the main process (host lifecycle, loopback HTTP, tray, windows)
 // and the renderer (stores and UI). Exposed as `window.codync` by the preload script.
@@ -322,5 +323,16 @@ export interface CodyncBridge {
     gotoEditor(): Promise<void>
     /** The start page's "Open settings": the chat window shows Settings ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ n8n. */
     openSettings(): void
+  }
+  /** The bundled tools' windows (ComfyUI): the tool's own page, or this window's start page while the host brings it up. */
+  tools: {
+    /** Opens (or focuses) the tool's window, from the chat window. */
+    open(id: ToolId): Promise<void>
+    /** The start page calls it once the tool runs: the window then loads the tool. */
+    gotoEditor(id: ToolId): Promise<void>
+    /** Opens the tool's log file in the system's viewer. */
+    openLog(id: ToolId): Promise<void>
+    /** Opens the folder where the tool's models go. */
+    openModels(id: ToolId): Promise<void>
   }
 }

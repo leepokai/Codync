@@ -56,6 +56,7 @@ import './chat-window.css'
 import './sidebar-header.css'
 import { useOnboardingTelemetry } from './use-onboarding-telemetry'
 import { useTr } from '../lib/use-language'
+import { useTool } from '../lib/use-tool'
 
 
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
@@ -221,6 +222,8 @@ interface CreateTarget {
 }
 
 function ChatSplitView() {
+  // Only the rail's dot needs it, so a slow poll.
+  const comfyTool = useTool('comfy', true, 5000)
   const tr = useTr()
   const app = useApp()
   const ssh = useSSH()
@@ -431,6 +434,8 @@ function ChatSplitView() {
             onUsage={() => setSettings('usage')}
             onN8n={() => window.codync.n8n.open()}
             onBrowser={() => void window.codync.browser.open()}
+            onComfy={() => void window.codync.tools.open('comfy')}
+            comfy={comfyTool.state}
             onExtensions={openMarketplace}
             onSettings={() => setSettings('general')}
             onAccount={() => setShowAccount((s) => !s)}

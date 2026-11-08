@@ -24,6 +24,7 @@ import { JumpList } from './jump-list'
 import { registerCloud } from './cloud'
 import { registerN8n } from './n8n'
 import { registerBrowser } from './browser-window'
+import { registerToolWindows } from './tools-window'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
@@ -305,6 +306,7 @@ if (yieldsToInstall()) {
     registerSSHConfig()
     registerN8n(host, rendererURL, () => chat, () => send({ kind: 'openN8nSettings' }))
     registerBrowser(rendererURL, () => chat)
+    registerToolWindows(host, rendererURL, () => chat)
     // Calls use the microphone (realtime voice); nothing else asks for permissions.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())

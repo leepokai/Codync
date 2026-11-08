@@ -256,6 +256,24 @@ extension BotStore {
         answer(entry, "cancel") { try await $0.cancelTask(entryId: entry.id) }
     }
 
+    /// Moves a message waiting at the computer into the running turn instead of after it.
+    public func steerQueued(_ entry: Entry) {
+        perform { try await $0.steer(entryId: entry.id) }
+    }
+
+    /// Rewrites a waiting message; the agent reads it when its turn comes. Whether the computer took it.
+    @discardableResult
+    public func editQueued(_ entry: Entry, text: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return await attempt { try await $0.editQueued(entryId: entry.id, text: trimmed) }
+    }
+
+    /// Drops a waiting message: the agent never hears it.
+    public func deleteQueued(_ entry: Entry) {
+        perform { try await $0.deleteQueued(entryId: entry.id) }
+    }
+
     public func setFastMode(_ bot: Bot, _ fastMode: Bool) {
         var d = BotDraft(bot)
         d.fastMode = fastMode

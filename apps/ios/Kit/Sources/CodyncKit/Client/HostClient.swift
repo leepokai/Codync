@@ -250,6 +250,21 @@ public extension HostClient {
         let _: Empty = try await call("cancelTask", ["entryId": entryId])
     }
 
+    /// Hands a waiting message to the running turn instead of after it.
+    func steer(entryId: String) async throws {
+        let _: Empty = try await call("steer", ["entryId": entryId])
+    }
+
+    /// Rewrites a waiting message; the agent reads it when its turn comes.
+    func editQueued(entryId: String, text: String) async throws {
+        let _: Empty = try await call("editQueued", ["entryId": entryId, "text": text])
+    }
+
+    /// Drops a waiting message: the agent never hears it.
+    func deleteQueued(entryId: String) async throws {
+        let _: Empty = try await call("deleteQueued", ["entryId": entryId])
+    }
+
     /// Toggles the user's `emoji` reaction on a chat message.
     func react(entryId: String, emoji: String) async throws -> Entry {
         struct Res: Decodable { var entry: Entry }

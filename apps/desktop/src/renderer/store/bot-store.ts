@@ -357,6 +357,36 @@ export class BotStore extends BotSync {
     }
   }
 
+  /** Moves a waiting message into the running turn instead of after it; why not, when refused. */
+  async steer(entry: Entry): Promise<string | null> {
+    try {
+      await (await this.ready()).call('steer', { botId: entry.botId, entryId: entry.id })
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  /** Rewrites a waiting message; the agent reads it when its turn comes. */
+  async editQueued(entry: Entry, text: string): Promise<string | null> {
+    try {
+      await (await this.ready()).call('editQueued', { botId: entry.botId, entryId: entry.id, text })
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  /** Drops a waiting message: the agent never hears it. */
+  async deleteQueued(entry: Entry): Promise<string | null> {
+    try {
+      await (await this.ready()).call('deleteQueued', { botId: entry.botId, entryId: entry.id })
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
   /** Saves the user's version of a handoff that hasn't been sent; whether it did. */
   async editHandoff(entry: Entry, text: string) {
     try {

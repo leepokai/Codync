@@ -120,6 +120,22 @@ fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
     }
 }
 
+/** Moves a message waiting at the computer into the running turn instead of after it. */
+fun AppStore.steerQueued(entry: Entry) = action("steer:" + entry.id) {
+    ready().call("steer", body("botId" to entry.botId, "entryId" to entry.id))
+}
+
+/** Rewrites a waiting message; the agent reads it when its turn comes. */
+fun AppStore.editQueued(entry: Entry, text: String) = action("queued-edit:" + entry.id) {
+    require(text.isNotBlank()) { "A message can't be empty." }
+    ready().call("editQueued", body("botId" to entry.botId, "entryId" to entry.id, "text" to text.trim()))
+}
+
+/** Drops a waiting message: the agent never hears it. */
+fun AppStore.deleteQueued(entry: Entry) = action("queued-delete:" + entry.id) {
+    ready().call("deleteQueued", body("botId" to entry.botId, "entryId" to entry.id))
+}
+
 internal suspend fun AppStore.deliver(send: PendingSend) {
     if (!sends.add(send.nonce)) return
     try {

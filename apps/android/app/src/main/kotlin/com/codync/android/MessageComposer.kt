@@ -192,6 +192,11 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
         MentionChips(mentions, state.bots) { member -> text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ") }
     }
+    // The messages waiting behind the running turn, with what can be done with the next one.
+    val queued = state.queuedMessages(bot.id, thread)
+    var queueSheet by remember { mutableStateOf(false) }
+    QueuedStrip(queued, working && online, store) { queueSheet = true }
+    QueueSheetHost(queueSheet, queued, working && online, store) { queueSheet = false }
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp), verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DropdownMenu({ buildList {

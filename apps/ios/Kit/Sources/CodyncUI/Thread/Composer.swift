@@ -105,6 +105,10 @@ struct Composer: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            // The messages waiting behind the running turn, with what can be done with the next one.
+            if bot != nil {
+                QueuedMessages(botId: botId, thread: nil, working: working)
+            }
             field
         }
         .animation(Motion.layout, value: suggestions.map(\.id))

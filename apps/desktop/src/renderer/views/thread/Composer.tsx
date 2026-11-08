@@ -10,6 +10,7 @@ import { IconButton } from '../../components/Controls'
 import { RecordingPill } from '../../components/RecordingPill'
 import { Sheet, usePresence } from '../../components/Overlay'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
+import { QueuedStrip } from './QueuedStrip'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
@@ -244,6 +245,8 @@ function DestinationComposer({ botId, thread, reply, about, cancelReply, onCall,
           ))}
         </div>
       </ComposerReveal>
+      {/* The messages waiting behind the running turn, with what can be done with the next one. */}
+      <QueuedStrip botId={botId} thread={thread} />
       <div
         className="composer"
         onDragOver={(e) => {

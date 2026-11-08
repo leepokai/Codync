@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import { useEffect } from 'react'
 import './styles/theme.css'
 import { ChatWindow } from './views/ChatWindow'
 import { ScreenWindow } from './views/screen/ScreenWindow'
@@ -14,6 +15,8 @@ import { DemoBadge } from './views/DemoBadge'
 import { applyTextSize, prefs } from './lib/prefs'
 import { account } from './store/account'
 import { errorReport } from '@shared/error-report'
+import { resolvedLanguage } from './lib/l10n'
+import { useAppLanguage } from './lib/use-language'
 
 // Error tracking: this window's uncaught errors go to the host (shared/error-report.ts).
 const report = (error: unknown, mechanism: string) => window.codync.app.reportError(errorReport(error, 'desktop-renderer', mechanism))
@@ -24,6 +27,12 @@ window.addEventListener('unhandledrejection', (e) => report(e.reason, 'unhandled
 /** The chat window: the real model, or the demo's while the person tries it (the real one keeps running underneath). */
 function ChatRoot({ app }: { app: AppModel }) {
   const demo = useModel(demoMode).model
+  const language = useAppLanguage()
+  useEffect(() => {
+    const arabic = resolvedLanguage(language, navigator.language) === 'ar'
+    document.documentElement.dir = arabic ? 'rtl' : 'ltr'
+    document.documentElement.lang = arabic ? 'ar' : resolvedLanguage(language, navigator.language)
+  }, [language])
   return demo
     ? <AppContext.Provider value={demo}><ChatWindow key="demo" /><DemoBadge /></AppContext.Provider>
     : <AppContext.Provider value={app}><ChatWindow /></AppContext.Provider>

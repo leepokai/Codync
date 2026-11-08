@@ -20,7 +20,9 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.view.WindowCompat
 
 /** Keep these pairs aligned with CodyncKit/Design/Theme.swift; obeys manual theme via `Palette`. */
@@ -123,6 +125,11 @@ fun CodyncTheme(
         LocalUiDensity provides settings.density,
         LocalChatTextScale provides settings.chatTextScale,
         LocalCodyncHaptics provides haptics,
+        LocalLayoutDirection provides if (LocalAppLanguage.current.resolved(LocalSystemTag.current).rightToLeft) {
+            LayoutDirection.Rtl
+        } else {
+            LayoutDirection.Ltr
+        },
     ) {
         MaterialTheme(colorScheme = colors, typography = type) {
             CompositionLocalProvider(

@@ -1727,5 +1727,10 @@
   "Artifact": "아티팩트",
   "Close tab": "탭 닫기",
   "Channel picture": "채널 사진",
-  "Member faces": "멤버 얼굴"
+  "Member faces": "멤버 얼굴",
+  "Theme palette": "테마 팔레트",
+  "Put JSON palettes in the theme folder and pick one here. The window follows each change while it is open.": "테마 폴더에 JSON 팔레트를 넣고 여기서 고르세요. 창이 열려 있는 동안 변경을 따릅니다.",
+  "None": "없음",
+  "No palette files yet.": "아직 팔레트 파일이 없습니다.",
+  "Use the app colors": "앱 색상 사용"
 }

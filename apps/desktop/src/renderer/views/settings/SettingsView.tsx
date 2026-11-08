@@ -21,6 +21,7 @@ import { ComputersView } from './ComputersView'
 import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
 import { UsageLimits } from './UsageLimits'
+import { ThemePaletteSection } from './ThemePaletteSection'
 import { WeekSummaryView } from './WeekSummaryView'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
@@ -206,6 +207,7 @@ function GeneralSettings() {
           Compact sidebar
         </Switch>
       </CardSection>
+      <ThemePaletteSection />
       <CardSection
         title="Language"
         footer="Choose the language for this device. Unsupported system languages use English."

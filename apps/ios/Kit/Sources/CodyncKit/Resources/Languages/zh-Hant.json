@@ -1727,5 +1727,10 @@
   "Artifact": "產物",
   "Close tab": "關閉分頁",
   "Channel picture": "頻道圖片",
-  "Member faces": "成員面孔"
+  "Member faces": "成員面孔",
+  "Theme palette": "主題調色盤",
+  "Put JSON palettes in the theme folder and pick one here. The window follows each change while it is open.": "把 JSON 調色盤放進主題資料夾並在此選擇。視窗開啟時會跟隨每次變更。",
+  "None": "無",
+  "No palette files yet.": "還沒有調色盤檔案。",
+  "Use the app colors": "使用應用程式顏色"
 }

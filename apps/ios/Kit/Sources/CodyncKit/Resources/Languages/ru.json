@@ -1727,5 +1727,10 @@
   "Artifact": "Артефакт",
   "Close tab": "Закрыть вкладку",
   "Channel picture": "Картинка канала",
-  "Member faces": "Лица участников"
+  "Member faces": "Лица участников",
+  "Theme palette": "Палитра темы",
+  "Put JSON palettes in the theme folder and pick one here. The window follows each change while it is open.": "Положите JSON-палитры в папку тем и выберите здесь. Окно следует за каждым изменением, пока открыто.",
+  "None": "Нет",
+  "No palette files yet.": "Файлов палитры пока нет.",
+  "Use the app colors": "Использовать цвета приложения"
 }

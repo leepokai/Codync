@@ -1727,5 +1727,10 @@
   "Artifact": "Artefato",
   "Close tab": "Fechar aba",
   "Channel picture": "Imagem do canal",
-  "Member faces": "Rostos dos membros"
+  "Member faces": "Rostos dos membros",
+  "Theme palette": "Paleta de tema",
+  "Put JSON palettes in the theme folder and pick one here. The window follows each change while it is open.": "Coloque paletas JSON na pasta de temas e escolha uma aqui. A janela acompanha cada mudança enquanto estiver aberta.",
+  "None": "Nenhuma",
+  "No palette files yet.": "Ainda não há arquivos de paleta.",
+  "Use the app colors": "Usar as cores do app"
 }

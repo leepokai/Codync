@@ -17,6 +17,7 @@ import { account } from './store/account'
 import { errorReport } from '@shared/error-report'
 import { resolvedLanguage } from './lib/l10n'
 import { useAppLanguage } from './lib/use-language'
+import { applyThemePalette } from './lib/theme-palette'
 
 // Error tracking: this window's uncaught errors go to the host (shared/error-report.ts).
 const report = (error: unknown, mechanism: string) => window.codync.app.reportError(errorReport(error, 'desktop-renderer', mechanism))
@@ -33,6 +34,26 @@ function ChatRoot({ app }: { app: AppModel }) {
     document.documentElement.dir = arabic ? 'rtl' : 'ltr'
     document.documentElement.lang = arabic ? 'ar' : resolvedLanguage(language, navigator.language)
   }, [language])
+  // The person's theme file, followed while the window is open.
+  useEffect(() => {
+    let live = true
+    const read = async () => {
+      const local = app.local
+      if (!local) return
+      try {
+        const answer = await (await local.ready()).call<{ active: { palette: Record<string, string> } }>('themeThemes')
+        if (live) applyThemePalette(answer.active.palette)
+      } catch {
+        // A host that cannot read the folder keeps the previous colors.
+      }
+    }
+    void read()
+    const timer = setInterval(() => void read(), 3_000)
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [app])
   return demo
     ? <AppContext.Provider value={demo}><ChatWindow key="demo" /><DemoBadge /></AppContext.Provider>
     : <AppContext.Provider value={app}><ChatWindow /></AppContext.Provider>

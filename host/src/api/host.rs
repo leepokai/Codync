@@ -16,6 +16,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     Ok(ControlFlow::Break(match method {
         "hostUpdateStatus" => crate::update::status()?,
         "hostHealth" => crate::health::value(hub),
+        // Palettes from the person's own theme files; a phone may read them, only the computer chooses one.
+        "themeThemes" => json!({"themes": crate::theme::list(), "active": crate::theme::active(&hub.store)}),
+        "setTheme" => {
+            crate::theme::select(&hub.store, b["name"].as_str())?;
+            crate::theme::active(&hub.store)
+        }
         "setHealthThresholds" => {
             let thresholds = crate::health::Thresholds {
                 warn: u8::try_from(b["warn"].as_u64().unwrap_or(0)).unwrap_or(0),

@@ -1727,5 +1727,10 @@
   "Artifact": "アーティファクト",
   "Close tab": "タブを閉じる",
   "Channel picture": "チャンネルの画像",
-  "Member faces": "メンバーの顔"
+  "Member faces": "メンバーの顔",
+  "Theme palette": "テーマパレット",
+  "Put JSON palettes in the theme folder and pick one here. The window follows each change while it is open.": "テーマフォルダーに JSON パレットを置いてここで選びます。開いている間は変更に追従します。",
+  "None": "なし",
+  "No palette files yet.": "パレットファイルはまだありません。",
+  "Use the app colors": "アプリの色を使う"
 }

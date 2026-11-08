@@ -49,6 +49,7 @@ mod shell;
 mod slack;
 mod store;
 mod telegram;
+mod theme;
 mod tui;
 mod update;
 mod usage;

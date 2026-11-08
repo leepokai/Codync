@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.*
@@ -217,7 +218,8 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
     val bot = state.bots.firstOrNull { it.id == botId }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp)
-        Text(bot?.name ?: "A deleted bot", style = Type.chatSubheadline.medium, color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.secondary)
+        Text(name ?: bot?.name ?: "A deleted bot", style = Type.chatSubheadline.medium,
+            color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.secondary)
     }
 }
 
@@ -302,11 +304,12 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun UserText(text: String) {    val compact = LocalUiDensity.current == UiDensity.Compact
+@Composable private fun UserText(text: String) {
+    val compact = LocalUiDensity.current == UiDensity.Compact
     Text(
         text,
         Modifier.background(Palette.bubbleUser).padding(horizontal = 16.dp, vertical = if (compact) 8.dp else 10.dp),
-        style = Type.chatBody,
+        style = Type.chatBody.copy(textDirection = TextDirection.Content),
         color = Palette.text,
     )
 }

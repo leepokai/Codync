@@ -307,7 +307,7 @@ export function Bubble({ className, items, reactions, children }: { className: s
   const menu = useContextMenu()
   return (
     <>
-      <div className={className} onContextMenu={menu.onContextMenu}>
+      <div className={className} dir="auto" onContextMenu={menu.onContextMenu}>
         {children}
       </div>
       <AnchoredMenu open={menu.open} onClose={menu.close} point={menu.point} items={items} reactions={reactions} />

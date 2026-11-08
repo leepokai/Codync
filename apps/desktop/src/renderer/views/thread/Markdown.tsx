@@ -58,10 +58,10 @@ function emphasis(text: string, key: string): ReactNode[] {
 const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
   switch (block.kind) {
     case 'paragraph':
-      return <div className="md-text md-spaced md-body">{inline(block.text)}</div>
+      return <div className="md-text md-spaced md-body" dir="auto">{inline(block.text)}</div>
     case 'heading':
       return (
-        <div className={`md-text md-spaced md-heading-${Math.min(block.level, 3)}`}>
+        <div className={`md-text md-spaced md-heading-${Math.min(block.level, 3)}`} dir="auto">
           {inline(block.text)}
         </div>
       )
@@ -69,7 +69,7 @@ const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
       return (
         <HStack align="baseline" gap={6} className="md-spaced md-body" style={{ paddingLeft: block.depth * 16 }}>
           <Text tone="secondary" className="md-marker">{block.marker}</Text>
-          <span className="md-text md-bullet-text">{inline(block.text)}</span>
+          <span className="md-text md-bullet-text" dir="auto">{inline(block.text)}</span>
         </HStack>
       )
     case 'rule':
@@ -81,18 +81,18 @@ const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
         <div className="md-table-scroll">
           <div className="md-table md-body" style={{ gridTemplateColumns: `repeat(${columns}, max-content)` }}>
             {cols.map((i) => (
-              <Text key={`h${i}`} weight="semibold">{inline(block.header[i] ?? '', `h${i}`)}</Text>
+              <Text key={`h${i}`} weight="semibold" dir="auto">{inline(block.header[i] ?? '', `h${i}`)}</Text>
             ))}
             {block.rows.map((row, r) => [
               <Hairline key={`l${r}`} style={{ gridColumn: `1 / span ${columns}` }} />,
-              ...cols.map((i) => <span key={`${r}-${i}`}>{inline(row[i] ?? '', `${r}-${i}`)}</span>),
+              ...cols.map((i) => <span key={`${r}-${i}`} dir="auto">{inline(row[i] ?? '', `${r}-${i}`)}</span>),
             ])}
           </div>
         </div>
       )
     }
     case 'quote':
-      return <div className="md-text md-spaced md-body md-quote">{inline(block.text)}</div>
+      return <div className="md-text md-spaced md-body md-quote" dir="auto">{inline(block.text)}</div>
     case 'code':
       return <CodeBlock text={block.text} language={block.language} />
   }

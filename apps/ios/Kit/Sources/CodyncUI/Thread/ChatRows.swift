@@ -140,6 +140,7 @@ struct UserBubble: View {
                         .font(.body)
                         .foregroundStyle(Palette.text)
                         .textSelection(.enabled)
+                        .paragraphDirection(of: text)
                 }
             }
                 .padding(.horizontal, 16)

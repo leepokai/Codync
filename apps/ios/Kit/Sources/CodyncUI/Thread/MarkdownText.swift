@@ -45,10 +45,12 @@ private struct MarkdownBlock: View {
             Text(MarkdownText.inline(t))
                 .font(.body)
                 .foregroundStyle(Palette.text)
+                .paragraphDirection(of: t)
         case let .heading(t, level):
             Text(MarkdownText.inline(t))
                 .font(level == 1 ? .title3.bold() : level == 2 ? .headline : .subheadline.bold())
                 .foregroundStyle(Palette.text)
+                .paragraphDirection(of: t)
         case let .bullet(t, marker, depth):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(marker).foregroundStyle(Palette.secondary).monospacedDigit()
@@ -56,6 +58,7 @@ private struct MarkdownBlock: View {
             }
             .font(.body)
             .padding(.leading, CGFloat(depth) * 16)
+            .paragraphDirection(of: t)
         case .rule:
             Rectangle().fill(Palette.border).frame(height: 1).padding(.vertical, 4)
         case let .table(header, rows):
@@ -66,6 +69,7 @@ private struct MarkdownBlock: View {
                 .foregroundStyle(Palette.secondary)
                 .padding(.leading, 10)
                 .overlay(alignment: .leading) { Rectangle().fill(Palette.border).frame(width: 3) }
+                .paragraphDirection(of: t)
         case let .code(t, _):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(t)
@@ -89,14 +93,16 @@ private struct MarkdownTable: View {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 7) {
                 GridRow {
                     ForEach(0 ..< columns, id: \.self) { i in
-                        Text(MarkdownText.inline(i < header.count ? header[i] : "")).fontWeight(.semibold)
+                        let cell = i < header.count ? header[i] : ""
+                        Text(MarkdownText.inline(cell)).fontWeight(.semibold).paragraphDirection(of: cell)
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     Rectangle().fill(Palette.border).frame(height: 1).gridCellUnsizedAxes(.horizontal)
                     GridRow {
                         ForEach(0 ..< columns, id: \.self) { i in
-                            Text(MarkdownText.inline(i < row.count ? row[i] : ""))
+                            let cell = i < row.count ? row[i] : ""
+                            Text(MarkdownText.inline(cell)).paragraphDirection(of: cell)
                         }
                     }
                 }

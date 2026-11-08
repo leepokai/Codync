@@ -446,6 +446,11 @@ in `context.window.<bot>`); before that they offer only the three choices. A cus
 reported a window keeps its setting while its agent isn't running. Other agents have no setting (`compaction` is
 `null`) and keep the defaults for rollovers.
 
+Decisions follow the setting in force when they act. A queued compaction runs only if it's still due then (another
+turn may have gone first, or the user changed the setting). When the setting changes, a handoff card it no longer
+calls for is withdrawn (shown as kept, without counting as the user turning the rollover down) and the old
+conversation goes on.
+
 The `idleCompaction` setting needs no change. The harness never idle-compacts in SDK/ACP sessions, and setting it
 to true "does not turn idle compaction on".
 

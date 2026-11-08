@@ -283,6 +283,18 @@ impl Actor {
         c
     }
 
+    /// The user changed when the chat is summarized: a fresh conversation the new setting doesn't call for is
+    /// withdrawn, and the old one goes on.
+    pub(super) fn threshold_changed(&self) {
+        let Some(sid) = &self.session_id else { return };
+        let Some((card, _)) = handoff::pending(&self.hub.store, &self.cfg.id) else { return };
+        let (c, at, now) = (self.conversation(sid), self.threshold(), now_ms());
+        if !rules::rollover_due(&c, at, self.cache_life(), now) && rules::at_turn_end(&c, at, now) != Decision::Rollover
+        {
+            handoff::withdraw(&self.hub, &self.cfg.id, &card);
+        }
+    }
+
     fn draft_handoff(&mut self, session: &str, reason: handoff::Reason) {
         if handoff::pending(&self.hub.store, &self.cfg.id).is_some() {
             return;
@@ -296,7 +308,14 @@ impl Actor {
     /// opening is rendered again, so the compaction keeps current memory (render, load, compact).
     pub(super) async fn start_compaction(&mut self, idle: bool, done_tx: &tokio::sync::mpsc::UnboundedSender<Done>) {
         let (Some(sid), Some(command)) = (self.session_id.clone(), self.compact_command()) else { return };
-        crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, self.threshold());
+        // Decided when it was queued; another turn or a change of the setting may have come first.
+        let (c, at, now) = (self.conversation(&sid), self.threshold(), now_ms());
+        let due =
+            if idle { rules::while_idle(&c, at, self.cache_life(), now) } else { rules::at_turn_end(&c, at, now) };
+        if due != Decision::Compact {
+            return;
+        }
+        crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, at);
         let _ = self.dreamer.send(memory::DreamEvent::Flush);
         if let Err(error) = context::refresh(&self.hub.store, &self.cfg.id, &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't refresh the opening");

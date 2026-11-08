@@ -167,6 +167,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   It runs as a hidden turn: dreaming first, then the opening rendered again (a Claude session reloads only when
   it changed), then `/compact <keep-list>` for Claude, or `/compact` for Codex, whose keep-list is its
   `CODEX_CONFIG` `compact_prompt`. Other harnesses compact on their own. The keep-list is also in the opening.
+  A compaction queued behind another turn runs only if it is still due when its turn comes.
 - **The user's threshold** (*Summarize long chats* in a Claude Code or Codex bot's settings, the bot's
   `compaction`): Early (the default above), Near the limit, Only when full (no compaction or rollover from the
   host), or a size from 50k up to the window less 40k (the apps list 100k steps and take any other size typed,
@@ -182,7 +183,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   the user's last four messages and the last reply (each cut at 2,000 characters, so a pasted document doesn't fill
   the new conversation), the open plan, and a bookmark for `search_history`. The user can
   edit it (`editHandoff`) or keep the conversation (`keepConversation`); otherwise their next message there starts
-  a new session that begins with it.
+  a new session that begins with it. A change of the threshold withdraws a card it no longer calls for (shown as
+  kept, not counted as the user turning it down).
 - **After every compaction** the host records a notice ("Earlier context was summarized to make room.", its
   `compaction` field carrying Claude's summary, which the next handoff starts from). The apps don't show it: the
   same conversation goes on.

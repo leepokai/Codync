@@ -34,7 +34,7 @@ Data: `~/.codync/comfy/{user,models,custom_nodes,input,output,temp}` (`~/.codync
 
 ## Bots
 
-The host registers a `comfyui` connector while ComfyUI runs (`lifecycle::offer_to_bots`); a bot gets the `codync-host mcp comfy` server only when its owner turned that connector on (`agent/bot/session.rs`). Tools: `list_models`, `list_nodes`, `example_workflow`, `run_workflow`, `upload_image`, `job_status`, `cancel_job`. `run_workflow` returns at once; the host follows the job (`/history`, `/queue`, 30 minute limit) and sends the saved images to the bot's chat with `send_file`. One job at a time. Host API: `toolStatus|toolStart|toolStop` (`{id}`), `comfyCall`, `comfyCancel`, `comfyJobImage`.
+The host registers a `comfyui` connector while ComfyUI runs (`lifecycle::offer_to_bots`); a bot gets the `codync-host mcp comfy` server only when its owner turned that connector on (`agent/bot/session.rs`). Tools: `list_models`, `list_nodes`, `example_workflow`, `run_workflow`, `wait_for_job`, `upload_image`, `job_status`, `cancel_job`. The host follows each job (`/history`, `/queue`, 30 minute limit) for the card. The images reach the bot's chat with `send_file`, which only works while the bot's turn runs, so the bot's own call delivers them: `run_workflow` queues and waits up to 5 minutes; a longer job returns still running and `wait_for_job` (or a `job_status` look) delivers it later, once. A wait abandoned because the asking bot's turn stopped cancels the job (`comfy_job::CancelOnDrop`); another bot's wait never does. One job at a time. Host API: `toolStatus|toolStart|toolStop` (`{id}`), `comfyCancel`, `comfyJobImage`; `comfyCall` (the MCP bridge) is loopback-only, like the other bridges.
 
 ## Known limits
 

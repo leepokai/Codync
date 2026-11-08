@@ -90,7 +90,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
             Event::MessageSent
         }
-        "stop" => Event::TurnStopped,
+        "stop" | "cancelTask" => Event::TurnStopped,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,
         "react" => Event::ReactionAdded,

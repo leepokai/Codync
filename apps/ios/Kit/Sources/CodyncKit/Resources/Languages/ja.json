@@ -188,6 +188,8 @@
   "Cancel": "キャンセル",
   "Cancel reply": "返信をキャンセル",
   "Cancel request": "リクエストのキャンセル",
+  "Cancel task": "タスクをキャンセル",
+  "Cancelled": "キャンセル済み",
   "Cannot read this image.": "この画像を読み込めません。",
   "Canvas": "キャンバス",
   "Changes are made on a computer: in Codync's settings there, or with codync-host network.": "変更はコンピューター側で行います：そのコンピューターの Codync の設定、または codync-host network で。",

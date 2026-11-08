@@ -400,8 +400,13 @@ export interface EntryData {
   botApp?: BotApp
   /** notice: human takeover request card (Idea 13). */
   takeoverRequest?: { reason: string; url?: string | null; status: string }
-  /** notice: a turn that stopped half done (out of steps, or its answer cut); one tap continues it. */
-  pausedTurn?: { verdict: 'paused' | 'truncated'; status: 'waiting' | 'continued'; round: number; canContinue: boolean }
+  /** notice: a turn that stopped half done (out of steps, or its answer cut); one tap continues it or ends it. */
+  pausedTurn?: {
+    verdict: 'paused' | 'truncated'
+    status: 'waiting' | 'continued' | 'closed'
+    round: number
+    canContinue: boolean
+  }
   /** Interactive Passkey / 2FA assistance card from CDP browser detector (INIC-02). */
   passkeyWall?: PasskeyWallCard
   /** Chief of Staff incident intervention card (INIC-04). */
@@ -421,6 +426,8 @@ export interface EntryData {
   runId?: string
   /** notice: a failed routine run the user can run again (`retryRoutineRun`). */
   retry?: boolean
+  /** notice: the run was ended from its failure line (`cancelTask`); no retry is left. */
+  cancelled?: boolean
   /** notice: the computer's current health banner; the host updates it in place. */
   health?: boolean
   /** notice: `warning`, `critical` or `normal`, with `health`. */

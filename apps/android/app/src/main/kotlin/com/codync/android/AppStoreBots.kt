@@ -104,6 +104,11 @@ fun AppStore.retryRoutineRun(entry: Entry) = action("retry:" + entry.id) {
     val runId = requireNotNull(entry.data.text("runId")) { "This run can't be retried." }
     ready().call("retryRoutineRun", body("botId" to entry.botId, "runId" to runId))
 }
+
+/** Ends a stopped turn or a failed routine run from its card; the messages stay. */
+fun AppStore.cancelTask(entry: Entry) = action("cancel:" + entry.id) {
+    ready().call("cancelTask", body("entryId" to entry.id))
+}
 /** Queries belong to the account runtime as well as their screen; retiring either cancels them. */
 internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, timeoutMillis: Long = 20_000,
     expectedGeneration: Int = state.value.generation): JsonElement {

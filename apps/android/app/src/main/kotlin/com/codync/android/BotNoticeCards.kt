@@ -78,14 +78,17 @@ import kotlinx.serialization.json.jsonPrimitive
     }
 }
 
-/** A turn that stopped half done: said so, with one tap to go on (a few times in a row, then it asks for words). */
+/**
+ * A turn that stopped half done: said so, with one tap to go on (a few times in a row, then it asks
+ * for words) or to end the task there. Ending it keeps the messages.
+ */
 @Composable internal fun PausedTurnCard(entry: Entry, state: AppState, store: AppStore) {
     val paused = entry.data["pausedTurn"] as? JsonObject ?: return
-    val open = paused.text("status") == "waiting"
+    val status = paused.text("status")
+    val open = status == "waiting"
     val canContinue = paused["canContinue"]?.jsonPrimitive?.booleanOrNull == true
     val title = tr(if (paused.text("verdict") == "truncated") "Answer cut short" else "Paused halfway")
-    val working = "continue:" + entry.id in state.busy
-    val remains = tr(if (open) "Say what remains in a message." else "Continued")
+    val working = "continue:" + entry.id in state.busy || "cancel:" + entry.id in state.busy
     Column(Modifier.fillMaxWidth().clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -93,8 +96,15 @@ import kotlinx.serialization.json.jsonPrimitive
             Text(title, style = Type.chatSubheadline.semibold, color = Palette.warning)
         }
         Text(entry.text, style = Type.chatFootnote, color = Palette.secondary)
-        if (open && canContinue) PrimaryButton(tr("Continue"), enabled = !working) { store.continueTurn(entry) }
-        else Text(remains, style = Type.caption, color = Palette.tertiary)
+        if (open) {
+            if (!canContinue) Text(tr("Say what remains in a message."), style = Type.caption, color = Palette.tertiary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (canContinue) PrimaryButton(tr("Continue"), enabled = !working) { store.continueTurn(entry) }
+                SecondaryButton(tr("Cancel task"), enabled = !working) { store.cancelTask(entry) }
+            }
+        } else {
+            Text(tr(if (status == "closed") "Cancelled" else "Continued"), style = Type.caption, color = Palette.tertiary)
+        }
     }
 }
 

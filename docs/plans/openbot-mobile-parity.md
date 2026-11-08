@@ -59,7 +59,7 @@ Parity owed: the iPhone app has no Support page yet (`apps/ios`).
 
 Not started, in order:
 
-- **M2**: workflow editor (Condition model and effort, WhatsApp numbers), channel Cancel task.
+- **M2**: workflow editor (Condition model and effort, WhatsApp numbers).
 
 Done from M2:
 
@@ -68,6 +68,7 @@ Done from M2:
 | A routine can start from a WhatsApp message or group mention | Done | host `routines::events`, `RoutinesView.kt` (catalog from the host) |
 | A WhatsApp chat as an output | Done | host `routines::outputs`, `Routine.kt`, `RoutinesView.kt`, desktop `routine.ts` |
 | Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx` |
+| Cancel task on a stopped or failed task | Done | Codync has no channel tasks: a paused turn card and a failed routine notice stand in. host `pause::close` and `routines::retry::cancel` (one `cancelTask` method), `PausedTurnCard.kt`, `RoutineNotice`, desktop `ChatRows.tsx`/`RoutineNotice.tsx`, TUI `/cancel` and `E` |
 
 - **M5/M6**: Voice pause slider and reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.

@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 69] = [
+const HELP: [(&str, &str, &str); 70] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -32,6 +32,7 @@ const HELP: [(&str, &str, &str); 69] = [
     ("CHAT", "c", "copy the last reply"),
     ("CHAT", "C", "open connection / login request"),
     ("CHAT", "F", "try a failed routine run again"),
+    ("CHAT", "E", "end a stopped or failed task"),
     ("CHAT", "r", "reply to a message"),
     ("CHAT", "v", "pick a message"),
     ("CHAT", "j k  ↵", "picking: move / reply"),

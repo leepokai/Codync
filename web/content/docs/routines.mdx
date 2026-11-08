@@ -87,6 +87,8 @@ Codync retries a failed run only when retrying can't repeat work:
 - **Nothing changed yet.** If the run failed before using any tool that changes things (for example, the agent was rate limited or didn't start), Codync tries again after 1, 5 and 15 minutes. The chat shows an info line like "Trying again in 5 minutes." without a notification.
 - **It already acted, ran out of time, or the retries failed.** The failure line notifies you and has a **Try again** button (`F` in the terminal UI) that runs the same work again. Only a routine's latest failure keeps the button.
 
+A failure line also has **Cancel task** (`E` in the terminal UI). It ends the run there, keeping the messages, and cancels a retry still waiting for its time; the line then reads **Cancelled** and Try again is gone.
+
 Pausing or deleting the routine cancels a waiting retry; stopping the bot doesn't. A paused routine isn't retried automatically, and Try again doesn't work on it until you resume it.
 
 If the host stops in the middle of a run (an update, a crash, a restart), the run resumes in its session when it's back, if the agent can reload it. If not, the run is marked interrupted. Either way, check what it already did before retrying anything with side effects.

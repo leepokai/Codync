@@ -15,6 +15,10 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var runId: String?
     /// notice: a failed routine run the user can run again (`retryRoutineRun`).
     public var retry: Bool?
+    /// notice: the failed run was ended from its line (`cancelTask`); no retry is left.
+    public var cancelled: Bool?
+    /// notice: a turn that stopped half done (out of steps, or its answer cut); one tap continues it or ends it.
+    public var pausedTurn: PausedTurn?
     /// notice: the bot moved to another agent of its chain, or back to its own.
     public var agentSwitch: AgentSwitch?
     /// notice (error): the bot has no fallbacks and its agent ran out of usage or was rate limited: offer to add one.

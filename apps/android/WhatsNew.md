@@ -20,6 +20,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Slack、Telegram 與 Discord 的提及可以啟動流程；GitHub 的 issue、PR 與失敗檢查也一樣。
 - 新增 TickTick 等應用程式，以及每個代理程式的建立者、審核狀態、分類與更新日期。
 - WhatsApp 號碼可以用配對代碼連結，不必掃描 QR 碼。
+- 中斷的任務與失敗的例行工作可以用「取消任務」結束，訊息會保留。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -32,6 +33,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Slack, Telegram and Discord mentions can start a workflow, as can GitHub issues, pull requests and failed checks.
 - New apps such as TickTick, and each agent page now names its creator, review, category and update date.
 - A WhatsApp number can be linked by typing a pairing code instead of scanning a QR code.
+- A task that stopped halfway, or a routine run that failed, can be ended with Cancel task; its messages stay.
 
 ## 2.32.0
 

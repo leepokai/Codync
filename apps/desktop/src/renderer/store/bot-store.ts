@@ -380,6 +380,21 @@ export class BotStore extends BotSync {
     if (runId) this.answer(entry, 'retry', (c) => c.call('retryRoutineRun', { botId: entry.botId, runId }))
   }
 
+  /** Ends a stopped turn from its card; the messages stay and the card can't be continued. */
+  async cancelTask(entry: Entry): Promise<string | null> {
+    try {
+      await (await this.ready()).call('cancelTask', { entryId: entry.id })
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  /** Ends a failed routine run from its notice; the messages stay and no retry is left. */
+  cancelRoutineRun(entry: Entry) {
+    this.answer(entry, 'cancel', (c) => c.call('cancelTask', { entryId: entry.id }))
+  }
+
   /** The roster's "Mark as read". */
   markAllRead(botId: string) {
     const bot = this.bots.get(botId)

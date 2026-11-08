@@ -429,12 +429,26 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-/** A routine's run in the main chat: tapping it opens Routines on that routine. */
-@Composable internal fun RoutineNotice(entry: Entry, open: () -> Unit) {
-    Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)
-        Text(entry.text.ifEmpty { "Routine" }, style = Type.chatFootnote, color = Palette.secondary)
+/**
+ * A routine's run in the main chat: tapping it opens Routines on that routine. A failed run that
+ * still offers a retry can be tried again or ended there, keeping the messages.
+ */
+@Composable internal fun RoutineNotice(entry: Entry, state: AppState, store: AppStore, open: () -> Unit) {
+    val busy = "retry:" + entry.id in state.busy || "cancel:" + entry.id in state.busy
+    val failed = entry.data.text("source") == "scheduled_task" && entry.data["style"] != null
+    val cancelled = entry.data["cancelled"]?.jsonPrimitive?.booleanOrNull == true
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)
+            Text(entry.text.ifEmpty { "Routine" }, style = Type.chatFootnote, color = Palette.secondary)
+        }
+        if (entry.data["retry"]?.jsonPrimitive?.booleanOrNull == true) {
+            if (busy) Spinner(12.dp)
+            else IconButton(tr("Try again"), "arrow.clockwise", enabled = !busy) { store.retryRoutineRun(entry) }
+        }
+        if (failed && !cancelled) IconButton(tr("Cancel task"), "xmark", enabled = !busy) { store.cancelTask(entry) }
+        if (cancelled) Text(tr("Cancelled"), style = Type.caption, color = Palette.tertiary)
     }
 }
 

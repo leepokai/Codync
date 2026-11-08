@@ -13,6 +13,8 @@ pub enum SlashAction {
     Fast,
     /// Goes on with a turn that stopped half done (`continueTurn`).
     Continue,
+    /// Ends a stopped or failed task (`cancelTask`).
+    Cancel,
     Skill,
 }
 
@@ -31,7 +33,9 @@ impl SlashCommand {
         match self.action {
             SlashAction::Skill if self.detail.is_empty() => self.title.clone(),
             SlashAction::Skill => self.detail.replace('\n', " "),
-            SlashAction::Fast | SlashAction::Continue => format!("{} · {}", self.title, self.detail),
+            SlashAction::Fast | SlashAction::Continue | SlashAction::Cancel => {
+                format!("{} · {}", self.title, self.detail)
+            }
         }
     }
 }
@@ -57,6 +61,16 @@ impl App {
         })
     }
 
+    /// The newest pause card of the selected bot still waiting, even when it can't go on.
+    fn waiting_card(&self) -> Option<String> {
+        let bot = self.bot().filter(|b| !b.group)?;
+        self.entries
+            .get(&bot.id)?
+            .values()
+            .rev()
+            .find_map(|e| (e.data["pausedTurn"]["status"] == "waiting").then(|| e.id.clone()))
+    }
+
     /// Continuing a half-done turn, when the selected bot has one; and Fast mode, when the bot (or any member of
     /// a group) offers it.
     fn built_in(&self) -> Vec<SlashCommand> {
@@ -67,6 +81,14 @@ impl App {
                 title: "Continue".into(),
                 detail: "Go on with the turn that stopped half done".into(),
                 action: SlashAction::Continue,
+            });
+        }
+        if self.waiting_card().is_some() {
+            commands.push(SlashCommand {
+                name: "cancel".into(),
+                title: "Cancel task".into(),
+                detail: "End the turn that stopped half done, keeping its messages".into(),
+                action: SlashAction::Cancel,
             });
         }
         let bots = self.fast_bots();
@@ -166,6 +188,13 @@ impl App {
                 }
                 String::new()
             }
+            SlashAction::Cancel => {
+                if let Some(entry) = self.waiting_card() {
+                    self.call("cancelTask", json!({"entryId": entry}), After::Nothing);
+                    self.flash("Task cancelled");
+                }
+                String::new()
+            }
             SlashAction::Skill => format!("/{} ", command.name),
         };
         if let Some(key) = self.selected.clone() {
@@ -247,12 +276,14 @@ mod tests {
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert!(names(&app).is_empty(), "no card, no command");
         app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "waiting", true));
-        assert_eq!(names(&app), ["continue"]);
+        assert_eq!(names(&app), ["continue", "cancel"]);
         assert_eq!(app.paused_card().as_deref(), Some("c1"));
         app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "continued", true));
         assert!(names(&app).is_empty(), "a used card offers nothing");
         app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "waiting", false));
-        assert!(names(&app).is_empty(), "a card that reached its limit offers nothing");
+        assert_eq!(names(&app), ["cancel"], "a card that reached its limit can still be ended");
+        app.entries.entry("b".into()).or_default().insert(1, card("c1", 1, "closed", false));
+        assert!(names(&app).is_empty(), "a closed card offers nothing");
     }
 
     #[tokio::test]

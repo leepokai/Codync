@@ -240,6 +240,16 @@ public extension HostClient {
         let _: Empty = try await call("markRead", ["botId": id])
     }
 
+    /// Goes on with a turn that stopped half done, from its card; the host refuses a card already used.
+    func continueTurn(entryId: String) async throws {
+        let _: Empty = try await call("continueTurn", ["entryId": entryId])
+    }
+
+    /// Ends a stopped turn or a failed routine run from its card; the messages stay.
+    func cancelTask(entryId: String) async throws {
+        let _: Empty = try await call("cancelTask", ["entryId": entryId])
+    }
+
     /// Toggles the user's `emoji` reaction on a chat message.
     func react(entryId: String, emoji: String) async throws -> Entry {
         struct Res: Decodable { var entry: Entry }

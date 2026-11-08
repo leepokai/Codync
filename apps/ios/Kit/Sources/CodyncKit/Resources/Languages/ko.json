@@ -188,6 +188,8 @@
   "Cancel": "취소",
   "Cancel reply": "답장 취소",
   "Cancel request": "요청 취소",
+  "Cancel task": "작업 취소",
+  "Cancelled": "취소됨",
   "Cannot read this image.": "이 이미지를 읽을 수 없습니다.",
   "Canvas": "캔버스",
   "Changes are made on a computer: in Codync's settings there, or with codync-host network.": "변경은 컴퓨터에서 합니다: 해당 컴퓨터의 Codync 설정이나 codync-host network로.",

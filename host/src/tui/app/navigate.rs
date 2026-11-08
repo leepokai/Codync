@@ -180,6 +180,7 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => self.step_pick(-1),
             KeyCode::Char('C') => self.open_connection(),
             KeyCode::Char('F') => self.retry_failed_run(),
+            KeyCode::Char('E') => self.cancel_task(),
             KeyCode::Char('A') if picked.as_ref().is_some_and(|e| self.fallback_owner(&id, e).is_some()) => {
                 if let Some(e) = picked {
                     self.add_fallback(&id, &e);

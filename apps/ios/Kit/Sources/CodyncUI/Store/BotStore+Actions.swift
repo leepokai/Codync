@@ -241,6 +241,21 @@ extension BotStore {
         answer(entry, "retry") { try await $0.retryRoutineRun(botId: entry.botId, runId: runId) }
     }
 
+    /// Ends a failed routine run from its notice; no retry is left.
+    public func cancelRoutineRun(_ entry: Entry) {
+        answer(entry, "cancel") { try await $0.cancelTask(entryId: entry.id) }
+    }
+
+    /// Goes on with a turn that stopped half done, from its card.
+    public func continueTurn(_ entry: Entry) {
+        answer(entry, "continue") { try await $0.continueTurn(entryId: entry.id) }
+    }
+
+    /// Ends a stopped turn from its card; the messages stay and it can't be continued after.
+    public func cancelTask(_ entry: Entry) {
+        answer(entry, "cancel") { try await $0.cancelTask(entryId: entry.id) }
+    }
+
     public func setFastMode(_ bot: Bot, _ fastMode: Bool) {
         var d = BotDraft(bot)
         d.fastMode = fastMode

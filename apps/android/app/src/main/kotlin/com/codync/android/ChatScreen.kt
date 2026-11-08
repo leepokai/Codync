@@ -215,7 +215,7 @@ import com.kyant.shapes.RoundedRectangle
                 is ChatItem.NewLine -> NewLineRow(newLineColor)
                 is ChatItem.Message -> {
                     val routine = item.entry.data.text("routineId").takeIf { item.entry.kind == "notice" }
-                    if (routine != null) RoutineNotice(item.entry) { openRoutine(routine) }
+                    if (routine != null) RoutineNotice(item.entry, state, store) { openRoutine(routine) }
                     else if (item.entry.kind == "notice" && item.entry.call != null) Box(Modifier.padding(top = 6.dp)) {
                         Column {
                             CallLineRow(item.entry) { openCall(item.entry.id) }

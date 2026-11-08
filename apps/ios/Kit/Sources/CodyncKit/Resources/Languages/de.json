@@ -188,6 +188,8 @@
   "Cancel": "Abbrechen",
   "Cancel reply": "Antwort abbrechen",
   "Cancel request": "Anfrage abbrechen",
+  "Cancel task": "Aufgabe abbrechen",
+  "Cancelled": "Abgebrochen",
   "Cannot read this image.": "Dieses Bild kann nicht gelesen werden.",
   "Canvas": "Leinwand",
   "Changes are made on a computer: in Codync's settings there, or with codync-host network.": "Änderungen machst du an einem Computer: in den Codync-Einstellungen dort oder mit codync-host network.",

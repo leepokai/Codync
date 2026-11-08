@@ -1,6 +1,6 @@
 //! A turn that stopped half done (out of steps, or its answer cut at the output limit) leaves a card in the chat:
-//! the person can continue it with one tap. A continuation is a short message of its own, and at most
-//! [`MAX_CONTINUATIONS`] follow one another, so a task that never finishes cannot loop on its own.
+//! the person can continue it with one tap, or end it there. A continuation is a short message of its own, and at
+//! most [`MAX_CONTINUATIONS`] follow one another, so a task that never finishes cannot loop on its own.
 
 use super::Actor;
 use super::verdict::TurnVerdict;
@@ -48,6 +48,22 @@ pub fn begin(data: &Value) -> Result<Value> {
     Ok(used)
 }
 
+/// Checks that `data` is a card still waiting, and returns it closed: the messages stay, the card
+/// offers no continuation, and a later `continueTurn` on it is refused.
+pub fn close(data: &Value) -> Result<Value> {
+    let paused = &data["pausedTurn"];
+    if !paused.is_object() {
+        bail!("That isn't a paused turn");
+    }
+    if paused["status"] != "waiting" {
+        bail!("This turn was already continued or closed");
+    }
+    let mut closed = data.clone();
+    closed["pausedTurn"]["status"] = "closed".into();
+    closed["pausedTurn"]["canContinue"] = false.into();
+    Ok(closed)
+}
+
 /// A user message the person sent from a pause card.
 pub fn is_continuation(data: &Value) -> bool {
     data["from"] == "continue"
@@ -85,6 +101,20 @@ mod tests {
         assert_eq!(last["pausedTurn"]["canContinue"], false);
         assert!(begin(&last).is_err(), "the chain stops after {MAX_CONTINUATIONS} continuations");
         assert!(begin(&json!({"text": "hi"})).is_err(), "not a paused turn");
+    }
+
+    #[test]
+    fn an_open_card_can_be_closed_instead_of_continued() {
+        let first = card(TurnVerdict::Paused, 0);
+        let closed = close(&first).expect("a waiting card");
+        assert_eq!(closed["pausedTurn"]["status"], "closed");
+        assert_eq!(closed["pausedTurn"]["canContinue"], false);
+        assert!(begin(&closed).is_err(), "a closed card can't be continued");
+        assert!(close(&closed).is_err(), "and it can't be closed twice");
+        // The chain's last card asks for words but can still be ended.
+        let last = card(TurnVerdict::Paused, MAX_CONTINUATIONS);
+        assert!(close(&last).is_ok());
+        assert!(close(&json!({"text": "hi"})).is_err(), "not a paused turn");
     }
 
     #[test]

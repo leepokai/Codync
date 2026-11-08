@@ -188,6 +188,8 @@
   "Cancel": "取消",
   "Cancel reply": "取消回覆",
   "Cancel request": "取消申請",
+  "Cancel task": "取消任務",
+  "Cancelled": "已取消",
   "Cannot read this image.": "無法讀取這張圖片。",
   "Canvas": "畫布",
   "Changes are made on a computer: in Codync's settings there, or with codync-host network.": "變更要在電腦上進行：在那臺電腦的 Codync 設定裡，或用 codync-host network。",

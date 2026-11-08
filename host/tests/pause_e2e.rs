@@ -69,3 +69,29 @@ async fn a_turn_that_runs_out_of_steps_is_paused_and_can_be_continued_once() {
     let error = host.refused("continueTurn", json!({"entryId": card["id"]})).await;
     assert!(error.contains("already"), "{error}");
 }
+
+#[tokio::test]
+async fn a_paused_turn_can_be_cancelled_instead_of_continued() {
+    if Command::new(common::python()).arg("--version").output().is_err() {
+        eprintln!("skipping: Python not available");
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Worker", "pause_agent.py", "").await;
+
+    host.call("send", json!({"botId": bot, "text": "do the big job", "clientNonce": "n2"})).await;
+    let card = paused_card(&host, &bot).await;
+    host.call("cancelTask", json!({"entryId": card["id"]})).await;
+
+    let history = host.call("history", json!({"botId": bot})).await;
+    let entries = history["entries"].as_array().unwrap();
+    let closed = entries.iter().find(|e| e["id"] == card["id"]).unwrap();
+    assert_eq!(closed["data"]["pausedTurn"]["status"], "closed");
+    assert_eq!(closed["data"]["pausedTurn"]["canContinue"], false);
+    assert!(entries.iter().any(|e| e["kind"] == "user"), "the message that stopped stays");
+
+    let error = host.refused("continueTurn", json!({"entryId": card["id"]})).await;
+    assert!(error.contains("already"), "{error}");
+    let error = host.refused("cancelTask", json!({"entryId": card["id"]})).await;
+    assert!(error.contains("already"), "{error}");
+}

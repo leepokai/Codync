@@ -94,6 +94,8 @@ Some agents keep working after their reply, for example a background helper that
 
 Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent.
 
+A turn that stops short instead (it used all its steps, or its answer was cut at the output limit) leaves a card saying so, with **Continue** to go on and **Cancel task** to end it there. Cancelling keeps the messages and leaves the card read **Cancelled**; it can't be continued after that. In the terminal UI, `/continue` goes on and `E` (or `/cancel`) ends it.
+
 ## Replying to a message
 
 You can reply to any of your messages or any message from the bot. The reply goes in the chat in time order and shows a quote of the message it answers at the top.

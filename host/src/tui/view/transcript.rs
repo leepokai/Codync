@@ -272,8 +272,9 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 // Half done: the slash menu offers /continue while the card can still be used.
                 let open = paused.get("status").is_some_and(|s| s == "waiting");
                 let hint = match (open, paused.get("canContinue").is_some_and(|c| c == true)) {
-                    (true, true) => " · /continue goes on",
-                    (true, false) => " · say what remains",
+                    (true, true) => " · /continue goes on · E ends it",
+                    (true, false) => " · say what remains · E ends it",
+                    (false, _) if paused.get("status").is_some_and(|s| s == "closed") => " · cancelled",
                     _ => " · continued",
                 };
                 format!("⏸ {}{hint}", e.notice_text())
@@ -286,8 +287,13 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 format!("{} · o shows the call", e.notice_text())
             } else if app.fallback_owner(&b.id, e).is_some() {
                 format!("{} · A adds a fallback", e.notice_text())
+            } else if e.data["cancelled"] == true {
+                format!("{} · cancelled", e.notice_text())
             } else if e.retries() {
-                format!("{} · F tries again", e.notice_text())
+                format!("{} · F tries again · E ends it", e.notice_text())
+            } else if e.data["source"] == "scheduled_task" && matches!(e.data["style"].as_str(), Some("error" | "info"))
+            {
+                format!("{} · E ends it", e.notice_text())
             } else {
                 e.notice_text()
             };

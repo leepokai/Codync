@@ -188,6 +188,8 @@
   "Cancel": "Отменить",
   "Cancel reply": "Отменить ответ",
   "Cancel request": "Отменить запрос",
+  "Cancel task": "Отменить задачу",
+  "Cancelled": "Отменено",
   "Cannot read this image.": "Не удаётся прочитать это изображение.",
   "Canvas": "Холст",
   "Changes are made on a computer: in Codync's settings there, or with codync-host network.": "Изменения вносятся на компьютере: в настройках Codync на нём или командой codync-host network.",

@@ -178,12 +178,18 @@ function PausedTurnNotice({ entry }: { entry: Entry }) {
         <Text weight="semibold" tone="attention">{tr(paused.verdict === 'truncated' ? 'Answer cut short' : 'Paused halfway')}</Text>
       </HStack>
       <Text size="footnote" tone="secondary">{entry.data.text}</Text>
-      {open && paused.canContinue ? (
-        <Button kind="primary" onClick={() => void store.continueTurn(entry).then(setError)}>{tr('Continue')}</Button>
+      {open ? (
+        <>
+          {!paused.canContinue ? <Text size="caption" tone="tertiary">{tr('Say what remains in a message.')}</Text> : null}
+          <HStack gap={8}>
+            {paused.canContinue ? (
+              <Button kind="primary" onClick={() => void store.continueTurn(entry).then(setError)}>{tr('Continue')}</Button>
+            ) : null}
+            <Button kind="secondary" onClick={() => void store.cancelTask(entry).then(setError)}>{tr('Cancel task')}</Button>
+          </HStack>
+        </>
       ) : (
-        <Text size="caption" tone="tertiary">
-          {tr(open ? 'Say what remains in a message.' : 'Continued')}
-        </Text>
+        <Text size="caption" tone="tertiary">{tr(paused.status === 'closed' ? 'Cancelled' : 'Continued')}</Text>
       )}
       {error ? <Text size="caption" tone="danger">{error}</Text> : null}
     </VStack>

@@ -114,7 +114,9 @@ public struct ThreadView: View {
         case .exchanges(let group):
             BotMessageRow(group: group) { botChat = BotChatTarget(id: group.peerId) }
         case .entry(let e, let groupStart):
-            if e.kind == "notice", let id = e.data.routineId {
+            if e.kind == "notice", let paused = e.data.pausedTurn {
+                PausedTurnRow(entry: e, paused: paused)
+            } else if e.kind == "notice", let id = e.data.routineId {
                 RoutineNoticeRow(entry: e) { openRoutine(id) }
             } else {
                 ChatRow(entry: e, groupStart: groupStart, chat: bot, openTrace: { showTrace = true },

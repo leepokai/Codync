@@ -202,6 +202,7 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('C') => self.open_connection(),
             KeyCode::Char('F') => self.retry_failed_run(),
+            KeyCode::Char('E') => self.cancel_task(),
             KeyCode::Char('I') if self.error.is_some() && self.bots.is_empty() => self.install_host(),
             KeyCode::Char('I') if self.bot().is_some_and(|b| b.lead) => self.overlays.push(Overlay::LeadAgent(0)),
             KeyCode::Char('?') => self.overlays.push(Overlay::Help(Editor::default())),

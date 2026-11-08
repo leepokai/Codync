@@ -127,9 +127,9 @@ iOS-only entries, each adapted to Android:
 | X6 iPhone Duo and foldable split | Master-detail from 600 × 360 dp with the rail | Already present | `MainNavigation.isExpandedWindow`, `configChanges` |
 | X7 Agent picture in notifications | The face as the notification's large icon | Already present | `AlertNotification.kt` `notificationFace` |
 
-Parity owed by this work: the iPhone app has no chat-channel UI at all (Telegram, Slack, Discord,
-WhatsApp), so the pairing code waits for that screen; the Support page, routine outputs and the
-`2.39.0` App Store notes are in.
+The iPhone app now has the channel screens (Telegram, Slack, Discord, GitHub, WhatsApp) the Android
+app had, so the pairing code reaches both phones; the Support page, routine outputs and the `2.39.0`
+App Store notes are in.
 
 ## Validation
 

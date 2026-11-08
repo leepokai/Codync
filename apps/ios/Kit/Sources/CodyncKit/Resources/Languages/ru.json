@@ -1750,5 +1750,7 @@
   "A recovery key was made": "Создан ключ восстановления",
   "Who may write to the bots changed": "Изменено, кто может писать ботам",
   "The approval setting changed": "Изменена настройка одобрения",
-  "Cloud assistants were let in or out": "Облачные помощники допущены или убраны"
+  "Cloud assistants were let in or out": "Облачные помощники допущены или убраны",
+  "Close file": "Закрыть файл",
+  "Open files": "Открытые файлы"
 }

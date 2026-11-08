@@ -1750,5 +1750,7 @@
   "A recovery key was made": "Uma chave de recuperação foi criada",
   "Who may write to the bots changed": "Quem pode escrever aos bots mudou",
   "The approval setting changed": "O ajuste de aprovação mudou",
-  "Cloud assistants were let in or out": "Assistentes de nuvem foram liberados ou removidos"
+  "Cloud assistants were let in or out": "Assistentes de nuvem foram liberados ou removidos",
+  "Close file": "Fechar arquivo",
+  "Open files": "Arquivos abertos"
 }

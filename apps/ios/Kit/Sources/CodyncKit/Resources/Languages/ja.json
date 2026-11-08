@@ -1750,5 +1750,7 @@
   "A recovery key was made": "復旧キーを作成しました",
   "Who may write to the bots changed": "ボットに書き込める人が変わりました",
   "The approval setting changed": "承認設定が変わりました",
-  "Cloud assistants were let in or out": "クラウドアシスタントを許可または解除しました"
+  "Cloud assistants were let in or out": "クラウドアシスタントを許可または解除しました",
+  "Close file": "ファイルを閉じる",
+  "Open files": "開いているファイル"
 }

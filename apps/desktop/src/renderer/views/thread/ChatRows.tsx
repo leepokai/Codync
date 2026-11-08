@@ -46,13 +46,15 @@ function hasForwardable(entry: Entry) {
 }
 
 /** One chat-visible entry, with what can be done to it. */
-export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, onForward, openAgent, openApp, openArtifact, openThread }: {
+export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, onOpenFile, onForward, openAgent, openApp, openArtifact, openThread }: {
   entry: Entry
   groupStart: boolean
   chat: Bot | null
   openTrace: () => void
   /** Quotes this message in the composer; absent where the computer can't take replies. */
   onReply?: (e: Entry) => void
+  /** Opens a shared file in its own tab; absent where there is no room for it. */
+  onOpenFile?: (e: Entry, file: import('@shared/models').SharedFile) => void
   /** Sends this message on to another chat; absent where the computer can't forward. */
   onForward?: (e: Entry) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
@@ -85,7 +87,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       return (
         <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
-          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} forward={forward} openArtifact={openArtifact} />
+          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} forward={forward} openFile={onOpenFile} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>
             <ReactionsRow entry={entry} />
           </VStack>
@@ -375,7 +377,7 @@ function UserStatus({ entry, botWorking, hovering }: { entry: Entry; botWorking:
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply, forward, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; forward?: () => void; openArtifact?: (artifactId: string) => void }) {
+export function AgentBubble({ entry, openTrace, reply, forward, openFile, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; forward?: () => void; openFile?: (e: Entry, file: import('@shared/models').SharedFile) => void; openArtifact?: (artifactId: string) => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
@@ -398,7 +400,7 @@ export function AgentBubble({ entry, openTrace, reply, forward, openArtifact }: 
           {entry.data.artifact ? (
             <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
           ) : entry.data.files?.length ? (
-            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} />)}</div>
+            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} onOpen={openFile ? () => openFile(entry, file) : undefined} />)}</div>
           ) : (
             <MarkdownText text={entry.data.text ?? ''} />
           )}

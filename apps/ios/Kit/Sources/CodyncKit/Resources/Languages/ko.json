@@ -1750,5 +1750,7 @@
   "A recovery key was made": "복구 키를 만들었습니다",
   "Who may write to the bots changed": "봇에 쓸 수 있는 사람이 바뀌었습니다",
   "The approval setting changed": "승인 설정이 바뀌었습니다",
-  "Cloud assistants were let in or out": "클라우드 어시스턴트를 허용하거나 해제했습니다"
+  "Cloud assistants were let in or out": "클라우드 어시스턴트를 허용하거나 해제했습니다",
+  "Close file": "파일 닫기",
+  "Open files": "열린 파일"
 }

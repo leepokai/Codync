@@ -24,7 +24,7 @@ export function downloadDetail(state: DownloadState | undefined, file: SharedFil
   }
 }
 
-export function FileDownloadCard({ entry, file }: { entry: Entry; file: SharedFile }) {
+export function FileDownloadCard({ entry, file, onOpen }: { entry: Entry; file: SharedFile; onOpen?: () => void }) {
   const store = useStore()
   const state = store.fileDownloads.states.get(file.id)
   const busy = state?.kind === 'downloading'
@@ -41,7 +41,9 @@ export function FileDownloadCard({ entry, file }: { entry: Entry; file: SharedFi
     <HStack gap={12}>
       <Icon name={attachmentSymbol(file.name)} size={24} color="var(--secondary)" />
       <VStack grow>
-        <Text as="div" size="subheadline" weight="semibold" truncate title={file.name}>{file.name}</Text>
+        <button className="file-card-name" onClick={onOpen} disabled={!onOpen} title={onOpen ? file.name : undefined}>
+          <Text as="div" size="subheadline" weight="semibold" truncate title={file.name}>{file.name}</Text>
+        </button>
         <Text as="div" size="caption2" tone={state?.kind === 'failed' ? 'danger' : 'secondary'} role={state?.kind === 'failed' ? 'alert' : 'status'} className="file-card-detail">{detail}</Text>
       </VStack>
       <IconButtonBase title={action} icon={busy ? 'xmark' : 'arrow.down.to.line'} size={36} onClick={() => busy ? store.fileDownloads.cancel(file.id) : void store.fileDownloads.save(store.client, entry.id, file)} />

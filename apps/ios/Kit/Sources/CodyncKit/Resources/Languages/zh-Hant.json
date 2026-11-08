@@ -1750,5 +1750,7 @@
   "A recovery key was made": "已建立復原金鑰",
   "Who may write to the bots changed": "可向機器人寫入的人已變更",
   "The approval setting changed": "核准設定已變更",
-  "Cloud assistants were let in or out": "已允許或移除雲端助理"
+  "Cloud assistants were let in or out": "已允許或移除雲端助理",
+  "Close file": "關閉檔案",
+  "Open files": "開啟的檔案"
 }

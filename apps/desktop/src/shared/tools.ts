@@ -12,7 +12,7 @@ export interface ToolSpec {
 }
 
 export const TOOLS: Record<ToolId, ToolSpec> = {
-  comfy: { id: 'comfy', page: 'comfy', title: 'ComfyUI', icon: 'photo' },
+  comfy: { id: 'comfy', page: 'comfy', title: 'ComfyUI', icon: 'comfyui.logo' },
 }
 
 export type ToolRunState = 'stopped' | 'starting' | 'running' | 'error'

@@ -61,17 +61,18 @@ export function ComfySheet() {
         <CardSection>
           <VStack gap={10}>
             {!hostKnown || state === null ? (
-              <HStack gap={8}><Spinner size={18} /><Text tone="secondary">{tr('Checking ComfyUI…')}</Text></HStack>
+              <HStack gap={8}><Spinner size={18} /><Text tone="secondary">{tr('Checking {name}…').replace('{name}', 'ComfyUI')}</Text></HStack>
             ) : card && !card.bundled ? (
               <Text tone="secondary">{tr('This build of Codync does not include ComfyUI.')}</Text>
             ) : (
               <>
                 <Text tone="text" weight="medium">
-                  {running ? tr('Running') : state.state === 'starting' ? tr('Starting… the first start can take a few minutes.') : state.state === 'error' ? tr('Stopped with an error') : tr('Stopped')}
+                  {running ? tr('Running') : state.state === 'starting' ? tr('Starting {name}… the first start can take a few minutes.').replace('{name}', 'ComfyUI') : state.state === 'error' ? tr('Stopped with an error') : tr('Stopped')}
                 </Text>
                 {card ? (
                   <Text size="caption" tone="secondary">
-                    {`${tr('Version')} ${card.version} · ${bytesText(card.usedBytes)} ${tr('used')}${running ? ` · ${tr('port')} ${state.port}` : ''}`}
+                    {tr('Version {version} · {size} used').replace('{version}', card.version).replace('{size}', bytesText(card.usedBytes))}
+                    {running ? ` · ${tr('Port {port}').replace('{port}', String(state.port))}` : ''}
                   </Text>
                 ) : null}
                 {card?.notice ? <Text size="caption" tone="attention">{tr(card.notice)}</Text> : null}

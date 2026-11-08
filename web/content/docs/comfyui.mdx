@@ -10,6 +10,14 @@ The card shows the state, the ComfyUI version that ships with your Codync, the s
 
 If port 8188 is taken, ComfyUI uses the next free one; the card and the log say which.
 
+The sidebar's **ComfyUI** button carries ComfyUI's mark, in the sidebar's own color like its other icons, with a dot under it: lit while ComfyUI runs, pulsing while it starts, red after an error. On a Codync that doesn't include ComfyUI, its window says so.
+
+## From your phone and the terminal
+
+On Android, **Settings → ComfyUI** shows whether ComfyUI runs on the computer, starts and stops it, and shows the image a bot is making, with **Cancel**. The editor itself opens on the computer.
+
+In the terminal app (`codync-host tui`), the header says what ComfyUI is doing while it starts, runs or makes an image, and says nothing while it is off.
+
 ## Your models and files
 
 Everything you add lives in `~/.codync/comfy` and survives updates: `models/` (checkpoints, LoRAs, VAEs…), `custom_nodes/`, `input/`, `output/` and the editor's settings in `user/`. Uninstalling Codync asks whether to delete them too; the default is to keep them. Codync ships no models: put a checkpoint in `models/checkpoints` (the **Models** button opens it) and it appears in the editor.

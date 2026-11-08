@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { N8nState } from '@shared/models'
-import type { ToolState } from '@shared/tools'
+import { TOOLS, type ToolState } from '@shared/tools'
 import { Icon } from '../components/Icon'
 import { useTr } from '../lib/use-language'
 import appIcon from '../../../resources/icon.png'
@@ -62,7 +62,7 @@ export function AppRail({ active, onBots, onCanvas, onUsage, onN8n, onComfy, onB
   update?: ReactNode
   account?: ReactNode
   n8n?: N8nState | null
-  /** ComfyUI's state; the button hides on a build that doesn't include it. */
+  /** ComfyUI's state, for the button's dot; a build without ComfyUI says so in its window. */
   comfy?: ToolState | null
 }) {
   const tr = useTr()
@@ -82,9 +82,7 @@ export function AppRail({ active, onBots, onCanvas, onUsage, onN8n, onComfy, onB
           status={n8nStatus(n8n)}
         />
         <RailButton label={tr('Browser')} icon="globe" onClick={onBrowser} />
-        {comfy?.comfy?.bundled === false ? null : (
-          <RailButton label={tr('ComfyUI: make images, run by this computer')} icon="photo" onClick={onComfy} status={n8nStatus(comfy)} />
-        )}
+        <RailButton label={tr('ComfyUI: make images, run by this computer')} icon={TOOLS.comfy.icon} onClick={onComfy} status={n8nStatus(comfy)} />
         <RailButton label={tr('Extensions')} icon="square.grid.2x2" current={active === 'marketplace'} onClick={onExtensions} />
       </div>
       <div className="app-rail-group app-rail-bottom">

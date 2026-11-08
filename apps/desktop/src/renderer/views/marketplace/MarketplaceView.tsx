@@ -15,6 +15,7 @@ import { CatalogPanel } from './CatalogPanel'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
 import { MarketAgentSheet } from './MarketAgentSheet'
+import { TOOLS } from '@shared/tools'
 import { ComfySheet } from './ComfySheet'
 import { WhatsAppSheet } from './WhatsAppSheet'
 import { SetupTerminalView } from './SetupTerminal'
@@ -213,7 +214,7 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
               <ItemRow
                 title="ComfyUI"
                 subtitle={tr('Make images on this computer, and let your bots make them too.')}
-                icon={<div className="market-tile"><Icon name="photo" size={14} /></div>}
+                icon={<div className="market-tile"><Icon name={TOOLS.comfy.icon} size={14} /></div>}
                 onOpen={() => setComfy(true)}
                 trailing={<Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
               />

@@ -237,6 +237,7 @@ import kotlinx.coroutines.launch
                         }, when (output.kind) {
                             "githubComment" -> "owner/name"
                             "telegram" -> "-1001234567890"
+                            "whatsapp" -> "5215555555555@s.whatsapp.net"
                             "discordReact" -> "👍"
                             else -> "1234567890"
                         }, fill = Palette.bubbleUser, capitalize = false)

@@ -18,7 +18,7 @@ pub const MAX: usize = 10;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Output {
-    /// `slack`, `telegram`, `discord` or `githubComment`.
+    /// `slack`, `telegram`, `whatsapp`, `discord` or `githubComment`.
     pub kind: String,
     /// A channel id, a chat id, or (for GitHub) the repository, `owner/name`.
     pub target: String,
@@ -42,6 +42,7 @@ pub fn problem(output: &Output) -> Option<String> {
         }
         "discordReact" if target.contains(char::is_whitespace) => Some("Use one emoji or name:id.".into()),
         "telegram" if target.parse::<i64>().is_err() => Some("Use a Telegram chat id.".into()),
+        "whatsapp" if !whatsapp_chat(target) => Some("Use a WhatsApp chat id.".into()),
         "githubComment" | "githubIssue" if !github_repo(target) => Some("Use owner/name.".into()),
         "githubLabel" | "githubAssign" | "githubReview" => {
             if !github_repo(target) {
@@ -53,9 +54,15 @@ pub fn problem(output: &Output) -> Option<String> {
             }
             None
         }
-        "slack" | "telegram" | "discord" | "discordReact" | "githubComment" | "githubIssue" => None,
+        "slack" | "telegram" | "whatsapp" | "discord" | "discordReact" | "githubComment" | "githubIssue" => None,
         _ => Some("Choose what kind of output it is.".into()),
     }
+}
+
+/// Whether `value` is a `WhatsApp` chat id: a number or a group, never a bare number that could be either.
+fn whatsapp_chat(value: &str) -> bool {
+    let Some((id, host)) = value.split_once('@') else { return false };
+    !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit() || b == b'-') && matches!(host, "s.whatsapp.net" | "g.us")
 }
 
 fn github_repo(value: &str) -> bool {
@@ -90,6 +97,7 @@ pub fn describe(output: &Output) -> String {
         "githubReview" => format!("Request a review in {}", output.target),
         "slack" => format!("Post in Slack {}", output.target),
         "telegram" => format!("Send to Telegram {}", output.target),
+        "whatsapp" => format!("Send to WhatsApp {}", output.target),
         "discord" => format!("Post in Discord {}", output.target),
         "discordReact" => format!("React with {} on Discord", output.target),
         other => format!("{other} {}", output.target),
@@ -151,6 +159,7 @@ async fn one(hub: &Arc<Hub>, output: &Output, event: &Value, text: &str) -> Resu
             crate::telegram::send_text(&hub.store, &account, chat, text).await?;
         }
         "discord" => crate::discord::send_text(&hub.store, &output.target, text).await?,
+        "whatsapp" => hub.whatsapp.send_message(&output.target, text, None, None, None).await?,
         "discordReact" => {
             let channel = event["channel"].as_str().context("The run did not come from a channel.")?;
             let message = event["messageId"].as_str().context("The run did not name a message.")?;
@@ -269,6 +278,10 @@ mod tests {
         assert!(problem(&output("discordReact", "👍")).is_none());
         assert!(problem(&output("discordReact", "two words")).is_some());
         assert!(problem(&output("telegram", "-100123")).is_none());
+        assert!(problem(&output("whatsapp", "5215555555555@s.whatsapp.net")).is_none());
+        assert!(problem(&output("whatsapp", "1203630@g.us")).is_none());
+        assert!(problem(&output("whatsapp", "5215555555555")).is_some());
+        assert!(problem(&output("whatsapp", "abc@s.whatsapp.net")).is_some());
         assert!(problem(&output("githubComment", "owner/repo")).is_none());
         assert!(problem(&output("slack", "not a channel")).is_some());
         assert!(problem(&output("telegram", "abc")).is_some());

@@ -68,6 +68,8 @@ test('an output checks its own destination', () => {
   const output = (kind: string, target: string) => ({ kind, target })
   assert.equal(outputProblem(output('slack', 'C0123')), null)
   assert.equal(outputProblem(output('telegram', '-100123')), null)
+  assert.equal(outputProblem(output('whatsapp', '5215555555555@s.whatsapp.net')), null)
+  assert.ok(outputProblem(output('whatsapp', '5215555555555')))
   assert.equal(outputProblem(output('githubComment', 'owner/repo')), null)
   assert.ok(outputProblem(output('slack', 'not a channel')))
   assert.ok(outputProblem(output('telegram', 'abc')))

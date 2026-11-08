@@ -6,7 +6,7 @@ import { outputKinds, outputProblem, type RoutineOutput } from './routine'
 import './routines.css'
 
 const placeholder = (kind: string) =>
-  kind === 'githubComment' ? 'owner/name' : kind === 'telegram' ? '-1001234567890' : kind === 'discordReact' ? '👍' : '1234567890'
+  kind === 'githubComment' ? 'owner/name' : kind === 'telegram' ? '-1001234567890' : kind === 'whatsapp' ? '5215555555555@s.whatsapp.net' : kind === 'discordReact' ? '👍' : '1234567890'
 
 const valuePlaceholder = (kind: string) =>
   kind === 'githubIssue' ? 'Issue title (optional)' : kind === 'githubLabel' ? 'Labels, separated by commas' : 'People, separated by commas'

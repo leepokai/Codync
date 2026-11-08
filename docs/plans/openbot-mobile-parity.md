@@ -59,8 +59,14 @@ Parity owed: the iPhone app has no Support page yet (`apps/ios`).
 
 Not started, in order:
 
-- **M2**: workflow editor (Condition model and effort, Telegram/Slack triggers and outputs,
-  WhatsApp numbers), channel Cancel task.
+- **M2**: workflow editor (Condition model and effort, WhatsApp numbers), channel Cancel task.
+
+Done from M2:
+
+| Item | Status | Files |
+| --- | --- | --- |
+| A routine can start from a WhatsApp message or group mention | Done | host `routines::events`, `RoutinesView.kt` (catalog from the host) |
+| A WhatsApp chat as an output | Done | host `routines::outputs`, `Routine.kt`, `RoutinesView.kt`, desktop `routine.ts` |
 - **M5/M6**: Voice pause slider and reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.
 - **M1/M7**: marketplace connectors (Coinbase, RevenueCat, TickTick, Proton Pass, Higgsfield),

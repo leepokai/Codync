@@ -10,7 +10,7 @@ import './attachments.css'
 /** The symbol for a file by its extension. */
 export function attachmentSymbol(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp'].includes(ext)) return 'photo'
+  if (['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp', 'svg'].includes(ext)) return 'photo'
   if (ext === 'pdf') return 'doc.richtext'
   if (['zip', 'gz', 'tar', '7z'].includes(ext)) return 'doc.zipper'
   if (['mov', 'mp4', 'm4v'].includes(ext)) return 'film'
@@ -85,7 +85,7 @@ export function AttachmentImage({ source, fit }: { source: ImageSource; fit: 'ic
       const data = 'entryId' in source ? store.sharedFileData(source.file, source.entryId) : store.attachmentData(source.file.id, source.botId)
       void data.then((data) => {
         if (!data || revoked || made) return
-        made = URL.createObjectURL(new Blob([data as BlobPart]))
+        made = URL.createObjectURL(new Blob([data as BlobPart], { type: source.file.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : '' }))
         setUrl(made)
       })
     }

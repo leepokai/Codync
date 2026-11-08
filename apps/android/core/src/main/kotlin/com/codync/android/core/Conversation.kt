@@ -107,7 +107,7 @@ private data class EntryFields(
     val isImage: Boolean get() = isImageName(name)
 }
 
-private fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
+private fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp", "svg")
 
 /** A file a bot shared: immutable on the computer, checked against its SHA-256 once downloaded. */
 @Serializable data class SharedFile(val id: String, val name: String, val size: Long, val sha256: String) {

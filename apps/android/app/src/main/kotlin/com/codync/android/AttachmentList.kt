@@ -1,5 +1,6 @@
 package com.codync.android
 
+import android.webkit.WebView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +28,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -84,7 +86,34 @@ import kotlinx.coroutines.withContext
 
 /** An image a bot shared, like `AttachmentImage`. */
 @Composable internal fun SharedImage(file: SharedFile, entryId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier) =
-    RemoteImage(file.id, maxPixels, state, modifier, ContentScale.Fit) { store.sharedImage(entryId, file) }
+    if (file.name.lowercase().endsWith(".svg")) RemoteSvg(file.id, state, modifier) { store.sharedImage(entryId, file) }
+    else RemoteImage(file.id, maxPixels, state, modifier, ContentScale.Fit) { store.sharedImage(entryId, file) }
+
+/** An SVG shown by a WebView: the decoder behind bitmaps cannot read vector files. */
+@Composable private fun RemoteSvg(id: String, state: AppState, modifier: Modifier, load: suspend () -> java.io.File) {
+    var file by remember(id) { mutableStateOf<java.io.File?>(null) }
+    LaunchedEffect(id, state.actualConnection) {
+        if (file != null) return@LaunchedEffect
+        try { file = load() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { /* The placeholder stays; the next link change tries again. */ }
+    }
+    val shown = file
+    if (shown == null) {
+        Box(modifier.size(160.dp, 120.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser), contentAlignment = Alignment.Center) {
+            Symbol("photo", size = 20.dp, tint = Palette.tertiary)
+        }
+        return
+    }
+    AndroidView(factory = { context ->
+        WebView(context).apply {
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            loadUrl(shown.toURI().toString())
+        }
+    }, modifier = modifier)
+}
 
 /** A picture `load` fetches from the computer into the cache (iOS `AttachmentImage`); a placeholder until then. */
 @Composable private fun RemoteImage(id: String, maxPixels: Int, state: AppState, modifier: Modifier, scale: ContentScale, load: suspend () -> java.io.File) {
@@ -108,7 +137,7 @@ import kotlinx.coroutines.withContext
 /** The symbol for a file by its extension. */
 internal object AttachmentIcon {
     fun symbol(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-        "png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp" -> "photo"
+        "png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp", "svg" -> "photo"
         "pdf" -> "doc.richtext"
         "zip", "gz", "tar", "7z" -> "doc.zipper"
         "mov", "mp4", "m4v" -> "film"

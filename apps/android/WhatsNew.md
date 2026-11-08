@@ -19,6 +19,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 每個 Bot 的聊天可以選擇顏色，方便一眼分辨。
 - Slack、Telegram 與 Discord 的提及可以啟動流程；GitHub 的 issue、PR 與失敗檢查也一樣。
 - 新增 TickTick 等應用程式，以及每個代理程式的建立者、審核狀態、分類與更新日期。
+- WhatsApp 號碼可以用配對代碼連結，不必掃描 QR 碼。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -30,6 +31,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Each bot's chat can have its own color, so it is easy to tell apart.
 - Slack, Telegram and Discord mentions can start a workflow, as can GitHub issues, pull requests and failed checks.
 - New apps such as TickTick, and each agent page now names its creator, review, category and update date.
+- A WhatsApp number can be linked by typing a pairing code instead of scanning a QR code.
 
 ## 2.32.0
 

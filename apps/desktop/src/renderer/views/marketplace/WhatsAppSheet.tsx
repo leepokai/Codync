@@ -21,6 +21,8 @@ export function WhatsAppSheet() {
   const app = useApp()
   const [qrImage, setQrImage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [phone, setPhone] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
   const state = store.whatsapp
   const selected = state?.bot ?? app.selection?.botId ?? null
   const bots = [...store.bots.values()]
@@ -39,10 +41,30 @@ export function WhatsAppSheet() {
 
   const connect = async () => {
     setError(null)
+    setNotice(null)
     try {
       await store.whatsappConnect()
     } catch (e) {
       setError((e as Error).message)
+    }
+  }
+
+  const pair = async () => {
+    setError(null)
+    setNotice(null)
+    try {
+      await store.whatsappPair(phone)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const copyCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setNotice(tr('Code copied.'))
+    } catch {
+      setError(tr('Could not copy the code.'))
     }
   }
 
@@ -60,6 +82,21 @@ export function WhatsAppSheet() {
                   {tr('WhatsApp does not support this kind of client officially and can block a number it sees as automated. A separate number is safer.')}
                 </Text>
               </>
+            ) : state?.state === 'pairing' ? (
+              <>
+                <Text tone="text">
+                  {tr('On your phone, open WhatsApp → Linked devices → Link a device, choose Link with phone number, then type this code.')}
+                </Text>
+                <HStack gap={10} align="center">
+                  <Text tone="text" weight="medium" size="title2" mono>{groupedCode(state.pairCode ?? '')}</Text>
+                  <Button kind="secondary" disabled={!state.pairCode} onClick={() => void copyCode(state.pairCode ?? '')}>
+                    {tr('Copy code')}
+                  </Button>
+                </HStack>
+                <HStack gap={8}>
+                  <Button kind="secondary" onClick={() => void store.whatsappLogout()}>{tr('Cancel')}</Button>
+                </HStack>
+              </>
             ) : state?.state === 'connected' ? (
               <>
                 <Text tone="text" weight="medium">{state.name || state.me}</Text>
@@ -70,13 +107,30 @@ export function WhatsAppSheet() {
                 <AllowedChats allowed={state.allowed ?? []} onSet={(jid, allowed) => void store.whatsappSetAllowed(jid, allowed)} />
               </>
             ) : state?.state === 'starting' ? (
-              <HStack gap={8}><Spinner size={18} /><Text tone="secondary">{tr('Starting the WhatsApp link…')}</Text></HStack>
+              <>
+                <HStack gap={8}><Spinner size={18} /><Text tone="secondary">{tr('Starting the WhatsApp link…')}</Text></HStack>
+                <HStack gap={8}>
+                  <Button kind="secondary" onClick={() => void store.whatsappLogout()}>{tr('Cancel')}</Button>
+                </HStack>
+              </>
             ) : (
               <>
                 <Text tone="secondary">
-                  {tr('Link this computer to a WhatsApp number with a QR code, as another device. Messages arrive here; nothing goes through a Codync server.')}
+                  {tr('Link this computer to a WhatsApp number with a pairing code, or a QR code, as another device. Messages arrive here; nothing goes through a Codync server.')}
                 </Text>
-                <Button onClick={() => void connect()}>{tr('Link WhatsApp')}</Button>
+                <HStack gap={8}>
+                  <input
+                    className="field-box"
+                    value={phone}
+                    placeholder="5215555555555"
+                    inputMode="tel"
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                  <Button disabled={!phone.trim()} onClick={() => void pair()}>{tr('Link with a code')}</Button>
+                </HStack>
+                <HStack gap={8}>
+                  <Button kind="secondary" onClick={() => void connect()}>{tr('Scan a QR code')}</Button>
+                </HStack>
               </>
             )}
             <ValueRow label={tr('Bot')}>
@@ -90,6 +144,7 @@ export function WhatsAppSheet() {
               </select>
             </ValueRow>
             {state?.error ? <Text size="caption" tone="attention">{state.error}</Text> : null}
+            {notice ? <Text size="caption" tone="secondary">{notice}</Text> : null}
             {error ? <ErrorText text={error} /> : null}
           </VStack>
         </CardSection>
@@ -98,7 +153,11 @@ export function WhatsAppSheet() {
   )
 }
 
-/** A labelled row; the marketplace's inputs share it. */function ValueRow({ label, children }: { label: string; children: React.ReactNode }) {
+/** The pairing code in two groups of four, as WhatsApp shows its field for it. */
+const groupedCode = (code: string) => (code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code)
+
+/** A labelled row; the marketplace's inputs share it. */
+function ValueRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <VStack gap={4}>
       <Text size="caption" tone="secondary">{label}</Text>

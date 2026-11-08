@@ -67,6 +67,8 @@ Done from M2:
 | --- | --- | --- |
 | A routine can start from a WhatsApp message or group mention | Done | host `routines::events`, `RoutinesView.kt` (catalog from the host) |
 | A WhatsApp chat as an output | Done | host `routines::outputs`, `Routine.kt`, `RoutinesView.kt`, desktop `routine.ts` |
+| Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx` |
+
 - **M5/M6**: Voice pause slider and reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.
 - **M1/M7**: marketplace connectors (Coinbase, RevenueCat, TickTick, Proton Pass, Higgsfield),

@@ -540,6 +540,12 @@ export class BotStore extends BotSync {
     this.changed()
   }
   async whatsappConnect() { return (await this.ready()).call('whatsappConnect') }
+  /** Links a number with a pairing code to type in WhatsApp instead of scanning a QR code. */
+  async whatsappPair(phone: string) {
+    const state = await (await this.ready()).call<import('@shared/models').WhatsAppState>('whatsappPair', { phone })
+    this.whatsapp = state
+    this.changed()
+  }
   async whatsappLogout() { return (await this.ready()).call('whatsappLogout') }
   async whatsappSetBot(botId: string | null) { return this.whatsapp = { ...(this.whatsapp ?? { state: 'disconnected' }), bot: botId }, await (await this.ready()).call('whatsappSetBot', { botId: botId ?? '' }), this.changed() }
   /** Lets a chat or person write, or takes them out; an empty list lets anyone in. */

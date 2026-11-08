@@ -6,9 +6,11 @@ import kotlinx.serialization.json.jsonObject
 
 /** The computer's linked WhatsApp number, as `whatsappState` reports it. */
 @Serializable data class WhatsAppLink(
-    /** `disconnected`, `starting`, `qr`, `connected`, `loggedOut` or `error`. */
+    /** `disconnected`, `starting`, `qr`, `pairing`, `connected`, `loggedOut` or `error`. */
     val state: String = "disconnected",
     val qr: String? = null,
+    /** The code to type in WhatsApp → Linked devices instead of scanning a QR code. */
+    val pairCode: String? = null,
     val me: String? = null,
     val name: String? = null,
     val error: String? = null,
@@ -26,8 +28,12 @@ object WhatsApp {
         "connected" -> "Linked"
         "starting" -> "Starting…"
         "qr" -> "Scan the code"
+        "pairing" -> "Enter the code on your phone."
         "loggedOut" -> "Not linked"
         "error" -> "The link stopped"
         else -> "Not linked"
     }
+
+    /** The code in two groups of four, as WhatsApp shows its field for it. */
+    fun groupedCode(code: String): String = if (code.length == 8) "${code.take(4)}-${code.drop(4)}" else code
 }

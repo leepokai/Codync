@@ -713,9 +713,11 @@ export type AccountApproval = 'code' | 'auto'
 
 /** A linked WhatsApp number on this computer. */
 export interface WhatsAppState {
-  /** disconnected, starting, qr, connected, loggedOut or error. */
+  /** disconnected, starting, qr, pairing, connected, loggedOut or error. */
   state: string
   qr?: string | null
+  /** The code to type in WhatsApp → Linked devices instead of scanning a QR code. */
+  pairCode?: string | null
   me?: string | null
   name?: string | null
   error?: string | null

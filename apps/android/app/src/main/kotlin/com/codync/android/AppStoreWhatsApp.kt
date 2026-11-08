@@ -12,6 +12,10 @@ suspend fun AppStore.whatsapp(): WhatsAppLink? = runCatching { WhatsApp.decode(h
 /** Starts the link; the host emits the QR code as an event. */
 suspend fun AppStore.whatsappConnect(): JsonElement = hostQuery("whatsappConnect", buildJsonObject { })
 
+/** Links [phone] with a pairing code to type in WhatsApp instead of scanning a QR code. */
+suspend fun AppStore.whatsappPair(phone: String): WhatsAppLink =
+    WhatsApp.decode(hostQuery("whatsappPair", body("phone" to phone.trim())))
+
 /** Forgets the number on this computer. */
 suspend fun AppStore.whatsappLogout(): JsonElement = hostQuery("whatsappLogout", buildJsonObject { })
 

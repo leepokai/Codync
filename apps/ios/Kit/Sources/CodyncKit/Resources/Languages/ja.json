@@ -1770,5 +1770,7 @@
   "Copy SCIM URL": "SCIM URL をコピー",
   "Disconnect": "切断",
   "SCIM token (shown once)": "SCIM トークン（一度だけ表示）",
-  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "これらのドメインのメールを持つ人は会社経由でサインインします。SCIM は所有者とこのコンピューターのデバイスを一覧します。メンバーアカウントができるまでは読み取り専用です。"
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "これらのドメインのメールを持つ人は会社経由でサインインします。SCIM は所有者とこのコンピューターのデバイスを一覧します。メンバーアカウントができるまでは読み取り専用です。",
+  "The company sign-in changed": "会社のサインインが変わりました",
+  "A SCIM token was made": "SCIM トークンを作成しました"
 }

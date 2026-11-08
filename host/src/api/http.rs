@@ -80,7 +80,7 @@ fn unauthorized() -> ApiError {
 
 /// `GET /scim/v2/Users`: the owner and this computer's paired devices, for a provisioning client with the SCIM
 /// bearer token from Settings.
-async fn scim_users(State(hub): State<Arc<Hub>>, headers: HeaderMap) -> Result<Json<serde_json::Value>, ApiError> {
+async fn scim_users(State(hub): State<Arc<Hub>>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     let header = headers.get("authorization").and_then(|h| h.to_str().ok());
     if !crate::enterprise::scim_allowed(&hub.store, header) {
         return Err(unauthorized());

@@ -1,4 +1,4 @@
-//! Company sign-in and user sync: an OpenID Connect provider the owner names, checked by discovery, and a bearer token
+//! Company sign-in and user sync: an `OpenID Connect` provider the owner names, checked by discovery, and a `bearer token`
 //! for a SCIM client. Codync has no member accounts of its own yet, so the SCIM endpoint lists the account owner and
 //! this computer's paired devices as read-only users.
 

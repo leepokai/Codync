@@ -1770,5 +1770,7 @@
   "Copy SCIM URL": "复制 SCIM URL",
   "Disconnect": "断开连接",
   "SCIM token (shown once)": "SCIM 令牌（只显示一次）",
-  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "使用这些域邮箱的人通过公司登录。SCIM 列出所有者和此电脑的设备；在成员账户出现前为只读。"
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "使用这些域邮箱的人通过公司登录。SCIM 列出所有者和此电脑的设备；在成员账户出现前为只读。",
+  "The company sign-in changed": "公司登录已更改",
+  "A SCIM token was made": "已创建 SCIM 令牌"
 }

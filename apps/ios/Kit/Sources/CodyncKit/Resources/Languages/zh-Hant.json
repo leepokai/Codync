@@ -1770,5 +1770,7 @@
   "Copy SCIM URL": "複製 SCIM URL",
   "Disconnect": "中斷連線",
   "SCIM token (shown once)": "SCIM 權杖（只顯示一次）",
-  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "使用這些網域信箱的人透過公司登入。SCIM 列出擁有者與此電腦的裝置；在成員帳號出現前為唯讀。"
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "使用這些網域信箱的人透過公司登入。SCIM 列出擁有者與此電腦的裝置；在成員帳號出現前為唯讀。",
+  "The company sign-in changed": "公司登入已變更",
+  "A SCIM token was made": "已建立 SCIM 權杖"
 }

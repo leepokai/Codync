@@ -1770,5 +1770,7 @@
   "Copy SCIM URL": "Копировать URL SCIM",
   "Disconnect": "Отключить",
   "SCIM token (shown once)": "Токен SCIM (показывается один раз)",
-  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "Люди с почтой на этих доменах входят через компанию. SCIM перечисляет владельца и устройства этого компьютера; только чтение, пока нет учётных записей участников."
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "Люди с почтой на этих доменах входят через компанию. SCIM перечисляет владельца и устройства этого компьютера; только чтение, пока нет учётных записей участников.",
+  "The company sign-in changed": "Вход через компанию изменён",
+  "A SCIM token was made": "Создан токен SCIM"
 }

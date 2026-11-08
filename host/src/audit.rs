@@ -25,6 +25,8 @@ pub fn action(method: &str) -> Option<&'static str> {
         "setNetworkRules" => "Who may write to the bots changed",
         "setApproval" => "The approval setting changed",
         "setAssistants" => "Cloud assistants were let in or out",
+        "setEnterprise" | "disconnectEnterprise" => "The company sign-in changed",
+        "rotateScim" => "A SCIM token was made",
         _ => return None,
     })
 }
@@ -46,6 +48,8 @@ pub fn detail(method: &str, body: &Value) -> String {
             format!("{} {}", if allowed { "allowed" } else { "refused" }, at("key"))
         }
         "setCloud" | "setCloudUrl" => at("url"),
+        "setEnterprise" => at("issuer"),
+        "disconnectEnterprise" | "rotateScim" => String::new(),
         "revokeDevice" => at("key"),
         _ => {
             [at("peer"), at("computer"), at("key"), at("name")].into_iter().find(|v| !v.is_empty()).unwrap_or_default()

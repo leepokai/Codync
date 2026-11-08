@@ -1770,5 +1770,7 @@
   "Copy SCIM URL": "Copier l'URL SCIM",
   "Disconnect": "Déconnecter",
   "SCIM token (shown once)": "Jeton SCIM (affiché une fois)",
-  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "Les personnes avec un courriel de ces domaines se connectent via l'entreprise. SCIM liste le propriétaire et les appareils de cet ordinateur ; lecture seule tant que les comptes membres n'existent pas."
+  "People with an email at these domains sign in through the company. SCIM lists the owner and this computer's devices; it is read-only until member accounts exist.": "Les personnes avec un courriel de ces domaines se connectent via l'entreprise. SCIM liste le propriétaire et les appareils de cet ordinateur ; lecture seule tant que les comptes membres n'existent pas.",
+  "The company sign-in changed": "La connexion d'entreprise a changé",
+  "A SCIM token was made": "Un jeton SCIM a été créé"
 }

@@ -135,3 +135,46 @@
 .library-row-menu:focus-visible {
   opacity: 1;
 }
+
+/* Several artifacts open at once: a tab strip over the one shown. */
+.artifact-tabbed {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+}
+.artifact-tabbed .artifact-layer {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  min-height: 0;
+}
+.artifact-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 54px 0 54px;
+  overflow-x: auto;
+  flex: none;
+}
+.artifact-tab {
+  display: flex;
+  align-items: center;
+  max-width: 220px;
+  background: var(--surface);
+  border-radius: var(--radius-s) var(--radius-s) 0 0;
+}
+.artifact-tab.active { background: var(--raised, var(--surface)); }
+.artifact-tab > button:first-child {
+  min-width: 0;
+  padding: 6px 4px 6px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption);
+  color: var(--secondary);
+}
+.artifact-tab.active > button:first-child { color: var(--text); }
+.artifact-tab-close { display: flex; padding: 4px 8px 4px 4px; color: var(--tertiary); }
+.artifact-tab-close:hover { color: var(--text); }

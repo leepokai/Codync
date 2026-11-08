@@ -51,6 +51,7 @@ const WIDE = 740
  */
 export const ThreadView = memo(function ThreadView({ botId }: { botId: string }) {
   const store = useStore()
+  const tr = useTr()
   const bot = store.bots.get(botId) ?? null
   const [showTrace, setShowTrace] = useState(false)
   const [replyTo, setReplyTo] = useState<Entry | null>(null)
@@ -74,8 +75,9 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   const [editingMember, setEditingMember] = useState<string | null>(null)
   const [activeApp, setActiveApp] = useState<BotApp | null>(null)
   const [routineRequest, setRoutineRequest] = useState(0)
-  // The artifact shown over the chat (a card or the Library opened it).
-  const [artifactId, setArtifactId] = useState<string | null>(null)
+  // The artifacts shown over the chat (a card or the Library opened them), each its own tab.
+  const [artifacts, setArtifacts] = useState<string[]>([])
+  const [activeArtifact, setActiveArtifact] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const dock = useRef<HTMLDivElement>(null)
   // The width is measured, not rendered: resizing re-renders only when `wide` flips, or while the
@@ -132,8 +134,16 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   const openTrace = useCallback(() => setShowTrace(true), [])
   const openForward = useCallback((e: Entry) => setForwardEntry(e), [])
   const openArtifact = useCallback((id: string) => {
-    setArtifactId(id)
+    setArtifacts((list) => (list.includes(id) ? list : [...list, id]))
+    setActiveArtifact(id)
     setCompactDetails(false)
+  }, [])
+  const closeArtifact = useCallback((id: string) => {
+    setArtifacts((list) => {
+      const next = list.filter((item) => item !== id)
+      setActiveArtifact((active) => (active !== id ? active : (next[Math.max(0, list.indexOf(id) - 1)] ?? null)))
+      return next
+    })
   }, [])
 
   const presentRoutine = useCallback((id: string | null) => {
@@ -201,7 +211,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             <div className="composer-update-needed">
               <UpdateNeededCard />
             </div>
-          ) : artifactId ? null : (
+          ) : activeArtifact ? null : (
             // The artifact over the chat has its own box (two would both take the voice shortcut).
             <Composer
               botId={botId}
@@ -217,7 +227,25 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             <CallView botId={botId} onSpeaking={setCallSpeaking} interrupt={interruptCall} onEnd={() => setCalling(false)} />
           </div>
         ) : null}
-        {artifactId ? <ArtifactView botId={botId} artifactId={artifactId} close={() => setArtifactId(null)} /> : null}
+        {activeArtifact ? (
+          <div className="artifact-tabbed">
+            {artifacts.length > 1 ? (
+              <div className="artifact-tabs" role="tablist" aria-label={tr('Open artifacts')}>
+                {artifacts.map((id) => (
+                  <div key={id} role="presentation" className={id === activeArtifact ? 'artifact-tab active' : 'artifact-tab'}>
+                    <button role="tab" aria-selected={id === activeArtifact} onClick={() => setActiveArtifact(id)}>
+                      {store.artifacts.byId.get(id)?.title ?? tr('Artifact')}
+                    </button>
+                    <button className="artifact-tab-close" title={tr('Close tab')} onClick={() => closeArtifact(id)}>
+                      <Icon name="xmark" size={9} weight="bold" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <ArtifactView key={activeArtifact} botId={botId} artifactId={activeArtifact} close={() => closeArtifact(activeArtifact)} />
+          </div>
+        ) : null}
       </div>
       <ChatSidePanel
         open={panelOpen}

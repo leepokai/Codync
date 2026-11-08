@@ -1722,5 +1722,8 @@
   "Bot busy": "봇 사용 중",
   "Missing file or tool": "파일 또는 도구 없음",
   "Stopped": "중지됨",
-  "Error": "오류"
+  "Error": "오류",
+  "Open artifacts": "열린 아티팩트",
+  "Artifact": "아티팩트",
+  "Close tab": "탭 닫기"
 }

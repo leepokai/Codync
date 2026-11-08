@@ -1722,5 +1722,8 @@
   "Bot busy": "機器人忙碌",
   "Missing file or tool": "缺少檔案或工具",
   "Stopped": "已停止",
-  "Error": "錯誤"
+  "Error": "錯誤",
+  "Open artifacts": "開啟的產物",
+  "Artifact": "產物",
+  "Close tab": "關閉分頁"
 }

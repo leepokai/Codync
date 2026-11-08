@@ -1722,5 +1722,8 @@
   "Bot busy": "Bot beschäftigt",
   "Missing file or tool": "Datei oder Werkzeug fehlt",
   "Stopped": "Gestoppt",
-  "Error": "Fehler"
+  "Error": "Fehler",
+  "Open artifacts": "Offene Artefakte",
+  "Artifact": "Artefakt",
+  "Close tab": "Tab schließen"
 }

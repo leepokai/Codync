@@ -70,6 +70,8 @@ class EncryptedChannel internal constructor(
     private val listLock = Mutex()
     private val mailboxUpdates = MutableSharedFlow<JsonObject>(extraBufferCapacity = 256)
     val mailbox = mailboxUpdates.asSharedFlow()
+    /** Told each request's method, how long it took and why it failed; the Support page's log listens. */
+    @Volatile var onCall: ((method: String, millis: Long, error: Throwable?) -> Unit)? = null
     @Volatile private var closed = false
 
     internal suspend fun start(): EncryptedChannel {
@@ -220,18 +222,24 @@ class EncryptedChannel internal constructor(
     }
 
     suspend fun call(method: String, body: JsonElement = JsonNull, timeoutMillis: Long = 20_000): JsonElement {
-        awaitReady(timeoutMillis)
-        require(!pairing || method == "pair") { "A pairing channel only accepts pair" }
+        val started = System.nanoTime()
+        var failure: Throwable? = null
         val id = nextId()
-        val result = CompletableDeferred<JsonElement>()
-        calls[id] = result
         try {
+            awaitReady(timeoutMillis)
+            require(!pairing || method == "pair") { "A pairing channel only accepts pair" }
+            val result = CompletableDeferred<JsonElement>()
+            calls[id] = result
             val request = buildJsonObject { put("id", id); put("m", method); put("b", body) }
             sendInner(request)
             val response = deadline(timeoutMillis, "The computer didn't respond in time. Check the result before retrying.") { result.await() }
             return response
+        } catch (error: Throwable) {
+            failure = error
+            throw error
         } finally {
             if (calls.remove(id) != null) cancelRemote(id)
+            onCall?.invoke(method, (System.nanoTime() - started) / 1_000_000, failure)
         }
     }
 

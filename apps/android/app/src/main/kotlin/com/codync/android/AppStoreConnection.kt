@@ -102,6 +102,10 @@ fun AppStore.connect() {
                 val active = HostConnector.connect(target, identity)
                 connected = active
                 channel = active
+                active.onCall = { method, millis, error ->
+                    SupportLog.add(if (error == null) SupportLevel.Info else SupportLevel.Warn, SupportSource.Network,
+                        "$method ${millis}ms" + (error?.let { " · ${it.message ?: it::class.simpleName}" } ?: ""))
+                }
                 coroutineScope {
                     launch {
                         active.mailbox.collect { event ->
@@ -247,6 +251,16 @@ private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
 }
 
 private fun AppStore.showConnection(link: LinkState) {
+    SupportLog.add(
+        if (link is LinkState.Connecting || link is LinkState.Ready) SupportLevel.Info else SupportLevel.Warn,
+        SupportSource.Connection,
+        when (link) {
+            is LinkState.Connecting -> "Connecting to ${state.value.computer?.name ?: "the computer"}"
+            is LinkState.Ready -> "Connected over ${link.route.name.lowercase()}"
+            is LinkState.ComputerOffline -> "The computer is offline"
+            is LinkState.Failed -> "Connection failed" + (link.status?.let { " ($it)" } ?: "") + ": ${link.message}"
+        },
+    )
     mutableState.update { it.copy(actualConnection = link) }
     val immediate = link is LinkState.Ready || link is LinkState.Failed && link.status in listOf(403, 426)
     if (immediate) {

@@ -39,13 +39,28 @@ before connect (`openMirror`), sign-out erasure (`LocalStore.erase`), bounded im
 | Resting faces stay still (only working and needs-you faces move) | Present | `CharacterAvatar.kt` |
 | Encrypted copy of agents and chats, deleted on sign-out | Partial: the mirror lives in `noBackupFilesDir`, which is private but not encrypted; the key is Keystore-owned | `LocalStore.kt`, `MirrorDatabase.kt` |
 
-## 3. Queue, then the rest
+## 3. Support (M4)
+
+Adapted, not copied: iPhone and Android had no Support page, so Android leads it. The log is the
+app's own events, kept on the phone (app cache, never backed up), redacted, capped at 5,000 and
+paged 100 at a time when read; Apple-style crash reporting was already in `CrashReports.kt`.
+
+| Item | Status | Files |
+| --- | --- | --- |
+| Settings → Support with Discord and GitHub links | Done | `SettingsView.kt`, `SupportView.kt`, `AnalyticsEvent.kt` |
+| App event log: connection steps, each request with its result and errors | Done | `SupportLog.kt`, `EncryptedChannel.onCall`, `AppStoreConnection.kt` |
+| Show log, newest first, 5,000 events, Show older events | Done | `SupportView.kt` |
+| Save log file through the share sheet, and Clear log with a confirmation | Done | `AppStoreSupport.kt`, `SupportView.kt` |
+| Log kept across restarts, deleted only from the page | Done | `SupportLog.kt` |
+
+Parity owed: the iPhone app has no Support page yet (`apps/ios`).
+
+## 4. Queue, then the rest
 
 Not started, in order:
 
-- **M2/M4**: workflow editor (Condition model and effort, Telegram/Slack triggers and outputs,
-  WhatsApp numbers), Support (Discord ticket, 5,000-event log, Show log page), channel Cancel
-  task.
+- **M2**: workflow editor (Condition model and effort, Telegram/Slack triggers and outputs,
+  WhatsApp numbers), channel Cancel task.
 - **M5/M6**: Voice pause slider and reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.
 - **M1/M7**: marketplace connectors (Coinbase, RevenueCat, TickTick, Proton Pass, Higgsfield),

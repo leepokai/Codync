@@ -61,6 +61,7 @@ class MainActivity : FragmentActivity() {
         ThinkingDetails.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
+        SupportLog.start(applicationContext)
         Analytics.userId = { store.state.value.account.userId }
         NotificationDisplay.channels(this)
         if (savedInstanceState == null) lifecycleScope.launch { CodyncWidgets.publishPreviews(applicationContext) }

@@ -56,6 +56,7 @@ import com.codync.android.design.*
     var confirmStartOver by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
     var channels by remember { mutableStateOf(false) }
+    var support by remember { mutableStateOf(false) }
     LaunchedEffect(reselectToken) { if (reselectToken > 0) scroll.animateScrollTo(0) }
     LaunchedEffect(active) { if (active) store.refreshCloud() }
     CardForm(Modifier.background(Palette.background).statusBarsPadding(), PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = bottomInset), scroll) {
@@ -115,6 +116,9 @@ import com.codync.android.design.*
             }
         }
         CardSection {
+            row { RowLabel("Support", "lifepreserver", chevron = true, modifier = Modifier.plainButton { support = true }) }
+        }
+        CardSection {
             row { ValueRow("App version", BuildConfig.VERSION_NAME) }
             row { LinkButton("Source code") { uri.open("https://github.com/leepokai/Codync", OutboundLink.Github) } }
         }
@@ -130,6 +134,7 @@ import com.codync.android.design.*
     }
     CodyncSheet(aboutAnalytics, { aboutAnalytics = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { AnalyticsSheet() }
     CodyncSheet(channels, { channels = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { ChannelsSheet(state, store) }
+    CodyncSheet(support, { support = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { SupportView(store) { support = false } }
     CodyncDialog("Start over?", confirmStartOver, { confirmStartOver = false },
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {
         listOf(DialogAction("Start over", destructive = true, action = store::startOver))

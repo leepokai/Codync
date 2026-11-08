@@ -116,7 +116,7 @@ object NativeAccounts {
      * Clerk's own text for a closed browser or an unreachable server is "Error occurred with unknown message.", so a
      * sign-in that fails reads as on the iPhone; the browser closed ([SignInFailure.Cancelled]) shows nothing at all.
      * Clerk also reports a refusal on the redirect (`error`, `__clerk_error_code`) as an [SSOCancellationException], with
-     * that text in place of its own "Authentication cancelled" (Clerk 1.1.11 `SSOService.completeCancellation`): a failure.
+     * that text in place of its own "Authentication cancelled" (Clerk 1.4.1 `SSOService.cancellation`): a failure.
      */
     private fun signInError(failure: ClerkResult.Failure<com.clerk.api.network.model.error.ClerkErrorResponse>): SignInError {
         val cause = failure.throwable

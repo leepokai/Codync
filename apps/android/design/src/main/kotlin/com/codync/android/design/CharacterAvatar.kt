@@ -64,7 +64,7 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
 
 /** Port of CodyncKit's dotted character; the accompanying name/status supplies accessibility text. */
 @Composable fun CharacterAvatar(shape: String, color: String, size: Dp = 40.dp, status: String = "idle", monochrome: Color? = null,
-    highlight: Color? = null) {
+    highlight: Color? = null, blink: Boolean = false) {
     val owner = LocalLifecycleOwner.current
     var active by remember(owner) { mutableStateOf(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     DisposableEffect(owner) {
@@ -87,7 +87,7 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
         val glance = if (status == "working" && time > 0) (sin(time * 2 * PI / 3.2) * 1.4).roundToInt() else 0
         val eyes = eyeColumns(cells).map { it + glance }
         val eyeRows = eyeRows(cells)
-        val blinking = time > 0 && (time / 4.7) % 1 < 0.035
+        val blinking = blink || (time > 0 && (time / 4.7) % 1 < 0.035)
         val yaw = if (status == "working" && time > 0) time * 1.4 else -0.7
         val lx = sin(yaw) * .8; val ly = .55; val lz = cos(yaw) * .5 + .6
         val ll = sqrt(lx * lx + ly * ly + lz * lz)

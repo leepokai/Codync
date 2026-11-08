@@ -7,6 +7,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
+import kotlin.random.Random
 
 // Pairing, the encrypted link to the computer and the mirror's event stream.
 
@@ -43,7 +44,8 @@ fun AppStore.setForeground(active: Boolean) {
     foregroundState.value = active
     PushDelivery.foreground = transportRequired
     if (active && !state.value.loading) {
-        connect()
+        // Coming back dials again at once: a link that died in the background may still be waiting its backoff.
+        reconnect()
         acknowledgeVisible()
         refreshCloud()
     }
@@ -116,7 +118,7 @@ fun AppStore.connect() {
                                 reconcileMailbox(active)
                             }
                             if (link is LinkState.Ready) {
-                                val fromHost = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
+                                val fromHost = withTimeout(15_000) { HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target) }
                                 val hello = active.call("hello").jsonObject
                                 // This phone's picks (color, route, push) may have changed during those calls.
                                 changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
@@ -131,7 +133,7 @@ fun AppStore.connect() {
                                 // follow hundreds of historical entries. Load the current roster
                                 // without moving the event cursor before consuming that stream.
                                 if (state.value.bots.isEmpty()) {
-                                    val roster = HostClient.bots(active)
+                                    val roster = withTimeout(15_000) { HostClient.bots(active) }
                                     if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Initial roster: ${roster.size} bots")
                                     withContext(Dispatchers.IO) { requireNotNull(database).receive(roster) }
                                 }
@@ -165,7 +167,8 @@ fun AppStore.connect() {
                 connected?.close()
                 if (channel === connected) channel = null
             }
-            delay(backoff)
+            // A random fifth added to each wait so phones paired with one computer don't retry in step.
+            delay(backoff + Random.nextLong(0, backoff / 5 + 1))
             backoff = minOf(backoff * 2, 20_000)
         }
     }

@@ -38,6 +38,7 @@ import kotlin.math.sin
 /**
  * Cold launch, as iOS `LaunchSplash`: the app-icon bot pops out of the blank system splash and
  * looks around while the computer catches up, then grows a little as it fades into the app.
+ * Between blinks it stays still, so the display draws no frames in the long gaps.
  */
 /** The splash over the app until the store is ready, held at least 0.7 s so the motion reads. */
 @Composable internal fun LaunchLayer(loading: Boolean) {
@@ -60,10 +61,23 @@ import kotlin.math.sin
     LaunchedEffect(Unit) { shown.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 158f)) }
     val bob by rememberInfiniteTransition(label = "Bob").animateFloat(0f, 1f,
         infiniteRepeatable(tween((2 * PI / 2.4 * 1000).toInt(), easing = LinearEasing), RepeatMode.Restart), label = "Phase")
+    // One closed/open pair every 4.8 s: a timer, not an endless animation, so the gaps cost no frames.
+    var blink by remember { mutableStateOf(false) }
+    LaunchedEffect(still) {
+        if (still) return@LaunchedEffect
+        delay(2_112)
+        while (true) {
+            blink = true
+            delay(96)
+            blink = false
+            delay(96)
+            delay(4_800 - 192)
+        }
+    }
     Box(Modifier.fillMaxSize().background(Palette.background).semantics { contentDescription = "Connecting" }, contentAlignment = Alignment.Center) {
         Box(Modifier.graphicsLayer {
             scaleX = shown.value; scaleY = shown.value; alpha = opacity.value
             translationY = if (still) 0f else sin(bob * 2 * PI).toFloat() * 4.dp.toPx()
-        }) { CharacterAvatar("squircle", "gray", 112.dp, status = "working", monochrome = Palette.text) }
+        }) { CharacterAvatar("squircle", "gray", 112.dp, monochrome = Palette.text, blink = blink) }
     }
 }

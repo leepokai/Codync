@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 const SLOT: &str = "discord.channel";
-pub const METHODS: &[&str] = &["discordStatus", "setDiscordChannel", "disconnectDiscord"];
+pub const METHODS: &[&str] = &["discordStatus", "setDiscordChannel", "disconnectDiscord", "setChannelMemory"];
 const MAX_BINDINGS: usize = 50;
 const MAX_ALLOWED: usize = 100;
 
@@ -29,6 +29,9 @@ const MAX_ALLOWED: usize = 100;
 pub(super) struct Binding {
     pub channel_id: String,
     pub bot_id: String,
+    /// What the bot should know about this channel (the channel's memory).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub memory: String,
     pub allowed_users: Vec<String>,
 }
 
@@ -188,7 +191,7 @@ pub(crate) async fn send_text(store: &Store, channel: &str, text: &str) -> Resul
 pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Value> {
     crate::market::vault::unlock(hub.clone()).await?;
     let prepared = if method == "setDiscordChannel" {
-        let config: Config = serde_json::from_value(body)?;
+        let config: Config = serde_json::from_value(body.clone())?;
         validate(hub, &config)?;
         verify(&config).await?;
         Some(config)
@@ -213,6 +216,15 @@ pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Va
                 generation: String::new(),
             },
         )?,
+        "setChannelMemory" => {
+            let channel = body["channel"].as_str().context("channel is required.")?;
+            let memory = crate::channels::memory_arg(&body)?;
+            let mut config = load(&hub.store)?.context("Discord is not configured.")?;
+            let binding =
+                config.bindings.iter_mut().find(|b| b.channel_id == channel).context("Unknown Discord channel.")?;
+            binding.memory = memory;
+            save(&hub.store, &config)?;
+        }
         "discordStatus" => {}
         _ => bail!("Unknown Discord method."),
     }

@@ -6,6 +6,8 @@ export interface TelegramBotStatus {
   botId: string
   botName: string
   allowed: number[]
+  /** What the bot knows about this channel (given before every message). */
+  memory?: string
   /** `ok`, `starting`, or `error: …`. */
   state: string
   lastReceivedAt: number | null
@@ -16,7 +18,7 @@ export interface SlackStatus {
   configured: boolean
   socketMode: boolean
   workspaceId: string | null
-  bindings: { channelId: string; botId: string; allowedUsers: string[] }[] | null
+  bindings: { channelId: string; botId: string; allowedUsers: string[]; memory?: string }[] | null
 }
 
 /** The Discord connection, as `discordStatus` reports it. Snowflakes are digits. */
@@ -24,7 +26,7 @@ export interface DiscordStatus {
   configured: boolean
   guildId: string | null
   botUserId: string | null
-  bindings: { channelId: string; botId: string; allowedUsers: string[] }[] | null
+  bindings: { channelId: string; botId: string; allowedUsers: string[]; memory?: string }[] | null
   /** `ok`, `starting`, or `error: …`. */
   state: string
   deliveries: { id: string; state: string }[]

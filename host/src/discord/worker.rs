@@ -165,6 +165,15 @@ fn deliver(hub: &Hub, event: &DiscordIncoming) -> Result<()> {
         hub.store.reject_discord(&event.event)?;
         return Ok(());
     }
+    let Some(binding) = c
+        .bindings
+        .iter()
+        .find(|b| b.channel_id == event.channel && b.bot_id == event.bot && b.allowed_users.contains(&event.user))
+    else {
+        hub.store.reject_discord(&event.event)?;
+        return Ok(());
+    };
+    let text = crate::channels::with_memory(&binding.memory, &event.text);
     let Some(bot) = hub.store.bot(&event.bot)?.filter(|b| !b.deleted && !b.config.is_group()) else {
         hub.store.reject_discord(&event.event)?;
         return Ok(());
@@ -184,7 +193,7 @@ fn deliver(hub: &Hub, event: &DiscordIncoming) -> Result<()> {
         &lane,
         EntryKind::User,
         hub.store.max_turn(&event.bot) + 1,
-        &json!({"text":event.text,"status":"queued","source":"discord",
+        &json!({"text":text,"status":"queued","source":"discord",
         "discordGeneration":event.generation,"discordChannel":event.channel,"discordUser":event.user}),
     )?;
     if entry.data["status"] != "queued" {

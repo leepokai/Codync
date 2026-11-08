@@ -1,0 +1,21 @@
+Talk to your bots from Telegram, Slack or Discord. Only the people you allow can write to a bot there, and the bot answers with its own agent, folder and permissions.
+
+## Connect a channel
+
+Channels belong to a computer and are set up on it:
+
+- **Telegram:** Settings → Channels. Add the bot @BotFather gave you, choose the Codync bot it answers for, then send `/start` with its pairing code from Telegram.
+- **Slack:** connect the workspace's app with its bot token, app token and signing secret; each channel is bound to a Codync bot and to the Slack users allowed in it.
+- **Discord:** connect the server's bot token, then bind channel ids to Codync bots and list the people allowed in each.
+
+Tokens stay in the computer's credential vault. A paired phone can see the channels, pair or remove someone, and change what a channel remembers.
+
+## Channel memory
+
+Each Telegram bot, Slack channel and Discord channel has a **Channel memory**: what the bot should know about that conversation, such as the project it covers or how its people like answers. It is given to the bot before every message from that channel and saved on its own, so it survives a reconnect.
+
+Keep it short and stable. Anything that changes per message belongs in the message; anything that belongs to every chat belongs in the bot's [memory](/docs/memory).
+
+## Approvals and routines
+
+An [approval card](/docs/conversations#approval-cards) arrives in the channel with a button per option; anyone allowed there may answer, and the first answer wins. Mentioning the bot in a Slack or Telegram channel can also start a [routine](/docs/routines); those triggers are edited on the computer.

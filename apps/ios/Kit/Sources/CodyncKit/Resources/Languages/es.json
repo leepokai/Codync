@@ -1711,5 +1711,8 @@
   "Send to a channel": "Enviar a un canal",
   "The message arrives there as a forwarded copy.": "El mensaje llega allí como una copia reenviada.",
   "Forwarded from": "Reenviado de",
-  "No chats yet.": "Aún no hay chats."
+  "No chats yet.": "Aún no hay chats.",
+  "Channel memory": "Memoria del canal",
+  "What the bot should remember about this channel": "Lo que el bot debe recordar sobre este canal",
+  "Save memory": "Guardar memoria"
 }

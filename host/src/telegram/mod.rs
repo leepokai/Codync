@@ -22,8 +22,14 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 const SLOT: &str = "telegram.channels";
-pub const METHODS: &[&str] =
-    &["telegramStatus", "addTelegramBot", "removeTelegramBot", "pairTelegram", "setTelegramAllowed"];
+pub const METHODS: &[&str] = &[
+    "telegramStatus",
+    "addTelegramBot",
+    "removeTelegramBot",
+    "pairTelegram",
+    "setTelegramAllowed",
+    "setChannelMemory",
+];
 /// Telegram bots a host talks through; more is a mistake.
 const MAX_BOTS: usize = 10;
 const MAX_ALLOWED: usize = 20;
@@ -42,6 +48,9 @@ struct TgBot {
     /// Telegram user ids allowed to talk to it.
     #[serde(default)]
     allowed: Vec<i64>,
+    /// What the bot should know about this channel (the channel's memory).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    memory: String,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -152,7 +161,14 @@ async fn call_with(hub: &Arc<Hub>, ep: &Endpoint, method: &str, body: Value) -> 
             if config.bots.len() >= MAX_BOTS {
                 bail!("That is as many Telegram bots as one host talks through ({MAX_BOTS}).");
             }
-            config.bots.push(TgBot { name: add.name, token: add.token, username, bot_id: add.bot_id, allowed });
+            config.bots.push(TgBot {
+                name: add.name,
+                token: add.token,
+                username,
+                bot_id: add.bot_id,
+                allowed,
+                memory: String::new(),
+            });
             save(&hub.store, &config)?;
         }
         "removeTelegramBot" => {
@@ -177,6 +193,12 @@ async fn call_with(hub: &Arc<Hub>, ep: &Endpoint, method: &str, body: Value) -> 
                 }
                 bot.allowed.push(user);
             }
+            save(&hub.store, &config)?;
+        }
+        "setChannelMemory" => {
+            let memory = crate::channels::memory_arg(&body)?;
+            let bot = config.bots.iter_mut().find(|b| b.name == name).context("Unknown Telegram bot.")?;
+            bot.memory = memory;
             save(&hub.store, &config)?;
         }
         "telegramStatus" => {}

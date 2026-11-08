@@ -1711,5 +1711,8 @@
   "Send to a channel": "傳送到頻道",
   "The message arrives there as a forwarded copy.": "訊息會以轉傳副本的形式到達那裡。",
   "Forwarded from": "轉傳自",
-  "No chats yet.": "還沒有聊天。"
+  "No chats yet.": "還沒有聊天。",
+  "Channel memory": "頻道記憶",
+  "What the bot should remember about this channel": "機器人應記住的關於此頻道的事",
+  "Save memory": "儲存記憶"
 }

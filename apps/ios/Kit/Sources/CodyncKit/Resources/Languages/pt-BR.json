@@ -1711,5 +1711,8 @@
   "Send to a channel": "Enviar para um canal",
   "The message arrives there as a forwarded copy.": "A mensagem chega lá como uma cópia encaminhada.",
   "Forwarded from": "Encaminhada de",
-  "No chats yet.": "Nenhum chat ainda."
+  "No chats yet.": "Nenhum chat ainda.",
+  "Channel memory": "Memória do canal",
+  "What the bot should remember about this channel": "O que o bot deve lembrar deste canal",
+  "Save memory": "Salvar memória"
 }

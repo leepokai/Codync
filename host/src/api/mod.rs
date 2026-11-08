@@ -112,9 +112,10 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         return crate::slack::call(hub, method, b).await;
     }
     if crate::telegram::METHODS.contains(&method) {
-        // A paired phone may see the channels and let someone in or out; a token is only ever given on the computer.
+        // A paired phone may see the channels, let someone in or out and write a channel's memory; a token is only
+        // ever given on the computer.
         if !matches!(caller, Caller::Local)
-            && !matches!(method, "telegramStatus" | "pairTelegram" | "setTelegramAllowed")
+            && !matches!(method, "telegramStatus" | "pairTelegram" | "setTelegramAllowed" | "setChannelMemory")
         {
             return Err(Forbidden.into());
         }

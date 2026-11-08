@@ -36,7 +36,12 @@ fn fixture() -> Fixture {
         guild_id: GUILD.into(),
         bot_user_id: BOT.into(),
         bot_token: "abc.def.ghi".into(),
-        bindings: vec![Binding { channel_id: CHANNEL.into(), bot_id: "b1".into(), allowed_users: vec![MINE.into()] }],
+        bindings: vec![Binding {
+            channel_id: CHANNEL.into(),
+            bot_id: "b1".into(),
+            memory: String::new(),
+            allowed_users: vec![MINE.into()],
+        }],
         generation: "g1".into(),
     };
     crate::market::vault::write(&hub.store, SLOT, &serde_json::to_string(&config).expect("json")).expect("vault");

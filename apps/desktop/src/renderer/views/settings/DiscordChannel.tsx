@@ -6,6 +6,7 @@ import { discordIdOk, discordStateText, discordTokenOk, type DiscordStatus } fro
 import { useTr } from '../../lib/use-language'
 import { Field } from '../marketplace/pieces'
 import type { ChannelsStore } from '../../store/channels-store'
+import { ChannelMemory } from './ChannelMemory'
 
 interface BindingDraft {
   channelId: string
@@ -46,9 +47,12 @@ export function DiscordChannel({ status, model, bots }: {
           {tr('Server')} {status.guildId} · {status.bindings?.length ?? 0} {tr('channels bound')}
         </Text>
         {status.bindings?.map((binding) => (
-          <Text key={binding.channelId} size="caption" tone="tertiary">
-            {binding.channelId} → {bots.find((b) => b.id === binding.botId)?.label ?? tr('Unknown bot')} · {binding.allowedUsers.length} {tr('people allowed')}
-          </Text>
+          <VStack key={binding.channelId} gap={4} className="settings-stack">
+            <Text size="caption" tone="tertiary">
+              {binding.channelId} → {bots.find((b) => b.id === binding.botId)?.label ?? tr('Unknown bot')} · {binding.allowedUsers.length} {tr('people allowed')}
+            </Text>
+            <ChannelMemory value={binding.memory ?? ''} save={(memory) => model.setMemory('discord', binding.channelId, memory)} />
+          </VStack>
         ))}
         <HStack gap={8}>
           <Button kind="secondary" disabled={model.busy} onClick={() => setEditing(true)}>{tr('Change Discord settings')}</Button>

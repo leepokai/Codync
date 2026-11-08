@@ -64,6 +64,17 @@ export class ChannelsStore extends Observable {
   async setAllowed(name: string, userId: number, allowed: boolean) {
     await this.act('setTelegramAllowed', { name, userId, allowed })
   }
+
+  /** Saves what the bot should know about a channel (a Telegram bot's name, or a Slack or Discord channel). */
+  async setMemory(provider: 'slack' | 'discord' | 'telegram', channel: string, memory: string) {
+    if (!this.active || this.busy) return false
+    this.busy = true; this.error = null; this.changed()
+    try {
+      await (await this.client()).call('setChannelMemory', { provider, channel, memory })
+      return true
+    } catch (error) { if (this.active) this.error = String(error); return false }
+    finally { if (this.active) { this.busy = false; this.changed() } }
+  }
   async disconnectSlack() {
     if (!this.active || this.busy) return
     this.busy = true; this.error = null; this.changed()

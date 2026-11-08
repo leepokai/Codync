@@ -1711,5 +1711,8 @@
   "Send to a channel": "Отправить в канал",
   "The message arrives there as a forwarded copy.": "Сообщение придёт туда как пересланная копия.",
   "Forwarded from": "Переслано от",
-  "No chats yet.": "Чатов пока нет."
+  "No chats yet.": "Чатов пока нет.",
+  "Channel memory": "Память канала",
+  "What the bot should remember about this channel": "Что бот должен помнить об этом канале",
+  "Save memory": "Сохранить память"
 }

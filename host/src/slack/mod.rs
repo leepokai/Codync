@@ -17,13 +17,16 @@ pub(crate) async fn run(hub: Arc<Hub>) {
     tokio::join!(worker::run(hub.clone()), socket::run(hub, socket::Endpoint::slack()));
 }
 const SLOT: &str = "slack.channel";
-pub const METHODS: &[&str] = &["slackStatus", "setSlackChannel", "disconnectSlack"];
+pub const METHODS: &[&str] = &["slackStatus", "setSlackChannel", "disconnectSlack", "setChannelMemory"];
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Binding {
     channel_id: String,
     bot_id: String,
+    /// What the bot should know about this channel (the channel's memory).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    memory: String,
     allowed_users: Vec<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -106,7 +109,7 @@ pub(crate) fn credentials(store: &Store) -> Result<Option<(String, String)>> {
 pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Value> {
     crate::market::vault::unlock(hub.clone()).await?;
     let prepared = if method == "setSlackChannel" {
-        let config: Config = serde_json::from_value(body)?;
+        let config: Config = serde_json::from_value(body.clone())?;
         validate(hub, &config)?;
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -139,6 +142,15 @@ pub(crate) async fn call(hub: &Arc<Hub>, method: &str, body: Value) -> Result<Va
             crate::market::vault::write(&hub.store, SLOT, "")?;
         }
         "slackStatus" => {}
+        "setChannelMemory" => {
+            let channel = body["channel"].as_str().context("channel is required.")?;
+            let memory = crate::channels::memory_arg(&body)?;
+            let mut config = load(&hub.store)?.context("Slack is not configured.")?;
+            let binding =
+                config.bindings.iter_mut().find(|b| b.channel_id == channel).context("Unknown Slack channel.")?;
+            binding.memory = memory;
+            crate::market::vault::write(&hub.store, SLOT, &serde_json::to_string(&config)?)?;
+        }
         _ => bail!("Unknown Slack method."),
     }
     let c = load(&hub.store)?;

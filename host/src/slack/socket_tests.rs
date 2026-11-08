@@ -44,7 +44,12 @@ fn fixture(app_token: &str, signing_secret: &str) -> Fixture {
         bot_token: "xoxb-test".into(),
         signing_secret: signing_secret.into(),
         app_token: app_token.into(),
-        bindings: vec![Binding { channel_id: "C1".into(), bot_id: "b1".into(), allowed_users: vec!["U1".into()] }],
+        bindings: vec![Binding {
+            channel_id: "C1".into(),
+            bot_id: "b1".into(),
+            memory: String::new(),
+            allowed_users: vec!["U1".into()],
+        }],
         generation: "g1".into(),
     };
     crate::market::vault::write(&hub.store, SLOT, &serde_json::to_string(&config).expect("json")).expect("vault");

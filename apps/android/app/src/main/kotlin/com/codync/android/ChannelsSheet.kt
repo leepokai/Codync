@@ -73,6 +73,9 @@ import kotlinx.coroutines.launch
                             pairing?.takeIf { it.first == bot.name }?.let { (_, code) ->
                                 Text("${tr(Channels.pairingInstruction(code, bot.username))} $code", style = Type.footnote, color = Palette.text)
                             }
+                            ChannelMemoryField(bot.name, bot.memory) { memory ->
+                                act { store.setChannelMemory("telegram", bot.name, memory); bots = store.telegramBots() ?: bots }
+                            }
                             SecondaryButton("Pair someone", enabled = !busy) {
                                 act {
                                     val answer = store.pairTelegram(bot.name)
@@ -95,8 +98,11 @@ import kotlinx.coroutines.launch
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(tr(text), style = Type.body, color = Palette.secondary)
                         connected?.bindings?.forEach { binding ->
-                            Text("${binding.channelId} �� ${binding.allowedUsers.size} ${tr("people allowed")}",
+                            Text("${binding.channelId} · ${binding.allowedUsers.size} ${tr("people allowed")}",
                                 style = Type.caption, color = Palette.tertiary)
+                            ChannelMemoryField(binding.channelId, binding.memory) { memory ->
+                                act { store.setChannelMemory("discord", binding.channelId, memory); discord = store.discordStatus() }
+                            }
                         }
                         if (connected?.configured == true) {
                             SecondaryButton("Disconnect Discord", enabled = !busy) {
@@ -143,8 +149,32 @@ import kotlinx.coroutines.launch
                     }
                     Text(tr(text), style = Type.body, color = Palette.secondary)
                 }
+                if (!slack?.bindings.isNullOrEmpty()) row {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (binding in slack?.bindings.orEmpty()) ChannelMemoryField(binding.channelId, binding.memory) { memory ->
+                            act { store.setChannelMemory("slack", binding.channelId, memory); slack = store.slackStatus() }
+                        }
+                    }
+                }
             }
             error?.let { Text(it, style = Type.caption, color = Palette.danger) }
+        }
+    }
+}
+
+/** What the bot should know about one channel, given before every message from it. */
+@Composable private fun ChannelMemoryField(channel: String, value: String, save: suspend (String) -> Unit) {
+    var text by remember(channel, value) { mutableStateOf(value) }
+    var saving by remember(channel) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FieldBox(text, { text = it }, "Channel memory: what the bot should know", 2, 4, fill = Palette.bubbleUser, capitalize = false)
+        when {
+            saving -> Text(tr("Saving�"), style = Type.caption, color = Palette.secondary)
+            text.trim() != value.trim() -> SecondaryButton("Save memory") {
+                saving = true
+                scope.launch { try { save(text.trim()) } finally { saving = false } }
+            }
         }
     }
 }

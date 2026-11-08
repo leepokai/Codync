@@ -1711,5 +1711,8 @@
   "Send to a channel": "채널로 보내기",
   "The message arrives there as a forwarded copy.": "메시지는 전달된 사본으로 도착합니다.",
   "Forwarded from": "전달한 사람:",
-  "No chats yet.": "아직 채팅이 없습니다."
+  "No chats yet.": "아직 채팅이 없습니다.",
+  "Channel memory": "채널 기억",
+  "What the bot should remember about this channel": "이 채널에 대해 봇이 기억할 것",
+  "Save memory": "기억 저장"
 }

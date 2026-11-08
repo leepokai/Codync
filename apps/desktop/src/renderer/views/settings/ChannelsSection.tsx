@@ -9,6 +9,7 @@ import { useApp } from '../../store/context'
 import { ChannelsStore } from '../../store/channels-store'
 import { ErrorText, Field } from '../marketplace/pieces'
 import { DiscordChannel } from './DiscordChannel'
+import { ChannelMemory } from './ChannelMemory'
 
 /** Telegram bots (add, pair, who may write, which bot answers, state) and the Slack connection of this computer's host. */
 export function ChannelsSection() {
@@ -28,13 +29,13 @@ export function ChannelsSection() {
   const slack = model.slack
   const bots = (local?.roster ?? []).filter((b) => b.kind !== 'group' && b.backend !== 'external').map((b) => ({ id: b.id, label: b.name }))
   return <CardSection title="Channels" footer="Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.">
-    {model.telegram.map((bot) => <TelegramRow key={bot.name} bot={bot} model={model} onRemove={() => setRemoving(bot.name)} />)}
-    {model.telegram.length === 0 ? <Text tone="secondary">No Telegram bots yet.</Text> : null}
+    {model.telegram.map((bot) => <TelegramRow key={bot.name} bot={bot} model={model} onRemove={() => setRemoving(bot.name)} />)}    {model.telegram.length === 0 ? <Text tone="secondary">No Telegram bots yet.</Text> : null}
     <AddTelegram model={model} bots={bots} />
     <DiscordChannel status={model.discord} model={model} bots={bots} />
     {slack?.configured ? <VStack gap={4} className="settings-stack">
       <Text>Slack {slack.socketMode ? '· Socket Mode' : '· HTTP endpoint'}</Text>
       <Text size="caption" tone="tertiary">{slack.workspaceId} · {slack.bindings?.length ?? 0} channel{slack.bindings?.length === 1 ? '' : 's'} bound</Text>
+      {slack.bindings?.map((b) => <ChannelMemory key={b.channelId} label={b.channelId} value={b.memory ?? ''} save={(memory) => model.setMemory('slack', b.channelId, memory)} />)}
       <Button kind="secondary" disabled={model.busy} onClick={() => setDisconnecting(true)}>Disconnect Slack</Button>
     </VStack> : <Text size="caption" tone="tertiary">Slack is connected with the host’s setSlackChannel call; see docs/guides/slack-manual-checklist.md.</Text>}
     {model.error && <ErrorText text={model.error} />}
@@ -48,6 +49,7 @@ function TelegramRow({ bot, model, onRemove }: { bot: TelegramBotStatus; model: 
   return <VStack gap={6} className="settings-stack">
     <Text>{bot.name}{bot.username ? ` · @${bot.username}` : ''} → {bot.botName}</Text>
     <Text size="caption" tone={bot.state === 'ok' ? 'secondary' : 'tertiary'}>{telegramStateText(bot.state)} · {lastReceivedText(bot.lastReceivedAt, Date.now())} · {allowedText(bot.allowed.length)}</Text>
+    <ChannelMemory value={bot.memory ?? ''} save={(memory) => model.setMemory('telegram', bot.name, memory)} />
     {bot.allowed.map((id) => <div key={id} className="settings-row">
       <Text grow>Telegram user {id}</Text>
       <Button kind="secondary" disabled={model.busy} onClick={() => void model.setAllowed(bot.name, id, false)}>Remove</Button>

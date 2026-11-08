@@ -1711,5 +1711,8 @@
   "Send to a channel": "チャンネルに送る",
   "The message arrives there as a forwarded copy.": "メッセージは転送されたコピーとして届きます。",
   "Forwarded from": "転送元:",
-  "No chats yet.": "チャットはまだありません。"
+  "No chats yet.": "チャットはまだありません。",
+  "Channel memory": "チャンネルの記憶",
+  "What the bot should remember about this channel": "このチャンネルについてボットが覚えておくこと",
+  "Save memory": "記憶を保存"
 }

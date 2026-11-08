@@ -27,3 +27,11 @@ suspend fun AppStore.setTelegramAllowed(name: String, userId: Long, allowed: Boo
         put("userId", userId)
         put("allowed", allowed)
     }))
+
+/** Saves what the bot should know about a channel (`provider`: telegram, slack or discord). */
+suspend fun AppStore.setChannelMemory(provider: String, channel: String, memory: String): JsonElement =
+    hostQuery("setChannelMemory", buildJsonObject {
+        put("provider", provider)
+        put("channel", channel)
+        put("memory", memory)
+    })

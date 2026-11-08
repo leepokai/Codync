@@ -121,7 +121,7 @@ pub(super) fn accept(hub: &Hub, c: &Config, envelope: &Value) -> Result<()> {
         channel: binding.channel_id.clone(),
         thread: thread.into(),
         entry: stable_id(&[&c.generation, &binding.channel_id, ts]),
-        text: message.prompt(),
+        text: crate::channels::with_memory(&binding.memory, &message.prompt()),
         user: message.person,
     };
     hub.store.enqueue_slack(&incoming)?;

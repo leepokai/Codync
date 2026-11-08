@@ -1711,5 +1711,8 @@
   "Send to a channel": "发送到频道",
   "The message arrives there as a forwarded copy.": "消息会以转发副本的形式到达那里。",
   "Forwarded from": "转发自",
-  "No chats yet.": "还没有聊天。"
+  "No chats yet.": "还没有聊天。",
+  "Channel memory": "频道记忆",
+  "What the bot should remember about this channel": "机器人应记住的关于此频道的事",
+  "Save memory": "保存记忆"
 }

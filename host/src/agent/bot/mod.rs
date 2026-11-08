@@ -79,6 +79,15 @@ pub struct BotHandle {
 }
 
 pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
+    spawn_inner(hub, base, true)
+}
+
+/// A second actor for one routine run: no shared queue with the bot's chat and no main-turn resume.
+pub fn spawn_side(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
+    spawn_inner(hub, base, false)
+}
+
+fn spawn_inner(hub: Arc<Hub>, base: BotConfig, resume: bool) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let session_id = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
@@ -86,7 +95,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     // A turn the previous host process never finished (crash, update, restart), unless
     // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
     // A side conversation's turn is marked `<started>	<side>` (see `Actor::set_inflight`).
-    let interrupted = hub.store.kv_get(&inflight_key(&cfg.id)).and_then(|v| {
+    let interrupted = resume.then(|| hub.store.kv_get(&inflight_key(&cfg.id))).flatten().and_then(|v| {
         let (started, side) = v.split_once('\t').map_or((v.as_str(), None), |(at, side)| (at, Some(side)));
         let started: i64 = started.parse().ok()?;
         (now_ms() - started < STALE_RESUME_MS)

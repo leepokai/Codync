@@ -108,6 +108,8 @@ pub struct Hub {
     /// Held across "mutate store + broadcast" so events leave in rev order.
     emit_lock: Mutex<()>,
     bots: Mutex<HashMap<String, BotHandle>>,
+    /// One extra actor per running routine, so routines of one bot do not queue behind each other.
+    side: Mutex<HashMap<String, BotHandle>>,
     runtime: Mutex<HashMap<String, Runtime>>,
     pub phone_clients: AtomicUsize,
     pub usage: Mutex<Usage>,
@@ -169,6 +171,7 @@ impl Hub {
             events,
             emit_lock: Mutex::new(()),
             bots: Mutex::default(),
+            side: Mutex::default(),
             runtime: Mutex::default(),
             phone_clients: AtomicUsize::new(0),
             usage: Mutex::default(),
@@ -227,7 +230,8 @@ impl Hub {
     /// Stops every bot actor (and so every agent process), waiting briefly for them to exit.
     pub async fn shutdown(&self) {
         self.routines.stop().await;
-        let handles: Vec<BotHandle> = self.bots.locked().drain().map(|(_, h)| h).collect();
+        let handles: Vec<BotHandle> =
+            self.bots.locked().drain().map(|(_, h)| h).chain(self.side.locked().drain().map(|(_, h)| h)).collect();
         let tasks: Vec<_> = handles
             .into_iter()
             .map(|h| {
@@ -246,6 +250,31 @@ impl Hub {
         let bots = self.bots.locked();
         let h = bots.get(bot_id).ok_or_else(|| anyhow!("unknown bot"))?;
         h.tx.send(cmd).map_err(|_| anyhow!("bot stopped"))
+    }
+
+    /// At most this many routines of one bot run beside its chat at once.
+    pub const MAX_SIDE: usize = 4;
+
+    /// Sends to a side actor of `bot` (key: the routine run), starting one when there is room.
+    /// `Err` means every side slot is busy, so the caller keeps the run queued.
+    pub fn send_side(self: &Arc<Self>, bot: &BotConfig, key: &str, cmd: Cmd) -> Result<()> {
+        let mut side = self.side.locked();
+        side.retain(|_, handle| !handle.tx.is_closed());
+        if !side.contains_key(key) {
+            let prefix = format!("{}|", bot.id);
+            if side.keys().filter(|k| k.starts_with(&prefix)).count() >= Self::MAX_SIDE {
+                return Err(anyhow!("all side slots are busy"));
+            }
+            side.insert(key.to_owned(), bot::spawn_side(self.clone(), bot.clone()));
+        }
+        side[key].tx.send(cmd).map_err(|_| anyhow!("side actor stopped"))
+    }
+
+    /// Stops and forgets a side actor once its routine is over.
+    pub fn drop_side(&self, key: &str) {
+        if let Some(handle) = self.side.locked().remove(key) {
+            let _ = handle.tx.send(Cmd::Shutdown);
+        }
     }
 
     // MARK: bots

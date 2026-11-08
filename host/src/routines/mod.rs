@@ -30,7 +30,6 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::HashSet,
     str::FromStr,
     sync::{Arc, Mutex},
 };
@@ -172,7 +171,8 @@ struct State {
 
 pub struct Routines {
     state: Mutex<State>,
-    active: Mutex<HashSet<String>>,
+    /// How many runs each bot has in flight (at most `Hub::MAX_SIDE`).
+    active: Mutex<std::collections::HashMap<String, usize>>,
     scheduler: Mutex<Option<tokio::task::JoinHandle<()>>>,
     stopping: std::sync::atomic::AtomicBool,
     /// Bumped whenever the webhook set the relay registers (`hooks()`) changes.
@@ -229,7 +229,7 @@ impl Routines {
                 Status::Running | Status::Recovering => {
                     run.status = Status::Recovering;
                     run.finished_at = None;
-                    active.insert(run.bot_id.clone());
+                    *active.entry(run.bot_id.clone()).or_default() += 1;
                 }
                 _ => {}
             }

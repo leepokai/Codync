@@ -76,7 +76,7 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 ### How a run works
 
 - **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own.
-- **One thing at a time.** A bot runs one routine at a time, and routine runs take turns with your conversation. A message you send during a run waits until the run ends.
+- **Several at once, up to four.** Each run has its own agent process, so up to four runs of one bot work at the same time and the chat answers beside them. A fifth waits for a slot. Runs on different bots always run in parallel.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
 - **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.
 

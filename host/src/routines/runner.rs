@@ -39,7 +39,13 @@ impl Routines {
     }
 
     pub fn release(&self, bot: &str) {
-        self.active.locked().remove(bot);
+        let mut active = self.active.locked();
+        if let Some(count) = active.get_mut(bot) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                active.remove(bot);
+            }
+        }
     }
 
     pub fn recovery(&self, bot: &str) -> Option<Run> {
@@ -169,6 +175,7 @@ impl Routines {
         if let Some(start) = flow {
             super::flow::spawn(hub, start);
         }
+        hub.drop_side(&format!("{bot}|{id}"));
         self.release(&bot);
         Ok(())
     }
@@ -397,18 +404,21 @@ fn tick(hub: &Arc<Hub>) -> Result<()> {
             hub.routines.disable_bot(&hub.store, &run.bot_id)?;
             continue;
         }
-        if !hub.routines.active.locked().insert(run.bot_id.clone()) {
-            continue;
+        {
+            let mut active = hub.routines.active.locked();
+            let count = active.entry(run.bot_id.clone()).or_default();
+            if *count >= Hub::MAX_SIDE {
+                continue;
+            }
+            *count += 1;
         }
-        if let Err(error) = hub.send_cmd(&run.bot_id, crate::agent::bot::Cmd::Routine(run.id.clone())) {
-            hub.routines.complete(
-                hub,
-                &run.id,
-                Status::Failed,
-                Some(format!("Could not queue routine: {error:#}")),
-                None,
-                false,
-            )?;
+        let key = format!("{}|{}", run.bot_id, run.id);
+        let Some(bot) = hub.store.bot(&run.bot_id)?.filter(|b| !b.deleted) else {
+            hub.routines.release(&run.bot_id);
+            continue;
+        };
+        if hub.send_side(&bot.config, &key, crate::agent::bot::Cmd::Routine(run.id.clone())).is_err() {
+            hub.routines.release(&run.bot_id);
         }
     }
     Ok(())

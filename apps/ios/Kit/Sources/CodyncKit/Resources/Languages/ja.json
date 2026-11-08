@@ -1752,5 +1752,11 @@
   "The approval setting changed": "承認設定が変わりました",
   "Cloud assistants were let in or out": "クラウドアシスタントを許可または解除しました",
   "Close file": "ファイルを閉じる",
-  "Open files": "開いているファイル"
+  "Open files": "開いているファイル",
+  "Keys for this bot. They override the agent keys below and stay in this computer.": "このボットのキー。エージェントのキーを上書きし、このコンピューターに残ります。",
+  "Variable name": "変数名",
+  "Value": "値",
+  "Save key": "キーを保存",
+  "Remove {name}": "{name} を削除",
+  "Agent keys, for every bot": "エージェントのキー（すべてのボット用）"
 }

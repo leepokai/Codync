@@ -243,3 +243,14 @@ suspend fun AppStore.appRequest(address: MiniAppAddress, method: String, path: S
 /** Turns a model off or back on in the picker for one provider. */
 internal suspend fun AppStore.setModelHidden(backend: String, model: String, hidden: Boolean) =
     ready().call("setModelHidden", buildJsonObject { put("backend", backend); put("model", model); put("hidden", hidden) })
+
+/** The keys saved for this bot and those it inherits from its agent (names only). */
+internal suspend fun AppStore.agentEnv(backend: String, botId: String): Pair<List<String>, List<String>> {
+    val json = hostQuery("agentEnv", buildJsonObject { put("backend", backend); put("botId", botId) }).jsonObject
+    return json["own"]!!.jsonArray.map { it.jsonPrimitive.content } to
+        json["inherited"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
+}
+
+/** Saves one of the bot's own agent keys; an empty value removes it. */
+internal suspend fun AppStore.setBotAgentKey(backend: String, botId: String, key: String, value: String) =
+    hostQuery("setAgentEnv", buildJsonObject { put("backend", backend); put("botId", botId); put("vars", buildJsonObject { put(key, value) }) })

@@ -214,16 +214,17 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             )?;
             json!({})
         }
-        "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
+        "agentAuth" | "agentAuthenticate" | "setAgentEnv" | "agentEnv" => {
             let backend = str_arg(&b, "backend")?;
             let status = match method {
                 "agentAuth" => crate::agent::auth::check(&hub.store, backend).await?,
+                "agentEnv" => crate::agent::auth::env_names(&hub.store, backend, str_arg(&b, "botId")?)?,
                 "agentAuthenticate" => {
                     crate::agent::auth::authenticate(&hub.store, backend, str_arg(&b, "method")?).await?
                 }
                 _ => {
                     let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
-                    crate::agent::auth::set_env(&hub.store, backend, vars).await?
+                    crate::agent::auth::set_env(&hub.store, backend, b["botId"].as_str(), vars).await?
                 }
             };
             // Chats that asked the user to sign in get their messages answered now.

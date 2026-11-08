@@ -1752,5 +1752,11 @@
   "The approval setting changed": "Изменена настройка одобрения",
   "Cloud assistants were let in or out": "Облачные помощники допущены или убраны",
   "Close file": "Закрыть файл",
-  "Open files": "Открытые файлы"
+  "Open files": "Открытые файлы",
+  "Keys for this bot. They override the agent keys below and stay in this computer.": "Ключи этого бота. Они заменяют ключи агента и остаются на этом компьютере.",
+  "Variable name": "Имя переменной",
+  "Value": "Значение",
+  "Save key": "Сохранить ключ",
+  "Remove {name}": "Удалить {name}",
+  "Agent keys, for every bot": "Ключи агента, для всех ботов"
 }

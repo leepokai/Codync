@@ -92,25 +92,37 @@ fn env_slot(backend: &str) -> String {
     format!("agent-env:{backend}")
 }
 
-/// Keys saved for `backend`, as environment for its process.
-pub fn env(store: &Store, backend: &str) -> Result<Vec<(String, String)>> {
-    let Some(raw) = crate::market::vault::read(store, &env_slot(backend))? else {
-        return Ok(Vec::new());
-    };
-    let values: BTreeMap<String, String> = serde_json::from_str(&raw)?;
+fn bot_env_slot(backend: &str, bot: &str) -> String {
+    format!("agent-env:{backend}:{bot}")
+}
+
+/// Keys saved for `backend`, and for `bot` on top of them, as environment for its process.
+pub fn env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<(String, String)>> {
+    let mut values: BTreeMap<String, String> = BTreeMap::new();
+    for slot in [Some(env_slot(backend)), bot.map(|bot| bot_env_slot(backend, bot))].into_iter().flatten() {
+        if let Some(raw) = crate::market::vault::read(store, &slot)? {
+            values.extend(serde_json::from_str::<BTreeMap<String, String>>(&raw)?);
+        }
+    }
     Ok(values.into_iter().collect())
 }
 
-/// The environment `backend`'s process starts with: the saved keys, and what the harness needs to start.
-pub fn launch_env(store: &Store, backend: &str) -> Result<Vec<(String, String)>> {
-    let mut env = env(store, backend)?;
+/// The environment `backend`'s process starts with: the saved keys (the bot's above the backend's), and what the
+/// harness needs to start.
+pub fn launch_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<(String, String)>> {
+    let mut env = env(store, backend, bot)?;
     backends::apply_process_env(backend, &mut env);
     Ok(env)
 }
 
 /// Names of the saved keys (values never leave the host).
-fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
-    Ok(env(store, backend)?.into_iter().map(|(k, _)| k).collect())
+fn saved_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<String>> {
+    Ok(env(store, backend, bot)?.into_iter().map(|(k, _)| k).collect())
+}
+
+/// Names saved for this bot itself and those it inherits from its agent, without values.
+pub fn env_names(store: &Store, backend: &str, bot: &str) -> Result<Value> {
+    Ok(json!({"own": saved_env(store, backend, Some(bot))?, "inherited": saved_env(store, backend, None)?}))
 }
 
 /// Runs a check and returns `{signedIn, detail, methods, savedEnv}`.
@@ -125,7 +137,7 @@ pub async fn check(store: &Store, backend: &str) -> Result<Value> {
     backends::set_signed_in(backend, status.signed_in);
     CHECKED.locked().insert(backend.to_owned(), status.clone());
     let mut v = serde_json::to_value(&status)?;
-    v["savedEnv"] = json!(saved_env(store, backend)?);
+    v["savedEnv"] = json!(saved_env(store, backend, None)?);
     // Codync's own sign-in command (phone-friendly device flows where the CLI has one).
     v["login"] = json!(backends::login_available(backend));
     Ok(v)
@@ -135,7 +147,7 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
     let (acp, mut inbox, init, cmd) = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
     if let ControlFlow::Break(signed_in) =
-        login_without_session(&init, &mut inbox, backend, &env(store, backend)?).await
+        login_without_session(&init, &mut inbox, backend, &env(store, backend, None)?).await
     {
         acp.kill().await;
         return Ok(Status { signed_in, detail: None, methods });
@@ -281,8 +293,9 @@ pub fn terminal_command(backend: &str, method: &str) -> Option<String> {
 }
 
 /// Saves the keys for an env-var method (empty values remove them), then re-checks.
-pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) -> Result<Value> {
-    let mut saved: BTreeMap<String, String> = env(store, backend)?.into_iter().collect();
+pub async fn set_env(store: &Store, backend: &str, bot: Option<&str>, vars: &Map<String, Value>) -> Result<Value> {
+    let slot = bot.map_or_else(|| env_slot(backend), |bot| bot_env_slot(backend, bot));
+    let mut saved: BTreeMap<String, String> = env(store, backend, bot)?.into_iter().collect();
     for (k, v) in vars {
         if !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || k.is_empty() {
             bail!("`{k}` isn't an environment variable name");
@@ -292,7 +305,7 @@ pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) ->
             None => saved.remove(k),
         };
     }
-    crate::market::vault::write(store, &env_slot(backend), &serde_json::to_string(&saved)?)?;
+    crate::market::vault::write(store, &slot, &serde_json::to_string(&saved)?)?;
     check(store, backend).await
 }
 

@@ -21,7 +21,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     if hub.store.kv_read(&format!("agent-env:{}", cfg.backend))?.is_some() {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let env = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
+    let env = crate::agent::auth::launch_env(&hub.store, &cfg.backend, Some(&cfg.id))?;
     let mut conn = None;
     let mut last_err = None;
     for candidate in crate::agent::bot::launch_commands(cfg)? {

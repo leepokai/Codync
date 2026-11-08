@@ -1752,5 +1752,11 @@
   "The approval setting changed": "승인 설정이 바뀌었습니다",
   "Cloud assistants were let in or out": "클라우드 어시스턴트를 허용하거나 해제했습니다",
   "Close file": "파일 닫기",
-  "Open files": "열린 파일"
+  "Open files": "열린 파일",
+  "Keys for this bot. They override the agent keys below and stay in this computer.": "이 봇의 키. 에이전트 키를 덮어쓰며 이 컴퓨터에 남습니다.",
+  "Variable name": "변수 이름",
+  "Value": "값",
+  "Save key": "키 저장",
+  "Remove {name}": "{name} 제거",
+  "Agent keys, for every bot": "에이전트 키(모든 봇용)"
 }

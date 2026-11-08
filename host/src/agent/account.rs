@@ -465,7 +465,7 @@ pub async fn delete(store: &Store, id: &str) -> Result<()> {
 /// Signs the computer's own (default) account out, without touching isolated accounts.
 pub async fn sign_out(store: &Store, backend: &str) -> Result<()> {
     let outcome = if let Ok(command) = backends::sign_out_command(backend).await {
-        let env = auth::launch_env(store, backend).unwrap_or_default();
+        let env = auth::launch_env(store, backend, None).unwrap_or_default();
         run_login_command(&command, &env, Duration::from_secs(30)).await
     } else {
         backends::remove_credentials(backend);

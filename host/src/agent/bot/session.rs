@@ -202,7 +202,7 @@ impl Actor {
             };
             let candidates = launch_commands(&self.cfg)?;
             // Keys saved from an "environment variable" sign-in, what the harness needs to start, and the account's.
-            let mut env = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
+            let mut env = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, Some(&self.cfg.id))?;
             if let Some(ref account_id) = self.cfg.account {
                 let acc_env = crate::agent::account::env(account_id, &self.cfg.backend)?;
                 for (k, v) in acc_env {

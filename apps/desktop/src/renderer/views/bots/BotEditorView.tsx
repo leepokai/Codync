@@ -15,6 +15,7 @@ import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
 import { AgentAccountPicker } from './AgentAccountPicker'
+import { BotAgentKeys } from './BotAgentKeys'
 import { AgentModelPicker } from './AgentModelPicker'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { useAgentSetup } from './agent-status'
@@ -251,6 +252,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         </HStack>
       ) : null}
       {account}
+      <BotAgentKeys backend={draft.backend} botId={draft.id} />
     </VStack>
   )
   // While the bot runs on a fallback, the Agent card starts with it.

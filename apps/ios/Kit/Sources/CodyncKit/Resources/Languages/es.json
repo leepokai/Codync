@@ -1752,5 +1752,11 @@
   "The approval setting changed": "Cambió el ajuste de aprobación",
   "Cloud assistants were let in or out": "Se dejó entrar o salir a asistentes de nube",
   "Close file": "Cerrar archivo",
-  "Open files": "Archivos abiertos"
+  "Open files": "Archivos abiertos",
+  "Keys for this bot. They override the agent keys below and stay in this computer.": "Claves de este bot. Anulan las claves del agente y se quedan en este equipo.",
+  "Variable name": "Nombre de la variable",
+  "Value": "Valor",
+  "Save key": "Guardar clave",
+  "Remove {name}": "Quitar {name}",
+  "Agent keys, for every bot": "Claves del agente, para todos los bots"
 }

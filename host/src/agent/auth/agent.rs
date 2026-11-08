@@ -47,7 +47,7 @@ async fn start_candidates(
         // The installed CLI alone when there is one: resolving the registry build can mean a long download.
         candidates.truncate(1);
     }
-    let mut env = launch_env(store, backend)?;
+    let mut env = launch_env(store, backend, None)?;
     for (k, v) in extra_env {
         env.retain(|(ek, _)| ek != k);
         env.push((k.clone(), v.clone()));

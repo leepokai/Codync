@@ -669,6 +669,16 @@ export class BotStore extends BotSync {
     return result.accounts
   }
 
+  /** The keys saved for this bot, and those it inherits from its agent (names only). */
+  async agentEnv(backend: string, botId: string): Promise<{ own: string[]; inherited: string[] }> {
+    return (await this.ready()).call('agentEnv', { backend, botId })
+  }
+
+  /** Saves or removes one of the bot's own agent keys; an empty value removes it. */
+  async setAgentEnv(backend: string, vars: Record<string, string>, botId: string) {
+    await (await this.ready()).call('setAgentEnv', { backend, vars, botId })
+  }
+
   async authenticateAgentAccount(backend: string): Promise<AgentAccount> {
     const result = await (await this.ready()).call<{ account: AgentAccount }>('accountAuthenticate', { backend }, 660_000)
     return result.account

@@ -334,7 +334,8 @@ export const market = {
     (await c.call<{ term: string }>('agentSetup', { backend, step, method, cols, rows }, s(300))).term,
   agentAuth: (c: HostClient, backend: string) => c.call<AgentAuth>('agentAuth', { backend }, s(300)),
   agentAuthenticate: (c: HostClient, backend: string, method: string) => c.call<AgentAuth>('agentAuthenticate', { backend, method }, s(660)),
-  setAgentEnv: (c: HostClient, backend: string, vars: Record<string, string>) => c.call<AgentAuth>('setAgentEnv', { backend, vars }, s(300)),
+  setAgentEnv: (c: HostClient, backend: string, vars: Record<string, string>, botId?: string) => c.call<AgentAuth>('setAgentEnv', { backend, vars, botId: botId ?? null }, s(300)),
+  agentEnv: (c: HostClient, backend: string, botId: string) => c.call<{ own: string[]; inherited: string[] }>('agentEnv', { backend, botId }, s(30)),
   listAccounts: async (c: HostClient, backend?: string) =>
     (await c.call<{ accounts: AgentAccount[] }>('listAccounts', { backend: backend ?? null }, s(30))).accounts,
   accountAuthenticate: (c: HostClient, backend: string, name?: string) =>

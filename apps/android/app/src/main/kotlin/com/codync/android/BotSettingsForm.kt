@@ -171,6 +171,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
         }
     }
     botAccountRow(state, store, draft, change)
+    row { BotAgentKeys(state, store, draft) }
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
     row { FallbackList(state, draft.backend, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback) }

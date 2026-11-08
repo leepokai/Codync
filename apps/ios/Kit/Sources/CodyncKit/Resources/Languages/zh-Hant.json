@@ -1752,5 +1752,11 @@
   "The approval setting changed": "核准設定已變更",
   "Cloud assistants were let in or out": "已允許或移除雲端助理",
   "Close file": "關閉檔案",
-  "Open files": "開啟的檔案"
+  "Open files": "開啟的檔案",
+  "Keys for this bot. They override the agent keys below and stay in this computer.": "此機器人的金鑰。會覆寫代理的金鑰並留在此電腦。",
+  "Variable name": "變數名稱",
+  "Value": "值",
+  "Save key": "儲存金鑰",
+  "Remove {name}": "移除 {name}",
+  "Agent keys, for every bot": "代理金鑰，適用於所有機器人"
 }

@@ -53,6 +53,24 @@ extension ChannelTransport {
     }
 
     func perform(_ method: String, body: Data, timeout: TimeInterval) async throws -> Data {
+        let started = ContinuousClock.now
+        do {
+            let data = try await send(method, body: body, timeout: timeout)
+            SupportLog.info(.network, "\(method) \(elapsed(since: started))ms")
+            return data
+        } catch {
+            SupportLog.warn(.network, "\(method) \(elapsed(since: started))ms · \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// Whole milliseconds since `start`, for a support log line.
+    private func elapsed(since start: ContinuousClock.Instant) -> Int {
+        let parts = start.duration(to: .now).components
+        return Int(Double(parts.seconds) * 1_000 + Double(parts.attoseconds) / 1e15)
+    }
+
+    private func send(_ method: String, body: Data, timeout: TimeInterval) async throws -> Data {
         try await ready(within: timeout)
         let b: Any = body.isEmpty ? NSNull() : try JSONSerialization.jsonObject(with: body, options: .fragmentsAllowed)
         let id = nextId()

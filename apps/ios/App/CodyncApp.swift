@@ -75,6 +75,8 @@ struct CodyncApp: App {
                     }
                 }
                 .onOpenURL { url in app.open(url) }
+                // The Support page's log: read back at launch, written while the app runs.
+                .task { await SupportLog.shared.start() }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     ReviewInvitation.shared.setActive(phase == .active)
                     switch phase {

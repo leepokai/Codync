@@ -51,6 +51,7 @@ internal object SupportLog {
             }
         }.getOrDefault(emptyList())
         if (restored.isNotEmpty()) _events.value = restored
+        info(SupportSource.App, "The app started")
         writer.scheduleWithFixedDelay(::save, SAVE_EVERY_MS, SAVE_EVERY_MS, TimeUnit.MILLISECONDS)
     }
 

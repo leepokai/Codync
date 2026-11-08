@@ -136,6 +136,7 @@ extension BotStore {
             guard !Task.isCancelled, !retired else { return }
             switch state {
             case let .ready(route):
+                SupportLog.info(.connection, "Connected over \(route == .relay ? "the relay" : "the local network")")
                 setHostRoute(route)
                 if eventsTask == nil {
                     if connection != .online { setConnection(.connecting) }
@@ -150,15 +151,18 @@ extension BotStore {
                 stopEvents()
                 setConnection(.connecting)
             case let .hostOffline(lastSeen):
+                SupportLog.warn(.connection, "The computer is offline")
                 stopEvents()
                 setConnection(.computerOffline(lastSeen: lastSeen))
                 if let remote = transport as? any RemoteTransport {
                     Task { [weak self] in await self?.reconcileQueued(remote) }
                 }
             case let .unauthorized(message):
+                SupportLog.warn(.connection, "The computer refused this device: \(message)")
                 stopEvents()
                 setConnection(.unauthorized(message))
             case let .failed(message):
+                SupportLog.warn(.connection, "Connection failed: \(message)")
                 stopEvents()
                 setConnection(.offline(message))
             }

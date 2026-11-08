@@ -82,13 +82,19 @@ extension View {
 }
 
 /// iOS owns save/export destinations through its native share sheet.
-struct FileExportSheet: UIViewControllerRepresentable {
+public struct FileExportSheet: UIViewControllerRepresentable {
     let url: URL
     let completed: () -> Void
-    func makeUIViewController(context: Context) -> UIActivityViewController {
+
+    public init(url: URL, completed: @escaping () -> Void) {
+        self.url = url
+        self.completed = completed
+    }
+
+    public func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         controller.completionWithItemsHandler = { _, _, _, _ in completed() }
         return controller
     }
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+    public func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

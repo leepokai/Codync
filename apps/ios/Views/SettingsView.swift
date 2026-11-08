@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(Analytics.enabledKey) private var analyticsEnabled = true
     @State private var confirmStartOver = false
     @State private var aboutAnalytics = false
+    @State private var support = false
 
     var body: some View {
         CardForm {
@@ -44,6 +45,10 @@ struct SettingsView: View {
             }
 
             CardSection {
+                Button { support = true } label: {
+                    RowLabel("Support", systemImage: "lifepreserver", chevron: true)
+                }
+                .buttonStyle(.plain)
                 Button {
                     Analytics.shared.capture(.reviewLinkOpened)
                     openURL(AppStoreRelease.reviewPage)
@@ -91,6 +96,7 @@ struct SettingsView: View {
             if phase == .active { Task { notificationsAllowed = await PushRegistrar.shared.isAllowed() } }
         }
         .codyncSheet(isPresented: $aboutAnalytics) { AnalyticsSheet() }
+        .codyncSheet(isPresented: $support) { SupportView() }
     }
 
     private var notificationsRow: some View {

@@ -14,6 +14,8 @@ struct RoutineEditorView: View {
     @State private var timeout = "3600"
     @State private var missedPolicy = "skip"
     @State private var limitPolicy = "wait"
+    @State private var outputs: [RoutineOutput] = []
+    @State private var thread = false
     @State private var busy = false
     @State private var error: String?
     @State private var advanced = false
@@ -45,7 +47,7 @@ struct RoutineEditorView: View {
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isOffline && !busy &&
-        loaded && checkedSchedule == schedule && previewError == nil
+        loaded && checkedSchedule == schedule && previewError == nil && outputs.allSatisfy { $0.problem == nil }
     }
 
     var body: some View {
@@ -84,6 +86,8 @@ struct RoutineEditorView: View {
                 timeout = String(routine.timeoutSeconds ?? 3600)
                 missedPolicy = routine.missedPolicy ?? "skip"
                 limitPolicy = routine.limitPolicy ?? "wait"
+                outputs = routine.outputs ?? []
+                thread = routine.thread ?? false
             }
             await loadSchedule()
         }
@@ -147,11 +151,63 @@ struct RoutineEditorView: View {
                         }
                         Text(L10n.tr("The bot's daily token limit is used up: its runs follow this rule."))
                             .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
+                        Toggle(isOn: $thread) { Text(L10n.tr("Run in a thread")) }
+                            .toggleStyle(.codync)
+                        Text(L10n.tr("Its runs post in a thread of the bot chat instead of the main one."))
+                            .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     }
                 }
+                outputsSection
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Where the last reply goes, sent once after the last step; a routine can have several.
+    private var outputsSection: some View {
+        Field("Outputs") {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(outputs.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            ChoicePicker(selection: $outputs[index].kind,
+                                         options: RoutineOutput.kinds, fitsAvailableWidth: true)
+                            IconButton("Remove", systemImage: "minus.circle") { outputs.remove(at: index) }
+                        }
+                        TextField("Destination", text: $outputs[index].target,
+                                  prompt: Text(L10n.tr(outputs[index].placeholder)).foregroundStyle(Palette.secondary))
+                            .autocorrectionDisabled().routineInput().focused($typing)
+                        if outputs[index].kind == "telegram" {
+                            TextField("Account", text: Binding(
+                                get: { outputs[index].account ?? "" },
+                                set: { outputs[index].account = $0.isEmpty ? nil : $0 }),
+                                prompt: Text(L10n.tr("The bot it sends as, if there are several")).foregroundStyle(Palette.secondary))
+                                .autocorrectionDisabled().routineInput().focused($typing)
+                        }
+                        if let placeholder = outputs[index].valuePlaceholder {
+                            TextField("Value", text: Binding(
+                                get: { outputs[index].value ?? "" },
+                                set: { outputs[index].value = $0.isEmpty ? nil : $0 }),
+                                prompt: Text(L10n.tr(placeholder)).foregroundStyle(Palette.secondary))
+                                .autocorrectionDisabled().routineInput().focused($typing)
+                        }
+                        if let problem = outputs[index].problem {
+                            Text(L10n.tr(problem)).font(.caption).foregroundStyle(Palette.danger)
+                        }
+                    }
+                }
+                if outputs.count < RoutineOutput.max {
+                    Button(L10n.tr("Add an output")) {
+                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { outputs.append(RoutineOutput()) }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !outputs.isEmpty {
+                    Text(L10n.tr("Sent once, after the last step, with its reply."))
+                        .font(.caption).foregroundStyle(Palette.tertiary)
+                }
+            }
+        }
     }
 
     private func checkSchedule() async {
@@ -454,7 +510,8 @@ struct RoutineEditorView: View {
             do {
                 let result = try await client.saveRoutine(botId: botId, id: routine?.id, name: name,
                     instruction: instruction, schedule: schedule, timeoutSeconds: timeout,
-                    missedPolicy: missedPolicy, limitPolicy: limitPolicy)
+                    missedPolicy: missedPolicy, limitPolicy: limitPolicy,
+                    outputs: outputs, thread: thread)
                 saved(result)
             } catch { self.error = error.localizedDescription }
         }

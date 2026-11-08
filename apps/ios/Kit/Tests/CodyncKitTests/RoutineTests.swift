@@ -164,3 +164,27 @@ import Testing
     #expect(try JSONDecoder().decode(Routine.self, from: without).missedPolicy == nil)
     #expect(try JSONDecoder().decode(Routine.self, from: without).limitPolicy == nil)
 }
+
+@Test func routineOutputsDecodeAndEachKindChecksItsDestination() throws {
+    let data = Data(#"{"id":"r","botId":"b","name":"Check","instruction":"Check","triggers":[],"enabled":true,"createdAt":0,"updatedAt":0,"triggerDescriptions":[],"outputs":[{"kind":"whatsapp","target":"1203630@g.us"}],"thread":true}"#.utf8)
+    let routine = try JSONDecoder().decode(Routine.self, from: data)
+    #expect(routine.outputs?.first?.target == "1203630@g.us")
+    #expect(routine.thread == true)
+
+    #expect(RoutineOutput(kind: "slack", target: "C0123").problem == nil)
+    #expect(RoutineOutput(kind: "discord", target: "123").problem == nil)
+    #expect(RoutineOutput(kind: "discordReact", target: "👍").problem == nil)
+    #expect(RoutineOutput(kind: "discordReact", target: "two words").problem != nil)
+    #expect(RoutineOutput(kind: "telegram", target: "-100123").problem == nil)
+    #expect(RoutineOutput(kind: "telegram", target: "abc").problem != nil)
+    #expect(RoutineOutput(kind: "whatsapp", target: "5215555555555@s.whatsapp.net").problem == nil)
+    #expect(RoutineOutput(kind: "whatsapp", target: "1203630@g.us").problem == nil)
+    #expect(RoutineOutput(kind: "whatsapp", target: "5215555555555").problem != nil)
+    #expect(RoutineOutput(kind: "whatsapp", target: "abc@s.whatsapp.net").problem != nil)
+    #expect(RoutineOutput(kind: "githubComment", target: "owner/repo").problem == nil)
+    #expect(RoutineOutput(kind: "githubComment", target: "owner").problem != nil)
+    #expect(RoutineOutput(kind: "githubLabel", target: "owner/repo", value: "bug").problem == nil)
+    #expect(RoutineOutput(kind: "githubLabel", target: "owner/repo").problem != nil)
+    #expect(RoutineOutput(kind: "slack", target: "not a channel").problem != nil)
+    #expect(RoutineOutput().problem != nil)
+}

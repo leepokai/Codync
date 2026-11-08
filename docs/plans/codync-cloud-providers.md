@@ -150,3 +150,11 @@ abstract a short-lived agent workspace (create, exec, close, SDK-made workspace 
 with its disk and keeps never-expiring snapshots. Worth borrowing: ComputeSDK's capability fields (whether a pause
 keeps memory, a snapshot's scope and whether it expires, the longest run) to describe each provider in
 `cloud/machines/src/types.ts`, and its per-provider source as notes on each API's quirks.
+
+Hosted routers ("OpenRouter for sandboxes"), read 2026-11-08: the only hosted one is the ComputeSDK Platform (one org
+key, BYOK provider keys kept in its vault or compute resold through its Market, `providerOrder` failover). Its REST API
+only creates, gets, execs and destroys (states `creating`, `running`, `destroyed`; no stop with the disk, no snapshot
+saving; one command ≤290 s), it routes to neither Boat nor InstaBox, and every Codync user would have to open their
+own org and hand it their provider keys. The others are self-hosted (bespokelabs `sandbox-router`, Open Sandbox Router,
+E2BGateway) or resell one upstream (SandBase). None fits; recheck when one adds stop/resume, snapshots and per-user
+keys.

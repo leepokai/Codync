@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { TOOLS, type ToolId, type ToolState } from '../shared/tools'
 import type { HostController } from './host-controller'
@@ -135,6 +136,9 @@ export function registerToolWindows(host: HostController, rendererURL: (page: st
   ipcMain.handle('tools:openModels', async (event, id: unknown) => {
     if (!known(id) || !fromChatOrPage(event, id)) throw new Error('This window cannot open that folder.')
     const folder = (await status(id))?.comfy?.modelsDir
-    if (folder) await shell.openPath(folder)
+    if (!folder) return
+    // Before ComfyUI's first start the folder doesn't exist yet; the user is about to put a model in it.
+    mkdirSync(folder, { recursive: true })
+    await shell.openPath(folder)
   })
 }

@@ -256,14 +256,16 @@ async fn real_comfyui_jobs_run_one_at_a_time_and_cancel() {
         "1": {"class_type": "EmptyImage", "inputs": {"width": 32, "height": 32, "batch_size": 1, "color": 255}},
         "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": "codync-job"}},
     });
+    // A bot's run_workflow waits like this, inside its turn, and then attaches the images.
     jobs.submit(&hub, "nobody", &quick).await.expect("the quick job is accepted");
-    for _ in 0..120 {
-        if phase(&jobs) == "done" {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
+    let waited = jobs.wait(&hub, "nobody", Duration::from_secs(60)).await.expect("the wait ends");
     assert_eq!(phase(&jobs), "done", "{}", jobs.status());
+    // There is no bot called "nobody": attaching fails, says why, and the job stays undelivered for a retry.
+    assert!(waited["attachError"].as_str().is_some_and(|e| !e.is_empty()), "{waited}");
+    assert_eq!(jobs.status()["delivered"], false);
+    // Another bot's look neither attaches nor errors: the images belong to the bot that asked.
+    let other = jobs.wait(&hub, "someone-else", Duration::ZERO).await.expect("a look");
+    assert!(other.get("attachError").is_none(), "{other}");
     assert_eq!(jobs.status()["files"].as_array().map(Vec::len), Some(1));
     assert!(jobs.first_file().is_some_and(|f| f.is_file()));
 
@@ -312,6 +314,30 @@ async fn real_comfyui_jobs_run_one_at_a_time_and_cancel() {
     assert!(idle, "ComfyUI stopped the interrupted job");
     assert_eq!(phase(&jobs), "cancelled", "a late finish does not overwrite the cancellation");
     assert!(jobs.cancel(&hub).await.is_err(), "there is nothing left to cancel");
+
+    // Another bot that stops waiting leaves the job alone; the bot that asked stopping its turn cancels it.
+    jobs.submit(&hub, "nobody", &slow).await.expect("another slow job");
+    let elsewhere =
+        tokio::time::timeout(Duration::from_secs(3), jobs.wait(&hub, "someone-else", Duration::from_mins(5))).await;
+    assert!(elsewhere.is_err(), "the other bot's wait was still going");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(matches!(phase(&jobs).as_str(), "queued" | "running"), "{}", jobs.status());
+    let abandoned =
+        tokio::time::timeout(Duration::from_secs(3), jobs.wait(&hub, "nobody", Duration::from_mins(5))).await;
+    assert!(abandoned.is_err(), "the wait was still going when the turn stopped");
+    for _ in 0..80 {
+        if phase(&jobs) == "cancelled" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert_eq!(phase(&jobs), "cancelled", "a stopped turn stops its image");
+    for _ in 0..240 {
+        if api.queue().await.expect("queue answers")["queue_running"].as_array().is_some_and(Vec::is_empty) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
 
     hub.tools.stop(&hub.store, "comfy").await.expect("switching ComfyUI off");
     assert!(!hub.tools.comfy_running());

@@ -8,15 +8,24 @@ use crate::hub::Hub;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub const INSTRUCTIONS: &str = "Make images with the ComfyUI on this computer. list_models shows the checkpoints, LoRAs and VAEs \
-installed; list_nodes finds node names. run_workflow takes a workflow in ComfyUI's API format (example_workflow returns one that works) \
-and returns at once: the finished images arrive in this chat by themselves. Check job_status, or stop it with cancel_job. \
-One job runs at a time. Use upload_image to give a workflow an input picture (its returned name goes in a LoadImage node).";
+installed; list_nodes finds node names. run_workflow takes a workflow in ComfyUI's API format (example_workflow returns one that works), \
+waits for it and sends the finished images to this chat. A slow one comes back still running: call wait_for_job to keep waiting \
+(the images are sent when it ends), job_status to look without waiting, or cancel_job to stop it. One job runs at a time. \
+Use upload_image to give a workflow an input picture (its returned name goes in a LoadImage node).";
+
+/// How long one call waits for a job: under the agents' own tool timeouts. A longer job is waited for again.
+const WAIT_IN_CALL: Duration = Duration::from_mins(5);
+/// The MCP bridge's timeout for a `comfyCall`: the wait plus the time to queue and attach.
+pub const CALL_TIMEOUT: Duration = Duration::from_mins(6);
 
 /// The example graph: the default workflow of the repo's `script_examples/basic_api_example.py`.
 const EXAMPLE: &str = include_str!("comfy_example.json");
 const MAX_UPLOAD: u64 = 20 * 1024 * 1024;
+/// What `upload_image` takes: the picture formats a `LoadImage` node reads.
+const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "webp", "bmp", "gif"];
 
 pub fn tools() -> Value {
     json!([
@@ -30,7 +39,7 @@ pub fn tools() -> Value {
         tool("example_workflow", "A working text-to-image workflow in API format to start from.", &json!({}), &[]),
         tool(
             "run_workflow",
-            "Queue a workflow (ComfyUI API format). Returns at once; the images are sent to this chat when done.",
+            "Run a workflow (ComfyUI API format): waits for it and sends its images to this chat. A slow one returns still running.",
             &json!({"workflow": {"type": "object", "description": "Numbered nodes with class_type and inputs."}}),
             &["workflow"],
         ),
@@ -41,8 +50,14 @@ pub fn tools() -> Value {
             &["path"],
         ),
         tool(
+            "wait_for_job",
+            "Keep waiting for the running job; its images are sent to this chat when it ends.",
+            &json!({}),
+            &[]
+        ),
+        tool(
             "job_status",
-            "The state of the current or last job: queued, running, done, cancelled or error.",
+            "The state of the current or last job, without waiting: queued, running, done, cancelled or error.",
             &json!({}),
             &[]
         ),
@@ -51,7 +66,7 @@ pub fn tools() -> Value {
 }
 
 fn tool(name: &str, description: &str, properties: &Value, required: &[&str]) -> Value {
-    let read_only = matches!(name, "list_models" | "list_nodes" | "example_workflow" | "job_status");
+    let read_only = matches!(name, "list_models" | "list_nodes" | "example_workflow");
     json!({
         "name": name,
         "description": description,
@@ -67,8 +82,13 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
     }
     let jobs = hub.tools.comfy_jobs();
     match name {
-        "run_workflow" => jobs.submit(hub, bot, &args["workflow"]).await,
-        "job_status" => Ok(jobs.status()),
+        "run_workflow" => {
+            jobs.submit(hub, bot, &args["workflow"]).await?;
+            jobs.wait(hub, bot, WAIT_IN_CALL).await
+        }
+        "wait_for_job" => jobs.wait(hub, bot, WAIT_IN_CALL).await,
+        // Looking without waiting still sends a finished job's images, if a turn ended before they could go.
+        "job_status" => jobs.wait(hub, bot, Duration::ZERO).await,
         "cancel_job" => jobs.cancel(hub).await,
         "list_models" => {
             let info = api(hub)?.object_info().await?;
@@ -121,6 +141,7 @@ fn options(info: &Value, class: &str, input: &str) -> Value {
 
 async fn upload(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     let path = std::path::PathBuf::from(args["path"].as_str().context("`path` is required")?);
+    anyhow::ensure!(is_image(&path), "upload_image takes a picture: {}", IMAGE_EXTENSIONS.join(", "));
     let meta = tokio::fs::metadata(&path).await.with_context(|| format!("reading {}", path.display()))?;
     anyhow::ensure!(meta.is_file() && meta.len() <= MAX_UPLOAD, "the image must be a file of at most 20 MB");
     let name = match args["name"].as_str() {
@@ -131,9 +152,23 @@ async fn upload(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     Ok(json!({ "name": stored }))
 }
 
+/// Whether `path` names a picture, by its extension.
+fn is_image(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| IMAGE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_pictures_are_uploaded() {
+        use std::path::Path;
+        assert!(is_image(Path::new("C:/in/cat.PNG")) && is_image(Path::new("dog.webp")));
+        assert!(!is_image(Path::new("C:/Users/me/.ssh/id_ed25519")) && !is_image(Path::new("notes.txt")));
+    }
 
     #[test]
     fn the_example_is_a_graph_of_known_nodes() {

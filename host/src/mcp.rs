@@ -206,7 +206,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
-        Server::Comfy => ("comfyCall", Duration::from_mins(2)),
+        Server::Comfy => ("comfyCall", crate::tools::comfy_mcp::CALL_TIMEOUT),
         Server::Composio => ("composioCall", Duration::from_mins(2)),
         // The first listing may wait for the other computers.
         Server::Network => ("agentCall", Duration::from_secs(30)),

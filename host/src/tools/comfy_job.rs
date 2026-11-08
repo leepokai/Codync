@@ -1,6 +1,7 @@
 //! ComfyUI jobs: one at a time. A job is a workflow queued with `POST /prompt`, followed through
-//! `/queue` and `/history`, cancelled with `/interrupt` (or removed from the queue), and, when it
-//! finishes, its images go to the chat of the bot that asked.
+//! `/queue` and `/history`, and cancelled with `/interrupt` (or removed from the queue). Its images go to
+//! the chat of the bot that asked, from inside that bot's turn: `send_file` only works while a turn runs,
+//! so the bot's own `run_workflow` / `wait_for_job` call waits for the job and attaches them, once.
 
 use super::comfy::{self, MODELS_URL};
 use super::comfy_api::Api;
@@ -49,16 +50,55 @@ struct Job {
     phase: Phase,
     error: Option<String>,
     files: Vec<PathBuf>,
+    /// The images went to the bot's chat already.
+    delivered: bool,
 }
 
 impl Job {
+    fn queued(id: &str, bot: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            bot: bot.to_owned(),
+            phase: Phase::Queued,
+            error: None,
+            files: vec![],
+            delivered: false,
+        }
+    }
+
     fn public(&self) -> Value {
         json!({
             "id": self.id,
             "phase": self.phase.name(),
             "error": self.error,
             "files": self.files.iter().map(|f| f.to_string_lossy()).collect::<Vec<_>>(),
+            "delivered": self.delivered,
         })
+    }
+}
+
+/// Cancels the job when the call waiting for it goes away unfinished: a bot's turn that is stopped
+/// (from the phone, the desktop or the bot) stops the image it was waiting for.
+struct CancelOnDrop {
+    jobs: Arc<Jobs>,
+    hub: Arc<Hub>,
+    id: String,
+    armed: bool,
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let (jobs, hub, id) = (self.jobs.clone(), self.hub.clone(), self.id.clone());
+        tokio::spawn(async move {
+            if jobs.phase_of(&id).is_some_and(Phase::active)
+                && let Err(e) = jobs.cancel(&hub).await
+            {
+                tracing::warn!(error = format!("{e:#}"), "cancelling the ComfyUI job of a stopped turn");
+            }
+        });
     }
 }
 
@@ -84,11 +124,20 @@ impl Jobs {
         self.current.locked().as_ref().filter(|j| j.phase == Phase::Done).and_then(|j| j.files.first().cloned())
     }
 
+    fn phase_of(&self, id: &str) -> Option<Phase> {
+        self.current.locked().as_ref().filter(|j| j.id == id).map(|j| j.phase)
+    }
+
+    fn announce(&self, job: &Job) {
+        let _ = self.events.send(json!({ "type": "toolJob", "tool": "comfy", "job": job.public() }));
+    }
+
+    /// Changes the job while it is still active: a cancellation or a finish already recorded stays.
     fn update(&self, id: &str, change: impl FnOnce(&mut Job)) {
         let mut guard = self.current.locked();
         let Some(job) = guard.as_mut().filter(|j| j.id == id && j.phase.active()) else { return };
         change(job);
-        let _ = self.events.send(json!({ "type": "toolJob", "tool": "comfy", "job": job.public() }));
+        self.announce(job);
     }
 
     /// Validates and queues `graph` for `bot`; the job is followed in the background.
@@ -101,11 +150,59 @@ impl Jobs {
         let api = running_api(hub)?;
         validate(graph, &api.object_info().await?)?;
         let id = api.submit(graph, "codync").await?;
-        let job = Job { id: id.clone(), bot: bot.to_owned(), phase: Phase::Queued, error: None, files: vec![] };
+        let job = Job::queued(&id, bot);
         *self.current.locked() = Some(job.clone());
-        let _ = self.events.send(json!({ "type": "toolJob", "tool": "comfy", "job": job.public() }));
+        self.announce(&job);
         tokio::spawn(self.clone().follow(hub.clone(), id));
         Ok(job.public())
+    }
+
+    /// Waits up to `limit` for the current job, from inside `bot`'s turn. When it is done and `bot` asked
+    /// for it, its images go to `bot`'s chat (once). A wait that is abandoned (the turn stopped) cancels it.
+    pub async fn wait(self: &Arc<Self>, hub: &Arc<Hub>, bot: &str, limit: Duration) -> Result<Value> {
+        let Some((id, owner)) = self.current.locked().as_ref().map(|j| (j.id.clone(), j.bot.clone())) else {
+            bail!("there is no ComfyUI job: start one with run_workflow");
+        };
+        // Only the bot that asked for the job stops it by stopping its turn.
+        let mut guard = CancelOnDrop { jobs: self.clone(), hub: hub.clone(), id: id.clone(), armed: owner == bot };
+        let deadline = tokio::time::Instant::now() + limit;
+        while self.phase_of(&id).is_some_and(Phase::active) && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(POLL_EVERY).await;
+        }
+        guard.armed = false;
+        let mut status = self.status();
+        if self.phase_of(&id).is_some_and(Phase::active) {
+            status["note"] = json!("still running: call wait_for_job to keep waiting, or cancel_job to stop it");
+        }
+        let files = self.claim_delivery(&id, bot);
+        if !files.is_empty() {
+            match attach(hub, bot, &files).await {
+                Ok(()) => status["delivered"] = json!(true),
+                Err(e) => {
+                    self.release_delivery(&id);
+                    status["attachError"] = json!(format!("{e:#}"));
+                }
+            }
+        }
+        Ok(status)
+    }
+
+    /// The images of a finished job of `bot` that are not in its chat yet, marked as sent.
+    fn claim_delivery(&self, id: &str, bot: &str) -> Vec<PathBuf> {
+        let mut guard = self.current.locked();
+        let Some(job) = guard.as_mut().filter(|j| j.id == id && j.bot == bot && j.phase == Phase::Done && !j.delivered)
+        else {
+            return vec![];
+        };
+        job.delivered = true;
+        job.files.clone()
+    }
+
+    /// Sending failed: a later call may try again.
+    fn release_delivery(&self, id: &str) {
+        if let Some(job) = self.current.locked().as_mut().filter(|j| j.id == id) {
+            job.delivered = false;
+        }
     }
 
     /// Stops the current job: interrupts it when it runs, removes it when it waits.
@@ -123,11 +220,14 @@ impl Jobs {
         Ok(self.status())
     }
 
+    /// Keeps the job's state current for the card while it waits and runs.
     async fn follow(self: Arc<Self>, hub: Arc<Hub>, id: String) {
         let started = tokio::time::Instant::now();
         loop {
             tokio::time::sleep(POLL_EVERY).await;
-            let Some(job) = self.current.locked().clone().filter(|j| j.id == id && j.phase.active()) else { return };
+            if !self.phase_of(&id).is_some_and(Phase::active) {
+                return;
+            }
             let Ok(api) = running_api(&hub) else {
                 self.update(&id, |j| {
                     j.phase = Phase::Error;
@@ -144,15 +244,12 @@ impl Jobs {
                 return;
             }
             match self.poll(&api, &id).await {
-                Ok(Some(done)) => {
-                    let files = done.files.clone();
-                    self.update(&id, |j| *j = done);
-                    for file in files {
-                        let args = json!({ "path": file });
-                        if let Err(e) = crate::chat::outbox::call(&hub, &job.bot, "send_file", &args).await {
-                            tracing::warn!(error = format!("{e:#}"), "sending the ComfyUI image to the chat");
-                        }
-                    }
+                Ok(Some((phase, error, files))) => {
+                    self.update(&id, |j| {
+                        j.phase = phase;
+                        j.error = error;
+                        j.files = files;
+                    });
                     return;
                 }
                 Ok(None) => {}
@@ -161,25 +258,15 @@ impl Jobs {
         }
     }
 
-    /// One look at the server: the finished job, or `None` while it still waits or runs.
-    async fn poll(&self, api: &Api, id: &str) -> Result<Option<Job>> {
+    /// One look at the server: how the job ended, or `None` while it still waits or runs.
+    async fn poll(&self, api: &Api, id: &str) -> Result<Option<(Phase, Option<String>, Vec<PathBuf>)>> {
         let record = api.history(id).await?;
-        let mut job = self.current.locked().clone().filter(|j| j.id == id).unwrap_or_else(|| Job {
-            id: id.to_owned(),
-            bot: String::new(),
-            phase: Phase::Queued,
-            error: None,
-            files: vec![],
-        });
         if !record.is_null() {
-            if record["status"]["status_str"] == "error" {
-                job.phase = Phase::Error;
-                job.error = Some(failure(&record));
+            return Ok(Some(if record["status"]["status_str"] == "error" {
+                (Phase::Error, Some(failure(&record)), vec![])
             } else {
-                job.phase = Phase::Done;
-                job.files = output_files(&record);
-            }
-            return Ok(Some(job));
+                (Phase::Done, None, output_files(&record))
+            }));
         }
         let running = api.queue().await?["queue_running"]
             .as_array()
@@ -189,6 +276,14 @@ impl Jobs {
         }
         Ok(None)
     }
+}
+
+/// Sends `files` to `bot`'s chat; only works while the bot's turn runs.
+async fn attach(hub: &Arc<Hub>, bot: &str, files: &[PathBuf]) -> Result<()> {
+    for file in files {
+        crate::chat::outbox::call(hub, bot, "send_file", &json!({ "path": file })).await?;
+    }
+    Ok(())
 }
 
 fn running_api(hub: &Hub) -> Result<Api> {

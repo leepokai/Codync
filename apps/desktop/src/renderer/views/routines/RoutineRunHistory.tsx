@@ -3,7 +3,7 @@ import { Button } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
-import { runLabel, type RoutineRun } from './routine'
+import { failureCodeLabel, runLabel, type RoutineRun } from './routine'
 import './routine-run-history.css'
 
 /** Inspect the host's recorded metadata, without rerunning work or borrowing today's instruction. */
@@ -25,6 +25,7 @@ export function RoutineRunHistory({ runs, name }: { runs: RoutineRun[]; name: st
           <Button kind="secondary" disabled={index <= 0} onClick={() => setSelected(runs[index - 1].id)}>Newer run</Button>
         </HStack>
         <Text weight="semibold">{tr(runLabel(current))}</Text>
+        {current.failureCode ? <Text size="caption" tone="danger">{tr(failureCodeLabel(current.failureCode))}</Text> : null}
         <Text size="caption" tone="secondary">{tr('Created')}: {when(current.createdAt)}</Text>
         <Text size="caption" tone="secondary">{tr('Finished')}: {current.finishedAt ? when(current.finishedAt) : tr('Not finished')}</Text>
         {current.scheduledFor ? <Text size="caption" tone="secondary">{tr('Scheduled for')}: {when(current.scheduledFor)}</Text> : null}
@@ -37,7 +38,7 @@ export function RoutineRunHistory({ runs, name }: { runs: RoutineRun[]; name: st
         {current.notBefore ? <Text size="caption" tone="secondary">{tr('Retry scheduled')}: {when(current.notBefore)}</Text> : null}
         {current.detail ? <Text as="div" size="callout" className="routine-run-detail">{current.detail}</Text> : <Text size="caption" tone="secondary">No additional detail was recorded.</Text>}
       </VStack> : <VStack gap={6}>
-        {runs.slice(0, 10).map((run) => <Button key={run.id} kind="secondary" onClick={() => setSelected(run.id)}>{when(run.createdAt)} · {tr(runLabel(run))}</Button>)}
+        {runs.slice(0, 10).map((run) => <Button key={run.id} kind="secondary" onClick={() => setSelected(run.id)}>{when(run.createdAt)} · {tr(runLabel(run))}{run.failureCode ? ` · ${tr(failureCodeLabel(run.failureCode))}` : ''}</Button>)}
       </VStack>}
       </div>
     </div>

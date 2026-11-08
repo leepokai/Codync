@@ -152,6 +152,7 @@ impl Routines {
                 let now = now_ms();
                 r.status = status;
                 r.finished_at = Some(now);
+                r.failure_code = failed.then(|| failure_code(status, timed_out, detail.as_deref()));
                 r.detail = detail;
                 r.result = text.filter(|t| !crate::chat::group::is_pass(t));
                 r.report_pending = r.result.is_some() || failed;
@@ -331,6 +332,33 @@ impl Routines {
             Ok(checks)
         })
     }
+}
+
+/// A stable reason for a failed run, from its status and detail, so the history can be scanned by cause.
+pub(super) fn failure_code(status: Status, timed_out: bool, detail: Option<&str>) -> String {
+    if status == Status::Interrupted {
+        return "stopped".into();
+    }
+    if timed_out {
+        return "timeout".into();
+    }
+    let detail = detail.unwrap_or_default().to_ascii_lowercase();
+    if detail.contains("memory") {
+        return "memory".into();
+    }
+    if ["usage", "quota", "credit", "limit reached", "rate limit"].iter().any(|w| detail.contains(w)) {
+        return "usage_limit".into();
+    }
+    if ["permission", "denied", "not allowed"].iter().any(|w| detail.contains(w)) {
+        return "denied".into();
+    }
+    if ["busy", "queue", "in use"].iter().any(|w| detail.contains(w)) {
+        return "busy".into();
+    }
+    if ["missing", "not found", "no such"].iter().any(|w| detail.contains(w)) {
+        return "missing".into();
+    }
+    "error".into()
 }
 
 pub fn start(hub: &Arc<Hub>) {

@@ -1714,5 +1714,13 @@
   "No chats yet.": "아직 채팅이 없습니다.",
   "Channel memory": "채널 기억",
   "What the bot should remember about this channel": "이 채널에 대해 봇이 기억할 것",
-  "Save memory": "기억 저장"
+  "Save memory": "기억 저장",
+  "Timed out": "시간 초과",
+  "Usage limit": "사용 한도",
+  "Out of memory": "메모리 부족",
+  "Denied": "거부됨",
+  "Bot busy": "봇 사용 중",
+  "Missing file or tool": "파일 또는 도구 없음",
+  "Stopped": "중지됨",
+  "Error": "오류"
 }

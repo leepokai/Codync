@@ -27,7 +27,7 @@ impl Routines {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{new_run, tests::routine};
+    use super::super::{new_run, runner::failure_code, tests::routine};
     use super::*;
     use serde_json::Value;
 
@@ -37,6 +37,19 @@ mod tests {
         let mut run = new_run(&r, Value::Null, None);
         run.status = status;
         run
+    }
+
+    #[test]
+    fn a_failure_keeps_a_stable_reason() {
+        assert_eq!(failure_code(Status::Interrupted, false, None), "stopped");
+        assert_eq!(failure_code(Status::Failed, true, Some("anything")), "timeout");
+        assert_eq!(failure_code(Status::Failed, false, Some("this computer's memory is full")), "memory");
+        assert_eq!(failure_code(Status::Failed, false, Some("usage limit reached")), "usage_limit");
+        assert_eq!(failure_code(Status::Failed, false, Some("Permission denied by the agent")), "denied");
+        assert_eq!(failure_code(Status::Failed, false, Some("the bot is busy")), "busy");
+        assert_eq!(failure_code(Status::Failed, false, Some("file not found")), "missing");
+        assert_eq!(failure_code(Status::Failed, false, Some("it broke")), "error");
+        assert_eq!(failure_code(Status::Failed, false, None), "error");
     }
 
     #[test]

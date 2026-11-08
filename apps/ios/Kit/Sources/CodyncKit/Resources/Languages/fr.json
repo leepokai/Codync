@@ -1714,5 +1714,13 @@
   "No chats yet.": "Aucune discussion pour l'instant.",
   "Channel memory": "Mémoire du canal",
   "What the bot should remember about this channel": "Ce que le bot doit retenir de ce canal",
-  "Save memory": "Enregistrer la mémoire"
+  "Save memory": "Enregistrer la mémoire",
+  "Timed out": "Délai dépassé",
+  "Usage limit": "Limite d'usage",
+  "Out of memory": "Mémoire épuisée",
+  "Denied": "Refusé",
+  "Bot busy": "Bot occupé",
+  "Missing file or tool": "Fichier ou outil manquant",
+  "Stopped": "Arrêté",
+  "Error": "Erreur"
 }

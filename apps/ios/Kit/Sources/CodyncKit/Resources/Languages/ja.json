@@ -1714,5 +1714,13 @@
   "No chats yet.": "チャットはまだありません。",
   "Channel memory": "チャンネルの記憶",
   "What the bot should remember about this channel": "このチャンネルについてボットが覚えておくこと",
-  "Save memory": "記憶を保存"
+  "Save memory": "記憶を保存",
+  "Timed out": "時間切れ",
+  "Usage limit": "利用上限",
+  "Out of memory": "メモリ不足",
+  "Denied": "拒否",
+  "Bot busy": "ボットが使用中",
+  "Missing file or tool": "ファイルまたはツールがない",
+  "Stopped": "停止",
+  "Error": "エラー"
 }

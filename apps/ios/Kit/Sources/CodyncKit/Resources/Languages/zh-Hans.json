@@ -1714,5 +1714,13 @@
   "No chats yet.": "还没有聊天。",
   "Channel memory": "频道记忆",
   "What the bot should remember about this channel": "机器人应记住的关于此频道的事",
-  "Save memory": "保存记忆"
+  "Save memory": "保存记忆",
+  "Timed out": "超时",
+  "Usage limit": "用量上限",
+  "Out of memory": "内存不足",
+  "Denied": "已拒绝",
+  "Bot busy": "机器人忙碌",
+  "Missing file or tool": "缺少文件或工具",
+  "Stopped": "已停止",
+  "Error": "错误"
 }

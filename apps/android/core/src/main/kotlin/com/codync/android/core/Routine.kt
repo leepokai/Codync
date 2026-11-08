@@ -33,6 +33,8 @@ import java.time.format.FormatStyle
 @Serializable data class RoutineRun(
     val id: String, val routineId: String, val botId: String, val status: String,
     val createdAt: Long = 0, val finishedAt: Long? = null, val detail: String? = null,
+    /** A stable failure reason (`timeout`, `usage_limit`, `memory`…), for scanning the history. */
+    val failureCode: String? = null,
     /** A retry of a run that failed before acting waits until then. */
     val notBefore: Long? = null,
     /** The occurrence this run stands for, when its schedule named one. */
@@ -55,6 +57,20 @@ import java.time.format.FormatStyle
             "cancelled" -> // A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped.
                 if (scheduledFor != null || missed != null) "Skipped$missedSuffix" else "Cancelled"
             else -> status.replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    /** What the failure's stable code reads as; unknown codes fall back to a plain error. */
+    val failureLabel: String? get() = failureCode?.let {
+        when (it) {
+            "timeout" -> "Timed out"
+            "usage_limit" -> "Usage limit"
+            "memory" -> "Out of memory"
+            "denied" -> "Denied"
+            "busy" -> "Bot busy"
+            "missing" -> "Missing file or tool"
+            "stopped" -> "Stopped"
+            else -> "Error"
         }
     }
 

@@ -75,7 +75,7 @@ internal data class RoutineHistorySelection(val expanded: Boolean = false, val r
                             .heightIn(min = 44.dp).padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(formatter.format(Instant.ofEpochMilli(run.createdAt)), Modifier.weight(1f), style = Type.caption, color = Palette.text)
-                            Text(run.label, style = Type.caption, color = if (run.status in listOf("failed", "interrupted")) Palette.danger else Palette.secondary)
+                            Text(run.label + (run.failureLabel?.let { " · $it" } ?: ""), style = Type.caption, color = if (run.status in listOf("failed", "interrupted")) Palette.danger else Palette.secondary)
                         }
                     }
                     if (selectedRun != null) {
@@ -95,14 +95,14 @@ internal data class RoutineHistorySelection(val expanded: Boolean = false, val r
                                     Text("$routineName · ${run.label}", Modifier.semantics { heading() }, style = Type.caption.medium, color = Palette.text)
                                     Text("Created: ${formatter.format(Instant.ofEpochMilli(run.createdAt))}", style = Type.caption, color = Palette.secondary)
                                     run.finishedAt?.let { Text("Finished: ${formatter.format(Instant.ofEpochMilli(it))}", style = Type.caption, color = Palette.secondary) }
+                                    run.failureLabel?.let { Text("Reason: $it", style = Type.caption, color = Palette.danger) }
                                     run.scheduledFor?.let { Text("Scheduled for: ${formatter.format(Instant.ofEpochMilli(it))}", style = Type.caption, color = Palette.secondary) }
                                     run.missed?.takeIf { it.count > 0 }?.let {
                                         Text("Missed occurrences: ${it.count}${it.until?.let { until -> " · last at ${formatter.format(Instant.ofEpochMilli(until))}" } ?: ""}",
                                             style = Type.caption, color = Palette.secondary)
                                     }
                                     run.notBefore?.let { Text("Not before: ${formatter.format(Instant.ofEpochMilli(it))}", style = Type.caption, color = Palette.secondary) }
-                                    run.detail?.takeIf { it.isNotBlank() }?.let { Text(it, style = Type.caption, color = Palette.text) }
-                                }
+                                    run.detail?.takeIf { it.isNotBlank() }?.let { Text(it, style = Type.caption, color = Palette.text) }                                }
                             }
                         }
                     }

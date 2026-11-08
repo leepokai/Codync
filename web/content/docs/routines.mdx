@@ -91,6 +91,8 @@ Pausing or deleting the routine cancels a waiting retry; stopping the bot doesn'
 
 If the host stops in the middle of a run (an update, a crash, a restart), the run resumes in its session when it's back, if the agent can reload it. If not, the run is marked interrupted. Either way, check what it already did before retrying anything with side effects.
 
+Each failed run in the history carries a short reason it can be scanned by: **Timed out**, **Usage limit**, **Out of memory**, **Denied**, **Bot busy**, **Missing file or tool**, **Stopped** or **Error**. It is a stable word rather than the agent's wording, so the same cause reads the same on every run and in every language.
+
 ## Timeouts
 
 Each run has a time limit: one hour unless you change it under **Run settings → Timeout**, from 1 second to 24 hours. A run that goes over is stopped so the bot can get on with other work. A run that hits its limit isn't retried automatically.

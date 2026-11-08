@@ -145,6 +145,9 @@ pub struct Run {
     /// This failed run can be retried by the user, so it keeps its event until then.
     #[serde(default)]
     pub retryable: bool,
+    /// A stable reason for a failure (`timeout`, `usage_limit`, `memory`…), for the history and its filters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_code: Option<String>,
     /// The occurrence this run stands for, when its schedule named one: a run that started well
     /// after it ran late, and a skipped one names the occurrences it dropped.
     #[serde(default)]
@@ -662,6 +665,7 @@ fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
         not_before: None,
         retry_at: None,
         retryable: false,
+        failure_code: None,
         scheduled_for: None,
         missed: None,
     }

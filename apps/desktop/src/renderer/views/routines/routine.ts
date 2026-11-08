@@ -59,6 +59,8 @@ export interface RoutineRun {
   createdAt: number
   finishedAt?: number | null
   detail?: string | null
+  /** A stable failure reason (`timeout`, `usage_limit`, `memory`…), for scanning the history. */
+  failureCode?: string | null
   /** A retry of a run that failed before acting waits until then. */
   notBefore?: number | null
   /** The occurrence this run stands for, when its schedule named one. */
@@ -72,6 +74,28 @@ export interface RoutineRun {
 export const isActiveRun = (run: RoutineRun) => ['pending', 'starting', 'running', 'recovering'].includes(run.status)
 
 /** A run's status in the routines list; a waiting retry says when it goes, a skipped run why. */
+/** What a failure's stable code reads as; unknown codes fall back to a plain error. */
+export function failureCodeLabel(code: string | null | undefined) {
+  switch (code) {
+    case 'timeout':
+      return 'Timed out'
+    case 'usage_limit':
+      return 'Usage limit'
+    case 'memory':
+      return 'Out of memory'
+    case 'denied':
+      return 'Denied'
+    case 'busy':
+      return 'Bot busy'
+    case 'missing':
+      return 'Missing file or tool'
+    case 'stopped':
+      return 'Stopped'
+    default:
+      return 'Error'
+  }
+}
+
 export function runLabel(run: RoutineRun, now = Date.now()) {
   const missed = run.missed && run.missed.count > 0 ? ` · ${run.missed.count} missed` : ''
   switch (run.status) {

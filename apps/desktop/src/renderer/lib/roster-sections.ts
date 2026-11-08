@@ -71,7 +71,19 @@ export function sectionNames(bots: Iterable<{ section?: string | null }>): strin
 
 /** The section a typed name names: trimmed of whitespace and control characters, null when nothing is left (iOS `RosterSection.name(typed:)`). */
 export function sectionName(typed: string | null): string | null {
-  return typed?.replace(/^[\s\p{Cc}]+|[\s\p{Cc}]+$/gu, '') || null
+  const name = typed?.replace(/^[\s\p{Cc}]+|[\s\p{Cc}]+$/gu, '') || null
+  // A folder tree separates its levels with `/`; empty levels fold away.
+  return name?.split('/').map((part) => part.trim()).filter(Boolean).join('/') || null
+}
+
+/** What a heading shows of a nested folder: its own last level. */
+export function sectionLeaf(name: string): string {
+  return name.split('/').filter(Boolean).pop() ?? name
+}
+
+/** How deep a nested folder sits, for its indent. */
+export function sectionDepth(name: string): number {
+  return Math.max(0, name.split('/').filter(Boolean).length - 1)
 }
 
 /** `renameSection`'s payload: `to` as `sectionName` reads it, and null (sent, not left out) to remove the section. */

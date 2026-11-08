@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { isGroup, type Bot } from '@shared/models'
 import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
-import { sameRosterGroup } from '../lib/roster-sections'
+import { sameRosterGroup, sectionDepth, sectionLeaf } from '../lib/roster-sections'
 import { reduceMotion } from '../lib/theme'
 import { useSlide } from '../lib/slide'
 import { sameRef, refKey, type RosterItem } from '../store/app-model'
@@ -248,7 +248,10 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
       const key = JSON.stringify([store.contextId, computer.id, project])
       const folded = collapsedProjects.includes(key)
       return <div key={key}>
-        {project ? <button className="roster-project" aria-expanded={!folded} title={project} onClick={() => setCollapsedProjects(folded ? collapsedProjects.filter((id) => id !== key) : [...collapsedProjects, key])} onContextMenu={(e) => { e.preventDefault(); onSectionContext(project, store, e.clientX, e.clientY) }}>{rosterProjectLabel(children[0].bot)}</button> : null}
+        {project ? <button className="roster-project" aria-expanded={!folded} title={project}
+          style={roster.grouping === 'project' ? undefined : { marginLeft: sectionDepth(project) * 12 }}
+          onClick={() => setCollapsedProjects(folded ? collapsedProjects.filter((id) => id !== key) : [...collapsedProjects, key])}
+          onContextMenu={(e) => { e.preventDefault(); onSectionContext(project, store, e.clientX, e.clientY) }}>{roster.grouping === 'project' ? rosterProjectLabel(children[0].bot) : sectionLeaf(project)}</button> : null}
         {!folded || !project ? children.map((item) => row(item, items)) : null}
       </div>
     })

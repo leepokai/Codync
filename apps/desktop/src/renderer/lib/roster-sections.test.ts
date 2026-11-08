@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterLines, sameRosterGroup, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, type RosterLine } from './roster-sections.ts'
+import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterLines, sameRosterGroup, sectionDepth, sectionLeaf, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, type RosterLine } from './roster-sections.ts'
 
 const item = (id: string, section?: string, { pinned = false, unread = 0 } = {}) => ({ id, bot: { pinned, section, unread } })
 type Item = ReturnType<typeof item>
@@ -70,8 +70,17 @@ test('a typed name is trimmed of whitespace and control characters, nothing left
   for (const typed of [null, '', ' \n\t', '\u00a0', '\u0000', ' \u0000 \t']) assert.equal(sectionName(typed), null)
 })
 
-test('removing a section sends `to` as null, which JSON keeps', () => {
-  assert.equal(JSON.stringify(sectionRename('Work', null)), '{"from":"Work","to":null}')
+test('a nested section keeps its path and shows its last level', () => {
+  assert.equal(sectionName(' Work / Clients / Acme '), 'Work/Clients/Acme')
+  assert.equal(sectionName('Work//Acme'), 'Work/Acme')
+  assert.equal(sectionName(' / '), null)
+  assert.equal(sectionLeaf('Work/Clients/Acme'), 'Acme')
+  assert.equal(sectionLeaf('Work'), 'Work')
+  assert.equal(sectionDepth('Work/Clients/Acme'), 2)
+  assert.equal(sectionDepth('Work'), 0)
+})
+
+test('removing a section sends `to` as null, which JSON keeps', () => {  assert.equal(JSON.stringify(sectionRename('Work', null)), '{"from":"Work","to":null}')
   assert.equal(JSON.stringify(sectionRename('Work', '  ')), '{"from":"Work","to":null}')
   assert.deepEqual(sectionRename('Work', ' Jobs '), { from: 'Work', to: 'Jobs' })
 })

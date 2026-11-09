@@ -132,7 +132,8 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
 "幫我支援一下這個 cloud 服務"). Nothing in the apps names a provider:
 
 - `GET /v1/cloud-computers` lists `providers`, each `{provider, name, region, keyPrompt, setup: {page, commands},
-  credential}`, from `PROVIDERS` in `cloud-credentials.ts`. A new provider shows up in every app with no release.
+  credential, offer?: {label, detail, url}}`, from `PROVIDERS` in `cloud-credentials.ts`. `offer` is the provider's own
+  free plan (InstaBox only; older clouds leave it out). A new provider shows up in every app with no release.
 - Keys are per provider (`PUT/DELETE /v1/cloud-credentials/:provider`, one `cloud_credentials` row each).
   `POST /v1/cloud-computers {provider, name}` creates a computer on one the user gave a key; `provider` may be left
   out when there is only one.
@@ -148,7 +149,8 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
   A provider is reached only where it is picked (owner, 2026-11-09: no separate Cloud providers row; picking a provider
   shows only that provider's options): a row without a working key, the `⋯` inside a row with one (*{provider} API key*,
   and *Remove key* while no cloud computer runs there), or a computer's `⋯` opens *{provider} API key*, a sheet with just that provider: its key (last four, replace, remove) or a field to
-  paste one, and *How to make a key* folded under it; saving one goes back to New cloud computer with it picked. A key
+  paste one, the provider's free plan when it has one (InstaBox: *Get a free sandbox*, its pricing page; its row in
+  New cloud computer says *Free sandbox available* until it has a key), and *How to make a key* folded under it; saving one goes back to New cloud computer with it picked. A key
   the provider turned down for its own sake (revoked, expired) leaves its row unpicked; one turned down for the plan or
   the account still creates, which tries again. At the limit **+** still opens, with *Create* off and why, so every
   provider's key stays in reach.
@@ -168,7 +170,8 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
     InstaBox also pauses a machine idle for 30 minutes on its own (a free machine can't turn that off): the next wake
     starts it, as after Codync's own sleep.
 - Adding a provider: a driver beside `boat.ts` and `instabox.ts`, registered in `drivers`, a `PROVIDERS` entry (name,
-  region, key prompt, how to make the key) and its base URL override for tests in `sendWith`. No migration: no CHECK
+  region, key prompt, how to make the key, its free plan (`offer`) if any, with `label` and `detail` added to every
+  language catalog) and its base URL override for tests in `sendWith`. No migration: no CHECK
   names providers. `cloud/machines/test/` holds each driver's request and answer tests.
 
 ### What Codync can still do

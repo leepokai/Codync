@@ -108,6 +108,9 @@ pub enum Reported {
         outcome: CloudCreateOutcome,
         provider: CloudProvider,
     },
+    CloudOfferOpened {
+        provider: CloudProvider,
+    },
     CloudComputerRenamed {
         outcome: CloudRenameOutcome,
     },
@@ -444,6 +447,7 @@ mod tests {
                 json!({"event": "cloud_computer_created", "app": "desktop", "outcome": "created", "provider": "boat"}),
                 Event::CloudComputerCreated,
             ),
+            (json!({"event": "cloud_offer_opened", "app": "desktop", "provider": "instabox"}), Event::CloudOfferOpened),
             (
                 json!({"event": "cloud_computer_renamed", "app": "desktop", "outcome": "failed"}),
                 Event::CloudComputerRenamed,

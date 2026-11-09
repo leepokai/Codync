@@ -116,6 +116,12 @@ export class CloudComputerModel extends Observable {
     return saved
   }
 
+  /** Opens `provider`'s free plan in the browser, counted by its provider. */
+  openOffer(provider: string, url: string) {
+    analytics.track({ event: 'cloud_offer_opened', provider })
+    window.codync.app.openExternal(url)
+  }
+
   canRemoveKey(provider: string) {
     return canRemoveKey(this.machines, provider)
   }

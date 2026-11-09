@@ -133,7 +133,7 @@ struct NewCloudComputerSheet: View {
         if let problem = provider.credential?.problem {
             return Text(L10n.tr(problem)).foregroundStyle(Palette.danger)
         }
-        let key = provider.credential?.hint ?? L10n.tr("Add a key first")
+        let key = provider.credential?.hint ?? L10n.tr(provider.offer == nil ? "Add a key first" : "Free sandbox available")
         return Text(verbatim: "\(provider.region) · \(key)").foregroundStyle(Palette.secondary)
     }
 

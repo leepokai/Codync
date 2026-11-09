@@ -104,7 +104,7 @@ import com.kyant.shapes.RoundedRectangle
     val detail = when {
         problem != null -> tr(problem)
         credential != null -> "${provider.region} · ${credential.hint}"
-        else -> "${provider.region} · ${tr("Add a key first")}"
+        else -> "${provider.region} · ${tr(if (provider.offer != null) "Free sandbox available" else "Add a key first")}"
     }
     val action = if (provider.usable) Modifier.choice(selected, provider.name, choose = tap)
         else Modifier.plainButton(action = tap).semantics { contentDescription = provider.name }

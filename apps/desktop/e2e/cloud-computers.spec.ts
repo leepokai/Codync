@@ -166,10 +166,10 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
 
     // With no computer left, each key goes from its row's ⋯ in New cloud computer.
     await section.getByRole('button', { name: 'New cloud computer' }).click()
-    for (const name of ['Boat', 'InstaBox']) {
+    for (const [name, keyless] of [['Boat', 'Add a key first'], ['InstaBox', 'Free sandbox available']]) {
       await rowMenu(name).click()
       await page.getByRole('menuitem', { name: 'Remove key' }).click()
-      await expect(providerRow(name)).toContainText('Add a key first')
+      await expect(providerRow(name)).toContainText(keyless)
     }
     await expect(create).toBeDisabled()
   } finally {

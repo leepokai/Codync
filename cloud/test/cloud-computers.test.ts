@@ -26,6 +26,13 @@ describe("cloud computers", () => {
     });
     expect(open.providers[0].setup.commands).toContain("boat api-key create codync --env <id> --ttl never --actions sandbox.create,");
     expect(open.providers[1].setup.commands).toContain("instabox keys create --name codync --scope machines:read,machines:write,machines:delete");
+    // Only a provider with a free plan offers one.
+    expect(open.providers[0].offer).toBeUndefined();
+    expect(open.providers[1].offer).toEqual({
+      label: "Get a free sandbox",
+      detail: "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).",
+      url: "https://instabox.sh/pricing",
+    });
   });
 
   it("needs the user's own Boat key", async () => {

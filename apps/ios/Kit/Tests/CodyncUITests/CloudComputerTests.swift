@@ -120,7 +120,8 @@ private final class KeyStub: CloudComputerStub {
         default:
             let setup = #""setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"},"credential":null"#
             return (200, #"{"cloudComputers":[],"available":true,"limit":3,"providers":[{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",\#(setup)},"#
-                + #"{"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",\#(setup)}]}"#)
+                + #"{"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",\#(setup),"#
+                + #""offer":{"label":"Get a free sandbox","detail":"A free plan.","url":"https://nimbus.example/pricing"}}]}"#)
         }
     }
 }
@@ -133,6 +134,8 @@ private final class KeyStub: CloudComputerStub {
     #expect(store.isShown && store.machines.isEmpty && !store.atLimit)
     #expect(store.providers.map(\.name) == ["Boat", "Nimbus"])
     #expect(store.providers.first?.setup.commands == "boat env new codync")
+    // A free plan only where the cloud names one.
+    #expect(store.providers.map(\.offer?.url.absoluteString) == [nil, "https://nimbus.example/pricing"])
     #expect(store.providers.allSatisfy { $0.credential == nil })
     #expect(await store.saveKey("boat_admin_key", provider: "boat") == false)
     #expect(store.error == "This key can manage your whole account. Make one limited to Codync instead.")

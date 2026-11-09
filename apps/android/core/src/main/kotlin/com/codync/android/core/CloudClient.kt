@@ -91,11 +91,17 @@ data class CloudOffer(@SerialName("cloudComputers") val machines: List<CloudMach
 data class CloudProvider(val provider: String, val name: String, val region: String,
     /** What its keys start with, for the field's placeholder (`boat_…`). */
     val keyPrompt: String,
-    val setup: CloudKeySetup, val credential: CloudCredential? = null) {
+    val setup: CloudKeySetup, val credential: CloudCredential? = null,
+    /** Its own free plan, if it has one (older clouds don't say). */
+    val offer: CloudProviderOffer? = null) {
     /** The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
      * when the provider said no for the plan or the account). */
     val usable: Boolean get() = credential != null && !credential.blocking
 }
+
+/** A provider's own free plan, in the cloud's words (the app translates [label] and [detail]), and its page. */
+@Serializable
+data class CloudProviderOffer(val label: String, val detail: String, val url: String)
 
 /** A key the account gave a provider, as the cloud shows it: never the key itself. */
 @Serializable

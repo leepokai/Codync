@@ -1,6 +1,6 @@
 # Computers → Codync Cloud → "+" (New cloud computer): every provider with what it needs and its logo, the suggested name,
-# and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row opens only
-# InstaBox's key sheet with its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
+# and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row (its free plan
+# without a key) opens only InstaBox's key sheet with its free plan and its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
 # one closes the sheet with Boat picked and its hint shown; Boat's row's ⋯ (More) offers its key and Remove key, which works.
 # Needs a cloud that offers Codync Cloud: dev-api offers it to every account, or, to stay off the shared dev or when the
 # branch changes cloud/, `npm run cloud:stack` in cloud/ with a provider key (docs/guides/cloud-computer-testing.md);
@@ -85,10 +85,12 @@ env:
           notVisible: "Remove key"
           timeout: 15000
 
-# Every provider asks for a key, the suggested name stands in for an empty one, and nothing can be created yet.
+# Every provider asks for a key (InstaBox points to its free plan), the suggested name stands in for an empty one, and
+# nothing can be created yet.
 - extendedWaitUntil:
     visible: ".*Add a key first"
     timeout: 10000
+- assertVisible: ".*Free sandbox available"
 - assertVisible: "Boat.*"
 - assertVisible: "InstaBox.*"
 - assertVisible: "Cloud computer"
@@ -104,14 +106,16 @@ env:
       - assertVisible:
           id: "cloudProvider.instabox"
 
-# InstaBox's row opens InstaBox's key alone, with its own steps (the command lines are one text; on the iPhone they
-# scroll sideways, wider than the screen, so the text is never all in view).
+# InstaBox's row opens InstaBox's key alone, with its free plan and its own steps (the command lines are one text; on
+# the iPhone they scroll sideways, wider than the screen, so the text is never all in view).
 - tapOn: "InstaBox.*"
 - extendedWaitUntil:
     visible: "How to make a key"
     timeout: 10000
 - assertVisible: "InstaBox API key"
 - assertNotVisible: "Boat API key"
+- assertVisible: "InstaBox's free plan includes one machine.*"
+- assertVisible: "Get a free sandbox"
 - tapOn: "How to make a key"
 - scrollUntilVisible:
     element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
@@ -129,6 +133,7 @@ env:
     visible: "How to make a key"
     timeout: 10000
 - assertNotVisible: "InstaBox API key"
+- assertNotVisible: "Get a free sandbox"
 - tapOn:
     text: "(Boat API key|boat_…)"
     above: "How to make a key"

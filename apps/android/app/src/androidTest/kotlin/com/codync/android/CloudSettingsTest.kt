@@ -80,12 +80,15 @@ class CloudSettingsTest {
         compose.onNodeWithText("How to make a key").assertIsDisplayed().performClick()
         compose.onNodeWithText("boat env new codync").assertIsDisplayed()
         compose.onNodeWithText("Open Boat").assertExists()
+        // Boat has no free plan.
+        compose.onNodeWithText("Get a free sandbox").assertDoesNotExist()
         snapshot("key-sheet")
     }
 
     @Test fun plusOffersEveryProviderAndAKeyToAddFirst() {
         val key = CloudCredential("boat_…9abc")
-        val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup)
+        val free = CloudProviderOffer("Get a free sandbox", "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).", "https://instabox.sh/pricing")
+        val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, offer = free)
         val offer = CloudOffer(listOf(machine("stopped")), available = true, providers = listOf(boat(key), instabox))
         compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
@@ -93,12 +96,15 @@ class CloudSettingsTest {
         compose.onNodeWithText("Cloud computer 2", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Boat").assertIsSelected()
         compose.onNodeWithText("EU · boat_…9abc").assertIsDisplayed()
-        compose.onNodeWithText("US · Add a key first").assertIsDisplayed()
+        // Without a key, InstaBox points to its free plan.
+        compose.onNodeWithText("US · Free sandbox available").assertIsDisplayed()
         compose.onNodeWithContentDescription("Create").assertIsEnabled()
         compose.onNodeWithTag("cloudProviderKey.instabox").assertDoesNotExist()
         snapshot("new")
         compose.onNodeWithContentDescription("InstaBox").performClick()
         compose.onNodeWithText("InstaBox API key").assertIsDisplayed()
+        compose.onNodeWithText("InstaBox's free plan includes one machine (4 vCPU, 8 GiB).").assertIsDisplayed()
+        compose.onNodeWithText("Get a free sandbox").assertIsDisplayed()
         compose.onNodeWithText("How to make a key").assertExists()
         compose.onNodeWithText("Boat API key").assertDoesNotExist()
     }

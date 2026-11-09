@@ -55,6 +55,7 @@ class AnalyticsTest {
         assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(CloudError(429, "rateLimited")))
         assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(IOException("Offline")))
         assertEquals("""{"outcome":"refused","provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Refused, "instabox").properties).toString())
+        assertEquals("""{"provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudOfferOpened("instabox").properties).toString())
     }
 
     @Test fun `a cloud computer the cloud refuses is told apart from one that failed`() {

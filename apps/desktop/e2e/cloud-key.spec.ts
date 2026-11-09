@@ -18,7 +18,7 @@ const cloud = (page: Page, method: string, path: string, body?: unknown) =>
 
 const REFUSED = /^(This key wasn't accepted|The provider refused this key)/
 
-/** Starts with no keys, so every provider in New cloud computer asks for one. */
+/** Starts with no provider in New cloud computer having a key. */
 async function forgetKeys(page: Page, offer: Offer) {
   for (const p of offer.providers ?? []) if (p.credential) await cloud(page, 'DELETE', `v1/cloud-credentials/${p.provider}`)
 }
@@ -65,20 +65,22 @@ test('Codync Cloud keeps a Boat key only once Boat takes it, from Boat in New cl
     const { newSheet, providerRow, providerMenu, keySheet, create } = await openNewComputer(page)
     const boatRow = providerRow('Boat')
 
-    // No key: every provider on its logo tile asks for one, without a ⋯, and nothing can be created.
+    // No key: every provider on its logo tile, without a ⋯, asks for one (InstaBox points to its free plan),
+    // and nothing can be created.
     await expect(newSheet.locator('.cloud-provider-tile .agent-icon')).toHaveCount(2)
-    await expect(boatRow).toContainText('Add a key first')
-    await expect(providerRow('InstaBox')).toContainText('Add a key first')
+    await expect(boatRow).toContainText('EU · Add a key first')
+    await expect(providerRow('InstaBox')).toContainText('US · Free sandbox available')
     await expect(newSheet.getByRole('button', { name: 'More' })).toHaveCount(0)
     await expect(newSheet.getByLabel('Name your cloud computer')).toHaveAttribute('placeholder', 'Cloud computer')
     await expect(create).toBeDisabled()
 
-    // Boat's row opens Boat's key alone, with its own steps.
+    // Boat's row opens Boat's key alone, with its own steps and no free plan.
     await boatRow.click()
     const sheet = keySheet('Boat')
     const field = sheet.getByLabel('Boat API key')
     const save = sheet.getByRole('button', { name: 'Save', exact: true })
     await expect(sheet.getByLabel('InstaBox API key')).toHaveCount(0)
+    await expect(sheet.getByRole('button', { name: 'Get a free sandbox' })).toHaveCount(0)
     await sheet.getByRole('button', { name: 'How to make a key' }).click()
     await expect(sheet.getByText(/boat env new codync/)).toBeVisible()
 
@@ -128,7 +130,7 @@ test('Codync Cloud keeps a Boat key only once Boat takes it, from Boat in New cl
   }
 })
 
-test('Codync Cloud offers InstaBox beside Boat, with its own key and steps', async () => {
+test('Codync Cloud offers InstaBox beside Boat, with its own key, steps and free plan', async () => {
   const { browser, page } = await attach()
   try {
     await noComputers(page, 'instabox')
@@ -138,6 +140,8 @@ test('Codync Cloud offers InstaBox beside Boat, with its own key and steps', asy
     const sheet = keySheet('InstaBox')
     const field = sheet.getByLabel('InstaBox API key')
     await expect(sheet.getByLabel('Boat API key')).toHaveCount(0)
+    await expect(sheet.getByText("InstaBox's free plan includes one machine (4 vCPU, 8 GiB).", { exact: true })).toBeVisible()
+    await expect(sheet.getByRole('button', { name: 'Get a free sandbox' })).toBeVisible()
     await sheet.getByRole('button', { name: 'How to make a key' }).click()
     await expect(sheet.getByText(/instabox keys create --name codync --scope machines:read,machines:write,machines:delete/)).toBeVisible()
 
@@ -152,7 +156,7 @@ test('Codync Cloud offers InstaBox beside Boat, with its own key and steps', asy
     await expect(create).toBeEnabled()
     // Its row's ⋯ removes it too, while no cloud computer runs there.
     await providerMenu('InstaBox', 'Remove key')
-    await expect(row).toContainText('Add a key first')
+    await expect(row).toContainText('US · Free sandbox available')
     await expect(rowMenu('InstaBox')).toHaveCount(0)
   } finally {
     await page.reload()

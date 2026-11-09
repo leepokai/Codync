@@ -4,7 +4,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import type { CloudCredential, CloudProvider } from '../../lib/cloud-computer'
+import type { CloudCredential, CloudProvider, CloudProviderOffer } from '../../lib/cloud-computer'
 import { fill } from '../../lib/fill'
 import { useTr } from '../../lib/use-language'
 import type { CloudComputerModel } from '../../store/cloud-computer'
@@ -28,6 +28,7 @@ export function CloudKeySheet({ model, provider, done }: { model: CloudComputerM
       <VStack gap={20} className="cloud-key-body">
         <CardSection>
           <KeyRow provider={p} model={model} saved={done} />
+          {p.offer ? <OfferRow provider={p.provider} offer={p.offer} model={model} /> : null}
           <SetupRow provider={p} />
         </CardSection>
         <ErrorText error={model.errorAt('card')} />
@@ -112,6 +113,19 @@ function KeyEntry({ provider, model, cancel, saved }: { provider: CloudProvider;
         </button>
       ) : null}
       {model.busy === `saveKey:${provider.provider}` ? <Spinner /> : <Button onClick={() => void save()} disabled={!key.trim() || model.busy !== null}>Save</Button>}
+    </HStack>
+  )
+}
+
+/** The provider's own free plan: what it includes, and its page. */
+function OfferRow({ provider, offer, model }: { provider: string; offer: CloudProviderOffer; model: CloudComputerModel }) {
+  const tr = useTr()
+  return (
+    <HStack gap={8} className="settings-row">
+      <Text size="footnote" tone="secondary" grow>{tr(offer.detail)}</Text>
+      <button className="settings-link" onClick={() => model.openOffer(provider, offer.url)}>
+        <Text size="footnote">{tr(offer.label)}</Text>
+      </button>
     </HStack>
   )
 }

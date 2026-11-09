@@ -1827,5 +1827,7 @@
   "Copy path": "Pfad kopieren",
   "Folder": "Ordner",
   "This folder is empty.": "Dieser Ordner ist leer.",
-  "Inside this bot’s folder": "Im Ordner dieses Bots"
+  "Inside this bot’s folder": "Im Ordner dieses Bots",
+  "Drop to send to {name}": "Zum Senden an {name} ablegen",
+  "this bot": "diesen Bot"
 }

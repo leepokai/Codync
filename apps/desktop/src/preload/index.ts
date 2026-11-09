@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { sshBridge } from './ssh'
 import type { CallError, CodyncBridge, HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
 
@@ -141,7 +141,8 @@ const bridge: CodyncBridge = {
     pickFiles: () => ipcRenderer.invoke('app:pickFiles'),
     pickExport: () => ipcRenderer.invoke('app:pickExport'),
     readPaths: (paths: string[]) => ipcRenderer.invoke('app:readPaths', paths),
-    pathForFile: (file: File) => ipcRenderer.sendSync('app:pathForFile', file),
+    // Only the page that got the File can ask for its path: a File sent over IPC loses it.
+    pathForFile: (file: File) => webUtils.getPathForFile(file),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),
     setTraySummary: (summary: TraySummary) => ipcRenderer.send('app:traySummary', summary),
     showWindow: () => ipcRenderer.send('app:showWindow'),

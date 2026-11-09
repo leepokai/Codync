@@ -1827,5 +1827,7 @@
   "Copy path": "复制路径",
   "Folder": "文件夹",
   "This folder is empty.": "此文件夹为空。",
-  "Inside this bot’s folder": "在此机器人的文件夹中"
+  "Inside this bot’s folder": "在此机器人的文件夹中",
+  "Drop to send to {name}": "拖放以发送给 {name}",
+  "this bot": "这个机器人"
 }

@@ -1827,5 +1827,7 @@
   "Copy path": "Копировать путь",
   "Folder": "Папка",
   "This folder is empty.": "Эта папка пуста.",
-  "Inside this bot’s folder": "В папке этого бота"
+  "Inside this bot’s folder": "В папке этого бота",
+  "Drop to send to {name}": "Отпустите, чтобы отправить: {name}",
+  "this bot": "этот бот"
 }

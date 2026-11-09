@@ -3,7 +3,7 @@ import { registerAppearance } from './appearance'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
-import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell, webUtils, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
+import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerAgentImport } from './agent-import'
@@ -190,7 +190,6 @@ function registerIPC(tray: Tray) {
     return result.canceled ? [] : readFiles(result.filePaths)
   })
   ipcMain.handle('app:readPaths', (_e, paths: string[]) => readFiles(paths))
-  ipcMain.on('app:pathForFile', (e, file: File) => { e.returnValue = webUtils.getPathForFile(file) })
   ipcMain.handle('app:pickExport', async (e) => {
     const result = await openDialog(e, { defaultPath: app.getPath('downloads'), properties: ['openFile'], filters: [{ name: 'Bot export', extensions: ['zip'] }] })
     return result.canceled ? null : (result.filePaths[0] ?? null)

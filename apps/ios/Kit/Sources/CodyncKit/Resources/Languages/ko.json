@@ -1827,5 +1827,7 @@
   "Copy path": "경로 복사",
   "Folder": "폴더",
   "This folder is empty.": "이 폴더는 비어 있습니다.",
-  "Inside this bot’s folder": "이 봇의 폴더 안"
+  "Inside this bot’s folder": "이 봇의 폴더 안",
+  "Drop to send to {name}": "놓아서 {name}에게 보내기",
+  "this bot": "이 봇"
 }

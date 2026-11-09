@@ -1827,5 +1827,7 @@
   "Copy path": "パスをコピー",
   "Folder": "フォルダー",
   "This folder is empty.": "このフォルダーは空です。",
-  "Inside this bot’s folder": "このボットのフォルダー内"
+  "Inside this bot’s folder": "このボットのフォルダー内",
+  "Drop to send to {name}": "ドロップして {name} に送信",
+  "this bot": "このボット"
 }

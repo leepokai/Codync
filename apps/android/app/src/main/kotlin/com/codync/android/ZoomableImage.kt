@@ -60,7 +60,8 @@ import kotlin.math.abs
         if (next.zoomedIn && !zoom.zoomedIn) report()
         zoom = next
     }
-    Box(modifier.onSizeChanged { box = it.toSize() }.clipToBounds()
+    // A new size (rotation, split screen) keeps the picture inside it, with no gap at an edge.
+    Box(modifier.onSizeChanged { box = it.toSize(); zoom = zoom.clamped(box, picture()) }.clipToBounds()
         .pointerInput(bitmap) {
             detectTapGestures(onDoubleTap = { point ->
                 val from = zoom

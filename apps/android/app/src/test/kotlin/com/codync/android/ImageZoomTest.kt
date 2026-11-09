@@ -53,6 +53,16 @@ class ImageZoomTest {
         assertEquals(Size(400f, 800f), ImageZoom.fitted(Size(100f, 200f), box))
     }
 
+    @Test fun `a picture panned to its edge leaves no gap after the box grows`() {
+        val natural = Size(2000f, 1600f)
+        // Twice its fit size in a 1000 x 800 box, moved as far right as it goes.
+        val panned = ImageZoom(2f, Offset(500f, 0f)).clamped(box, ImageZoom.fitted(natural, box))
+        assertEquals(500f, panned.offset.x)
+        // The box doubles in width (split screen): the picture now just fills it across, so it comes back to the middle.
+        val wider = Size(2000f, 800f)
+        assertEquals(ImageZoom(2f), panned.clamped(wider, ImageZoom.fitted(natural, wider)))
+    }
+
     @Test fun `an animation passes through the zooms in between`() {
         assertEquals(ImageZoom(1.75f, Offset(-50f, 10f)), ImageZoom.Fit.lerp(ImageZoom(2.5f, Offset(-100f, 20f)), 0.5f))
     }

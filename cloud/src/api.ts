@@ -12,6 +12,7 @@ export { ApiError, type Ctx } from "./routes/common";
 export * from "./routes/account";
 export * from "./routes/assistant";
 export * from "./routes/cloud-computers";
+export * from "./routes/cloud-keeper";
 export * from "./routes/cloud-credentials";
 export * from "./routes/cloud-host";
 export * from "./routes/host";

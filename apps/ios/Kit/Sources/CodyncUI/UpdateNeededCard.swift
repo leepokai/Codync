@@ -124,9 +124,10 @@ public enum UpdateNeededText {
         }
     }
 
-    /// How to update Codync on a computer this app can't update.
-    public static func how(os: String?) -> String {
-        switch os {
+    /// How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself.
+    public static func how(os: String?, cloud: Bool = false) -> String {
+        if cloud { return "Codync Cloud updates it before it next sleeps." }
+        return switch os {
         case "macos": "Open Codync on that Mac and choose Check for Updates."
         case "linux": "Run codync-host update there."
         default: "Update Codync on that computer."

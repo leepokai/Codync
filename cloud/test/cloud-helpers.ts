@@ -53,7 +53,8 @@ export function boat(state = "provisioning", answers: Record<string, Answer | ((
 }
 
 /** The host's side of the ticket: the claim signed with its key, sent to `/v1/host/claim`. */
-export function hostClaim(host: TestHost, ticket: { claimId: string; nonce: string; userId: string }) {
+/** `extra`: more of the claim body (a cloud computer's `keeperKey`). */
+export function hostClaim(host: TestHost, ticket: { claimId: string; nonce: string; userId: string }, extra: Record<string, unknown> = {}) {
   const boxKey = ref.b64url(host.box.pub);
   const canonical = ref.claimCanonical(ticket.claimId, ticket.nonce, ticket.userId, host.cid, boxKey);
   return call("POST", "/v1/host/claim", {
@@ -68,6 +69,7 @@ export function hostClaim(host: TestHost, ticket: { claimId: string; nonce: stri
       platform: "linux",
       version: "2.25.0",
       sig: ref.b64url(ref.sign(host.sign, ref.enc.encode(canonical))),
+      ...extra,
     },
   });
 }
@@ -130,4 +132,23 @@ export function instaboxTicket(spy: ReturnType<typeof instaboxApi>) {
   const stdin: string = JSON.parse(init!.body as string).stdin;
   const b64 = /printf %s '([A-Za-z0-9+/=]+)' \| base64 -d > '\.codync\/managed\.json'/.exec(stdin)![1]!;
   return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))));
+}
+
+/** Boat (`boat` in `boatState`) and InstaBox stubbed at once, each answering its own calls; `instabox` answers InstaBox's
+ * (`instaboxApi`'s by default, or a provider out of reach). */
+export function bothProviders(boatState = "ready", instabox = instaboxApi().getMockImplementation()!) {
+  const answer = boat(boatState).getMockImplementation()!;
+  return spyFetch().mockImplementation((url, init) => (String(url).startsWith("https://boat.dev") ? answer(url, init) : instabox(url, init)));
+}
+
+/** A user with a cloud computer on each provider: Boat's first, then InstaBox's, named "Build box". */
+export async function onBothProviders() {
+  const userId = uid();
+  await withKey(userId);
+  await withInstaboxKey(userId);
+  boat();
+  await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" });
+  instaboxApi();
+  await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
+  return userId;
 }

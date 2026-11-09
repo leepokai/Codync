@@ -57,6 +57,20 @@ class AnalyticsTest {
         assertEquals("""{"outcome":"refused","provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Refused, "instabox").properties).toString())
     }
 
+    @Test fun `a cloud computer the cloud refuses is told apart from one that failed`() {
+        val limit = CloudError(409, "conflict", "You can have up to 3 cloud computers. Delete one to make another.")
+        assertEquals(CloudCreateOutcome.Refused, CloudCreateOutcome.of(limit))
+        assertEquals(CloudCreateOutcome.Refused, CloudCreateOutcome.of(CloudError(422, "keyRefused", "This key has expired. Make a new one.")))
+        assertEquals(CloudCreateOutcome.Failed, CloudCreateOutcome.of(CloudError(503, "providerUnavailable")))
+        assertEquals(CloudCreateOutcome.Failed, CloudCreateOutcome.of(IOException("Offline")))
+        val created = AnalyticsEvent.CloudComputerCreated(CloudCreateOutcome.Created, "boat")
+        assertEquals("cloud_computer_created", created.name)
+        assertEquals("""{"outcome":"created","provider":"boat"}""", JsonObject(created.properties).toString())
+        val renamed = AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed)
+        assertEquals("cloud_computer_renamed", renamed.name)
+        assertEquals("""{"outcome":"failed"}""", JsonObject(renamed.properties).toString())
+    }
+
     @Test fun `a crash keeps its type and Codync frames but never its message`() {
         val error = IllegalStateException("secret prompt text")
         val properties = CrashReports.properties(error).toString()

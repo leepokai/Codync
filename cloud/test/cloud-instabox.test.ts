@@ -41,7 +41,7 @@ describe("an InstaBox key", () => {
     expect(fetch).not.toHaveBeenCalled();
 
     const saved = await cc("PUT", userId, userId, PATH, { key: IBX_KEY });
-    expect(saved.body).toEqual({ credential: { hint: "ibk_…a2a2", problem: null, updatedAt: expect.any(Number) } });
+    expect(saved.body).toEqual({ credential: { hint: "ibk_…a2a2", problem: null, blocking: false, updatedAt: expect.any(Number) } });
     expect(calls(fetch)).toEqual([`GET ${API}/v1/me`, `GET ${API}/v1/orgs/org_1/invites`]);
     expect((fetch.mock.calls[0]![1]!.headers as Record<string, string>).authorization).toBe(`Bearer ${IBX_KEY}`);
 
@@ -74,7 +74,7 @@ describe("a cloud computer on InstaBox", () => {
 
     // Running and ready: one exec writes the ticket and starts the setup; later reads leave it be.
     const ready = instaboxApi("running");
-    expect((await cc("GET", userId)).body.cloudComputer.state).toBe("running");
+    expect((await cc("GET", userId)).body.cloudComputers[0].state).toBe("running");
     expect(calls(ready)).toEqual([`GET ${API}/v1/machines/m_test`, `POST ${API}/v1/machines/m_test/exec`]);
     const ticket = instaboxTicket(ready);
     expect(ticket).toMatchObject({ userId, approval: "auto" });
@@ -104,7 +104,7 @@ describe("a cloud computer on InstaBox", () => {
 
     const gone = instaboxApi("running");
     expect((await call("DELETE", `/v1/computers/${host.cid}`, { token: await clerkToken(userId) })).status).toBe(409);
-    expect((await cc("DELETE", userId)).status).toBe(200);
+    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${created.body.cloudComputer.cloudComputerId}`)).status).toBe(200);
     const [dUrl, dInit] = gone.mock.calls.find(([, i]) => i?.method === "DELETE")!;
     expect(String(dUrl)).toBe(`${API}/v1/machines/m_test`);
     expect(dInit!.headers).toMatchObject({ "X-Confirm-Delete": "m_test" });
@@ -116,9 +116,9 @@ describe("a cloud computer on InstaBox", () => {
     await cc("GET", userId);
     expect(execs(failing)).toHaveLength(1);
     expect((await row(userId))!.setup_at).toBeNull();
-    // InstaBox out of reach altogether: the read fails, and the next one tries again.
+    // InstaBox out of reach altogether: the read lists it as last seen, and the next one tries again.
     const unreachable = execUnreachable();
-    expect((await cc("GET", userId)).status).toBe(500);
+    expect((await cc("GET", userId)).status).toBe(200);
     expect(execs(unreachable)).toHaveLength(1);
     expect((await row(userId))!.setup_at).toBeNull();
     const both = instaboxApi("running");
@@ -168,7 +168,7 @@ describe("a cloud computer on InstaBox", () => {
     expect(ticket.claimId).not.toBe(first);
     const host = await newHost();
     expect((await hostClaim(host, ticket)).status).toBe(200);
-    expect((await cc("GET", userId)).body.cloudComputer.computerId).toBe(host.cid);
+    expect((await cc("GET", userId)).body.cloudComputers[0].computerId).toBe(host.cid);
   });
 });
 

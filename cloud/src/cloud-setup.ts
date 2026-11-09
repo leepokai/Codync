@@ -1,6 +1,9 @@
-// What a new cloud computer runs once, when it is first ready: the public host install, then, on dev and test
-// clouds only, a host build under test and the environment its service starts with
-// (docs/guides/cloud-computer-testing.md).
+// What a new cloud computer runs once, when it is first ready, as the provider's own user (which has passwordless sudo,
+// and keeps it: the provider's machine agent may need it, Boat's snapshots do): the public host install (on dev and
+// test clouds, a host build under test and its service's environment: docs/guides/cloud-computer-testing.md); the
+// keeper, the same binary under its own system user `codync`, which holds the secrets; and the user Codync's host and
+// agents run as, `codync-agent`, which never has sudo or any group that is root by another name, so its agents can't
+// reach them (docs/plans/codync-cloud.md, "Agents and the host's secrets").
 
 import type { Setup } from "../machines/src";
 import type { Env } from "./index";
@@ -21,6 +24,88 @@ export function hostEnv(raw: string | undefined): [string, string][] {
     });
 }
 
+/** `Environment=` lines for a systemd unit. */
+const envLines = (vars: [string, string][]) => vars.map(([k, v]) => `Environment=${k}=${v}`);
+
+/** Writes `lines` to `path` as root, or as user `as`: each line is its own `printf` argument, never its format. Every
+ * line here is fixed or a checked setting (`VAR`), so none holds a `'`. */
+const writeFile = (path: string, lines: string[], as?: string) =>
+  `printf '%s\\n' ${lines.map((l) => `'${l}'`).join(" ")} | sudo -n ${as ? `-u ${as} ` : ""}tee ${path} >/dev/null`;
+
+/** Where the keeper lives: its state, and its own copy of the binary, which only it may replace (`update`). */
+const KEEPER_DIR = "/var/lib/codync-keeper";
+
+/** The keeper's system unit: its own user, its own state folder (0700), its socket under /run. */
+function keeperUnit(vars: [string, string][]): string[] {
+  return [
+    "[Unit]",
+    "Description=Codync keeper",
+    "Wants=network-online.target",
+    "After=network-online.target",
+    "[Service]",
+    "User=codync",
+    "Group=codync",
+    `ExecStart=${KEEPER_DIR}/codync-host keeper`,
+    "StateDirectory=codync-keeper",
+    "StateDirectoryMode=0700",
+    "RuntimeDirectory=codync-keeper",
+    "RuntimeDirectoryMode=0755",
+    ...envLines(vars),
+    "Restart=always",
+    "RestartSec=2",
+    "NoNewPrivileges=yes",
+    "ProtectSystem=strict",
+    "ProtectHome=yes",
+    "PrivateTmp=yes",
+    "[Install]",
+    "WantedBy=multi-user.target",
+  ];
+}
+
+/** The keeper's user, its unit, and the setting that keeps processes of one user from attaching to each other where
+ * the kernel has Yama (the host also makes itself non-dumpable). */
+function keeperLines(vars: [string, string][]): string[] {
+  return [
+    `id -u codync >/dev/null 2>&1 || sudo -n useradd --system --user-group --no-create-home --home-dir ${KEEPER_DIR} --shell /usr/sbin/nologin codync`,
+    `sudo -n install -d -o codync -g codync -m 0700 ${KEEPER_DIR}`,
+    `sudo -n install -o codync -g codync -m 0700 "$HOME/.local/bin/codync-host" ${KEEPER_DIR}/codync-host`,
+    writeFile("/etc/systemd/system/codync-keeper.service", keeperUnit(vars)),
+    "sudo -n systemctl daemon-reload",
+    "sudo -n systemctl enable --now codync-keeper",
+    writeFile("/etc/sysctl.d/60-codync.conf", ["kernel.yama.ptrace_scope = 1"]),
+    "sudo -n sysctl -q -p /etc/sysctl.d/60-codync.conf || true",
+  ];
+}
+
+/** The user Codync's host and its agents run as: made here, never in a sudo or admin group, its home beside the
+ * provider user's (on the disk the provider keeps). */
+const AGENT = "codync-agent";
+
+/** Makes the agents' user, hands it the binary and the claim ticket the provider left in its own user's home, starts
+ * its user manager (linger) and installs the host's service there, with `vars` in its environment. */
+function agentLines(vars: [string, string][]): string[] {
+  const as = `sudo -n -u ${AGENT} env HOME="$AH" XDG_RUNTIME_DIR="/run/user/$AU" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$AU/bus"`;
+  return [
+    `AH="$(dirname "$HOME")/${AGENT}"`,
+    `id -u ${AGENT} >/dev/null 2>&1 || sudo -n useradd --create-home --home-dir "$AH" --shell /bin/bash --user-group ${AGENT}`,
+    `AU="$(id -u ${AGENT})"`,
+    `sudo -n install -d -o ${AGENT} -g ${AGENT} -m 0700 "$AH/.codync"`,
+    `sudo -n install -d -o ${AGENT} -g ${AGENT} -m 0755 "$AH/.local" "$AH/.local/bin"`,
+    `sudo -n install -o ${AGENT} -g ${AGENT} -m 0755 "$HOME/.local/bin/codync-host" "$AH/.local/bin/codync-host"`,
+    `sudo -n install -o ${AGENT} -g ${AGENT} -m 0600 "$HOME/.codync/managed.json" "$AH/.codync/managed.json"`,
+    "rm -f ~/.codync/managed.json",
+    ...(vars.length
+      ? [
+          `sudo -n install -d -o ${AGENT} -g ${AGENT} -m 0755 "$AH/.config" "$AH/.config/systemd" "$AH/.config/systemd/user" "$AH/.config/systemd/user/codync-host.service.d"`,
+          writeFile('"$AH/.config/systemd/user/codync-host.service.d/codync-cloud.conf"', ["[Service]", ...envLines(vars)], AGENT),
+        ]
+      : []),
+    `sudo -n loginctl enable-linger ${AGENT}`,
+    'for _ in $(seq 60); do [ -S "/run/user/$AU/bus" ] && break; sleep 1; done',
+    `${as} "$AH/.local/bin/codync-host" install`,
+  ];
+}
+
 export function setupScript(env: Env): string {
   const lines = ["set -eu", `curl -fsSL ${INSTALL} | sh -s -- --host-only`, 'export PATH="$HOME/.local/bin:$PATH"'];
   const binary = env.CLOUD_HOST_BINARY_URL;
@@ -34,14 +119,7 @@ export function setupScript(env: Env): string {
     );
   }
   const vars = hostEnv(env.CLOUD_HOST_ENV);
-  if (vars.length) {
-    const unit = ["[Service]", ...vars.map(([k, v]) => `Environment=${k}=${v}`)].join("\\n");
-    lines.push(
-      "mkdir -p ~/.config/systemd/user/codync-host.service.d",
-      `printf '${unit}\\n' > ~/.config/systemd/user/codync-host.service.d/codync-cloud.conf`,
-    );
-  }
-  lines.push("codync-host install");
+  lines.push(...keeperLines(vars), ...agentLines(vars));
   return `${lines.join("\n")}\n`;
 }
 
@@ -52,5 +130,7 @@ export function machineSetup(env: Env, claimId: string, nonce: string, userId: s
   return { files: [{ path: ".codync/managed.json", content: ticket }], setupScript: setupScript(env) };
 }
 
-/** The provider's name for a user's machine; test clouds use their own prefix so leftovers are easy to find. */
-export const machineName = (env: Env, userId: string) => `${env.CLOUD_MACHINE_PREFIX ?? "codync"}-${userId.slice(-12)}`;
+/** The provider's name for one of a user's machines (`machineId`: its `cm_…` id); test clouds use their own prefix so
+ * leftovers are easy to find. */
+export const machineName = (env: Env, userId: string, machineId: string) =>
+  `${env.CLOUD_MACHINE_PREFIX ?? "codync"}-${userId.slice(-8)}-${machineId.slice(-6)}`.toLowerCase().replace(/[^a-z0-9-]/g, "0");

@@ -4,7 +4,7 @@
 
 import { drivers, type Outcome } from "../../machines/src";
 import { credentialFor, credentialView, forgetCredential, isProvider, type KeyProblem, problemText, type Provider, providerSend, saveCredential, sendWith } from "../cloud-credentials";
-import { type CloudMachineRow, machineOf } from "../cloud-machines";
+import { type CloudMachineRow, machinesOf } from "../cloud-machines";
 import { ApiError, audit, body, type Ctx, user } from "./common";
 import { allowedUser, unreachable } from "./cloud-computers";
 
@@ -16,7 +16,7 @@ const provider = (raw: string | undefined): Provider => {
 /**
  * `PUT /v1/cloud-credentials/:provider {key}`: checks the key with the provider, then keeps it (sealed) in place of any
  * earlier one. Refused (`keyRefused`, with what to fix) when the provider turns it down, when it can run the whole
- * account, or when a cloud computer on that provider already exists that it can't reach.
+ * account, or when it can't reach one of the user's cloud computers on that provider.
  */
 export async function saveCloudCredential(c: Ctx, [raw]: string[]) {
   const p = provider(raw);
@@ -27,7 +27,7 @@ export async function saveCloudCredential(c: Ctx, [raw]: string[]) {
   const key = body(c).key;
   if (typeof key !== "string" || !d.keyPattern.test(key.trim())) throw new ApiError("keyRefused", problemText("format"));
   const clean = key.trim();
-  const machine = await machineOf(c.env, u.userId);
+  const machines = (await machinesOf(c.env, u.userId)).filter((m) => m.provider === p);
   const checked = await sendWith(c.env, p, clean, d.checkKey());
   check(d.done(checked));
   const probe = d.checkAdmin(checked);
@@ -37,7 +37,7 @@ export async function saveCloudCredential(c: Ctx, [raw]: string[]) {
     console.log(JSON.stringify({ msg: "cloud key not saved", userId: u.userId, code: "admin" }));
     throw new ApiError("keyRefused", problemText("admin"));
   }
-  if (machine?.provider === p) await checkReaches(c, u.userId, clean, machine);
+  for (const machine of machines) await checkReaches(c, u.userId, clean, machine);
   const row = await saveCredential(c.env, u.userId, p, clean, c.now);
   await audit(c.env, u.userId, "cloudCredential.save", p, "ok", c.now).run();
   return { credential: credentialView(row) };
@@ -70,7 +70,9 @@ async function checkReaches(c: Ctx, userId: string, key: string, machine: CloudM
 export async function deleteCloudCredential(c: Ctx, [raw]: string[]) {
   const p = provider(raw);
   const u = await user(c);
-  if ((await machineOf(c.env, u.userId))?.provider === p) throw new ApiError("conflict", "Delete your cloud computer first: Codync needs the key to put it to sleep.");
+  if ((await machinesOf(c.env, u.userId)).some((m) => m.provider === p)) {
+    throw new ApiError("conflict", "Delete your cloud computers on it first: Codync needs the key to put them to sleep.");
+  }
   if (!(await credentialFor(c.env, u.userId, p))) return {};
   await c.env.DB.batch([forgetCredential(c.env, u.userId, p), audit(c.env, u.userId, "cloudCredential.delete", p, "ok", c.now)]);
   return {};

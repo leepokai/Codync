@@ -1,53 +1,40 @@
 import CodyncKit
 import SwiftUI
 
-/// Computers → Codync Cloud → Cloud providers: every provider the cloud can run the computer on, each with the key to
-/// the user's own account there. A key is pasted once, checked and kept encrypted by the cloud, and shown afterwards
-/// only by its last four; while the provider turns it down, what to fix shows under it.
-public struct CloudProvidersSheet: View {
+/// One provider's key, from New cloud computer or a cloud computer's `⋯`: the key to the user's own account there,
+/// pasted once, checked and kept encrypted by the cloud, and shown afterwards only by its last four; while the provider
+/// turns it down, what to fix shows under it. Saving one closes it.
+public struct CloudKeySheet: View {
     let store: CloudMachineStore
+    let provider: String
+    @Environment(\.dismissModal) private var dismiss
 
-    public init(store: CloudMachineStore) { self.store = store }
+    public init(store: CloudMachineStore, provider: String) {
+        self.store = store
+        self.provider = provider
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
-            ModalHeader("Cloud providers")
-            CardForm {
-                CardSection(footer: "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {}
-                ForEach(store.providers) { provider in
-                    CardSection(provider.name) {
-                        CloudKeyRow(store: store, provider: provider)
+            if let provider = store.providers.first(where: { $0.provider == self.provider }) {
+                ModalHeader { Text(verbatim: L10n.fill(L10n.tr("{provider} API key"), ["provider": provider.name])) }
+                CardForm {
+                    CardSection(footer: "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {
+                        CloudKeyRow(store: store, provider: provider) { dismiss() }
                         CloudKeySetupRow(provider: provider)
-                    } accessory: {
-                        Text(verbatim: provider.region).font(.footnote).foregroundStyle(Palette.secondary)
                     }
                 }
-                if let error = store.error(forKey: nil) { ErrorText(error) }
             }
         }
         .background(Palette.background)
     }
 }
 
-/// Why the last action failed.
-private struct ErrorText: View {
-    let error: String
-
-    init(_ error: String) { self.error = error }
-
-    var body: some View {
-        Text(L10n.tr(error))
-            .font(.footnote)
-            .foregroundStyle(Palette.danger)
-            .fixedSize(horizontal: false, vertical: true)
-            .transition(.opacity)
-    }
-}
-
-/// One provider's key: its last four with replace and remove, or a field to paste it.
+/// One provider's key: its last four with replace and remove, or a field to paste it; `done` once one is saved.
 private struct CloudKeyRow: View {
     let store: CloudMachineStore
     let provider: CloudProvider
+    let done: () -> Void
     @State private var key = ""
     @State private var replacing = false
     @FocusState private var keyFocused: Bool
@@ -67,8 +54,7 @@ private struct CloudKeyRow: View {
             } else {
                 entry
             }
-            // Under the key it's about: below every provider it would be off screen.
-            if let error = store.error(forKey: provider.provider) { ErrorText(error) }
+            if let error = store.error(at: .key(provider.provider)) { ErrorText(error) }
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: replacing)
     }
@@ -126,6 +112,7 @@ private struct CloudKeyRow: View {
             if await store.saveKey(typed, provider: provider.provider) {
                 key = ""
                 replacing = false
+                done()
             }
         }
     }

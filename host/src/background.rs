@@ -35,6 +35,7 @@ pub fn start(hub: &Arc<Hub>) -> JoinSet<()> {
     tokio::spawn(relay::run(hub.clone()));
     tokio::spawn(claim::run_ticket(hub.clone()));
     tokio::spawn(managed::sleep_loop(hub.clone()));
+    tokio::spawn(managed::on_start(hub.clone()));
     tokio::spawn(crate::remote::discovery::run(hub.clone()));
     #[cfg(target_os = "linux")]
     tokio::spawn(screen::supervise_linux_helper(hub.screen.clone()));

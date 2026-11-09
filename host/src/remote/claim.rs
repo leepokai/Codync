@@ -1,7 +1,9 @@
 //! Putting a cloud computer in its Codync account: the one-time ticket a cloud computer Codync runs
 //! for a signed-in user finds on its first boot (`managed.json` in the data
 //! folder, written by the provider before the machine starts). The ticket names the claim; the
-//! host signs it (`owner::sign_claim`) and completes it itself, then deletes the file.
+//! host signs it (`owner::sign_claim`) and completes it itself, then deletes the file. The claim also names the
+//! computer's keeper (`crate::keeper`), the only one the cloud then gives its vault key to: it waits for the keeper
+//! rather than claim without it.
 
 use crate::hub::Hub;
 use crate::remote::cloud::{self, Approval, CloudError};
@@ -77,6 +79,9 @@ pub async fn run_ticket(hub: Arc<Hub>) {
                 tracing::info!(claim_id = ticket.claim_id, "claimed this computer for its Codync account");
                 remove(&path).await;
                 rename(&hub).await;
+                // A first boot: this host started before it knew it was a cloud computer, and its keeper gets its key
+                // only now that the claim named it.
+                tokio::spawn(super::managed::on_start(hub));
                 return;
             }
             Err(e) if is_final(&e) => {
@@ -91,18 +96,32 @@ pub async fn run_ticket(hub: Arc<Hub>) {
     }
 }
 
-/// `POST /v1/host/claim`: the cloud checks the claim and this computer's signature, then sets the owner.
+/// `POST /v1/host/claim`: the cloud checks the claim and this computer's signature, then sets the owner, and
+/// remembers the keeper's key.
 async fn complete(hub: &Arc<Hub>, ticket: &Ticket) -> Result<()> {
+    let keeper = {
+        let hub = hub.clone();
+        tokio::task::spawn_blocking(move || crate::keeper::client::public_key(&hub.store))
+            .await?
+            .context("waiting for this computer's keeper")?
+    };
     let mut body = super::owner::sign_claim(hub, &ticket.claim_id, &ticket.nonce, &ticket.user_id).await?;
     body["claimId"] = json!(ticket.claim_id);
     body["userId"] = json!(ticket.user_id);
+    body["keeperKey"] = json!(keeper);
     let base = cloud::codync_url(hub)?;
-    cloud::call(hub, &base, Method::POST, "/v1/host/claim", Some(&body)).await?;
+    let done = cloud::call(hub, &base, Method::POST, "/v1/host/claim", Some(&body)).await?;
+    // The name its user gave it, at once: until then it is only "Codync Cloud", like every other cloud computer.
+    if let Some(name) = done["computer"]["name"].as_str().filter(|n| !n.trim().is_empty())
+        && let Err(e) = super::managed::set_name(hub, name)
+    {
+        tracing::warn!(error = format!("{e:#}"), "couldn't take this cloud computer's name");
+    }
     Ok(())
 }
 
-/// The account keeps the name and icon the computer registered with, which may predate it knowing it is a cloud
-/// computer: registering again gives them Codync Cloud's.
+/// The account keeps the icon the computer registered with, which may predate it knowing it is a cloud computer:
+/// registering again gives it a cloud computer's (the cloud keeps the name its user gave the machine).
 async fn rename(hub: &Hub) {
     let Some(address) = cloud::current(&hub.store) else { return };
     if let Err(e) = cloud::register(hub, &address).await {

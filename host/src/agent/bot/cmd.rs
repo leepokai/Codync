@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 pub enum Cmd {
     RefreshTools,
+    /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
+    KeeperRestarted,
     Routine(String),
     /// The user wrote in the bot's chat.
     Send {

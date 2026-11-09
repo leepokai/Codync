@@ -1,11 +1,12 @@
-import { cloudKeyOutcome, connectedProviders, isPreparing, type CloudCredential, type CloudMachine, type CloudProvider } from '../lib/cloud-computer'
+import {
+  actionMachine, canCreate, canRemoveKey, cloudCreateOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed,
+  type CloudComputerAction, type CloudCredential, type CloudMachine, type CloudProvider,
+} from '../lib/cloud-computer'
 import { Observable } from '../lib/observable'
 import { account } from './account'
 import { analytics } from './analytics'
-import { request, type CloudModel } from './cloud'
-
-/** One action at a time; a key's carries its provider (`saveKey:boat`). */
-export type CloudComputerAction = 'create' | 'deleteSnapshots' | 'delete' | `saveKey:${string}` | `removeKey:${string}`
+import type { AppModel } from './app-model'
+import { request } from './cloud'
 
 /** Asked again this often while a new cloud computer claims itself (about 10 s), slower if it takes long. */
 const PREPARING_POLL_MS = 3_000
@@ -13,16 +14,18 @@ const PREPARING_POLL_MAX_MS = 30_000
 
 /**
  * Computers → Codync Cloud: the providers the cloud can run a computer on with the keys the user gave them, the
- * account's cloud computer (`/v1/cloud-computers`), creating it and deleting it or its snapshots. Once claimed it is an
- * account computer like any other (`CloudModel.computers`).
+ * account's cloud computers (`/v1/cloud-computers`, oldest first), creating, renaming and deleting them or their
+ * snapshots. Once claimed each is an account computer like any other (`CloudModel.computers`).
  */
 export class CloudComputerModel extends Observable {
-  machine: CloudMachine | null = null
+  machines: CloudMachine[] = []
+  /** How many the account may have. */
+  limit = 0
   /** Every provider the cloud offers, each with the account's key for it, if any. */
   providers: CloudProvider[] = []
   /** The first answer came back for this account. */
   loaded = false
-  /** This account may create one (an allowlist of user ids). */
+  /** This account may create them (an allowlist of user ids). */
   available = false
   busy: CloudComputerAction | null = null
   error: string | null = null
@@ -30,8 +33,10 @@ export class CloudComputerModel extends Observable {
   private failed: CloudComputerAction | null = null
   private user = account.user?.userId ?? null
   private polling = false
+  /** Bumped by every change made here (create, rename, delete): a lookup sent before one is stale when it comes back. */
+  private generation = 0
 
-  constructor(private cloud: CloudModel) {
+  constructor(private app: AppModel) {
     super()
     account.subscribe(() => this.noteAccount())
   }
@@ -41,7 +46,8 @@ export class CloudComputerModel extends Observable {
     const user = account.user?.userId ?? null
     if (user === this.user) return
     this.user = user
-    this.machine = null
+    this.machines = []
+    this.limit = 0
     this.providers = []
     this.loaded = false
     this.available = false
@@ -52,18 +58,36 @@ export class CloudComputerModel extends Observable {
 
   async refresh() {
     await this.run(null, async (current) => {
-      const res = await request<{ cloudComputer: CloudMachine | null; available?: boolean; providers?: CloudProvider[] }>('GET', 'v1/cloud-computers')
-      if (!current()) return
-      this.available = res.available ?? false
-      this.providers = res.providers ?? []
-      this.show(res.cloudComputer)
+      const sent = this.generation
+      const res = await request<{ cloudComputers: CloudMachine[]; available: boolean; limit: number; providers: CloudProvider[] }>('GET', 'v1/cloud-computers')
+      if (!current() || sent !== this.generation) return
+      this.available = res.available
+      this.limit = res.limit
+      this.providers = res.providers
+      this.show(res.cloudComputers)
     })
   }
 
-  /** Where a computer can be created: the providers the account gave a key. Creating says what to fix if one still
-   * turns its key down. */
-  get connected() {
-    return connectedProviders(this.providers)
+  get canCreate() {
+    return canCreate(this.available, this.busy !== null, this.machines.length, this.limit)
+  }
+
+  /** The computer `id`'s own action is running: a spinner in its `⋯` menu's place. */
+  isBusy(id: string) {
+    return actionMachine(this.busy) === id
+  }
+
+  /** `error` where it shows: the card, the New cloud computer sheet, or under a provider's key (`key:boat`). */
+  errorAt(place: ReturnType<typeof errorPlace>) {
+    return this.error && errorPlace(this.failed) === place ? this.error : null
+  }
+
+  /** Forgets an earlier failure shown at `place` (a sheet opened afresh). */
+  clearError(place: ReturnType<typeof errorPlace>) {
+    if (!this.errorAt(place)) return
+    this.error = null
+    this.failed = null
+    this.changed()
   }
 
   /**
@@ -87,18 +111,8 @@ export class CloudComputerModel extends Observable {
     return saved
   }
 
-  /**
-   * `error` where the providers sheet shows it: under `provider`'s key when saving or removing that key failed, else
-   * (null) below every provider.
-   */
-  errorFor(provider: string | null) {
-    const keyOf = this.failed?.match(/^(?:saveKey|removeKey):(.+)$/)?.[1] ?? null
-    return keyOf === provider ? this.error : null
-  }
-
-  /** The computer's key stays: without it the cloud couldn't put the computer to sleep. */
   canRemoveKey(provider: string) {
-    return this.machine?.provider !== provider
+    return canRemoveKey(this.machines, provider)
   }
 
   /** Refused (409) while a cloud computer runs on that provider. */
@@ -113,29 +127,57 @@ export class CloudComputerModel extends Observable {
     this.providers = this.providers.map((p) => (p.provider === provider ? { ...p, credential } : p))
   }
 
-  /** On `provider`, one of `connected`. */
-  create(provider: string) {
-    return this.run('create', async (current) => {
-      const res = await request<{ cloudComputer: CloudMachine }>('POST', 'v1/cloud-computers', { provider })
-      if (current()) this.show(res.cloudComputer)
+  /** Another cloud computer named `name` on `provider`, one with a usable key. True once the cloud made it. */
+  async create(provider: string, name: string): Promise<boolean> {
+    let created = false
+    await this.run('create', async (current) => {
+      try {
+        const res = await request<{ cloudComputer: CloudMachine }>('POST', 'v1/cloud-computers', { provider, name })
+        analytics.track({ event: 'cloud_computer_created', outcome: 'created', provider })
+        if (!current()) return
+        this.generation++
+        this.show([...this.machines, res.cloudComputer])
+        created = true
+      } catch (error) {
+        analytics.track({ event: 'cloud_computer_created', outcome: cloudCreateOutcome(error), provider })
+        throw error
+      }
+    })
+    return created
+  }
+
+  /** Its account computer and its host take the name too; shown here at once (the host, asleep perhaps, says so later). */
+  rename(id: string, name: string) {
+    return this.run(`rename:${id}`, async (current) => {
+      const res = await request<{ cloudComputer: CloudMachine }>('PATCH', `v1/cloud-computers/${id}`, { name }).catch((error: unknown) => {
+        analytics.track({ event: 'cloud_computer_renamed', outcome: 'failed' })
+        throw error
+      })
+      analytics.track({ event: 'cloud_computer_renamed', outcome: 'renamed' })
+      if (!current()) return
+      this.generation++
+      this.show(this.machines.map((m) => (m.cloudComputerId === id ? res.cloudComputer : m)))
+      if (res.cloudComputer.computerId) this.app.store(res.cloudComputer.computerId)?.setHostName(res.cloudComputer.name)
+      void this.app.cloud.refresh(true)
     })
   }
 
   /** Erases the earlier saved states and the backup; the computer stays. Refused (409) while it sleeps. */
-  deleteSnapshots() {
-    return this.run('deleteSnapshots', async () => {
-      await request('DELETE', 'v1/cloud-computers/snapshots')
+  deleteSnapshots(id: string) {
+    return this.run(`deleteSnapshots:${id}`, async () => {
+      await request('DELETE', `v1/cloud-computers/${id}/snapshots`)
       await this.refresh()
     })
   }
 
   /** Erases the machine, its snapshots and its backup, and takes its computer out of the account. */
-  delete() {
-    return this.run('delete', async (current) => {
-      await request('DELETE', 'v1/cloud-computers')
+  delete(id: string) {
+    return this.run(`delete:${id}`, async (current) => {
+      await request('DELETE', `v1/cloud-computers/${id}`)
       if (!current()) return
-      this.show(null)
-      void this.cloud.refresh(true)
+      this.generation++
+      this.show(this.machines.filter((m) => m.cloudComputerId !== id))
+      void this.app.cloud.refresh(true)
     })
   }
 
@@ -166,28 +208,28 @@ export class CloudComputerModel extends Observable {
     }
   }
 
-  /** Settings shows Codync Cloud only to an account that may have one, or has one. */
+  /** Settings shows Codync Cloud only to an account that may have them, or has some. */
   get shown() {
-    return this.loaded && (this.available || this.machine !== null)
+    return this.loaded && (this.available || this.machines.length > 0)
   }
 
-  private show(machine: CloudMachine | null) {
-    const claimed = this.machine?.computerId === null && machine?.computerId
-    this.machine = machine
+  private show(machines: CloudMachine[]) {
+    const claimed = justClaimed(this.machines, machines)
+    this.machines = machines
     this.loaded = true
-    // Its computer just joined the account: listed, it shows up with the others.
-    if (claimed) void this.cloud.refresh(true)
-    if (isPreparing(machine)) void this.pollWhilePreparing()
+    // A computer just joined the account: listed, it shows up with the others.
+    if (claimed) void this.app.cloud.refresh(true)
+    if (machines.some(isPreparing)) void this.pollWhilePreparing()
   }
 
   private async pollWhilePreparing() {
     if (this.polling) return
     this.polling = true
     let delay = PREPARING_POLL_MS
-    while (isPreparing(this.machine)) {
+    while (this.machines.some(isPreparing)) {
       await new Promise((r) => setTimeout(r, delay))
       delay = Math.min(delay * 2, PREPARING_POLL_MAX_MS)
-      if (isPreparing(this.machine)) await this.refresh()
+      if (this.machines.some(isPreparing)) await this.refresh()
     }
     this.polling = false
   }

@@ -241,6 +241,8 @@ export interface MenuItem {
   leading?: ReactNode
   selected?: boolean
   destructive?: boolean
+  /** Shown, but can't be picked now. */
+  disabled?: boolean
   divider?: boolean
   /** The title is a name the user gave (a section): shown as typed, never translated. */
   verbatim?: boolean
@@ -291,7 +293,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
         setHighlight((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
-      } else if (e.key === 'Enter' && highlight >= 0) {
+      } else if (e.key === 'Enter' && highlight >= 0 && !items[highlight]?.disabled) {
         e.preventDefault()
         if (!items[highlight]?.keepsOpen) dismiss()
         items[highlight]?.action()
@@ -314,6 +316,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
             className={`menu-row ${item.destructive ? 'destructive' : ''} ${highlight === i ? 'highlight' : ''}`}
             role={item.selected === undefined ? 'menuitem' : 'menuitemradio'}
             aria-checked={item.selected}
+            disabled={item.disabled}
             title={item.verbatim ? item.title : tr(item.title)}
             onMouseEnter={() => setHighlight(i)}
             onClick={() => {

@@ -271,13 +271,39 @@
   word-break: break-all;
 }
 
-/* Codync Cloud's Cloud providers row (opens the sheet) and the sheet itself. */
-.cloud-providers-row {
-  text-align: left;
-}
-.cloud-providers-sheet {
+/* One provider's key sheet. */
+.cloud-key-sheet {
   width: 520px;
 }
-.cloud-providers-body {
+.cloud-key-body {
   padding: 4px 20px 20px;
+}
+/* A cloud computer's `⋯` menu. */
+.cloud-machine-menu {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-s);
+}
+/* New cloud computer: a name, the providers on their logo tiles (rows like the agent picker's), then the buttons. */
+.cloud-new-sheet {
+  width: 440px;
+}
+.cloud-new-body {
+  padding: 4px 20px 4px;
+}
+.cloud-provider-row > .agent-picker-item {
+  flex: 1;
+}
+.cloud-provider-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--field);
+}
+.cloud-new-footer {
+  padding: 16px 20px 20px;
 }

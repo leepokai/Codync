@@ -35,7 +35,7 @@ public struct CloudHosting: Codable, Hashable, Sendable {
     public var region: String
     public var state: CloudMachineState
 
-    /// "Runs on Boat · EU", translated: under the cloud computer's name, which is Codync Cloud already.
+    /// "Runs on Boat · EU", translated: under the computer's name.
     public var runsOn: String {
         L10n.tr("Runs on {provider} · {region}").replacingOccurrences(of: "{provider}", with: providerName)
             .replacingOccurrences(of: "{region}", with: region)
@@ -55,8 +55,11 @@ public enum CloudMachineState: String, Codable, Sendable {
     public var isAsleep: Bool { self == .stopped || self == .stopping }
 }
 
-/// The account's Codync Cloud computer (`GET` / `POST /v1/cloud-computers`).
-public struct CloudMachine: Decodable, Hashable, Sendable {
+/// One of the account's Codync Cloud computers (`GET` / `POST` / `PATCH /v1/cloud-computers`).
+public struct CloudMachine: Decodable, Hashable, Sendable, Identifiable {
+    public var cloudComputerId: String
+    /// The name the user gave it.
+    public var name: String
     public var hosting: CloudHosting
     /// Nil until the machine has booted and claimed itself into the account.
     public var computerId: ComputerID?
@@ -64,10 +67,16 @@ public struct CloudMachine: Decodable, Hashable, Sendable {
     /// don't say, and they all did.
     public var snapshots: Bool
 
-    private enum CodingKeys: String, CodingKey { case computerId, snapshots }
+    public var id: String { cloudComputerId }
+    /// Created, but not in the account yet (nor failed): it's booting and installing the host.
+    public var isPreparing: Bool { computerId == nil && hosting.state != .failed }
+
+    private enum CodingKeys: String, CodingKey { case cloudComputerId, name, computerId, snapshots }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        cloudComputerId = try c.decode(String.self, forKey: .cloudComputerId)
+        name = try c.decode(String.self, forKey: .name)
         computerId = try c.decodeIfPresent(ComputerID.self, forKey: .computerId)
         snapshots = try c.decodeIfPresent(Bool.self, forKey: .snapshots) ?? true
         // Provider, region and state sit beside `computerId`.
@@ -77,10 +86,13 @@ public struct CloudMachine: Decodable, Hashable, Sendable {
 
 /// The account's Codync Cloud as the cloud describes it (`GET /v1/cloud-computers`).
 public struct CloudStatus: Decodable, Hashable, Sendable {
-    public var cloudComputer: CloudMachine?
-    /// Whether this account may have one (the feature isn't public yet).
+    /// Oldest first.
+    public var cloudComputers: [CloudMachine]?
+    /// Whether this account may have them (the feature isn't public yet).
     public var available: Bool?
-    /// Every provider the computer can run on, each with the account's key for it.
+    /// How many it may have at once.
+    public var limit: Int?
+    /// Every provider the computers can run on, each with the account's key for it.
     public var providers: [CloudProvider]?
 }
 
@@ -96,6 +108,9 @@ public struct CloudProvider: Decodable, Hashable, Sendable, Identifiable {
     public var credential: CloudCredential?
 
     public var id: String { provider }
+    /// The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
+    /// when the provider said no for the plan or the account).
+    public var isReady: Bool { credential.map { $0.blocking != true } ?? false }
 }
 
 /// A key the account gave a provider, as the cloud shows it: never the key itself.
@@ -104,6 +119,8 @@ public struct CloudCredential: Decodable, Hashable, Sendable {
     public var hint: String
     /// What the owner has to fix while the provider turns the key down, in a sentence the app translates.
     public var problem: String?
+    /// The key itself was turned down (revoked, expired): nothing can be made with it until it's replaced.
+    public var blocking: Bool?
 }
 
 /// How the user makes a provider's key: commands to run, and the provider's page for doing it there instead.

@@ -22,8 +22,8 @@ mod session;
 mod turns;
 
 pub use lifecycle::{
-    DiscoveryStage, KV_STARTED, PairedAccount, Via, device_paired, discovery_failed, host_started,
-    join_from_phone_answered, phone_connected,
+    DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, Via, cloud_keeper_checked, device_paired, discovery_failed,
+    host_started, join_from_phone_answered, phone_connected,
 };
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
@@ -124,6 +124,12 @@ pub enum Event {
     JoinOfferAnswered,
     /// The user gave Codync Cloud the key to their own account with a cloud provider (desktop; phones send their own).
     CloudKeySaved,
+    /// The user created a Codync Cloud computer on one of their providers (desktop; phones send their own).
+    CloudComputerCreated,
+    /// The user renamed a Codync Cloud computer (desktop; phones send their own).
+    CloudComputerRenamed,
+    /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
+    CloudKeeperChecked,
     /// A paired phone asked to add this computer to its account, and the computer answered.
     JoinFromPhoneAnswered,
     /// Advertising on the local network failed, so a computer in no account can't be found at a new address.
@@ -207,6 +213,9 @@ impl Event {
             Self::ContinuedWithoutAccount => "continued_without_account",
             Self::JoinOfferAnswered => "join_offer_answered",
             Self::CloudKeySaved => "cloud_key_saved",
+            Self::CloudComputerCreated => "cloud_computer_created",
+            Self::CloudComputerRenamed => "cloud_computer_renamed",
+            Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",
             Self::DiscoveryFailed => "discovery_failed",
             Self::HostUpdateInstalled => "host_update_installed",

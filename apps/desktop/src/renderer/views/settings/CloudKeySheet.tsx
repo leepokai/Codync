@@ -10,27 +10,27 @@ import { useTr } from '../../lib/use-language'
 import type { CloudComputerModel } from '../../store/cloud-computer'
 
 /**
- * Computers → Codync Cloud → Cloud providers (iOS `CloudProvidersSheet`): every provider the cloud can run the computer
- * on, each with the key to the user's own account there. A key is pasted once, checked and kept encrypted by the cloud,
- * and shown afterwards only by its last four; while the provider turns it down, what to fix shows under it.
+ * One provider's key (iOS `CloudKeySheet`), from New cloud computer or a cloud computer's `⋯`: the key to the user's own
+ * account there, pasted once, checked and kept encrypted by the cloud, and shown afterwards only by its last four; while
+ * the provider turns it down, what to fix shows under it. Saving one closes it (`done`).
  */
-export function CloudProvidersSheet({ model }: { model: CloudComputerModel }) {
+export function CloudKeySheet({ model, provider, done }: { model: CloudComputerModel; provider: string; done: () => void }) {
   const tr = useTr()
+  const p = model.providers.find((x) => x.provider === provider)
+  if (!p) return null
   return (
-    <VStack className="cloud-providers-sheet">
+    <VStack className="cloud-key-sheet">
       <ModalHeader
         icon="key.fill"
-        title={tr('Cloud providers')}
+        title={fill(tr('{provider} API key'), { provider: p.name })}
         subtitle={tr('Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.')}
       />
-      <VStack gap={20} className="cloud-providers-body">
-        {model.providers.map((p) => (
-          <CardSection key={p.provider} title={p.name} accessory={<Text size="caption" tone="secondary">{p.region}</Text>}>
-            <KeyRow provider={p} model={model} />
-            <SetupRow provider={p} />
-          </CardSection>
-        ))}
-        <ErrorText error={model.errorFor(null)} />
+      <VStack gap={20} className="cloud-key-body">
+        <CardSection>
+          <KeyRow provider={p} model={model} saved={done} />
+          <SetupRow provider={p} />
+        </CardSection>
+        <ErrorText error={model.errorAt('card')} />
       </VStack>
     </VStack>
   )
@@ -42,7 +42,7 @@ function ErrorText({ error }: { error: string | null }) {
   return error ? <Text size="caption" tone="danger">{tr(error)}</Text> : null
 }
 
-function KeyRow({ provider, model }: { provider: CloudProvider; model: CloudComputerModel }) {
+function KeyRow({ provider, model, saved }: { provider: CloudProvider; model: CloudComputerModel; saved: () => void }) {
   const [replacing, setReplacing] = useState(false)
   const credential = provider.credential
   return (
@@ -50,10 +50,10 @@ function KeyRow({ provider, model }: { provider: CloudProvider; model: CloudComp
       {credential && !replacing ? (
         <SavedKey provider={provider} credential={credential} model={model} replace={() => setReplacing(true)} />
       ) : (
-        <KeyEntry provider={provider} model={model} cancel={replacing ? () => setReplacing(false) : null} />
+        <KeyEntry provider={provider} model={model} cancel={replacing ? () => setReplacing(false) : null} saved={saved} />
       )}
       {/* Under the key it's about: below every provider it would be out of view. */}
-      <ErrorText error={model.errorFor(provider.provider)} />
+      <ErrorText error={model.errorAt(`key:${provider.provider}`)} />
     </VStack>
   )
 }
@@ -82,7 +82,7 @@ function SavedKey({ provider, credential, model, replace }: { provider: CloudPro
   )
 }
 
-function KeyEntry({ provider, model, cancel }: { provider: CloudProvider; model: CloudComputerModel; cancel: (() => void) | null }) {
+function KeyEntry({ provider, model, cancel, saved }: { provider: CloudProvider; model: CloudComputerModel; cancel: (() => void) | null; saved: () => void }) {
   const tr = useTr()
   const [key, setKey] = useState('')
   const save = async () => {
@@ -90,6 +90,7 @@ function KeyEntry({ provider, model, cancel }: { provider: CloudProvider; model:
     if (await model.saveKey(provider.provider, key)) {
       setKey('')
       cancel?.()
+      saved()
     }
   }
   return (

@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { wake } from "../src/cloud-machines";
 import { open, seal } from "../src/secrets";
-import { boat, cc, cloudComputer, forbidden, KEY, uid, withKey } from "./cloud-helpers";
+import { boat, bothProviders, calls, cc, cloudComputer, forbidden, KEY, onBothProviders, uid, withKey } from "./cloud-helpers";
 import { deliverClerk, env } from "./helpers";
 
 afterEach(() => vi.restoreAllMocks());
@@ -44,7 +44,7 @@ describe("saving a Boat key", () => {
     const fetch = boat("ready");
     const saved = await cc("PUT", userId, userId, PATH, { key: ` ${KEY} ` });
     expect(saved.status).toBe(200);
-    expect(saved.body).toEqual({ credential: { hint: "boat_…9abc", problem: null, updatedAt: expect.any(Number) } });
+    expect(saved.body).toEqual({ credential: { hint: "boat_…9abc", problem: null, blocking: false, updatedAt: expect.any(Number) } });
     expect(fetch.mock.calls.map(([url, init]) => [String(url), (init!.headers as Record<string, string>).authorization])).toEqual([
       ["https://boat.dev/api/v1/sandboxes?limit=1", `Bearer ${KEY}`],
       ["https://boat.dev/api/v1/webhooks", `Bearer ${KEY}`],
@@ -94,7 +94,7 @@ describe("saving a Boat key", () => {
   });
 
   it("takes a replacement only if it reaches the cloud computer, and keeps the key while the computer exists", async () => {
-    const { userId } = await cloudComputer();
+    const { userId, id } = await cloudComputer();
     // The saved key reaches the computer; one from another account doesn't find it.
     boat("ready", { "/sandboxes/bx_test": (key) => (key === KEY ? undefined : [404, { code: "not_found" }]) });
     const other = await cc("PUT", userId, userId, PATH, { key: "boat_live_otheraccount1" });
@@ -107,17 +107,28 @@ describe("saving a Boat key", () => {
     expect(kept.status).toBe(409);
 
     boat("cancelled");
-    expect((await cc("DELETE", userId)).status).toBe(200);
+    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
     expect((await cc("DELETE", userId, userId, PATH)).status).toBe(200);
     expect(await credential(userId)).toBeNull();
   });
 
-  it("takes a new key once the computer is gone at Boat and the saved key revoked, so the computer can be deleted", async () => {
+  it("takes a replacement only if it reaches every cloud computer on Boat", async () => {
     const { userId } = await cloudComputer();
+    boat("provisioning", { "/sandboxes": [201, { ok: true, sandbox: { id: "bx_two", state: "provisioning" } }] });
+    expect((await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" })).status).toBe(200);
+    // The saved key reaches both; the new one only the first.
+    boat("ready", { "/sandboxes/bx_two": (key) => (key === KEY ? undefined : [404, { code: "not_found" }]) });
+    const partial = await cc("PUT", userId, userId, PATH, { key: "boat_live_otheraccount1" });
+    expect(partial.body.error).toEqual({ code: "keyRefused", message: "This key can't reach your cloud computer." });
+    expect((await credential(userId)).hint).toBe("boat_…9abc");
+  });
+
+  it("takes a new key once the computer is gone at Boat and the saved key revoked, so the computer can be deleted", async () => {
+    const { userId, id } = await cloudComputer();
     boat("ready", { "/sandboxes/bx_test": (key) => (key === KEY ? [401, { code: "unauthorized" }] : [404, { code: "not_found" }]) });
     expect((await cc("PUT", userId, userId, PATH, { key: "boat_live_newkey00001" })).body.credential.hint).toBe("boat_…0001");
-    expect((await cc("DELETE", userId)).status).toBe(200);
-    expect((await cc("GET", userId)).body.cloudComputer).toBeNull();
+    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
+    expect((await cc("GET", userId)).body.cloudComputers).toEqual([]);
   });
 });
 
@@ -125,7 +136,7 @@ describe("a key Boat turns down later", () => {
   it("shows what to fix, stops waking the computer, and clears once Boat takes it again", async () => {
     const { userId, host } = await cloudComputer();
     boat("ready", { "/sandboxes/bx_test": forbidden("api_key_expired") });
-    expect((await credential(userId)).problem).toBe("This key has expired. Make a new one.");
+    expect(await credential(userId)).toMatchObject({ problem: "This key has expired. Make a new one.", blocking: true });
     // Only the owner can fix it: a wake doesn't keep trying, unlike a busy Boat.
     expect(await wake(env, host.cid, Date.now())).toBe("none");
     boat("ready", { "/sandboxes/bx_test": [503, { code: "unavailable" }] });
@@ -148,7 +159,8 @@ describe("a key Boat turns down later", () => {
     boat("provisioning", { "/sandboxes": [402, { code: "payment_required" }] });
     const refused = await cc("POST", userId);
     expect(refused.body.error).toEqual({ code: "keyRefused", message: "This account needs an active plan." });
-    expect((await credential(userId)).problem).toBe("This account needs an active plan.");
+    // Not the key's own fault: Create stays open to try again once the plan is fixed.
+    expect(await credential(userId)).toMatchObject({ problem: "This account needs an active plan.", blocking: false });
     boat();
     expect((await cc("POST", userId)).status).toBe(200);
     expect((await credential(userId)).problem).toBeNull();
@@ -171,6 +183,17 @@ describe("a deleted account", () => {
     expect(await env.DB.prepare("SELECT * FROM cloud_credentials WHERE user_id = ?").bind(userId).first()).toBeNull();
     const machine = await env.DB.prepare("SELECT state FROM cloud_machines WHERE user_id = ?").bind(userId).first<{ state: string }>();
     expect(machine?.state).toBe("deleted");
+  });
+
+  it("stops its computers on every provider", async () => {
+    const userId = await onBothProviders();
+    const fetch = bothProviders("ready");
+    expect((await deliverClerk(`msg_${crypto.randomUUID()}`, { type: "user.deleted", data: { id: userId } })).status).toBe(200);
+    expect(calls(fetch)).toEqual(
+      expect.arrayContaining(["POST https://boat.dev/api/v1/sandboxes/bx_test/stop", "POST https://api.instabox.sh/v1/machines/m_test/suspend"]),
+    );
+    const { results } = await env.DB.prepare("SELECT state FROM cloud_machines WHERE user_id = ?").bind(userId).all<{ state: string }>();
+    expect(results.map((m) => m.state)).toEqual(["deleted", "deleted"]);
   });
 });
 

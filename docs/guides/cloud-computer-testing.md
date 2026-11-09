@@ -76,6 +76,19 @@ URL: the Worker sees that host, which is the one the host signs. They boot `CODY
 tunnel to the file server (x86_64, built on an InstaBox machine: its template has Rust), else the released host. This Mac's resolver may cache the new tunnel name as missing for a minute; the machines resolve
 it at once. The scripted run (`npm run e2e:cloud`) is Boat's only.
 
+### The keeper and the agents' user
+
+A machine set up by this branch runs the host and its agents as `codync-agent` and the keeper as the system user
+`codync`; the provider's own `user` keeps its sudo ([Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets)).
+Check on the machine (InstaBox `exec` and `boat exec` run as `user`, so test the agents' side with
+`sudo -u codync-agent …`): `systemctl is-active codync-keeper`; as `codync-agent`, `sudo -n true` asks for a password,
+`id` shows no group but its own, `ls /var/lib/codync-keeper` and (Boat) `cat /opt/ascii-agent/.env` are refused, and
+`/proc/<host pid>/environ` is refused (the host is non-dumpable); the keeper's socket `/run/codync-keeper/keeper.sock`
+answers `{"op":"status"}` with `"unlocked": true` once the claim named it (the Worker's `GET /v1/keeper/vault-key`); a
+key saved from an app (voice, an agent's API key, a connector's header) is in the keeper, not in `~/.codync`, and an
+agent gets only a `http://127.0.0.1:19230/t/…` URL for it. Machines set up before the keeper have none: delete and
+recreate them.
+
 ### Real apps against a local cloud
 
 `npm run cloud:stack` starts the same local cloud, accepting **dev Clerk** sessions (it reads the dev issuer from
@@ -97,12 +110,18 @@ Set `CODYNC_STACK_PORT` to keep the URL stable across runs. Ctrl-C deletes the m
 
 What to walk with the apps: Codync Cloud hidden for an account that isn't allowed; a key that isn't one, an admin key
 and a revoked key refused with what to fix; the test key (`BOAT_API_KEY_FILE`, or `INSTABOX_API_KEY_FILE` under
-InstaBox) pasted and shown as its hint; create → "Preparing your cloud
-computer…" → claimed → each app (desktop included) gets access by itself → chat with a bot on it, and create and
+InstaBox) pasted and shown as its hint; "+" → New cloud computer lists every provider with its logo (one without a
+working key opens that provider's key sheet, and is picked once its key is saved; a computer's `⋯` opens its
+provider's key too) → a name → create → "Preparing your cloud
+computer…" → claimed, under that name → each app (desktop included) gets access by itself → chat with a bot on it, and create and
 set up bots there from each app; on the desktop, hide the window → the channel closes and the computer can sleep; idle → "Sleeping · wakes when you
 message" → send → it wakes and answers; an app with a newer `minHost` → "Your cloud computer is updating…" →
-back; `APP_FLOOR_*` → *Update this app*; delete snapshots (awake: done; asleep: refused); delete the computer →
-gone from every app. Backups and a cold wake (stopped over 30 minutes) are in the scripted long run
+back; `APP_FLOOR_*` → *Update this app*; delete snapshots (awake: done; asleep: refused; preparing: off); *Rename…* → the card, the account's
+computers and the computer's own name follow, in the other apps already connected to it too; a second one on the
+other provider beside it, and neither key removable while its computer exists; at the limit (3) "+" opens with Create
+off and why, its keys still in reach; a key turned down for the plan still lets Create try again, one revoked or
+expired doesn't; delete the computer (*Delete {name}?*) → gone from every app and
+at its provider. Backups and a cold wake (stopped over 30 minutes) are in the scripted long run
 (`CODYNC_E2E_COLD=1`; backups need a paid Boat plan). A restore from a backup happens only once Boat drops a
 stopped machine's own snapshot (14 days), so the long run has a pass-through to Boat answer one resume with
 `409 snapshot_data_expired`; everything else, the new machine included, is the real Boat.

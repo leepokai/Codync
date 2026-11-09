@@ -36,9 +36,10 @@ export const updateNeededText = {
     const needs = `${host} runs Codync ${m.version}; this app needs ${m.minimum} or newer.`
     return instructions ? `${needs} ${updateNeededText.how(os)}` : needs
   },
-  /** How to update Codync on a computer this app can't update. */
-  how(os: string | null | undefined) {
-    return os === 'macos' ? 'Open Codync on that Mac and choose Check for Updates.'
+  /** How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself. */
+  how(os: string | null | undefined, cloud = false) {
+    return cloud ? 'Codync Cloud updates it before it next sleeps.'
+      : os === 'macos' ? 'Open Codync on that Mac and choose Check for Updates.'
       : os === 'linux' ? 'Run codync-host update there.'
       : 'Update Codync on that computer.'
   },
@@ -65,16 +66,16 @@ export interface HostVersionLine {
   accessory: { kind: 'updating' } | { kind: 'button'; title: string } | null
 }
 
-/** `latest` is the latest release the computer found (null while it doesn't know: then no verdict). */
+/** `latest` is the latest release the computer found (null while it doesn't know: then no verdict); `cloud`: a Codync Cloud computer. */
 export function hostVersionLine(version: string, latest: string | null | undefined, mismatch: VersionMismatch | null,
-  offer: HostUpdateOffer, host: string, os: string | null | undefined): HostVersionLine {
+  offer: HostUpdateOffer, host: string, os: string | null | undefined, cloud = false): HostVersionLine {
   const line = (detail: string[], warns = false, accessory: HostVersionLine['accessory'] = null) => ({ version, detail, warns, accessory })
   if (offer.kind === 'updating') return line([updateNeededText.updating(host)], false, { kind: 'updating' })
   const minimum = mismatch?.kind === 'updateHost' ? mismatch.minimum : null
   const available = latest && isBelow(version, latest) ? latest : null
   const due = minimum ? `This app needs ${minimum} or newer.` : available ? `Version ${available} is available.` : null
   if (!due) return line(latest ? ['Up to date'] : [])
-  if (offer.kind === 'unavailable') return line([due, updateNeededText.how(os)], minimum !== null)
+  if (offer.kind === 'unavailable') return line([due, updateNeededText.how(os, cloud)], minimum !== null)
   if (offer.last) return line([updateNeededText.notUpdated(offer.last, host)], true, { kind: 'button', title: 'Try again' })
   return line([due], minimum !== null, { kind: 'button', title: 'Update' })
 }

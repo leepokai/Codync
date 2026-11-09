@@ -1,10 +1,13 @@
-# Computers → Codync Cloud → Cloud providers: InstaBox's card with its own key field and steps, and the Boat key: how to
-# make one, a key Boat turns down shows what to fix, a kept one shows only its hint and offers a computer, a turned-down
-# replacement keeps it, and removing it goes back to pasting one.
+# Computers → Codync Cloud → "+" (New cloud computer): every provider with what it needs and its logo, the suggested name,
+# and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row opens only
+# InstaBox's key sheet with its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
+# one closes the sheet with Boat picked and its hint shown; Boat's key button opens it again, and Remove key works.
 # Needs a cloud that offers this account Codync Cloud (dev-api doesn't): `npm run cloud:stack` in cloud/
 # (docs/guides/cloud-computer-testing.md), the phone signed in with `npm run phone-account` and pointed at it (iPhone:
 # SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> on that command, which this flow's launch keeps; Android: built with
-# -PcodyncCloudUrl=<url> with -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl, plus adb reverse), an account with no cloud computer, and BOAT_KEY, a key its Boat takes.
+# -PcodyncCloudUrl=<url> with -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl, plus adb reverse), an account with no
+# cloud computer, and BOAT_KEY, a key its Boat takes. An account saves at most 5 keys a minute: run the phones one after
+# another, or on accounts of their own.
 # Run it apart from `smoke`, whose welcome flow clears the sign-in.
 # One flow for iPhone and Android (docs/guides/test-stack.md):
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags codync-cloud -e BOAT_KEY=<key> apps/maestro
@@ -60,89 +63,136 @@ env:
     visible: "Codync Cloud"
     timeout: 20000
 - scrollUntilVisible:
-    element: "Cloud providers"
-- tapOn: "Cloud providers"
+    element: "New cloud computer"
+- tapOn: "New cloud computer"
 - extendedWaitUntil:
-    visible: "How to make a key"
+    visible: "Name your cloud computer"
     timeout: 10000
-# Keys an earlier run left go first.
+# Keys an earlier run left go first, each from its key button.
 - repeat:
     while:
-      visible: "Remove key"
+      visible: "(Boat|InstaBox) API key"
     commands:
+      - tapOn: "(Boat|InstaBox) API key"
       - tapOn: "Remove key"
+      - extendedWaitUntil:
+          notVisible: "Remove key"
+          timeout: 15000
+      - tapOn: "Close"
       - waitForAnimationToEnd
-- tapOn: "How to make a key"
-- assertVisible: "Make a key with only what Codync needs.*"
 
-# InstaBox has a card of its own: its key field, and its own steps (the command lines are one text; on the iPhone they
-# scroll sideways, wider than the screen, so the text is never all in view).
-- scrollUntilVisible:
-    element: "(InstaBox API key|ibk_…)"
-- tapOn:
-    text: "How to make a key"
-    below: "(InstaBox API key|ibk_…)"
-- scrollUntilVisible:
-    element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
-    visibilityPercentage: 25
-- assertVisible: "(?s).*# The key reaches every machine in this workspace.*"
-- scrollUntilVisible:
-    element: "(Boat API key|boat_…)"
-    direction: UP
-
-# Turned down: what to fix.
-- tapOn: "(Boat API key|boat_…)"
-- inputText: ${REFUSED_KEY}
-- tapOn: "Save"
+# Every provider asks for a key, the suggested name stands in for an empty one, and nothing can be created yet.
 - extendedWaitUntil:
-    visible: "(This key wasn't accepted|The provider refused this key).*"
-    timeout: 15000
-
-# Kept: only its hint. The field still holds the refused key: on Android a tap puts the caret where it lands, so a
-# double tap selects the key (one word) before erasing.
+    visible: ".*Add a key first"
+    timeout: 10000
+- assertVisible: "Boat.*"
+- assertVisible: "InstaBox.*"
+- assertVisible: "Cloud computer"
+- assertVisible:
+    text: "Create"
+    enabled: false
 - runFlow:
     when:
       platform: iOS
     commands:
-      - tapOn: "(Boat API key|boat_…)"
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - doubleTapOn: "(Boat API key|boat_…)"
-- eraseText
-- inputText: ${BOAT_KEY}
-- tapOn: "Save"
-- extendedWaitUntil:
-    visible: ${BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
-    timeout: 15000
+      - assertVisible:
+          id: "cloudProvider.boat"
+      - assertVisible:
+          id: "cloudProvider.instabox"
 
-# A replacement Boat turns down keeps the saved key; Cancel goes back to it.
-- tapOn: "Replace key"
-- tapOn: "(Boat API key|boat_…)"
+# InstaBox's row opens InstaBox's key alone, with its own steps (the command lines are one text; on the iPhone they
+# scroll sideways, wider than the screen, so the text is never all in view).
+- tapOn: "InstaBox.*"
+- extendedWaitUntil:
+    visible: "How to make a key"
+    timeout: 10000
+- assertVisible: "InstaBox API key"
+- assertNotVisible: "Boat API key"
+- tapOn: "How to make a key"
+- scrollUntilVisible:
+    element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
+    visibilityPercentage: 25
+- assertVisible: "(?s).*# The key reaches every machine in this workspace.*"
+- tapOn: "Close"
+- extendedWaitUntil:
+    notVisible: "How to make a key"
+    timeout: 10000
+
+# Boat's row opens Boat's key alone. Turned down: what to fix. The field sits right above How to make a key, below the
+# sheet's title, which has the same words.
+- tapOn: "Boat.*"
+- extendedWaitUntil:
+    visible: "How to make a key"
+    timeout: 10000
+- assertNotVisible: "InstaBox API key"
+- tapOn:
+    text: "(Boat API key|boat_…)"
+    above: "How to make a key"
 - inputText: ${REFUSED_KEY}
 - tapOn: "Save"
 - extendedWaitUntil:
     visible: "(This key wasn't accepted|The provider refused this key).*"
     timeout: 15000
-# Save drops the keyboard, so Cancel is in reach (Maestro's hideKeyboard leaves it half up, over Cancel).
-- tapOn: "Cancel"
-- assertVisible: ${BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
 
-# Back on the card: Boat is connected, and a computer can be made.
-- tapOn: "Close"
+# Kept: the sheet closes and Boat is picked, with only its hint. The field still holds the refused key: on Android a
+# tap puts the caret where it lands, so a double tap selects the key (one word) before erasing.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          text: "(Boat API key|boat_…)"
+          above: "How to make a key"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - doubleTapOn:
+          text: "(Boat API key|boat_…)"
+          above: "How to make a key"
+- eraseText
+- inputText: ${BOAT_KEY}
+- tapOn: "Save"
 - extendedWaitUntil:
-    visible: "Create cloud computer"
-    timeout: 10000
+    notVisible: "How to make a key"
+    timeout: 15000
+- assertVisible: ${'.*' + BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
+- assertVisible:
+    text: "Create"
+    enabled: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          id: "cloudProvider.boat"
+          selected: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible:
+          text: "Boat"
+          checked: true
 
-# Removed: back to pasting one, and nothing to create.
-- tapOn: "Cloud providers"
+# Its key button opens it again: Remove key goes back to pasting one, and nothing is left to create on.
+- tapOn: "Boat API key"
+- extendedWaitUntil:
+    visible: "Remove key"
+    timeout: 10000
 - tapOn: "Remove key"
 - extendedWaitUntil:
-    visible: "(Boat API key|boat_…)"
+    notVisible: "Remove key"
     timeout: 15000
 - tapOn: "Close"
 - extendedWaitUntil:
-    visible: "Connect one"
+    notVisible: "How to make a key"
     timeout: 10000
-- assertNotVisible: "Create cloud computer"
+- assertNotVisible: "Boat API key"
+- assertVisible:
+    text: "Create"
+    enabled: false
+- tapOn: "Close"
+- extendedWaitUntil:
+    notVisible: "Name your cloud computer"
+    timeout: 10000

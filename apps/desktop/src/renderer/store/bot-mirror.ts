@@ -146,6 +146,14 @@ export class BotMirror extends Observable {
     return this.hello?.name ?? this.computer.name
   }
 
+  /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
+   * asleep perhaps, says so). */
+  setHostName(name: string) {
+    if (!this.hello || this.hello.name === name) return
+    this.hello = { ...this.hello, name }
+    this.changed()
+  }
+
   setCloudHosting(hosting: CloudPlacement | null) {
     if (JSON.stringify(hosting) === JSON.stringify(this.cloudHosting)) return
     this.cloudHosting = hosting
@@ -189,7 +197,7 @@ export class BotMirror extends Observable {
   hostVersionLine(now = Date.now()): HostVersionLine | null {
     if (!this.hello) return null
     return hostVersionLine(this.hello.version, this.hello.latestVersion, this.mismatch,
-      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os)
+      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os, this.cloudHosting !== null)
   }
 
   /** Out of reach while an update asked from here installs: the computer restarts on its own, so it

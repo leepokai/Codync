@@ -2,7 +2,7 @@
 //! of their binaries; a host the desktop app bundles hands an update request to
 //! the app. A signed manifest is required before executing new code.
 mod install;
-mod release;
+pub(crate) mod release;
 #[cfg(test)]
 mod tests;
 

@@ -100,6 +100,12 @@ public final class AccountStore {
             if let removed { self?.forget(removed) }
             await self?.refreshCloud()
         }
+        // Its host tells the apps connected to it; this one shows it at once (the host may be asleep).
+        cloudMachine?.onRenamed = { [weak self] id, name in
+            self?.stores[id]?.hello?.name = name
+            self?.updateSaved(id) { $0.name = name }
+            await self?.refreshCloud()
+        }
         refreshList()
     }
 

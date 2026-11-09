@@ -3,14 +3,17 @@
 // owner's own key (`cloud-credentials.ts`).
 
 import { drivers, type Machine, type Outcome, type Size } from "../machines/src";
-import { randomId } from "./auth";
+import { b64url, randomId } from "./auth";
 import { forgetCredential, GROUP, type Provider, providerSend } from "./cloud-credentials";
 import { machineName, machineSetup } from "./cloud-setup";
 import type { Env } from "./index";
+import { open, seal } from "./secrets";
 
 export interface CloudMachineRow {
   id: string;
   user_id: string;
+  /** The user's name for it, which its host takes as its computer's name. */
+  name: string;
   provider: Provider;
   provider_id: string;
   claim_id: string;
@@ -20,6 +23,11 @@ export interface CloudMachineRow {
   backup_at: number | null;
   /** When it was given its files and setup script (with the create, or once it ran); null until then. */
   setup_at: number | null;
+  /** The key to its keeper's vault, sealed (`newVault`); null once the machine is gone. */
+  vault_sealed: string | null;
+  vault_key_id: string | null;
+  /** Its keeper's Ed25519 key (base64url), named by its claim; the only key the vault key goes to. */
+  keeper_key: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -41,13 +49,47 @@ export async function newClaim(env: Env, userId: string, expiresAt: number): Pro
   return { claimId, nonce };
 }
 
+/** What a machine's vault key is sealed for (with the machine's id as its owner). */
+const VAULT_PURPOSE = "keeper-vault";
+
+/** A new machine's key to its keeper's vault (32 random bytes, base64url), sealed: only its keeper ever gets it. */
+export const newVault = (env: Env, id: string) => seal(env, id, VAULT_PURPOSE, b64url(crypto.getRandomValues(new Uint8Array(32))));
+
+/** The machine's vault key; null once the machine is gone, or when it can't be opened. */
+export const vaultKeyOf = (env: Env, m: Pick<CloudMachineRow, "id" | "vault_sealed" | "vault_key_id">) =>
+  m.vault_sealed && m.vault_key_id ? open(env, m.id, VAULT_PURPOSE, { sealed: m.vault_sealed, keyId: m.vault_key_id }) : Promise.resolve(null);
+
+/** The machine whose claim named keeper key `kid`. */
+export const machineByKeeper = (env: Env, kid: string) =>
+  env.DB.prepare("SELECT * FROM cloud_machines WHERE keeper_key = ? AND state != 'deleted'").bind(kid).first<CloudMachineRow>();
+
+/** Marks machines deleted (those the `WHERE` names, with `?2`), erasing their vault keys: a copy of a disk kept
+ * elsewhere can never fetch its key again. */
+const markDeleted = (env: Env, where: string, value: string, now: number) =>
+  env.DB.prepare(`UPDATE cloud_machines SET state = 'deleted', vault_sealed = NULL, vault_key_id = NULL, updated_at = ?1 WHERE ${where}`).bind(now, value);
+
+/** Marks machine `id` deleted (`markDeleted`). */
+export const machineDeleted = (env: Env, id: string, now: number) => markDeleted(env, "id = ?2", id, now);
+
 /** The cloud machine behind a claimed computer, if Codync runs it. */
 export const machineFor = (env: Env, computerId: string) =>
   env.DB.prepare("SELECT * FROM cloud_machines WHERE computer_id = ? AND state != 'deleted'").bind(computerId).first<CloudMachineRow>();
 
-/** The user's cloud machine (one per account), if they have one. */
-export const machineOf = (env: Env, userId: string) =>
-  env.DB.prepare("SELECT * FROM cloud_machines WHERE user_id = ? AND state != 'deleted'").bind(userId).first<CloudMachineRow>();
+/** How many cloud computers one account may have at once. */
+export const CLOUD_COMPUTER_LIMIT = 3;
+
+/** The user's cloud machines, oldest first. */
+export const machinesOf = async (env: Env, userId: string) =>
+  (await env.DB.prepare("SELECT * FROM cloud_machines WHERE user_id = ? AND state != 'deleted' ORDER BY created_at").bind(userId).all<CloudMachineRow>())
+    .results;
+
+/** One of the user's cloud machines, by its id. */
+export const machineOf = (env: Env, userId: string, id: string) =>
+  env.DB.prepare("SELECT * FROM cloud_machines WHERE id = ? AND user_id = ? AND state != 'deleted'").bind(id, userId).first<CloudMachineRow>();
+
+/** Gives a cloud machine's account computer the name its user gave the machine. */
+export const nameComputer = (env: Env, computerId: string, name: string, now: number) =>
+  env.DB.prepare("UPDATE computers SET name = ?, updated_at = ? WHERE id = ?").bind(name, now, computerId);
 
 export const setState = (env: Env, id: string, state: Machine["state"], now: number) =>
   env.DB.prepare("UPDATE cloud_machines SET state = ?, updated_at = ? WHERE id = ?").bind(state, now, id).run();
@@ -106,7 +148,7 @@ export async function wake(env: Env, computerId: string, now: number): Promise<W
 async function fromBackup(env: Env, m: CloudMachineRow, now: number): Promise<WakeResult> {
   const backup = drivers[m.provider].backup;
   if (!backup) return "none";
-  const spec = { name: machineName(env, m.user_id), size: SIZE, group: GROUP, autoStopSeconds: autoStop(env) };
+  const spec = { name: machineName(env, m.user_id, m.id), size: SIZE, group: GROUP, autoStopSeconds: autoStop(env) };
   const made = drivers[m.provider].machine(await providerSend(env, m.user_id, m.provider, backup.restore(spec, m.backup!, `${m.id}-${m.backup_at}`), now));
   if (!made.ok) {
     console.error(JSON.stringify({ msg: "cloud computer restore from backup failed", machine: m.id, code: made.detail }));
@@ -183,27 +225,31 @@ export async function setUp(env: Env, m: CloudMachineRow, live: Machine["state"]
   await release();
 }
 
-/** Cron: machines still waiting for their setup, each on its own (one that throws doesn't hold up the rest). */
-export async function setUpPending(env: Env, now: number): Promise<void> {
-  const { results } = await env.DB.prepare("SELECT * FROM cloud_machines WHERE setup_at IS NULL AND state NOT IN ('deleted', 'failed')").all<CloudMachineRow>();
-  for (const m of results) {
-    try {
-      const live = await refresh(env, m, now);
-      if (live.ok) await setUp(env, m, live.value.state, now);
-    } catch (e) {
-      console.error(JSON.stringify({ msg: "cloud computer setup failed", machine: m.id, error: String(e) }));
-    }
+/** `refresh`, then `setUp` once it runs. A provider out of reach is logged, not thrown: the machine keeps its last state,
+ * and one that throws doesn't hold up the rest. */
+export async function settle(env: Env, m: CloudMachineRow, now: number): Promise<void> {
+  try {
+    const live = await refresh(env, m, now);
+    if (live.ok) await setUp(env, m, live.value.state, now);
+  } catch (e) {
+    console.error(JSON.stringify({ msg: "cloud computer check failed", machine: m.id, error: String(e) }));
   }
 }
 
+/** Cron: machines still waiting for their setup, each on its own. */
+export async function setUpPending(env: Env, now: number): Promise<void> {
+  const { results } = await env.DB.prepare("SELECT * FROM cloud_machines WHERE setup_at IS NULL AND state NOT IN ('deleted', 'failed')").all<CloudMachineRow>();
+  for (const m of results) await settle(env, m, now);
+}
+
 /**
- * The owner's Codync account is gone. Their cloud computer is on their own provider account, which keeps it until they
- * delete it there: Codync stops it so it stops billing them, then forgets it and their key. Throws while the provider
- * can't take the stop yet (busy, unreachable), so the account deletion is retried before the key is gone.
+ * The owner's Codync account is gone. Their cloud computers are on their own provider accounts, which keep them until
+ * they delete them there: Codync stops each so it stops billing them, then forgets them and their keys. Throws while a
+ * provider can't take the stop yet (busy, unreachable), so the account deletion is retried before the keys are gone.
  */
 export async function forgetCloud(env: Env, userId: string, now: number): Promise<void> {
-  const m = await machineOf(env, userId);
-  if (m && m.state !== "stopped") {
+  for (const m of await machinesOf(env, userId)) {
+    if (m.state === "stopped") continue;
     const d = drivers[m.provider];
     // Read first: a provider may have put it to sleep on its own, and a second sleep is refused there.
     const live = await liveMachine(env, m, now);
@@ -213,7 +259,7 @@ export async function forgetCloud(env: Env, userId: string, now: number): Promis
     if (!stopped.ok && stopped.code !== "notFound") console.error(JSON.stringify({ msg: "cloud computer left running", machine: m.id, code: stopped.detail }));
   }
   await env.DB.batch([
-    env.DB.prepare("UPDATE cloud_machines SET state = 'deleted', updated_at = ? WHERE user_id = ? AND state != 'deleted'").bind(now, userId),
+    markDeleted(env, "user_id = ?2 AND state != 'deleted'", userId, now),
     forgetCredential(env, userId, null),
   ]);
 }

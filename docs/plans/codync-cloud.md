@@ -113,15 +113,16 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
   shows under the provider's name; Boat's environment sentences are Boat's own), the apps show the key row in red with
   *Replace*, and wakes stop retrying. The next call that shows it fixed clears it: any call that works, except that a
   missing action, the plan or the account's limits are cleared only by a write that works (a read says nothing about
-  them). *Create* stays offered: it tries again, for an owner who fixed their plan there.
+  them). *Create* stays offered (it tries again, for an owner who fixed their plan there) unless the key itself was
+  refused (`blocking`: rejected or expired), which only another key fixes.
 - A host whose stop is refused (the key) is put back online at once (`/internal/awake` on its relay): it never
   stopped, and no wake would find it running.
 - Write-only API: `GET /v1/cloud-computers` adds `providers`, each with its `credential` (`{hint, problem,
-  updatedAt}` or `null`), never the key. `DELETE /v1/cloud-credentials/:provider` is refused while the cloud computer
+  blocking, updatedAt}` or `null`), never the key. `DELETE /v1/cloud-credentials/:provider` is refused while any cloud computer
   runs on that provider: without the key Codync couldn't put it to sleep or delete it, and it would keep billing its
-  owner.
-- Deleting the cloud computer keeps the key (for another one). Deleting the Codync account stops the computer, then
-  forgets it and the key: the machine stays in the user's provider account for them to keep or delete. While the
+  owner. Saving a replacement checks that it reaches every one of them.
+- Deleting a cloud computer keeps the key (for another one). Deleting the Codync account stops each computer on every
+  provider, then forgets them and the keys: the machines stay in the user's provider accounts for them to keep or delete. While the
   provider is busy the webhook fails, so Clerk sends it again and the stop is retried with the key still there.
 - Audit rows: `cloudCredential.save`, `cloudCredential.delete` (never key material).
 
@@ -133,12 +134,24 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
 - `GET /v1/cloud-computers` lists `providers`, each `{provider, name, region, keyPrompt, setup: {page, commands},
   credential}`, from `PROVIDERS` in `cloud-credentials.ts`. A new provider shows up in every app with no release.
 - Keys are per provider (`PUT/DELETE /v1/cloud-credentials/:provider`, one `cloud_credentials` row each).
-  `POST /v1/cloud-computers {provider}` creates the computer on one the user gave a key; `provider` may be left out
-  when there is only one.
-- Apps: Computers → Codync Cloud has a *Cloud providers* row (the connected ones' names, *Connect one*, or *Needs
-  attention*) that opens a sheet with one card per provider: its key (last four, replace, remove) or a field to paste
-  one, and *How to make a key* folded under it. *Create cloud computer* creates on the one connected provider, or opens
-  a menu of them.
+  `POST /v1/cloud-computers {provider, name}` creates a computer on one the user gave a key; `provider` may be left
+  out when there is only one.
+- Several per account (owner, 2026-11-09: "一個帳號支援加入多台 cloud computer…使用者可以為不同電腦命名", one on Boat
+  and one on InstaBox at once): up to `CLOUD_COMPUTER_LIMIT` (3), each on the provider the user picks and with the
+  name they give it (`cloud_machines.name`, renamed with `PATCH /v1/cloud-computers/:id`). The name is the computer's
+  in the account and its host's own (`/v1/host/state` carries it; a re-register keeps it), so every app shows it: the
+  host tells apps connected to it with a `name` event, the others read it in their next `hello`.
+- Apps: Computers → Codync Cloud lists the account's cloud computers (provider logo, name, provider · region · state,
+  or what to fix in red while the provider turns its key down; a `⋯` menu with *Rename…*, *{provider} API key*,
+  *Delete snapshots*, *Delete cloud computer*). The card's **+** opens *New cloud computer*: a name (suggested "Cloud
+  computer", "Cloud computer 2", …) and every provider with its logo, where it runs and its key (or *Add a key first*).
+  A provider is reached only where it is picked (owner, 2026-11-09: no separate Cloud providers row; picking a provider
+  shows only that provider's options): a row without a working key, the key button on a row with one, or a computer's
+  `⋯` opens *{provider} API key*, a sheet with just that provider: its key (last four, replace, remove) or a field to
+  paste one, and *How to make a key* folded under it; saving one goes back to New cloud computer with it picked. A key
+  the provider turned down for its own sake (revoked, expired) leaves its row unpicked; one turned down for the plan or
+  the account still creates, which tries again. At the limit **+** still opens, with *Create* off and why, so every
+  provider's key stays in reach.
 - The Worker speaks to providers only through a `Driver` (`cloud/machines/src/types.ts`; `drivers` in its index): the
   same verbs for each (`create`, `get`, `sleep`, `wake`, `destroy`, `checkKey`, `checkAdmin`, and readers that turn
   answers into `Machine`/`Outcome`), plus members present or not for what differs in kind, which the Worker decides
@@ -163,9 +176,11 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
 The Worker, and so whoever controls Codync's Cloudflare account, can open the key and create, stop, resume and delete
 sandboxes in the user's `codync` environment on Boat, including a new one from the backup with its own setup script:
 that's how it provisions. It can't reach their other Boat sandboxes or their account. On InstaBox it can do the same
-to every machine of the key's workspace, and run commands there (`exec`). Say so in the privacy policy. Follow-up: a
-refused key also means an idle computer can't be stopped and keeps billing; tell the owner by push, not only in the
-apps.
+to every machine of the key's workspace, and run commands there (`exec`). It also keeps each cloud computer's vault
+key (sealed with `CLOUD_SECRET_KEYS`, [below](#agents-and-the-hosts-secrets)): together with that access to the
+machine (InstaBox `exec`, or a Boat sandbox made from the backup with its own setup script) it could open every secret
+that computer's keeper holds. Say so in the privacy policy. Follow-up: a refused key also means an idle computer can't
+be stopped and keeps billing; tell the owner by push, not only in the apps.
 
 ## What the user gets
 
@@ -379,6 +394,81 @@ the cloud; apps ask the host to catch up). Not adopted: the soft update above st
 - **Honest limit**: while the machine runs, its operator (Boat) can in principle read its memory and open files; no
   software encryption prevents that without confidential VMs (AMD SEV-SNP, Intel TDX), which Boat doesn't offer.
   Say so in the privacy policy.
+
+### Agents and the host's secrets
+
+Before this, a cloud computer's agents ran as the host's own Linux user, with passwordless sudo on InstaBox's and
+Boat's images: they could read the vault and its key, the database and the computer's identity, and so could an
+InstaBox key holder through `exec`. Decided (owner, 2026-11-09, after comparing [prior art](#prior-art-agent-sandboxes)):
+**agents on a cloud computer have no sudo**, and the secrets move to a process they can't read. Built the same day on
+`feat/cloud-boat`; a computer of the user's own is unchanged (everything below is gated on the cloud's claim ticket,
+`remote::managed::is_managed`).
+
+- **Three users.** The provider's own user (`user`, passwordless sudo) is left alone: the provider's machine agent
+  runs as it and needs it. On Boat that agent (`ascii-agents-server`) uses `user`'s sudo for its snapshots (taking it
+  away made `SNAPSHOT-INC` fail), keeps its credentials in `/opt/ascii-agent/.env` readable by `user`, and runs with
+  `CAP_DAC_READ_SEARCH` (it reads any file): anything running as `user` could drive it. So Codync's host and its
+  agents run as **`codync-agent`**, a user the first-boot setup makes (`cloud/src/cloud-setup.ts`, as `user` while it
+  has sudo), with no group but its own, never in sudoers, its home beside `user`'s on the disk the provider keeps
+  (`/data/codync-agent` on InstaBox, `/home/codync-agent` on Boat); the setup moves the claim ticket the provider left
+  in `user`'s home into it, turns on linger and installs the host's user service there. The secrets go to **the
+  keeper**, the same binary run as `codync-host keeper` under the system user `codync` (`host/src/keeper/`): a systemd
+  system unit with its state in `/var/lib/codync-keeper` (0700, its own copy of the binary there too, which only it
+  replaces) and its socket at `/run/codync-keeper/keeper.sock`. The setup also sets `kernel.yama.ptrace_scope = 1`
+  where the kernel has Yama (InstaBox's has none), and the managed host makes itself non-dumpable, so its agents, the
+  same user, can't attach to the running host or read its memory. **Limit**: the host is its agents' user, so that
+  guards only the process already running. An agent (a prompt injection, say) can change what runs as the host next
+  (its binary in `~/.local/bin`, its user unit, its user manager's environment) and restart it, and then gets every
+  secret the user saves after that in plain text on its way to the keeper; secrets saved before stay safe, since the
+  keeper never hands a proxied one back. Follow-up: run the host under a user of its own that starts agents as
+  `codync-agent` (through the keeper or a small root helper), or have the apps seal new secrets to the keeper's key so
+  the host relays only ciphertext. The host finds the keeper's socket at its fixed path only, never from its
+  environment. Agents install into their home only (`npm`/`pnpm`, `uv`/`pip` in a venv, `cargo`, `go install`,
+  `~/.local/bin`) on top of what the image ships in `/usr`; system packages: not for now (owner: "先暫時還不需要 codync-apt"), later a narrow Debian-only installer or a
+  root command the owner approves, if users need them. Whoever can run commands as `user` (the provider; on InstaBox
+  any holder of the workspace key, Codync included, through `exec`) can still become root: that is the provider's side
+  of the line, as before. A managed host that can `sudo -n true` logs a warning and reports it (`cloud_keeper_checked`).
+- **The vault key off the disk.** The Worker makes one key per cloud computer at create, sealed with
+  `CLOUD_SECRET_KEYS`; the first claim names the keeper's Ed25519 key (`keeperKey`, once), and only a request that key
+  signs gets the vault key (`GET /v1/keeper/vault-key`). The keeper fetches it at each start (retrying every 2 to 5 s
+  for its first ten minutes, while a new computer's claim may land, then up to every minute) and keeps it in memory;
+  its `secrets.json` (XChaCha20-Poly1305, the slot and kind as associated data) is ciphertext on disk and in every
+  snapshot. The keeper's signing key is on the disk too (`identity.json`), so a copy of the disk (a snapshot, a
+  backup) can still fetch the vault key, until deleting the computer erases it. Follow-up: tie the request to
+  something off the disk (the provider's attestation, a per-boot secret the Worker hands over through the provider's
+  API). Until it unlocks, a host operation that needs a secret waits up to 15 s, then says the keeper is still getting
+  its key.
+- **Use without seeing.** A secret is *proxied* or *visible*. A proxied one never leaves the keeper: a client asks
+  for a grant and gets `http://127.0.0.1:19230/t/<token>`, and the keeper forwards each request to the record's fixed
+  upstream with the real header added (client auth headers and named query parameters dropped; only the methods an API
+  takes, so no `TRACE` echoes the key back; redirects returned, not followed, so a key never follows one; responses
+  streamed; OAuth access tokens refreshed by the keeper itself, before expiry and once on a 401, and the sign-in
+  dropped once it can't be renewed, which the host then shows as signed out). Proxied: agents'
+  `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY`, `GEMINI_API_KEY`/`GOOGLE_API_KEY` (the agent gets `VAR=codync-keeper` and its base-URL variable pointed at a grant,
+  unless the user set that base URL themselves), voice keys, the Composio key, and remote connectors' headers and
+  OAuth tokens (the `codync-host mcp remote` bridge, which runs as the agent user, only ever gets a grant). Visible
+  (a process has to receive them, so agents can read them): website logins, the 1Password token, stdio connectors'
+  environment, other agent environment variables, `op://` references, OAuth client registrations, remote connectors'
+  URLs (a token in their query or user part too), `http://` connectors' headers. An agent's grants last as long as its process; any local process may ask the keeper for a grant
+  to any proxied secret (it can use it, never read it).
+- **Keeper updates.** A managed host whose keeper is older asks it to `update`: the keeper takes only a newer, signed
+  release, replaces its own binary and exits for systemd to restart it.
+
+Still readable by agents, by design: their own subscription sign-ins (`~/.claude`, `~/.codex`: the CLIs need them),
+the visible secrets above, and the workspace. No outside service: the Worker is the key custodian; Cloudflare AI
+Gateway is the candidate if spend limits or one-tap revocation are wanted later.
+
+#### Prior art: agent sandboxes
+
+Read 2026-11-09 from their source:
+- **OpenMausBot**: each engine process in a bubblewrap box (own user/pid/net namespaces, seccomp, the data folder
+  replaced by an empty one, egress only through a proxy to public addresses); the image ships no sudo; a broker swaps
+  base-URL-capable keys for per-process `omb_t0_` tokens. Headless installs keep API keys in plaintext 0600 files.
+- **CopilotKit/OpenBot**: secrets only on the server (AES-GCM, key in the server's environment); the model loop has no
+  shell and acts through the server. Where shell and server share a container: separate uids and sudo limited to one
+  apt wrapper (a plain `sudo apt-get` was escalated with `-o APT::Update::Pre-Invoke`).
+- **bloks**: plaintext 0600 `config.json`, readable by agents (it says so); GitHub tokens through a per-turn proxy
+  handle with an allowlist and an audit log.
 
 ### Security on Boat
 

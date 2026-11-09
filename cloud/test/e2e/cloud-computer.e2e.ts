@@ -35,7 +35,8 @@ const filesPort = await freePort();
 const files = serveFiles({ ...(HOST_LINUX_BIN ? { "codync-host": HOST_LINUX_BIN } : {}), "fake_agent.py": join(ROOT, "host/tests/fake_agent.py") }, filesPort);
 const proxyPort = await freePort();
 const proxy = COLD ? boatProxy(proxyPort) : undefined;
-let created = false;
+/** The cloud computer's id once created, to delete it at the end. */
+let created: string | undefined;
 let sandboxId: string | undefined;
 /** Sandboxes the cloud stopped tracking (the one a restore replaced), deleted at the end. */
 const replaced: string[] = [];
@@ -66,16 +67,15 @@ async function main() {
 
   step("2. create the cloud computer");
   const started = Date.now();
-  const res = await cloud.call("POST", "/v1/cloud-computers", { token });
+  const res = await cloud.call("POST", "/v1/cloud-computers", { token, body: { name: "E2E" } });
   check(res.status === 200, `created (${res.status})`);
-  created = true;
   const cc = res.body.cloudComputer;
-  check(cc.providerName === "Boat" && cc.region === "EU", "the user sees which provider runs it, and where");
-  check((await cloud.call("POST", "/v1/cloud-computers", { token })).body.cloudComputer.cloudComputerId === cc.cloudComputerId, "asking again returns the same one");
+  created = cc.cloudComputerId as string;
+  check(cc.providerName === "Boat" && cc.region === "EU" && cc.name === "E2E", "the user sees its name, which provider runs it, and where");
   const id = (await cloud.d1(`SELECT provider_id FROM cloud_machines WHERE id = '${cc.cloudComputerId}'`))[0].provider_id as string;
   sandboxId = id;
   console.log(`  sandbox ${id}`);
-  await waitFor("sandbox running", async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputer.state === "running" || undefined, 120_000);
+  await waitFor("sandbox running", async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputers[0].state === "running" || undefined, 120_000);
   check(true, `running after ${Date.now() - started} ms`);
 
   step("3. the machine reaches this computer, its first boot installs the host under test");
@@ -88,7 +88,7 @@ async function main() {
   check((await sh(id, `curl -fsS http://127.0.0.1:${filesPort}/fake_agent.py -o ~/fake_agent.py`)).exitCode === 0, "fake agent on the machine");
 
   step("4. the host claims itself");
-  const computerId = await waitFor("claimed", async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputer.computerId ?? undefined, 180_000);
+  const computerId = await waitFor("claimed", async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputers[0].computerId ?? undefined, 180_000);
   check(true, `claimed ${computerId} ${Date.now() - hostUp} ms after the host started`);
   check((await sh(id, "test -f ~/.codync/managed.json")).exitCode !== 0, "the ticket is gone after the claim");
 
@@ -123,7 +123,7 @@ async function main() {
   const bot = (await ch.call("createBot", { name: "Sleeper", backend: "custom", command: "python3 /home/user/fake_agent.py", cwd: "/home/user", permission: "auto" })).bot.id as string;
   ch.wire.ws.close();
 
-  const state = async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputer.state as string;
+  const state = async () => (await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputers[0].state as string;
   const machine = async () => (await cloud.d1(`SELECT provider_id, backup FROM cloud_machines WHERE id = '${cc.cloudComputerId}'`))[0]!;
   const asleep = () => waitFor("stopped", async () => ((await state()) === "stopped" ? true : undefined), 300_000);
   /** Puts `text` in the sleeping computer's mailbox and waits until the host the message woke delivers it to the
@@ -167,7 +167,7 @@ async function main() {
     const bootBefore = await bootId();
     await asleep();
     const stoppedAt = Date.now();
-    check((await cloud.call("DELETE", "/v1/cloud-computers/snapshots", { token })).status === 409, "asleep, its snapshot history can't be deleted");
+    check((await cloud.call("DELETE", `/v1/cloud-computers/${created}/snapshots`, { token })).status === 409, "asleep, its snapshot history can't be deleted");
     await cloud.d1(`UPDATE cloud_machines SET updated_at = updated_at - ${11 * 86_400_000} WHERE id = '${cc.cloudComputerId}'`);
     await cloud.cron(SWEEP_CRON);
     const backup = await waitFor("backup saved", async () => ((await machine()).backup as string | null) ?? undefined, 120_000);
@@ -203,7 +203,7 @@ async function main() {
     check(restored.history.entries.some((e: Json) => e.data?.clientNonce === "e2e-wake-1"), "with the bot's history from the backup");
 
     step("7d. awake, its snapshot history and backup can be deleted");
-    check((await cloud.call("DELETE", "/v1/cloud-computers/snapshots", { token })).status === 200, "deleted while awake");
+    check((await cloud.call("DELETE", `/v1/cloud-computers/${created}/snapshots`, { token })).status === 200, "deleted while awake");
     check((await machine()).backup === null && !(await savedSnapshot(key, backup)), "the backup is gone from Boat");
     check((await state()) === "running", "the computer keeps running");
     restored.close();
@@ -258,9 +258,9 @@ async function main() {
   }
 
   step("10. delete");
-  check((await cloud.call("DELETE", "/v1/cloud-computers", { token })).status === 200, "deleted");
-  created = false;
-  check((await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputer === null, "no cloud computer left");
+  check((await cloud.call("DELETE", `/v1/cloud-computers/${created}`, { token })).status === 200, "deleted");
+  created = undefined;
+  check((await cloud.call("GET", "/v1/cloud-computers", { token })).body.cloudComputers.length === 0, "no cloud computer left");
   const after = (await cloud.call("GET", "/v1/computers", { token, key: phone.key })).body.computers as Json[];
   check(!after.some((c) => c.computerId === computerId), "the computer left the account");
 
@@ -276,7 +276,7 @@ async function cleanup(failed = false) {
     if (log) console.error(`\nhost log:\n${log.stdout}`);
   }
   if (created) {
-    const res = await cloud.call("DELETE", "/v1/cloud-computers", { token: await cloud.token(USER_ID) }).catch(() => undefined);
+    const res = await cloud.call("DELETE", `/v1/cloud-computers/${created}`, { token: await cloud.token(USER_ID) }).catch(() => undefined);
     if (res?.status !== 200) console.error("  couldn't delete the sandbox; run `boat list` and delete it by hand");
   }
   // The cloud reaches Boat through the proxy, also for that last delete.

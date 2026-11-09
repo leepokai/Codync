@@ -15,7 +15,8 @@
 //!
 //! Registry and GitHub JSON is untrusted input: names become ids and paths, so
 //! they're reduced to a safe slug first. Secret values (API keys, tokens) stay
-//! on this computer; listings only say which keys are set.
+//! on this computer; listings only say which keys are set. On a Codync Cloud
+//! computer, remote connectors' secrets are its keeper's: see `connector_keeper`.
 
 pub mod agent_sign_in;
 pub mod composio;
@@ -28,6 +29,7 @@ pub mod vault;
 pub mod verify;
 
 mod command_line;
+mod connector_keeper;
 mod install;
 mod registry;
 mod skills;
@@ -194,7 +196,7 @@ pub fn skills(store: &crate::store::Store) -> Vec<Skill> {
 
 /// Whether a connector or connected app was ever saved, answered without the vault.
 pub fn connectors_saved(store: &crate::store::Store) -> Result<bool> {
-    Ok(store.kv_read(CONNECTORS_SLOT)?.is_some() || store.kv_read(composio::SLOT)?.is_some())
+    Ok(vault::saved(store, CONNECTORS_SLOT)? || vault::saved(store, composio::SLOT)?)
 }
 
 /// Everything a bot can turn on: installed connectors and connected apps.
@@ -270,6 +272,11 @@ fn save<T: Serialize>(store: &crate::store::Store, key: &str, items: &[T]) -> Re
 }
 
 pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<()> {
+    if crate::remote::managed::is_managed(store) {
+        let mut items = items.to_vec();
+        connector_keeper::hand_over(store, &mut items)?;
+        return vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?);
+    }
     vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(items)?)
 }
 

@@ -298,6 +298,9 @@ export class BotSync extends BotMirror {
       case 'cloud':
         this.cloud = event.cloud
         break
+      case 'name':
+        this.setHostName(event.name)
+        break
       case 'network':
         this.network = event.network
         break

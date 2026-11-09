@@ -80,7 +80,7 @@ export class AppModel extends Observable {
     this.computerAccess = new ComputerAccess(this)
     this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
-    this.cloudComputer = new CloudComputerModel(this.cloud)
+    this.cloudComputer = new CloudComputerModel(this)
     account.subscribe(() => this.noteAccount())
   }
 

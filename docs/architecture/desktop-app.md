@@ -103,14 +103,14 @@ The TUI connects to one host at a time, so it keeps its single roster.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
 - **Other computers in the account** are reached through this computer's own host and SSH
-  tunnels, except the account's Codync Cloud computer: the main process opens the relay's encrypted channel to it
+  tunnels, except the account's Codync Cloud computers: the main process opens the relay's encrypted channel to each
   (`main/channel/`, the iPhone's `ChannelTransport` over the relay only, since a cloud computer has no address to
-  dial), asks it for access once per launch (it approves the account's devices by itself), and the window uses it
+  dial), asks each for access once per launch (they approve the account's devices by themselves), and the window uses them
   like any computer: chats, bots and their settings, setup terminals. The channel is open only while someone looks
   at the window (shown, not minimized, the computer used in the last 10 minutes: `main/attention.ts`), as a phone
   connects only in the foreground, since a connected device keeps a cloud computer awake and billed. Other
   computers' "Ask for access" rows show status only: the product targets one computer. Every offline row
-  but the cloud computer's (deleted in its own section) has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
+  but a cloud computer's (deleted in its own section) has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
   *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate
   (`tools/release-gate.py`) sets that mark

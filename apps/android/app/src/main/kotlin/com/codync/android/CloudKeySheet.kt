@@ -32,35 +32,37 @@ import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.launch
 
+/** "Boat API key": a provider's key sheet, its key button and menu item, and its field. */
+@Composable internal fun keyTitle(providerName: String) = tr("{provider} API key").replace("{provider}", providerName)
+
 /**
- * Computers → Codync Cloud → Cloud providers (iOS `CloudProvidersSheet`): every provider the cloud can run the computer
- * on, each with the key to the user's own account there. A key is pasted once, checked and kept encrypted by the cloud,
- * and shown afterwards only by its last four; while the provider turns it down, what to fix shows under it.
+ * One provider's key (iOS `CloudKeySheet`), from New cloud computer or a cloud computer's `⋯`: the key to the user's own
+ * account there, pasted once, checked and kept encrypted by the cloud, and shown afterwards only by its last four; while
+ * the provider turns it down, what to fix shows under it. Saving one closes the sheet.
  */
-@Composable internal fun CloudProvidersSheet(offer: CloudOffer, state: AccountContext, store: AccountStore) {
+@Composable internal fun CloudKeySheet(provider: String, offer: CloudOffer, state: AccountContext, store: AccountStore) {
     DisposableEffect(store) {
-        store.cloudProvidersShown(true)
-        onDispose { store.cloudProvidersShown(false) }
+        store.cloudSheetShown(true)
+        onDispose { store.cloudSheetShown(false) }
     }
+    val p = offer.providers.firstOrNull { it.provider == provider } ?: return
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader("Cloud providers")
+        ModalHeader(keyTitle(p.name))
         CardForm {
             CardSection(footer = "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {}
-            for (provider in offer.providers) {
-                CardSection(provider.name, accessory = { Text(provider.region, style = Type.footnote, color = Palette.secondary) }) {
-                    row { KeyRow(provider, cloudKeyAction(provider.provider) in state.busy, offer.canRemoveKey(provider.provider), state.cloudErrorFor(provider.provider), store) }
-                    row { SetupRow(provider) }
-                }
+            CardSection {
+                row { KeyRow(p, cloudKeyAction(provider) in state.busy, offer.canRemoveKey(provider), state.cloudErrorAt(CloudErrorPlace.Key(provider)), store) }
+                row { SetupRow(p) }
             }
-            state.cloudErrorFor(null)?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
         }
     }
 }
 
-/** One provider's key: its last four with replace and remove, or a field to paste it; [error] when saving or removing
- * it failed, under the key (below every provider it would be off screen). */
+/** The provider's key: its last four with replace and remove, or a field to paste it; [error] when saving or removing
+ * it failed, under the key. */
 @Composable private fun KeyRow(provider: CloudProvider, busy: Boolean, canRemove: Boolean, error: String?, store: AccountStore) {
     var replacing by remember { mutableStateOf(false) }
+    val dismiss = LocalDismissModal.current
     val credential = provider.credential
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (credential != null && !replacing) {
@@ -68,7 +70,7 @@ import kotlinx.coroutines.launch
             credential.problem?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
         } else {
             KeyEntry(provider, busy, replacing, cancel = { replacing = false }) { key, done ->
-                store.saveCloudKey(provider.provider, key) { replacing = false; done() }
+                store.saveCloudKey(provider.provider, key) { replacing = false; done(); dismiss() }
             }
         }
         error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
@@ -95,7 +97,7 @@ import kotlinx.coroutines.launch
     save: (String, () -> Unit) -> Unit) {
     var key by remember { mutableStateOf("") }
     val focus = LocalFocusManager.current
-    val label = tr("{provider} API key").replace("{provider}", provider.name)
+    val label = keyTitle(provider.name)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.weight(1f)) {
             PlainInput(key, { key = it }, provider.keyPrompt, secret = true, enabled = !busy, label = label)

@@ -16,6 +16,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::watch;
 
+#[cfg(unix)]
+pub use super::cloud_url::keeper_cloud_url;
 pub use super::cloud_url::{Address, RelayKind, TokenChange, current, set_cloud, set_cloud_url, show, url, when_on};
 
 /// How long one successful state pull keeps an account device allowed.
@@ -322,6 +324,9 @@ struct State {
     /// A cloud computer's update order (`remote::managed`).
     #[serde(default)]
     update: Option<crate::remote::managed::UpdateOrder>,
+    /// A cloud computer's name, which its user gave it.
+    #[serde(default)]
+    name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -385,6 +390,9 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
         super::owner::out_of_account(hub)?;
     }
     sync_requests(hub, base, state.requests).await;
+    if let Some(name) = &state.name {
+        crate::remote::managed::set_name(hub, name)?;
+    }
     if let Some(order) = state.update {
         crate::remote::managed::update_to(hub, order);
     }
@@ -834,6 +842,18 @@ mod tests {
         *fake.state.lock().unwrap() = request(Some(nh), Some(nd));
         pull(&hub, &base).await.unwrap();
         assert_eq!(hub.store.device(&b64(&dk)).unwrap().source, DeviceSource::Account, "approved without the user");
+    }
+
+    #[tokio::test]
+    async fn a_cloud_computer_takes_the_name_its_user_gave_it() {
+        let hub = temp_hub();
+        let fake = Arc::new(FakeCloud::default());
+        let base = fake_cloud(fake.clone()).await;
+        *fake.state.lock().unwrap() =
+            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [], "name": "Lab"});
+        crate::remote::managed::set_managed(&hub.store).unwrap();
+        pull(&hub, &base).await.unwrap();
+        assert_eq!(crate::remote::managed::computer_name(&hub.store), "Lab");
     }
 
     #[tokio::test]

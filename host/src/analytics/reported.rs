@@ -104,6 +104,13 @@ pub enum Reported {
         #[serde(default)]
         provider: CloudProvider,
     },
+    CloudComputerCreated {
+        outcome: CloudCreateOutcome,
+        provider: CloudProvider,
+    },
+    CloudComputerRenamed {
+        outcome: CloudRenameOutcome,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
@@ -265,7 +272,29 @@ pub enum CloudKeyOutcome {
     Other,
 }
 
-/// The cloud provider a Codync Cloud key is for (the cloud's id for it).
+/// How creating a Codync Cloud computer ended: created, turned down (over the limit, or the provider refused the key or
+/// the plan, and the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudCreateOutcome {
+    Created,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How renaming a Codync Cloud computer ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudRenameOutcome {
+    Renamed,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// The cloud provider a Codync Cloud key or computer is for (the cloud's id for it).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CloudProvider {
@@ -404,6 +433,14 @@ mod tests {
             (
                 json!({"event": "cloud_key_saved", "app": "desktop", "outcome": "refused", "provider": "instabox"}),
                 Event::CloudKeySaved,
+            ),
+            (
+                json!({"event": "cloud_computer_created", "app": "desktop", "outcome": "created", "provider": "boat"}),
+                Event::CloudComputerCreated,
+            ),
+            (
+                json!({"event": "cloud_computer_renamed", "app": "desktop", "outcome": "failed"}),
+                Event::CloudComputerRenamed,
             ),
             (
                 json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),

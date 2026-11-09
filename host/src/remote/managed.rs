@@ -24,8 +24,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+mod keeper_checks;
+pub use keeper_checks::on_start;
+
 /// Store key: this host is a cloud computer Codync runs (set from its claim ticket).
 const MANAGED: &str = "cloud_managed";
+/// Store key: the name its user gave it in the cloud (`set_name`).
+const NAME_KEY: &str = "cloud_name";
 const NAME: &str = "Codync Cloud";
 /// No device, turn, run or setup terminal for this long.
 const IDLE: Duration = Duration::from_mins(10);
@@ -47,9 +52,24 @@ pub fn set_managed(store: &Store) -> Result<()> {
     store.kv_set(MANAGED, "1")
 }
 
-/// The name every app shows for this computer: a cloud computer's machine gets another hostname on each wake.
+/// The name every app shows for this computer: a cloud computer's is the one its user gave it (its machine gets another
+/// hostname on each wake).
 pub fn computer_name(store: &Store) -> String {
-    if is_managed(store) { NAME.into() } else { crate::service::host_name() }
+    if !is_managed(store) {
+        return crate::service::host_name();
+    }
+    store.kv_get(NAME_KEY).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| NAME.into())
+}
+
+/// The cloud's name for this cloud computer (its state's `name`): apps connected now hear it as a `name` event, the
+/// others in their next `hello`.
+pub fn set_name(hub: &Hub, name: &str) -> Result<()> {
+    if !is_managed(&hub.store) || hub.store.kv_get(NAME_KEY).as_deref() == Some(name) {
+        return Ok(());
+    }
+    hub.store.kv_set(NAME_KEY, name)?;
+    let _ = hub.events.send(json!({"type": "name", "name": name}));
+    Ok(())
 }
 
 /// What every app draws this computer as.
@@ -201,14 +221,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_cloud_computer_is_codync_cloud_with_a_cloud_in_every_app() {
+    async fn a_cloud_computer_is_codync_cloud_until_named_with_a_cloud_in_every_app() {
         let dir = std::env::temp_dir().join(format!("codync-managed-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let store = Store::open(&dir.join("t.db")).expect("store");
-        assert_eq!(computer_name(&store), crate::service::host_name());
-        set_managed(&store).expect("set");
-        assert_eq!(computer_name(&store), "Codync Cloud");
-        assert_eq!(computer_device(&store).await.expect("device"), crate::service::Device::Cloud);
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
+        let hub = Hub::new(store, "test".into(), identity, "test".into(), 0);
+        let mut events = hub.events.subscribe();
+        set_name(&hub, "Lab").expect("name");
+        assert_eq!(
+            computer_name(&hub.store),
+            crate::service::host_name(),
+            "a computer of the user's own keeps its own"
+        );
+        set_managed(&hub.store).expect("set");
+        assert_eq!(computer_name(&hub.store), "Codync Cloud");
+        assert_eq!(computer_device(&hub.store).await.expect("device"), crate::service::Device::Cloud);
+        set_name(&hub, "Lab").expect("name");
+        set_name(&hub, "Lab").expect("name");
+        assert_eq!(computer_name(&hub.store), "Lab");
+        // Connected apps hear it once, when it changes.
+        let heard: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).filter(|e| e["type"] == "name").collect();
+        assert_eq!(heard, [json!({"type": "name", "name": "Lab"})]);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

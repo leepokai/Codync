@@ -83,18 +83,20 @@ private final class UnavailableStub: CloudComputerStub {
         if request.httpMethod == "POST" {
             return (403, #"{"error":{"code":"forbidden","message":"Codync Cloud isn't available for this account yet."}}"#)
         }
-        return (200, #"{"cloudComputer":null}"#)
+        return (200, #"{"cloudComputers":[]}"#)
     }
 }
 
-/// An account that can't have a cloud computer keeps the section hidden; creating one anyway shows why not.
+/// An account that can't have a cloud computer keeps the section hidden; creating one anyway says why not, in the New
+/// cloud computer sheet.
 @MainActor @Test func cloudComputerStaysHiddenUntilTheAccountMayHaveOne() async {
     let store = CloudMachineStore(cloud: stubbedCloud(UnavailableStub.self))
     await store.refresh()
-    #expect(store.lookup == .unavailable)
-    await store.create(on: "boat")
-    #expect(store.lookup == .unavailable)
-    #expect(store.error == "Codync Cloud isn't available for this account yet.")
+    #expect(!store.isShown && !store.available)
+    #expect(await store.create(on: "boat", name: "") == false)
+    #expect(!store.isShown)
+    #expect(store.error(at: .newComputer) == "Codync Cloud isn't available for this account yet.")
+    #expect(store.error(at: .card) == nil)
 }
 
 /// An account that may have a cloud computer on two providers but gave neither a key yet. The first key it gives is
@@ -115,7 +117,7 @@ private final class KeyStub: CloudComputerStub {
             return (200, "{}")
         default:
             let setup = #""setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"},"credential":null"#
-            return (200, #"{"cloudComputer":null,"available":true,"providers":[{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",\#(setup)},"#
+            return (200, #"{"cloudComputers":[],"available":true,"limit":3,"providers":[{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",\#(setup)},"#
                 + #"{"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",\#(setup)}]}"#)
         }
     }
@@ -126,24 +128,25 @@ private final class KeyStub: CloudComputerStub {
 @MainActor @Test func cloudKeyComesBeforeTheComputer() async {
     let store = CloudMachineStore(cloud: stubbedCloud(KeyStub.self))
     await store.refresh()
-    #expect(store.lookup == .creatable)
+    #expect(store.isShown && store.machines.isEmpty && !store.atLimit)
     #expect(store.providers.map(\.name) == ["Boat", "Nimbus"])
     #expect(store.providers.first?.setup.commands == "boat env new codync")
-    #expect(store.connected.isEmpty && store.providersSummary.text == "Connect one")
+    #expect(store.providers.allSatisfy { $0.credential == nil })
     #expect(await store.saveKey("boat_admin_key", provider: "boat") == false)
     #expect(store.error == "This key can manage your whole account. Make one limited to Codync instead.")
     // Shown under Boat's key, not below every provider.
-    #expect(store.error(forKey: "boat") == store.error && store.error(forKey: "nimbus") == nil && store.error(forKey: nil) == nil)
+    #expect(store.error(at: .key("boat")) == store.error && store.error(at: .key("nimbus")) == nil && store.error(at: .card) == nil)
     #expect(await store.saveKey(" boat_live_key9abc ", provider: "boat"))
-    #expect(store.connected.map(\.provider) == ["boat"] && store.providers.first?.credential?.hint == "boat_…9abc")
-    #expect(store.providersSummary.text == "Boat" && store.canRemoveKey("boat") && store.error == nil)
+    #expect(store.providers.map(\.credential?.hint) == ["boat_…9abc", nil])
+    #expect(store.providers.map(\.isReady) == [true, false])
+    #expect(store.canRemoveKey("boat") && store.error == nil)
     await store.removeKey(provider: "boat")
-    #expect(store.connected.isEmpty)
+    #expect(store.providers.allSatisfy { $0.credential == nil })
     #expect(KeyStub.paths.withLock { $0 }.filter { !$0.hasPrefix("GET") }
         == ["PUT /v1/cloud-credentials/boat", "PUT /v1/cloud-credentials/boat", "DELETE /v1/cloud-credentials/boat"])
 }
 
-/// A sleeping machine that hasn't claimed itself in yet; its snapshots can't be deleted while it sleeps.
+/// A running machine, and a sleeping one that hasn't claimed itself in yet; snapshots can't be deleted while one sleeps.
 private final class PreparingStub: CloudComputerStub {
     static let claimed = OSAllocatedUnfairLock(initialState: false)
 
@@ -152,12 +155,20 @@ private final class PreparingStub: CloudComputerStub {
             return (409, #"{"error":{"code":"conflict","message":"Your cloud computer is asleep."}}"#)
         }
         let computer = claimed.withLock { $0 } ? #""abc""# : "null"
-        return (200, #"{"cloudComputer":{"cloudComputerId":"cm_1","provider":"boat","providerName":"Boat","region":"EU","state":"stopped","computerId":\#(computer)},"available":true}"#)
+        return (200, #"{"cloudComputers":[\#(machineJSON("cm_0", "Desk", computer: #""def""#, state: "running")),"#
+            + #"\#(machineJSON("cm_1", "Cloud computer", computer: computer))],"available":true}"#)
     }
 }
 
+/// A cloud computer as `GET /v1/cloud-computers` lists it.
+private func machineJSON(_ id: String, _ name: String, provider: String = "boat", computer: String = "null",
+                         state: String = "stopped", snapshots: Bool = true) -> String {
+    let providerName = provider == "boat" ? "Boat" : "InstaBox"
+    return #"{"cloudComputerId":"\#(id)","name":"\#(name)","provider":"\#(provider)","providerName":"\#(providerName)","region":"EU","state":"\#(state)","computerId":\#(computer),"snapshots":\#(snapshots)}"#
+}
+
 /// A new machine is "preparing" until its computer is in the account, then the account's list is refreshed;
-/// a refused action shows the cloud's reason and keeps the machine.
+/// a refused action shows the cloud's reason under the card's rows and keeps the machine.
 @MainActor @Test func preparingCloudComputerWaitsForItsClaim() async throws {
     let store = CloudMachineStore(cloud: stubbedCloud(PreparingStub.self))
     store.pollInterval = .milliseconds(20)
@@ -166,7 +177,8 @@ private final class PreparingStub: CloudComputerStub {
     defer { store.retire() }
 
     await store.refresh()
-    #expect(store.isPreparing)
+    #expect(store.isPreparing && store.machines.map(\.isPreparing) == [false, true])
+    #expect(store.machines.map { store.status(of: $0).text } == ["Running", "Preparing your cloud computer…"])
     PreparingStub.claimed.withLock { $0 = true }
     for _ in 0..<100 where store.isPreparing {
         try await Task.sleep(for: .milliseconds(20))
@@ -177,11 +189,156 @@ private final class PreparingStub: CloudComputerStub {
     }
     #expect(changed.withLock { $0 })
 
-    await store.deleteSnapshots()
-    #expect(store.error == "Your cloud computer is asleep." && store.error(forKey: nil) == store.error)
-    guard case let .machine(machine) = store.lookup else { Issue.record("machine gone"); return }
-    #expect(machine.computerId == "abc")
-    #expect(machine.hosting.state == .stopped)
+    await store.deleteSnapshots("cm_1")
+    #expect(store.error == "Your cloud computer is asleep." && store.error(at: .card) == store.error)
+    #expect(store.error(at: .newComputer) == nil && store.error(at: .key("boat")) == nil)
+    #expect(store.machines.map(\.computerId) == ["def", "abc"])
+    #expect(store.machines.last?.hosting.state == .stopped)
+}
+
+/// One cloud computer that failed before it claimed itself in; each lookup is counted.
+private final class FailedStub: CloudComputerStub {
+    static let lookups = OSAllocatedUnfairLock(initialState: 0)
+
+    override class func answer(_ request: URLRequest) -> (Int, String) {
+        lookups.withLock { $0 += 1 }
+        return (200, #"{"cloudComputers":[\#(machineJSON("cm_1", "Cloud computer", state: "failed"))],"available":true}"#)
+    }
+}
+
+/// A machine that failed before its claim isn't preparing: it says it failed, and nothing asks about it again.
+@MainActor @Test func failedCloudComputerIsNotPolled() async throws {
+    let store = CloudMachineStore(cloud: stubbedCloud(FailedStub.self))
+    store.pollInterval = .milliseconds(20)
+    defer { store.retire() }
+    await store.refresh()
+    #expect(store.machines.map(\.hosting.state) == [.failed] && !store.isPreparing)
+    #expect(store.machines.map { store.status(of: $0).text } == ["Failed"] && store.status(of: store.machines[0]).isError)
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(FailedStub.lookups.withLock { $0 } == 1)
+}
+
+/// Two cloud computers: Boat's, and InstaBox's named "Cloud computer 3", which keeps no snapshots. Another is made on the
+/// provider and with the name sent; each request is kept.
+private final class FleetStub: CloudComputerStub {
+    static let requests = OSAllocatedUnfairLock(initialState: [String]())
+    static let created = OSAllocatedUnfairLock(initialState: [String: String]())
+
+    override class func answer(_ request: URLRequest) -> (Int, String) {
+        let method = request.httpMethod ?? ""
+        let path = request.url?.path ?? ""
+        requests.withLock { $0.append("\(method) \(path)") }
+        let sent = (try? JSONDecoder().decode([String: String].self, from: body(of: request))) ?? [:]
+        switch method {
+        case "POST":
+            created.withLock { $0 = sent }
+            return (200, #"{"cloudComputer":\#(machineJSON("cm_3", sent["name"] ?? "", provider: sent["provider"] ?? ""))}"#)
+        case "PATCH":
+            return (200, #"{"cloudComputer":\#(machineJSON("cm_2", sent["name"] ?? "", provider: "instabox", computer: #""def""#, state: "running", snapshots: false))}"#)
+        case "DELETE":
+            return (200, "{}")
+        default:
+            let setup = #""setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"}"#
+            return (200, #"{"cloudComputers":[\#(machineJSON("cm_1", "Cloud computer", computer: #""abc""#, state: "running")),"#
+                + #"\#(machineJSON("cm_2", "Cloud computer 3", provider: "instabox", computer: #""def""#, state: "running", snapshots: false))],"#
+                + #""available":true,"limit":3,"providers":[{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",\#(setup),"credential":{"hint":"boat_…9abc"}},"#
+                + #"{"provider":"instabox","name":"InstaBox","region":"US","keyPrompt":"ibk_…",\#(setup),"credential":{"hint":"ibk_…1234","problem":"Your InstaBox key expired.","blocking":true}},"#
+                + #"{"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",\#(setup),"credential":null}]}"#)
+        }
+    }
+
+    /// The JSON it was sent: URLSession hands a protocol the body as a stream.
+    private static func body(of request: URLRequest) -> Data {
+        if let data = request.httpBody { return data }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while stream.hasBytesAvailable {
+            let n = stream.read(&buffer, maxLength: buffer.count)
+            guard n > 0 else { break }
+            data.append(buffer, count: n)
+        }
+        return data
+    }
+}
+
+/// Several cloud computers, oldest first: a key goes only once no computer runs on its provider, a new one gets the first
+/// free default name and fills the account up to its limit, a rename reaches the account's computer while only that
+/// machine shows busy, and a deleted one takes its computer out of the account.
+@MainActor @Test func severalCloudComputersAreNamedRenamedAndDeleted() async {
+    let store = CloudMachineStore(cloud: stubbedCloud(FleetStub.self))
+    let removed = OSAllocatedUnfairLock(initialState: [ComputerID?]())
+    store.onAccountChanged = { id in removed.withLock { $0.append(id) } }
+    // Each rename, with which machines showed busy meanwhile.
+    let renamed = OSAllocatedUnfairLock(initialState: [String]())
+    store.onRenamed = { [store] id, name in
+        let busy = "\(store.isBusy("cm_2")) \(store.isBusy("cm_1"))"
+        renamed.withLock { $0.append("\(id) \(name) \(busy)") }
+    }
+    defer { store.retire() }
+
+    await store.refresh()
+    #expect(store.machines.map(\.name) == ["Cloud computer", "Cloud computer 3"])
+    #expect(store.machines.map(\.snapshots) == [true, false])
+    #expect(!store.canRemoveKey("boat") && !store.canRemoveKey("instabox") && store.canRemoveKey("nimbus"))
+    #expect(store.providers.map(\.isReady) == [true, false, false])
+    // New cloud computer creates where the key works: InstaBox's is refused, Nimbus has none yet (picked, it's chosen
+    // once it has one).
+    #expect(store.provider(picked: nil) == "boat" && store.provider(picked: "instabox") == "boat" && store.provider(picked: "nimbus") == "boat")
+    #expect(store.suggestedName == "Cloud computer 2" && !store.atLimit && store.limitNote == nil)
+
+    #expect(await store.create(on: "boat", name: "  "))
+    #expect(FleetStub.created.withLock { $0 } == ["provider": "boat", "name": "Cloud computer 2"])
+    #expect(store.machines.map(\.id) == ["cm_1", "cm_2", "cm_3"] && store.isPreparing && store.atLimit)
+    // The cloud's own words for a create over the limit, which the catalogs translate.
+    #expect(store.limitNote == "You can have up to 3 cloud computers. Delete one to make another.")
+    #expect(store.suggestedName == "Cloud computer 4")
+
+    await store.rename("cm_2", to: " Lab ")
+    #expect(store.machines.map(\.name) == ["Cloud computer", "Lab", "Cloud computer 2"])
+    #expect(renamed.withLock { $0 } == ["def Lab true false"])
+    // Unchanged or empty: nothing to send.
+    await store.rename("cm_2", to: "Lab")
+    await store.rename("cm_1", to: " ")
+
+    await store.delete("cm_1")
+    #expect(store.machines.map(\.id) == ["cm_2", "cm_3"] && store.canRemoveKey("boat") == false)
+    #expect(removed.withLock { $0 } == ["abc"])
+    #expect(store.error == nil && store.working == nil)
+    #expect(FleetStub.requests.withLock { $0 }.filter { !$0.hasPrefix("GET") }
+        == ["POST /v1/cloud-computers", "PATCH /v1/cloud-computers/cm_2", "DELETE /v1/cloud-computers/cm_1"])
+}
+
+/// A cloud computer whose provider turns the key down says what to fix in its state's place, as an error; the other
+/// shows its state.
+@MainActor @Test func cloudComputerShowsItsKeysProblemInPlaceOfItsState() async {
+    let store = CloudMachineStore(cloud: stubbedCloud(FleetStub.self))
+    defer { store.retire() }
+    await store.refresh()
+    #expect(store.machines.map { store.status(of: $0).text } == ["Running", "Your InstaBox key expired."])
+    #expect(store.machines.map { store.status(of: $0).isError } == [false, true])
+}
+
+/// A key turned down for the plan or the account still creates, which tries again; one turned down for its own sake
+/// (revoked, expired) doesn't until it's replaced.
+@Test func onlyAKeyRefusedForItsOwnSakeStopsCreating() throws {
+    func provider(_ credential: String) throws -> CloudProvider {
+        try JSONDecoder().decode(CloudProvider.self, from: Data(
+            #"{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…","setup":{"page":"https://boat.dev","commands":""},"credential":\#(credential)}"#.utf8))
+    }
+    #expect(try provider(#"{"hint":"boat_…9abc","problem":"This account needs an active plan.","blocking":false}"#).isReady)
+    #expect(try !provider(#"{"hint":"boat_…9abc","problem":"This key has expired. Make a new one.","blocking":true}"#).isReady)
+    #expect(try !provider("null").isReady)
+}
+
+/// A name stops where the cloud's 64 UTF-16 units do, without splitting a character.
+@Test func cloudComputerNamesStopAtTheCloudsLimit() {
+    #expect(CloudMachineStore.limited(String(repeating: "a", count: 70)).count == 64)
+    #expect(CloudMachineStore.limited("short") == "short")
+    // Each flag is four UTF-16 units: 16 fit.
+    #expect(CloudMachineStore.limited(String(repeating: "🇹🇼", count: 20)) == String(repeating: "🇹🇼", count: 16))
 }
 
 /// Every Worker request is refused below the emergency floor.
@@ -203,6 +360,7 @@ private final class FloorStub: CloudComputerStub {
 /// don't say, and all of theirs kept some.
 @Test func cloudMachineSaysWhetherItKeepsSnapshots() throws {
     let decode = { (json: String) in try JSONDecoder().decode(CloudMachine.self, from: Data(json.utf8)) }
-    #expect(try decode(#"{"provider":"instabox","providerName":"InstaBox","region":"US","state":"running","snapshots":false}"#).snapshots == false)
-    #expect(try decode(#"{"provider":"boat","providerName":"Boat","region":"EU","state":"running"}"#).snapshots)
+    let instabox = try decode(#"{"cloudComputerId":"cm_1","name":"Lab","provider":"instabox","providerName":"InstaBox","region":"US","state":"running","snapshots":false}"#)
+    #expect(instabox.snapshots == false && instabox.name == "Lab" && instabox.id == "cm_1" && instabox.isPreparing)
+    #expect(try decode(#"{"cloudComputerId":"cm_2","name":"Cloud computer","provider":"boat","providerName":"Boat","region":"EU","state":"running"}"#).snapshots)
 }

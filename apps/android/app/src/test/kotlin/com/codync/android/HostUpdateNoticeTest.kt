@@ -61,6 +61,11 @@ class HostUpdateNoticeTest {
             accessory = tryAgain), line("2.29.0", update = HostUpdate.Requested(now - HOST_UPDATE_WAIT_MS)))
     }
 
+    @Test fun aCodyncCloudComputerSaysTheCloudUpdatesIt() {
+        assertEquals(listOf("This app needs 2.26.0 or newer.", "Codync Cloud updates it before it next sleeps."),
+            hostVersionLine("2.20.0", "2.29.0", behind, false, null, "Cloud", "linux", now, cloud = true).detail)
+    }
+
     @Test fun theCodyncRowComparesWithTheLatestReleaseTheComputerFound() {
         val state = AppState(Computer("fixture", "Studio", "fixture")).copy(hello = buildJsonObject {
             put("name", "Mini"); put("version", "2.28.0"); put("latestVersion", "2.30.0"); put("canUpdate", true)

@@ -67,7 +67,7 @@ class ConnectionPresentationTest {
     }
 
     @Test fun aCloudComputerSleepsUpdatesItselfOrFails() {
-        fun cloudState(link: LinkState, machine: String) = state(link).copy(cloudHosting = CloudMachine("boat", "Boat", "EU", machine))
+        fun cloudState(link: LinkState, machine: String) = state(link).copy(cloudHosting = CloudPlacement("boat", "Boat", "EU", machine))
         val asleep = cloudState(LinkState.ComputerOffline(null), "stopped")
         assertEquals("Sleeping · wakes when you message", statusText(asleep))
         assertEquals("Sleeping", connectionLabel(asleep))

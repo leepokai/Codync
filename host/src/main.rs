@@ -14,6 +14,7 @@ mod hub;
 mod icons;
 mod import;
 mod import_cli;
+mod keeper;
 mod local_api;
 mod market;
 mod mcp;
@@ -202,6 +203,10 @@ enum Sub {
     /// Add Codync's own Node.js, for agents that run on it (an agent's setup step).
     #[command(hide = true)]
     Node,
+    /// Keep a Codync Cloud computer's secrets, so its agents can use them but never read them (its own system
+    /// service there).
+    #[command(hide = true)]
+    Keeper,
     /// Built-in MCP servers that bots are started with (stdio).
     #[command(hide = true)]
     Mcp {
@@ -469,6 +474,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Sub::Node => agent::node::add().await,
+        Sub::Keeper => keeper::run().await,
         Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
         Sub::Statusline { port, wrapped } => {
             statusline(port, wrapped.join(" ")).await;

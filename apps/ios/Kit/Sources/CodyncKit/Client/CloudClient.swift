@@ -205,7 +205,7 @@ public struct CloudClient: Sendable {
 
     // MARK: Codync Cloud
 
-    /// The account's cloud computer, whether this account may create one, and the provider key it gave.
+    /// The account's cloud computers, whether this account may create them and how many, and the provider keys it gave.
     public func cloudStatus() async throws -> CloudStatus {
         try await request("GET", "v1/cloud-computers")
     }
@@ -223,22 +223,29 @@ public struct CloudClient: Sendable {
         try await send("DELETE", "v1/cloud-credentials/\(provider)")
     }
 
-    /// Creates the account's cloud computer on `provider`, or returns the one it has (`403 forbidden` off the
-    /// allowlist, `409` without that provider's key).
-    public func createCloudMachine(provider: String) async throws -> CloudMachine {
+    /// Creates another cloud computer named `name` on `provider` (`403 forbidden` off the allowlist, `409` at the
+    /// account's limit or without that provider's key).
+    public func createCloudMachine(provider: String, name: String) async throws -> CloudMachine {
         struct Res: Decodable { var cloudComputer: CloudMachine }
-        let res: Res = try await request("POST", "v1/cloud-computers", body: ["provider": provider])
+        let res: Res = try await request("POST", "v1/cloud-computers", body: ["provider": provider, "name": name])
+        return res.cloudComputer
+    }
+
+    /// Gives it a new name; its computer in the account, and its host, take it too.
+    public func renameCloudMachine(_ id: String, name: String) async throws -> CloudMachine {
+        struct Res: Decodable { var cloudComputer: CloudMachine }
+        let res: Res = try await request("PATCH", "v1/cloud-computers/\(id)", body: ["name": name])
         return res.cloudComputer
     }
 
     /// Deletes the machine, its snapshots and backup, and takes its computer out of the account.
-    public func deleteCloudMachine() async throws {
-        try await send("DELETE", "v1/cloud-computers")
+    public func deleteCloudMachine(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)")
     }
 
     /// Erases its earlier saved states and backup, keeping the computer (`409 conflict` while it sleeps).
-    public func deleteCloudSnapshots() async throws {
-        try await send("DELETE", "v1/cloud-computers/snapshots")
+    public func deleteCloudSnapshots(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)/snapshots")
     }
 
     public func createClaim() async throws -> CloudClaim {

@@ -2,7 +2,7 @@
 
 import { checkHostFloor, urgentUpdate } from "../app-versions";
 import { b64url, computerIdFor, fromB64url, randomId, sha256 } from "../auth";
-import { machineFor } from "../cloud-machines";
+import { machineFor, nameComputer } from "../cloud-machines";
 import { finishClaim } from "./account";
 import {
   ApiError,
@@ -36,8 +36,10 @@ export async function hostRegister(c: Ctx) {
     .bind(id)
     .first<{ status: string; owner_user_id: string | null }>();
   if (existing && existing.status !== "active") throw new ApiError("forbidden");
-  // A cloud computer below an emergency floor still registers: its update order arrives in its state.
-  if (!(await machineFor(c.env, id))) checkHostFloor(c.env, version);
+  // A cloud computer below an emergency floor still registers: its update order arrives in its state. Its name is the
+  // one its user gave it, whatever its host says.
+  const machine = await machineFor(c.env, id);
+  if (!machine) checkHostFloor(c.env, version);
   if (!existing && c.env.REGISTER_LIMITER) {
     const ip = c.req.headers.get("CF-Connecting-IP") ?? "unknown";
     if (!(await c.env.REGISTER_LIMITER.limit({ key: ip })).success) throw new ApiError("rateLimited");
@@ -48,7 +50,7 @@ export async function hostRegister(c: Ctx) {
      ON CONFLICT(id) DO UPDATE SET name = excluded.name, device = excluded.device, version = excluded.version,
        box_pub = excluded.box_pub, updated_at = excluded.updated_at`,
   )
-    .bind(id, s.kid, boxKey, name, platform, device, version, c.now)
+    .bind(id, s.kid, boxKey, machine?.name ?? name, platform, device, version, c.now)
     .run();
   return { computerId: id, owned: !!existing?.owner_user_id };
 }
@@ -62,11 +64,20 @@ export async function hostClaim(c: Ctx) {
   if (b.signKey !== s.kid) throw new ApiError("badSignature");
   const claim = await c.env.DB.prepare("SELECT user_id FROM claims WHERE id = ?").bind(claimId).first<{ user_id: string }>();
   if (!claim) throw new ApiError("notFound");
+  // The machine's keeper, which alone gets its vault key (`keeperVaultKey`): named once, by the claim from its first
+  // boot, before any agent ran there.
+  const keeper = b.keeperKey === undefined ? null : key(b, "keeperKey", 32);
   const done = await finishClaim(c, claim.user_id, claimId, b);
-  await c.env.DB.prepare("UPDATE cloud_machines SET computer_id = ? WHERE claim_id = ? AND state != 'deleted'")
-    .bind(done.computer.computerId, claimId)
-    .run();
-  return done;
+  const id = done.computer.computerId;
+  const machine = await c.env.DB.prepare(
+    "UPDATE cloud_machines SET computer_id = ?1, keeper_key = COALESCE(keeper_key, ?3) WHERE claim_id = ?2 AND state != 'deleted' RETURNING name",
+  )
+    .bind(id, claimId, keeper)
+    .first<{ name: string }>();
+  if (!machine) return done;
+  // Its computer takes the name its user gave the machine.
+  await nameComputer(c.env, id, machine.name, c.now).run();
+  return { ...done, computer: { ...done.computer, name: machine.name } };
 }
 
 /** The host attests that this device passed its local screen authorization (including QR pairing).
@@ -187,15 +198,16 @@ export async function hostState(c: Ctx) {
       createdAt: r.created_at,
       expiresAt: r.expires_at,
     })),
-    // A cloud computer's update that can't wait (`remote::managed` on the host installs it at once).
-    ...(await updateFor(c, comp)),
+    // A cloud computer's name, and its update that can't wait (`remote::managed` on the host installs it at once).
+    ...(await cloudFor(c, comp)),
   };
 }
 
-async function updateFor(c: Ctx, comp: Awaited<ReturnType<typeof host>>) {
-  if (!(await machineFor(c.env, comp.id))) return {};
+async function cloudFor(c: Ctx, comp: Awaited<ReturnType<typeof host>>) {
+  const machine = await machineFor(c.env, comp.id);
+  if (!machine) return {};
   const update = await urgentUpdate(c.env, comp, c.now);
-  return update ? { update } : {};
+  return { name: machine.name, ...(update ? { update } : {}) };
 }
 
 async function hostRequest(c: Ctx, computerId: string, id: string): Promise<RequestRow> {

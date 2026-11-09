@@ -99,10 +99,15 @@ export const credentialFor = (env: Env, userId: string, provider: Provider) =>
 export const credentialsOf = async (env: Env, userId: string) =>
   (await env.DB.prepare("SELECT * FROM cloud_credentials WHERE user_id = ?").bind(userId).all<CredentialRow>()).results;
 
-/** The apps' view of a key: never the key itself. */
+/** Problems with the key itself: only another key fixes them. The rest (its plan, its environment, an action) a create
+ * may find fixed at the provider, which clears them. */
+const KEY_PROBLEMS: ReadonlySet<KeyProblem> = new Set(["keyRejected", "keyExpired", "admin", "format"]);
+
+/** The apps' view of a key: never the key itself. `blocking`: nothing can be created with it until it's replaced. */
 export const credentialView = (r: CredentialRow) => ({
   hint: r.hint,
   problem: r.problem ? problemText(r.problem) : null,
+  blocking: r.problem !== null && KEY_PROBLEMS.has(r.problem),
   updatedAt: r.updated_at,
 });
 

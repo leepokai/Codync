@@ -25,10 +25,12 @@ data class AccountContext(
     val approvedAccess: Map<String, String> = emptyMap(),
     /** Account computers an access request is being sent to. */
     val asking: Set<String> = emptySet(),
-    /** The account's Codync Cloud computer and whether it may have one (Computers → Codync Cloud); null until asked. */
+    /** The account's Codync Cloud computers and whether it may have them (Computers → Codync Cloud); null until asked. */
     val cloudOffer: CloudOffer? = null,
-    /** Computers → Codync Cloud → Cloud providers is open, showing the account's error itself. */
-    val cloudProvidersOpen: Boolean = false,
+    /** Codync Cloud sheets open (New cloud computer, a provider's key over it), each showing the account's error itself. */
+    val cloudSheets: Int = 0,
+    /** Computers → Codync Cloud's card is on screen, showing its cloud computers' errors itself. */
+    val cloudCardShown: Boolean = false,
     /** The Codync cloud asked this app version to update (`426 appUpdateRequired`), with its reason. */
     val appFloor: String? = null,
     val tasks: Boolean = true,
@@ -64,7 +66,7 @@ data class AccountContext(
     val currentComputerId: String? get() = computers.currentId(lastComputerId)
 
     /** Codync Cloud runs this account computer: its provider, region and whether it's asleep. */
-    internal fun cloudOf(computerId: String?): CloudMachine? = cloudComputers.firstOrNull { it.computerId == computerId }?.cloud
+    internal fun cloudOf(computerId: String?): CloudPlacement? = cloudComputers.firstOrNull { it.computerId == computerId }?.cloud
 }
 
 /** One computer as the UI renders it (iOS `BotStore`); its `AppStore` owns the only writer. */
@@ -114,7 +116,7 @@ data class AppState(
     /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
     val hostUpdate: HostUpdate? = null,
     /** Codync Cloud runs this computer (the account's list says, `AccountStore.refreshCloud`): asleep isn't offline. */
-    val cloudHosting: CloudMachine? = null,
+    val cloudHosting: CloudPlacement? = null,
     /** The Codync cloud's emergency floor for this app version (`426 appUpdateRequired`), as the account last heard it. */
     val appFloor: String? = null,
     val error: String? = null,

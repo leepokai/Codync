@@ -74,6 +74,10 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
 internal fun AppStore.deleteEntry(entry: com.codync.android.core.Entry) =
     command("deleteEntry", body("entryId" to entry.id), "delete:" + entry.id)
 
+/** What the bot waits on: open approvals, routine runs and unread threads. */
+internal suspend fun AppStore.botTasks(botId: String): kotlinx.serialization.json.JsonObject =
+    hostQuery("botTasks", body("botId" to botId)).jsonObject
+
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
 

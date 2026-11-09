@@ -232,6 +232,27 @@ impl Store {
         Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Permission cards still waiting for this bot's user, newest first: its open approvals.
+    pub fn pending_approvals(&self, bot_id: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'permission'
+               AND json_extract(data, '$.status') = 'pending'
+             ORDER BY rev DESC LIMIT 50"
+        ))?;
+        Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The side conversations this bot has written in, most recently used first: documents, routine threads
+    /// and Slack threads, as their `thread_id`.
+    pub fn thread_roots(&self, bot_id: &str) -> Result<Vec<String>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(
+            "SELECT thread_id FROM entries WHERE bot_id = ?1 AND thread_id IS NOT NULL AND thread_id <> ''
+             GROUP BY thread_id ORDER BY MAX(rev) DESC LIMIT 50",
+        )?;
+        Ok(st.query_map([bot_id], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    }
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
     // ponytail: scans notices without an index; sign-ins are rare, add one if it shows up in profiles.
     pub fn pending_sign_ins(&self, backend: &str) -> Result<Vec<Entry>> {

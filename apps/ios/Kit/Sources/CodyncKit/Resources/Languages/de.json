@@ -1788,5 +1788,21 @@
   "Open channels in Extensions": "Kanäle in Erweiterungen öffnen",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack und Discord: sprich mit einem Bot dort, wo du ohnehin schreibst, nur mit den Personen, die du zulässt.",
   "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Sprich mit einem Bot über WhatsApp, Telegram, Slack oder Discord. Nur Personen, die du koppelst oder zulässt, können schreiben; Token bleiben im Tresor dieses Computers.",
-  "Duplicate": "Duplizieren"
+  "Duplicate": "Duplizieren",
+  "Tasks": "Aufgaben",
+  "Approvals": "Genehmigungen",
+  "Routine runs": "Routinenläufe",
+  "Unread threads": "Ungelesene Threads",
+  "Threads": "Threads",
+  "Nothing waiting for you.": "Nichts wartet auf dich.",
+  "No routine runs yet.": "Noch keine Routinenläufe.",
+  "Every thread is read.": "Alle Threads sind gelesen.",
+  "In a thread": "In einem Thread",
+  "In the chat": "Im Chat",
+  "active": "aktiv",
+  "Waiting its turn": "Wartet auf seinen Zug",
+  "Resuming after a restart": "Wird nach einem Neustart fortgesetzt",
+  "Document": "Dokument",
+  "Slack thread": "Slack-Thread",
+  "Routine thread": "Routinen-Thread"
 }

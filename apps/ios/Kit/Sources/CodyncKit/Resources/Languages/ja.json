@@ -1788,5 +1788,21 @@
   "Open channels in Extensions": "拡張機能でチャンネルを開く",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp、Telegram、Slack、Discord：いつも使う場所からボットと話せます。許可した人だけが書き込めます。",
   "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "WhatsApp、Telegram、Slack、Discord からボットと話せます。ペア設定または許可した人だけが書き込め、トークンはこのコンピューターの保管庫に残ります。",
-  "Duplicate": "複製"
+  "Duplicate": "複製",
+  "Tasks": "タスク",
+  "Approvals": "承認",
+  "Routine runs": "ルーチン実行",
+  "Unread threads": "未読スレッド",
+  "Threads": "スレッド",
+  "Nothing waiting for you.": "待っているものはありません。",
+  "No routine runs yet.": "ルーチン実行はまだありません。",
+  "Every thread is read.": "すべてのスレッドは既読です。",
+  "In a thread": "スレッド内",
+  "In the chat": "チャット内",
+  "active": "実行中",
+  "Waiting its turn": "順番待ち",
+  "Resuming after a restart": "再起動後に再開",
+  "Document": "ドキュメント",
+  "Slack thread": "Slack スレッド",
+  "Routine thread": "ルーチンのスレッド"
 }

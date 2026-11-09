@@ -1788,5 +1788,21 @@
   "Open channels in Extensions": "在扩展中打开渠道",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp、Telegram、Slack 和 Discord：在你日常书写的地方与机器人对话，仅限你允许的人。",
   "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "通过 WhatsApp、Telegram、Slack 或 Discord 与机器人对话。只有你配对或允许的人才能写入；令牌留在此电脑的保管库。",
-  "Duplicate": "复制"
+  "Duplicate": "复制",
+  "Tasks": "任务",
+  "Approvals": "审批",
+  "Routine runs": "例程运行",
+  "Unread threads": "未读会话",
+  "Threads": "会话",
+  "Nothing waiting for you.": "没有等待你的事。",
+  "No routine runs yet.": "还没有例程运行。",
+  "Every thread is read.": "所有会话都已读。",
+  "In a thread": "在会话中",
+  "In the chat": "在聊天中",
+  "active": "进行中",
+  "Waiting its turn": "等待轮次",
+  "Resuming after a restart": "重启后继续",
+  "Document": "文档",
+  "Slack thread": "Slack 会话",
+  "Routine thread": "例程会话"
 }

@@ -1788,5 +1788,21 @@
   "Open channels in Extensions": "확장에서 채널 열기",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack, Discord: 이미 쓰는 곳에서 허용한 사람과만 봇과 대화하세요.",
   "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "WhatsApp, Telegram, Slack, Discord에서 봇과 대화하세요. 페어링하거나 허용한 사람만 글을 쓸 수 있으며 토큰은 이 컴퓨터의 보관소에 남습니다.",
-  "Duplicate": "복제"
+  "Duplicate": "복제",
+  "Tasks": "작업",
+  "Approvals": "승인",
+  "Routine runs": "루틴 실행",
+  "Unread threads": "읽지 않은 스레드",
+  "Threads": "스레드",
+  "Nothing waiting for you.": "기다리는 항목이 없습니다.",
+  "No routine runs yet.": "아직 루틴 실행이 없습니다.",
+  "Every thread is read.": "모든 스레드를 읽었습니다.",
+  "In a thread": "스레드에서",
+  "In the chat": "채팅에서",
+  "active": "활성",
+  "Waiting its turn": "순서를 기다리는 중",
+  "Resuming after a restart": "재시작 후 재개",
+  "Document": "문서",
+  "Slack thread": "Slack 스레드",
+  "Routine thread": "루틴 스레드"
 }

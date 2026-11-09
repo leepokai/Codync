@@ -219,6 +219,49 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let id = str_arg(&b, "botId")?.to_owned();
             json!({"bot": tokio::task::spawn_blocking(move || hub.duplicate_bot(&id)).await??})
         }
+        // What this bot waits on: open approvals, routine runs and threads with unread replies.
+        "botTasks" => {
+            let bot = str_arg(&b, "botId")?;
+            let approvals: Vec<Value> = hub
+                .store
+                .pending_approvals(bot)?
+                .into_iter()
+                .map(|entry| {
+                    json!({
+                        "id": entry.id,
+                        "title": entry.data["title"].as_str().unwrap_or("Approval"),
+                        "detail": entry.data["detail"].as_str().unwrap_or_default(),
+                        "since": entry.created_at,
+                    })
+                })
+                .collect();
+            let runs: Vec<Value> = hub
+                .routines
+                .runs_for(bot)
+                .into_iter()
+                .map(|run| {
+                    json!({
+                        "id": run.id,
+                        "routineId": run.routine_id,
+                        "status": run.status,
+                        "startedAt": run.started_at,
+                        "finishedAt": run.finished_at,
+                        "detail": run.detail,
+                        "threadRoot": run.thread_root,
+                    })
+                })
+                .collect();
+            let threads: Vec<Value> = hub
+                .store
+                .thread_roots(bot)?
+                .into_iter()
+                .filter_map(|id| {
+                    let unread = hub.store.thread_unread(&id);
+                    (unread > 0).then(|| json!({"id": id, "unread": unread}))
+                })
+                .collect();
+            json!({"approvals": approvals, "runs": runs, "threads": threads})
+        }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
             json!({})

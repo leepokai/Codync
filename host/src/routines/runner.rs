@@ -48,6 +48,14 @@ impl Routines {
         }
     }
 
+    /// This bot's recent runs, newest first, for its tasks page.
+    pub fn runs_for(&self, bot: &str) -> Vec<Run> {
+        let state = self.state.locked();
+        let mut runs: Vec<Run> = state.runs.iter().filter(|run| run.bot_id == bot).cloned().collect();
+        runs.sort_by_key(|run| std::cmp::Reverse(run.created_at));
+        runs.truncate(20);
+        runs
+    }
     pub fn recovery(&self, bot: &str) -> Option<Run> {
         self.state.locked().runs.iter().find(|r| r.bot_id == bot && r.status == Status::Recovering).cloned()
     }

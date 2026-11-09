@@ -1788,5 +1788,21 @@
   "Open channels in Extensions": "在擴充功能中開啟頻道",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp、Telegram、Slack 和 Discord：在你日常書寫的地方與機器人對話，僅限你允許的人。",
   "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "透過 WhatsApp、Telegram、Slack 或 Discord 與機器人對話。只有你配對或允許的人才能寫入；權杖留在此電腦的保管庫。",
-  "Duplicate": "複製"
+  "Duplicate": "複製",
+  "Tasks": "任務",
+  "Approvals": "核准",
+  "Routine runs": "例程執行",
+  "Unread threads": "未讀會話",
+  "Threads": "會話",
+  "Nothing waiting for you.": "沒有等待你的事。",
+  "No routine runs yet.": "還沒有例程執行。",
+  "Every thread is read.": "所有會話都已讀。",
+  "In a thread": "在會話中",
+  "In the chat": "在聊天中",
+  "active": "進行中",
+  "Waiting its turn": "等待輪次",
+  "Resuming after a restart": "重新啟動後繼續",
+  "Document": "文件",
+  "Slack thread": "Slack 會話",
+  "Routine thread": "例程會話"
 }

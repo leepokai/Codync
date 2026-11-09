@@ -1788,5 +1788,21 @@
   "Open channels in Extensions": "Открыть каналы в Расширениях",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack и Discord: общайтесь с ботом там, где уже пишете, только с разрешёнными людьми.",
   "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Общайтесь с ботом через WhatsApp, Telegram, Slack или Discord. Писать могут только подключённые или разрешённые люди; токены остаются в хранилище этого компьютера.",
-  "Duplicate": "Дублировать"
+  "Duplicate": "Дублировать",
+  "Tasks": "Задачи",
+  "Approvals": "Согласования",
+  "Routine runs": "Запуски рутин",
+  "Unread threads": "Непрочитанные ветки",
+  "Threads": "Ветки",
+  "Nothing waiting for you.": "Вас ничего не ждёт.",
+  "No routine runs yet.": "Запусков рутин пока нет.",
+  "Every thread is read.": "Все ветки прочитаны.",
+  "In a thread": "В ветке",
+  "In the chat": "В чате",
+  "active": "активно",
+  "Waiting its turn": "Ждёт своей очереди",
+  "Resuming after a restart": "Продолжение после перезапуска",
+  "Document": "Документ",
+  "Slack thread": "Ветка Slack",
+  "Routine thread": "Ветка рутины"
 }

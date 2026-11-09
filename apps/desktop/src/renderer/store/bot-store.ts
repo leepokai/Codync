@@ -462,6 +462,15 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('deleteBot', { botId: bot.id }), true)
   }
 
+  /** What the bot waits on: open approvals, routine runs and unread threads (derived by the host). */
+  async botTasks(botId: string): Promise<{
+    approvals: { id: string; title: string; detail: string; since: number }[]
+    runs: { id: string; routineId: string; status: string; startedAt: number | null; finishedAt: number | null; detail: string | null; threadRoot: string | null }[]
+    threads: { id: string; unread: number }[]
+  }> {
+    return (await this.ready()).call('botTasks', { botId })
+  }
+
   /** Copies the bot's setup into a new one; the host names it and adds it to the roster. */
   async duplicateBot(bot: Bot): Promise<Bot> {
     const res = await (await this.ready()).call<{ bot: Bot }>('duplicateBot', { botId: bot.id })

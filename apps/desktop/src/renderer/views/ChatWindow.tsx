@@ -27,6 +27,7 @@ import { queueVoiceKey } from './thread/voice-shortcut-keys'
 import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
+import { BotTasksSheet } from './bots/BotTasksSheet'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
@@ -240,6 +241,7 @@ function ChatSplitView() {
   const [naming, setNaming] = useState<SectionNaming | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
+  const [tasksBot, setTasksBot] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
   const [marketplaceLink, setMarketplaceLink] = useState<{ section: ExtensionSection; id?: string } | null>(null)
   const [canvasBot, setCanvasBot] = useState<string | null>(null)
@@ -345,6 +347,7 @@ function ChatSplitView() {
   const botActions = (bot: Bot, store: BotStore): ActionItem[] => [
     { title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) },
     ...moveToSectionItems(bot, store, setNaming),
+    { title: 'Tasks', icon: 'checklist', action: () => setTasksBot({ bot, store }) },
     ...(bot.kind === 'group' ? [] : [{ title: 'Duplicate', icon: 'square.on.square', action: () => void store.duplicateBot(bot) }]),
     { title: 'Mark as Read', icon: 'bell.badge', action: () => store.markAllRead(bot.id) },
     { title: 'Edit ProfileÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦', icon: 'square.and.pencil', action: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }) },
@@ -540,6 +543,9 @@ function ChatSplitView() {
             <BotEditorView key={editing.id} draft={editing.draft} />
           </StoreContext.Provider>
         ) : null}
+      </Sheet>
+      <Sheet open={tasksBot !== null} onClose={() => setTasksBot(null)} width={Math.min(620, windowSize.width - 80)} height={Math.min(680, sheetHeight)}>
+        {tasksBot ? <BotTasksSheet bot={tasksBot.bot} store={tasksBot.store} onClose={() => setTasksBot(null)} /> : null}
       </Sheet>
       <Sheet open={creating !== null} onClose={() => setCreating(null)} maxHeight={sheetHeight}>
         {creating && createStore ? (

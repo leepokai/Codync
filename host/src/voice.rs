@@ -6,6 +6,7 @@
 //! audio never crosses the channel or the relay.
 
 pub(crate) mod decisions;
+mod elevenlabs;
 mod endpoint;
 pub(crate) mod receipts;
 mod transcript;
@@ -167,19 +168,23 @@ fn checked(s: &str) -> Result<&str> {
     if ok { Ok(s) } else { bail!("`{s}` isn't a model or voice name") }
 }
 
+/// The provider's own message from an error body ("Incorrect API key provided…"), whatever shape
+/// it uses: `error.message` for `OpenAI` and Gemini, `detail` for `ElevenLabs`.
+pub(super) fn provider_error(p: Provider, status: reqwest::StatusCode, v: &Value) -> anyhow::Error {
+    let message = v["error"]["message"]
+        .as_str()
+        .or_else(|| v["detail"]["message"].as_str())
+        .or_else(|| v["detail"].as_str())
+        .map_or_else(|| format!("{} answered {status}.", p.name()), str::to_owned);
+    anyhow!(message)
+}
+
 async fn send(p: Provider, req: reqwest::RequestBuilder) -> Result<Value> {
     let res = req.timeout(TIMEOUT).send().await.map_err(|_| anyhow!("Can't reach {}.", p.name()))?;
     let status = res.status();
     let v: Value = serde_json::from_str(&res.text().await.unwrap_or_default()).unwrap_or(Value::Null);
     if !status.is_success() {
-        // The provider's own message ("Incorrect API key provided…") says what to fix.
-        // ElevenLabs nests it under `detail`.
-        let message = v["error"]["message"]
-            .as_str()
-            .or_else(|| v["detail"]["message"].as_str())
-            .or_else(|| v["detail"].as_str())
-            .map_or_else(|| format!("{} answered {status}.", p.name()), str::to_owned);
-        bail!(message);
+        return Err(provider_error(p, status, &v));
     }
     Ok(v)
 }
@@ -239,65 +244,17 @@ pub fn status(store: &Store) -> Result<Value> {
     Ok(json!({"providers": providers}))
 }
 
-const ELEVENLABS: &str = "https://api.elevenlabs.io";
-
-/// The account's voices: premade, cloned and saved. A key that lists none is still valid.
-async fn elevenlabs_voices(key: &str) -> Result<Value> {
-    let v = send(
-        Provider::ElevenLabs,
-        crate::http().get(format!("{ELEVENLABS}/v2/voices?page_size=100")).header("xi-api-key", key),
-    )
-    .await?;
-    let voices: Vec<Value> = v["voices"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|voice| {
-            let id = voice["voice_id"].as_str()?;
-            Some(json!({"id": id, "name": voice["name"].as_str().unwrap_or(id)}))
-        })
-        .collect();
-    Ok(json!({"voices": voices}))
-}
-
-/// One stretch of a reply as MP3, by voice id: 64 kbps keeps each clip inside one channel message.
-async fn elevenlabs_speech(key: &str, model: &str, voice: &str, text: &str) -> Result<Vec<u8>> {
-    let res = crate::http()
-        .post(format!("{ELEVENLABS}/v1/text-to-speech/{voice}?output_format=mp3_44100_64"))
-        .header("xi-api-key", key)
-        .json(&json!({"model_id": model, "text": text}))
-        .timeout(TIMEOUT * 4)
-        .send()
-        .await
-        .map_err(|_| anyhow!("Can't reach ElevenLabs."))?;
-    let status = res.status();
-    let bytes = res.bytes().await.map_err(|_| anyhow!("ElevenLabs sent no audio."))?;
-    if !status.is_success() {
-        let v: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        let message = v["detail"]["message"]
-            .as_str()
-            .or_else(|| v["detail"].as_str())
-            .or_else(|| v["error"]["message"].as_str())
-            .map_or_else(|| format!("ElevenLabs answered {status}."), str::to_owned);
-        bail!(message);
-    }
-    Ok(bytes.to_vec())
-}
-
-/// Checks both permissions before the key is kept: it lists the voices, and reads one character
-/// with the first of them, which costs one character of the account's quota.
-async fn check_elevenlabs(key: &str) -> Result<()> {
-    let voices = elevenlabs_voices(key).await?;
-    if let Some(voice) = voices["voices"][0]["id"].as_str() {
-        elevenlabs_speech(key, "eleven_flash_v2_5", voice, ".").await?;
-    }
-    Ok(())
-}
-
 /// The voices the key can read with, for the picker. Other providers have a fixed list.
 pub async fn voices(store: &Store, p: Provider) -> Result<Value> {
     match p {
-        Provider::ElevenLabs => elevenlabs_voices(&key(store, p)?).await,
+        Provider::ElevenLabs => {
+            let voices: Vec<Value> = elevenlabs::voices(&key(store, p)?)
+                .await?
+                .into_iter()
+                .map(|(id, name)| json!({"id": id, "name": name}))
+                .collect();
+            Ok(json!({"voices": voices}))
+        }
         _ => bail!("{} has a fixed voice list.", p.name()),
     }
 }
@@ -308,7 +265,7 @@ pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
     let key = key.trim();
     if !key.is_empty() {
         if p == Provider::ElevenLabs {
-            check_elevenlabs(key).await?;
+            elevenlabs::check(key).await?;
         } else {
             let voice = match p {
                 Provider::OpenAi => "marin",
@@ -390,23 +347,7 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
                 })
                 .collect()
         }
-        Provider::ElevenLabs => {
-            // `/v1/models` is a plain array; every voice model says whether it reads text.
-            let req = crate::http().get(format!("{ELEVENLABS}/v1/models")).header("xi-api-key", &key);
-            let v = send(p, req).await?;
-            v.as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|m| {
-                    Some(Model {
-                        id: m["model_id"].as_str()?.to_owned(),
-                        live: false,
-                        generate: m["can_do_text_to_speech"].as_bool().unwrap_or(false),
-                        created: None,
-                    })
-                })
-                .collect()
-        }
+        Provider::ElevenLabs => elevenlabs::models(&key).await?,
     };
     let (realtime, transcribe, speech) = classify(p, &entries);
     let fallback = p.fallback();
@@ -414,12 +355,8 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
         // Flash 2.5 is the low-latency model a call needs; Scribe v1 is on every plan.
         Defaults {
             realtime: String::new(),
-            transcribe: "scribe_v1".into(),
-            speech: if speech.iter().any(|id| id == "eleven_flash_v2_5") {
-                "eleven_flash_v2_5".into()
-            } else {
-                newest(p, &entries, &speech).unwrap_or(fallback.speech)
-            },
+            transcribe: fallback.transcribe,
+            speech: newest(p, &entries, &speech).unwrap_or(fallback.speech),
         }
     } else {
         Defaults {
@@ -472,9 +409,9 @@ fn newest(p: Provider, models: &[Model], ids: &[String]) -> Option<String> {
             .cloned(),
         Provider::ElevenLabs => ["eleven_flash_v2_5", "eleven_turbo_v2_5", "eleven_flash_v2", "eleven_turbo_v2"]
             .iter()
-            .find(|want| ids.iter().any(|id| id == *want))
+            .find(|want| pool.iter().any(|id| id == *want))
             .map(|want| (*want).to_owned())
-            .or_else(|| ids.first().cloned()),
+            .or_else(|| pool.first().map(|id| (*id).clone())),
     }
 }
 
@@ -595,24 +532,12 @@ pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) ->
                 .filter_map(|part| part["text"].as_str())
                 .collect::<String>()
         }
-        Provider::ElevenLabs => {
-            let file = reqwest::multipart::Part::bytes(wav).file_name("speech.wav").mime_str("audio/wav")?;
-            let form = reqwest::multipart::Form::new()
-                .text("model_id", model.to_owned())
-                // The reply is read aloud: "(laughter)" has no place in the transcript.
-                .text("tag_audio_events", "false")
-                .part("file", file);
-            let req = crate::http()
-                .post(format!("{ELEVENLABS}/v1/speech-to-text"))
-                .header("xi-api-key", &key)
-                .multipart(form);
-            send(p, req).await?["text"].as_str().unwrap_or_default().to_owned()
-        }
+        Provider::ElevenLabs => elevenlabs::transcribe(&key, model, wav).await?,
     };
     Ok(json!({"text": text.trim()}))
 }
 
-/// Text to speech for one stretch of a reply: `{audio: base64, format: "aac" | "wav"}`.
+/// Text to speech for one stretch of a reply: `{audio: base64, format: "aac" | "wav" | "mp3"}`.
 pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &str) -> Result<Value> {
     let key = key(store, p)?;
     let (model, voice) = (checked(model)?, checked(voice)?);
@@ -637,11 +562,7 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
             let bytes = res.bytes().await.map_err(|_| anyhow!("{} sent no audio.", p.name()))?;
             if !status.is_success() {
                 let v: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-                bail!(
-                    v["error"]["message"]
-                        .as_str()
-                        .map_or_else(|| format!("{} answered {status}.", p.name()), str::to_owned)
-                );
+                return Err(provider_error(p, status, &v));
             }
             Ok(json!({"audio": STANDARD.encode(&bytes), "format": format}))
         }
@@ -664,7 +585,7 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
             Ok(json!({"audio": STANDARD.encode(wav(&pcm, 24_000)), "format": "wav"}))
         }
         Provider::ElevenLabs => {
-            let bytes = elevenlabs_speech(&key, model, voice, text).await?;
+            let bytes = elevenlabs::speech(&key, model, voice, text).await?;
             Ok(json!({"audio": STANDARD.encode(bytes), "format": "mp3"}))
         }
     }

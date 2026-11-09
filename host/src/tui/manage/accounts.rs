@@ -30,6 +30,7 @@ impl App {
         let current = choices.iter().position(|id| *id == form.account).unwrap_or(0);
         form.account.clone_from(&choices[super::super::app::cycle(current, direction, choices.len())]);
         form.model.clear();
+        form.model_options = Default::default();
         self.want_models_for(&form.backend, form.account.as_deref());
     }
 
@@ -45,6 +46,7 @@ impl App {
             if let Some(id) = value["account"]["id"].as_str() {
                 form.account = Some(id.to_owned());
                 form.model.clear();
+                form.model_options = Default::default();
             }
         } else {
             form.accounts = Some(

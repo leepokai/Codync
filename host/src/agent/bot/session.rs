@@ -200,6 +200,14 @@ impl Actor {
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 match self.start_candidate(candidate, &env, budget, &progress).await {
+                    Ok(conn) if conn.superseded && fallback_left => {
+                        tracing::info!(
+                            backend = self.cfg.backend.as_str(),
+                            "OpenCode 1.x: starting the registry build"
+                        );
+                        conn.acp.kill().await;
+                        last_err = Some(anyhow!("the installed OpenCode is older than 2"));
+                    }
                     Ok(conn) => {
                         conn.acp.hold(std::mem::take(&mut grants));
                         self.conn = Some(conn);

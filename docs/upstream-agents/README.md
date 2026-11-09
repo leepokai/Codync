@@ -24,6 +24,7 @@ qwen-code 0.26.5.
 | Hermes | [hermes.md](hermes.md) |
 | Kilo | [kilo.md](kilo.md) |
 | oh-my-pi | [oh-my-pi.md](oh-my-pi.md) |
+| OpenCode | [opencode.md](opencode.md) |
 | Qwen Code | [qwen-code.md](qwen-code.md) |
 | Gaps in ACP itself, covered for every agent | [acp-protocol.md](acp-protocol.md) |
 

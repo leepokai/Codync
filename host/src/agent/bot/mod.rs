@@ -186,6 +186,9 @@ pub(crate) struct Conn {
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
     pub(crate) adapter: Adapter,
+    /// An OpenCode older than 2, which never ends a turn its model refused (docs/reference/acp-adapter-workarounds.md):
+    /// the registry build runs instead when there is one.
+    pub(crate) superseded: bool,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     started: Instant,

@@ -170,6 +170,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         rx,
         sessions,
         adapter: adapter(&init),
+        superseded: superseded(&init),
         loaded: HashMap::new(),
         started: Instant::now(),
         opening: false,
@@ -192,9 +193,29 @@ fn adapter(init: &Value) -> Adapter {
     }
 }
 
+/// OpenCode 1.x retries a model call its provider refused forever (a used-up free quota, a bad key), so the turn
+/// never ends and the chat stays on "Thinking…"; 2.x returns the error at once.
+fn superseded(init: &Value) -> bool {
+    init["agentInfo"]["name"] == "OpenCode"
+        && init["agentInfo"]["version"]
+            .as_str()
+            .and_then(|v| semver::Version::parse(v).ok())
+            .is_some_and(|v| v.major < 2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_opencode_before_2_is_superseded() {
+        let init = |name: &str, version: &str| json!({"agentInfo": {"name": name, "version": version}});
+        assert!(superseded(&init("OpenCode", "1.19.5")));
+        assert!(!superseded(&init("OpenCode", "2.2.6")));
+        assert!(!superseded(&init("OpenCode", "dev")));
+        assert!(!superseded(&init("Kilo", "1.0.0")));
+        assert!(!superseded(&json!({})));
+    }
 
     #[test]
     fn variant_ids_become_options_only_when_the_agent_lists_plain_models() {

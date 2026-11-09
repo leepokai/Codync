@@ -33,6 +33,10 @@ pub enum After {
     /// A permission card's answer arrived (or couldn't).
     Answered(String),
     Sent(String),
+    /// A message sent into a thread, by its nonce.
+    ThreadSent(String),
+    /// `createThread` for bot `.0` (branched from entry `.1` when there is one): the new root, opened.
+    ThreadOpened(String, Option<String>),
     /// `editQueued` for bot `.0`, entry `.1`, of text `.2`: a waiting message the box rewrote.
     QueuedEdited(String, String, String),
     Connection(String, super::super::connections::Step),
@@ -144,6 +148,15 @@ impl Entry {
             "notice" => Kind::Notice,
             _ => Kind::Other,
         };
+        // The side conversation a line belongs to, and how many of a root's replies are unread, sit on
+        // the entry itself; keep them with its data so every reader finds them the same way.
+        let mut data = v["data"].clone();
+        if let Some(thread) = v["threadId"].as_str() {
+            data["threadId"] = thread.into();
+        }
+        if let Some(unread) = v["threadUnread"].as_i64() {
+            data["threadUnread"] = unread.into();
+        }
         Some((
             v["botId"].as_str()?.to_owned(),
             Self {
@@ -151,10 +164,20 @@ impl Entry {
                 seq: v["seq"].as_i64()?,
                 turn: v["turn"].as_i64().unwrap_or(0),
                 kind,
-                data: v["data"].clone(),
+                data,
                 created_at: v["createdAt"].as_i64().unwrap_or(0),
             },
         ))
+    }
+
+    /// The thread this line belongs to (its root's id); `None` in the chat itself.
+    pub fn thread(&self) -> Option<&str> {
+        self.data["threadId"].as_str()
+    }
+
+    /// How many of this line's thread's replies are unread (only a root line carries it).
+    pub fn thread_unread(&self) -> i64 {
+        self.data["threadUnread"].as_i64().unwrap_or(0)
     }
 
     pub fn text(&self) -> &str {

@@ -1769,5 +1769,21 @@
   "Forwarded from": "Переслано от",
   "No chats yet.": "Чатов пока нет.",
   "Slack is set up with the host's setSlackChannel call; see the Slack checklist.": "Slack настраивается вызовом setSlackChannel на хосте; см. чек-лист Slack.",
-  "Slack is not connected.": "Slack не подключён."
+  "Slack is not connected.": "Slack не подключён.",
+  "Threads": "Ветки",
+  "New thread": "Новая ветка",
+  "Archived": "В архиве",
+  "Rename": "Переименовать",
+  "Archive": "В архив",
+  "Restore": "Восстановить",
+  "Branched from": "Ответвлено от",
+  "A short name": "Короткое имя",
+  "Delete thread?": "Удалить ветку?",
+  "Delete thread": "Удалить ветку",
+  "Its replies go with it; the chat stays.": "Ответы уйдут вместе с ней; чат останется.",
+  "Nothing archived.": "В архиве пусто.",
+  "No threads yet. Open one from the menu, or branch from a message.": "Веток пока нет. Откройте через меню или ответвьте от сообщения.",
+  "Thread actions": "Действия с веткой",
+  "Rename thread": "Переименовать ветку",
+  "A thread keeps one side conversation apart from the chat.": "Ветка держит разговор в стороне от чата."
 }

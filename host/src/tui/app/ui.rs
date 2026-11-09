@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::super::manage::{
     AgentSetup, AnalyticsSheet, BotChatSheet, DocumentSheet, Fields, FlowSheet, Library, Market, MemorySheet,
-    NetworkSheet, RoutineForm, RoutineList, SkillSheet,
+    NetworkSheet, RoutineForm, RoutineList, SkillSheet, ThreadSheet, ThreadsSheet,
 };
 use super::{Editor, Mark};
 
@@ -124,6 +124,8 @@ pub enum ConfirmAct {
     RotateRoutineKey(String, String),
     RemoveConnector(String),
     RemoveSkill(String),
+    /// A thread, by bot and root entry.
+    DeleteThread(String, String),
 }
 
 pub struct Confirm {
@@ -399,6 +401,10 @@ pub enum Overlay {
     Documents(Box<DocumentSheet>),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
+    /// A thread opened from the chat, with its composer.
+    Thread(Box<ThreadSheet>),
+    /// The selected chat's threads.
+    Threads(Box<ThreadsSheet>),
     Routines(RoutineList),
     Flow(Box<FlowSheet>),
     Routine(Box<RoutineForm>),
@@ -435,6 +441,8 @@ pub enum Click {
     Steps,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
+    /// A line's thread chip (root entry id): opens that thread.
+    Thread(String),
 }
 
 #[derive(Default)]

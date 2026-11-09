@@ -19,6 +19,7 @@ import {
   type ScreenState,
   type SentinelReport,
   type SharedFile,
+  type ThreadInfo,
   type Usage,
   type WeekSummary,
 } from '@shared/models'
@@ -554,11 +555,60 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('updateBot', draft), true)
   }
 
+  /** A chat's threads, by bot: the live drawer and the archive (never the lines). */
+  threads = new Map<string, ThreadInfo[]>()
+  archivedThreads = new Map<string, ThreadInfo[]>()
+
+  /** One thread's lines, with its row for the title and branch line. */
   async loadThread(botId: string, root: string) {
-    const client = await this.ready()
-    const entries = await client.thread(botId, root)
-    if (this.retired) return
+    const { entries, thread } = await (await this.ready()).thread(botId, root)
+    if (this.retired) return null
     for (const entry of entries) this.upsert(entry)
+    this.changed()
+    return thread
+  }
+
+  async refreshThreads(botId: string, archived = false) {
+    const list = await (await this.ready()).threads(botId, archived)
+    if (this.retired) return
+    ;(archived ? this.archivedThreads : this.threads).set(botId, list)
+    this.changed()
+  }
+
+  /** Opens a thread, optionally branched from one of the chat's messages, and answers its root. */
+  async startThread(botId: string, fromEntryId: string | null = null, title = '') {
+    const id = await (await this.ready()).createThread(botId, title, fromEntryId)
+    await this.refreshThreads(botId)
+    return id
+  }
+
+  async renameThread(botId: string, threadId: string, title: string) {
+    const named = title.trim()
+    await (await this.ready()).renameThread(threadId, named)
+    const rename = (list: ThreadInfo[]) => list.map((t) => (t.id === threadId ? { ...t, title: named } : t))
+    for (const map of [this.threads, this.archivedThreads]) {
+      const list = map.get(botId)
+      if (list) map.set(botId, rename(list))
+    }
+    this.changed()
+    await this.refreshThreads(botId)
+    await this.refreshThreads(botId, true)
+  }
+
+  async setThreadArchived(botId: string, threadId: string, archived = true) {
+    await (await this.ready()).archiveThread(threadId, archived)
+    this.threads.set(botId, (this.threads.get(botId) ?? []).filter((t) => t.id !== threadId))
+    this.archivedThreads.set(botId, (this.archivedThreads.get(botId) ?? []).filter((t) => t.id !== threadId))
+    this.changed()
+    await this.refreshThreads(botId)
+    await this.refreshThreads(botId, true)
+  }
+
+  /** Removes a thread with its lines; the chat keeps everything else. */
+  async deleteThread(botId: string, threadId: string) {
+    await (await this.ready()).deleteThread(threadId)
+    this.threads.set(botId, (this.threads.get(botId) ?? []).filter((t) => t.id !== threadId))
+    this.archivedThreads.set(botId, (this.archivedThreads.get(botId) ?? []).filter((t) => t.id !== threadId))
     this.changed()
   }
 

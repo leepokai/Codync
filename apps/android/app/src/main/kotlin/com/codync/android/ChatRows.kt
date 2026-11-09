@@ -164,21 +164,23 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
     val forward: (() -> Unit)? = if (entry.text.isNotBlank() || entry.files.isNotEmpty() || entry.data["attachments"]?.jsonArray?.isNotEmpty() == true) {
         { forwardEntry = entry }
     } else null
+    // In the chat itself a reply can start a thread branched from it.
+    val branch: (() -> Unit)? = if (thread == null && entry.isReplyable) ({ store.startThread(entry.botId, fromEntryId = entry.id) }) else null
     when (entry.kind) {
         "user" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            UserBubble(entry, state, store, reply, forward, thread, speeds)
+            UserBubble(entry, state, store, reply, forward, thread, speeds, branch)
             ReactionsRow(entry, store)
-            ThreadChip(entry, state, reply)
+            ThreadChip(entry, state) { store.openBot(entry.botId, entry.id) }
             RoutineThreadChip(entry, store)
         }
         "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) topGroupGap else topSameGap).animateContentSize(Motion.layoutSize),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
-            AgentBubble(entry, state, store, openTrace, reply, forward, thread, openArtifact, speeds)
+            AgentBubble(entry, state, store, openTrace, reply, forward, thread, openArtifact, speeds, branch)
             Column(Modifier.padding(start = if (group) 34.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 ReactionsRow(entry, store)
-                ThreadChip(entry, state, reply)
+                ThreadChip(entry, state) { store.openBot(entry.botId, entry.id) }
             }
         }
         "permission" -> Column(Modifier.padding(top = topGroupGap), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -224,7 +226,7 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 }
 
 /** The menu a message opens on long press: copy, quote, reply in its thread, what the agent did. */
-private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?, store: AppStore? = null, quote: (() -> Unit)?, forward: (() -> Unit)? = null, speeds: (() -> Unit)? = null) = buildList {
+private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?, store: AppStore? = null, quote: (() -> Unit)?, forward: (() -> Unit)? = null, speeds: (() -> Unit)? = null, branch: (() -> Unit)? = null) = buildList {
     add(MenuItem("Copy", icon = "square.on.square") {
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", entry.text))
     })
@@ -233,6 +235,7 @@ private fun messageMenu(context: android.content.Context, entry: Entry, reply: (
         store.command("saveBookmark", body("botId" to entry.botId, "entryId" to entry.id, "preview" to entry.text, "author" to entry.replyQuote.author), "bookmark:" + entry.id)
     })
     if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
+    if (branch != null) add(MenuItem("Branch from here", icon = "arrow.triangle.branch", action = branch))
     if (store != null && entry.kind == "agent") {
         add(MenuItem("Mark unread", icon = "envelope.fill") { store.markUnread(entry) })
         if (entry.text.isNotBlank()) {
@@ -275,7 +278,7 @@ private fun reactionPick(entry: Entry, store: AppStore) = ReactionPick(quickReac
 
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
-@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, speeds: (() -> Unit)?) {
+@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, speeds: (() -> Unit)?, branch: (() -> Unit)?) {
     val context = LocalContext.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -287,7 +290,8 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         }
         if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser).swipeToReply(reply)
             .contextActions(reactions = reactionPick(entry, store), preview = { SelectionContainer { UserText(entry.text) } }) {
-                messageMenu(context, entry, reply, null, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
+                messageMenu(context, entry, reply, null, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds,
+                    branch = branch)
             }) { UserText(entry.text) }
         SendStatusLine(entry.status, state.bots.firstOrNull { it.id == entry.botId }?.status == "working")
     }
@@ -356,7 +360,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, openArtifact: (OpenArtifact) -> Unit, speeds: (() -> Unit)?) {
+@Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?, forward: (() -> Unit)?, thread: String?, openArtifact: (OpenArtifact) -> Unit, speeds: (() -> Unit)?, branch: (() -> Unit)?) {
     val context = LocalContext.current
     val files = entry.files
     val artifact = entry.artifact
@@ -366,16 +370,16 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store,
             Modifier.contextActions(reactions = reactionPick(entry, store),
                 onClick = { openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) {
-                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
+                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds, branch = branch)
             })
         else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store)) {
-            messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
+            messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds, branch = branch)
         },
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             SharedFilesList(entry, files, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).swipeToReply(reply)
             .contextActions(reactions = reactionPick(entry, store), preview = { AgentText(entry.text, selectable = true) }) {
-                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds)
+                messageMenu(context, entry, reply, openTrace, store, quote = { store.quoteMessage(entry, thread) }, forward = forward, speeds = speeds, branch = branch)
             }) { AgentText(entry.text, selectable = false) }
     }
 }
@@ -392,7 +396,8 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 }
 
 /** Under a message with a thread (Slack's): how many replied, how recently. */
-@Composable private fun ThreadChip(entry: Entry, state: AppState, open: (() -> Unit)?) {    val summary = entry.data["thread"] as? JsonObject ?: return
+@Composable private fun ThreadChip(entry: Entry, state: AppState, open: (() -> Unit)?) {
+    val summary = entry.data["thread"] as? JsonObject ?: return
     val count = summary["count"]?.jsonPrimitive?.intOrNull ?: 0
     if (count == 0 || open == null) return
     val unread = summary["unread"]?.jsonPrimitive?.intOrNull ?: 0

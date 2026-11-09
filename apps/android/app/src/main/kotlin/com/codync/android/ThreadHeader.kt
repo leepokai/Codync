@@ -47,7 +47,7 @@ import com.kyant.shapes.RoundedRectangle
  *   and overflow menu (`${bot.name} actions`).
  */
 @Composable internal fun ThreadHeader(bot: Bot, state: AppState, store: AppStore, edit: (Bot) -> Unit, trace: () -> Unit,
-    routines: () -> Unit, newSession: () -> Unit, delete: () -> Unit, search: () -> Unit) {
+    routines: () -> Unit, newSession: () -> Unit, delete: () -> Unit, search: () -> Unit, threads: () -> Unit, newThread: () -> Unit) {
     val density = LocalDensity.current
     val host = state.computer?.name.orEmpty()
     BoxWithConstraints(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 12.dp).height(48.dp)) {
@@ -121,10 +121,14 @@ import com.kyant.shapes.RoundedRectangle
                 }
                 if (bot.kind == "group") {
                     add(MenuItem("Edit group", icon = "person.2") { edit(bot) }); add(pin)
+                    add(MenuItem("Threads", icon = "bubble.left.and.bubble.right", action = threads))
+                    add(MenuItem("New thread", icon = "plus.bubble", action = newThread))
                     add(MenuItem("Delete group", icon = "trash", destructive = true, divider = true, action = delete))
                 } else {
                     add(MenuItem("Edit profile", icon = "pencil") { edit(bot) }); if (!bot.lead) add(pin)
                     add(MenuItem("Routines", icon = "clock.arrow.circlepath", action = routines))
+                    add(MenuItem("Threads", icon = "bubble.left.and.bubble.right", action = threads))
+                    add(MenuItem("New thread", icon = "plus.bubble", action = newThread))
                     add(MenuItem("New session", icon = "arrow.counterclockwise", action = newSession))
                     if (!bot.lead) add(MenuItem("Delete bot", icon = "trash", destructive = true, divider = true, action = delete))
                 }

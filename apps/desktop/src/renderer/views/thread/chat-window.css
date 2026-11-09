@@ -2,3 +2,11 @@
 .thread-link { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-caption); color: var(--secondary); }
 .thread-link:hover { color: var(--text); }
 .thread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+/* A message's thread, under it: who replied, how many, and how recently. */
+.thread-chip { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 5px 10px; border-radius: 999px; background: var(--surface); }
+.thread-chip:hover { background: var(--bubble-agent); }
+.thread-chip-authors { display: inline-flex; }
+.thread-chip-authors > * + * { margin-left: -6px; }
+.thread-chip-count { font-size: var(--text-caption); font-weight: 600; color: var(--accent); }
+.thread-chip-new { font-size: var(--text-caption); font-weight: 600; color: var(--text); }
+.thread-chip-when { font-size: var(--text-caption); color: var(--tertiary); }

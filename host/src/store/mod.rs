@@ -26,6 +26,7 @@ pub use saved_searches::{SearchScope, search_terms};
 pub mod runtime;
 mod schema;
 mod setup;
+pub mod threads;
 mod visibility;
 pub(crate) mod week;
 mod workspaces;

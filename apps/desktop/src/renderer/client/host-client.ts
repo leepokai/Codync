@@ -10,6 +10,7 @@ import {
   type Hello,
   type PairingRequest,
   type ScreenState,
+  type ThreadInfo,
   type Usage,
 } from '@shared/models'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
@@ -73,8 +74,9 @@ export type HostEvent =
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
   | { type: 'entryDeleted'; id: string; rev: number }
-  /** A thread's root line says how many of its replies are unread. */
-  | { type: 'thread'; threadId: string; botId: string; unread: number }
+  /** A thread's root line says how many of its replies are unread, and carries its summary for the chip under it
+   * (`thread` is null once the thread has nothing left, as after deleting it). */
+  | { type: 'thread'; threadId: string; botId: string; unread: number; thread: import('@shared/models').ThreadSummary | null }
   | { type: 'usage'; usage: Usage }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
@@ -161,10 +163,12 @@ export function parseEvent(line: string): HostEvent | null {
       const botIds = Array.isArray(raw.botIds) ? raw.botIds.filter((id): id is string => typeof id === 'string') : null
       return botIds && typeof raw.rev === 'number' ? { type, rev: raw.rev, botIds } : { type: 'undecodable', kind: 'routineFlow' }
     }
-    case 'thread':
+    case 'thread': {
+      const thread = raw.thread as import('@shared/models').ThreadSummary | null | undefined
       return typeof raw.threadId === 'string' && typeof raw.botId === 'string' && typeof raw.unread === 'number'
-        ? { type, threadId: raw.threadId, botId: raw.botId, unread: raw.unread }
+        ? { type, threadId: raw.threadId, botId: raw.botId, unread: raw.unread, thread: thread && typeof thread.count === 'number' ? thread : null }
         : { type: 'undecodable', kind: 'thread' }
+    }
     case 'resync':
       return { type }
     default:
@@ -228,9 +232,31 @@ export class HostClient {
     return (await this.call<{ entries: Entry[] }>('history', { botId, beforeSeq, limit })).entries
   }
 
-  /** A side conversation: a document's (`doc:<id>`). The chat itself has no threads. */
+  /** One thread with its lines and its row: a chat's own, a document's (`doc:<id>`), a routine's. */
   async thread(botId: string, rootId: string) {
-    return (await this.call<{ entries: Entry[] }>('thread', { botId, rootId })).entries
+    return this.call<{ entries: Entry[]; thread: ThreadInfo | null }>('thread', { botId, rootId })
+  }
+
+  /** A chat's threads, the most recently written first; the archive drawer instead when `archived`. */
+  async threads(botId: string, archived = false) {
+    return (await this.call<{ threads: ThreadInfo[] }>('threads', { botId, archived })).threads
+  }
+
+  /** Opens a thread on a chat, optionally branched from one of its messages, and answers its root. */
+  async createThread(botId: string, title = '', fromEntryId: string | null = null) {
+    return (await this.call<{ threadId: string }>('createThread', { botId, title, ...(fromEntryId ? { fromEntryId } : {}) })).threadId
+  }
+
+  async renameThread(threadId: string, title: string) {
+    return this.call('renameThread', { threadId, title })
+  }
+
+  async archiveThread(threadId: string, archived = true) {
+    return this.call('archiveThread', { threadId, archived })
+  }
+
+  async deleteThread(threadId: string) {
+    return this.call('deleteThread', { threadId })
   }
 
   async botConversation(botId: string, peerId: string) {

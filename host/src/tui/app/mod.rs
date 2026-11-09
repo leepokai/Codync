@@ -48,7 +48,7 @@ use std::io::Write as _;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::manage::Shell;
+use super::manage::{Reply, Shell, ThreadSheet, ThreadsSheet};
 use super::net::Client;
 
 #[derive(Clone)]
@@ -281,21 +281,35 @@ impl App {
         c
     }
 
-    /// A chat's entries, in display order.
+    /// A chat's entries, in display order. A thread's lines live in their own lane.
     pub fn lane(&self, bot: &str) -> Vec<&Entry> {
+        let mut v = self.kept(bot);
+        v.retain(|e| e.thread().is_none());
+        v
+    }
+
+    /// A thread's entries, in display order.
+    pub fn thread_lane(&self, bot: &str, root: &str) -> Vec<&Entry> {
+        let mut v = self.kept(bot);
+        v.retain(|e| e.thread() == Some(root));
+        v
+    }
+
+    /// A bot's lines worth showing: what a voice call carries shows behind its line (`o`), on whichever device the
+    /// call is: the host writes the line when the call ends, or when its app went away. A file or an artifact the bot
+    /// sent stays, to be opened. A message sent mid-turn belongs after that turn's reply.
+    fn kept(&self, bot: &str) -> Vec<&Entry> {
         let mut v: Vec<&Entry> = self.entries.get(bot).map(|m| m.values().collect()).unwrap_or_default();
-        // What a voice call carries shows behind its line (`o`), on whichever device the call is: the host writes the
-        // line when the call ends, or when its app went away. A file or an artifact the bot sent stays, to be opened.
         let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
         v.retain(|e| !e.is_internal() && (e.kind == Kind::Notice || e.call().is_none() || opens(e)));
-        // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v
     }
 
+    /// A card waiting for an answer anywhere in the selected chat or its threads.
     pub fn pending(&self) -> Option<&Entry> {
         let id = self.selected.as_ref()?;
-        self.lane(id).into_iter().rev().find(|e| e.pending())
+        self.kept(id).into_iter().rev().find(|e| e.pending())
     }
 
     /// The message the composer replies to, in the selected chat.
@@ -310,6 +324,105 @@ impl App {
 
     pub fn draft_files(&self) -> &[std::path::PathBuf] {
         self.selected.as_ref().and_then(|id| self.files.get(id)).map_or(&[], Vec::as_slice)
+    }
+
+    // ---------- threads ----------
+
+    /// A thread root's title, for its row and its sheet.
+    pub fn thread_title(&self, bot: &str, root: &str) -> String {
+        self.entries
+            .get(bot)
+            .and_then(|m| m.values().find(|e| e.id == root))
+            .map(|e| e.text().lines().next().unwrap_or_default().to_owned())
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "Thread".to_owned())
+    }
+
+    fn seq_of(&self, bot: &str, entry: &str) -> i64 {
+        self.entries.get(bot).and_then(|m| m.values().find(|e| e.id == entry)).map_or(0, |e| e.seq)
+    }
+
+    /// The thread open in the selected chat, if its sheet is on top.
+    pub fn top_thread(&self) -> Option<&ThreadSheet> {
+        match self.overlays.last() {
+            Some(Overlay::Thread(t)) => Some(t.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub(in crate::tui) fn top_thread_mut(&mut self) -> Option<&mut ThreadSheet> {
+        match self.overlays.last_mut() {
+            Some(Overlay::Thread(t)) => Some(t.as_mut()),
+            _ => None,
+        }
+    }
+
+    fn top_threads_mut(&mut self) -> Option<&mut ThreadsSheet> {
+        match self.overlays.last_mut() {
+            Some(Overlay::Threads(t)) => Some(t.as_mut()),
+            _ => None,
+        }
+    }
+
+    /// Opens thread `root` of `bot`: its lines load while the sheet shows.
+    pub(in crate::tui) fn open_thread(&mut self, bot: &str, root: &str) {
+        self.sheet(
+            "thread",
+            json!({"botId": bot, "rootId": root}),
+            Reply::Thread { bot: bot.to_owned(), root: root.to_owned() },
+        );
+        self.overlays.push(Overlay::Thread(Box::new(ThreadSheet::new(bot, root))));
+    }
+
+    /// Opens the thread message `entry` is in, or branches a new one from it.
+    pub(in crate::tui) fn open_thread_for(&mut self, bot: &str, entry: &str) {
+        if let Some(root) =
+            self.entries.get(bot).and_then(|m| m.values().find(|e| e.id == entry)).and_then(Entry::thread)
+        {
+            let root = root.to_owned();
+            self.open_thread(bot, &root);
+            return;
+        }
+        self.call(
+            "createThread",
+            json!({"botId": bot, "fromEntryId": entry}),
+            After::ThreadOpened(bot.to_owned(), Some(entry.to_owned())),
+        );
+    }
+
+    /// The selected chat's thread list.
+    pub(in crate::tui) fn open_threads(&mut self) {
+        let Some(bot) = self.selected.clone() else { return };
+        self.fetch_threads(&bot, false);
+        self.overlays.push(Overlay::Threads(Box::new(ThreadsSheet::new(&bot))));
+    }
+
+    /// Loads `bot`'s threads (archived or not) into the list sheet on top.
+    pub(in crate::tui) fn fetch_threads(&mut self, bot: &str, archived: bool) {
+        self.sheet(
+            "threads",
+            json!({"botId": bot, "archived": archived}),
+            Reply::Threads { bot: bot.to_owned(), archived },
+        );
+    }
+
+    /// Sends the open thread's draft.
+    pub(in crate::tui) fn send_thread(&mut self) {
+        let Some(t) = self.top_thread() else { return };
+        if t.sending || t.composer.text.trim().is_empty() {
+            return;
+        }
+        let (bot, root, text) = (t.bot.clone(), t.root.clone(), t.composer.text.clone());
+        let nonce = uuid::Uuid::new_v4().to_string();
+        if let Some(t) = self.top_thread_mut() {
+            t.sending = true;
+            t.error = None;
+        }
+        self.call(
+            "send",
+            json!({"botId": bot, "text": text, "clientNonce": nonce, "threadId": root}),
+            After::ThreadSent(nonce),
+        );
     }
 
     /// Name of an entry's author (a group reply's bot), as the apps show it.

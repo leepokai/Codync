@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 70] = [
+const HELP: [(&str, &str, &str); 71] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -67,8 +67,9 @@ const HELP: [(&str, &str, &str); 70] = [
     ("BOTS", "⇧← ⇧→", "between details, library, memory, settings"),
     ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
-    ("VIEW", "t", "trace pane"),
-    ("VIEW", "T", "trace full screen"),
+    ("VIEW", "t", "pick a message, t: its thread; otherwise trace pane"),
+    ("VIEW", "T", "threads of this chat"),
+    ("VIEW", "V", "trace full screen"),
     ("VIEW", "{ }", "previous / next turn"),
     ("VIEW", "b", "compact roster"),
     ("VIEW", "U", "usage"),

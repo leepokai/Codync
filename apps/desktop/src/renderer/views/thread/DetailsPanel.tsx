@@ -16,6 +16,7 @@ import { BotAppsCard } from '../bots/BotAppsView'
 import { SkillProposalsCard } from '../bots/SkillProposalsCard'
 import { MemoryCard } from '../bots/MemoryView'
 import { DocumentsCard } from '../bots/DocumentsView'
+import { ThreadsCard } from './ThreadsCard'
 import { ComputerPanel } from '../bots/ComputerPanel'
 import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
@@ -26,7 +27,7 @@ import '../bots/documents.css'
 import { useTr } from '../../lib/use-language'
 
 
-export type DetailsTab = 'details' | 'library' | 'apps' | 'memory' | 'documents' | 'computer' | 'settings'
+export type DetailsTab = 'details' | 'library' | 'apps' | 'memory' | 'documents' | 'threads' | 'computer' | 'settings'
 
 const TABS: { id: DetailsTab; label: string }[] = [
   { id: 'details', label: 'Details' },
@@ -34,6 +35,7 @@ const TABS: { id: DetailsTab; label: string }[] = [
   { id: 'library', label: 'Library' },
   { id: 'memory', label: 'Memory' },
   { id: 'documents', label: 'Documents' },
+  { id: 'threads', label: 'Threads' },
   { id: 'computer', label: 'Computer' },
   { id: 'settings', label: 'Settings' },
 ]
@@ -63,7 +65,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
       <div className="details-scroll">
         {bot ? <Identity bot={bot} /> : null}
         {bot && group ? (
-          <><GroupMembersList group={bot} editGroup={editGroup} /><div className="details-tab"><DocumentsCard bot={bot} store={store} /></div></>
+          <><GroupMembersList group={bot} editGroup={editGroup} /><div className="details-tab"><DocumentsCard bot={bot} store={store} /><ThreadsCard bot={bot} store={store} /></div></>
         ) : (
           <>
             <TabChoice label="Conversation details" selection={tab} options={hasLibrary(store.hostVersion?.version) ? TABS : TABS.filter((t) => t.id !== 'library')} onChange={setTab} />
@@ -84,6 +86,8 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
                 <ComputerPanel key={`${store.contextId}:${store.computer.id}:${botId}`} botId={botId} />
               ) : tab === 'documents' && bot ? (
                 <DocumentsCard bot={bot} store={store} />
+              ) : tab === 'threads' && bot ? (
+                <ThreadsCard bot={bot} store={store} />
               ) : (
                 <BotSettingsPanel botId={botId} part="rarely" />
               )}

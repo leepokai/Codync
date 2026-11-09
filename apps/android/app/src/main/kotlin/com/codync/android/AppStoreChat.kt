@@ -12,12 +12,14 @@ import kotlinx.serialization.json.*
 
 fun AppStore.openBot(id: String?, thread: String? = null) {
     if (id != state.value.selectedBot) stopReading()
-    mutableState.update { it.copy(selectedBot = id, thread = thread, trace = false, removedComputer = false) }
+    mutableState.update { it.copy(selectedBot = id, thread = thread, threadInfo = null, trace = false, removedComputer = false) }
     if (id != null) {
         acknowledgeVisible()
         if (thread != null) action("thread:" + thread) {
             val response = chatRead("thread", body("botId" to id, "rootId" to thread))
             receiveEntries(response)
+            val info = (response.jsonObject["thread"] as? JsonObject)?.let { ThreadInfo.decode(it) }
+            mutableState.update { it.copy(threadInfo = info) }
         }
     }
 }
@@ -224,7 +226,7 @@ fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + ent
     delay(2_000)
 }
 
-private suspend fun AppStore.receiveEntries(response: JsonElement) {
+internal suspend fun AppStore.receiveEntries(response: JsonElement) {
     val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
     withContext(Dispatchers.IO) { requireNotNull(database).receive(entries) }
     refresh()

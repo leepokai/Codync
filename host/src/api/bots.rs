@@ -132,19 +132,60 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let bot = str_arg(&b, "botId")?;
             let before = b["beforeSeq"].as_i64().unwrap_or(i64::MAX);
             let limit = b["limit"].as_i64().unwrap_or(100).clamp(1, 500);
-            json!({"entries": hub.store.history(bot, before, limit)?})
+            let mut entries = vec![];
+            for e in hub.store.history(bot, before, limit)? {
+                let mut entry = serde_json::to_value(&e)?;
+                hub.store.decorate_thread(&mut entry)?;
+                entries.push(entry);
+            }
+            json!({"entries": entries})
         }
-        // A side conversation (a document's `doc:<id>`, a routine's thread, a Slack thread's `slack-…`);
-        // the chat itself has none.
+        // A side conversation (one opened from the chat, a document's `doc:<id>`, a routine's thread, a Slack
+        // thread's `slack-…`); the chat itself has none.
         "thread" => {
             let root = str_arg(&b, "rootId")?;
             let bot = str_arg(&b, "botId")?;
-            if !(root.starts_with("doc:") || root.starts_with("slack-") || root.starts_with("routine-thread-")) {
-                bail!("threads are gone: replies are in the chat");
-            }
             let entries = hub.store.thread(bot, root, 500)?;
+            let thread = hub.store.thread_by_id(root)?;
+            if entries.is_empty() && thread.is_none() {
+                bail!("unknown thread");
+            }
+            // What the client hasn't seen yet, read before opening the thread clears it.
+            let unread = hub.store.thread_unread(root);
             hub.mark_thread_read(bot, root)?;
-            json!({"entries": entries, "unread": 0})
+            json!({"entries": entries, "thread": thread, "unread": unread})
+        }
+        // A chat's threads, the last one written first: never the lines, only where each ends.
+        "threads" => {
+            let bot = str_arg(&b, "botId")?;
+            hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            json!({"threads": hub.store.threads(bot, b["archived"].as_bool().unwrap_or(false))?})
+        }
+        // A thread opened from the chat, optionally branched from one of its messages.
+        "createThread" => {
+            let bot = str_arg(&b, "botId")?;
+            hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let from = b["fromEntryId"]
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .filter(|id| hub.store.entry(id).is_some_and(|e| e.bot_id == bot && e.thread_id.is_none()));
+            json!({"threadId": hub.store.create_thread(bot, b["title"].as_str().unwrap_or(""), from)?})
+        }
+        "renameThread" => {
+            hub.store.rename_thread(str_arg(&b, "threadId")?, str_arg(&b, "title")?)?;
+            json!({})
+        }
+        "archiveThread" => {
+            hub.store.archive_thread(str_arg(&b, "threadId")?, b["archived"].as_bool().unwrap_or(true))?;
+            json!({})
+        }
+        "deleteThread" => {
+            let id = str_arg(&b, "threadId")?;
+            let bot = hub.store.thread_by_id(id)?.map(|t| t.bot_id).unwrap_or_default();
+            if hub.store.delete_thread(id)?.is_some() && !bot.is_empty() {
+                hub.thread_deleted(id, &bot);
+            }
+            json!({})
         }
         // Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet.
         "botConversation" => {

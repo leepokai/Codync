@@ -306,10 +306,11 @@ impl App {
                     self.trace = if self.trace == TraceMode::Off { TraceMode::Off } else { TraceMode::Full };
                 }
             }
-            KeyCode::Char('T') => {
+            KeyCode::Char('V') => {
                 self.trace = if self.trace == TraceMode::Full { TraceMode::Off } else { TraceMode::Full };
                 self.focus = if self.trace == TraceMode::Full { Focus::Trace } else { Focus::Chat };
             }
+            KeyCode::Char('T') => self.open_threads(),
             KeyCode::Char('o') => {
                 let Some(id) = self.selected.clone() else { return };
                 // The newest turn in this lane that did something.
@@ -442,6 +443,11 @@ impl App {
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
+                    Some(Click::Thread(root)) => {
+                        if let Some(bot) = self.selected.clone() {
+                            self.open_thread(&bot, &root);
+                        }
+                    }
                     None => {
                         if self.overlays.is_empty() {
                             if self.hits.trace.contains(at) {

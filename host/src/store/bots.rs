@@ -5,7 +5,7 @@ use super::visibility::PUBLIC;
 use super::{Store, logged, next_rev};
 use crate::LockExt;
 use anyhow::Result;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 /// Raw `bots` row before the config JSON is parsed.
@@ -24,6 +24,24 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
             None
         }
     }
+}
+
+/// Unread agent finals and pending permissions in a thread, after its own read mark. Takes the connection,
+/// so a caller already holding the store lock (`threads::thread_info`) doesn't lock the mutex again.
+pub(crate) fn thread_unread(c: &Connection, thread: &str) -> i64 {
+    let mark: i64 =
+        c.query_row("SELECT read_rev FROM thread_reads WHERE thread_id = ?1", [thread], |r| r.get(0)).unwrap_or(0);
+    let n = c.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM entries WHERE thread_id = ?1 AND {PUBLIC} AND
+           ((kind = 'agent' AND json_extract(data, '$.final') = 1) OR
+            (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
+           COALESCE(json_extract(data, '$.contentRev'), rev) > ?2"
+        ),
+        params![thread, mark],
+        |r| r.get(0),
+    );
+    logged("thread unread", n).unwrap_or(0)
 }
 
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
@@ -165,20 +183,7 @@ impl Store {
 
     /// Unread replies of one thread (a document's or a routine's), after its own read mark.
     pub fn thread_unread(&self, thread: &str) -> i64 {
-        let c = self.db.locked();
-        let mark: i64 =
-            c.query_row("SELECT read_rev FROM thread_reads WHERE thread_id = ?1", [thread], |r| r.get(0)).unwrap_or(0);
-        let n = c.query_row(
-            &format!(
-                "SELECT COUNT(*) FROM entries WHERE thread_id = ?1 AND {PUBLIC} AND
-               ((kind = 'agent' AND json_extract(data, '$.final') = 1) OR
-                (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
-               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2"
-            ),
-            params![thread, mark],
-            |r| r.get(0),
-        );
-        logged("thread unread", n).unwrap_or(0)
+        thread_unread(&self.db.locked(), thread)
     }
 
     /// Reading a thread marks it read up to now.

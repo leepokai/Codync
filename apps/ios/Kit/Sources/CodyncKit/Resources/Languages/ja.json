@@ -1769,5 +1769,21 @@
   "Forwarded from": "転送元:",
   "No chats yet.": "チャットはまだありません。",
   "Slack is set up with the host's setSlackChannel call; see the Slack checklist.": "Slack はホストの setSlackChannel 呼び出しで設定します。Slack のチェックリストを参照してください。",
-  "Slack is not connected.": "Slack は接続されていません。"
+  "Slack is not connected.": "Slack は接続されていません。",
+  "Threads": "スレッド",
+  "New thread": "新しいスレッド",
+  "Archived": "アーカイブ済み",
+  "Rename": "名前を変更",
+  "Archive": "アーカイブ",
+  "Restore": "復元",
+  "Branched from": "分岐元:",
+  "A short name": "短い名前",
+  "Delete thread?": "スレッドを削除しますか?",
+  "Delete thread": "スレッドを削除",
+  "Its replies go with it; the chat stays.": "返信も一緒に消えますが、チャットは残ります。",
+  "Nothing archived.": "アーカイブはありません。",
+  "No threads yet. Open one from the menu, or branch from a message.": "まだスレッドはありません。メニューから開くか、メッセージから分岐してください。",
+  "Thread actions": "スレッドの操作",
+  "Rename thread": "スレッドの名前を変更",
+  "A thread keeps one side conversation apart from the chat.": "スレッドはサイドの会話をチャットから切り離します。"
 }

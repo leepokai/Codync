@@ -259,5 +259,21 @@
   "Disconnect GitHub": "فصل GitHub",
   "Disconnect Discord": "فصل Discord",
   "Connected through the HTTP endpoint": "متصل عبر نقطة نهاية HTTP",
-  "Connected through Socket Mode": "متصل عبر Socket Mode"
+  "Connected through Socket Mode": "متصل عبر Socket Mode",
+  "Threads": "سلاسل المحادثات",
+  "New thread": "سلسلة محادثة جديدة",
+  "Archived": "المؤرشفة",
+  "Rename": "إعادة تسمية",
+  "Archive": "أرشفة",
+  "Restore": "استعادة",
+  "Branched from": "متفرّعة من",
+  "A short name": "اسم قصير",
+  "Delete thread?": "حذف سلسلة المحادثة؟",
+  "Delete thread": "حذف سلسلة المحادثة",
+  "Its replies go with it; the chat stays.": "تُحذف ردودها معها وتبقى المحادثة.",
+  "Nothing archived.": "لا شيء مؤرشف.",
+  "No threads yet. Open one from the menu, or branch from a message.": "لا توجد سلاسل بعد. افتح واحدة من القائمة أو تفرّع من رسالة.",
+  "Thread actions": "إجراءات سلسلة المحادثة",
+  "Rename thread": "إعادة تسمية سلسلة المحادثة",
+  "A thread keeps one side conversation apart from the chat.": "تُبقي سلسلة المحادثة محادثة جانبية واحدة بعيدًا عن المحادثة."
 }

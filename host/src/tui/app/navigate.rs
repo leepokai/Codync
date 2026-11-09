@@ -268,6 +268,11 @@ impl App {
                     self.flash("Copied");
                 }
             }
+            KeyCode::Char('t') if picked.is_some() => {
+                if let Some(e) = picked {
+                    self.open_thread_for(&id, &e.id);
+                }
+            }
             KeyCode::Esc => self.pick = None,
             _ => return false,
         }

@@ -1769,5 +1769,21 @@
   "Forwarded from": "전달한 사람:",
   "No chats yet.": "아직 채팅이 없습니다.",
   "Slack is set up with the host's setSlackChannel call; see the Slack checklist.": "Slack은 호스트의 setSlackChannel 호출로 설정합니다. Slack 체크리스트를 참고하세요.",
-  "Slack is not connected.": "Slack이 연결되지 않았습니다."
+  "Slack is not connected.": "Slack이 연결되지 않았습니다.",
+  "Threads": "스레드",
+  "New thread": "새 스레드",
+  "Archived": "보관됨",
+  "Rename": "이름 변경",
+  "Archive": "보관",
+  "Restore": "복원",
+  "Branched from": "분기 위치",
+  "A short name": "짧은 이름",
+  "Delete thread?": "스레드를 삭제할까요?",
+  "Delete thread": "스레드 삭제",
+  "Its replies go with it; the chat stays.": "답장도 함께 사라지지만 채팅은 남습니다.",
+  "Nothing archived.": "보관된 항목이 없습니다.",
+  "No threads yet. Open one from the menu, or branch from a message.": "아직 스레드가 없습니다. 메뉴에서 열거나 메시지에서 분기하세요.",
+  "Thread actions": "스레드 작업",
+  "Rename thread": "스레드 이름 변경",
+  "A thread keeps one side conversation apart from the chat.": "스레드는 곁대화를 채팅과 분리해 둡니다."
 }

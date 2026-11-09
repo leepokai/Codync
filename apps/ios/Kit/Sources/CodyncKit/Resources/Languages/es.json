@@ -1769,5 +1769,21 @@
   "Forwarded from": "Reenviado de",
   "No chats yet.": "Aún no hay chats.",
   "Slack is set up with the host's setSlackChannel call; see the Slack checklist.": "Slack se configura con la llamada setSlackChannel del host; consulta la lista de Slack.",
-  "Slack is not connected.": "Slack no está conectado."
+  "Slack is not connected.": "Slack no está conectado.",
+  "Threads": "Hilos",
+  "New thread": "Hilo nuevo",
+  "Archived": "Archivados",
+  "Rename": "Renombrar",
+  "Archive": "Archivar",
+  "Restore": "Restaurar",
+  "Branched from": "Ramificado de",
+  "A short name": "Un nombre corto",
+  "Delete thread?": "¿Eliminar el hilo?",
+  "Delete thread": "Eliminar hilo",
+  "Its replies go with it; the chat stays.": "Sus respuestas se van con él; el chat se queda.",
+  "Nothing archived.": "Nada archivado.",
+  "No threads yet. Open one from the menu, or branch from a message.": "Aún no hay hilos. Abre uno desde el menú o ramifica desde un mensaje.",
+  "Thread actions": "Acciones del hilo",
+  "Rename thread": "Renombrar hilo",
+  "A thread keeps one side conversation apart from the chat.": "Un hilo mantiene una conversación aparte del chat."
 }

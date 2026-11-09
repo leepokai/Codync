@@ -9,6 +9,9 @@ Rules: additive only, Codync Android components first, OpenBot non-UI code secon
 method when the phone would otherwise own logic. No APK is built while the owner holds it; the
 gate is `./gradlew :core:test :app:testDebugUnitTest :app:compileDebugKotlin`.
 
+The full two-list inventory (what is kept and what is missing, plus each iOS-only adaptation) is
+`openbot-android-inventory.md`.
+
 ## 1. Resilience and message actions (M9, M3)
 
 Already present, verified, no work: message delete (all entries, owner-only host model),
@@ -74,8 +77,9 @@ Done from M2:
 | Cancel task on a stopped or failed task | Done | Codync has no channel tasks: a paused turn card and a failed routine notice stand in. host `pause::close` and `routines::retry::cancel` (one `cancelTask` method), `PausedTurnCard.kt`, `RoutineNotice`, desktop `ChatRows.tsx`/`RoutineNotice.tsx`, TUI `/cancel` and `E` |
 | A step's own Model and Effort | Done: a link carries a model and its options into the next bot's one turn, then the bot's own come back. Codync's canvas has no Condition step type; a link is the step. host schema 8, `chat::team::ModelOverride`, `agent::bot::model_override`, Android + desktop link panels; the iPhone has no flow canvas yet | `store/flows.rs`, `routines/flow`, `ModelOverride`, `RoutineFlowDetail.kt`, `FlowInspector.tsx` |
 
-Every M2 item is done; the iPhone has no flow canvas yet, so a link's model is set from Android or
-the desktop app.
+Every workflow (M2) item listed there is done; the iPhone has no flow canvas yet, so a link's model is set from Android or
+the desktop app. Threads (also M2) landed after them: one per message, a `threads` drawer, a chip
+under each message with replies, rename, archive and delete, on Android, iOS, desktop and the TUI.
 
 - **M5/M6**: voice pause slider, reply speed choice, Plush/Flat avatar style, calmer resting
   faces and group float.
@@ -143,3 +147,8 @@ state and Disconnect; setting it up from the phone is the next one to add.
 Each merge-ready chunk runs the Gradle gate plus emulator walks (phone, tablet, foldable) and
 TalkBack on the X items; regressions touch chat, push, channels, voice, marketplace, profiles
 and settings. APK builds wait for the owner.
+
+M2 (threads) passed the Gradle gate, the host's `cargo fmt`/`clippy`/tests, the desktop
+`typecheck`/tests, and a host API E2E (branch, chip summary, unread, open marks read, rename,
+archive, delete; 22/22). The phone and iOS walks wait for the device (`adb devices` is empty) and
+for a Mac respectively.

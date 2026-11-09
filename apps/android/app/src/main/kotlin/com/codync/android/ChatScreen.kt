@@ -103,6 +103,8 @@ import com.kyant.shapes.RoundedRectangle
     val startCall = rememberStartVoice(bot.id, state, store) { micDenied = true }
     // The chat message the next one answers (`replyTo`).
     var replyingTo by remember(bot.id) { mutableStateOf<Entry?>(null) }
+    // The chat's threads, open ones or the archive.
+    var threadsOpen by remember(bot.id) { mutableStateOf(false) }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val scroll = rememberConversationScroll()
@@ -116,7 +118,8 @@ import com.kyant.shapes.RoundedRectangle
         ScrollEdge(Edge.Bottom, with(density) { composerHeight.toDp() } + 4.dp, Modifier.align(Alignment.BottomCenter))
         // 10 above the composer, as on iOS: the list already keeps 8 under its last row.
         JumpToLatest(scroll, Modifier.align(Alignment.BottomCenter).padding(bottom = with(density) { composerHeight.toDp() } + 10.dp))
-        ThreadHeader(bot, state, store, { shown -> if (shown.kind == "group") edit(shown) else details = DetailsRequest() }, { store.showTrace(true) }, { openRoutine(null) }, { confirmNewSession = true }, { confirmDelete = true }, { searching = true })
+        ThreadHeader(bot, state, store, { shown -> if (shown.kind == "group") edit(shown) else details = DetailsRequest() }, { store.showTrace(true) }, { openRoutine(null) }, { confirmNewSession = true }, { confirmDelete = true }, { searching = true },
+            threads = { threadsOpen = true }, newThread = { store.startThread(bot.id) })
         // The call floats over the chat under the header, as on iOS; the chat stays readable and usable.
         AnimatedVisibility(state.voice != null, Modifier.padding(top = top + 54.dp),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { -it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { -it }) {
@@ -171,6 +174,7 @@ import com.kyant.shapes.RoundedRectangle
     CodyncSheet(state.thread, { store.openBot(bot.id) }) { root -> RepliesView(bot, root, state, store, connect) }
     CodyncSheet(state.trace, { store.showTrace(false) }) { TraceView(bot, state.thread, state) }
     CodyncSheet(searching, { searching = false }) { ConversationSearch(bot, store) { searching = false } }
+    CodyncSheet(threadsOpen, { threadsOpen = false }) { ThreadsSheet(bot, state, store) { threadsOpen = false } }
     CodyncSheet(routines, { routines = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded), initialDetent = SheetDetent.Expanded) {
         RoutinesScreen(bot, state, store, routineId)
     }

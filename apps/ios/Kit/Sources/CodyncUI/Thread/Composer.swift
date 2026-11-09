@@ -16,6 +16,8 @@ struct Composer: View {
     var onInterrupt: (() -> Void)?
     /// An artifact's viewer: every message is about the artifact (a reply to its card), from a draft of its own.
     var artifact: Artifact?
+    /// A thread's message box: messages go to the thread (`threadId`) and it keeps a draft of its own.
+    var thread: String?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The field owns its text; the store only keeps a copy. A field bound straight to the
@@ -38,7 +40,9 @@ struct Composer: View {
     @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
     private var bot: Bot? { model.bots[botId] }
-    private var draftKey: String { artifact.map(BotStore.artifactDraftKey) ?? botId }
+    private var draftKey: String {
+        artifact.map(BotStore.artifactDraftKey) ?? thread.map { BotStore.threadDraftKey(botId: botId, thread: $0) } ?? botId
+    }
     private var working: Bool { bot?.isWorking(in: botId) == true }
 
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
@@ -107,7 +111,7 @@ struct Composer: View {
             }
             // The messages waiting behind the running turn, with what can be done with the next one.
             if bot != nil {
-                QueuedMessages(botId: botId, thread: nil, working: working)
+                QueuedMessages(botId: botId, thread: thread, working: working)
             }
             field
         }
@@ -412,7 +416,7 @@ struct Composer: View {
         guard canSend else { return }
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
             guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo?.replyQuote,
-                                          files: files) else { return }
+                                          files: files, thread: thread) else { return }
             draft = ""
             files = []
             replyingTo = nil

@@ -112,7 +112,12 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.BotChanged -> { writeBot(db, event.bot); bump(db, event.bot.rev) }
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
             is MirrorEvent.EntryDeleted -> { db.delete("entries", "id=?", arrayOf(event.id)); bump(db, event.rev) }
-            is MirrorEvent.ThreadUnread -> readEntry(db, event.threadId)?.let { writeEntry(db, it.copy(threadUnread = event.unread)) }
+            is MirrorEvent.ThreadUnread -> readEntry(db, event.threadId)?.let { entry ->
+                // The root line's chip reads its summary from its own data; a deleted thread clears it.
+                val data = event.summary?.let { JsonObject(entry.data + ("thread" to it)) }
+                    ?: JsonObject(entry.data - "thread")
+                writeEntry(db, entry.copy(threadUnread = event.unread, data = data))
+            }
             is MirrorEvent.Icons -> setMeta(db, "icons", kotlinx.serialization.json.Json.encodeToString(event.icons))
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())

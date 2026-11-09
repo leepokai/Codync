@@ -184,8 +184,8 @@ etwork` is null from hosts before the network view (or one this app can't read).
     data class Network(val view: NetworkView) : MirrorEvent
     /** These bots' routine-flow canvases changed: load them again. Live only, never a checkpoint. */
     data class RoutineFlow(val rev: Long, val botIds: List<String>) : MirrorEvent
-    /** A thread root's unread count. */
-    data class ThreadUnread(val threadId: String, val botId: String, val unread: Int) : MirrorEvent
+    /** A thread root's unread count, and its summary for the chip under it (`summary` is null once it's gone). */
+    data class ThreadUnread(val threadId: String, val botId: String, val unread: Int, val summary: JsonObject? = null) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -214,6 +214,7 @@ etwork` is null from hosts before the network view (or one this app can't read).
                     value.getValue("threadId").jsonPrimitive.content,
                     value.getValue("botId").jsonPrimitive.content,
                     value.getValue("unread").jsonPrimitive.int,
+                    value["thread"]?.takeUnless { it == JsonNull }?.jsonObject,
                 )
             }.getOrDefault(Ignored)
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored

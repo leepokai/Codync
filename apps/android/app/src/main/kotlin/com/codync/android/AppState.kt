@@ -45,6 +45,12 @@ data class AppState(
     val removedComputer: Boolean = false,
     /** The document conversation (`doc:<id>`) open over the selected bot's chat. */
     val thread: String? = null,
+    /** The open thread's name, branch origin and archive flag. */
+    val threadInfo: ThreadInfo? = null,
+    /** Each chat's live threads as last fetched, by chat ID. */
+    val threads: Map<String, List<ThreadInfo>> = emptyMap(),
+    /** Each chat's archived threads as last fetched, by chat ID. */
+    val archivedThreads: Map<String, List<ThreadInfo>> = emptyMap(),
     val navigationRequest: Int = 0,
     val navigationPage: LinkPage = LinkPage.Bots,
     val trace: Boolean = false,

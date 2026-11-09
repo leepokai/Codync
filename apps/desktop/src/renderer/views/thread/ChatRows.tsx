@@ -46,7 +46,7 @@ function hasForwardable(entry: Entry) {
 }
 
 /** One chat-visible entry, with what can be done to it. */
-export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, onForward, openAgent, openApp, openArtifact, openThread }: {
+export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrace, onReply, onForward, openAgent, openApp, openArtifact, openThread, onBranch }: {
   entry: Entry
   groupStart: boolean
   chat: Bot | null
@@ -63,15 +63,19 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   openArtifact?: (artifactId: string) => void
   /** Opens a thread from its root line. */
   openThread?: (rootId: string) => void
+  /** Starts a thread branched from this chat message. */
+  onBranch?: (e: Entry) => void
 }) {
   const host = useStore()
   const reply = onReply && (isReplyable(entry) || entry.data.memberQuestion) ? () => onReply(entry) : undefined
   const forward = onForward && hasForwardable(entry) ? () => onForward(entry) : undefined
+  // In the chat itself a reply can start a thread branched from it.
+  const branch = onBranch && !entry.threadId && isReplyable(entry) ? () => onBranch(entry) : undefined
   switch (entry.kind) {
     case 'user':
       return (
         <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
-          <UserBubble entry={entry} botWorking={!!chat && isWorking(chat)} reply={reply} forward={forward} />
+          <UserBubble entry={entry} botWorking={!!chat && isWorking(chat)} reply={reply} forward={forward} branch={branch} />
           {entry.data.routineThread && openThread ? (
             <button className="thread-link press" onClick={() => openThread(entry.id)}>
               {entry.threadUnread ? <span className="thread-dot" aria-hidden /> : null}
@@ -79,15 +83,17 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
             </button>
           ) : null}
           <ReactionsRow entry={entry} />
+          <ThreadChip entry={entry} openThread={openThread} />
         </VStack>
       )
     case 'agent':
       return (
         <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
-          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} forward={forward} openArtifact={openArtifact} />
+          <AgentBubble entry={entry} openTrace={openTrace} reply={reply} forward={forward} openArtifact={openArtifact} branch={branch} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>
             <ReactionsRow entry={entry} />
+            <ThreadChip entry={entry} openThread={openThread} />
           </VStack>
         </VStack>
       )
@@ -269,6 +275,39 @@ function LivePermission({ entry }: { entry: Entry }) {
   return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o, rule) => store.respond(entry, o, rule)} propose={() => store.proposeRule(entry)} />
 }
 
+/** A message's thread, under it: who replied, how many, and how recently (or how many are new). */
+function ThreadChip({ entry, openThread }: { entry: Entry; openThread?: (rootId: string) => void }) {
+  const store = useStore()
+  const summary = entry.data.thread
+  if (!summary || summary.count < 1 || !openThread) return null
+  const authors = (summary.authors ?? []).flatMap((id) => {
+    const bot = store.bots.get(id)
+    return bot ? [bot] : []
+  })
+  return (
+    <button
+      className="thread-chip press"
+      onClick={() => openThread(entry.id)}
+      aria-label={`View thread, ${summary.count} ${summary.count === 1 ? 'reply' : 'replies'}${summary.unread ? `, ${summary.unread} new` : ''}`}
+    >
+      {authors.length ? (
+        <span className="thread-chip-authors">
+          {authors.slice(0, 3).map((bot) => (
+            <BotAvatar key={bot.id} bot={bot} size={18} animated={false} />
+          ))}
+        </span>
+      ) : null}
+      <span className="thread-chip-count">{summary.count === 1 ? '1 reply' : `${summary.count} replies`}</span>
+      {summary.unread > 0 ? (
+        <span className="thread-chip-new">{summary.unread} new</span>
+      ) : summary.lastAt > 0 ? (
+        <span className="thread-chip-when">{relativeTime.day(summary.lastAt)}</span>
+      ) : null}
+      <Icon name="chevron.right" size={10} color="var(--tertiary)" />
+    </button>
+  )
+}
+
 /** Who wrote a message: their avatar and name in their color, or `name` for a bot on another computer. */
 export function AuthorLabel({ botId, name }: { botId?: string | null; name?: string }) {
   const store = useStore()
@@ -323,7 +362,7 @@ export function TimeSeparator({ date }: { date: number }) {
 
 const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
-export function UserBubble({ entry, botWorking, reply, forward }: { entry: Entry; botWorking: boolean; reply?: () => void; forward?: () => void }) {
+export function UserBubble({ entry, botWorking, reply, forward, branch }: { entry: Entry; botWorking: boolean; reply?: () => void; forward?: () => void; branch?: () => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const status = entry.data.status
@@ -341,6 +380,7 @@ export function UserBubble({ entry, botWorking, reply, forward }: { entry: Entry
             { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
               { title: 'Bookmark', icon: 'bookmark', action: () => void store.saveBookmark(entry.botId, entry.id, entry.data.text ?? '', '', entry.data.author ?? 'user', entry.threadId ?? null) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+              ...(branch ? [{ title: 'Branch from here', icon: 'arrow.triangle.branch', action: branch }] : []),
               ...(forward ? [{ title: 'Send to a channel…', icon: 'arrowshape.turn.up.right', action: forward }] : []),
               { title: 'Delete', icon: 'trash', destructive: true, action: () => void store.deleteEntry(entry.id) },
             ]}
@@ -381,7 +421,7 @@ function UserStatus({ entry, botWorking, hovering }: { entry: Entry; botWorking:
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply, forward, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; forward?: () => void; openArtifact?: (artifactId: string) => void }) {
+export function AgentBubble({ entry, openTrace, reply, forward, openArtifact, branch }: { entry: Entry; openTrace: () => void; reply?: () => void; forward?: () => void; openArtifact?: (artifactId: string) => void; branch?: () => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
@@ -395,6 +435,7 @@ export function AgentBubble({ entry, openTrace, reply, forward, openArtifact }: 
             { title: 'Copy', icon: 'square.on.square', action: copy },
               { title: 'Quote', icon: 'text.quote', action: () => quoteEntry(store, entry) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+              ...(branch ? [{ title: 'Branch from here', icon: 'arrow.triangle.branch', action: branch }] : []),
               ...(forward ? [{ title: 'Send to a channel…', icon: 'arrowshape.turn.up.right', action: forward }] : []),
               { title: 'Delete', icon: 'trash', destructive: true, action: () => void store.deleteEntry(entry.id) },
             { title: 'Show what it did', icon: 'list.bullet', action: openTrace },

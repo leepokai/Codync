@@ -67,6 +67,12 @@ public final class BotStore {
     public internal(set) var rosterStopping: Set<String> = []
     public internal(set) var rosterThreadRequest: RosterSearchHit?
     public internal(set) var entries: [String: [Entry]] = [:]
+    /// Each chat's live threads, newest first; their lines stay in `threadEntries`.
+    public internal(set) var threads: [String: [ThreadInfo]] = [:]
+    /// Each chat's archived threads, newest first.
+    public internal(set) var archivedThreads: [String: [ThreadInfo]] = [:]
+    /// The lines of the threads read here, by root id; the chat keeps its own in `entries`.
+    public internal(set) var threadEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The computer's remote screen (`nil`: the host predates it).
     public internal(set) var screen: ScreenState?

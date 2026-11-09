@@ -44,16 +44,20 @@ extension BotStore {
     /// An artifact viewer's message box keeps its own draft, apart from the chat's.
     static func artifactDraftKey(_ artifact: Artifact) -> String { "\(artifact.botId)/artifact/\(artifact.id)" }
 
+    /// A thread's message box keeps its own draft, apart from the chat's.
+    static func threadDraftKey(botId: String, thread: String) -> String { "\(botId)/thread/\(thread)" }
+
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
     /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes.
+    /// `thread`: the side conversation it goes to (the chat's when nil).
     @discardableResult
     func sendComposerDraft(to botId: String, draft key: String? = nil, replyTo: ReplyQuote? = nil,
-                           files: [OutgoingFile] = []) -> Bool {
-        let key = key ?? botId
+                           files: [OutgoingFile] = [], thread: String? = nil) -> Bool {
+        let key = key ?? thread.map { Self.threadDraftKey(botId: botId, thread: $0) } ?? botId
         let text = composerDraft(for: key)
         guard !retired, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
         let pasted = composerPasted[key] ?? []
-        send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
+        send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted, threadId: thread)
         setComposerDraft("", for: key)
         return true
     }
@@ -69,7 +73,7 @@ extension BotStore {
 
     @discardableResult
     func send(_ text: String, to botId: String, replyTo: ReplyQuote?, nonce: String, files: [OutgoingFile] = [],
-              pasted: [String] = [], call: String? = nil) -> Task<SendProgress, Never>? {
+              pasted: [String] = [], call: String? = nil, threadId: String? = nil) -> Task<SendProgress, Never>? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !files.isEmpty, !retired else { return nil }
         if call == nil { ReviewInvitation.shared.sent(nonce) }
@@ -81,22 +85,24 @@ extension BotStore {
             data.attachments = files.map { Attachment(id: $0.id.uuidString, name: $0.name, size: Int64($0.data.count)) }
             outgoingFiles[nonce] = files
         }
-        let local = Entry(
+        var local = Entry(
             id: "local-\(nonce)", seq: Int64.max, botId: botId, rev: 0, kind: "user",
             turn: 0, data: data, createdAt: Int64(Date.now.timeIntervalSince1970 * 1000), updatedAt: 0
         )
+        local.threadId = threadId
         upsert(local)
         storage.lastComputerId = computer.id
         if let bot = bots[botId] { onSent?(bot, .sending) }
-        // The relay mailbox holds text only: files, and the call a message was said in, wait for the computer.
-        if canQueue, files.isEmpty, call == nil, let remote = transport as? any RemoteTransport {
+        // The relay mailbox holds text only and puts it in the chat: a thread message goes straight instead.
+        if canQueue, files.isEmpty, call == nil, threadId == nil, let remote = transport as? any RemoteTransport {
             return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce)
         }
-        return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted, call: call)
+        return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted, call: call,
+                       threadId: threadId)
     }
 
     private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = [],
-                         call: String? = nil) -> Task<SendProgress, Never> {
+                         call: String? = nil, threadId: String? = nil) -> Task<SendProgress, Never> {
         Task {
             do {
                 // Safe to repeat: the computer skips a nonce it already has.
@@ -114,7 +120,7 @@ extension BotStore {
                     }
                     try Task.checkCancellation()
                     return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
-                                                 pasted: pasted, call: call)
+                                                 pasted: pasted, call: call, threadId: threadId)
                 }
                 outgoingFiles[nonce] = nil
                 upsert(e)
@@ -236,11 +242,11 @@ extension BotStore {
     public func retry(_ entry: Entry) {
         let files = entry.data.clientNonce.flatMap { outgoingFiles[$0] } ?? []
         guard let text = entry.data.text, !text.isEmpty || !files.isEmpty else { return }
-        entries[entry.botId]?.removeAll { $0.id == entry.id }
+        removeLocal(entry)
         // The same clientNonce: if the computer got it after all, it won't run twice (the host
         // skips a nonce it has). Every seal still takes a fresh ephemeral key (§6.4).
         send(text, to: entry.botId, replyTo: entry.data.replyTo, nonce: entry.data.clientNonce ?? UUID().uuidString,
-             files: files)
+             files: files, threadId: entry.threadId)
     }
 
     /// A sent file's bytes: on disk after the first fetch (sent files never change).
@@ -274,14 +280,30 @@ extension BotStore {
 
     public func discard(_ entry: Entry) {
         if let nonce = entry.data.clientNonce { outgoingFiles[nonce] = nil }
-        entries[entry.botId]?.removeAll { $0.id == entry.id }
+        removeLocal(entry)
         scheduleSave()
     }
 
+    /// Takes a local message out of the list holding it: its chat's, or its thread's.
+    private func removeLocal(_ entry: Entry) {
+        if let thread = entry.threadId {
+            threadEntries[thread]?.removeAll { $0.id == entry.id }
+        } else {
+            entries[entry.botId]?.removeAll { $0.id == entry.id }
+        }
+    }
+
     private func markLocal(nonce: String, botId: String, status: String) {
-        guard var list = entries[botId], let i = list.firstIndex(where: { $0.id == "local-\(nonce)" }) else { return }
-        list[i].data.status = status
-        entries[botId] = list
+        let id = "local-\(nonce)"
+        if let thread = threadEntries.first(where: { $0.value.contains { $0.id == id } })?.key {
+            guard var list = threadEntries[thread], let i = list.firstIndex(where: { $0.id == id }) else { return }
+            list[i].data.status = status
+            threadEntries[thread] = list
+        } else {
+            guard var list = entries[botId], let i = list.firstIndex(where: { $0.id == id }) else { return }
+            list[i].data.status = status
+            entries[botId] = list
+        }
         scheduleSave()
         if status == "failed", let bot = bots[botId] { onSent?(bot, .failed) }
     }

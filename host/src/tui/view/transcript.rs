@@ -21,14 +21,14 @@ pub(super) struct Built {
     pub(super) messages: Vec<(String, usize, usize)>,
 }
 
-struct TurnInfo {
+pub(super) struct TurnInfo {
     steps: usize,
     files: BTreeSet<String>,
     /// The turn's last message to the user: the steps line goes under it.
     last_message: Option<String>,
 }
 
-fn turn_info(entries: &[&Entry]) -> HashMap<i64, TurnInfo> {
+pub(super) fn turn_info(entries: &[&Entry]) -> HashMap<i64, TurnInfo> {
     let mut m: HashMap<i64, TurnInfo> = HashMap::new();
     for e in entries {
         let ti = m.entry(e.turn).or_insert_with(|| TurnInfo { steps: 0, files: BTreeSet::new(), last_message: None });
@@ -75,7 +75,10 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     // A bot's messages arrive whole (Grok Bot's `send_message`); what it writes along the way is trace.
     for item in group(&b.id, &entries) {
         match item {
-            Item::Entry(e) => entry_lines(&mut out, app, b, e, &info, width),
+            Item::Entry(e) => {
+                entry_lines(&mut out, app, b, e, &info, width);
+                thread_chip(&mut out, app, e, width);
+            }
             Item::Group(g) => {
                 let from = out.lines.len();
                 let lead = format!("{} messages with ", g.count);
@@ -138,8 +141,8 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
     out.lines.extend(md::wrap(&[Span::styled(hello, t.secondary)], width, &[Span::raw("  ")], &[Span::raw("  ")]));
 }
 
-/// One chat entry.
-fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i64, TurnInfo>, width: usize) {
+/// One chat entry (`pub(super)` for the thread view, which shows the same lines).
+pub(super) fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i64, TurnInfo>, width: usize) {
     let t = theme();
     // In a group each reply is its author's; elsewhere the bot's own.
     let author = if b.group { app.bots.get(e.data["author"].as_str().unwrap_or_default()) } else { Some(b) };
@@ -432,6 +435,40 @@ fn reactions(out: &mut Built, app: &App, e: &Entry) {
     if !r.is_empty() {
         out.lines.push(Line::from(Span::raw(format!("   {}", r.join("  ")))));
     }
+}
+
+/// A message's thread, under it: how many replied, how recently and who. Opens the thread.
+fn thread_chip(out: &mut Built, app: &App, e: &Entry, width: usize) {
+    let t = theme();
+    let Some(summary) = e.data["thread"].as_object() else { return };
+    let count = summary.get("count").and_then(serde_json::Value::as_i64).unwrap_or(0);
+    if count == 0 {
+        return;
+    }
+    let unread = e.thread_unread();
+    let last = summary.get("lastAt").and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let names: Vec<&str> = summary
+        .get("authors")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|id| app.bots.get(id.as_str()?).map(|b| b.name.as_str()))
+        .collect();
+    let replies = if count == 1 { "1 reply".to_owned() } else { format!("{count} replies") };
+    let mut parts = vec![replies];
+    if unread > 0 {
+        parts.push(format!("{unread} new"));
+    }
+    if !names.is_empty() {
+        parts.push(names.join(", "));
+    }
+    if last > 0 {
+        parts.push(clock(last));
+    }
+    let text = truncate(&format!(" ≡ {}", parts.join(" · ")), width.saturating_sub(3));
+    let style = if unread > 0 { t.amber } else { t.secondary };
+    out.buttons.push((out.lines.len(), 3, u(w(&text)), Click::Thread(e.id.clone())));
+    out.lines.push(Line::from(Span::styled(text, style)));
 }
 
 /// A user message on one line: its text, then its files.

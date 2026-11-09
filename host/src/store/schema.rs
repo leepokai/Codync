@@ -9,7 +9,8 @@ use std::sync::Mutex;
 /// Current schema version (kv `schema`).
 /// 7: the account a device joined with (devices.account).
 /// 8: a flow link's own model and effort (`routine_flow_links.model`, `.model_options`).
-const SCHEMA: i64 = 8;
+/// 9: a thread's title, branch origin and archive flag (`threads`).
+const SCHEMA: i64 = 9;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -35,7 +36,8 @@ fn migrate(c: &Connection) -> Result<()> {
     }
     migrate_6(c)?;
     migrate_7(c)?;
-    migrate_8(c)
+    migrate_8(c)?;
+    migrate_9(c)
 }
 
 fn migrate_3(c: &Connection) -> Result<()> {
@@ -153,6 +155,17 @@ fn migrate_8(c: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// A thread is a first-class thing now: it has a title, a branch origin and an archive drawer.
+fn migrate_9(c: &Connection) -> Result<()> {
+    super::threads::open(c)?;
+    c.execute_batch(
+        "BEGIN;
+         INSERT INTO kv(k, v) VALUES('schema', '9') ON CONFLICT(k) DO UPDATE SET v = '9';
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
 fn migrate_6(c: &Connection) -> Result<()> {
     c.execute_batch(
         "BEGIN;
@@ -210,6 +223,7 @@ impl Store {
         super::analytics::open(&c)?;
         super::apps::open(&c)?;
         super::open_items::open(&c)?;
+        super::threads::open(&c)?;
         super::flows::open(&c)?;
         codync_mem::schema::migrate(&c)?;
         let secret_key = if path == Path::new(":memory:") {
@@ -253,7 +267,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("9"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -276,7 +290,7 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("9"));
     }
 
     #[test]

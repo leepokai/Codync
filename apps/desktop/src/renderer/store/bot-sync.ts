@@ -278,7 +278,11 @@ export class BotSync extends BotMirror {
       case 'thread': {
         const root = (this.entries.get(event.botId) ?? []).find((e) => e.id === event.threadId)
         if (root) {
-          root.threadUnread = event.unread
+          root.threadUnread = event.thread?.unread ?? event.unread
+          const data = { ...root.data }
+          if (event.thread) data.thread = event.thread
+          else delete data.thread
+          root.data = data
           this.changed()
         }
         break

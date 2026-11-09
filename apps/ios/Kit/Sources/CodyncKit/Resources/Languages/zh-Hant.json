@@ -1769,5 +1769,21 @@
   "Forwarded from": "轉傳自",
   "No chats yet.": "還沒有聊天。",
   "Slack is set up with the host's setSlackChannel call; see the Slack checklist.": "Slack 透過主機的 setSlackChannel 呼叫設定；請參閱 Slack 檢查清單。",
-  "Slack is not connected.": "Slack 未連線。"
+  "Slack is not connected.": "Slack 未連線。",
+  "Threads": "話題",
+  "New thread": "新話題",
+  "Archived": "已封存",
+  "Rename": "重新命名",
+  "Archive": "封存",
+  "Restore": "還原",
+  "Branched from": "分支自",
+  "A short name": "簡短名稱",
+  "Delete thread?": "刪除話題?",
+  "Delete thread": "刪除話題",
+  "Its replies go with it; the chat stays.": "回覆會一起刪除，聊天仍保留。",
+  "Nothing archived.": "沒有已封存的話題。",
+  "No threads yet. Open one from the menu, or branch from a message.": "還沒有話題。從選單開啟一個，或從訊息分支。",
+  "Thread actions": "話題操作",
+  "Rename thread": "重新命名話題",
+  "A thread keeps one side conversation apart from the chat.": "話題把一段側邊對話與聊天分開。"
 }

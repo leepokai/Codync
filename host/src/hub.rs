@@ -538,19 +538,38 @@ impl Hub {
         Ok(false)
     }
 
-    /// Tells clients how many replies of the entry's thread are unread (a dot on the root line).
-    fn thread_unread(&self, thread: Option<&str>, bot: &str) {
-        if let Some(thread) = thread {
-            let unread = self.store.thread_unread(thread);
-            let _ = self.events.send(json!({"type": "thread", "threadId": thread, "botId": bot, "unread": unread}));
+    /// A live `entry` event for `e`, with its thread chip data when it is a root line.
+    fn entry_event(&self, e: &Entry) -> Value {
+        let mut entry = serde_json::to_value(e).unwrap_or(Value::Null);
+        if let Err(error) = self.store.decorate_thread(&mut entry) {
+            tracing::warn!(error = format!("{error:#}"), entry = e.id, "couldn't read an entry's thread");
         }
+        json!({"type": "entry", "rev": e.rev, "entry": entry})
+    }
+
+    /// Tells clients how many replies of the entry's thread are unread (a dot on the root line), and the
+    /// thread's summary, so the chip under that line stays current without reloading the chat.
+    fn thread_unread(&self, thread: Option<&str>, bot: &str) {
+        let Some(thread) = thread else { return };
+        let unread = self.store.thread_unread(thread);
+        let summary = self.store.thread_summary(thread).ok().flatten();
+        let _ = self
+            .events
+            .send(json!({"type": "thread", "threadId": thread, "botId": bot, "unread": unread, "thread": summary}));
+    }
+
+    /// A thread just went away: its root line's chip goes with it.
+    pub fn thread_deleted(&self, thread: &str, bot: &str) {
+        let _g = self.emit_lock.locked();
+        let _ =
+            self.events.send(json!({"type": "thread", "threadId": thread, "botId": bot, "unread": 0, "thread": null}));
     }
 
     pub fn add_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
         match self.store.insert_entry(lane, kind, turn, data) {
             Ok(e) => {
-                let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+                let _ = self.events.send(self.entry_event(&e));
                 self.thread_unread(lane.thread.as_deref(), &lane.chat);
                 Some(e)
             }
@@ -577,7 +596,7 @@ impl Hub {
         let _guard = self.emit_lock.locked();
         let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
         if added {
-            let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
+            let _ = self.events.send(self.entry_event(&entry));
             self.thread_unread(lane.thread.as_deref(), &lane.chat);
         }
         Ok((entry, added))
@@ -589,7 +608,7 @@ impl Hub {
         match self.store.update_entry(id, data) {
             Ok(e) => {
                 if let Some(e) = &e {
-                    let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+                    let _ = self.events.send(self.entry_event(e));
                     self.thread_unread(e.thread_id.as_deref(), &e.bot_id);
                 }
                 e
@@ -611,7 +630,7 @@ impl Hub {
             return Ok(e);
         }
         let e = self.store.update_entry(id, &e.data)?.ok_or_else(|| anyhow!("unknown message"))?;
-        let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+        let _ = self.events.send(self.entry_event(&e));
         self.thread_unread(e.thread_id.as_deref(), &e.bot_id);
         Ok(e)
     }

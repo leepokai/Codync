@@ -115,8 +115,14 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
   missing action, the plan or the account's limits are cleared only by a write that works (a read says nothing about
   them). *Create* stays offered (it tries again, for an owner who fixed their plan there) unless the key itself was
   refused (`blocking`: rejected or expired), which only another key fixes.
-- A host whose stop is refused (the key) is put back online at once (`/internal/awake` on its relay): it never
-  stopped, and no wake would find it running.
+- A host asking to sleep is recorded `stopping` before the stop goes out. One whose stop is turned down (the key,
+  busy, any refusal) is recorded `running` again, so the first wake takes the host back; a refused key leaves no wake
+  able to read the machine, so that host is put back online at once (`/internal/awake` on its relay). A provider
+  failing (5xx) may have stopped it all the same, so it stays `stopping`.
+- For two minutes after a host asked to sleep, a machine the provider still reports running stays recorded
+  `stopping` (`refresh`): its stop hasn't taken effect yet, so its host keeps waiting (`GET /v1/host/sleep`) and a
+  wake keeps trying. After that, running means the stop failed: it is recorded running, and the host is taken back
+  online.
 - Write-only API: `GET /v1/cloud-computers` adds `providers`, each with its `credential` (`{hint, problem,
   blocking, updatedAt}` or `null`), never the key. `DELETE /v1/cloud-credentials/:provider` is refused while any cloud computer
   runs on that provider: without the key Codync couldn't put it to sleep or delete it, and it would keep billing its
@@ -163,7 +169,9 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
     new ticket (the host has its whole 30 minutes to install and claim) and starts the script detached. One InstaBox
     paused before it got them is started again for it.
   - `backup`: Boat drops a stopped sandbox's own snapshot after 14 days, so it gets a never-expiring backup on day 10
-    and comes back from it; InstaBox keeps a stopped or paused machine's disks until it is deleted, so it has none.
+    (counted from its sleep request, however late the stop is seen) and comes back from it; InstaBox keeps a stopped
+    or paused machine's disks until it is deleted, so it has none. Deleting a computer deletes its backup first: one
+    that can't be deleted yet keeps the computer listed, so the delete can be tried again.
   - `deleteHistory`: Boat keeps automatic snapshots of earlier states (*Delete snapshots* erases them); InstaBox keeps
     none, so there is only the backup (if any) to erase.
   - Sleep: Boat stops (the disk is kept, memory isn't); InstaBox pauses (memory and processes kept, back in seconds).

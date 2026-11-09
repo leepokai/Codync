@@ -32,12 +32,15 @@ export async function hostSleep(c: Ctx) {
   const res = await relay("sleep", { wakeAt });
   if (res.status === 409) throw new ApiError("conflict", "A device is connected.");
   if (!res.ok) throw new ApiError("internal");
+  // Recorded before the stop goes out, so a wake meanwhile waits for it (`refresh`).
+  await setState(c.env, row.id, "stopping", c.now);
   const d = drivers[row.provider];
   const stopped = d.machine(await providerSend(c.env, row.user_id, row.provider, d.sleep(row.provider_id, crypto.randomUUID()), c.now));
-  // The owner's key was refused, so it surely didn't stop, and no wake can find it running either: back online now.
+  // Turned down (the key, busy, any refusal), it surely didn't stop, so the first wake takes the host back; only a
+  // provider failing may have stopped it all the same. A refused key leaves no wake able to read it: back online now.
+  if (!stopped.ok && (stopped.needsOwner || stopped.code === "busy" || !stopped.retryable)) await setState(c.env, row.id, "running", c.now);
   if (!stopped.ok && stopped.needsOwner) await relay("awake", {});
   value(stopped);
-  await setState(c.env, row.id, "stopping", c.now);
   return {};
 }
 

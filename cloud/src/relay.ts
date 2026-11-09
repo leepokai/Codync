@@ -202,7 +202,8 @@ export class ComputerRelay extends DurableObject<Env> {
     this.setMeta("wakeAt", wakeAt === null ? "" : String(wakeAt));
     if (wakeAt !== null) await this.ensureAlarm(wakeAt);
     // Offline from now on: the machine stops within a minute, and its socket may never close cleanly. The host
-    // stays connected until then; a wake that finds the machine still running takes it back (`wakeHost`).
+    // stays connected until then; a wake that finds the machine still running once its stop had time to take
+    // effect takes it back (`wakeHost`; before that, `wake` retries).
     for (const [ws, a] of this.hosts()) if (a.ready) ws.serializeAttachment({ ...a, ready: false });
     await this.hostOffline(Date.now());
     return Response.json({});

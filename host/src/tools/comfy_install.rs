@@ -25,6 +25,10 @@ const STALL: Duration = Duration::from_mins(1);
 const REPORT_EVERY: Duration = Duration::from_millis(500);
 /// The folder the official archive unpacks to.
 const PORTABLE_ROOT: &str = "ComfyUI_windows_portable";
+/// Windows Defender and other scanners keep freshly unpacked files open for a while, and a folder with an
+/// open file can't be moved: the move is tried again for about a minute.
+const MOVE_TRIES: u32 = 30;
+const MOVE_PAUSE: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Phase {
@@ -130,12 +134,16 @@ impl Installer {
             );
         }
         let work = root.join(".download");
-        let _ = tokio::fs::remove_dir_all(&work).await;
         tokio::fs::create_dir_all(&work).await.context("preparing the download folder")?;
         let archive = work.join(&pin.asset);
         let source = Source { url: pin.url(), size: pin.size, sha256: pin.sha256.clone() };
-        self.set(Phase::Downloading, 0, source.size, None);
-        download(&source, &archive, |done| self.set(Phase::Downloading, done, source.size, None)).await?;
+        // A start that failed after the download (say, while unpacking) doesn't fetch 2 GB again.
+        let (checked, expected) = (archive.clone(), (source.size, source.sha256.clone()));
+        let kept = tokio::task::spawn_blocking(move || already_downloaded(&checked, expected.0, &expected.1)).await?;
+        if !kept {
+            self.set(Phase::Downloading, 0, source.size, None);
+            download(&source, &archive, |done| self.set(Phase::Downloading, done, source.size, None)).await?;
+        }
         self.set(Phase::Unpacking, 0, 0, None);
         let target = comfy::downloaded_dir();
         let placed = target.clone();
@@ -209,20 +217,61 @@ async fn fetch_once(source: &Source, dest: &Path, progress: &impl Fn(u64)) -> Re
     }
     file.flush().await.context("saving the download")?;
     progress(done);
-    let digest = hash.finalize().iter().fold(String::with_capacity(64), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
-        s
-    });
+    let digest = hex(&hash.finalize());
     if done != source.size || !digest.eq_ignore_ascii_case(&source.sha256) {
         return Err(anyhow!(Mismatch)).with_context(|| format!("{done} bytes with SHA-256 {digest}"));
     }
     Ok(())
 }
 
+fn hex(digest: &[u8]) -> String {
+    digest.iter().fold(String::with_capacity(64), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
+/// Whether `path` already holds the pinned archive, checked byte for byte. Blocking.
+fn already_downloaded(path: &Path, size: u64, sha256: &str) -> bool {
+    use std::io::Read;
+    if std::fs::metadata(path).map(|m| m.len()).ok() != Some(size) {
+        return false;
+    }
+    let Ok(mut file) = std::fs::File::open(path) else { return false };
+    let mut hash = Sha256::new();
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => hash.update(&buffer[..n]),
+            Err(_) => return false,
+        }
+    }
+    hex(&hash.finalize()).eq_ignore_ascii_case(sha256)
+}
+
+/// `std::fs::rename` that waits out a scanner holding files in `from` open.
+fn rename_patiently(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut tries = 1;
+    loop {
+        match std::fs::rename(from, to) {
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && tries < MOVE_TRIES => {
+                std::thread::sleep(MOVE_PAUSE);
+                tries += 1;
+            }
+            done => return done,
+        }
+    }
+}
+
 /// Unpacks `archive` with 7za into `work`, moves the portable to `target`, and removes the other versions
 /// beside it and the download folder. Blocking.
 fn unpack_and_place(seven: &Path, archive: &Path, work: &Path, target: &Path) -> Result<()> {
     let unpacked = work.join("unpacked");
+    // What an earlier, interrupted unpack left is not trusted.
+    if unpacked.exists() {
+        std::fs::remove_dir_all(&unpacked).with_context(|| format!("clearing {}", unpacked.display()))?;
+    }
     let mut command = std::process::Command::new(seven);
     command
         .arg("x")
@@ -246,7 +295,7 @@ fn unpack_and_place(seven: &Path, archive: &Path, work: &Path, target: &Path) ->
     if target.exists() {
         std::fs::remove_dir_all(target).with_context(|| format!("clearing {}", target.display()))?;
     }
-    std::fs::rename(&portable, target).with_context(|| format!("moving ComfyUI to {}", target.display()))?;
+    rename_patiently(&portable, target).with_context(|| format!("moving ComfyUI to {}", target.display()))?;
     for entry in std::fs::read_dir(versions)?.filter_map(Result::ok) {
         let path = entry.path();
         if path != target
@@ -339,6 +388,19 @@ mod tests {
     fn test_seven_zip() -> Option<PathBuf> {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../apps/desktop/node_modules/7zip-bin/win/x64/7za.exe");
         path.is_file().then_some(path)
+    }
+
+    #[test]
+    fn a_kept_archive_is_reused_only_when_it_is_the_pinned_one() {
+        let dir = temp("kept");
+        let path = dir.join("ComfyUI.7z");
+        let body = b"the pinned archive".to_vec();
+        std::fs::write(&path, &body).expect("an archive");
+        assert!(already_downloaded(&path, body.len() as u64, &sha(&body)));
+        assert!(!already_downloaded(&path, body.len() as u64, &sha(b"another")), "same size, other bytes");
+        assert!(!already_downloaded(&path, 1, &sha(&body)), "other size");
+        assert!(!already_downloaded(&dir.join("missing.7z"), 1, &sha(&body)));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

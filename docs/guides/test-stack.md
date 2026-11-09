@@ -12,7 +12,7 @@ Run them one at a time: never start a test binary several times in parallel, or 
 
 Everyday tests use the fake agents, which only answer the way we expect. Run the real ones too, one short turn per agent on the cheapest model, with nothing in parallel (it uses your own plan), when:
 
-1. The registry version of `claude-acp` or `codex-acp` moves ([ACP adapter workarounds](../reference/acp-adapter-workarounds.md)).
+1. The registry version of `claude-acp` or `codex-acp` moves ([upstream agent bugs](../upstream-agents/README.md)).
 2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
 3. Before a release.
 
@@ -38,7 +38,7 @@ maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-ta
 
 The devices are the worktree's own simulator `Codync <sandbox name>` and the shared `codync_worktree` emulator, under its lock ([worktree sandboxes](dev-app.md#worktree-sandboxes)). Install the worktree's builds first: `xcodebuild … -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd` for the simulator, `./gradlew :app:assembleDebug` for the emulator.
 
-A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it. That signs the Android app out, but the iPhone's sign-in stays in the simulator's Keychain, so run `xcrun simctl keychain <device> reset` before `smoke` on a signed-in simulator. `sign-in-cancel.yaml` (`sign-in`) clears it the same way and needs the phone online, since it opens Google's page and leaves it. `signed-out-pairing.yaml` needs a sandbox in no account and the phone signed out, and takes the pairing link as `PAIRING_URL`. Run a flow past the welcome screen in a Maestro run of its own, after the sign-in. Signed in isn't past first-run setup: `agent-logos.yaml` skips the choice page when it's there. The `computer-choice` flows need setup unfinished (fresh app data) and each finishes or changes it, so each gets its own run with its own start: `computer-choice` and `computer-choice-skip` with a computer in the account (`npm run dev -- --cloud`), `computer-choice-empty` without one.
+A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it. That signs the Android app out, but the iPhone's sign-in stays in the simulator's Keychain, so run `xcrun simctl keychain <device> reset` before `smoke` on a signed-in simulator. `sign-in-cancel.yaml` (`sign-in`) clears it the same way and needs the phone online, since it opens Google's page and leaves it. `signed-out-pairing.yaml` needs a sandbox in no account and the phone signed out, and takes the pairing link as `PAIRING_URL`. Run a flow past the welcome screen in a Maestro run of its own, after the sign-in. Signed in isn't past first-run setup: `agent-logos.yaml` skips the choice page when it's there. The `computer-choice` flows need setup unfinished (fresh app data) and each finishes or changes it, so each gets its own run with its own start: `computer-choice` and `computer-choice-skip` with a computer in the account (`npm run dev -- --cloud`, or the sandbox's own local cloud on a branch that changes `cloud/`), `computer-choice-empty` without one.
 
 Two things that look like failures but aren't the app's:
 

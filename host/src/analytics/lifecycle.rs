@@ -1,4 +1,4 @@
-//! Events outside API calls: the host's own start, a phone added, a phone connecting.
+//! Events outside API calls: the host's own start (and a cloud computer's keeper), a phone added, a phone connecting.
 
 use super::{Analytics, Event, capture, platform, platform_of};
 use crate::LockExt as _;
@@ -39,6 +39,32 @@ fn started(last: Option<&str>, version: &str, service: bool) -> Map<String, Valu
     }
     p.insert("service".into(), service.into());
     p
+}
+
+/// How a Codync Cloud computer's keeper stood when its host started (`cloud_keeper_checked`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeeperState {
+    /// It had its vault key.
+    Unlocked,
+    /// Still waiting for its key from the Codync cloud after the host's short wait.
+    Locked,
+    /// Nothing listening on its socket.
+    Missing,
+}
+
+/// `cloud_keeper_checked`, once per start of a cloud computer's host: how its keeper stood, and whether `sudo` still
+/// worked for its agents (which would leave the keeper's secrets open to them).
+pub fn cloud_keeper_checked(hub: &Hub, state: KeeperState, sudo: bool) {
+    let state = match state {
+        KeeperState::Unlocked => "unlocked",
+        KeeperState::Locked => "locked",
+        KeeperState::Missing => "missing",
+    };
+    capture(
+        hub,
+        Event::CloudKeeperChecked,
+        Map::from_iter([("state".into(), state.into()), ("sudo".into(), sudo.into())]),
+    );
 }
 
 /// How a phone stands with this computer's account after pairing (`device_paired`).
@@ -152,5 +178,52 @@ mod tests {
         assert_eq!(p(Some("2.19.3"), false), json!({"first_run": false, "updated_from": "2.19.3", "service": false}));
         assert_eq!(p(Some("2.20.0"), true), json!({"first_run": false, "service": true}));
         assert_eq!(p(None, true), json!({"first_run": false, "service": true}), "a host from before this was kept");
+    }
+
+    #[test]
+    fn a_cloud_computer_reports_its_keeper_and_sudo_once_per_start() {
+        use crate::LockExt as _;
+        let dir = std::env::temp_dir().join(format!("codync-keeper-event-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+        let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
+        cloud_keeper_checked(&hub, KeeperState::Missing, true);
+        cloud_keeper_checked(&hub, KeeperState::Unlocked, false);
+        cloud_keeper_checked(&hub, KeeperState::Locked, false);
+
+        let mut rx = hub.analytics.rx.locked().take().unwrap();
+        let mut sent = Vec::new();
+        while let Ok(super::super::Msg::Event(event)) = rx.try_recv() {
+            sent.push(event);
+        }
+        let own = |e: &Value| json!({"event": e["event"], "state": e["properties"]["state"], "sudo": e["properties"]["sudo"]});
+        assert_eq!(
+            sent.iter().map(own).collect::<Vec<_>>(),
+            [
+                json!({"event": "cloud_keeper_checked", "state": "missing", "sudo": true}),
+                json!({"event": "cloud_keeper_checked", "state": "unlocked", "sudo": false}),
+                json!({"event": "cloud_keeper_checked", "state": "locked", "sudo": false}),
+            ]
+        );
+        // Nothing else of its own: no slot, URL or secret, only the properties every host event carries.
+        let mut keys: Vec<&str> = sent[0]["properties"].as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "$lib",
+                "$os",
+                "$process_person_profile",
+                "$session_id",
+                "app_version",
+                "arch",
+                "computer",
+                "env",
+                "state",
+                "sudo"
+            ]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

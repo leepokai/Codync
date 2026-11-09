@@ -18,28 +18,19 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     let cwd = crate::service::data_dir().join("background");
     tokio::fs::create_dir_all(&cwd).await?;
     let cwd = cwd.to_string_lossy().into_owned();
-    if hub.store.kv_read(&format!("agent-env:{}", cfg.backend))?.is_some() {
+    if crate::market::vault::saved(&hub.store, &format!("agent-env:{}", cfg.backend))? {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let env = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
-    let mut conn = None;
-    let mut last_err = None;
-    for candidate in crate::agent::bot::launch_commands(cfg)? {
-        let started = async {
-            let mut command = [candidate.resolve(|_| {}).await?.acp()];
-            let mut env = env.clone();
-            crate::agent::own_memory::turn_off(&cfg.backend, &cwd, &mut env, &mut command).await;
-            crate::agent::bot::start_agent(&command[0], &cwd, &env, Duration::from_mins(1)).await
-        };
-        match started.await {
-            Ok(c) => {
-                conn = Some(c);
-                break;
-            }
-            Err(e) => last_err = Some(e),
-        }
-    }
-    let mut conn = conn.ok_or_else(|| last_err.unwrap_or_else(|| anyhow!("no agent to run a background job")))?;
+    let (env, grants) = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
+    let candidates = crate::agent::bot::launch_commands(cfg)?;
+    let workspace = cwd.as_str();
+    let mut conn = crate::agent::bot::start_first(candidates, &env, |candidate, mut env, _| async move {
+        let mut command = [candidate.resolve(|_| {}).await?.acp()];
+        crate::agent::own_memory::turn_off(&cfg.backend, workspace, &mut env, &mut command).await;
+        crate::agent::bot::start_agent(&command[0], workspace, &env, Duration::from_mins(1)).await
+    })
+    .await?;
+    conn.acp.hold(grants);
     let acp = conn.acp.clone();
     let result = async {
         let mut params = json!({"cwd": cwd, "mcpServers": []});

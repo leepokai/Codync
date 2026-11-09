@@ -65,6 +65,10 @@ import Testing
     #expect(old == HostVersionLine(version: "2.20.0", detail: ["This app needs 2.26.0 or newer."], warns: true, accessory: .button("Update")))
     let manual = HostVersionLine.make(version: "2.20.0", latest: "2.29.0", mismatch: behind, offer: .unavailable, host: "Mac", os: "linux")
     #expect(manual.detail == ["This app needs 2.26.0 or newer.", "Run codync-host update there."] && manual.warns)
+    // A Codync Cloud computer has no terminal: the cloud updates it.
+    let cloud = HostVersionLine.make(version: "2.20.0", latest: "2.29.0", mismatch: behind, offer: .unavailable, host: "Cloud",
+                                     os: "linux", cloud: true)
+    #expect(cloud.detail == ["This app needs 2.26.0 or newer.", "Codync Cloud updates it before it next sleeps."])
     let failed = HostVersionLine.make(version: "2.28.0", latest: "2.29.0", mismatch: nil,
                                       offer: .available(last: .failed("A bot is working on this computer.")), host: "Mac", os: "macos")
     #expect(failed == HostVersionLine(version: "2.28.0", detail: ["A bot is working on this computer."], warns: true,

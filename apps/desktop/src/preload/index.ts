@@ -75,6 +75,24 @@ const bridge: CodyncBridge = {
       }
     },
   },
+  channel: {
+    async call(computerId, signKey, method, body, timeoutMs) {
+      const result = (await ipcRenderer.invoke('channel:call', computerId, signKey, method, body, timeoutMs)) as
+        | { ok: true; value: unknown }
+        | { ok: false; error: CallError }
+      if (!result.ok) throw result.error
+      return result.value
+    },
+    stream(computerId, signKey, path, onData, onEnd) {
+      const id = `s${++streamId}`
+      streams.set(id, { onData, onEnd })
+      ipcRenderer.send('channel:stream:open', id, computerId, signKey, path)
+      return () => {
+        if (!streams.delete(id)) return
+        ipcRenderer.send('channel:stream:close', id)
+      }
+    },
+  },
   account: {
     state: () => ipcRenderer.invoke('account:state'),
     onChange: (cb) => listen('account:change', cb),
@@ -116,6 +134,7 @@ const bridge: CodyncBridge = {
   },
   cloud: {
     request: (method, path, body, signed) => ipcRenderer.invoke('cloud:request', method, path, body, signed),
+    requestAccess: (computerId) => ipcRenderer.invoke('cloud:requestAccess', computerId),
   },
   updates: {
     state: () => ipcRenderer.invoke('updates:state'),
@@ -136,6 +155,8 @@ const bridge: CodyncBridge = {
     cancel: (id) => ipcRenderer.invoke('files:cancel', id),
   },
   app: {
+    attended: () => ipcRenderer.invoke('app:attended'),
+    onAttended: (cb) => listen('app:attended', cb),
     reportError: (report) => ipcRenderer.send('app:reportError', report),
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
     copy: (text) => ipcRenderer.send('app:copy', text),

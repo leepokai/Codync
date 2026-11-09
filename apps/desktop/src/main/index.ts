@@ -19,6 +19,9 @@ import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
 import { registerCloud } from './cloud'
+import { registerCloudAccess } from './cloud-access'
+import { registerChannels } from './channel'
+import { watchAttention } from './attention'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
@@ -94,6 +97,7 @@ function openChat() {
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
+  watchAttention(chat)
   keepArtifactsInFrame(chat.webContents)
   void chat.loadURL(rendererURL('chat'))
   return chat
@@ -263,6 +267,8 @@ if (yieldsToInstall()) {
     registerSpeech()
     registerScreenIPC()
     registerCloud(account)
+    registerCloudAccess(account)
+    registerChannels(account)
     registerSSH(() => BrowserWindow.getAllWindows())
     registerSSHConfig()
     // Calls use the microphone (realtime voice); nothing else asks for permissions.

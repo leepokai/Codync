@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
-import { Button, CardSection, IconButton, Reveal, Spinner, Switch } from '../../components/Controls'
+import { Button, CardSection, IconButton, Reveal, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { offlineCloudStatus, placementLine, type StatusLine } from '../../lib/cloud-computer'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
 import { analytics } from '../../store/analytics'
@@ -19,6 +20,8 @@ import { ComputersUsedSection } from './ComputersUsedSection'
 import { leavingRemovesText, withJoinRemoves } from '../../lib/account-copy'
 import { useJoinRemoves, useLeaveRemoves } from '../use-join-removes'
 import { cloudStatusLine } from '../../lib/relay-copy'
+import { CodyncCloudSection } from './CodyncCloudSection'
+import { CodyncVersionRow } from './CodyncVersionRow'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
 import { RelayAddressRow, RelayTokenRow } from './RelayFields'
@@ -44,7 +47,8 @@ export function ComputersView() {
   // A computer this app reaches (an SSH one) can name what goes; any other gets the general warning.
   const removingNames = useLeaveRemoves(managed.find((store) => store.computer.id === removing?.computerId) ?? null, removing !== null)
   // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
-  const others = cloud.computers.filter((c) => c.computerId !== app.local?.computer.id)
+  // Account computers this app isn't using (iOS `accountOnly`): the ones it uses have their own card or section.
+  const others = cloud.computers.filter((c) => !app.store(c.computerId))
   const addSSH = (host: string) => setEditing({ profile: { ...newSSHProfile(window.codync.hostPort), host }, isNew: true })
 
   return (
@@ -72,6 +76,8 @@ export function ComputersView() {
           ))}
           <SSHConfigSuggestions add={addSSH} />
         </div>
+
+        <CodyncCloudSection />
 
         <div>
           <SectionHeader title="Other computers in your account">
@@ -307,41 +313,14 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
   )
 }
 
-/** The Codync a computer runs, and its update when one is due (iOS `CodyncVersionRow`). */
-function CodyncVersionRow({ store }: { store: BotStore }) {
-  const tr = useTr()
-  // Moved on when an update asked from here runs out of time, so one that never finished is offered again.
-  const [now, setNow] = useState(Date.now)
-  const ends = store.hostUpdateWaitEnds
-  useEffect(() => {
-    if (ends === null) return
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, ends - Date.now()))
-    return () => clearTimeout(timer)
-  }, [ends])
-  const line = store.hostVersionLine(Math.max(now, Date.now()))
-  if (!line) return null
-  return (
-    <div className="settings-row settings-appear">
-      <Icon name="arrow.down.circle" size={13} color="var(--secondary)" />
-      <VStack grow className="settings-stack">
-        <Text>Codync <Text tone="secondary" tabular>{line.version}</Text></Text>
-        {line.detail.length > 0 ? (
-          <Text size="caption" tone={line.warns ? 'attention' : 'secondary'}>{line.detail.map((sentence) => tr(sentence)).join(' ')}</Text>
-        ) : null}
-      </VStack>
-      {line.accessory?.kind === 'updating' ? <Spinner />
-        : line.accessory ? <Button onClick={() => store.requestHostUpdate()}>{line.accessory.title}</Button>
-        : null}
-    </div>
-  )
-}
-
 /**
  * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). An
- * offline one can be removed: a computer that was reset or given away never comes back under that identity.
+ * offline one can be removed: a computer that was reset or given away never comes back under that identity. A
+ * cloud computer says where it runs, sleeping isn't offline, and it is deleted in its own section instead.
  */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
   const tr = useTr()
+  const status = accountComputerStatus(computer, olderCopy)
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
@@ -350,19 +329,23 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
         </span>
         <div className="settings-stack">
           <Text size="callout" weight="medium" tone={olderCopy ? 'secondary' : undefined}>{computer.name}</Text>
-          <Text size="caption" tone={olderCopy ? 'tertiary' : 'secondary'}>{tr(accountComputerStatus(computer, olderCopy))}</Text>
+          {computer.cloud ? <Text size="caption" tone="secondary">{placementLine(computer.cloud, tr)}</Text> : null}
+          <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />
-        {computer.online ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
+        {/* A cloud computer goes with Delete cloud computer, in its own section. */}
+        {computer.online || computer.cloud ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
       </div>
     </div>
   )
 }
 
 /** "Older copy", not the phones' "Older copy of this computer": on the desktop "this computer" reads as this Mac. */
-function accountComputerStatus(computer: CloudComputer, olderCopy: boolean) {
-  if (!olderCopy) return computer.online ? 'Online' : 'Offline'
-  return computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy'
+function accountComputerStatus(computer: CloudComputer, olderCopy: boolean): StatusLine {
+  const line = (text: string) => ({ text, error: false })
+  if (computer.online) return line('Online')
+  if (!olderCopy) return offlineCloudStatus(computer.cloud) ?? line('Offline')
+  return line(computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy')
 }
 
 /** "Pair iPhone" for a computer this app manages, through its store. */

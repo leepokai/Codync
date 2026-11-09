@@ -80,12 +80,12 @@ export function Switch({ on, onChange, children, label, disabled, className }: {
 }
 
 /** A button that opens a Codync menu. */
-export function DropdownMenu({ items, children, className, style, title }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string }) {
+export function DropdownMenu({ items, children, className, style, title, disabled }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
   return (
     <>
-      <button ref={ref} className={className} style={style} title={title} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button ref={ref} className={className} style={style} title={title} disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {children}
       </button>
       <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} />
@@ -378,4 +378,10 @@ export function ResizeHandle({ label, width, min, max, edge, onResize, onDraggin
       onKeyDown={onKeyDown}
     />
   )
+}
+
+/** A quiet "Beta" pill beside a feature still in beta (Network, Codync Cloud). */
+export function BetaTag() {
+  const tr = useTr()
+  return <Text as="span" size="caption" weight="semibold" className="beta-tag">{tr('Beta')}</Text>
 }

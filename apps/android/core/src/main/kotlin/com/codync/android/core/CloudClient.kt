@@ -6,6 +6,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import okhttp3.Call
@@ -22,10 +23,99 @@ import java.util.concurrent.TimeUnit
 data class CloudComputer(val computerId: String, val name: String, val signKey: String,
     val platform: String? = null, val device: String? = null, val boxKey: String? = null,
     val version: String? = null, val online: Boolean? = null, val lastSeenAt: Long? = null,
-    val claimedAt: Long? = null, val access: String? = null) {
+    val claimedAt: Long? = null, val access: String? = null,
+    /** Set when Codync Cloud runs this computer (older clouds omit it). */
+    val cloud: CloudPlacement? = null) {
     /** This device was approved on it through the account. */
     val isGranted: Boolean get() = access == "granted"
 }
+
+/** Who runs a Codync Cloud computer, where, and whether it's awake (`cloud` on an account computer; iOS `CloudHosting`). */
+@Serializable
+data class CloudPlacement(val provider: String, val providerName: String, val region: String, val state: String) {
+    /** Asleep, or going to sleep: it wakes when a device connects or a message arrives. */
+    val asleep: Boolean get() = state == "stopped" || state == "stopping"
+    val failed: Boolean get() = state == "failed"
+}
+
+/** One of the account's cloud computers (`/v1/cloud-computers`, iOS `CloudMachine`): [computerId] stays null until it has
+ * claimed itself into the account. */
+@Serializable
+data class CloudMachine(val cloudComputerId: String,
+    /** The name the user gave it (also its account computer's). */
+    val name: String,
+    val provider: String, val providerName: String, val region: String, val state: String,
+    val computerId: String? = null, val backupAt: Long? = null, val createdAt: Long? = null,
+    /** Whether its provider keeps snapshots (earlier states, a backup) that Delete snapshots erases; older clouds don't
+     * say, and they all did. */
+    val snapshots: Boolean = true) {
+    val failed: Boolean get() = state == "failed"
+    /** Created, and not yet in the account (nor failed): it's booting and installing the host. */
+    val preparing: Boolean get() = computerId == null && !failed
+}
+
+/**
+ * `/v1/cloud-computers`: the account's cloud computers (oldest first), whether it may have them (the feature isn't public
+ * yet) and how many, and every provider they can run on with the account's key for it (iOS `CloudStatus`).
+ */
+@Serializable
+data class CloudOffer(@SerialName("cloudComputers") val machines: List<CloudMachine> = emptyList(), val available: Boolean = false,
+    val limit: Int = 3, val providers: List<CloudProvider> = emptyList()) {
+    /** The provider New cloud computer creates on: [picked] while its key works, else the first whose key does. One picked
+     * before its key was added (or fixed) is chosen once it is (iOS `CloudMachineStore.provider(picked:)`). */
+    fun chosenProvider(picked: String?): String? {
+        val usable = providers.filter { it.usable }
+        return (usable.firstOrNull { it.provider == picked } ?: usable.firstOrNull())?.provider
+    }
+
+    /** A key can go unless a cloud computer runs on that provider (the cloud needs it to put them to sleep). */
+    fun canRemoveKey(provider: String) = machines.none { it.provider == provider }
+
+    /** What a new computer is called when the user names it nothing: [base] while no computer has that name, else
+     * [numbered] (`… {n}`) with the smallest free n from 2. The app passes both translated. */
+    fun suggestedName(base: String = "Cloud computer", numbered: String = "Cloud computer {n}"): String {
+        val taken = machines.mapTo(mutableSetOf()) { it.name }
+        if (base !in taken) return base
+        return generateSequence(2) { it + 1 }.map { numbered.replace("{n}", "$it") }.first { it !in taken }
+    }
+
+    fun withCredential(provider: String, credential: CloudCredential?) =
+        copy(providers = providers.map { if (it.provider == provider) it.copy(credential = credential) else it })
+}
+
+/**
+ * A provider the cloud can run the computer on, as it lists them: where it runs, how to make its key (worded by the
+ * cloud, so a new provider needs no app release) and the account's key for it.
+ */
+@Serializable
+data class CloudProvider(val provider: String, val name: String, val region: String,
+    /** What its keys start with, for the field's placeholder (`boat_…`). */
+    val keyPrompt: String,
+    val setup: CloudKeySetup, val credential: CloudCredential? = null,
+    /** Its own free plan, if it has one (older clouds don't say). */
+    val offer: CloudProviderOffer? = null) {
+    /** The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
+     * when the provider said no for the plan or the account). */
+    val usable: Boolean get() = credential != null && !credential.blocking
+}
+
+/** A provider's own free plan, in the cloud's words (the app translates [label] and [detail]), and its page. */
+@Serializable
+data class CloudProviderOffer(val label: String, val detail: String, val url: String)
+
+/** A key the account gave a provider, as the cloud shows it: never the key itself. */
+@Serializable
+data class CloudCredential(
+    /** Its kind and last four, `boat_…9abc`. */
+    val hint: String,
+    /** What the owner has to fix while the provider turns the key down, in a sentence the app translates. */
+    val problem: String? = null,
+    /** The key itself was turned down (revoked, expired): nothing can be made with it until it's replaced. */
+    val blocking: Boolean = false)
+
+/** How the user makes a provider's key: commands to run, or the provider's page. */
+@Serializable
+data class CloudKeySetup(val page: String, val commands: String)
 
 data class AccessTicket(val requestId: String, val expiresAt: Long, val code: String, val computerId: String, val signKey: String)
 
@@ -59,19 +149,20 @@ class CloudError(val status: Int, val code: String, detail: String? = null) : IO
 }
 
 /** Existing /v1 account protocol; a login is never a host authorization. */
-class CloudClient private constructor(base: String, private val identity: DeviceIdentity,
+class CloudClient private constructor(base: String, private val identity: DeviceIdentity, private val appVersion: String,
     private val token: suspend () -> String, private val http: OkHttpClient,
     private val pollInterval: Long) {
     private val baseUrl = base.trimEnd('/').toHttpUrl()
     private val json = Json { ignoreUnknownKeys = true }
+    private val app = appHeader(appVersion)
 
-    constructor(base: String, identity: DeviceIdentity, token: suspend () -> String) : this(base, identity, token,
+    constructor(base: String, identity: DeviceIdentity, appVersion: String, token: suspend () -> String) : this(base, identity, appVersion, token,
         OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).callTimeout(20, TimeUnit.SECONDS).build(), 2_000) {
         require(isCloudUrl(base)) { "Invalid cloud address" }
     }
 
     internal constructor(base: String, identity: DeviceIdentity, token: suspend () -> String,
-        http: OkHttpClient, pollInterval: Long, testOnly: Unit) : this(base, identity, token, http, pollInterval)
+        http: OkHttpClient, pollInterval: Long, testOnly: Unit, appVersion: String = "2.24.0") : this(base, identity, appVersion, token, http, pollInterval)
 
     suspend fun registerDevice(name: String) { request("POST", listOf("v1", "devices"),
         buildJsonObject { put("name", name); put("platform", "android") }, signed = true) }
@@ -169,7 +260,7 @@ class CloudClient private constructor(base: String, private val identity: Device
      */
     suspend fun pinningToken(): CloudClient? {
         val now = try { token() } catch (error: CancellationException) { throw error } catch (_: Exception) { return null }
-        return CloudClient(baseUrl.toString(), identity, { now }, http, pollInterval)
+        return CloudClient(baseUrl.toString(), identity, appVersion, { now }, http, pollInterval)
     }
 
     /** This device's id in the account; null when it was never registered. */
@@ -182,11 +273,35 @@ class CloudClient private constructor(base: String, private val identity: Device
     }
     suspend fun cancelAccess(id: String) { request("DELETE", listOf("v1", "access-requests", id)) }
 
+    /** The account's Codync Cloud computers, and whether this account may create them. */
+    suspend fun cloudComputers(): CloudOffer = json.decodeFromJsonElement(request("GET", listOf("v1", "cloud-computers")))
+    /**
+     * Gives Codync Cloud the key to the user's own account with [provider]. The cloud checks it there and keeps it
+     * sealed; a refusal (`422 keyRefused`) says what to fix.
+     */
+    suspend fun saveCloudKey(provider: String, key: String): CloudCredential = json.decodeFromJsonElement(
+        request("PUT", listOf("v1", "cloud-credentials", provider), buildJsonObject { put("key", key.trim()) }).getValue("credential"))
+    /** Forgets [provider]'s key (`409 conflict` while a cloud computer runs on it). */
+    suspend fun deleteCloudKey(provider: String) { request("DELETE", listOf("v1", "cloud-credentials", provider)) }
+    /** Creates another cloud computer called [name] on [provider] (`403 forbidden` when the cloud has Codync Cloud off,
+     * `409` at the limit or without that provider's key, `keyRefused` with what to fix). */
+    suspend fun createCloudComputer(provider: String, name: String): CloudMachine = machine(
+        request("POST", listOf("v1", "cloud-computers"), buildJsonObject { put("provider", provider); put("name", name) }))
+    /** Its new [name], here and as its computer (its host takes it at its next look at the cloud). */
+    suspend fun renameCloudComputer(id: String, name: String): CloudMachine =
+        machine(request("PATCH", listOf("v1", "cloud-computers", id), buildJsonObject { put("name", name) }))
+    /** Erases the machine, its snapshots and backup, and takes its computer out of the account. */
+    suspend fun deleteCloudComputer(id: String) { request("DELETE", listOf("v1", "cloud-computers", id)) }
+    /** Erases its earlier saved states and backup, keeping the computer (`409 conflict` while it sleeps). */
+    suspend fun deleteCloudSnapshots(id: String) { request("DELETE", listOf("v1", "cloud-computers", id, "snapshots")) }
+
+    private fun machine(response: JsonObject): CloudMachine = json.decodeFromJsonElement(response.getValue("cloudComputer"))
+
     private suspend fun request(method: String, path: List<String>, body: JsonObject? = null, signed: Boolean = false): JsonObject {
         val url = baseUrl.newBuilder().apply { path.forEach(::addPathSegment) }.build()
         val bytes = body?.toString()?.toByteArray() ?: byteArrayOf()
         val jwt = token()
-        val builder = Request.Builder().url(url).header("Authorization", "Bearer $jwt")
+        val builder = Request.Builder().url(url).header("Authorization", "Bearer $jwt").header("Codync-App", app)
             .method(method, if (body != null) bytes.toRequestBody("application/json".toMediaType()) else null)
         if (signed) builder.header("Codync-Sig", RequestSigner.header(identity, method, url, bytes))
         val call = http.newCall(builder.build())

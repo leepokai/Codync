@@ -17,6 +17,7 @@ impl Actor {
             Cmd::RefreshTools => {
                 self.tools_changed = true;
             }
+            Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await,
             Cmd::Steer { entry_id } => self.steer(entry_id).await,
@@ -174,7 +175,7 @@ impl Actor {
     }
 
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
-    async fn restart_agent(&mut self) {
+    pub(super) async fn restart_agent(&mut self) {
         self.files.cancel();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
@@ -267,10 +268,8 @@ impl Actor {
                     if turn.reply.is_closed() || !(turn.late || self.hub.groups.current(&turn.lane, turn.epoch)) {
                         continue;
                     }
-                    if turn.late
-                        && let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg)
-                    {
-                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "late room turn dropped");
+                    if let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg.id) {
+                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "room turn dropped");
                         continue;
                     }
                     let (lane, prompt) = (turn.lane.clone(), turn.prompt.clone());

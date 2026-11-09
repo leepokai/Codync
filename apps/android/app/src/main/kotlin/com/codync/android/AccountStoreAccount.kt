@@ -106,8 +106,10 @@ fun AccountStore.refreshCloud() = action("cloud") {
         val client = cloud ?: return@action
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
-        mutableState.update { it.copy(cloudComputers = computers) }
+        mutableState.update { it.copy(cloudComputers = computers, appFloor = null) }
+        shareAccountView()
         learnRelay(computers)
+        askCloudComputers(computers)
     } catch (error: IOException) {
         if (error is CloudError && !error.isTransient) throw error
         // Runs on every launch and foreground: a dropped connection, a busy cloud or a token not ready

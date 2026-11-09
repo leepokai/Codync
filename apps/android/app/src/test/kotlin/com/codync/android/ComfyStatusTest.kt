@@ -38,6 +38,19 @@ class ComfyStatusTest {
         assertEquals("stopped", bare.state)
     }
 
+    @Test fun aDownloadInProgressAndANotYetDownloadedProgramAreRead() {
+        val arriving = decode("""{"state":"stopped","comfy":{"bundled":true,"installed":false,"downloadBytes":2054382457},
+            "install":{"phase":"downloading","done":1073741824,"total":2054382457,"error":null}}""")
+        assertFalse(arriving.installed)
+        assertTrue(arriving.installing)
+        assertEquals(1073741824L, arriving.installDone)
+        assertEquals(2054382457L, arriving.downloadBytes)
+        val failed = decode("""{"state":"stopped","comfy":{"installed":false},"install":{"phase":"failed","error":"HTTP 503"}}""")
+        assertFalse(failed.installing)
+        assertEquals("HTTP 503", failed.installError)
+        assertTrue("an older host reads as installed", decode("""{"state":"stopped","comfy":{"bundled":true}}""").installed)
+    }
+
     @Test fun anErrorKeepsTheHostsReason() {
         val status = decode("""{"state":"error","error":"ComfyUI needs 10 GB free","comfy":{"bundled":true}}""")
         assertEquals("Stopped with an error", status.stateLabel)

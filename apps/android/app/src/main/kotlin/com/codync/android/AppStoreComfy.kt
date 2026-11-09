@@ -16,8 +16,19 @@ internal data class ComfyStatus(
     val notice: String?,
     /** `queued`, `running`, `done`, `cancelled` or `error`; null before the first job. */
     val jobPhase: String?,
+    /** Whether its program is on the computer; the first start downloads it. */
+    val installed: Boolean = true,
+    /** The download's size, for the line that offers it. */
+    val downloadBytes: Long = 0,
+    /** `idle`, `downloading`, `unpacking` or `failed`. */
+    val installPhase: String = "idle",
+    val installDone: Long = 0,
+    val installTotal: Long = 0,
+    val installError: String? = null,
 ) {
     val active get() = state == "running" || state == "starting"
+    /** The program is arriving: Start waits for it. */
+    val installing get() = installPhase == "downloading" || installPhase == "unpacking"
     val jobActive get() = jobPhase == "queued" || jobPhase == "running"
 
     /** The line under the logo (a catalog key). */
@@ -41,14 +52,23 @@ internal data class ComfyStatus(
     companion object {
         fun decode(json: JsonObject): ComfyStatus {
             fun text(value: Any?) = (value as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+            fun number(value: Any?) = (value as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() ?: 0L
             val card = json["comfy"] as? JsonObject
             val job = json["job"] as? JsonObject
+            val install = json["install"] as? JsonObject
             return ComfyStatus(
                 state = text(json["state"]) ?: "stopped",
                 error = text(json["error"]),
                 bundled = card?.get("bundled")?.jsonPrimitive?.content != "false",
                 notice = text(card?.get("notice")),
                 jobPhase = text(job?.get("phase")),
+                // An older host has no download: its ComfyUI is either there or not offered.
+                installed = card?.get("installed")?.jsonPrimitive?.content != "false",
+                downloadBytes = number(card?.get("downloadBytes")),
+                installPhase = text(install?.get("phase")) ?: "idle",
+                installDone = number(install?.get("done")),
+                installTotal = number(install?.get("total")),
+                installError = text(install?.get("error")),
             )
         }
     }

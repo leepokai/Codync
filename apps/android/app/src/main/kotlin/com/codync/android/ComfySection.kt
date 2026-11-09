@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.HostHealth
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -65,11 +66,30 @@ private const val REFRESH_MILLIS = 3_000L
                 current?.notice?.let { Text(tr(it), style = Type.caption, color = Palette.secondary) }
                 current?.error?.let { Text(it, style = Type.caption, color = Palette.danger) }
                 if (current != null && current.bundled) {
+                    when {
+                        current.installPhase == "downloading" -> Text(
+                            tr("Downloading {name}… {done} of {total}").replace("{name}", "ComfyUI")
+                                .replace("{done}", HostHealth.bytesText(current.installDone))
+                                .replace("{total}", HostHealth.bytesText(current.installTotal)),
+                            style = Type.caption, color = Palette.secondary,
+                        )
+                        current.installPhase == "unpacking" ->
+                            Text(tr("Unpacking {name}…").replace("{name}", "ComfyUI"), style = Type.caption, color = Palette.secondary)
+                        !current.installed -> Text(
+                            tr("{name} downloads about {size} the first time it starts.").replace("{name}", "ComfyUI")
+                                .replace("{size}", HostHealth.bytesText(current.downloadBytes)),
+                            style = Type.caption, color = Palette.secondary,
+                        )
+                    }
+                    current.installError?.takeIf { current.installPhase == "failed" }?.let {
+                        Text(it, style = Type.caption, color = Palette.danger)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (current.active) {
                             SecondaryButton(tr("Stop"), enabled = !busy) { run { status = store.comfyStop() } }
                         } else {
-                            SecondaryButton(tr("Start"), enabled = !busy) { run { status = store.comfyStart() } }
+                            SecondaryButton(tr(if (current.installed) "Start" else "Download and start"),
+                                enabled = !busy && !current.installing) { run { status = store.comfyStart() } }
                         }
                     }
                 }

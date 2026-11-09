@@ -60,6 +60,44 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `pairing asks for a signed device certificate and a claim`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"certificate":{"payload":"{\"v\":1,\"exp\":99}","sig":"proof"}}"""))
+            server.enqueue(MockResponse().setBody("""{"claimId":"clm_1","nonce":"n1"}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            val certificate = client.deviceCertificate()
+            assertEquals("""{"v":1,"exp":99}""", certificate.payload)
+            assertEquals("proof", certificate.sig)
+            val claim = client.createClaim()
+            assertEquals("clm_1", claim.claimId)
+            client.completeClaim(claim.claimId, buildJsonObject { put("claimId", claim.claimId); put("nonce", claim.nonce); put("sig", "signed") })
+            val certificateRequest = server.takeRequest()
+            assertEquals("/v1/devices/certificate", certificateRequest.path)
+            assertEquals("POST", certificateRequest.method)
+            assertNotNull(certificateRequest.getHeader("Codync-Sig"))
+            assertEquals("/v1/claims", server.takeRequest().path)
+            val complete = server.takeRequest()
+            assertEquals("/v1/claims/clm_1/complete", complete.path)
+            assertEquals("""{"claimId":"clm_1","nonce":"n1","sig":"signed"}""", complete.body.readUtf8())
+            // The computer signs it: this request carries the account session but no device signature.
+            assertEquals("Bearer session", complete.getHeader("Authorization"))
+            assertNull(complete.getHeader("Codync-Sig"))
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `a certificate is fresh while more than a day of it is left`() {
+        val now = System.currentTimeMillis()
+        val long = DeviceCertificate("""{"v":1,"exp":${now + 2 * 86_400_000}}""", "sig")
+        val short = DeviceCertificate("""{"v":1,"exp":${now + 3_600_000}}""", "sig")
+        assertTrue(long.isFresh(now))
+        assertFalse(short.isFresh(now))
+        assertTrue(short.isValid(now))
+        assertFalse(DeviceCertificate("not json", "sig").isValid(now))
+    }
+
     @Test fun `an error page that isn't JSON still fails with its status`() = runBlocking {
         val server = MockWebServer()
         server.start()

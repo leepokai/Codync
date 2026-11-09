@@ -32,7 +32,6 @@ impl Caller {
 const LOCAL_ONLY: &[&str] = &[
     "hostUpdateStatus",
     "diagnostics",
-    "listFiles",
     "checkHostUpdate",
     "setHostAutomaticUpdates",
     "setScreenEnabled",

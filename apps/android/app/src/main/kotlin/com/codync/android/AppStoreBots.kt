@@ -81,6 +81,11 @@ internal suspend fun AppStore.botUsage(botId: String): kotlinx.serialization.jso
 internal suspend fun AppStore.botTasks(botId: String): kotlinx.serialization.json.JsonObject =
     hostQuery("botTasks", body("botId" to botId)).jsonObject
 
+
+/** One folder of a bot's workspace: its files and folders, confined by the host. */
+suspend fun AppStore.listFiles(botId: String, path: String): kotlinx.serialization.json.JsonArray =
+    hostQuery("listFiles", buildJsonObject { put("botId", botId); put("path", path) }).jsonObject["entries"]!!.jsonArray
+
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
 

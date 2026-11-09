@@ -39,7 +39,7 @@ import kotlinx.coroutines.delay
  * The details sheet's pages, as on the desktop inspector; no Memory until the read-only memory screen is ported
  * (docs/plans/android-app.md).
  */
-internal enum class DetailsTab(val title: String) { Details("Details"), Apps("Apps"), Tasks("Tasks"), Memory("Memory"), Library("Library"), Settings("Settings") }
+internal enum class DetailsTab(val title: String) { Details("Details"), Apps("Apps"), Tasks("Tasks"), Files("Files"), Memory("Memory"), Library("Library"), Settings("Settings") }
 
 /**
  * What to open the details sheet on (iOS `DetailsRequest`): a page, a routine's editor on the Details page, or another bot's
@@ -68,7 +68,7 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
         delay(600)
         store.saveSettings(draft)
     }
-    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Apps, DetailsTab.Tasks, DetailsTab.Memory, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Settings)
+    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Apps, DetailsTab.Tasks, DetailsTab.Files, DetailsTab.Memory, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Settings)
     Box(Modifier.fillMaxSize().background(Palette.background)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
@@ -85,6 +85,7 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
                         }
                         DetailsTab.Apps -> BotAppsCard(bot.id, state, store)
                         DetailsTab.Tasks -> BotTasksView(bot, state, store)
+                        DetailsTab.Files -> BotFilesView(bot, store)
                         DetailsTab.Memory -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
                             MemoryCard(bot.id, state, store)
                             if (bot.kind != "group") SkillProposalsCard(bot.id, store)

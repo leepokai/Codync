@@ -43,7 +43,16 @@ async function asPng(bytes: Uint8Array): Promise<Blob> {
   }
 }
 
-export async function copyImage(bytes: Uint8Array) {
+/** Numbers each copy as it starts, so one that finishes after a newer one began knows it was overtaken. */
+export class CopyRequests {
+  private latest = 0
+  start() { return ++this.latest }
+  isLatest(request: number) { return request === this.latest }
+}
+
+/** The picture on the clipboard, unless `stillWanted` says a newer copy took its place while it was converting. */
+export async function copyImage(bytes: Uint8Array, stillWanted: () => boolean) {
   const png = await asPng(bytes).catch((error) => { throw new ImageCopyError('convert', error) })
+  if (!stillWanted()) return
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).catch((error) => { throw new ImageCopyError('clipboard', error) })
 }

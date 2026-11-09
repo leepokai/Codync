@@ -75,8 +75,12 @@ struct AttachmentViewer: View {
     private func copyImage() {
         copying?.cancel()
         copying = Task {
-            let done = await ImageCopy.image(viewing.source, model: model, from: .viewer)
-            showCopy(done ? .copied : .failed)
+            switch await ImageCopy.image(viewing.source, model: model, from: .viewer) {
+            case .copied: showCopy(.copied)
+            case .failed: showCopy(.failed)
+            // A newer copy shows its own result.
+            case .overtaken: return
+            }
             // Cancelled by a newer copy, which shows its own result.
             try? await Task.sleep(for: CopyResult.shownFor)
             if !Task.isCancelled { showCopy(nil) }

@@ -100,8 +100,13 @@ internal enum class CopyResult(val title: String, val symbol: String) {
     fun copy() {
         flash?.cancel()
         flash = scope.launch {
-            result = try { store.copyImage(source, ImageFrom.Viewer); CopyResult.Copied }
-                catch (cancelled: CancellationException) { throw cancelled }
+            result = try {
+                when (store.copyImage(source, ImageFrom.Viewer)) {
+                    ImageCopyOutcome.Copied -> CopyResult.Copied
+                    // A newer copy shows its own result.
+                    ImageCopyOutcome.Overtaken -> return@launch
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { android.util.Log.w("Codync", "Couldn't copy an image", error); CopyResult.Failed }
             delay(FLASH_MS)
             result = null

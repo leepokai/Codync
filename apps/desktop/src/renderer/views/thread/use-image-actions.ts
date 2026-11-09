@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import type { Entry } from '@shared/models'
 import type { MenuItem, ReactionPick } from '../../components/Menu'
 import type { ImageFailure, ImageFrom } from '../../../shared/analytics.ts'
-import { copyImage } from '../../lib/image-clipboard'
+import { copyImage, CopyRequests } from '../../lib/image-clipboard'
 import { copyFailure, imageActionEvent } from '../../lib/image-analytics.ts'
 import { analytics } from '../../store/analytics'
 import type { BotStore } from '../../store/bot-store'
@@ -35,23 +35,34 @@ export function useCopyFailed() {
   return useSyncExternalStore((listener) => { failureListeners.add(listener); return () => void failureListeners.delete(listener) }, () => copyFailed)
 }
 
-/** The picture itself on the clipboard (not its name). Whether it worked; reported either way. */
-export async function copyImageOf(store: BotStore, source: ImageSource, from: ImageFrom) {
+const copyRequests = new CopyRequests()
+
+/**
+ * How a copy of the picture itself went. `overtaken`: a newer copy started before this one finished, so the clipboard and
+ * showing how it went are that one's, and this one reports nothing.
+ */
+export type CopyOutcome = 'copied' | 'failed' | 'overtaken'
+
+/** The picture itself on the clipboard (not its name). Reported, done or failed, unless a newer copy overtook it. */
+export async function copyImageOf(store: BotStore, source: ImageSource, from: ImageFrom): Promise<CopyOutcome> {
+  const request = copyRequests.start()
+  const current = () => copyRequests.isLatest(request)
   let error: ImageFailure | undefined
   const bytes = await imageBytes(store, source).catch(console.error)
   if (!bytes) error = 'unavailable'
   else {
     try {
-      await copyImage(bytes)
+      await copyImage(bytes, current)
     } catch (cause) {
       console.error(cause)
       error = copyFailure(cause)
     }
   }
+  if (!current()) return 'overtaken'
   analytics.track(imageActionEvent('copy_image', from, error))
   // The viewer's own copy button shows its result; a picture's menu elsewhere has nothing to show it.
   if (error && from === 'menu') flashCopyFailure()
-  return !error
+  return error ? 'failed' : 'copied'
 }
 
 export function copyNameOf(source: ImageSource, from: ImageFrom) {
@@ -89,7 +100,10 @@ export function useImageCopy(source: ImageSource) {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
   const copy = useCallback(async () => {
-    setDone((await copyImageOf(store, source, 'viewer')) ? 'image' : 'failed')
+    const outcome = await copyImageOf(store, source, 'viewer')
+    // A newer copy shows its own result.
+    if (outcome === 'overtaken') return
+    setDone(outcome === 'copied' ? 'image' : 'failed')
     clearTimeout(timer.current)
     timer.current = setTimeout(() => setDone(null), FLASH_MS)
   }, [store, source])

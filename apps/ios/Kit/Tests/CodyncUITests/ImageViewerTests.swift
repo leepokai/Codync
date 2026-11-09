@@ -75,6 +75,15 @@ private let big = CGSize(width: 2000, height: 1600)
     #expect(try pixelSize(png) == CGSize(width: 2, height: 8))
 }
 
+@Test func aCopyOvertakenByANewerOneIsNoLongerTheOneToLand() {
+    var requests = CopyRequests()
+    let first = requests.start()
+    #expect(requests.isLatest(first))
+    let second = requests.start()
+    #expect(!requests.isLatest(first))
+    #expect(requests.isLatest(second))
+}
+
 @MainActor @Test func aPictureTakesCopysPlaceInItsMessageMenuAndInTheViewerWhatLeavesClosesItFirst() {
     var log: [String] = []
     let entry = Entry(id: "e", seq: 1, botId: "b", rev: 1, kind: "agent", turn: 1, data: EntryData(text: "Hi"), createdAt: 0, updatedAt: 0)

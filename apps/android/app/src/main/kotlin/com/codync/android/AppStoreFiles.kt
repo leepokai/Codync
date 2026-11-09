@@ -66,26 +66,52 @@ private fun AppStore.setDownload(fileId: String, download: FileDownloadState?) =
 /** A picture action that failed, and why (the analytics `error`); its message is what the user sees. */
 internal class ImageActionFailure(val kind: ImageError, message: String, cause: Throwable? = null) : Exception(message, cause)
 
+/** Numbers each copy as it starts (iOS `CopyRequests`), so one that finishes after a newer one began knows it was overtaken. */
+internal class CopyRequests {
+    private var latest = 0
+
+    fun start(): Int = ++latest
+
+    fun isLatest(request: Int): Boolean = request == latest
+}
+
+/** How a copy of the picture itself went, short of failing (which throws [ImageActionFailure]). */
+internal enum class ImageCopyOutcome {
+    Copied,
+
+    /** A newer copy started before this one finished: the clipboard and showing how it went are that one's, and this one reports nothing. */
+    Overtaken,
+}
+
 /**
  * Picture `source` itself on the clipboard (desktop `copyImageOf`), its original file fetched first if it isn't cached yet,
  * reported as done or failed `from` where it was asked. It runs in the store's scope, so closing the viewer that asked
  * doesn't stop it; the caller only waits for how it went.
  */
-internal suspend fun AppStore.copyImage(source: ImageSource, from: ImageFrom) = contextScope.async {
+internal suspend fun AppStore.copyImage(source: ImageSource, from: ImageFrom): ImageCopyOutcome = contextScope.async {
+    val request = imageCopies.start()
+    val staged = try { Result.success(stagedImage(source)) } catch (failure: ImageActionFailure) { Result.failure(failure) }
+    if (!imageCopies.isLatest(request)) return@async ImageCopyOutcome.Overtaken
     try {
-        val file = try { source.load() }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { throw ImageActionFailure(ImageError.Unavailable, error.message ?: COPY_FAILED, error) }
-        val clip = try { withContext(Dispatchers.IO) { attachments.stageImage(file, source.name) } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { throw ImageActionFailure(ImageError.Convert, COPY_FAILED, error) }
+        val clip = staged.getOrThrow()
         try { attachments.putOnClipboard(clip) } catch (error: Exception) { throw ImageActionFailure(ImageError.Clipboard, COPY_FAILED, error) }
         Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage, from))
+        ImageCopyOutcome.Copied
     } catch (failure: ImageActionFailure) {
         Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage, from, failure.kind))
         throw failure
     }
 }.await()
+
+/** Picture `source` as a clip, its original file fetched first if it isn't cached yet. */
+private suspend fun AppStore.stagedImage(source: ImageSource): ClipData {
+    val file = try { source.load() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { throw ImageActionFailure(ImageError.Unavailable, error.message ?: COPY_FAILED, error) }
+    return try { withContext(Dispatchers.IO) { attachments.stageImage(file, source.name) } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { throw ImageActionFailure(ImageError.Convert, COPY_FAILED, error) }
+}
 
 private const val COPY_FAILED = "Couldn't copy image"
 

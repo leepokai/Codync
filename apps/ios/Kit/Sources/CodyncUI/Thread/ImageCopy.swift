@@ -33,25 +33,46 @@ enum ImageClipboard {
     }
 }
 
+/// Numbers each copy as it starts, so one that finishes after a newer one began knows it was overtaken.
+struct CopyRequests {
+    private var latest = 0
+
+    mutating func start() -> Int {
+        latest += 1
+        return latest
+    }
+
+    func isLatest(_ request: Int) -> Bool { request == latest }
+}
+
 /// Copying a picture from the chat, the viewer or the Library: the picture itself, or just its name. Each is
 /// reported as a viewer action with where it was done and how it went (never the picture or its name); a failed
 /// copy is logged.
 @MainActor enum ImageCopy {
-    /// Whether the picture reached the clipboard. The viewer shows the result on its copy button; from a chat's menu
-    /// the caller tells the user.
-    @discardableResult
-    static func image(_ source: ImageSource, model: BotStore, from: AnalyticsEvent.ImageFrom) async -> Bool {
-        let failure: AnalyticsEvent.ImageError?
-        if let data = await source.data(model) {
+    /// How a copy of the picture itself went.
+    enum Outcome {
+        case copied, failed
+        /// A newer copy started before this one finished: the clipboard and showing how it went are that one's, and
+        /// this one reports nothing.
+        case overtaken
+    }
+
+    private static var requests = CopyRequests()
+
+    /// The viewer shows the result on its copy button; from a chat's menu the caller tells the user.
+    static func image(_ source: ImageSource, model: BotStore, from: AnalyticsEvent.ImageFrom) async -> Outcome {
+        let request = requests.start()
+        let data = await source.data(model)
+        var item: [String: Data]?
+        if let data {
             // The re-encode of a big picture (a TIFF or HEIC to PNG) runs off the main actor; only the pasteboard write is on it.
-            let item = await Task.detached(priority: .userInitiated) { ImageClipboard.item(data) }.value
-            failure = ImageClipboard.put(item)
-        } else {
-            failure = .unavailable
+            item = await Task.detached(priority: .userInitiated) { ImageClipboard.item(data) }.value
         }
+        guard requests.isLatest(request) else { return .overtaken }
+        let failure: AnalyticsEvent.ImageError? = data == nil ? .unavailable : ImageClipboard.put(item)
         if let failure { log.error("Couldn't copy image: \(failure.rawValue, privacy: .public)") }
         Analytics.shared.capture(.imagePreviewAction(.copyImage, from: from, outcome: failure.map { .failed($0) } ?? .done))
-        return failure == nil
+        return failure == nil ? .copied : .failed
     }
 
     static func name(_ source: ImageSource, from: AnalyticsEvent.ImageFrom) {
@@ -69,7 +90,7 @@ enum ImageClipboard {
     /// The items in the chat, where nothing shows the result: a failed copy says so in the app's error dialog.
     static func menuItems(_ source: ImageSource, model: BotStore) -> [MenuItem] {
         menuItems(source, from: .menu) {
-            Task { if !(await image(source, model: model, from: .menu)) { model.lastError = "Couldn't copy image" } }
+            Task { if await image(source, model: model, from: .menu) == .failed { model.lastError = "Couldn't copy image" } }
         }
     }
 }

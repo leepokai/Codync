@@ -98,7 +98,9 @@ public struct VoiceDefaults: Codable, Sendable, Equatable {
 
 public struct VoiceStatus: Decodable, Sendable {
     public struct Provider: Decodable, Sendable {
-        public var provider: VoiceProvider
+        /// A raw id, not the enum: a provider a newer computer adds must not break the whole
+        /// list on this app.
+        public var provider: String
         public var configured: Bool
         /// Missing from hosts before 2.6.3.
         public var defaults: VoiceDefaults?
@@ -107,7 +109,7 @@ public struct VoiceStatus: Decodable, Sendable {
     public var providers: [Provider]
 
     public func configured(_ provider: VoiceProvider) -> Bool {
-        providers.first { $0.provider == provider }?.configured == true
+        providers.first { $0.provider == provider.rawValue }?.configured == true
     }
 }
 

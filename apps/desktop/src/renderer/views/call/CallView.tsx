@@ -187,7 +187,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       begin(configured)
       if (window.codync.platform === 'darwin') engineChoice.current = picked
     } else {
-      setBlocked(`${onDeviceUnavailableReason()} Add an OpenAI or Gemini key in call settings.`)
+      setBlocked(`${onDeviceUnavailableReason()} Add an OpenAI, Gemini or ElevenLabs key in call settings.`)
       // Nothing runs: the next settings close tries again, with a key added there.
       engineChoice.current = ''
     }

@@ -289,7 +289,7 @@ internal suspend fun AppStore.voiceTranscribe(provider: VoiceProvider, model: St
     hostCall("voiceTranscribe", body("provider" to provider.id, "model" to model, "audio" to Base64.getEncoder().encodeToString(wav)), 60_000)
         .jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
 
-/** Text to speech for a stretch of a reply: the audio and its format (`aac` or `wav`). */
+/** Text to speech for a stretch of a reply: the audio and its format (`aac`, `wav` or `mp3`). */
 internal suspend fun AppStore.voiceSpeak(provider: VoiceProvider, model: String, voice: String, text: String): Pair<ByteArray, String> {
     val clip = hostCall("voiceSpeak", body("provider" to provider.id, "model" to model, "voice" to voice, "text" to text), 90_000).jsonObject
     val audio = clip["audio"]?.jsonPrimitive?.contentOrNull?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }

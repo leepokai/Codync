@@ -110,6 +110,8 @@ private struct ProviderVoiceSettings: View {
     @Environment(BotStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(VoiceSettings.dictationEngineKey) private var dictationEngine = "device"
+    /// Observed so the model rows switch the moment the mode does.
+    @AppStorage private var mode: String
     /// nil while the computer hasn't answered yet.
     @State private var saved: Bool?
     @State private var replacing = false
@@ -128,9 +130,10 @@ private struct ProviderVoiceSettings: View {
     init(provider: VoiceProvider, dictationOnly: Bool = false) {
         self.provider = provider
         self.dictationOnly = dictationOnly
+        _mode = AppStorage(wrappedValue: "realtime", VoiceSettings.modeKey(provider))
     }
 
-    private var speechMode: Bool { VoiceSettings.isSpeechMode(provider) }
+    private var speechMode: Bool { !provider.live || mode == "speech" }
     /// Speech mode and dictation with this provider both use its speech-to-text model.
     private var transcribes: Bool { dictationOnly || speechMode || dictationEngine == provider.rawValue }
     private var hasKey: Bool { saved == true }
@@ -300,10 +303,6 @@ private struct ProviderVoiceSettings: View {
     private func loadModels(_ client: HostClient) async {
         if provider == .elevenLabs, let list = try? await client.voiceVoices(provider).voices, !list.isEmpty {
             voices = list.map { ($0.id, $0.name) }
-            if !voices.contains(where: { $0.id == voice }) {
-                voice = voices[0].id
-                UserDefaults.standard.set(voice, forKey: VoiceSettings.voiceKey(provider))
-            }
         }
         guard let list = try? await client.voiceModels(provider) else { return }
         models = list
@@ -347,8 +346,9 @@ private struct ProviderVoiceSettings: View {
     /// Reads the Test sample with the chosen voice, from a temporary file the player reads by container.
     private func play(_ clip: (Data, String)) {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("codync-test-\(UUID().uuidString).\(clip.1)")
-        guard (try? clip.0.write(to: url)) != nil, let player = try? AVAudioPlayer(contentsOf: url) else { return }
-        try? FileManager.default.removeItem(at: url)
+        guard (try? clip.0.write(to: url)) != nil else { return }
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let player = try? AVAudioPlayer(contentsOf: url) else { return }
         player.play()
         sample = player
     }

@@ -129,7 +129,11 @@ enum VoiceSettings {
     }
 
     static func remember(_ status: VoiceStatus) {
-        for entry in status.providers { remember(entry.defaults, for: entry.provider) }
+        for entry in status.providers {
+            // A provider this app version doesn't know stays out of its defaults.
+            guard let provider = VoiceProvider(rawValue: entry.provider) else { continue }
+            remember(entry.defaults, for: provider)
+        }
     }
 
     /// `realtime` (a live conversation) or `speech` (speech to text, then the reply read aloud).

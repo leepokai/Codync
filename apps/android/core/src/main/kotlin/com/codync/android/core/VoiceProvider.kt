@@ -69,9 +69,8 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
 
     /** Speech: speech to text, then the reply read aloud. Otherwise a realtime conversation. */
     fun speechMode(provider: VoiceProvider): Boolean = !provider.live || read("callMode.${provider.id}") == "speech"
-    fun speechMode(provider: VoiceProvider, on: Boolean) {
-        if (provider.live) write("callMode.${provider.id}", if (on) "speech" else "realtime")
-    }
+    fun speechMode(provider: VoiceProvider, on: Boolean) =
+        write("callMode.${provider.id}", if (on) "speech" else "realtime")
 
     fun model(provider: VoiceProvider, kind: Model): String = read("${kind.prefix}.${provider.id}") ?: fallback(provider, kind)
     fun choose(provider: VoiceProvider, kind: Model, model: String) =

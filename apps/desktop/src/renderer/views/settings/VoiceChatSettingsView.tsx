@@ -1,4 +1,4 @@
-import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
+import { audioType, onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fromBase64, LoopbackTransport, type HostClient } from '../../client/host-client'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
@@ -63,7 +63,7 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
                           </ValueRow>,
                         ]
                       : []),
-                    ...(mode === 'speech' || !voice.supportsRealtime(provider) ? [<PauseRow key="pause" />] : []),
+                    ...(voice.isSpeechMode(provider) ? [<PauseRow key="pause" />] : []),
                   ]
                 : [
                     <ValueRow key="language" label="Language" detail="The language you speak in calls.">
@@ -100,18 +100,21 @@ function PauseRow() {
   )
 }
 
-/** One clip at a time: Test reads its sample aloud and stops the one before. */
-let sample: HTMLAudioElement | null = null
+/** One sample at a time: Test reads it aloud, stops the one before and frees its blob URL. */
+let sample: { audio: HTMLAudioElement; url: string } | null = null
 
 function playSample(clip: { audio: string; format: string }) {
-  sample?.pause()
-  const type = clip.format === 'aac' ? 'audio/aac' : clip.format === 'wav' ? 'audio/wav' : clip.format === 'mp3' ? 'audio/mpeg' : `audio/${clip.format}`
-  const url = URL.createObjectURL(new Blob([fromBase64(clip.audio) as BlobPart], { type }))
+  if (sample) {
+    sample.audio.pause()
+    URL.revokeObjectURL(sample.url)
+    sample = null
+  }
+  const url = URL.createObjectURL(new Blob([fromBase64(clip.audio) as BlobPart], { type: audioType(clip.format) }))
   const audio = new Audio(url)
-  sample = audio
+  sample = { audio, url }
   const done = () => {
     URL.revokeObjectURL(url)
-    if (sample === audio) sample = null
+    if (sample?.audio === audio) sample = null
   }
   audio.onended = done
   audio.onerror = done
@@ -123,7 +126,6 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const tr = useTr()
   const store = useStore()
   const info = voice.voiceInfo[provider]
-  const [mode] = usePref(voice.mode(provider))
   const [dictationEngine] = usePref(voice.dictationEngine)
   /** null while the computer hasn't answered yet. */
   const [saved, setSaved] = useState<boolean | null>(null)
@@ -139,7 +141,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const [speechModel, setSpeechModel] = useState(() => voice.chosenModel(provider, 'speech'))
   const [models, setModels] = useState<VoiceModels>(() => voice.modelsCache(provider).get() ?? { models: [], transcribe: [], speech: [] })
   const busyRef = useRef(false)
-  const speechMode = !voice.supportsRealtime(provider) || mode === 'speech'
+  const speechMode = voice.isSpeechMode(provider)
   /** Speech mode and dictation with this provider both use its speech-to-text model. */
   const transcribes = dictationOnly || speechMode || dictationEngine === provider
   const hasKey = saved === true
@@ -152,13 +154,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
       // ElevenLabs' voices belong to the account: premade, cloned and saved.
       try {
         const own = (await voice.voiceVoices(client, provider)).voices
-        if (own.length > 0) {
-          setVoices(own)
-          if (!own.some((v) => v.id === chosenVoice)) {
-            setChosenVoice(own[0]!.id)
-            voice.saveVoice(provider, own[0]!.id)
-          }
-        }
+        if (own.length > 0) setVoices(own)
       } catch {
         // The models below report the key's own trouble.
       }

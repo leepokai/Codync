@@ -6,7 +6,6 @@ import { pref, type Pref } from '../../lib/prefs'
 // The keys stay on the computer; these are this device's choices.
 
 export type VoiceProvider = 'openai' | 'gemini' | 'elevenlabs'
-export const VOICE_PROVIDERS: VoiceProvider[] = ['openai', 'gemini', 'elevenlabs']
 
 /** The provider's newest model for each voice mode, as the computer last found them. */
 export interface VoiceDefaults {
@@ -117,6 +116,9 @@ function keyed<T>(key: string, fallback: T): Pref<T> {
 
 /** `realtime` (a live conversation) or `speech` (speech to text, then the reply read aloud). */
 export const mode = (p: VoiceProvider) => keyed<string>(`callMode.${p}`, 'realtime')
+
+/** Speech: speech to text, then the reply read aloud. ElevenLabs has no live conversation. */
+export const isSpeechMode = (p: VoiceProvider) => !supportsRealtime(p) || mode(p).get() === 'speech'
 const voicePref = (p: VoiceProvider) => keyed<string | null>(`callVoice.${p}`, null)
 const defaultsPref = (p: VoiceProvider) => keyed<VoiceDefaults | null>(`callDefaults.${p}`, null)
 /** The provider's model list as last fetched with the user's key. */

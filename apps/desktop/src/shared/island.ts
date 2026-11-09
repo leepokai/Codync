@@ -222,5 +222,15 @@ export function notchOf(screens: NotchScreen[], bounds: { x: number; width: numb
   return s && width > 0 ? { width, height: s.top } : null
 }
 
+/** Providers shown at once in the Usage tab: the island has room for two cards side by side. */
+export const USAGE_PER_PAGE = 2
+
+/** One page of `items`, and how many pages there are. A page past the end (a provider went away) is the last one. */
+export function pageOf<T>(items: T[], page: number, perPage = USAGE_PER_PAGE) {
+  const pages = Math.max(1, Math.ceil(items.length / perPage))
+  const current = Math.min(Math.max(0, page), pages - 1)
+  return { items: items.slice(current * perPage, (current + 1) * perPage), page: current, pages }
+}
+
 /** The setting's name: a notch on the Mac, the top edge elsewhere. */
 export const islandLabel = (platform: string) => (platform === 'darwin' ? 'Show in Notch' : 'Show at top of screen')

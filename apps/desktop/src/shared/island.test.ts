@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { BotStatus } from './models.ts'
 import {
-  focusOf, hitRect, hits, islandFrame, islandMode, islandRect, notchOf, othersOf, stopsDictation, transitions,
+  focusOf, hitRect, hits, islandFrame, islandMode, islandRect, notchOf, othersOf, pageOf, stopsDictation, transitions,
   type IslandBot, type IslandNotice, type IslandPermission, type IslandSummary, type IslandTab,
 } from './island.ts'
 
@@ -91,4 +91,15 @@ test('leaving the message tab while dictating stops it there; other tab changes 
   assert.equal(stopsDictation('message', 'message', true), false)
   assert.equal(stopsDictation('message', 'bots', false), false)
   assert.equal(stopsDictation('usage', 'bots', true), false)
+})
+
+test('the Usage tab shows two providers a page, and a page past the end is the last one', () => {
+  const four = ['a', 'b', 'c', 'd']
+  assert.deepEqual(pageOf(four, 0), { items: ['a', 'b'], page: 0, pages: 2 })
+  assert.deepEqual(pageOf(four, 1), { items: ['c', 'd'], page: 1, pages: 2 })
+  assert.deepEqual(pageOf(['a', 'b', 'c'], 1), { items: ['c'], page: 1, pages: 2 }, 'an odd one is alone on the last page')
+  assert.deepEqual(pageOf(four, 5).page, 1, 'a provider went away while on page 6')
+  assert.deepEqual(pageOf(four, -3).page, 0)
+  assert.deepEqual(pageOf([], 0), { items: [], page: 0, pages: 1 }, 'no providers is one empty page, not zero')
+  assert.deepEqual(pageOf(['a', 'b'], 0, 1), { items: ['a'], page: 0, pages: 2 }, 'the page size can change')
 })

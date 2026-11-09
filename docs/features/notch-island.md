@@ -43,7 +43,7 @@ costs no frames; with Reduce Motion on, nothing moves at all.
 | Finished | A bot stops working | "*Bot* is done" with its last message, Open conversation / OK, for 5.2 s |
 | Failed | A bot stops on an error | "*Bot* stopped." with the error in red, until OK |
 | Message a bot | The header's bubble, or the [voice input shortcut](voice-call.md#voice-input-shortcut) | The bot chip (click for the next bot) and a field with the mic (macOS); Enter sends, Esc closes. Until the shortcut is first used, a tip under the field says how to talk from any app |
-| Usage | The header's gauge or the usage meter | Claude and Codex limits side by side: each window's bar, percent and reset |
+| Usage | The header's gauge or the usage meter | The providers closest to a limit first, two to a page side by side with arrows (and "1 / 3") between pages: each window's bar, percent and reset, or its note when it has no percent |
 
 Opened by hover, the island folds 0.8 s after the pointer leaves; opened by a click or a tab,
 10 s after (a 2 pt line counts down). The message field stays until it sends, Esc or a click in

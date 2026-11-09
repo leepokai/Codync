@@ -1,4 +1,7 @@
+import { useState } from 'react'
+import { pageOf } from '@shared/island'
 import type { UsageProvider, UsageWindow } from '@shared/models'
+import { Icon } from '../../components/Icon'
 import { prefs, usePref } from '../../lib/prefs'
 import { usePixelRatio } from '../../lib/theme'
 import { useResetLine, useTr } from '../../lib/use-language'
@@ -56,13 +59,16 @@ export function UsageMeter({ model }: { model: IslandModel }) {
 }
 
 /**
- * The two providers closest to a limit side by side, each window a bar with when it resets. The
- * header meter's provider is always one of them; ones with notes only come last.
+ * The providers closest to a limit first, two to a page side by side with arrows between pages, each
+ * window a bar with when it resets. The header meter's provider is always on the first page; ones with
+ * notes only come last.
  */
 export function UsageView({ model }: { model: IslandModel }) {
   const usage = [...model.summary.usage].sort((a, b) => (tightest(b)?.percent ?? -1) - (tightest(a)?.percent ?? -1))
   const tr = useTr()
   const line = useResetLine()
+  const [wanted, setPage] = useState(0)
+  const { items, page, pages } = pageOf(usage, wanted)
   if (!usage.length) {
     return (
       <div className="island-card island-empty">
@@ -74,29 +80,44 @@ export function UsageView({ model }: { model: IslandModel }) {
     )
   }
   return (
-    <div className="island-row-cards">
-      {usage.slice(0, 2).map((provider) => (
-        <div key={provider.id} className="island-card island-usage">
-          <div className="island-agent">
-            <Mascot provider={provider} size={20} />
-            <span className="island-agent-name">{provider.name}</span>
-          </div>
-          {provider.windows.slice(0, 3).map((w) => (
-            <div key={w.id} className="island-usage-row">
-              <span className="island-usage-title">{tr(windowTitle(w))}</span>
-              {w.text ? (
-                <span className="island-usage-note">{w.text}</span>
-              ) : (
-                <>
-                  <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
-                  <span className="island-usage-value">{windowReading(w, tr)}</span>
-                  <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
-                </>
-              )}
-            </div>
-          ))}
+    <div className="island-usage-pages">
+      {pages > 1 ? (
+        <div className="island-usage-navigation">
+          <button className="island-tab" aria-label={tr('Previous usage providers')} disabled={page === 0} onClick={() => setPage(page - 1)}>
+            <Icon name="chevron.left" size={12} />
+          </button>
+          <span aria-live="polite">{page + 1} / {pages}</span>
+          <button className="island-tab" aria-label={tr('Next usage providers')} disabled={page === pages - 1} onClick={() => setPage(page + 1)}>
+            <Icon name="chevron.right" size={12} />
+          </button>
         </div>
-      ))}
+      ) : null}
+      <div key={page} className="island-row-cards island-swap">
+        {items.map((provider) => (
+          <div key={provider.id} className="island-card island-usage">
+            <div className="island-agent">
+              <Mascot provider={provider} size={20} />
+              <span className="island-agent-name truncate" title={provider.name}>{provider.name}</span>
+            </div>
+            <div className="island-usage-windows">
+              {provider.windows.map((w) => (
+                <div key={w.id} className="island-usage-row">
+                  <span className="island-usage-title" title={w.label}>{tr(windowTitle(w))}</span>
+                  {w.text ? (
+                    <span className="island-usage-note">{w.text}</span>
+                  ) : (
+                    <>
+                      <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
+                      <span className="island-usage-value">{windowReading(w, tr)}</span>
+                      <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

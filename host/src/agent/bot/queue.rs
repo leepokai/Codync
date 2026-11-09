@@ -268,10 +268,8 @@ impl Actor {
                     if turn.reply.is_closed() || !(turn.late || self.hub.groups.current(&turn.lane, turn.epoch)) {
                         continue;
                     }
-                    if turn.late
-                        && let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg)
-                    {
-                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "late room turn dropped");
+                    if let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg.id) {
+                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "room turn dropped");
                         continue;
                     }
                     let (lane, prompt) = (turn.lane.clone(), turn.prompt.clone());

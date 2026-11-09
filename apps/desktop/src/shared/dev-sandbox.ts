@@ -15,6 +15,12 @@ export function sandboxPorts(claimed: Iterable<number>): number[] {
   return Array.from({ length: 100 }, (_, i) => 19300 + i).filter((port) => !taken.has(port))
 }
 
+/** The cloud a sandbox uses: the dev cloud with `--cloud`; its own local cloud with `--local-cloud`, and by default on a branch that changes cloud/ (not on Windows, where it doesn't run yet: tools/local-cloud.mjs); else none. */
+export function sandboxCloudMode(o: { cloud?: boolean; localCloud?: boolean; changesCloud: boolean; windows: boolean }): 'dev' | 'local' | 'off' {
+  if (o.cloud) return 'dev'
+  return o.localCloud || (o.changesCloud && !o.windows) ? 'local' : 'off'
+}
+
 /** The Clerk development secret key a sandbox may use: the environment's, else the `.env` file's `CODYNC_CLERK_SECRET_KEY`; null when neither is set. Anything but an `sk_test_` key throws, so production is never reached. */
 export function devClerkSecretKey(fromEnv: string | undefined, envFile: string | undefined) {
   const raw = fromEnv ?? /^CODYNC_CLERK_SECRET_KEY=(.+)$/m.exec(envFile ?? '')?.[1] ?? ''

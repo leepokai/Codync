@@ -92,13 +92,16 @@ recreate them.
 ### Real apps against a local cloud
 
 `npm run cloud:stack` starts the same local cloud, accepting **dev Clerk** sessions (it reads the dev issuer from
-`wrangler.toml` and its public key from the instance's JWKS), allows every account (`CLOUD_COMPUTER_USERS=*`,
-local only), forwards each new machine, and prints how to point each app at it:
+`wrangler.toml` and its public key from the instance's JWKS), and prints how to point each app at it. With
+`BOAT_API_KEY_FILE` or `INSTABOX_API_KEY_FILE` it also allows every account a cloud computer (`CLOUD_COMPUTER_USERS=*`,
+local only) and forwards each new machine; without one it is the plain local cloud a worktree sandbox runs, with
+Codync Cloud hidden:
 
 - iOS simulator: `SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> xcrun simctl launch <udid> com.pokai.Codync.ios.dev`, on a
   simulator no other session uses.
-- Desktop: `CODYNC_CLOUD_URL=<url> npm run dev -- --cloud` in the worktree (its sandbox host, signed in to its Clerk test
-  account; a development build takes the local `http://127.0.0.1` cloud, a release build only HTTPS).
+- Desktop: `CODYNC_CLOUD_URL=<url> CODYNC_DEVICE_CERT_KEY=<certPub> npm run dev -- --cloud` in the worktree (its
+  sandbox host, signed in to its Clerk test account; a development build takes the local `http://127.0.0.1` cloud, a
+  release build only HTTPS).
 - Android: `adb reverse tcp:<port> tcp:<port>` on its own emulator, built with `-PcodyncCloudUrl=<url>` together with
   `-PcodyncClerkPublishableKey=<dev pk_test>` and `-PcodyncPushRelayUrl=<relay>` (the build refuses one override alone).
 - Sign in with a Clerk test address (`anything+clerk_test@example.com`, code `424242`; the instance asks for a

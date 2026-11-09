@@ -10,22 +10,29 @@ there.
 
 | What changed | Tested against | How |
 |---|---|---|
-| `cloud/` on a branch (a worktree) | that worktree's own local Worker (`wrangler dev --env local`, a local D1, its own port) | `npm run e2e` (a real host, a fake agent, test tokens), [real phones against a local cloud](#real-phones-against-a-local-cloud), and for cloud computers `npm run e2e:cloud` or `npm run cloud:stack` ([cloud computer testing](cloud-computer-testing.md)) |
+| `cloud/` on a branch (a worktree) | that worktree's own local Worker (`wrangler dev --env local`, a local D1, its own port); `npm run dev` in `apps/desktop` starts one for the sandbox by itself | `npm run e2e` (a real host, a fake agent, test tokens), [real phones against a local cloud](#real-phones-against-a-local-cloud), and for cloud computers `npm run e2e:cloud` or `npm run cloud:stack` ([cloud computer testing](cloud-computer-testing.md)) |
 | only the apps or the host | the dev cloud as deployed | Codync Dev builds, or a worktree sandbox with `npm run dev -- --cloud` |
-| `cloud/` merged into `dev` | `dev-api.codync.dev` | `npm run deploy:dev` from `dev` (migrations first), before the dev → main PR ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)) |
+| `cloud/` merged into `dev` | `dev-api.codync.dev` | `npm run deploy:dev` from a clean tree at `origin/dev` right after the merge is pushed (migrations first), so `dev-api` always runs what `dev` has ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)) |
 | `cloud/` released | `api.codync.dev` | `npm run deploy:main` right after the merge into `main` |
 | `relay/` (push) or `discord/` | their tests (`npm test`); each has a single deployment everyone uses | deploy once the change has merged, then check the real path |
 
+- **A worktree sandbox picks by itself**: `npm run dev` gives the sandbox its own local cloud when the branch changes
+  `cloud/` against `origin/dev` (committed or not; not on Windows yet), and leaves the dev cloud off otherwise; `--local-cloud` and `--cloud`
+  choose one outright ([worktree sandboxes](dev-app.md#worktree-sandboxes)). The local cloud keeps its D1 and device
+  certificate key in the sandbox folder, so pairings and the sandbox's account outlast a restart; it has no cloud
+  computers unless started by hand with a provider key (`npm run cloud:stack`, [cloud computer testing](cloud-computer-testing.md)).
 - **Never from a branch**: `npm run deploy:dev`, `wrangler d1 migrations apply codync-dev --remote` or
   `wrangler secret put … --env dev`. A branch's Worker on dev breaks what everyone else is testing, and the next deploy
   from `dev` takes it away again without a word. Something that must be on dev before its change merges (a binding, a
   secret) goes there only when the owner says so, and the change records it.
 - **A local Worker belongs to its worktree**: its D1 sits in a temporary folder or the worktree's `.wrangler/` and goes
-  with it; its keys (device certificate key, Codync Cloud sealing keys) are throwaway values the runner makes; it takes
-  test tokens or dev Clerk sessions (`cloud:stack` and the commands below read the dev issuer's public key);
+  with it; its keys (device certificate key, Codync Cloud sealing keys) are throwaway values the runner makes. A
+  worktree sandbox's own cloud is the exception: its D1 and device certificate key stay in the sandbox folder's
+  `cloud/` across runs, until `npm run dev -- --prune` deletes the sandbox. Either way it takes test tokens or dev
+  Clerk sessions (`cloud:stack` and the commands below read the dev issuer's public key);
   `CLOUD_COMPUTER_USERS=*` is fine there and nowhere else.
 - **Point what should use it at it** as in [real phones against a local cloud](#real-phones-against-a-local-cloud)
-  (a host also needs `CODYNC_DEVICE_CERT_KEY`, the Worker's throwaway public half, to accept its phones) or
+  (a host also needs `CODYNC_DEVICE_CERT_KEY`, the public half of the Worker's device certificate key, to accept its phones) or
   [real apps against a local cloud](cloud-computer-testing.md#real-apps-against-a-local-cloud). A machine elsewhere
   (a cloud computer) reaches it through a tunnel (`boat forward --reverse` or a Cloudflare quick tunnel).
 - **What a local Worker can't show**: Cloudflare's edge (custom domains, rate limits across locations, cron on its real

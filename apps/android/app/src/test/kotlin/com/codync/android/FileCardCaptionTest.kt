@@ -62,6 +62,12 @@ class FileCardCaptionTest {
         assertEquals("0:08", clock(7.5))
     }
 
+    @Test fun `an accessibility adjust moves five seconds whatever value it asks for`() {
+        assertEquals(25.0, seekStepTarget(20.0, 48f.compareTo(20f)), 0.0)
+        assertEquals(15.0, seekStepTarget(20.0, 0f.compareTo(20f)), 0.0)
+        assertEquals(20.0, seekStepTarget(20.0, 20f.compareTo(20f)), 0.0)
+    }
+
     @Test fun `sizes count in thousands as ByteCountFormatter`() {
         val cases = mapOf(
             0L to "Zero KB", 1L to "1 byte", 43L to "43 bytes", 999L to "999 bytes",

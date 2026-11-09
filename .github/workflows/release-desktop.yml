@@ -221,13 +221,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host
-      - name: Cache the ComfyUI portable
-        if: matrix.arch == 'x64'
-        # The 2 GB release asset, keyed by the pinned version (packaging/comfy/version.json).
-        uses: actions/cache@v4
-        with:
-          path: build/comfy
-          key: comfy-${{ hashFiles('packaging/comfy/version.json') }}
       - name: Initialize Windows networking provider
         shell: powershell
         # The first CIM query on a fresh ARM runner can exceed the SSH tool's 30-second timeout.

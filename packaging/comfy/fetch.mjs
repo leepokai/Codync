@@ -1,6 +1,8 @@
-// Puts the pinned ComfyUI portable (https://github.com/Comfy-Org/ComfyUI, GPL-3.0) into a directory:
-// node packaging/comfy/fetch.mjs <dir>. version.json is the one place the version is named (the host
-// reads it too, for the card). The release's 7z is streamed to build/comfy, checked against the
+// Development only: puts the pinned ComfyUI portable (https://github.com/Comfy-Org/ComfyUI, GPL-3.0) into a
+// directory, for the host's live tests and a dev host pointed at it with CODYNC_COMFY_DIR:
+// node packaging/comfy/fetch.mjs <dir>. Packages don't ship it (NSIS can't hold 2.5 GB): the host downloads
+// the same pin on its first start (host/src/tools/comfy_install.rs). version.json is the one place the
+// version is named. The release's 7z is streamed to build/comfy, checked against the
 // pinned size and SHA-256, and unpacked with 7za from the desktop app's 7zip-bin (Windows' own tar has no LZMA codec); only the program
 // (ComfyUI/ and python_embeded/) is kept, with no models: those live in the user's data folder.
 // Only Windows x64 gets the program (the NVIDIA portable also runs on the CPU). Any other target, or

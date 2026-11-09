@@ -291,6 +291,26 @@ mod tests {
         assert!(permit(&Caller::Device { key: "k".into(), scopes: vec![] }, "hello").is_err());
         assert!(permit(&both, "pair").is_err(), "pair only on a pairing channel");
         assert!(permit(&Caller::Pairing { key: "k".into() }, "hello").is_err());
+        // Channels are set up from the phone as from the computer; only the pairing channel can't.
+        for m in [
+            "githubStatus",
+            "setGitHubToken",
+            "disconnectGitHub",
+            "discordStatus",
+            "setDiscordChannel",
+            "disconnectDiscord",
+            "slackStatus",
+            "setSlackChannel",
+            "disconnectSlack",
+            "addTelegramBot",
+            "removeTelegramBot",
+            "pairTelegram",
+            "setTelegramAllowed",
+            "telegramStatus",
+        ] {
+            assert!(permit(&both, m).is_ok(), "{m} is a phone's to call");
+            assert!(permit(&Caller::Pairing { key: "k".into() }, m).is_err(), "{m} waits for the pairing");
+        }
         assert_eq!(both.device_key(), "k");
         assert_eq!(Caller::Local.device_key(), "local");
     }

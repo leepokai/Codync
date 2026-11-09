@@ -103,6 +103,10 @@ advance the same grant, but intervening edits cannot supply its readiness result
 URL changes require explicit replacement headers,
 and clear the old OAuth grant. URL or header changes advance the revision and
 invalidate pending sign-ins and running proxies.
+Revisioned managed edits require an updated keeper. An older keeper rejects the new record field before the connector list is saved.
+
+On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them.
+
 See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).
 Registry connectors are still refused.
 

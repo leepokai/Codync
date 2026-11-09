@@ -366,6 +366,7 @@ async fn retrying_a_saved_url_after_sign_in_requests_readiness_and_refresh() {
     assert!(!metadata_check, "metadata alone must not restart bots");
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn managed_edits_verify_the_definition_saved_after_secret_handover() {
     let keeper = crate::keeper::tests::test_keeper();

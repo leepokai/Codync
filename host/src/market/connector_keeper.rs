@@ -46,6 +46,7 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
             c.headers.iter().filter(|(_, v)| literal(v)).map(|(k, v)| (k.to_ascii_lowercase(), v.clone())).collect();
         let token: Option<OAuth> = c.oauth.clone().filter(|o| o.signed_in() && o.access_token != PLACEHOLDER);
         let mut record = Record::new(&upstream, headers);
+        record.auth_revision.clone_from(&c.auth_revision);
         if let Some(o) = &token {
             record.headers.insert("authorization".into(), format!("Bearer {}", o.access_token));
             record.oauth = Some(record::OAuth {
@@ -108,7 +109,8 @@ pub async fn target(store: &Store, c: &Connector, url: &str) -> Result<Option<Va
         bail!("The connector changed while resolving its target. Retry the request.");
     }
     if !resolved.is_empty() {
-        let record = Record::new(&upstream, resolved);
+        let mut record = Record::new(&upstream, resolved);
+        record.auth_revision.clone_from(&c.auth_revision);
         let keep = Keep { headers: c.headers.keys().cloned().collect(), oauth: true };
         client::put_proxied(store, &slot, &record, &keep)?;
     }

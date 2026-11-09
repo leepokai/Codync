@@ -157,3 +157,70 @@ fn unchanged_connector_records_and_provider_updates_preserve_their_grants() {
         "connector edits do not change long-lived provider grant behavior"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn path_and_query_edits_revoke_requests_waiting_for_their_body() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let capture = seen.clone();
+    let app = Router::new().fallback(move |uri: axum::http::Uri| {
+        capture.lock().unwrap().push(uri.to_string());
+        async { StatusCode::OK }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    for next_path in ["/next?team=1", "/mcp?team=2"] {
+        seen.lock().unwrap().clear();
+        let keeper = test_keeper();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        keeper.manage(&store);
+        let connector: crate::market::Connector = serde_json::from_value(serde_json::json!({
+            "id":"path-edit", "name":"Path edit", "url":format!("{origin}/mcp?team=1"),
+            "headers":{"X-Key":"unchanged"}, "authRevision":"before"
+        }))
+        .unwrap();
+        crate::market::save_connectors(&store, &[connector]).unwrap();
+        let target = crate::market::oauth::target(&store, "path-edit", false).await.unwrap();
+        let token = target["base"].as_str().unwrap().rsplit('/').next().unwrap();
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let polled = started.clone();
+        let wait = release.clone();
+        let body = Body::from_stream(futures::stream::once(async move {
+            polled.notify_one();
+            wait.notified().await;
+            Ok::<_, std::io::Error>("{}")
+        }));
+        let request =
+            axum::http::Request::builder().method("POST").uri(format!("/t/{token}/mcp?team=1")).body(body).unwrap();
+        let proxy = keeper.keeper.clone();
+        let pending = tokio::spawn(async move { forward(&proxy, request).await });
+        tokio::time::timeout(Duration::from_secs(5), started.notified()).await.unwrap();
+        crate::market::update_connectors(&store, |all| {
+            all[0].url = Some(format!("{origin}{next_path}"));
+            all[0].headers.insert("X-Key".into(), "unchanged".into());
+            all[0].auth_revision = "after".into();
+            Ok(())
+        })
+        .unwrap();
+        release.notify_one();
+        let result = tokio::time::timeout(Duration::from_secs(5), pending).await.unwrap().unwrap();
+        assert_eq!(result.unwrap_err(), StatusCode::UNAUTHORIZED, "the old path/query request must stop");
+        assert!(seen.lock().unwrap().is_empty(), "no request reaches the old endpoint after the edit");
+        let fresh = crate::market::oauth::target(&store, "path-edit", false).await.unwrap();
+        let url = fresh["url"].as_str().unwrap();
+        assert_eq!(reqwest::Client::new().post(url).body("{}").send().await.unwrap().status(), StatusCode::OK);
+        assert_eq!(seen.lock().unwrap().as_slice(), [next_path]);
+        crate::market::update_connectors(&store, |all| {
+            all[0].description = "Metadata only".into();
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            reqwest::Client::new().post(url).body("{}").send().await.unwrap().status(),
+            StatusCode::OK,
+            "unchanged connection revision preserves the fresh grant"
+        );
+    }
+    server.abort();
+}

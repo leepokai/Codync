@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Dialog } from '../components/Overlay'
+import { Dialog, DialogField } from '../components/Overlay'
 import { useTr } from '../lib/use-language'
 
 /** An open name dialog: its title, the name it starts with, and what Save does with the typed one. */
@@ -34,11 +34,9 @@ export function NameDialog({ naming, placeholder, limit, clean, onClose }: {
   }
   return (
     <Dialog open={naming !== null} title={naming ? tr(naming.title) : ''} actions={[{ title: 'Save', disabled: !typed, action: save }]} onClose={onClose}>
-      <input className="dialog-field" data-autofocus value={name} placeholder={tr(placeholder)} aria-label={tr(placeholder)} spellCheck={false}
-        onChange={(e) => setName(limit(e.target.value))}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229 || !typed) return
-          e.preventDefault()
+      <DialogField value={name} placeholder={tr(placeholder)} label={tr(placeholder)} onChange={(text) => setName(limit(text))}
+        onSubmit={() => {
+          if (!typed) return
           onClose()
           save()
         }} />

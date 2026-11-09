@@ -5,7 +5,7 @@ import { groupBotReactions, isGroup, isReplyable, type Bot, type Entry, type Rep
 import { BotAvatar } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Overlay'
+import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Menu'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'

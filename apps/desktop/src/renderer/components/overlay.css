@@ -264,6 +264,13 @@
 .menu-row.destructive {
   color: var(--danger);
 }
+.menu-row:disabled {
+  color: var(--secondary);
+  cursor: default;
+}
+.menu-row:disabled.highlight {
+  background: none;
+}
 .menu-row.highlight {
   background: rgba(var(--text-rgb), 0.07);
 }

@@ -57,17 +57,20 @@ import kotlinx.coroutines.launch
             delay(1_500)
         }
     }
+    // The coroutine that finishes an action runs outside composition, so its words are read now.
+    val failed = tr("That did not work.")
+    val copied = tr("Code copied.")
     fun act(work: suspend () -> Unit) {
         if (busy) return
         busy = true; error = null; notice = null
         scope.launch {
-            try { work() } catch (e: Exception) { error = e.message ?: "That did not work." } finally { busy = false }
+            try { work() } catch (e: Exception) { error = e.message ?: failed } finally { busy = false }
         }
     }
     fun copyCode(code: String) {
         (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             .setPrimaryClip(ClipData.newPlainText("WhatsApp pairing code", code))
-        notice = "Code copied."
+        notice = copied
     }
     val current = link
     Column(Modifier.fillMaxSize().background(Palette.background)) {
@@ -124,8 +127,8 @@ import kotlinx.coroutines.launch
                 row {
                     val bots = state.bots.sortedBy { it.name }
                     val choices = listOf("" to tr("No bot")) + bots.map { it.id to it.name }
-                    ValueRow("Bot", detail = tr("Messages from your allowed chats reach the bot you pick. A workflow can also start from a mention.")) {
-                        ChoicePicker(current?.bot.orEmpty(), choices, { act { store.whatsappSetBot(it.ifEmpty { null }) } }, label = "Bot")
+                    ValueRow(tr("Bot"), detail = tr("Messages from your allowed chats reach the bot you pick. A workflow can also start from a mention.")) {
+                        ChoicePicker(current?.bot.orEmpty(), choices, { act { store.whatsappSetBot(it.ifEmpty { null }) } }, label = tr("Bot"))
                     }
                 }
                 current?.error?.let { row { Text(it, style = Type.caption, color = Palette.danger) } }
@@ -138,16 +141,16 @@ import kotlinx.coroutines.launch
                 }
             }
             if (link?.state == "connected") {
-                CardSection("Allowed chats", footer = "Anyone can write while this is empty. The owner always can.") {
+                CardSection(tr("Allowed chats"), footer = tr("Anyone can write while this is empty. The owner always can.")) {
                     link?.allowed.orEmpty().forEach { entry ->
                         row {
                             Text(entry, style = Type.caption.monospaced, color = Palette.text, modifier = Modifier.weight(1f))
-                            SecondaryButton("Remove", enabled = !busy) { act { store.whatsappSetAllowed(entry, false); link = store.whatsapp() } }
+                            SecondaryButton(tr("Remove"), enabled = !busy) { act { store.whatsappSetAllowed(entry, false); link = store.whatsapp() } }
                         }
                     }
                     row {
                         FieldBox(jid, { jid = it }, "5215555555555@s.whatsapp.net", fill = Palette.bubbleUser, capitalize = false)
-                        SecondaryButton("Allow", enabled = !busy && jid.isNotBlank()) {
+                        SecondaryButton(tr("Allow"), enabled = !busy && jid.isNotBlank()) {
                             val value = jid.trim()
                             act { store.whatsappSetAllowed(value, true); jid = ""; link = store.whatsapp() }
                         }

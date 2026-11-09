@@ -55,7 +55,7 @@ import kotlinx.coroutines.launch
         ModalHeader("Channels")
         CardForm {
             val list = bots
-            CardSection("Telegram", footer = "Add a Telegram bot, or remove one, on the computer: its token stays there.") {
+            CardSection(tr("Telegram"), footer = tr("Add a Telegram bot, or remove one, on the computer: its token stays there.")) {
                 if (list == null) row { Text(tr("Loading…"), style = Type.body, color = Palette.secondary) }
                 else if (list.isEmpty()) row { Text(tr("No Telegram bots yet."), style = Type.body, color = Palette.secondary) }
                 else for (bot in list) {
@@ -67,13 +67,13 @@ import kotlinx.coroutines.launch
                                 style = Type.caption, color = Palette.secondary)
                             for (id in bot.allowed) {
                                 ValueRow("Telegram user $id") {
-                                    SecondaryButton("Remove", enabled = !busy) { act { bots = store.setTelegramAllowed(bot.name, id, false) } }
+                                    SecondaryButton(tr("Remove"), enabled = !busy) { act { bots = store.setTelegramAllowed(bot.name, id, false) } }
                                 }
                             }
                             pairing?.takeIf { it.first == bot.name }?.let { (_, code) ->
                                 Text(tr(Channels.pairingInstruction(code, bot.username)), style = Type.footnote, color = Palette.text)
                             }
-                            SecondaryButton("Pair someone", enabled = !busy) {
+                            SecondaryButton(tr("Pair someone"), enabled = !busy) {
                                 act {
                                     val answer = store.pairTelegram(bot.name)
                                     Channels.pairingCode(answer)?.let { pairing = bot.name to it }
@@ -84,13 +84,13 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            CardSection("Discord", footer = "Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.") {
+            CardSection(tr("Discord"), footer = tr("Set up Discord on the computer: its bot token stays there. Only the people allowed in each channel can write to it.")) {
                 row {
                     val connected = discord
                     val text = when {
                         connected == null -> "Loading…"
                         !connected.configured -> "Discord is not connected."
-                        else -> "${tr(Channels.discordStateText(connected.state))} · ${connected.bindings.size} ${tr("channels bound")} · ${tr("Server")} ${connected.guildId.orEmpty()}"
+                        else -> "${tr(Channels.discordStateText(connected.state))} · ${connected.bindings.orEmpty().size} ${tr("channels bound")} · ${tr("Server")} ${connected.guildId.orEmpty()}"
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(tr(text), style = Type.body, color = Palette.secondary)
@@ -99,7 +99,7 @@ import kotlinx.coroutines.launch
                                 style = Type.caption, color = Palette.tertiary)
                         }
                         if (connected?.configured == true) {
-                            SecondaryButton("Disconnect Discord", enabled = !busy) {
+                            SecondaryButton(tr("Disconnect Discord"), enabled = !busy) {
                                 act {
                                     discord = store.disconnectDiscord()
                                     discord = store.discordStatus() ?: discord
@@ -109,7 +109,7 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            CardSection("GitHub", footer = "Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.") {
+            CardSection(tr("GitHub"), footer = tr("Set up GitHub on the computer: the token stays there. Workflows can comment, label and open issues with it.")) {
                 row {
                     val connected = github
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -125,14 +125,14 @@ import kotlinx.coroutines.launch
                             if (connected.scopes.isNotEmpty()) {
                                 Text("${tr("Scopes")}: ${connected.scopes.joinToString(", ")}", style = Type.caption, color = Palette.tertiary)
                             }
-                            SecondaryButton("Disconnect GitHub", enabled = !busy) {
+                            SecondaryButton(tr("Disconnect GitHub"), enabled = !busy) {
                                 act { github = store.disconnectGitHub() }
                             }
                         }
                     }
                 }
             }
-            CardSection("Slack") {
+            CardSection(tr("Slack")) {
                 row {
                     val connected = slack
                     val text = when {

@@ -20,6 +20,14 @@ class ChannelsTest {
         assertEquals(SlackStatus(true, true, "T1"), Channels.decodeSlack(parse("""{"configured":true,"socketMode":true,"workspaceId":"T1"}""")))
     }
 
+    @Test fun `a Discord status decodes without a connection or a bound channel`() {
+        assertEquals(DiscordStatus(), Channels.decodeDiscord(parse("""{"configured":false,"guildId":null,"botUserId":null,"bindings":null,"state":"starting","deliveries":[]}""")))
+        assertEquals(
+            DiscordStatus(true, "g1", "u1", listOf(DiscordBinding("c1", "b1", listOf("u2"))), "ok"),
+            Channels.decodeDiscord(parse("""{"configured":true,"guildId":"g1","botUserId":"u1","bindings":[{"channelId":"c1","botId":"b1","allowedUsers":["u2"]}],"state":"ok"}""")),
+        )
+    }
+
     @Test fun `a pairing answer carries the code once`() {
         assertEquals("ABCD2345", Channels.pairingCode(parse("""{"bots":[],"result":{"code":"ABCD2345","expiresAt":5}}""")))
         assertNull(Channels.pairingCode(parse("""{"bots":[],"result":{}}""")))

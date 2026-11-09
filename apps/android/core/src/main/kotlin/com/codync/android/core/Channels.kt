@@ -28,7 +28,8 @@ import kotlinx.serialization.json.jsonObject
     val configured: Boolean = false,
     val guildId: String? = null,
     val botUserId: String? = null,
-    val bindings: List<DiscordBinding> = emptyList(),
+    /** Null while Discord isn't connected at all; the host sends no list then. */
+    val bindings: List<DiscordBinding>? = null,
     /** `ok`, `starting`, or `error: …`. */
     val state: String = "starting",
 )

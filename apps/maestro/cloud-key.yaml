@@ -2,8 +2,9 @@
 # and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row opens only
 # InstaBox's key sheet with its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
 # one closes the sheet with Boat picked and its hint shown; Boat's key button opens it again, and Remove key works.
-# Needs a cloud that offers this account Codync Cloud (dev-api doesn't): `npm run cloud:stack` in cloud/
-# (docs/guides/cloud-computer-testing.md), the phone signed in with `npm run phone-account` and pointed at it (iPhone:
+# Needs a cloud that offers Codync Cloud: dev-api offers it to every account, or, to stay off the shared dev or when the
+# branch changes cloud/, `npm run cloud:stack` in cloud/ with a provider key (docs/guides/cloud-computer-testing.md);
+# the phone signed in with `npm run phone-account` and pointed at it (iPhone:
 # SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> on that command, which this flow's launch keeps; Android: built with
 # -PcodyncCloudUrl=<url> with -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl, plus adb reverse), an account with no
 # cloud computer, and BOAT_KEY, a key its Boat takes. An account saves at most 5 keys a minute: run the phones one after

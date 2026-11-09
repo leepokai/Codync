@@ -4,8 +4,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { wake } from "../src/cloud-machines";
 import { open, seal } from "../src/secrets";
-import { boat, bothProviders, calls, cc, cloudComputer, forbidden, KEY, onBothProviders, uid, withKey } from "./cloud-helpers";
-import { deliverClerk, env } from "./helpers";
+import { boat, bothProviders, callWith, calls, cc, cloudComputer, forbidden, KEY, onBothProviders, uid, withKey } from "./cloud-helpers";
+import { clerkToken, deliverClerk, env } from "./helpers";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -42,7 +42,7 @@ describe("saving a Boat key", () => {
   it("checks it with Boat, keeps it sealed and only ever shows its hint", async () => {
     const userId = uid();
     const fetch = boat("ready");
-    const saved = await cc("PUT", userId, userId, PATH, { key: ` ${KEY} ` });
+    const saved = await cc("PUT", userId, PATH, { key: ` ${KEY} ` });
     expect(saved.status).toBe(200);
     expect(saved.body).toEqual({ credential: { hint: "boat_…9abc", problem: null, blocking: false, updatedAt: expect.any(Number) } });
     expect(fetch.mock.calls.map(([url, init]) => [String(url), (init!.headers as Record<string, string>).authorization])).toEqual([
@@ -59,19 +59,19 @@ describe("saving a Boat key", () => {
   it("refuses what isn't a key, keys Boat turns down, and keys that can run the whole account", async () => {
     const userId = uid();
     const fetch = boat("ready");
-    const notAKey = await cc("PUT", userId, userId, PATH, { key: "sk-proj-123" });
+    const notAKey = await cc("PUT", userId, PATH, { key: "sk-proj-123" });
     expect(notAKey.body.error).toEqual({ code: "keyRefused", message: "That doesn't look like an API key from this provider." });
     expect(fetch).not.toHaveBeenCalled();
 
     boat("ready", { "/sandboxes?limit=1": [401, { ok: false, code: "unauthorized", message: "Unauthorized" }] });
-    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).body.error.message).toBe("This key wasn't accepted. It may have been revoked.");
+    expect((await cc("PUT", userId, PATH, { key: KEY })).body.error.message).toBe("This key wasn't accepted. It may have been revoked.");
 
     boat("ready", { "/sandboxes?limit=1": forbidden("api_key_action_forbidden") });
-    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).body.error.message).toContain("missing a permission Codync needs");
+    expect((await cc("PUT", userId, PATH, { key: KEY })).body.error.message).toContain("missing a permission Codync needs");
 
     // An admin key (or one from before scopes) can read the account's webhooks.
     boat("ready", { "/webhooks": [200, { webhooks: [] }] });
-    const admin = await cc("PUT", userId, userId, PATH, { key: KEY });
+    const admin = await cc("PUT", userId, PATH, { key: KEY });
     expect(admin.status).toBe(422);
     expect(admin.body.error.message).toBe("This key can manage your whole account. Make one limited to Codync instead.");
     expect(await credential(userId)).toBeNull();
@@ -80,16 +80,16 @@ describe("saving a Boat key", () => {
   it("isn't kept while Boat is busy or failing, which says nothing about the key", async () => {
     const userId = uid();
     boat("ready", { "/sandboxes?limit=1": [503, { code: "no_ready_machine" }] });
-    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).body.error.code).toBe("providerUnavailable");
+    expect((await cc("PUT", userId, PATH, { key: KEY })).body.error.code).toBe("providerUnavailable");
     boat("ready", { "/webhooks": [429, { code: "rate_limited" }] });
-    expect((await cc("PUT", userId, userId, PATH, { key: KEY })).status).toBe(503);
+    expect((await cc("PUT", userId, PATH, { key: KEY })).status).toBe(503);
     expect(await credential(userId)).toBeNull();
   });
 
-  it("is only for accounts allowed Codync Cloud", async () => {
+  it("is refused by a cloud that can't seal keys, and for a provider it doesn't know", async () => {
     const fetch = boat("ready");
-    expect((await cc("PUT", uid(), "user_other", PATH, { key: KEY })).status).toBe(403);
-    expect((await cc("PUT", uid(), undefined, "/v1/cloud-credentials/fly", { key: KEY })).status).toBe(404);
+    expect((await callWith({ CLOUD_SECRET_KEYS: undefined }, "PUT", PATH, { token: await clerkToken(uid()), body: { key: KEY } })).status).toBe(403);
+    expect((await cc("PUT", uid(), "/v1/cloud-credentials/fly", { key: KEY })).status).toBe(404);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -97,28 +97,28 @@ describe("saving a Boat key", () => {
     const { userId, id } = await cloudComputer();
     // The saved key reaches the computer; one from another account doesn't find it.
     boat("ready", { "/sandboxes/bx_test": (key) => (key === KEY ? undefined : [404, { code: "not_found" }]) });
-    const other = await cc("PUT", userId, userId, PATH, { key: "boat_live_otheraccount1" });
+    const other = await cc("PUT", userId, PATH, { key: "boat_live_otheraccount1" });
     expect(other.body.error.message).toBe("This key can't reach your cloud computer.");
     expect((await credential(userId)).hint).toBe("boat_…9abc");
 
     boat("ready");
-    expect((await cc("PUT", userId, userId, PATH, { key: "boat_live_rotated0001" })).body.credential.hint).toBe("boat_…0001");
-    const kept = await cc("DELETE", userId, userId, PATH);
+    expect((await cc("PUT", userId, PATH, { key: "boat_live_rotated0001" })).body.credential.hint).toBe("boat_…0001");
+    const kept = await cc("DELETE", userId, PATH);
     expect(kept.status).toBe(409);
 
     boat("cancelled");
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
-    expect((await cc("DELETE", userId, userId, PATH)).status).toBe(200);
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
+    expect((await cc("DELETE", userId, PATH)).status).toBe(200);
     expect(await credential(userId)).toBeNull();
   });
 
   it("takes a replacement only if it reaches every cloud computer on Boat", async () => {
     const { userId } = await cloudComputer();
     boat("provisioning", { "/sandboxes": [201, { ok: true, sandbox: { id: "bx_two", state: "provisioning" } }] });
-    expect((await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" })).status).toBe(200);
+    expect((await cc("POST", userId, "/v1/cloud-computers", { provider: "boat" })).status).toBe(200);
     // The saved key reaches both; the new one only the first.
     boat("ready", { "/sandboxes/bx_two": (key) => (key === KEY ? undefined : [404, { code: "not_found" }]) });
-    const partial = await cc("PUT", userId, userId, PATH, { key: "boat_live_otheraccount1" });
+    const partial = await cc("PUT", userId, PATH, { key: "boat_live_otheraccount1" });
     expect(partial.body.error).toEqual({ code: "keyRefused", message: "This key can't reach your cloud computer." });
     expect((await credential(userId)).hint).toBe("boat_…9abc");
   });
@@ -126,8 +126,8 @@ describe("saving a Boat key", () => {
   it("takes a new key once the computer is gone at Boat and the saved key revoked, so the computer can be deleted", async () => {
     const { userId, id } = await cloudComputer();
     boat("ready", { "/sandboxes/bx_test": (key) => (key === KEY ? [401, { code: "unauthorized" }] : [404, { code: "not_found" }]) });
-    expect((await cc("PUT", userId, userId, PATH, { key: "boat_live_newkey00001" })).body.credential.hint).toBe("boat_…0001");
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
+    expect((await cc("PUT", userId, PATH, { key: "boat_live_newkey00001" })).body.credential.hint).toBe("boat_…0001");
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
     expect((await cc("GET", userId)).body.cloudComputers).toEqual([]);
   });
 });

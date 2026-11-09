@@ -22,6 +22,7 @@ The environment is chosen when building, never stored: the host compiles in its 
 - **Production:** `main.plist` targets `https://api.codync.dev` with the Clerk production instance (`clerk.codync.dev`, Google sign-in through the `codync-auth` Google Cloud project, published; GitHub sign-in not enabled yet: it needs its GitHub OAuth App before the release that ships the button, see [GitHub sign-in](accounts-and-ssh.md#github-sign-in)). The root Worker is deployed with D1 `codync`, `CLERK_SECRET_KEY` and `CLERK_WEBHOOK_SECRET` (Clerk webhook endpoint `https://api.codync.dev/v1/webhooks/clerk`, `user.deleted`), and `RELEASE_GATE_TOKEN` (dispatches the release gate; renewal in the [cloud README](../../cloud/README.md)).
 - **Cloud assistants (MCP connector):** the Worker also serves `mcp.codync.dev` (main) and `dev-mcp.codync.dev` (dev), deployed 2026-10-26. Each Clerk instance lists its URL under Agents → MCP server (public checks pass) with CIMD on and DCR off, and the zone's "no Browser Integrity Check" rule covers both hosts ([cloud assistants](../features/cloud-assistants.md)).
 - **Local:** Wrangler's `local` environment supports the isolated integration test and its test issuer. It is not a real Google sign-in test.
+- **Dev release channel:** `dev-releases.codync.dev` serves the R2 bucket `codync-releases-dev` (public read, custom domain), which CI fills from `dev` ([dev release channel](development.md#dev-release-channel)); the zone's "no Browser Integrity Check" rule covers it, since hosts and `curl` download from it.
 - **Host names:** a dev host is the production name with a `dev-` prefix (`api` → `dev-api`, `mcp` → `dev-mcp`), never a `-dev` suffix: the suffix position is for regions (`relay-na`, so its dev host is `dev-relay-na`). Keep every host one level under `codync.dev` (a hyphen, not `dev.api.codync.dev`) so Cloudflare's universal certificate for `*.codync.dev` covers it.
 
 ## Troubleshooting: a running host appears offline on another computer
@@ -64,13 +65,15 @@ A migration that changes what the database accepts goes out before the Worker co
 
 `RELAY_NEEDS_ACCOUNT` is on for dev and off for main. It keeps the relay and public webhooks to computers in an account ([optional sign-in](../plans/optional-sign-in.md#compatibility-and-rollout)). Turn it on for main with a `[vars]` entry in `wrangler.toml` once both stores have the apps from 2.41.0.
 
-CI only tests `cloud/`; nothing deploys it. A dev → main PR that changes `cloud/` (routes, bindings, migrations) goes out in this order:
+CI only tests `cloud/`; nothing deploys it. A change to `cloud/` (routes, bindings, migrations, secrets) goes out in this order:
 
-1. Before the PR merges: create any new binding in dev (R2 bucket, rate limit, D1 migration), `npm run deploy:dev`, and test the changed flows end to end against `dev-api.codync.dev` with the dev apps.
-2. Right after the merge into `main`, before or with the release tag: create the same bindings for main (`wrangler.toml` names them, e.g. `codync-icons` beside `codync-icons-dev`; keep R2 buckets private), apply migrations, `npm run deploy:main`.
-3. Check main: each new route on `api.codync.dev` answers (401 without credentials, not 404), and `npx wrangler deployments list` shows the new version.
+1. On its branch, it runs only on that worktree's local Worker ([which cloud](cloudflare-testing.md#which-cloud-a-change-is-tested-on)).
+2. Right after it is merged into `dev` and pushed: create what it needs in dev (R2 bucket, rate limit, secret, then the D1 migrations), `npm run deploy:dev` from a clean tree at `origin/dev` (the merged worktree right after its push: `git rev-parse HEAD` is `origin/dev` and `git status --porcelain -- cloud` prints nothing; never the shared main checkout, where other agents' uncommitted work would ship too), and check its routes on `dev-api.codync.dev`. `dev-api` then always runs what `dev` has, so every worktree that uses the dev cloud meets the code it was branched from. If that can't happen yet (a secret only the owner can make), say so when merging and deploy as soon as it can.
+3. Before a dev → main PR that changes `cloud/` merges: test the changed flows end to end against `dev-api.codync.dev` with the dev apps.
+4. Right after the merge into `main`, before or with the release tag: create the same bindings for main (`wrangler.toml` names them, e.g. `codync-icons` beside `codync-icons-dev`; keep R2 buckets private), apply migrations, `npm run deploy:main`.
+5. Check main: each new route on `api.codync.dev` answers (401 without credentials, not 404), and `npx wrangler deployments list` shows the new version.
 
-Clients and host that call a new route must not reach users before step 2. In 2026-10, custom icons shipped in v2.33.2 while production cloud was days old and its R2 bucket missing, so every upload failed.
+Clients and host that call a new route must not reach users before `api.codync.dev` has it (step 4). In 2026-10, custom icons shipped in v2.33.2 while production cloud was days old and its R2 bucket missing, so every upload failed.
 
 ## Secrets audit
 

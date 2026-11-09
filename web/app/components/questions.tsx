@@ -6,7 +6,7 @@ import { CHINA_COMMUNITY, DISCORD } from "../links";
 const questions: [string, string][] = [
   [
     "Is Codync free?",
-    "Yes. Codync costs $0 with every feature included, and it's Apache 2.0 licensed. You pay only your agent's provider, through the plan or key you already have.",
+    "Yes. Codync costs $0 with every feature included, Codync Cloud too, and it's Apache 2.0 licensed. You pay only your agent's provider, through the plan or key you already have, and for a cloud computer, your Boat or InstaBox account under its own plan.",
   ],
   [
     "Can I bring my own Claude or ChatGPT subscription?",
@@ -31,6 +31,14 @@ const questions: [string, string][] = [
   [
     "Which computers can run it?",
     "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host, and the desktop app on Mac, Windows and Linux adds other machines over SSH, with their bots in the same sidebar.",
+  ],
+  [
+    "Can my bots run in the cloud?",
+    "Yes, with Codync Cloud (beta). Signed in to a free Codync account, start a cloud computer on your own Boat (EU) or InstaBox (US) account with a key you paste once. Codync charges nothing for it; the provider bills your account under its own plan. It sleeps while your bots are idle and wakes when you message one, and every app reaches it like any other computer.",
+  ],
+  [
+    "Can bots on different computers work together?",
+    "Yes. Put your computers in a private network (beta) and a bot on one can message a bot on another, which works on its own computer and answers. Computers connect peer to peer, through a relay that sees only encrypted traffic when they must, and each one decides which bots may message its bots.",
   ],
   [
     "What happens when my agent runs out of usage?",

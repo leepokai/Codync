@@ -1,14 +1,14 @@
 // What a new cloud computer runs once, when it is first ready, as the provider's own user (which has passwordless sudo,
-// and keeps it: the provider's machine agent may need it, Boat's snapshots do): the public host install (on dev and
-// test clouds, a host build under test and its service's environment: docs/guides/cloud-computer-testing.md); the
-// keeper, the same binary under its own system user `codync`, which holds the secrets; and the user Codync's host and
-// agents run as, `codync-agent`, which never has sudo or any group that is root by another name, so its agents can't
-// reach them (docs/plans/codync-cloud.md, "Agents and the host's secrets").
+// and keeps it: the provider's machine agent may need it, Boat's snapshots do): the host install from this cloud's
+// release channel (`host-releases.ts`; on test clouds, a host build under test and its service's environment:
+// docs/guides/cloud-computer-testing.md); the keeper, the same binary under its own system user `codync`, which holds
+// the secrets; and the user Codync's host and agents run as, `codync-agent`, which never has sudo or any group that is
+// root by another name, so its agents can't reach them (docs/plans/codync-cloud.md, "Agents and the host's secrets").
 
 import type { Setup } from "../machines/src";
+import { releasesUrl } from "./host-releases";
 import type { Env } from "./index";
 
-const INSTALL = "https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh";
 const URL = /^https?:\/\/[A-Za-z0-9.:[\]_/-]+$/;
 const VAR = /^(CODYNC_[A-Z_]{1,40})=([A-Za-z0-9:/._-]{1,200})$/;
 
@@ -28,7 +28,8 @@ export function hostEnv(raw: string | undefined): [string, string][] {
 const envLines = (vars: [string, string][]) => vars.map(([k, v]) => `Environment=${k}=${v}`);
 
 /** Writes `lines` to `path` as root, or as user `as`: each line is its own `printf` argument, never its format. Every
- * line here is fixed or a checked setting (`VAR`), so none holds a `'`. */
+ * line here is fixed, a checked setting (`VAR`) or the checked release channel (`CHANNEL` in `host-releases.ts`), so
+ * none holds a `'`. */
 const writeFile = (path: string, lines: string[], as?: string) =>
   `printf '%s\\n' ${lines.map((l) => `'${l}'`).join(" ")} | sudo -n ${as ? `-u ${as} ` : ""}tee ${path} >/dev/null`;
 
@@ -94,12 +95,8 @@ function agentLines(vars: [string, string][]): string[] {
     `sudo -n install -o ${AGENT} -g ${AGENT} -m 0755 "$HOME/.local/bin/codync-host" "$AH/.local/bin/codync-host"`,
     `sudo -n install -o ${AGENT} -g ${AGENT} -m 0600 "$HOME/.codync/managed.json" "$AH/.codync/managed.json"`,
     "rm -f ~/.codync/managed.json",
-    ...(vars.length
-      ? [
-          `sudo -n install -d -o ${AGENT} -g ${AGENT} -m 0755 "$AH/.config" "$AH/.config/systemd" "$AH/.config/systemd/user" "$AH/.config/systemd/user/codync-host.service.d"`,
-          writeFile('"$AH/.config/systemd/user/codync-host.service.d/codync-cloud.conf"', ["[Service]", ...envLines(vars)], AGENT),
-        ]
-      : []),
+    `sudo -n install -d -o ${AGENT} -g ${AGENT} -m 0755 "$AH/.config" "$AH/.config/systemd" "$AH/.config/systemd/user" "$AH/.config/systemd/user/codync-host.service.d"`,
+    writeFile('"$AH/.config/systemd/user/codync-host.service.d/codync-cloud.conf"', ["[Service]", ...envLines(vars)], AGENT),
     `sudo -n loginctl enable-linger ${AGENT}`,
     'for _ in $(seq 60); do [ -S "/run/user/$AU/bus" ] && break; sleep 1; done',
     `${as} "$AH/.local/bin/codync-host" install`,
@@ -113,7 +110,12 @@ const PROVIDER_AGENTS =
   'L=/usr/local/lib/ascii-harnesses/lazy-run; if [ -x "$L" ]; then for h in cursor hermes openclaw vibe; do sudo -n "$L" --install "$h" >/dev/null 2>&1 || true; done; fi';
 
 export function setupScript(env: Env): string {
-  const lines = ["set -eu", `curl -fsSL ${INSTALL} | sh -s -- --host-only`, 'export PATH="$HOME/.local/bin:$PATH"'];
+  const releases = releasesUrl(env);
+  const lines = [
+    "set -eu",
+    `curl -fsSL ${releases}/latest/download/install.sh | CODYNC_RELEASES_URL=${releases} sh -s -- --host-only`,
+    'export PATH="$HOME/.local/bin:$PATH"',
+  ];
   const binary = env.CLOUD_HOST_BINARY_URL;
   if (binary) {
     if (!URL.test(binary)) throw new Error("Invalid CLOUD_HOST_BINARY_URL");
@@ -124,7 +126,8 @@ export function setupScript(env: Env): string {
       "mv ~/.local/bin/codync-host.next ~/.local/bin/codync-host",
     );
   }
-  const vars = hostEnv(env.CLOUD_HOST_ENV);
+  // The host and the keeper update from the same channel.
+  const vars: [string, string][] = [["CODYNC_RELEASES_URL", releases], ...hostEnv(env.CLOUD_HOST_ENV)];
   lines.push(...keeperLines(vars), ...agentLines(vars), PROVIDER_AGENTS);
   return `${lines.join("\n")}\n`;
 }

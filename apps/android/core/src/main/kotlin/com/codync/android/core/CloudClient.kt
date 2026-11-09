@@ -277,8 +277,8 @@ class CloudClient private constructor(base: String, private val identity: Device
         request("PUT", listOf("v1", "cloud-credentials", provider), buildJsonObject { put("key", key.trim()) }).getValue("credential"))
     /** Forgets [provider]'s key (`409 conflict` while a cloud computer runs on it). */
     suspend fun deleteCloudKey(provider: String) { request("DELETE", listOf("v1", "cloud-credentials", provider)) }
-    /** Creates another cloud computer called [name] on [provider] (`403 forbidden` off the allowlist, `409` at the limit
-     * or without that provider's key, `keyRefused` with what to fix). */
+    /** Creates another cloud computer called [name] on [provider] (`403 forbidden` when the cloud has Codync Cloud off,
+     * `409` at the limit or without that provider's key, `keyRefused` with what to fix). */
     suspend fun createCloudComputer(provider: String, name: String): CloudMachine = machine(
         request("POST", listOf("v1", "cloud-computers"), buildJsonObject { put("provider", provider); put("name", name) }))
     /** Its new [name], here and as its computer (its host takes it at its next look at the cloud). */

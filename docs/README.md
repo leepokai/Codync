@@ -16,8 +16,9 @@ Source review, a passing build, local integration tests and production acceptanc
 | Change an iPhone or desktop screen or button | [UI conventions](design/ui-conventions.md) |
 | Change the composer | [Composer behavior and checks](guides/composer.md) |
 | Ship app and host updates | [Updates](guides/updates.md), [client and host compatibility](reference/compatibility.md) |
+| Add, rotate or remove a key or secret | [Secrets](reference/secrets.md) |
 | Plan and build Android | [Android plan](plans/android-app.md), [Android status](../apps/android/README.md) |
-| Test a phone over Cloudflare instead of LAN | [Cloudflare testing](guides/cloudflare-testing.md) |
+| Test a phone over Cloudflare instead of LAN, or a `cloud/` change on a local Worker | [Cloudflare testing](guides/cloudflare-testing.md) |
 | Test cloud computers (Codync Cloud), isolated per worktree or on the persistent Dev | [Cloud computer testing](guides/cloud-computer-testing.md) |
 | Configure dev/main or deploy the services | [Environments and deployment](guides/environments-and-deployment.md) |
 | Run the host on a Linux server or cloud VM | [Linux servers](guides/linux-servers.md) |
@@ -26,7 +27,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Check connectors against live services | [Connector verification](guides/connector-verification.md) |
 | Change transport or cryptography | [Remote protocol](reference/remote-relay.md) and [shared vectors](reference/fixtures/README.md) |
 | Review an issue or pull request | [Issue and PR review](guides/issue-pr-review.md) (the `review-issue-pr` workflow) and its [security check](guides/security-check.md) |
-| Patch around an agent adapter's bug, or check whether upstream fixed one | [ACP adapter workarounds](reference/acp-adapter-workarounds.md) |
+| Record or patch around an agent's bug, or check whether upstream fixed one | [Upstream agent bugs](upstream-agents/README.md) (one page per agent) |
 | Look into errors or failed turns users hit | [Usage analytics](features/analytics.md), [iPhone crash tracing](guides/iphone-crash-tracing.md), [investigations](#investigations) |
 
 ## Features

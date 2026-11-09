@@ -2,18 +2,18 @@
 
 import { runDurableObjectAlarm } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boat, bothProviders, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
+import { boat, bothProviders, callWith, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
 import { call, clerkToken, devicePath, newHost, sleep, socket } from "./helpers";
 import * as ref from "./ref";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("cloud computers", () => {
-  it("is refused for accounts off the allowlist", async () => {
+  it("is open to every account, on a cloud that can seal their keys", async () => {
     const fetch = boat();
-    const other = uid();
-    expect((await cc("GET", other, "user_other")).body).toEqual({ cloudComputers: [], available: false, limit: 3, providers: [] });
-    expect((await cc("POST", other, "user_other")).status).toBe(403);
+    const noKeys = async (method: string) => callWith({ CLOUD_SECRET_KEYS: undefined }, method, "/v1/cloud-computers", { token: await clerkToken(uid()) });
+    expect((await noKeys("GET")).body).toEqual({ cloudComputers: [], available: false, limit: 3, providers: [] });
+    expect((await noKeys("POST")).status).toBe(403);
     expect(fetch).not.toHaveBeenCalled();
     const open = (await cc("GET", uid())).body;
     expect(open).toMatchObject({
@@ -34,7 +34,7 @@ describe("cloud computers", () => {
     const refused = await cc("POST", userId);
     expect(refused.status).toBe(409);
     expect(refused.body.error.message).toBe("Connect a cloud provider first.");
-    expect((await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "nimbus" })).status).toBe(400);
+    expect((await cc("POST", userId, "/v1/cloud-computers", { provider: "nimbus" })).status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -42,7 +42,7 @@ describe("cloud computers", () => {
     const userId = uid();
     await withKey(userId);
     const fetch = boat();
-    const created = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat", name: " Lab " });
+    const created = await cc("POST", userId, "/v1/cloud-computers", { provider: "boat", name: " Lab " });
     expect(created.status).toBe(200);
     expect(created.body.cloudComputer).toMatchObject({ name: "Lab", provider: "boat", providerName: "Boat", region: "EU", state: "starting", computerId: null, snapshots: true });
     const id = created.body.cloudComputer.cloudComputerId as string;
@@ -79,8 +79,8 @@ describe("cloud computers", () => {
     expect((await call("DELETE", `/v1/computers/${host.cid}`, { token })).status).toBe(409);
 
     const destroy = boat("cancelled");
-    expect((await cc("DELETE", userId, userId, "/v1/cloud-computers/cm_nope")).status).toBe(404);
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
+    expect((await cc("DELETE", userId, "/v1/cloud-computers/cm_nope")).status).toBe(404);
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
     const [dUrl, dInit] = destroy.mock.lastCall!;
     expect(dUrl).toBe("https://boat.dev/api/v1/sandboxes/bx_test");
     expect((dInit!.headers as Record<string, string>)["X-Ascii-Confirm-Delete"]).toBe("bx_test");
@@ -97,10 +97,10 @@ describe("several cloud computers", () => {
     await withInstaboxKey(userId);
     boat();
     expect((await cc("POST", userId)).body.error.message).toBe("Choose the provider to create it on.");
-    const first = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" });
+    const first = await cc("POST", userId, "/v1/cloud-computers", { provider: "boat" });
     expect(first.body.cloudComputer.name).toBe("Cloud computer");
     instaboxApi();
-    const second = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
+    const second = await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
     expect(second.status).toBe(200);
     const listed = await cc("GET", userId);
     expect(listed.body.cloudComputers.map((m: { name: string; provider: string }) => [m.name, m.provider])).toEqual([
@@ -108,21 +108,21 @@ describe("several cloud computers", () => {
       ["Build box", "instabox"],
     ]);
 
-    expect((await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox" })).status).toBe(200);
-    const over = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox" });
+    expect((await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox" })).status).toBe(200);
+    const over = await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox" });
     expect(over.status).toBe(409);
     expect(over.body.error.message).toBe("You can have up to 3 cloud computers. Delete one to make another.");
 
     // A key with a computer on it stays; the other provider's key goes once its computers are gone.
-    const removeBoat = await cc("DELETE", userId, userId, "/v1/cloud-credentials/boat");
+    const removeBoat = await cc("DELETE", userId, "/v1/cloud-credentials/boat");
     expect(removeBoat.body.error.message).toBe("Delete your cloud computers on it first: Codync needs the key to put them to sleep.");
   });
 
   it("renames one, as its computer too, and its host is told", async () => {
     const { userId, host, id } = await cloudComputer();
     const token = await clerkToken(userId);
-    expect((await cc("PATCH", userId, userId, `/v1/cloud-computers/${id}`, { name: "  " })).status).toBe(400);
-    const renamed = await cc("PATCH", userId, userId, `/v1/cloud-computers/${id}`, { name: "Research" });
+    expect((await cc("PATCH", userId, `/v1/cloud-computers/${id}`, { name: "  " })).status).toBe(400);
+    const renamed = await cc("PATCH", userId, `/v1/cloud-computers/${id}`, { name: "Research" });
     expect(renamed.body.cloudComputer.name).toBe("Research");
     expect((await call("GET", "/v1/computers", { token })).body.computers[0].name).toBe("Research");
     // The host takes it from its state, and registering again keeps it.
@@ -150,9 +150,9 @@ describe("several cloud computers", () => {
     const { id } = await cloudComputer();
     const other = uid();
     const fetch = boat("ready");
-    expect((await cc("PATCH", other, other, `/v1/cloud-computers/${id}`, { name: "Mine" })).status).toBe(404);
-    expect((await cc("DELETE", other, other, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(404);
-    expect((await cc("DELETE", other, other, `/v1/cloud-computers/${id}`)).status).toBe(404);
+    expect((await cc("PATCH", other, `/v1/cloud-computers/${id}`, { name: "Mine" })).status).toBe(404);
+    expect((await cc("DELETE", other, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(404);
+    expect((await cc("DELETE", other, `/v1/cloud-computers/${id}`)).status).toBe(404);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

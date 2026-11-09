@@ -33,6 +33,7 @@ the change.
 | `computer-use` | Remote screen, computer use | [remote screen](../features/remote-screen.md), [computer use](../features/computer-use.md) |
 | `voice` | Calls, dictation, engines and keys | [voice calls](../features/voice-call.md) |
 | `remote-access` | Relay, direct routes, pairing, accounts, reverse proxy, SSH computers | [remote protocol](../reference/remote-relay.md), [accounts and SSH](accounts-and-ssh.md) |
+| `codync-cloud` | Cloud computers on the user's own Boat or InstaBox account: keys and what Codync does with them, create, sleep and wake, rename, snapshots, delete | [Codync Cloud](../plans/codync-cloud.md), [cloud computer testing](cloud-computer-testing.md), `cloud/src/cloud-credentials.ts` |
 | `linux-servers` | Headless install, reaching it, firewall, approvals | [Linux servers](linux-servers.md) |
 | `updates` | App and host updates, version mismatch, uninstall | [updates](updates.md), [compatibility](../reference/compatibility.md) |
 | `privacy` | What stays on the computer, what Codync's services see, analytics | [analytics](../features/analytics.md), [remote protocol](../reference/remote-relay.md); keep it consistent with the policy page `web/app/privacy/page.tsx` |

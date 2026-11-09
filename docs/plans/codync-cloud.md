@@ -69,8 +69,8 @@ workspace admin's.
 
 ### Saving it (`PUT /v1/cloud-credentials/:provider {key}`)
 
-1. Only for accounts allowed Codync Cloud; at most 5 saves a minute per account (`CLOUD_KEY_LIMITER`), so the
-   endpoint can't be used to test other people's keys.
+1. Only on a cloud that can seal keys (`CLOUD_SECRET_KEYS`, every signed-in account there); at most 5 saves a minute
+   per account (`CLOUD_KEY_LIMITER`), so the endpoint can't be used to test other people's keys.
 2. Shape (the driver's `keyPattern`): Boat `boat_…` (or `box_…`), letters, digits, `_`, `-`; InstaBox `ibk_` and 52
    of a–z, 2–7.
 3. A read must succeed (`checkKey`): Boat `GET /sandboxes?limit=1` (the key works and reads sandboxes), InstaBox
@@ -228,8 +228,8 @@ What changes against the generic design below:
 
 ### Build order on Boat
 
-1. **Provision for a signed-in user** (no app UI yet): Worker `POST/GET/DELETE /v1/cloud-computers` (Clerk, an
-   allowlist of user IDs), D1 `cloud_machines`, the Boat calls in `cloud/machines/`
+1. **Provision for a signed-in user** (no app UI yet): Worker `POST/GET/DELETE /v1/cloud-computers` (Clerk),
+   D1 `cloud_machines`, the Boat calls in `cloud/machines/`
    (sans-I/O), and in the host a first-boot claim from `~/.codync/managed.json` (written by Boat's `files` before
    the sandbox is ready, deleted once used) plus `Approval::Auto`. The computer then appears in the account's
    Computers list on every app, as *Codync Cloud* with a cloud icon (`device: "cloud"`; the machine's own hostname
@@ -242,7 +242,7 @@ What changes against the generic design below:
    backup and the update before sleep (`POST /v1/host/sleep` answers `{update}`); backups, a cold wake and a
    restore from a backup passed on Boat's paid plan on 2026-10-31 ([trial log
    §15](codync-cloud-boat-trial.md#15-updates-backups-and-a-cold-wake-on-the-paid-plan-2026-10-31)). Still open:
-   a start-limit budget beyond retrying (decided once the internal beta shows real use, owner 2026-10-31).
+   a start-limit budget beyond retrying (decided once real use shows the need, owner 2026-10-31).
 3. **App UI** on iOS, Android and desktop (provisioning entry, "preparing your cloud computer" for the ~10 s until
    it is claimed, Cloud badge with provider and region, an automatic access request for the account's cloud
    computer instead of the "Ask for access" tap, a sleeping computer shown as ready ("wakes when you message")
@@ -317,9 +317,13 @@ their phone, the phone shows *Update this app* and stops syncing. Two layers:
   last 30 days.
 - Apps released before this send nothing. Unknown never holds an update or blocks an app (the compatibility rule:
   an unknown is not a reason to lock someone out).
-- Each release's `minApp` comes from its own source: the Worker's cron reads GitHub's latest mark and tags, and
-  `MIN_APP` from `host/src/compat.rs` at each new tag (`host_releases`). Releases need no extra asset (a field in
-  the signed manifest would break older hosts: `release.rs` parses it with `deny_unknown_fields`).
+- Each release's `minApp` comes from the release itself: the Worker's cron reads its channel's latest
+  `codync-host-compat.json` (the version and `MIN_APP` from `host/src/compat.rs`; GitHub on main, the
+  [dev release channel](../guides/development.md#dev-release-channel) on dev) and keeps each version it sees
+  (`host_releases`). It is its own asset, not a field in the signed manifest, which would break older hosts
+  (`release.rs` parses that with `deny_unknown_fields`). A release that is *latest* for less than one cron interval
+  (15 minutes), or that the gate skips past, is never seen, so the soft update can't pick it; one more release
+  between two others is rarely what an old app needs.
 
 ### Cloud soft update (雲端弱更新, the default)
 
@@ -336,7 +340,8 @@ their phone, the phone shows *Update this app* and stops syncing. Two layers:
 - **An app that needs a newer host updates the cloud computer first** (owner, 2026-10-24): as soon as a device
   connects with a `minHost` above the cloud host, the Worker tells the host (`cloud.changed`), and the host installs
   exactly that version at once, even mid-task (bots' sessions resume). Exactly that version is the oldest release
-  the new app works with, so the account's older apps keep working. Measured on Boat: the app connected, and the host
+  the new app works with, so the account's older apps keep working. When `dev` bumped past it before it was released,
+  the order is the oldest release in `host_releases` above it. Measured on Boat: the app connected, and the host
   was back online on the new version **4.6 s** later. A sleeping computer wakes for the app's connection first.
 - When (the regular soft update): when the host is idle and asks to sleep, `POST /v1/host/sleep` answers
   `{update}` instead of stopping it; the host installs, restarts, and sleeps after its next idle period, so a wake
@@ -694,19 +699,18 @@ public.
 
 ## Delivery
 
-Three releases, each gated by the Worker (`CLOUD_SECRET_KEYS` unset or the user not in `CLOUD_COMPUTER_USERS`: the
-apps show no Codync Cloud section, so shipping the code changes nothing for anyone else).
+The Worker gates it: with `CLOUD_SECRET_KEYS` unset the apps show no Codync Cloud section, so shipping the code
+changes nothing; with it set, every signed-in account has Codync Cloud (no allowlist, the owner's call on 2026-11-09).
 
 1. **Dark merge into `dev`**: the branch split into reviewable commits that pass the pre-commit checks, the
    `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
    with migrations `0007`–`0009` on the dev D1 and dev's own `CLOUD_SECRET_KEYS`, then `npm run e2e:cloud` and the iPhone and
    Android apps against dev.
-2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations up to `0009`,
-   production's own `CLOUD_SECRET_KEYS`, `CLOUD_COMPUTER_USERS` = internal accounts, each bringing its own Boat
-   key); MFA on the internal accounts.
-3. **Public launch**: terms, acceptable use and privacy policy, encryption at rest,
-   memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
-   screen's "Start a cloud computer", the user manual page.
+2. **Launch on `main`**: production's own `CLOUD_SECRET_KEYS` opens Codync Cloud to every signed-in account at once
+   (without an allowlist there is no smaller beta), so first: terms, acceptable use and privacy policy, encryption at
+   rest, memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
+   screen's "Start a cloud computer", the user manual page. Then `deploy:main` right after the release merge
+   (migrations up to `0009`) and that key; each account brings its own provider key.
 
 The cloud picks a cloud computer's version on its own (the soft and hard updates), and its owner can also update
 it to the latest release from any device, like any computer (owner, 2026-10-31): *Update* on its Codync row

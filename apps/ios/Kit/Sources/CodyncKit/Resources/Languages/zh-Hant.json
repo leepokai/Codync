@@ -1821,5 +1821,11 @@
   "Channel note": "頻道備註",
   "Channels": "頻道",
   "Show the page": "顯示頁面",
-  "Hide the page": "隱藏頁面"
+  "Hide the page": "隱藏頁面",
+  "Up": "上一層",
+  "Open folder": "開啟資料夾",
+  "Copy path": "複製路徑",
+  "Folder": "資料夾",
+  "This folder is empty.": "此資料夾為空。",
+  "Inside this bot’s folder": "在此機器人的資料夾中"
 }

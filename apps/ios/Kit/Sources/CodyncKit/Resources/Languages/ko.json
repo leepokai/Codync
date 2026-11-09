@@ -1821,5 +1821,11 @@
   "Channel note": "채널 메모",
   "Channels": "채널",
   "Show the page": "페이지 표시",
-  "Hide the page": "페이지 숨기기"
+  "Hide the page": "페이지 숨기기",
+  "Up": "위로",
+  "Open folder": "폴더 열기",
+  "Copy path": "경로 복사",
+  "Folder": "폴더",
+  "This folder is empty.": "이 폴더는 비어 있습니다.",
+  "Inside this bot’s folder": "이 봇의 폴더 안"
 }

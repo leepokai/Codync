@@ -1821,5 +1821,11 @@
   "Channel note": "Заметка канала",
   "Channels": "Каналы",
   "Show the page": "Показать страницу",
-  "Hide the page": "Скрыть страницу"
+  "Hide the page": "Скрыть страницу",
+  "Up": "Вверх",
+  "Open folder": "Открыть папку",
+  "Copy path": "Копировать путь",
+  "Folder": "Папка",
+  "This folder is empty.": "Эта папка пуста.",
+  "Inside this bot’s folder": "В папке этого бота"
 }

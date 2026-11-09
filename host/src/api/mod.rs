@@ -183,6 +183,9 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
     if matches!(method, "channelNotes" | "addChannelNote" | "removeChannelNote") {
         return crate::channels::call(hub, method, &b);
     }
+    if method == "listFiles" {
+        return files::list(hub, &b).await;
+    }
     if method == "readFile" {
         return files::read(hub, &b).await;
     }

@@ -1821,5 +1821,11 @@
   "Channel note": "Nota do canal",
   "Channels": "Canais",
   "Show the page": "Mostrar a página",
-  "Hide the page": "Ocultar a página"
+  "Hide the page": "Ocultar a página",
+  "Up": "Subir",
+  "Open folder": "Abrir pasta",
+  "Copy path": "Copiar caminho",
+  "Folder": "Pasta",
+  "This folder is empty.": "Esta pasta está vazia.",
+  "Inside this bot’s folder": "Dentro da pasta deste bot"
 }

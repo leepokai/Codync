@@ -1821,5 +1821,11 @@
   "Channel note": "チャンネルのメモ",
   "Channels": "チャンネル",
   "Show the page": "ページを表示",
-  "Hide the page": "ページを隠す"
+  "Hide the page": "ページを隠す",
+  "Up": "上へ",
+  "Open folder": "フォルダーを開く",
+  "Copy path": "パスをコピー",
+  "Folder": "フォルダー",
+  "This folder is empty.": "このフォルダーは空です。",
+  "Inside this bot’s folder": "このボットのフォルダー内"
 }

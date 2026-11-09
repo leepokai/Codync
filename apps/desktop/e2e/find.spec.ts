@@ -1,9 +1,10 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Browser, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { api, attach, echoBot, openGeneralSettings } from './sandbox.ts'
 
 // ⌘F and ⌘G are menu accelerators, which keys sent over the DevTools protocol never reach: the specs pick the
-// menu items through System Events instead (macOS; the unpackaged sandbox app is the process "Electron").
+// menu items through System Events instead (macOS). Every unpackaged sandbox app is a process named "Electron",
+// so they pick the attached app by its process ID.
 test.skip(process.platform !== 'darwin', 'drives the app menu through System Events')
 
 type History = { entries: { kind: string; data: { text?: string } }[] }
@@ -16,14 +17,24 @@ async function say(page: Page, botId: string, text: string) {
     .toBe(true)
 }
 
-/** Picks an item of the app's View menu, as its shortcut does. */
-function viewMenu(item: string) {
-  execFileSync('osascript', ['-e', `tell application "System Events" to tell process "Electron" to click menu item "${item}" of menu "View" of menu bar 1`])
+/** The process ID of the app `browser` is attached to (its main process). */
+async function appPid(browser: Browser) {
+  const session = await browser.newBrowserCDPSession()
+  const { processInfo } = await session.send('SystemInfo.getProcessInfo')
+  await session.detach()
+  const main = processInfo.find((p) => p.type === 'browser')
+  if (!main) throw new Error('The attached app reported no main process.')
+  return main.id
+}
+
+/** Picks an item of the View menu of the app with process ID `pid`, as its shortcut does. */
+function viewMenu(pid: number, item: string) {
+  execFileSync('osascript', ['-e', `tell application "System Events" to tell (first process whose unix id is ${pid}) to click menu item "${item}" of menu "View" of menu bar 1`])
 }
 
 /** ⌘F: View > Find in Conversation. */
-async function openFind(page: Page) {
-  viewMenu('Find in Conversation')
+async function openFind(page: Page, pid: number) {
+  viewMenu(pid, 'Find in Conversation')
   await expect(page.getByRole('search')).toBeVisible()
 }
 
@@ -62,6 +73,7 @@ test('find in a conversation keeps to the messages, steps through matches and ke
   const name = `Find e2e ${Date.now()}`
   let botId: string | undefined
   try {
+    const pid = await appPid(browser)
     const bot = await echoBot(page, name)
     botId = bot.id
     // One match far back, past the first page of the chat, then enough to push it there.
@@ -74,7 +86,7 @@ test('find in a conversation keeps to the messages, steps through matches and ke
 
     await page.locator('.roster-row', { hasText: name }).click()
     await expect(page.locator('.load-earlier')).toBeVisible()
-    await openFind(page)
+    await openFind(page, pid)
 
     // The transcript's own controls aren't the conversation.
     await field(page).fill('earlier')
@@ -105,9 +117,9 @@ test('find in a conversation keeps to the messages, steps through matches and ke
     await field(page).press('Enter')
     await field(page).press('Shift+Enter')
     await expect(count(page)).toHaveText('2/4')
-    viewMenu('Find Next')
+    viewMenu(pid, 'Find Next')
     await expect(count(page)).toHaveText('3/4')
-    viewMenu('Find Previous')
+    viewMenu(pid, 'Find Previous')
     await expect(count(page)).toHaveText('2/4')
     await page.getByRole('search').getByRole('button', { name: 'Next match' }).click()
     await expect(count(page)).toHaveText('3/4')
@@ -146,10 +158,11 @@ test("an empty chat's hints aren't searched", async () => {
   const name = `Find empty e2e ${Date.now()}`
   let botId: string | undefined
   try {
+    const pid = await appPid(browser)
     botId = (await echoBot(page, name)).id
     await page.locator('.roster-row', { hasText: name }).click()
     await expect(page.locator('.intro-card')).toContainText('notification')
-    await openFind(page)
+    await openFind(page, pid)
     await field(page).fill('notification')
     await expect(count(page)).toHaveText('No results')
   } finally {

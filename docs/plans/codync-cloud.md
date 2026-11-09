@@ -1,8 +1,7 @@
 # Codync Cloud
 
-Status (2026-10-31): steps 1–3 of the [build order](#build-order-on-boat) and both update paths are built on
-`feat/cloud-boat`, synced with `dev`, and passed end to end on Boat and the iPhone app.
-What's left before each release: [Delivery](#delivery). Owner decisions:
+Status (2026-11-09): released in 2.43.1 and open on `main` to every signed-in account; what's still open is under
+[Delivery](#delivery). Owner decisions:
 
 - **Free, and users bring their own cloud** (owner, 2026-11-06; how, 2026-11-08): Codync charges nothing; each user
   connects their own Boat account with an API key they paste once, which Codync keeps sealed:
@@ -719,11 +718,11 @@ changes nothing; with it set, every signed-in account has Codync Cloud (no allow
    `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
    with migrations `0007`–`0009` on the dev D1 and dev's own `CLOUD_SECRET_KEYS`, then `npm run e2e:cloud` and the iPhone and
    Android apps against dev.
-2. **Launch on `main`**: production's own `CLOUD_SECRET_KEYS` opens Codync Cloud to every signed-in account at once
-   (without an allowlist there is no smaller beta), so first: terms, acceptable use and privacy policy, encryption at
-   rest, memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
-   screen's "Start a cloud computer", the user manual page. Then `deploy:main` right after the release merge
-   (migrations up to `0009`) and that key; each account brings its own provider key.
+2. **Launch on `main`**: done on 2026-11-09 with 2.43.1, the owner's call: migrations `0007`–`0009`, production's own
+   `CLOUD_SECRET_KEYS` (every signed-in account has Codync Cloud at once), then `deploy:main`. A new cloud computer
+   installs GitHub's latest release, so 2.43.1 once the release gate marks it latest; only 2.43.1 apps show Codync
+   Cloud. Planned before launch and still open: MFA required for accounts with a cloud computer, memory admission, the
+   welcome screen's "Start a cloud computer", and encryption at rest (Boat documents none for sandbox disks).
 
 The cloud picks a cloud computer's version on its own (the soft and hard updates), and its owner can also update
 it to the latest release from any device, like any computer (owner, 2026-10-31): *Update* on its Codync row

@@ -410,6 +410,11 @@ impl App {
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
+                    Some(Click::Link(url)) => {
+                        if !crate::shell::open(std::ffi::OsStr::new(&url)) {
+                            tracing::warn!("couldn't open a link in the browser");
+                        }
+                    }
                     Some(Click::DevServers) => self.open_dev_servers(),
                     Some(Click::Section(name)) => {
                         self.click_section(&name);

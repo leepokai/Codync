@@ -388,6 +388,8 @@ pub enum Click {
     DevServers,
     /// A section's label (its name): folds or unfolds it, like `z`.
     Section(String),
+    /// A web address in a message: opens it in the browser.
+    Link(String),
 }
 
 #[derive(Default)]

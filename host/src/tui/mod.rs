@@ -3,6 +3,7 @@
 
 mod app;
 mod appearance;
+mod autolink;
 mod choice;
 mod connections;
 mod details;

@@ -115,7 +115,7 @@ fn push_cells(line: &mut Vec<Span<'static>>, cells: &[(char, Style)]) {
     }
 }
 
-/// Inline Markdown: `code`, **bold**, *italic* / _italic_, [text](url).
+/// Inline Markdown: `code`, **bold**, *italic* / _italic_, [text](url), bare addresses (underlined).
 pub fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
     let t = theme();
     let mut out = vec![];
@@ -147,6 +147,14 @@ pub fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
             let code: String = chars[i + 1..i + 1 + len].iter().collect();
             out.push(Span::styled(code, t.code));
             i += len + 2;
+            continue;
+        }
+        let url = super::autolink::url_len(&chars, i);
+        if url > 0 {
+            flush(&mut run, &mut out, style(bold, italic));
+            let text: String = chars[i..i + url].iter().collect();
+            out.push(Span::styled(text, style(bold, italic).add_modifier(Modifier::UNDERLINED)));
+            i += url;
             continue;
         }
         if c == '*' && chars.get(i + 1) == Some(&'*') {

@@ -61,6 +61,23 @@ describe("cloud host updates", () => {
     await hostWs.nextT("cloud.changed");
   });
 
+  it("orders the oldest published release above the host an app needs when that version was never released", async () => {
+    const releases = (rows: string[][]) =>
+      env.DB.batch([
+        env.DB.prepare("DELETE FROM host_releases"),
+        ...rows.map(([v, m]) => env.DB.prepare("INSERT INTO host_releases(version, min_app) VALUES (?, ?)").bind(v, m)),
+      ]);
+    // `dev` bumped 2.25.0 to 2.25.1 before main released it.
+    await releases([
+      ["2.24.0", "2.18.0"],
+      ["2.25.1", "2.21.0"],
+      ["2.26.0", "2.26.0"],
+    ]);
+    const { host } = await withPhone("ios/2.26.0; minHost=2.25.0");
+    expect((await call("GET", "/v1/host/state", { key: host.sign })).body.update).toEqual({ version: "2.25.1", force: true });
+    await releases([]);
+  });
+
   it("raises the order to an emergency floor; a self-hosted computer below it may not register", async () => {
     const { host } = await withPhone("ios/2.26.0; minHost=2.25.0");
     const state = await callWith({ HOST_FLOOR: "2.30.0" }, "GET", "/v1/host/state", { key: host.sign });
@@ -91,22 +108,31 @@ describe("cloud host updates", () => {
     expect(calls(fetch)).not.toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/stop");
   });
 
-  it("reads releases up to GitHub's latest mark with each one's MIN_APP", async () => {
-    await env.DB.prepare("INSERT INTO host_releases(version, min_app) VALUES ('2.27.0', '2.21.0')").run();
-    spyFetch().mockImplementation(async (url) => {
-      const u = String(url);
-      if (u.endsWith("/releases/latest")) return Response.json({ tag_name: "v2.25.0" });
-      if (u.includes("/tags")) return Response.json([{ name: "v2.26.0" }, { name: "v2.25.0" }, { name: "v2.24.0" }, { name: "nightly" }]);
-      if (u.includes("/v2.25.0/host/src/compat.rs")) return new Response('pub const MIN_APP: &str = "2.21.0";');
-      if (u.includes("/v2.24.0/host/src/compat.rs")) return new Response('pub const MIN_APP: &str = "2.18.0";');
-      return new Response("", { status: 404 });
-    });
+  it("keeps each release its channel marks latest, with its MIN_APP, and drops any above it", async () => {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM host_releases"),
+      ...[
+        ["2.24.0", "2.18.0"],
+        ["2.25.0", "2.20.0"],
+        ["2.27.0", "2.21.0"],
+      ].map(([v, m]) => env.DB.prepare("INSERT INTO host_releases(version, min_app) VALUES (?, ?)").bind(v, m)),
+    ]);
+    // The tests run with the dev cloud's settings, so on its dev channel.
+    const fetch = spyFetch().mockImplementation(async () => Response.json({ version: "2.25.0", minApp: "2.21.0" }));
     await syncReleases(env);
+    expect(String(fetch.mock.calls.at(-1)?.[0])).toBe("https://dev-releases.codync.dev/latest/download/codync-host-compat.json");
     const { results } = await env.DB.prepare("SELECT version, min_app FROM host_releases ORDER BY version").all();
     expect(results).toEqual([
       { version: "2.24.0", min_app: "2.18.0" },
       { version: "2.25.0", min_app: "2.21.0" },
     ]);
+
+    spyFetch().mockImplementation(async () => Response.json({ version: "2.26.0; DROP", minApp: "2.21.0" }));
+    await expect(syncReleases(env)).rejects.toThrow("invalid");
+    // Without a channel (main): GitHub's releases.
+    const github = spyFetch().mockImplementation(async () => new Response("", { status: 404 }));
+    await expect(syncReleases({ ...env, HOST_RELEASES_URL: undefined })).rejects.toThrow("404");
+    expect(String(github.mock.calls.at(-1)?.[0])).toBe("https://github.com/leepokai/Codync/releases/latest/download/codync-host-compat.json");
   });
 });
 

@@ -54,6 +54,9 @@ export interface Env {
    * the provider name prefix, so test machines are easy to find and sweep. */
   CLOUD_HOST_ENV?: string;
   CLOUD_HOST_BINARY_URL?: string;
+  /** The release channel cloud computers install and update from (`host-releases.ts`): unset = GitHub's releases;
+   * dev sets the dev channel. */
+  HOST_RELEASES_URL?: string;
   CLOUD_MACHINE_PREFIX?: string;
   /** Seconds after which the provider stops a cloud computer on its own; needed on Boat's trial (≤ 7200). */
   CLOUD_AUTO_STOP_SECONDS?: string;

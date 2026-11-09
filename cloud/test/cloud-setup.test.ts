@@ -11,7 +11,7 @@ describe("cloud computer setup", () => {
     const plain = setupScript(env({})).trimEnd().split("\n");
     expect(plain.slice(0, 3)).toEqual([
       "set -eu",
-      "curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh -s -- --host-only",
+      "curl -fsSL https://github.com/leepokai/Codync/releases/latest/download/install.sh | CODYNC_RELEASES_URL=https://github.com/leepokai/Codync/releases sh -s -- --host-only",
       'export PATH="$HOME/.local/bin:$PATH"',
     ]);
     const script = setupScript(
@@ -19,10 +19,24 @@ describe("cloud computer setup", () => {
     );
     expect(script).toContain("curl -fsSL --retry 60 --retry-delay 2 --retry-connrefused 'http://127.0.0.1:5000/codync-host' -o ~/.local/bin/codync-host.next");
     expect(script).toContain(
-      "printf '%s\\n' '[Service]' 'Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000' 'Environment=CODYNC_ANALYTICS_ENV=dev' | sudo -n -u codync-agent tee \"$AH/.config/systemd/user/codync-host.service.d/codync-cloud.conf\" >/dev/null",
+      "printf '%s\\n' '[Service]' 'Environment=CODYNC_RELEASES_URL=https://github.com/leepokai/Codync/releases' 'Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000' 'Environment=CODYNC_ANALYTICS_ENV=dev' | sudo -n -u codync-agent tee \"$AH/.config/systemd/user/codync-host.service.d/codync-cloud.conf\" >/dev/null",
     );
     // The keeper starts with the same environment (it fetches its vault key from that cloud).
     expect(script).toContain("'Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000'");
+  });
+
+  it("installs from this cloud's release channel, and has the host and the keeper update from it", () => {
+    const script = setupScript(env({ HOST_RELEASES_URL: "https://dev-releases.codync.dev" }));
+    expect(script.split("\n")[1]).toBe(
+      "curl -fsSL https://dev-releases.codync.dev/latest/download/install.sh | CODYNC_RELEASES_URL=https://dev-releases.codync.dev sh -s -- --host-only",
+    );
+    const keeper = script.split("\n").find((l) => l.includes("codync-keeper/codync-host keeper"));
+    expect(keeper).toContain("'Environment=CODYNC_RELEASES_URL=https://dev-releases.codync.dev'");
+    expect(script.split("\n").find((l) => l.includes("codync-cloud.conf") && l.includes("tee"))).toContain(
+      "'Environment=CODYNC_RELEASES_URL=https://dev-releases.codync.dev'",
+    );
+    expect(() => setupScript(env({ HOST_RELEASES_URL: "https://dev-releases.codync.dev/;rm -rf ~" }))).toThrow();
+    expect(() => setupScript(env({ HOST_RELEASES_URL: "http://dev-releases.codync.dev" }))).toThrow();
   });
 
   it("puts the keeper under its own user, and the host and its agents under one that never had sudo", () => {

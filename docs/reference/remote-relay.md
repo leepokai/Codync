@@ -549,7 +549,7 @@ The route table below summarizes the contract. Executable schema and validation 
 - `POST /v1/host/claim` `{"claimId", …claim 的 complete 欄位, "keeperKey"?}` → `{"computer":<Computer>}`：雲端電腦用認主卡自己 claim（§4.2 A 末段）；`signKey` 必須等於簽章的 kid，帳號取自該 claim。`keeperKey`（32 bytes，base64url）是這台機器 keeper 的 Ed25519 公鑰，只在第一次 claim 時記下（之後不能換）。
 - `GET /v1/keeper/vault-key`（Sig(keeper)：用 claim 記下的 `keeperKey` 簽）→ `{"key"}`（32 bytes，base64url）：雲端電腦 keeper 保險箱的鑰匙，Worker 在建立機器時產生並封存（`CLOUD_SECRET_KEYS`），只交給這把 keeper key；還沒有 claim 記下它、或機器已刪除 → `404`。keeper 每次啟動來拿，只放記憶體（[Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets)）。
 - `POST /v1/host/sleep` `{"wakeAt": ms | null}` → `{}`：閒置的雲端電腦請求睡眠。DO 有裝置連線時 `409 conflict`；否則 DO 記下 `wakeAt`（alarm）、立刻把 host 視為離線（停機後的 socket 不會乾淨關閉），Worker 再用電腦主人的 key 讓供應商停機（Boat：stop；InstaBox：pause，記憶體保留）；供應商拒絕這把 key 時回 `422 keyRefused`，並請 DO 把 host 標回上線（`/internal/awake`：機器沒停，喚醒也不會發現它在執行）。DO 在 host 離線時，遇到裝置連線、mailbox 訊息、routine webhook 或 `wakeAt` 到期，就請供應商 resume（每分鐘最多一次；機器還在停止中或達到啟動上限時 20 秒後重試；機器根本沒停時把原本的 host socket 收回）。非雲端電腦沒有影響。
-- `POST /v1/host/sleep` 在有更新的 release 適合帳號所有近期裝置時（`minApp` ≤ 最舊的 app、版本 ≥ 需要的 `minHost`，release 清單由 cron 從 GitHub 讀入 `host_releases`），回 `{"update": {"version", "force": false}}` 而不停機；host 安裝後重啟，下次閒置再睡。
+- `POST /v1/host/sleep` 在有更新的 release 適合帳號所有近期裝置時（`minApp` ≤ 最舊的 app、版本 ≥ 需要的 `minHost`，release 清單由 cron 從該 cloud 的 release channel 最新的 `codync-host-compat.json` 讀入 `host_releases`），回 `{"update": {"version", "force": false}}` 而不停機；host 安裝後重啟，下次閒置再睡。
 - `GET /v1/host/sleep` → `{"state"}`：雲端電腦最近一次的機器狀態。請求睡眠後還在執行的 host 每 3 秒問一次，狀態離開 `stopping`／`stopped` 就重新連上 relay（保留記憶體的快速喚醒會帶回同一個程序和舊 socket）。
 
 **Routine webhook（公開）**：`POST /v1/hooks/{computerId}/{routineId}`，§7.8。

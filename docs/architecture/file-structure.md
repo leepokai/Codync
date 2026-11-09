@@ -72,7 +72,7 @@ Codync/
 └── .github/workflows/         # CI, signing and release automation
 ```
 
-`build/`, `apps/ios/Kit/.build/`, `apps/desktop/out/`, `apps/desktop/dist/`, Cargo `target/`, `node_modules/` and Wrangler local state are generated working data. They are not source modules and should not become documentation locations. Edit `apps/project.yml` and run `xcodegen generate --spec apps/project.yml`; never hand-edit `project.pbxproj`.
+`build/`, `apps/ios/Kit/.build/`, `apps/desktop/out/`, `apps/desktop/dist/`, Cargo `target/`, `node_modules/` and Wrangler local state are generated working data. They are not source modules and should not become documentation locations. Edit `apps/project.yml` and run `xcodegen generate --spec apps/project.yml`; never hand-edit `project.pbxproj` (`tools/bump-version.py` sets its `MARKETING_VERSION` lines to what xcodegen would write).
 
 ## Targets
 

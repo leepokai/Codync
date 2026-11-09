@@ -214,7 +214,8 @@ with the commands above, independently of the app.
 ## Release configuration
 
 Both workflows (`host.yml`, `release-desktop.yml`) run for a `vMAJOR.MINOR.PATCH` tag and publish
-without the *latest* mark; `release-gate.yml` sets it and updates the Homebrew tap (secret
+without the *latest* mark (`host.yml` also publishes `dev` to the
+[dev release channel](development.md#dev-release-channel)); `release-gate.yml` sets it and updates the Homebrew tap (secret
 `TAP_TOKEN`). Keep the host Cargo version, `apps/desktop/package.json` and the marketing
 version aligned before tagging; the desktop workflow fails when the app and host versions
 differ. The host workflow refuses a tag/version mismatch. Existing clients without this
@@ -225,8 +226,9 @@ replacing it breaks updates for installed hosts. The Actions secrets the release
 read: [secrets](../reference/secrets.md#github-actions-leepokaicodync).
 
 The desktop workflow signs and notarizes the Mac app and builds its DMG and zip; it builds
-the Linux AppImage, deb and tar.gz on x86_64 and arm64. The host workflow emits
-`codync-host-<platform>.update.json` and `.update.json.sig` alongside each archive. Signing fails if a private key does not match the committed public
+the Linux AppImage, deb and tar.gz on x86_64 and arm64. The host workflow builds each
+platform's archive without secrets; once all are built, its `release` job signs them
+(`codync-host-<platform>.update.json` and `.update.json.sig`) and uploads them together. Signing fails if a private key does not match the committed public
 key. Never commit private keys or put them in command-line arguments.
 
 A published release must include these assets before clients can update. Feeds and

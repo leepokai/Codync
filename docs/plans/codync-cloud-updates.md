@@ -131,6 +131,3 @@ For a security hole or a critical bug, an operator sets `HOST_FLOOR` (a version 
   within a day (a withdrawn release) is dropped, and the notice stays like on any computer that's too old.
 - **Android before the gate reads Google Play**: an Android phone below `MIN_APP` might not have an update on Play
   yet. Android is internal-only today; fix the gate before it goes public.
-- **GitHub API limits**: hourly checks go to `api.github.com/repos/.../releases/latest` (60 requests an hour per IP
-  without a token). If many cloud machines share an outgoing IP, serve *latest* from the Worker (it already reads
-  it for the gate).

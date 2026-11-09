@@ -69,7 +69,8 @@ Set with `gh secret set <name>`. The workflow that reads each one is in `.github
 |---|---|---|---|
 | `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD` | `release-desktop` | The Developer ID certificate that signs the Mac app | Revoke it, make a new one in Apple Developer |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY` | `release-desktop`, `ios-submit`, `ios-dsyms` | App Store Connect API key: notarizing, submitting to App Review, fetching dSYMs | Revoke it, make a new one in App Store Connect |
-| `HOST_UPDATE_SIGNING_KEY` | `host` | Signs host update manifests; the public half is `packaging/updates/host-public-key.txt` | *No reissue*: a new key breaks updates for every installed host. Copy: `CODYNC_HOST_UPDATE_SIGNING_KEY` |
+| `HOST_UPDATE_SIGNING_KEY` | `host` | Signs host update manifests, for tags and the dev release channel alike (a manifest names its channel's URL); the public half is `packaging/updates/host-public-key.txt` | *No reissue*: a new key breaks updates for every installed host. Copy: `CODYNC_HOST_UPDATE_SIGNING_KEY` |
+| `DEV_RELEASES_R2_KEY_ID`, `DEV_RELEASES_R2_SECRET` | `host` | R2 API token (*Object Read & Write* on the bucket `codync-releases-dev` only) that uploads the [dev release channel](../guides/development.md#dev-release-channel) | Delete the token under R2 → Manage API tokens, make a new one, set both again |
 | `TAP_TOKEN` | `auto-tag`, `release-gate` | Pushes the version tags and the Homebrew tap | Make a new token |
 | `ANDROID_UPLOAD_KEYSTORE`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD` | `android-submit` | The Play upload key that signs Android builds | Ask Play Console for an upload key reset (takes days); keep the file outside the repository |
 | `ANDROID_GOOGLE_SERVICES_JSON` | `android-submit` | Firebase configuration for the Android builds | Download it again from Firebase |

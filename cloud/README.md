@@ -81,6 +81,7 @@ Every secret across the Workers, GitHub and local files, and what to do when one
 | `CLOUD_KEY_LIMITER` | rate limit binding | provider keys saved per account (each save calls the provider), 5 per minute |
 | `CLOUD_COMPUTER_USERS` | secret, optional | comma-separated Clerk user ids allowed a cloud computer (`*`: everyone, local runs only); a secret because the repository is public |
 | `BOAT_API_URL`, `INSTABOX_API_URL`, `CLOUD_AUTO_STOP_SECONDS` | var, dev/e2e only | Boat and InstaBox base URLs; provider auto-stop (Boat's trial needs ≤ 7200; InstaBox ignores it and pauses a machine idle for 30 minutes) |
+| `HOST_RELEASES_URL` | var, dev only | the release channel cloud computers install and update from; unset: GitHub's releases ([dev release channel](../docs/guides/development.md#dev-release-channel)) |
 | `CLOUD_HOST_ENV`, `CLOUD_HOST_BINARY_URL`, `CLOUD_MACHINE_PREFIX` | var, dev/e2e only | a cloud computer's host service environment (`CODYNC_…=value`, e.g. its cloud URL, analytics off); a host build to boot instead of the release; the machine name prefix ([cloud computer testing](../docs/guides/cloud-computer-testing.md)) |
 | `HOST_FLOOR`, `HOST_FLOOR_REASON` | var, emergencies only | cloud hosts below it update at once; self-hosted ones below it get `426 hostUpdateRequired` at registration |
 | `APP_FLOOR_IOS`, `APP_FLOOR_ANDROID`, `APP_FLOOR_DESKTOP`, `APP_FLOOR_REASON` | var, emergencies only | apps below their platform's floor get `426 appUpdateRequired` on every request |

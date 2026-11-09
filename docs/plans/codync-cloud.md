@@ -317,9 +317,13 @@ their phone, the phone shows *Update this app* and stops syncing. Two layers:
   last 30 days.
 - Apps released before this send nothing. Unknown never holds an update or blocks an app (the compatibility rule:
   an unknown is not a reason to lock someone out).
-- Each release's `minApp` comes from its own source: the Worker's cron reads GitHub's latest mark and tags, and
-  `MIN_APP` from `host/src/compat.rs` at each new tag (`host_releases`). Releases need no extra asset (a field in
-  the signed manifest would break older hosts: `release.rs` parses it with `deny_unknown_fields`).
+- Each release's `minApp` comes from the release itself: the Worker's cron reads its channel's latest
+  `codync-host-compat.json` (the version and `MIN_APP` from `host/src/compat.rs`; GitHub on main, the
+  [dev release channel](../guides/development.md#dev-release-channel) on dev) and keeps each version it sees
+  (`host_releases`). It is its own asset, not a field in the signed manifest, which would break older hosts
+  (`release.rs` parses that with `deny_unknown_fields`). A release that is *latest* for less than one cron interval
+  (15 minutes), or that the gate skips past, is never seen, so the soft update can't pick it; one more release
+  between two others is rarely what an old app needs.
 
 ### Cloud soft update (雲端弱更新, the default)
 
@@ -336,7 +340,8 @@ their phone, the phone shows *Update this app* and stops syncing. Two layers:
 - **An app that needs a newer host updates the cloud computer first** (owner, 2026-10-24): as soon as a device
   connects with a `minHost` above the cloud host, the Worker tells the host (`cloud.changed`), and the host installs
   exactly that version at once, even mid-task (bots' sessions resume). Exactly that version is the oldest release
-  the new app works with, so the account's older apps keep working. Measured on Boat: the app connected, and the host
+  the new app works with, so the account's older apps keep working. When `dev` bumped past it before it was released,
+  the order is the oldest release in `host_releases` above it. Measured on Boat: the app connected, and the host
   was back online on the new version **4.6 s** later. A sleeping computer wakes for the app's connection first.
 - When (the regular soft update): when the host is idle and asks to sleep, `POST /v1/host/sleep` answers
   `{update}` instead of stopping it; the host installs, restarts, and sleeps after its next idle period, so a wake

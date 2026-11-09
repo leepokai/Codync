@@ -1841,5 +1841,6 @@
   "{n} ready": "{n} готовы",
   "Grant it to let bots use apps and the screen": "Разрешите, чтобы боты использовали приложения и экран",
   "Getting started": "Первые шаги",
-  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Каждый шаг настраивается на этом компьютере; те же страницы есть в Настройках и Расширениях."
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Каждый шаг настраивается на этом компьютере; те же страницы есть в Настройках и Расширениях.",
+  "Email": "SCIM перечисляет владельца, устройства этого компьютера и людей, которых добавляет клиент провижининга."
 }

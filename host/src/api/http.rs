@@ -28,7 +28,8 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/hooks/routines/{id}", post(routine_hook))
         .route("/hooks/slack", post(crate::slack::ingress::receive))
         .route("/events", get(events))
-        .route("/scim/v2/Users", get(scim_users))
+        .route("/scim/v2/Users", get(scim_users).post(scim_create))
+        .route("/scim/v2/Users/{id}", axum::routing::delete(scim_delete))
         .route("/api/{method}", post(command))
         .route("/api/setIcon", post(icon_command).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/term/{id}", get(term_stream))
@@ -88,6 +89,40 @@ async fn scim_users(State(hub): State<Arc<Hub>>, headers: HeaderMap) -> Result<J
     crate::enterprise::scim_users(&hub)
         .map(Json)
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))
+}
+
+/// `POST /scim/v2/Users`: a provisioning client adds (or updates) a member by email.
+async fn scim_create(
+    State(hub): State<Arc<Hub>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let header = headers.get("authorization").and_then(|h| h.to_str().ok());
+    if !crate::enterprise::scim_allowed(&hub.store, header) {
+        return Err(unauthorized());
+    }
+    let user_name = body["userName"].as_str().unwrap_or_default();
+    let name = body["displayName"].as_str().unwrap_or(user_name);
+    crate::enterprise::add_member(&hub.store, user_name, name)
+        .map(|answer| (StatusCode::CREATED, Json(answer)))
+        .map_err(|error| ApiError(StatusCode::BAD_REQUEST, format!("{error:#}")))
+}
+
+/// `DELETE /scim/v2/Users/{id}`: removes the member a provisioning client created.
+async fn scim_delete(
+    State(hub): State<Arc<Hub>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let header = headers.get("authorization").and_then(|h| h.to_str().ok());
+    if !crate::enterprise::scim_allowed(&hub.store, header) {
+        return Err(unauthorized());
+    }
+    match crate::enterprise::remove_member(&hub.store, &id) {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(ApiError(StatusCode::NOT_FOUND, "unknown member".into())),
+        Err(error) => Err(ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{error:#}"))),
+    }
 }
 
 struct ApiError(StatusCode, String);

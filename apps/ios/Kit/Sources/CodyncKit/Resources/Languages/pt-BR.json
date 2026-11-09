@@ -1841,5 +1841,6 @@
   "{n} ready": "{n} prontos",
   "Grant it to let bots use apps and the screen": "Conceda para os bots usarem apps e a tela",
   "Getting started": "Primeiros passos",
-  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Cada passo é definido neste computador; as mesmas páginas ficam em Ajustes e Extensões."
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Cada passo é definido neste computador; as mesmas páginas ficam em Ajustes e Extensões.",
+  "Email": "O SCIM lista o proprietário, os dispositivos deste computador e as pessoas que um cliente de provisionamento adiciona."
 }

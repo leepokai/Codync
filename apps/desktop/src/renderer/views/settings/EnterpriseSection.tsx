@@ -6,6 +6,13 @@ import { useTr } from '../../lib/use-language'
 import { useApp } from '../../store/context'
 import { Field } from '../marketplace/pieces'
 
+interface Member {
+  id: string
+  userName: string
+  displayName: string
+  active: boolean
+}
+
 interface Enterprise {
   configured: boolean
   issuer: string | null
@@ -28,6 +35,39 @@ export function EnterpriseSection() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [token, setToken] = useState<string | null>(null)
+  const [members, setMembers] = useState<Member[]>([])
+  const [email, setEmail] = useState('')
+  const [personName, setPersonName] = useState('')
+  const loadMembers = async () => {
+    const c = await client()
+    if (!c) return
+    try {
+      setMembers((await c.call<{ members: Member[] }>('members', {})).members ?? [])
+    } catch {
+      // An older host without a directory keeps the list empty.
+    }
+  }
+  const addMember = async () => {
+    const c = await client()
+    if (!c) return
+    setBusy(true)
+    try {
+      await c.call('addMember', { email: email.trim(), name: personName.trim() })
+      setEmail('')
+      setPersonName('')
+      await loadMembers()
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+    setBusy(false)
+  }
+  const removeMember = async (id: string) => {
+    const c = await client()
+    if (!c) return
+    await c.call('removeMember', { id })
+    await loadMembers()
+  }
   const client = async () => {
     const local = app.local
     return local ? (await local.ready()) : null
@@ -43,6 +83,7 @@ export function EnterpriseSection() {
     }
   }
   useEffect(() => { void load() }, [app])
+  useEffect(() => { if (status?.configured) void loadMembers() }, [status?.configured])
   const save = async () => {
     const c = await client()
     if (!c) return
@@ -80,6 +121,18 @@ export function EnterpriseSection() {
           }}>{tr('Disconnect')}</Button>
         </HStack>
         {token ? <Text size="caption" tone="attention">{tr('SCIM token (shown once)')}: {token}</Text> : null}
+        <ValueRow label={tr('People')}>{members.length ? String(members.length) : tr('None yet')}</ValueRow>
+        {members.map((member) => (
+          <HStack key={member.id} gap={8}>
+            <Text size="caption" grow>{member.displayName || member.userName}</Text>
+            <Button kind="secondary" disabled={busy} onClick={() => void removeMember(member.id)}>{tr('Remove')}</Button>
+          </HStack>
+        ))}
+        <HStack gap={6}>
+          <Field label={tr('Email')} value={email} onChange={setEmail} placeholder="person@example.com" />
+          <Field label={tr('Name')} value={personName} onChange={setPersonName} />
+          <Button kind="secondary" disabled={busy || !email.trim()} onClick={() => void addMember()}>{tr('Add')}</Button>
+        </HStack>
         {error ? <Text role="alert" tone="danger">{error}</Text> : null}
       </CardSection>
     )

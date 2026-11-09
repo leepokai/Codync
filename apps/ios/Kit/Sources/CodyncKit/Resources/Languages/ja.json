@@ -1841,5 +1841,6 @@
   "{n} ready": "{n} 件準備完了",
   "Grant it to let bots use apps and the screen": "ボットがアプリと画面を使えるように許可します",
   "Getting started": "はじめに",
-  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "各ステップはこのコンピューターで設定します。同じページは設定と拡張機能にあります。"
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "各ステップはこのコンピューターで設定します。同じページは設定と拡張機能にあります。",
+  "Email": "SCIM は所有者、このコンピューターのデバイス、プロビジョニングクライアントが追加したメンバーを一覧します。"
 }

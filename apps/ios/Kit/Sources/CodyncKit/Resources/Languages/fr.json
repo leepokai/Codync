@@ -1841,5 +1841,6 @@
   "{n} ready": "{n} prêts",
   "Grant it to let bots use apps and the screen": "Accordez-le pour que les bots utilisent les apps et l’écran",
   "Getting started": "Premiers pas",
-  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Chaque étape se règle sur cet ordinateur ; les mêmes pages restent dans Réglages et Extensions."
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Chaque étape se règle sur cet ordinateur ; les mêmes pages restent dans Réglages et Extensions.",
+  "Email": "SCIM liste le propriétaire, les appareils de cet ordinateur et les personnes qu'un client de provisionnement ajoute."
 }

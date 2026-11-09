@@ -1841,5 +1841,6 @@
   "{n} ready": "{n} 個就緒",
   "Grant it to let bots use apps and the screen": "允許機器人的應用程式與螢幕存取",
   "Getting started": "開始使用",
-  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "每一步都在此電腦設定；相同頁面在設定與擴充功能中。"
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "每一步都在此電腦設定；相同頁面在設定與擴充功能中。",
+  "Email": "SCIM 列出擁有者、此電腦的裝置以及佈建設定用戶端新增的成員。"
 }

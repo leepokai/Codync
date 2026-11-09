@@ -113,6 +113,98 @@ pub fn rotate_scim(store: &Store) -> Result<String> {
     Ok(token)
 }
 
+const MEMBERS: &str = "enterprise.members";
+
+/// A person the company's directory lists. Codync has no per-member sign-in yet; a member is a record a
+/// provisioning client manages, kept so a SCIM sync has somewhere to write.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Member {
+    pub id: String,
+    pub user_name: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default = "yes")]
+    pub active: bool,
+    pub created_at: i64,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn members(store: &Store) -> Result<Vec<Member>> {
+    Ok(crate::market::vault::read(store, MEMBERS)?
+        .filter(|raw| !raw.is_empty())
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default())
+}
+
+fn save_members(store: &Store, people: &[Member]) -> Result<()> {
+    crate::market::vault::write(store, MEMBERS, &serde_json::to_string(people)?)
+}
+
+/// The people a SCIM client created, without secrets.
+pub fn member_list(store: &Store) -> Result<Value> {
+    Ok(json!({"members": members(store)?}))
+}
+
+/// Adds a member from an email (the SCIM `userName`), or updates the one with that email.
+pub fn add_member(store: &Store, user_name: &str, display_name: &str) -> Result<Value> {
+    let user_name = user_name.trim().to_lowercase();
+    if user_name.len() < 3
+        || user_name.len() > 200
+        || !user_name.contains('@')
+        || user_name.chars().any(char::is_whitespace)
+    {
+        bail!("Use the person's email as their user name.");
+    }
+    let display_name = display_name.trim();
+    if display_name.chars().count() > 120 {
+        bail!("That name is too long.");
+    }
+    let mut people = members(store)?;
+    let found = people.iter_mut().find(|person| person.user_name == user_name).map(|existing| {
+        display_name.clone_into(&mut existing.display_name);
+        existing.active = true;
+        existing.clone()
+    });
+    if let Some(existing) = found {
+        save_members(store, &people)?;
+        return Ok(json!({"member": existing}));
+    }
+    if people.len() >= 500 {
+        bail!("The directory is full.");
+    }
+    let member = Member {
+        id: uuid::Uuid::new_v4().to_string(),
+        user_name: user_name.clone(),
+        display_name: display_name.to_owned(),
+        active: true,
+        created_at: crate::store::now_ms(),
+    };
+    people.push(member.clone());
+    save_members(store, &people)?;
+    Ok(json!({"member": member}))
+}
+
+/// Removes the member with this id; false when it wasn't there.
+pub fn remove_member(store: &Store, id: &str) -> Result<bool> {
+    let mut people = members(store)?;
+    let before = people.len();
+    people.retain(|person| person.id != id);
+    if people.len() == before {
+        return Ok(false);
+    }
+    save_members(store, &people)?;
+    Ok(true)
+}
+
+/// The member a SCIM resource id names, if any.
+pub fn member_by_id(store: &Store, id: &str) -> Result<Option<Member>> {
+    Ok(members(store)?.into_iter().find(|person| person.id == id))
+}
+
 /// The SCIM list this computer can answer: the account owner and its paired devices, read-only.
 pub fn scim_users(hub: &Hub) -> Result<Value> {
     let mut resources = Vec::new();
@@ -132,6 +224,15 @@ pub fn scim_users(hub: &Hub) -> Result<Value> {
             "userName": device.name,
             "active": true,
             "displayName": device.platform,
+        }));
+    }
+    for member in members(&hub.store)? {
+        resources.push(json!({
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:User"],
+            "id": member.id,
+            "userName": member.user_name,
+            "displayName": member.display_name,
+            "active": member.active,
         }));
     }
     let total = resources.len();
@@ -165,6 +266,20 @@ mod tests {
     #[test]
     fn discovery_lives_under_the_issuer() {
         assert_eq!(discovery_url("https://id.example.com/"), "https://id.example.com/.well-known/openid-configuration");
+    }
+
+    #[test]
+    fn members_are_added_once_and_removed() {
+        let hub = hub();
+        *hub.store.secret_key.lock().unwrap() = Some(zeroize::Zeroizing::new(vec![7; 32]));
+        add_member(&hub.store, "Ana@Example.com", "Ana").unwrap();
+        add_member(&hub.store, "ana@example.com", "Ana B").unwrap();
+        let people = members(&hub.store).unwrap();
+        assert_eq!(people.len(), 1, "the same email updates the member");
+        assert_eq!(people[0].display_name, "Ana B");
+        assert!(remove_member(&hub.store, &people[0].id).unwrap());
+        assert!(!remove_member(&hub.store, &people[0].id).unwrap());
+        assert!(add_member(&hub.store, "nonsense", "").is_err());
     }
 
     #[test]

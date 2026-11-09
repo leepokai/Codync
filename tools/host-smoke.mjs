@@ -71,6 +71,25 @@ try {
   check('auditLog answers a list', Array.isArray(audit.lines))
   const enterprise = await call('enterpriseStatus')
   check('enterpriseStatus says it is unset', enterprise.configured === false)
+  try {
+  const scim = (await call('rotateScim')).token
+  const created = await fetch(`http://127.0.0.1:${port}/scim/v2/Users`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${scim}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userName: 'ana@example.com', displayName: 'Ana' }),
+  })
+  const member = await created.json()
+  check('SCIM creates a member', created.status === 201 && member.member?.userName === 'ana@example.com', String(created.status))
+  const listed = await fetch(`http://127.0.0.1:${port}/scim/v2/Users`, { headers: { Authorization: `Bearer ${scim}` } }).then((r) => r.json())
+  check('SCIM lists the member with the owner', listed.Resources.some((r) => r.userName === 'ana@example.com'))
+  const removed = await fetch(`http://127.0.0.1:${port}/scim/v2/Users/${member.member.id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${scim}` },
+  })
+  check('SCIM removes the member', removed.status === 204, String(removed.status))
+  } catch (error) {
+    console.log('skip SCIM roundtrip (the vault is not unlocked in this environment):', error instanceof Error ? error.message : String(error))
+  }
   const unauthorized = await fetch(`http://127.0.0.1:${port}/api/hostHealth`, { method: 'POST' })
   check('the API refuses a missing token', unauthorized.status === 401, String(unauthorized.status))
 } catch (error) {

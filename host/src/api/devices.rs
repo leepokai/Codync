@@ -71,6 +71,8 @@ const LOCAL_ONLY: &[&str] = &[
     "clearAuditLog",
     "setEnterprise",
     "disconnectEnterprise",
+    "addMember",
+    "removeMember",
     "rotateScim",
     // Letting a phone in that brings this computer into its account is decided at the computer.
     "pairingRequests",

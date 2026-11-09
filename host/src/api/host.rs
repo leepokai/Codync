@@ -23,6 +23,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "setEnterprise" => crate::enterprise::set(hub, &b).await?,
         "disconnectEnterprise" => crate::enterprise::disconnect(&hub.store)?,
         "rotateScim" => json!({"token": crate::enterprise::rotate_scim(&hub.store)?}),
+        "members" => crate::enterprise::member_list(&hub.store)?,
+        "addMember" => {
+            crate::enterprise::add_member(&hub.store, str_arg(&b, "email")?, b["name"].as_str().unwrap_or_default())?
+        }
+        "removeMember" => json!({"removed": crate::enterprise::remove_member(&hub.store, str_arg(&b, "id")?)?}),
         "clearAuditLog" => {
             crate::audit::clear(hub)?;
             json!({})

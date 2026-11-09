@@ -1841,5 +1841,6 @@
   "{n} ready": "{n} 个就绪",
   "Grant it to let bots use apps and the screen": "允许机器人的应用与屏幕访问",
   "Getting started": "开始使用",
-  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "每一步都在此电脑设置；相同页面在设置和扩展中。"
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "每一步都在此电脑设置；相同页面在设置和扩展中。",
+  "Email": "SCIM 列出所有者、此电脑的设备以及配置客户端添加的成员。"
 }

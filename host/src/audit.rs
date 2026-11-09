@@ -27,6 +27,8 @@ pub fn action(method: &str) -> Option<&'static str> {
         "setAssistants" => "Cloud assistants were let in or out",
         "setEnterprise" | "disconnectEnterprise" => "The company sign-in changed",
         "rotateScim" => "A SCIM token was made",
+        "addMember" => "A member was added to the company directory",
+        "removeMember" => "A member was removed from the company directory",
         _ => return None,
     })
 }
@@ -49,7 +51,8 @@ pub fn detail(method: &str, body: &Value) -> String {
         }
         "setCloud" | "setCloudUrl" => at("url"),
         "setEnterprise" => at("issuer"),
-        "disconnectEnterprise" | "rotateScim" => String::new(),
+        "disconnectEnterprise" | "rotateScim" | "removeMember" => String::new(),
+        "addMember" => at("email"),
         "revokeDevice" => at("key"),
         _ => {
             [at("peer"), at("computer"), at("key"), at("name")].into_iter().find(|v| !v.is_empty()).unwrap_or_default()

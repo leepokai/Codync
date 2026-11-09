@@ -1,6 +1,7 @@
 import { Children, Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Icon } from './Icon'
-import { AnchoredMenu, IconButtonBase, usePresence, type MenuItem } from './Overlay'
+import { IconButtonBase, usePresence } from './Overlay'
+import { AnchoredMenu, type MenuItem } from './Menu'
 import { HStack, Spacer, VStack } from './Stack'
 import { useTr } from '../lib/use-language'
 import { Text } from './Text'

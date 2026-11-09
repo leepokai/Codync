@@ -1886,5 +1886,18 @@
   "Sign in there with {email} and add it to your account, and it shows up here.": "そこで {email} でサインインしてアカウントに追加すると、ここに表示されます。",
   "Scan with the Codync app or the iPhone Camera.": "Codync アプリまたは iPhone のカメラでスキャンしてください。",
   "Phones paired without this account lose access and must pair again.": "このアカウントでペアリングしていないスマートフォンはアクセスを失い、再度ペアリングが必要です。",
-  "This message's files aren't on this device anymore. Delete it and attach them again.": "このメッセージのファイルはこの端末にもうありません。メッセージを削除して、もう一度ファイルを添付してください。"
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "このメッセージのファイルはこの端末にもうありません。メッセージを削除して、もう一度ファイルを添付してください。",
+  "Summarize long chats": "長いチャットを要約",
+  "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.": "「自動」はエージェントに任せ、チャットがいっぱいになると自分で要約します。ほかの選択肢では Codync が早めに要約します。",
+  "Early": "早め",
+  "Near the limit": "上限の手前",
+  "Set a size": "サイズを指定",
+  "Sizes show after the bot's next reply": "ボットの次の返信後にサイズを選べます",
+  "Auto (default)": "自動（デフォルト）",
+  "Summarize": "要約",
+  "Claude Code and Codex bots only": "Claude Code と Codex のボットのみ",
+  "Custom size…": "カスタムサイズ…",
+  "Custom size": "カスタムサイズ",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "千トークン単位で、10K 単位に丸められ、モデルが扱える上限までです。",
+  "Or type a size in K:": "サイズを K 単位で入力することもできます："
 }

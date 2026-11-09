@@ -39,6 +39,8 @@ data class BotDraft(
     val reachableByAssistants: Boolean? = null,
     /** The agent mode it works in ([AgentMode]); null, sent as null, keeps the agent's default. */
     val mode: String? = AgentMode.AUTO,
+    /** When Codync summarizes its chat ([Bot.compaction]); null where it doesn't, so it isn't sent. */
+    val compaction: Compaction? = null,
 ) {
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
@@ -70,7 +72,7 @@ data class BotDraft(
     companion object {
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
-        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
+        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction")
         /** Who reaches a bot belongs to its computer, not its setup. */
         private val TEMPLATE_SKIPS =
             setOf("id", "pinned", "hidden", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
@@ -80,6 +82,6 @@ data class BotDraft(
         fun from(bot: Bot): BotDraft = BotDraft(bot.id, bot.name, bot.description, bot.avatarColor, bot.avatarShape,
             bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.model,
             bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.manageTeam ?: false, bot.fallbacks, bot.selfFallbacks,
-            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode)
+            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode, bot.compaction)
     }
 }

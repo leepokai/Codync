@@ -1886,5 +1886,18 @@
   "Sign in there with {email} and add it to your account, and it shows up here.": "Войдите там как {email} и добавьте его в аккаунт: он появится здесь.",
   "Scan with the Codync app or the iPhone Camera.": "Отсканируйте в приложении Codync или камерой iPhone.",
   "Phones paired without this account lose access and must pair again.": "Телефоны, сопряжённые без этого аккаунта, потеряют доступ, и их нужно будет сопрячь заново.",
-  "This message's files aren't on this device anymore. Delete it and attach them again.": "Файлов этого сообщения больше нет на этом устройстве. Удалите его и прикрепите файлы заново."
+  "This message's files aren't on this device anymore. Delete it and attach them again.": "Файлов этого сообщения больше нет на этом устройстве. Удалите его и прикрепите файлы заново.",
+  "Summarize long chats": "Сжатие длинных чатов",
+  "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.": "«Автоматически» — решает агент: он сам сжимает чат, когда тот заполнится. В остальных вариантах Codync делает это раньше.",
+  "Early": "Рано",
+  "Near the limit": "У предела",
+  "Set a size": "Задать размер",
+  "Sizes show after the bot's next reply": "Размеры появятся после следующего ответа бота",
+  "Auto (default)": "Автоматически (по умолчанию)",
+  "Summarize": "Сжатие",
+  "Claude Code and Codex bots only": "Только для ботов Claude Code и Codex",
+  "Custom size…": "Свой размер…",
+  "Custom size": "Свой размер",
+  "Thousands of tokens, rounded to 10K, up to what the model holds.": "В тысячах токенов, с округлением до 10K, не больше, чем вмещает модель.",
+  "Or type a size in K:": "Или введите размер в K:"
 }

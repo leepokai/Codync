@@ -4,7 +4,8 @@ import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startu
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
-import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
+import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
+import { AnchoredMenu, type MenuItem } from '../components/Menu'
 import { HStack, Spacer } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
@@ -43,7 +44,7 @@ import { PairingRequestPrompt } from './PairingRequestPrompt'
 import { DeleteAccountPrompt } from './DeleteAccountPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
-import { DesktopActionMenu, type ActionItem } from './DesktopActionMenu'
+import { DesktopActionMenu } from './DesktopActionMenu'
 import { sectionHeaderItems, type SectionNaming } from './section-menus'
 import { voiceTarget } from './lead-menus'
 import { botActions } from './bot-menus'
@@ -207,7 +208,7 @@ function ChatSplitView() {
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
   const [railNewMenu, setRailNewMenu] = useState(false)
-  const [context, setContext] = useState<{ items: ActionItem[]; x: number; y: number } | null>(null)
+  const [context, setContext] = useState<{ items: MenuItem[]; x: number; y: number } | null>(null)
   const [naming, setNaming] = useState<SectionNaming | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)

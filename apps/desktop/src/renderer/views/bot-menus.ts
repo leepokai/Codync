@@ -1,6 +1,6 @@
 import type { Bot } from '@shared/models'
 import type { BotStore } from '../store/bot-store'
-import type { ActionItem } from './DesktopActionMenu'
+import type { MenuItem } from '../components/Menu'
 import { makeLeadItems, offersDelete } from './lead-menus'
 import { moveToSectionItems, type SectionNaming } from './section-menus'
 
@@ -12,7 +12,7 @@ export interface BotMenuActions {
 }
 
 /** A bot row's menu: one plain list. The lead stays in sight: no hide. */
-export function botActions(bot: Bot, store: BotStore, menu: BotMenuActions): ActionItem[] {
+export function botActions(bot: Bot, store: BotStore, menu: BotMenuActions): MenuItem[] {
   return [
     { title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) },
     ...moveToSectionItems(bot, store, menu.askName),

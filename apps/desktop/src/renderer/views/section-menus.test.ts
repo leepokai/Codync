@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Bot } from '@shared/models'
 import type { BotStore } from '../store/bot-store'
-import type { ActionItem } from './DesktopActionMenu'
+import type { MenuItem } from '../components/Menu'
 import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus.ts'
 
 /** A computer's store as the menus read it (`archived` is hidden, its section still counts), logging what they ask of it. */
@@ -19,10 +19,10 @@ function computer(hasRosterSections = true) {
 }
 
 /** The "Move to section" submenu. */
-function submenu(items: ActionItem[]) {
+function submenu(items: MenuItem[]) {
   assert.equal(items.length, 1)
   const [move] = items
-  assert.ok(move && 'submenu' in move && move.title === 'Move to section')
+  assert.ok(move?.submenu && move.title === 'Move to section')
   return move.submenu
 }
 
@@ -32,9 +32,9 @@ test('Move to section offers the other sections (hidden bots\' too), a new one, 
   assert.deepEqual(rows.map((r) => r.title), ['archive', 'Home', 'New section…', 'Remove from section'])
   // Section names show as the user typed them ("Home" stays "Home" in any language); the rest is translated.
   assert.deepEqual(rows.map((r) => r.verbatim === true), [true, true, false, false])
-  rows[1]!.action()
-  rows[3]!.action()
-  rows[2]!.action()
+  rows[1]!.action?.()
+  rows[3]!.action?.()
+  rows[2]!.action?.()
   assert.deepEqual(naming.map((n) => [n.title, n.name]), [['New section', '']])
   naming[0]!.save('Side')
   assert.deepEqual(calls, [['move', 'work', 'Home'], ['move', 'work', null], ['move', 'work', 'Side']])
@@ -49,10 +49,10 @@ test('a header renames its section from its name, or removes it', () => {
   const { store, calls, naming } = computer()
   const items = sectionHeaderItems('Work', store, (n) => naming.push(n), (to) => calls.push(['rename', to]))
   assert.deepEqual(items.map((i) => i.title), ['Rename section…', 'Remove section'])
-  items[0]!.action()
+  items[0]!.action?.()
   assert.deepEqual(naming.map((n) => [n.title, n.name]), [['Rename section', 'Work']])
   naming[0]!.save('Jobs')
-  items[1]!.action()
+  items[1]!.action?.()
   assert.deepEqual(calls, [['rename', 'Jobs'], ['rename', null]])
 })
 

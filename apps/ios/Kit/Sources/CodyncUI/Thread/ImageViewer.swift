@@ -49,7 +49,7 @@ struct AttachmentViewer: View {
                 }
             }
             if case .shared(let file, _, _) = viewing.source { ViewerDownloadStatus(file: file) }
-            ZoomableImage(zoom: $zoom) { AttachmentImage(viewing.source, maxPixels: 4096) }
+            ZoomableImage(zoom: $zoom) { AttachmentImage(viewing.source, maxPixels: ImageData.largestPixels) }
                 .accessibilityLabel(Text(verbatim: viewing.source.name))
                 .contextActions(reactions: menu?.reactions) {
                     let copy = ImageCopy.menuItems(viewing.source, from: .viewer, copyImage: copyImage)

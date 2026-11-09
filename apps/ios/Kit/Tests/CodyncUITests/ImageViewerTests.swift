@@ -61,6 +61,20 @@ private let big = CGSize(width: 2000, height: 1600)
     #expect(ImageClipboard.item(Data("not a picture".utf8)) == nil)
 }
 
+@Test func theClipboardPNGOfAHugePictureIsScaledDownToTheViewersSize() throws {
+    let tiff = try encoded(.tiff, width: ImageData.largestPixels * 2, height: 4)
+    let png = try #require(ImageClipboard.item(tiff)?[UTType.png.identifier])
+    #expect(try pixelSize(png) == CGSize(width: ImageData.largestPixels, height: 2))
+    #expect(ImageClipboard.item(tiff)?[UTType.tiff.identifier] == tiff)
+}
+
+@Test func theClipboardPNGIsUprightWhenThePictureIsStoredTurned() throws {
+    // Stored 8 wide and 2 high, shown turned a quarter (EXIF orientation 6): upright it is 2 wide and 8 high.
+    let tiff = try encoded(.tiff, width: 8, height: 2, orientation: .right)
+    let png = try #require(ImageClipboard.item(tiff)?[UTType.png.identifier])
+    #expect(try pixelSize(png) == CGSize(width: 2, height: 8))
+}
+
 @MainActor @Test func aPictureTakesCopysPlaceInItsMessageMenuAndInTheViewerWhatLeavesClosesItFirst() {
     var log: [String] = []
     let entry = Entry(id: "e", seq: 1, botId: "b", rev: 1, kind: "agent", turn: 1, data: EntryData(text: "Hi"), createdAt: 0, updatedAt: 0)
@@ -88,16 +102,25 @@ private let big = CGSize(width: 2000, height: 1600)
     #expect(FileDownloadCard.symbol(.saved) == "arrow.down.to.line")
 }
 
-/// A 2 × 2 picture of `type`.
-private func encoded(_ type: UTType) throws -> Data {
-    let context = try #require(CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
+/// A `width` × `height` picture of `type`, stored with `orientation`.
+private func encoded(_ type: UTType, width: Int = 2, height: Int = 2, orientation: CGImagePropertyOrientation = .up) throws -> Data {
+    let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
     context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
-    context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     let image = try #require(context.makeImage())
     let out = NSMutableData()
     let destination = try #require(CGImageDestinationCreateWithData(out, type.identifier as CFString, 1, nil))
-    CGImageDestinationAddImage(destination, image, nil)
+    CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: orientation.rawValue] as CFDictionary)
     #expect(CGImageDestinationFinalize(destination))
     return out as Data
+}
+
+/// The pixel size `data` decodes to, as stored.
+private func pixelSize(_ data: Data) throws -> CGSize {
+    let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+    let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+    let width = try #require(properties[kCGImagePropertyPixelWidth] as? Int)
+    let height = try #require(properties[kCGImagePropertyPixelHeight] as? Int)
+    return CGSize(width: width, height: height)
 }

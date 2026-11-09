@@ -40,7 +40,9 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   Android open a picture in a sheet that zooms the same way (pinch, drag once zoomed in, double-tap
   to 2.5x and back; at fit size a swipe down still closes it), with Copy image (the picture
   itself; iPhone puts the file's own bytes on the pasteboard, plus a PNG copy when it is not PNG,
-  JPEG or GIF; Android clips the original file as a FileProvider `content://` link) and, for a
+  JPEG or GIF, made off the main thread, upright, and scaled down past 4096 pixels on its long side
+  like the viewer (`ImageData.largestPixels`), so a small compressed HEIC or TIFF can't run the phone
+  out of memory; Android clips the original file as a FileProvider `content://` link) and, for a
   bot-shared file, its Download button by the close button. Holding a picture, in the chat or the
   viewer, opens that same message menu; in the Library it offers only Copy image and Copy name.
 - Terminal UI: has no full-size viewer, zoom or Copy image: a terminal can't draw a picture, and the

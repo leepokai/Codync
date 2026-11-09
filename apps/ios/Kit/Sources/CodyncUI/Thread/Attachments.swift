@@ -48,6 +48,10 @@ struct PickedFile: Transferable {
 }
 
 enum ImageData {
+    /// The long side, in pixels, of the largest picture the app decodes (the viewer, a converted upload, the clipboard's
+    /// PNG): a bigger one is scaled down to it, so a small compressed file can't take more memory than the phone has.
+    static let largestPixels = 4096
+
     static func isImage(_ data: Data) -> Bool {
         CGImageSourceCreateWithData(data as CFData, nil).map { CGImageSourceGetCount($0) > 0 } ?? false
     }
@@ -66,22 +70,22 @@ enum ImageData {
     }
 
     static func jpeg(_ data: Data) -> Data? {
-        guard let image = thumbnail(data, maxPixels: 4096) else { return nil }
+        guard let image = thumbnail(data, maxPixels: largestPixels) else { return nil }
         return encode(image, as: .jpeg, [kCGImageDestinationLossyCompressionQuality: 0.85])
     }
 
-    /// The picture's first frame, full size and upright (its orientation applied), as PNG.
-    static func png(_ source: CGImageSource) -> Data? {
+    /// The picture's first frame, upright (its orientation applied), as PNG: full size up to `maxPixels` on the long
+    /// side, scaled down to it past that.
+    static func png(_ source: CGImageSource, maxPixels: Int) -> Data? {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
         let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(width, height, 1),
+            kCGImageSourceThumbnailMaxPixelSize: min(max(width, height, 1), maxPixels),
         ]
-        let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) ?? CGImageSourceCreateImageAtIndex(source, 0, nil)
-        return image.flatMap { encode($0, as: .png) }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).flatMap { encode($0, as: .png) }
     }
 
     private static func encode(_ image: CGImage, as type: UTType, _ options: [CFString: Any] = [:]) -> Data? {

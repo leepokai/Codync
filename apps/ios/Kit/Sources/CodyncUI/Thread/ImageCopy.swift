@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Attachments")
 
-/// The picture itself on the clipboard: the file's own bytes as their image type, plus a PNG of them when that type
-/// isn't one every app pastes.
+/// The picture itself on the clipboard: the file's own bytes as their image type, plus a PNG of them (upright, at most
+/// `ImageData.largestPixels` on its long side) when that type isn't one every app pastes.
 enum ImageClipboard {
     private static let pastedEverywhere: [UTType] = [.png, .jpeg, .gif]
 
@@ -18,7 +18,7 @@ enum ImageClipboard {
               let identifier = CGImageSourceGetType(source) as String?, let type = UTType(identifier) else { return nil }
         var item: [String: Data] = [type.identifier: data]
         if !pastedEverywhere.contains(type) {
-            guard let png = ImageData.png(source) else { return nil }
+            guard let png = ImageData.png(source, maxPixels: ImageData.largestPixels) else { return nil }
             item[UTType.png.identifier] = png
         }
         return item

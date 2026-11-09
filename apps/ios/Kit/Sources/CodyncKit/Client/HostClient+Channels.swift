@@ -1,5 +1,9 @@
 import Foundation
 
+private extension String {
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
 // The messaging channels of a computer and its linked WhatsApp number. The calls and their
 // answers live in the host (`telegramStatus`, `slackStatus`, `whatsappState`, …); these methods
 // only carry them.
@@ -9,6 +13,8 @@ public extension HostClient {
         var name: String
         var userId: Int64?
         var allowed: Bool?
+        var token: String?
+        var botId: String?
     }
 
     /// The computer's Telegram bots. A host older than them answers without `bots`.
@@ -32,13 +38,55 @@ public extension HostClient {
 
     func slackStatus() async throws -> SlackStatus { try await call("slackStatus", Empty()) }
 
+    /// Forgets the Slack connection, workspace and bot token included.
+    func disconnectSlack() async throws -> SlackStatus { try await call("disconnectSlack", Empty()) }
+
     func discordStatus() async throws -> DiscordStatus { try await call("discordStatus", Empty()) }
 
     func disconnectDiscord() async throws -> DiscordStatus { try await call("disconnectDiscord", Empty()) }
 
+    /// Sets the Discord bot and its bound channels up; the host checks the token before saving anything.
+    func setDiscord(guildId: String, botUserId: String, botToken: String,
+                    bindings: [DiscordBinding]) async throws -> DiscordStatus {
+        struct Body: Encodable {
+            var guildId: String
+            var botUserId: String
+            var botToken: String
+            var bindings: [Binding]
+        }
+        struct Binding: Encodable {
+            var channelId: String
+            var botId: String
+            var allowedUsers: [String]
+        }
+        let body = Body(guildId: guildId.trimmed, botUserId: botUserId.trimmed, botToken: botToken.trimmed,
+                        bindings: bindings.map { Binding(channelId: $0.channelId.trimmed, botId: $0.botId,
+                                                        allowedUsers: $0.allowedUsers.map(\.trimmed)) })
+        return try await call("setDiscordChannel", body)
+    }
+
+    /// Adds a Telegram bot the host will talk through, answered by `botId`; its token stays on the computer.
+    func addTelegramBot(name: String, token: String, botId: String) async throws -> [TelegramBot] {
+        let status: TelegramStatus = try await call("addTelegramBot",
+                                                    TelegramBody(name: name.trimmed, token: token.trimmed, botId: botId))
+        return status.bots
+    }
+
+    /// Forgets a Telegram bot and its token.
+    func removeTelegramBot(name: String) async throws -> [TelegramBot] {
+        let status: TelegramStatus = try await call("removeTelegramBot", TelegramBody(name: name))
+        return status.bots
+    }
+
     func githubStatus() async throws -> GitHubStatus { try await call("githubStatus", Empty()) }
 
     func disconnectGitHub() async throws -> GitHubStatus { try await call("disconnectGitHub", Empty()) }
+
+    /// Gives the host a GitHub token; it answers with the account that token belongs to.
+    func setGitHubToken(_ token: String) async throws -> GitHubStatus {
+        struct Body: Encodable { var token: String }
+        return try await call("setGitHubToken", Body(token: token.trimmed))
+    }
 
     func whatsappState() async throws -> WhatsAppLink { try await call("whatsappState", Empty()) }
 

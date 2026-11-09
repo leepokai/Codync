@@ -91,6 +91,12 @@ public struct DiscordBinding: Decodable, Identifiable, Equatable, Sendable {
 
     public var id: String { channelId }
 
+    public init(channelId: String, botId: String, allowedUsers: [String]) {
+        self.channelId = channelId
+        self.botId = botId
+        self.allowedUsers = allowedUsers
+    }
+
     private enum CodingKeys: String, CodingKey { case channelId, botId, allowedUsers }
 
     public init(from decoder: Decoder) throws {
@@ -170,6 +176,30 @@ public struct WhatsAppLink: Decodable, Equatable, Sendable {
 
 /// What the Channels screen shows, and the words it uses.
 public enum Channels {
+    /// A short name the host accepts for a Telegram bot.
+    public static func nameOk(_ name: String) -> Bool {
+        (1...32).contains(name.count) && name.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") }
+    }
+
+    /// `123456:ABC…`, the shape BotFather gives.
+    public static func tokenOk(_ token: String) -> Bool {
+        token.count <= 128 && token.wholeMatch(of: /\d+:[A-Za-z0-9_-]{30,}/) != nil
+    }
+
+    /// A Discord snowflake.
+    public static func idOk(_ id: String) -> Bool { (1...32).contains(id.count) && id.allSatisfy(\.isNumber) }
+
+    /// The three dot-separated parts of a bot token.
+    public static func discordTokenOk(_ token: String) -> Bool {
+        token.count <= 200 && token.wholeMatch(of: /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{20,}/) != nil
+    }
+
+    /// `github_pat_…` or a classic token: 20–255 letters, digits, `-` or `_`.
+    public static func githubTokenOk(_ token: String) -> Bool {
+        let value = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (20...255).contains(value.count) && value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
+    }
+
     public static func stateText(_ state: String) -> String {
         switch state {
         case "ok": "Connected"

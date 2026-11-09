@@ -70,7 +70,7 @@ Done from M2:
 | A WhatsApp chat as an output | Done | host `routines::outputs`, `Routine.kt`, `RoutinesView.kt`, iOS `RoutineOutput` + editor, desktop `routine.ts` |
 | A routine can run in a thread | Done | host `Routine::thread`, `routines::mod`, `Run in a thread` on the three clients |
 | Link a number with a pairing code, with the QR code still offered | Done | host `whatsapp::pair`, bridge `pair`, `WhatsAppSheet.kt`, desktop `WhatsAppSheet.tsx`, iOS `WhatsAppSheet.swift` (marketplace pin and a computer's WhatsApp row) |
-| Channels on the phone: pair someone to a Telegram bot, take them out, see Discord, Slack and GitHub | Done | `ChannelsSheet.kt`/`AppStoreChannels.kt`; iOS `ChannelsSheet.swift`, `HostClient+Channels.swift`, `BotStore+Channels.swift`, Settings row |
+| Channels on the phone: set a channel up as on the computer — add or remove a Telegram bot, edit Discord's server, bot and bound channels, connect or disconnect GitHub, disconnect Slack — and pair someone to a bot or take them out | Done | host `api::route` lets a paired device call every channel method (a pairing channel still may not); `ChannelsSheet.kt`/`AppStoreChannels.kt`; iOS `ChannelsSheet.swift`, `HostClient+Channels.swift`, `BotStore+Channels.swift` |
 | Cancel task on a stopped or failed task | Done | Codync has no channel tasks: a paused turn card and a failed routine notice stand in. host `pause::close` and `routines::retry::cancel` (one `cancelTask` method), `PausedTurnCard.kt`, `RoutineNotice`, desktop `ChatRows.tsx`/`RoutineNotice.tsx`, TUI `/cancel` and `E` |
 | A step's own Model and Effort | Done: a link carries a model and its options into the next bot's one turn, then the bot's own come back. Codync's canvas has no Condition step type; a link is the step. host schema 8, `chat::team::ModelOverride`, `agent::bot::model_override`, Android + desktop link panels; the iPhone has no flow canvas yet | `store/flows.rs`, `routines/flow`, `ModelOverride`, `RoutineFlowDetail.kt`, `FlowInspector.tsx` |
 
@@ -130,6 +130,13 @@ iOS-only entries, each adapted to Android:
 The iPhone app now has the channel screens (Telegram, Slack, Discord, GitHub, WhatsApp) the Android
 app had, so the pairing code reaches both phones; the Support page, routine outputs and the `2.39.0`
 App Store notes are in.
+
+## Still on the computer only
+
+The host accepts these from a phone, but no phone screen reaches them yet: the Slack setup form
+(`setSlackChannel`, which the desktop itself also lacks), the bot icon editor (`setIcon`), a bot's
+agent gear and model, conversation compaction (`keepConversation`) and the roster preview. Slack stays visible with its
+state and Disconnect; setting it up from the phone is the next one to add.
 
 ## Validation
 

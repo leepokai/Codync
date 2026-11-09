@@ -23,13 +23,35 @@ extension BotStore {
 
     public func slackStatus() async throws -> SlackStatus { try await ready().slackStatus() }
 
+    public func disconnectSlack() async throws -> SlackStatus { try await ready().disconnectSlack() }
+
     public func discordStatus() async throws -> DiscordStatus { try await ready().discordStatus() }
 
     public func disconnectDiscord() async throws -> DiscordStatus { try await ready().disconnectDiscord() }
 
+    public func setDiscord(guildId: String, botUserId: String, botToken: String,
+                           bindings: [DiscordBinding]) async throws -> DiscordStatus {
+        try await ready().setDiscord(guildId: guildId, botUserId: botUserId, botToken: botToken, bindings: bindings)
+    }
+
+    /// Adds a Telegram bot the host will talk through, answered by `botId`.
+    public func addTelegramBot(name: String, token: String, botId: String) async throws -> [TelegramBot] {
+        try await ready().addTelegramBot(name: name, token: token, botId: botId)
+    }
+
+    /// Forgets a Telegram bot and its token.
+    public func removeTelegramBot(name: String) async throws -> [TelegramBot] {
+        try await ready().removeTelegramBot(name: name)
+    }
+
     public func githubStatus() async throws -> GitHubStatus { try await ready().githubStatus() }
 
     public func disconnectGitHub() async throws -> GitHubStatus { try await ready().disconnectGitHub() }
+
+    /// Gives the computer a GitHub token; it answers with the account that token belongs to.
+    public func setGitHubToken(_ token: String) async throws -> GitHubStatus {
+        try await ready().setGitHubToken(token)
+    }
 
     /// The computer's linked WhatsApp number.
     public func whatsapp() async throws -> WhatsAppLink { try await ready().whatsappState() }

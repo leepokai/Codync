@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -18,6 +19,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.LocalPinnableContainer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +56,13 @@ import kotlinx.coroutines.launch
     dismiss: () -> Unit, detail: (T) -> String? = { null }, trailing: @Composable RowScope.(T) -> Unit = {}) {
     val open = item != null
     LaunchedEffect(open) { if (open) Analytics.capture(AnalyticsEvent.ImagePreviewOpened) }
+    // The sheet lives in the chat row that opened it. A resize (split screen) can lay the chat out once without that row,
+    // which would drop the sheet, so the row stays composed while the picture is open.
+    val row = LocalPinnableContainer.current
+    DisposableEffect(open, row) {
+        val pinned = if (open) row?.pin() else null
+        onDispose { pinned?.release() }
+    }
     CodyncSheet(item, dismiss) { shown ->
         val picture = source(shown)
         val copy = rememberImageCopy(picture, store)

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// "+" on the Codync Cloud card: names another cloud computer and picks the provider it runs on. A provider without a
 /// key it takes opens that provider's key sheet to add one; back here, its row shows the saved key and it's picked. One
-/// with a key opens it from its key button (replace or remove it). At the account's limit it says so, and Create is off.
+/// with a key opens it, or removes it, from its row's `⋯`. At the account's limit it says so, and Create is off.
 struct NewCloudComputerSheet: View {
     let store: CloudMachineStore
     @Environment(\.dismissModal) private var dismiss
@@ -37,32 +37,62 @@ struct NewCloudComputerSheet: View {
                 CardSection("Provider") {
                     ForEach(store.providers) { row($0) }
                 }
-                if let error = store.error(at: .newComputer) ?? store.limitNote { ErrorText(error) }
+                // A key removed from a row's `⋯` fails here, where it was asked.
+                if let error = store.error(at: .newComputer) ?? store.keyRemovalError ?? store.limitNote { ErrorText(error) }
             }
             .textFieldStyle(.plain)
         }
         .background(Palette.background)
         .codyncSheet(item: $keyFor) { CloudKeySheet(store: store, provider: $0.provider) }
-        // A failure from an earlier opening is over.
-        .onAppear { store.clearError(at: .newComputer) }
+        // A failure from an earlier opening is over, a row's key removal too.
+        .onAppear {
+            store.clearError(at: .newComputer)
+            for provider in store.providers { store.clearError(at: .key(provider.provider)) }
+        }
         .onChange(of: name) {
             let limited = CloudMachineStore.limited(name)
             if limited != name { name = limited }
         }
     }
 
-    /// Its logo on a tile, its name and its key; a checkmark on the picked one, and a key button on one with a key it takes.
+    /// Its logo on a tile, its name and its key; a checkmark on the picked one, and a `⋯` on one with a key it takes.
     private func row(_ provider: CloudProvider) -> some View {
         HStack(spacing: 4) {
             pickButton(provider)
-            if provider.isReady {
-                IconButton(L10n.fill(L10n.tr("{provider} API key"), ["provider": provider.name]), systemImage: "key.fill") {
-                    keyFor = provider
+            if store.working == .removingKey(provider.provider) {
+                // Where the `⋯` glyph sits, so the checkmark stays put.
+                Spinner().frame(width: 44).padding(.trailing, -12)
+            } else if provider.isReady {
+                DropdownMenu { menu(provider) } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Palette.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
-                .disabled(creating)
+                .accessibilityLabel(L10n.tr("More"))
                 .accessibilityIdentifier("cloudProviderKey.\(provider.provider)")
+                .disabled(store.working != nil)
+                // A 44 pt target in the row, its glyph near the card's edge (like a cloud computer's `⋯`).
+                .padding(.vertical, -6)
+                .padding(.trailing, -12)
             }
         }
+    }
+
+    /// Its key (replace it or see what to fix), and removing it while no cloud computer runs there.
+    private func menu(_ provider: CloudProvider) -> [MenuItem] {
+        var items = [
+            MenuItem(L10n.fill(L10n.tr("{provider} API key"), ["provider": provider.name]), icon: "key.fill", verbatim: true) {
+                keyFor = provider
+            },
+        ]
+        if store.canRemoveKey(provider.provider) {
+            items.append(MenuItem("Remove key", icon: "trash", destructive: true) {
+                Task { await store.removeKey(provider: provider.provider) }
+            })
+        }
+        return items
     }
 
     private func pickButton(_ provider: CloudProvider) -> some View {
@@ -103,7 +133,7 @@ struct NewCloudComputerSheet: View {
         if let problem = provider.credential?.problem {
             return Text(L10n.tr(problem)).foregroundStyle(Palette.danger)
         }
-        let key = provider.credential?.hint ?? L10n.tr("Add a key first")
+        let key = provider.credential?.hint ?? L10n.tr(provider.offer == nil ? "Add a key first" : "Free sandbox available")
         return Text(verbatim: "\(provider.region) · \(key)").foregroundStyle(Palette.secondary)
     }
 

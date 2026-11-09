@@ -278,9 +278,11 @@
 .cloud-key-body {
   padding: 4px 20px 20px;
 }
-/* A cloud computer's `⋯` menu. */
-.cloud-machine-menu {
+/* A cloud computer's `⋯` menu, and a provider's in New cloud computer. */
+.cloud-machine-menu, .cloud-provider-menu {
   flex: none;
+  display: grid;
+  place-items: center;
   width: 28px;
   height: 28px;
   border-radius: var(--radius-s);
@@ -292,8 +294,20 @@
 .cloud-new-body {
   padding: 4px 20px 4px;
 }
-.cloud-provider-row > .agent-picker-item {
+/* One fill per provider row: picked or hovered, it holds the row's `⋯` too. */
+.cloud-provider-row {
+  border-radius: var(--radius-xs);
+  transition: background var(--hover);
+}
+.cloud-provider-row:hover, .cloud-provider-row:has(> [aria-pressed="true"]) {
+  background: var(--surface);
+}
+.cloud-provider-row > .agent-picker-item, .cloud-provider-row > .agent-picker-item:is(:hover, [aria-pressed="true"]) {
   flex: 1;
+  background: transparent;
+}
+.cloud-provider-menu {
+  margin-right: 4px;
 }
 .cloud-provider-tile {
   flex: none;

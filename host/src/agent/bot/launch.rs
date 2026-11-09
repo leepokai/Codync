@@ -5,7 +5,7 @@ use super::{Adapter, Conn, SessionCaps};
 use crate::agent::acp::{self, Acp};
 use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -117,6 +117,52 @@ fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a
     (model, Vec::new())
 }
 
+/// Starts the first of `candidates` (best first) that `start` gets running; `start` gets each with its environment
+/// and whether another is left after it. An OpenCode older than 2 never ends a turn its model refused
+/// ([OpenCode](../../../../docs/upstream-agents/opencode.md)): it runs only when nothing after it starts, and the
+/// registry build standing in for it keeps a database of its own, since on the user's its first start would migrate
+/// their 1.x sessions one way.
+pub(crate) async fn start_first<F: Future<Output = Result<Conn>>>(
+    candidates: Vec<Candidate>,
+    env: &[(String, String)],
+    mut start: impl FnMut(Candidate, Vec<(String, String)>, bool) -> F,
+) -> Result<Conn> {
+    let mut env = env.to_vec();
+    let (mut last_err, mut superseded) = (None, None::<Conn>);
+    let count = candidates.len();
+    for (i, candidate) in candidates.into_iter().enumerate() {
+        let fallback_left = i + 1 < count;
+        match start(candidate, env.clone(), fallback_left).await {
+            Ok(conn) if conn.superseded && fallback_left => {
+                let dir = crate::service::data_dir().join("opencode");
+                if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+                    tracing::warn!(
+                        error = format!("{e:#}"),
+                        "OpenCode 1.x: no folder for the registry build's database"
+                    );
+                    return Ok(conn);
+                }
+                tracing::info!("OpenCode 1.x: starting the registry build");
+                env.push(("OPENCODE_DB".into(), dir.join("opencode.db").to_string_lossy().into_owned()));
+                superseded = Some(conn);
+            }
+            Ok(conn) => {
+                if let Some(old) = superseded {
+                    old.acp.kill().await;
+                }
+                return Ok(conn);
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    if let Some(conn) = superseded {
+        let error = last_err.map(|e| format!("{e:#}")).unwrap_or_default();
+        tracing::warn!(error, "OpenCode 1.x: the registry build didn't start, so the installed one runs");
+        return Ok(conn);
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")))
+}
+
 /// Spawns an ACP agent and completes the `initialize` handshake.
 pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
     let (acp, rx) = Acp::spawn(command, cwd, env)?;
@@ -170,6 +216,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         rx,
         sessions,
         adapter: adapter(&init),
+        superseded: superseded(&init),
         loaded: HashMap::new(),
         started: Instant::now(),
         opening: false,
@@ -192,9 +239,63 @@ fn adapter(init: &Value) -> Adapter {
     }
 }
 
+/// OpenCode 1.x retries a model call its provider refused forever (a used-up free quota, a bad key), so the turn
+/// never ends and the chat stays on "Thinking…" (anomalyco/opencode#41848); 2.x returns the error at once.
+fn superseded(init: &Value) -> bool {
+    init["agentInfo"]["name"] == "OpenCode"
+        && init["agentInfo"]["version"]
+            .as_str()
+            .and_then(|v| semver::Version::parse(v).ok())
+            .is_some_and(|v| v.major < 2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_opencode_before_2_is_superseded() {
+        let init = |name: &str, version: &str| json!({"agentInfo": {"name": name, "version": version}});
+        assert!(superseded(&init("OpenCode", "1.19.5")));
+        assert!(!superseded(&init("OpenCode", "2.2.6")));
+        assert!(!superseded(&init("OpenCode", "dev")));
+        assert!(!superseded(&init("Kilo", "1.0.0")));
+        assert!(!superseded(&json!({})));
+    }
+
+    /// Starts each candidate as an agent answering `initialize` as the OpenCode version its command names ("broken"
+    /// doesn't start). Returns whether the agent that runs is superseded, and whether each start got its own database.
+    #[cfg(unix)]
+    async fn first_of(versions: &[&str]) -> (bool, Vec<bool>) {
+        const AGENT: &str = r#"read l; id=$(echo "$l" | sed 's/.*"id":\([0-9]*\).*/\1/'); printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"name":"OpenCode","version":"%s"}}}\n' "$id" "$0""#;
+        let candidates =
+            versions.iter().map(|v| Candidate::Ready(Cmd { program: (*v).to_owned(), args: String::new() })).collect();
+        let mut own_db = Vec::new();
+        let conn = start_first(candidates, &[], |candidate, env, _| {
+            own_db.push(env.iter().any(|(k, _)| k == "OPENCODE_DB"));
+            async move {
+                let Candidate::Ready(Cmd { program: version, .. }) = candidate else { unreachable!() };
+                anyhow::ensure!(version != "broken", "didn't start");
+                let command = format!("sh -c '{}' {version}", AGENT.replace('\'', "'\\''"));
+                start_agent(&command, "/tmp", &env, Duration::from_secs(10)).await
+            }
+        })
+        .await
+        .unwrap();
+        (conn.superseded, own_db)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_opencode_before_2_runs_only_when_nothing_after_it_starts() {
+        assert_eq!(
+            first_of(&["1.19.5", "2.2.6"]).await,
+            (false, vec![false, true]),
+            "the registry build, on its own database"
+        );
+        assert!(first_of(&["1.19.5", "broken"]).await.0, "the registry build didn't start");
+        assert!(first_of(&["1.19.5"]).await.0, "a custom command, or no registry build");
+    }
 
     #[test]
     fn variant_ids_become_options_only_when_the_agent_lists_plain_models() {

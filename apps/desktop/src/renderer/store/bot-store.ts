@@ -19,6 +19,7 @@ import { readSharedFile } from '../../shared/files.ts'
 import { latestOnly } from '../lib/latest-only'
 import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
+import { noteFirstPrompt } from '../lib/use-kofi-invite'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
@@ -93,7 +94,10 @@ export class BotStore extends BotSync {
         this.upsert(e)
         this.changed()
         // Only once it arrived, so a resend counts once.
-        if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
+        if (!call) {
+          noteFirstPrompt(botId, e.createdAt)
+          prefs.promptsSent.set(prefs.promptsSent.get() + 1)
+        }
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')

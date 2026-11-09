@@ -1938,10 +1938,15 @@
   "Cloud computer": "雲端電腦",
   "Cloud computer {n}": "雲端電腦 {n}",
   "Add a key first": "請先加入金鑰",
+  "Free sandbox available": "有免費沙盒",
+  "Get a free sandbox": "取得免費沙盒",
+  "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "InstaBox 的免費方案包含一台機器（4 vCPU、8 GiB）。",
   "Rename…": "重新命名…",
   "Rename cloud computer": "重新命名雲端電腦",
   "Provider": "供應商",
   "You can have up to 3 cloud computers. Delete one to make another.": "最多可以有 3 台雲端電腦。請先刪除一台再新增。",
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "請先刪除這家供應商上的雲端電腦：Codync 需要這把金鑰讓它們休眠。",
-  "Codync Cloud updates it before it next sleeps.": "Codync Cloud 會在它下次休眠前更新它。"
+  "Codync Cloud updates it before it next sleeps.": "Codync Cloud 會在它下次休眠前更新它。",
+  "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync 是免費的，由一個人開發。如果它幫得上你，可以在 Ko-fi 上支持它。",
+  "Support on Ko-fi": "在 Ko-fi 上支持"
 }

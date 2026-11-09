@@ -108,8 +108,15 @@ pub enum Reported {
         outcome: CloudCreateOutcome,
         provider: CloudProvider,
     },
+    CloudOfferOpened {
+        provider: CloudProvider,
+    },
     CloudComputerRenamed {
         outcome: CloudRenameOutcome,
+    },
+    KofiInviteShown,
+    KofiInviteAnswered {
+        opened: bool,
     },
 }
 
@@ -426,6 +433,8 @@ mod tests {
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
             (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
+            (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
+            (json!({"event": "kofi_invite_answered", "app": "desktop", "opened": true}), Event::KofiInviteAnswered),
             (
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
                 Event::JoinOfferAnswered,
@@ -438,6 +447,7 @@ mod tests {
                 json!({"event": "cloud_computer_created", "app": "desktop", "outcome": "created", "provider": "boat"}),
                 Event::CloudComputerCreated,
             ),
+            (json!({"event": "cloud_offer_opened", "app": "desktop", "provider": "instabox"}), Event::CloudOfferOpened),
             (
                 json!({"event": "cloud_computer_renamed", "app": "desktop", "outcome": "failed"}),
                 Event::CloudComputerRenamed,

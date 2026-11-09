@@ -21,12 +21,15 @@ public struct CloudKeySheet: View {
                 CardForm {
                     CardSection(footer: "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {
                         CloudKeyRow(store: store, provider: provider) { dismiss() }
+                        if let offer = provider.offer { CloudOfferRow(provider: provider.provider, offer: offer) }
                         CloudKeySetupRow(provider: provider)
                     }
                 }
             }
         }
         .background(Palette.background)
+        // Closed, its failure was seen: New cloud computer under it shows only a removal asked from its own row.
+        .onDisappear { store.clearError(at: .key(provider)) }
     }
 }
 
@@ -115,6 +118,24 @@ private struct CloudKeyRow: View {
                 done()
             }
         }
+    }
+}
+
+/// The provider's own free plan: what it includes, and its page.
+private struct CloudOfferRow: View {
+    let provider: String
+    let offer: CloudProviderOffer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.tr(offer.detail))
+                .font(.footnote)
+                .foregroundStyle(Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            WebLink(offer.label, url: offer.url) { Analytics.shared.capture(.cloudOfferOpened(provider: provider)) }
+                .font(.footnote)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

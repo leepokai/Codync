@@ -1938,10 +1938,15 @@
   "Cloud computer": "클라우드 컴퓨터",
   "Cloud computer {n}": "클라우드 컴퓨터 {n}",
   "Add a key first": "먼저 키를 추가하세요",
+  "Free sandbox available": "무료 샌드박스 제공",
+  "Get a free sandbox": "무료 샌드박스 받기",
+  "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "InstaBox 무료 요금제에는 머신 1대(4 vCPU, 8 GiB)가 포함됩니다.",
   "Rename…": "이름 변경…",
   "Rename cloud computer": "클라우드 컴퓨터 이름 변경",
   "Provider": "제공업체",
   "You can have up to 3 cloud computers. Delete one to make another.": "클라우드 컴퓨터는 최대 3대까지 가질 수 있습니다. 새로 만들려면 하나를 삭제하세요.",
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "먼저 해당 제공업체의 클라우드 컴퓨터를 삭제하세요. Codync가 절전시키려면 이 키가 필요합니다.",
-  "Codync Cloud updates it before it next sleeps.": "다음에 절전하기 전에 Codync Cloud가 업데이트합니다."
+  "Codync Cloud updates it before it next sleeps.": "다음에 절전하기 전에 Codync Cloud가 업데이트합니다.",
+  "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync는 무료이며 한 사람이 만들고 있습니다. 도움이 되었다면 Ko-fi에서 후원할 수 있습니다.",
+  "Support on Ko-fi": "Ko-fi에서 후원하기"
 }

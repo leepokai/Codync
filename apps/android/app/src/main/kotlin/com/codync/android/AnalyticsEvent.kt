@@ -55,6 +55,10 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class CloudKeySaved(val outcome: CloudKeyOutcome, val provider: String) : AnalyticsEvent("cloud_key_saved") {
         override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
     }
+    /** The user opened a provider's free plan from its key sheet ([provider]: the cloud's id for it; iOS `cloudOfferOpened`). */
+    data class CloudOfferOpened(val provider: String) : AnalyticsEvent("cloud_offer_opened") {
+        override val properties get() = mapOf("provider" to JsonPrimitive(provider))
+    }
     /** The user made a Codync Cloud computer on a provider ([provider]: the cloud's id for it; iOS `cloudComputerCreated`). */
     data class CloudComputerCreated(val outcome: CloudCreateOutcome, val provider: String) : AnalyticsEvent("cloud_computer_created") {
         override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))

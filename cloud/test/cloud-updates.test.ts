@@ -4,25 +4,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { syncReleases } from "../src/host-releases";
 import { saveBackups, wake } from "../src/cloud-machines";
-import worker, { type Env } from "../src/index";
-import { boat, calls, cc, cloudComputer, spyFetch } from "./cloud-helpers";
-import { AUTHORITY, ORIGIN, call, clerkToken, devicePath, env, socket, type Json } from "./helpers";
+import { boat, callWith, calls, cc, cloudComputer, spyFetch } from "./cloud-helpers";
+import { call, clerkToken, devicePath, env, socket } from "./helpers";
 import * as ref from "./ref";
 
 afterEach(() => vi.restoreAllMocks());
-
-/** A signed or Clerk call through the Worker with some env overridden. */
-async function callWith(over: Partial<Env>, method: string, path: string, o: { token?: string; key?: ref.SignKey; body?: unknown; app?: string } = {}) {
-  const bytes = o.body === undefined ? new Uint8Array() : ref.enc.encode(JSON.stringify(o.body));
-  const headers: Record<string, string> = {};
-  if (o.token) headers.Authorization = `Bearer ${o.token}`;
-  if (o.app) headers["Codync-App"] = o.app;
-  if (o.key) headers["Codync-Sig"] = ref.signRequest(o.key, { method, authority: AUTHORITY, pathAndQuery: path, body: bytes });
-  const res = await worker.fetch(new Request(ORIGIN + path, { method, headers, body: bytes.length ? bytes : undefined }), { ...env, ...over }, {
-    waitUntil: () => {},
-  } as unknown as ExecutionContext);
-  return { status: res.status, body: (await res.json()) as Json };
-}
 
 /** A cloud computer whose owner has a registered phone that reported `app`. */
 async function withPhone(app: string) {
@@ -61,6 +47,23 @@ describe("cloud host updates", () => {
     await hostWs.nextT("cloud.changed");
   });
 
+  it("orders the oldest published release above the host an app needs when that version was never released", async () => {
+    const releases = (rows: string[][]) =>
+      env.DB.batch([
+        env.DB.prepare("DELETE FROM host_releases"),
+        ...rows.map(([v, m]) => env.DB.prepare("INSERT INTO host_releases(version, min_app) VALUES (?, ?)").bind(v, m)),
+      ]);
+    // `dev` bumped 2.25.0 to 2.25.1 before main released it.
+    await releases([
+      ["2.24.0", "2.18.0"],
+      ["2.25.1", "2.21.0"],
+      ["2.26.0", "2.26.0"],
+    ]);
+    const { host } = await withPhone("ios/2.26.0; minHost=2.25.0");
+    expect((await call("GET", "/v1/host/state", { key: host.sign })).body.update).toEqual({ version: "2.25.1", force: true });
+    await releases([]);
+  });
+
   it("raises the order to an emergency floor; a self-hosted computer below it may not register", async () => {
     const { host } = await withPhone("ios/2.26.0; minHost=2.25.0");
     const state = await callWith({ HOST_FLOOR: "2.30.0" }, "GET", "/v1/host/state", { key: host.sign });
@@ -91,22 +94,31 @@ describe("cloud host updates", () => {
     expect(calls(fetch)).not.toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/stop");
   });
 
-  it("reads releases up to GitHub's latest mark with each one's MIN_APP", async () => {
-    await env.DB.prepare("INSERT INTO host_releases(version, min_app) VALUES ('2.27.0', '2.21.0')").run();
-    spyFetch().mockImplementation(async (url) => {
-      const u = String(url);
-      if (u.endsWith("/releases/latest")) return Response.json({ tag_name: "v2.25.0" });
-      if (u.includes("/tags")) return Response.json([{ name: "v2.26.0" }, { name: "v2.25.0" }, { name: "v2.24.0" }, { name: "nightly" }]);
-      if (u.includes("/v2.25.0/host/src/compat.rs")) return new Response('pub const MIN_APP: &str = "2.21.0";');
-      if (u.includes("/v2.24.0/host/src/compat.rs")) return new Response('pub const MIN_APP: &str = "2.18.0";');
-      return new Response("", { status: 404 });
-    });
+  it("keeps each release its channel marks latest, with its MIN_APP, and drops any above it", async () => {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM host_releases"),
+      ...[
+        ["2.24.0", "2.18.0"],
+        ["2.25.0", "2.20.0"],
+        ["2.27.0", "2.21.0"],
+      ].map(([v, m]) => env.DB.prepare("INSERT INTO host_releases(version, min_app) VALUES (?, ?)").bind(v, m)),
+    ]);
+    // The tests run with the dev cloud's settings, so on its dev channel.
+    const fetch = spyFetch().mockImplementation(async () => Response.json({ version: "2.25.0", minApp: "2.21.0" }));
     await syncReleases(env);
+    expect(String(fetch.mock.calls.at(-1)?.[0])).toBe("https://dev-releases.codync.dev/latest/download/codync-host-compat.json");
     const { results } = await env.DB.prepare("SELECT version, min_app FROM host_releases ORDER BY version").all();
     expect(results).toEqual([
       { version: "2.24.0", min_app: "2.18.0" },
       { version: "2.25.0", min_app: "2.21.0" },
     ]);
+
+    spyFetch().mockImplementation(async () => Response.json({ version: "2.26.0; DROP", minApp: "2.21.0" }));
+    await expect(syncReleases(env)).rejects.toThrow("invalid");
+    // Without a channel (main): GitHub's releases.
+    const github = spyFetch().mockImplementation(async () => new Response("", { status: 404 }));
+    await expect(syncReleases({ ...env, HOST_RELEASES_URL: undefined })).rejects.toThrow("404");
+    expect(String(github.mock.calls.at(-1)?.[0])).toBe("https://github.com/leepokai/Codync/releases/latest/download/codync-host-compat.json");
   });
 });
 
@@ -114,10 +126,10 @@ describe("snapshots", () => {
   it("deletes an awake computer's saved history, but not while it sleeps", async () => {
     const { userId, id } = await cloudComputer();
     const fetch = boat("ready");
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(200);
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(200);
     expect(calls(fetch)).toContain("DELETE https://boat.dev/api/v1/sandboxes/bx_test/snapshots");
     boat("archived");
-    const asleep = await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}/snapshots`);
+    const asleep = await cc("DELETE", userId, `/v1/cloud-computers/${id}/snapshots`);
     expect(asleep.status).toBe(409);
   });
 
@@ -147,7 +159,7 @@ describe("snapshots", () => {
     const old = Date.now() - 11 * 86_400_000;
     await env.DB.prepare("UPDATE cloud_machines SET state = 'stopped', updated_at = ? WHERE id = ?").bind(old, id).run();
     boat("archived");
-    expect((await cc("PATCH", userId, userId, `/v1/cloud-computers/${id}`, { name: "Research" })).status).toBe(200);
+    expect((await cc("PATCH", userId, `/v1/cloud-computers/${id}`, { name: "Research" })).status).toBe(200);
     const saving = boat("archived");
     await saveBackups(env, Date.now());
     expect(calls(saving)).toEqual(["POST https://boat.dev/api/v1/saved-snapshots"]);

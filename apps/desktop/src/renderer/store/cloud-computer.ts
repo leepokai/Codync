@@ -25,7 +25,7 @@ export class CloudComputerModel extends Observable {
   providers: CloudProvider[] = []
   /** The first answer came back for this account. */
   loaded = false
-  /** This account may create them (an allowlist of user ids). */
+  /** This account may create them (the cloud can seal keys: CLOUD_SECRET_KEYS). */
   available = false
   busy: CloudComputerAction | null = null
   error: string | null = null
@@ -82,6 +82,11 @@ export class CloudComputerModel extends Observable {
     return this.error && errorPlace(this.failed) === place ? this.error : null
   }
 
+  /** A key removal's failure, whichever provider's: New cloud computer shows one asked from a row's `⋯` there. */
+  get keyRemovalError() {
+    return this.failed?.startsWith('removeKey:') ? this.error : null
+  }
+
   /** Forgets an earlier failure shown at `place` (a sheet opened afresh). */
   clearError(place: ReturnType<typeof errorPlace>) {
     if (!this.errorAt(place)) return
@@ -109,6 +114,12 @@ export class CloudComputerModel extends Observable {
       }
     })
     return saved
+  }
+
+  /** Opens `provider`'s free plan in the browser, counted by its provider. */
+  openOffer(provider: string, url: string) {
+    analytics.track({ event: 'cloud_offer_opened', provider })
+    window.codync.app.openExternal(url)
   }
 
   canRemoveKey(provider: string) {

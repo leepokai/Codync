@@ -93,9 +93,9 @@ recreate them.
 
 `npm run cloud:stack` starts the same local cloud, accepting **dev Clerk** sessions (it reads the dev issuer from
 `wrangler.toml` and its public key from the instance's JWKS), and prints how to point each app at it. With
-`BOAT_API_KEY_FILE` or `INSTABOX_API_KEY_FILE` it also allows every account a cloud computer (`CLOUD_COMPUTER_USERS=*`,
-local only) and forwards each new machine; without one it is the plain local cloud a worktree sandbox runs, with
-Codync Cloud hidden:
+`BOAT_API_KEY_FILE` or `INSTABOX_API_KEY_FILE` it also seals keys (`CLOUD_SECRET_KEYS`), so every account gets Codync
+Cloud, and forwards each new machine; without one it is the plain local cloud a worktree sandbox runs, with Codync
+Cloud hidden:
 
 - iOS simulator: `SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> xcrun simctl launch <udid> com.pokai.Codync.ios.dev`, on a
   simulator no other session uses.
@@ -111,7 +111,8 @@ Codync Cloud hidden:
 
 Set `CODYNC_STACK_PORT` to keep the URL stable across runs. Ctrl-C deletes the machines.
 
-What to walk with the apps: Codync Cloud hidden for an account that isn't allowed; a key that isn't one, an admin key
+What to walk with the apps: Codync Cloud hidden on a cloud without `CLOUD_SECRET_KEYS` (`cloud:stack` with no provider
+key, or a worktree sandbox's own cloud); a key that isn't one, an admin key
 and a revoked key refused with what to fix; the test key (`BOAT_API_KEY_FILE`, or `INSTABOX_API_KEY_FILE` under
 InstaBox) pasted and shown as its hint; "+" → New cloud computer lists every provider with its logo (one without a
 working key opens that provider's key sheet, and is picked once its key is saved; a computer's `⋯` opens its
@@ -139,13 +140,24 @@ Setup (once, then kept up with `dev`):
 1. Apply `cloud/migrations/0007_cloud_machines.sql`, `0008_app_versions.sql` and `0009_cloud_credentials.sql` to `codync-dev` (note the restore
    point; [deployment procedure](environments-and-deployment.md#deployment-procedure)) before deploying Worker code
    that reads them: `/v1/computers` joins `cloud_machines`.
-2. Secrets on `--env dev`: `CLOUD_SECRET_KEYS` (its own, never production's), `CLOUD_COMPUTER_USERS` (the dev
-   Clerk ids allowed; a secret, the repository is public). Each dev account pastes its own Boat key in the app.
+2. Secret on `--env dev`: `CLOUD_SECRET_KEYS` (its own, never production's); with it, every signed-in dev account
+   gets Codync Cloud. Each dev account pastes its own provider key in the app.
 3. Vars in `[env.dev]`: `CLOUD_MACHINE_PREFIX = "codync-dev"`, `CLOUD_HOST_ENV = "CODYNC_CLOUD_URL=https://dev-api.codync.dev
-   CODYNC_ANALYTICS_ENV=dev"` (released hosts are built for the production cloud and would report as `main`).
+   CODYNC_ANALYTICS_ENV=dev"` (hosts are built for the production cloud and would report as `main`), and
+   `HOST_RELEASES_URL = "https://dev-releases.codync.dev"`.
 4. Deploy with `npm run deploy:dev` from `dev`.
-5. Its machines boot the released host, so Dev runs cloud computers fully once a release carries the host side
-   (self-claim, sleep, cloud updates). Until then, branch hosts are tested at the worktree level.
+5. Its machines install and update from the [dev release channel](development.md#dev-release-channel), which CI
+   fills from every `dev` push that changes the host: Dev runs what `dev` has, before it is released. A computer
+   already running gets a host change once `dev`'s version is bumped past its own (before it sleeps, or *Update*).
 6. Create one cloud computer for the owner's dev account and keep it; check it from the iPhone over days.
+
+Moving the dev cloud to the dev release channel (once): wait for the first `dev` host run to fill it
+(`https://dev-releases.codync.dev/latest/download/install.sh` and `…/codync-host-compat.json` answer 200), and only then
+`npm run deploy:dev`: before that, a new computer's setup can't download the installer. A computer created before
+the channel still follows GitHub, while the dev cloud's soft update offers it versions only the channel has: its
+updates fail and it never sleeps. Delete and recreate it, or add
+`Environment=CODYNC_RELEASES_URL=https://dev-releases.codync.dev` to its
+`~codync-agent/.config/systemd/user/codync-host.service.d/codync-cloud.conf` and to
+`/etc/systemd/system/codync-keeper.service`, then restart both.
 
 Boat machines named `codync-dev-…` belong to Dev and are never swept by test runs.

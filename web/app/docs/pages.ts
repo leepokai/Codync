@@ -112,6 +112,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
           "How your phone reaches your computer: directly over Wi-Fi, Tailscale or your own URL, or through the Codync relay, always end-to-end encrypted.",
       },
       {
+        slug: "codync-cloud",
+        title: "Codync Cloud",
+        description:
+          "Run your bots on a cloud computer on your own Boat or InstaBox account: free from Codync, asleep while idle, woken by a message.",
+      },
+      {
         slug: "linux-servers",
         title: "Linux servers",
         description:

@@ -11,7 +11,7 @@ use super::bot::Bot;
 use super::{After, App};
 
 /// The first host with `markUnread`.
-const MARK_UNREAD_SINCE: &str = "2.43.0";
+const MARK_UNREAD_SINCE: &str = "2.44.0";
 
 /// The read state behind this screen's marks.
 #[derive(Default)]
@@ -345,8 +345,8 @@ mod tests {
     async fn an_older_host_is_told_to_update_instead_of_refusing() {
         let mut app = app_with(&[("a", 0)]);
         app.selected = Some("a".into());
-        app.host_version = "2.41.1".into();
+        app.host_version = "2.43.1".into();
         app.on_key(KeyEvent::from(KeyCode::Char('.')));
-        assert!(app.hint.as_ref().is_some_and(|(text, _)| text.contains("2.43.0")));
+        assert!(app.hint.as_ref().is_some_and(|(text, _)| text.contains("2.44.0")));
     }
 }

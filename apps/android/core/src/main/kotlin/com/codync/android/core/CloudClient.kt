@@ -91,11 +91,17 @@ data class CloudOffer(@SerialName("cloudComputers") val machines: List<CloudMach
 data class CloudProvider(val provider: String, val name: String, val region: String,
     /** What its keys start with, for the field's placeholder (`boat_…`). */
     val keyPrompt: String,
-    val setup: CloudKeySetup, val credential: CloudCredential? = null) {
+    val setup: CloudKeySetup, val credential: CloudCredential? = null,
+    /** Its own free plan, if it has one (older clouds don't say). */
+    val offer: CloudProviderOffer? = null) {
     /** The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
      * when the provider said no for the plan or the account). */
     val usable: Boolean get() = credential != null && !credential.blocking
 }
+
+/** A provider's own free plan, in the cloud's words (the app translates [label] and [detail]), and its page. */
+@Serializable
+data class CloudProviderOffer(val label: String, val detail: String, val url: String)
 
 /** A key the account gave a provider, as the cloud shows it: never the key itself. */
 @Serializable
@@ -277,8 +283,8 @@ class CloudClient private constructor(base: String, private val identity: Device
         request("PUT", listOf("v1", "cloud-credentials", provider), buildJsonObject { put("key", key.trim()) }).getValue("credential"))
     /** Forgets [provider]'s key (`409 conflict` while a cloud computer runs on it). */
     suspend fun deleteCloudKey(provider: String) { request("DELETE", listOf("v1", "cloud-credentials", provider)) }
-    /** Creates another cloud computer called [name] on [provider] (`403 forbidden` off the allowlist, `409` at the limit
-     * or without that provider's key, `keyRefused` with what to fix). */
+    /** Creates another cloud computer called [name] on [provider] (`403 forbidden` when the cloud has Codync Cloud off,
+     * `409` at the limit or without that provider's key, `keyRefused` with what to fix). */
     suspend fun createCloudComputer(provider: String, name: String): CloudMachine = machine(
         request("POST", listOf("v1", "cloud-computers"), buildJsonObject { put("provider", provider); put("name", name) }))
     /** Its new [name], here and as its computer (its host takes it at its next look at the cloud). */

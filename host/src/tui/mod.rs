@@ -111,6 +111,7 @@ pub async fn run(url: Option<String>, port: u16, token: Option<String>) -> Resul
         if dirty && !in_shell {
             app.tick();
             app.report_screen();
+            app.kofi_seen();
             term.draw(|f| view::draw(f, &mut app))?;
             dirty = false;
         }

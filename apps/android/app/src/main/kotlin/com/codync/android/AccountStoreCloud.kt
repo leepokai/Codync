@@ -79,6 +79,10 @@ internal fun AccountContext.cloudMachineBusy(id: String) = CloudMachineAction.en
 /** [AccountContext.error] where [place] shows it: only an action's that belongs there (iOS `CloudMachineStore.error(at:)`). */
 internal fun AccountContext.cloudErrorAt(place: CloudErrorPlace): String? = error.takeIf { CloudErrorPlace.of(failedAction) == place }
 
+/** A provider key's error, whichever provider's: New cloud computer shows a removal asked from a row's `⋯` there (iOS
+ * `CloudMachineStore.keyRemovalError`); a save's shows in the key sheet over it, and goes when that closes. */
+internal fun AccountContext.cloudKeyError(): String? = error.takeIf { CloudErrorPlace.of(failedAction) is CloudErrorPlace.Key }
+
 /** Forgets an error shown at [place] once it's out of view. */
 internal fun AccountStore.clearCloudError(place: CloudErrorPlace) = mutableState.update {
     if (CloudErrorPlace.of(it.failedAction) == place) it.copy(error = null, failedAction = null) else it

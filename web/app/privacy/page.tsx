@@ -9,7 +9,7 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: November 6, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: November 10, 2026</p>
 
         <Section title="Overview">
           Codync is an independent open-source project by leepokai (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
@@ -34,6 +34,18 @@ export default function Privacy() {
 
         <Section title="Cloud assistants">
           If you turn cloud assistants on at a computer and add the Codync connector to ChatGPT, Claude or another assistant, that assistant&apos;s requests to your bots and the bots&apos; replies are not end-to-end encrypted: they pass through our relay over HTTPS, which can read them but doesn&apos;t store them, and the assistant&apos;s provider sees them as part of your conversation there, under its own privacy policy. Cloud assistants are off on every computer until you turn them on at that computer, and the relay passes on only requests from your own Codync account.
+        </Section>
+
+        <Section title="Codync Cloud (cloud computers)">
+          <p className="mb-2">
+            Codync Cloud is optional. If you use it, your bots run on a computer in your own account with a cloud provider (Boat or InstaBox) instead of your own machine, so your code, agent sign-ins, bots and conversations live on that machine, with the provider.
+          </p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><strong>Your provider key</strong> is stored by our account service, encrypted, and shown back only by its last four characters. Our service opens it to create your cloud computers, put them to sleep, wake them, back them up and delete them. A Boat key reaches only its <code>codync</code> environment and can&apos;t run commands on a running machine. An InstaBox key reaches every machine in its workspace and can run commands on them, which is how we install Codync there.</li>
+            <li><strong>Each cloud computer&apos;s vault key</strong>, which unlocks the secrets you save on that computer, is also kept by our service, encrypted. Together with the access above, whoever controls our service could open those secrets.</li>
+            <li><strong>The provider runs the hardware</strong> and can in principle read a running machine&apos;s memory and files. Boat documents no encryption at rest for its disks, and its snapshots may be stored outside the EU.</li>
+            <li>Your phone and desktop still reach a cloud computer end to end encrypted, through our relay.</li>
+          </ul>
         </Section>
 
         <Section title="Codync account">
@@ -65,13 +77,14 @@ export default function Privacy() {
             <li><strong>PostHog (US)</strong>: stores the usage analytics described above, unless you turned them off.</li>
             <li><strong>Vercel</strong>: hosts codync.dev and forwards the site&apos;s analytics to PostHog.</li>
             <li><strong>The AI agents you choose</strong>: they run on your computer under their own terms and privacy policies.</li>
+            <li><strong>Boat (EU) or InstaBox (US)</strong>: only if you start a Codync Cloud computer there. It runs in your own account with that provider, under its terms and privacy policy.</li>
             <li><strong>OpenAI or Google (optional, voice)</strong>: only if you add your own OpenAI or Gemini API key for calls or dictation. In a realtime call, your voice goes from your phone or computer directly to that provider, together with the bot&apos;s name and description and the chat messages it asks for during the call. In a call&apos;s speech mode, and when you dictate a message with the provider, your recording goes to your computer, which sends it to the provider to be transcribed, together with the names of the bots on that computer as spelling hints, and sends the bot&apos;s replies to the provider to be read aloud. All of it is under your account and the provider&apos;s privacy policy. The key is stored encrypted on your computer and sent only to that provider, never to our relay or services; a realtime call gets a short-lived credential made from it. Without a key, voice uses your device&apos;s own speech recognition.</li>
           </ul>
           <p className="mt-2">This policy covers Codync as we publish it. Codync services run by third parties (for example a hosted host or relay) handle your data under their own privacy policies; we don&apos;t operate them and receive none of that data.</p>
         </Section>
 
         <Section title="Data retention">
-          Your bots and conversations live on your devices. Our services keep only these: your account; each computer&apos;s registration, the devices allowed to use it and its routines&apos; webhook keys, while the computer is registered; a log of account and access changes (30 days); messages waiting for an offline computer (up to 24 hours); and webhook deliveries waiting for it (up to 72 hours). Delete a bot to remove its conversation; uninstall the host and delete <code>~/.codync</code> to remove all of it. Deleting the phone app removes its cache. Turning analytics off stops new events from being sent.
+          Your bots and conversations live on your devices. Our services keep only these: your account; each computer&apos;s registration, the devices allowed to use it and its routines&apos; webhook keys, while the computer is registered; a log of account and access changes (30 days); messages waiting for an offline computer (up to 24 hours); and webhook deliveries waiting for it (up to 72 hours). With Codync Cloud, also your provider keys (encrypted) and each cloud computer&apos;s record and vault key (encrypted), until you delete that computer or the key. Delete a bot to remove its conversation; uninstall the host and delete <code>~/.codync</code> to remove all of it. Deleting the phone app removes its cache. Turning analytics off stops new events from being sent.
         </Section>
 
         <Section id="delete-account" title="Delete your Codync account">
@@ -82,7 +95,7 @@ export default function Privacy() {
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Deleted:</strong> your sign-in and email address, your account&apos;s list of computers, and every device&apos;s access through the account.</li>
-            <li><strong>Kept:</strong> a record that the account was deleted, with the revoked devices&apos; names and keys, so those devices can&apos;t be used with it again; the log of account and access changes (30 days); and, when you delete it in the app, the usage analytics linked to it, until you email us to delete them too. Bots and conversations stay on your computer until you delete them there (see Data retention).</li>
+            <li><strong>Kept:</strong> a record that the account was deleted, with the revoked devices&apos; names and keys, so those devices can&apos;t be used with it again; the log of account and access changes (30 days); and, when you delete it in the app, the usage analytics linked to it, until you email us to delete them too. Bots and conversations stay on your computer until you delete them there (see Data retention). Your Codync Cloud computers are put to sleep and we forget your provider keys; the machines stay in your provider account until you delete them there.</li>
           </ul>
         </Section>
 

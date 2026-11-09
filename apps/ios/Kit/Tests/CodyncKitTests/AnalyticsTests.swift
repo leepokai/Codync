@@ -79,6 +79,7 @@ import Testing
     #expect(try json(.onboardingStepViewed(.choose)) == #"{"step":"choose"}"#)
     #expect(try json(.signedOutPairingsMoved(computers: 2, keys: .rescan)) == #"{"computers":2,"keys":"rescan"}"#)
     #expect(try json(.cloudKeySaved(.refused, provider: "instabox")) == #"{"outcome":"refused","provider":"instabox"}"#)
+    #expect(try json(.cloudOfferOpened(provider: "instabox")) == #"{"provider":"instabox"}"#)
     #expect(try json(.cloudComputerCreated(.created, provider: "boat")) == #"{"outcome":"created","provider":"boat"}"#)
     #expect(AnalyticsEvent.cloudComputerCreated(.failed, provider: "boat").name == "cloud_computer_created")
     // Refused: the cloud said what to fix (at the limit, no key, or the provider turned the key down).

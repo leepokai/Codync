@@ -24,6 +24,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case cloudKeySaved(CloudKeyOutcome, provider: String)
     /// The user made another Codync Cloud computer on `provider` (the cloud's id for it); never its name.
     case cloudComputerCreated(CloudCreateOutcome, provider: String)
+    /// The user opened `provider`'s free plan from its key sheet (the cloud's id for it).
+    case cloudOfferOpened(provider: String)
     /// The user renamed one of their Codync Cloud computers; never the name.
     case cloudComputerRenamed(CloudRenameOutcome)
     case pairingFailed(PairingFailure)
@@ -169,6 +171,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .addToAccountFailed: "add_to_account_failed"
         case .cloudKeySaved: "cloud_key_saved"
         case .cloudComputerCreated: "cloud_computer_created"
+        case .cloudOfferOpened: "cloud_offer_opened"
         case .cloudComputerRenamed: "cloud_computer_renamed"
         case .pairingFailed: "pairing_failed"
         case .computerPaired: "computer_paired"
@@ -203,6 +206,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .cloudKeySaved(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
         case let .cloudComputerCreated(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
+        case let .cloudOfferOpened(provider): return ["provider": .string(provider)]
         case let .cloudComputerRenamed(outcome): return ["outcome": .string(outcome.rawValue)]
         case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]

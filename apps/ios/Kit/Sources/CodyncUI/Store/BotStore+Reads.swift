@@ -7,9 +7,9 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "BotStore")
 // Read marks: reading the chats on screen, opening one, the roster's "Mark as read" and "Mark as unread". The
 // host decides what a read does to a chat marked unread; here they only go out in order, and show at once.
 extension BotStore {
-    static let markUnreadHost = "2.43.0"
+    static let markUnreadHost = "2.44.0"
 
-    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.43.0
+    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.44.0
     /// (it refuses `markUnread`), "Mark as read".
     public func offersMarkUnread(_ bot: Bot) -> Bool {
         bot.unread == 0 && !bot.keptUnread

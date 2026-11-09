@@ -126,6 +126,8 @@ test('New cloud computer lists every provider and starts on the first with a usa
   const unpaid = { ...instabox, credential: { hint: 'ibk_…0001', problem: 'This account needs an active plan.', blocking: false } }
   const tr = (t: string) => t
   assert.deepEqual(providerOption(boat, tr), { usable: false, detail: { text: 'EU · Add a key first', error: false } })
+  const offered = { ...boat, offer: { label: 'Get a free sandbox', detail: 'A free plan.', url: 'https://example.com' } }
+  assert.deepEqual(providerOption(offered, tr), { usable: false, detail: { text: 'EU · Free sandbox available', error: false } })
   assert.deepEqual(providerOption(instabox, tr), { usable: true, detail: { text: 'US · ibk_…0001', error: false } })
   assert.deepEqual(providerOption(refused, tr), { usable: false, detail: { text: 'This key has expired. Make a new one.', error: true } })
   assert.deepEqual(providerOption(unpaid, tr), { usable: true, detail: { text: 'This account needs an active plan.', error: true } })

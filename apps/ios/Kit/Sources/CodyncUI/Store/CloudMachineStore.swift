@@ -85,6 +85,12 @@ public final class CloudMachineStore {
     /// `error` where `place` shows it: only an action that belongs there.
     public func error(at place: Place) -> String? { failed?.place == place ? error : nil }
 
+    /// A key removal's failure, whichever provider's: New cloud computer shows one asked from a row's `⋯` there.
+    public var keyRemovalError: String? {
+        if case .removingKey = failed { return error }
+        return nil
+    }
+
     /// Forgets an earlier failure shown at `place` (a sheet opened afresh).
     public func clearError(at place: Place) {
         guard failed?.place == place else { return }

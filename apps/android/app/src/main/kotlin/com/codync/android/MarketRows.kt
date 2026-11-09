@@ -177,12 +177,21 @@ internal fun serviceDomain(website: String?, name: String, registryName: String?
 @Composable internal fun SkillGlyph() = TileIcon("book.pages")
 
 /** Text that opens a web page (iOS `WebLink`). */
-@Composable internal fun WebLink(title: String, url: String, style: androidx.compose.ui.text.TextStyle = Type.body) {
+@Composable internal fun WebLink(
+    title: String,
+    url: String,
+    style: androidx.compose.ui.text.TextStyle = Type.body,
+    /** Runs once the page opened (an analytics event). */
+    opened: () -> Unit = {},
+) {
     val uri = LocalUriHandler.current
     var failed by remember { mutableStateOf(false) }
     val label = tr(title)
     Text(if (failed) "$label (couldn't open the browser)" else label,
-        Modifier.plainButton { failed = runCatching { uri.openUri(url) }.isFailure }, style = style.copy(textDecoration = TextDecoration.Underline),
+        Modifier.plainButton {
+            failed = runCatching { uri.openUri(url) }.isFailure
+            if (!failed) opened()
+        }, style = style.copy(textDecoration = TextDecoration.Underline),
         color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 

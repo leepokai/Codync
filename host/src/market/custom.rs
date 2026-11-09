@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(connectors(&hub.store).unwrap(), before);
         assert_eq!(hub.store.kv_read("connectors").unwrap(), sealed, "no vault rewrite");
         assert_eq!(hub.store.bot("uses-server").unwrap().unwrap().config.connectors, [id]);
-        assert!(hub.store.bot("unrelated").unwrap().unwrap().config.connectors.is_empty());
+        assert_eq!(hub.store.bot("unrelated").unwrap().unwrap().config.connectors, Vec::<String>::new());
         assert!(!error.to_string().contains("secret"));
         std::fs::remove_dir_all(dir).unwrap();
     }

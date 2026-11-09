@@ -1809,5 +1809,10 @@
   "{n} tokens": "{n} 个令牌",
   "{used} of {limit} tokens": "{used}/{limit} 个令牌",
   "All bots today": "今天的全部机器人",
-  "Tokens": "令牌"
+  "Tokens": "令牌",
+  "Copy diagnostics": "复制诊断信息",
+  "Preparing…": "正在准备…",
+  "Copied. Paste it where you need it; secrets were removed.": "已复制。粘贴到需要的地方；机密已移除。",
+  "The snapshot could not be made.": "无法生成快照。",
+  "Versions, health, settings and the end of the log, with secrets removed.": "版本、状态、设置和日志末尾，已移除机密。"
 }

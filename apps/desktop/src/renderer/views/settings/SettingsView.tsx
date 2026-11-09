@@ -23,6 +23,7 @@ import { errorText, isMac, thisMac } from './parts'
 import { UsageLimits } from './UsageLimits'
 import { ThemePaletteSection } from './ThemePaletteSection'
 import { EnterpriseSection } from './EnterpriseSection'
+import { DiagnosticsButton } from './DiagnosticsButton'
 import { WeekSummaryView } from './WeekSummaryView'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
@@ -243,6 +244,7 @@ function GeneralSettings({ onExtensions }: { onExtensions?: () => void } = {}) {
             <ChoicePicker selection={voiceShortcut} options={VOICE_SHORTCUTS} onChange={(s) => void window.codync.speech.setShortcut(s).then(setVoiceShortcut)} />
           </ValueRow>
         ) : null}
+        <DiagnosticsButton />
         <Switch on={launchAtLogin} onChange={(on) => void window.codync.app.setLaunchAtLogin(on).then(setLaunchAtLogin)}>
           Open at login
         </Switch>

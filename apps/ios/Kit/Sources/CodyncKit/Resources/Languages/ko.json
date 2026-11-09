@@ -1809,5 +1809,10 @@
   "{n} tokens": "{n} 토큰",
   "{used} of {limit} tokens": "{limit} 중 {used} 토큰",
   "All bots today": "오늘 모든 봇",
-  "Tokens": "토큰"
+  "Tokens": "토큰",
+  "Copy diagnostics": "진단 정보 복사",
+  "Preparing…": "준비 중…",
+  "Copied. Paste it where you need it; secrets were removed.": "복사했습니다. 필요한 곳에 붙여넣으세요. 비밀 정보는 제거되었습니다.",
+  "The snapshot could not be made.": "스냅샷을 만들 수 없습니다.",
+  "Versions, health, settings and the end of the log, with secrets removed.": "버전, 상태, 설정, 로그 끝부분(비밀 정보 제거)."
 }

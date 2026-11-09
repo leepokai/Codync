@@ -1809,5 +1809,10 @@
   "{n} tokens": "{n} トークン",
   "{used} of {limit} tokens": "{limit} 中 {used} トークン",
   "All bots today": "今日の全ボット",
-  "Tokens": "トークン"
+  "Tokens": "トークン",
+  "Copy diagnostics": "診断情報をコピー",
+  "Preparing…": "準備中…",
+  "Copied. Paste it where you need it; secrets were removed.": "コピーしました。必要な場所に貼り付けてください。秘密情報は削除済みです。",
+  "The snapshot could not be made.": "スナップショットを作成できませんでした。",
+  "Versions, health, settings and the end of the log, with secrets removed.": "バージョン、状態、設定、ログの末尾（秘密情報を削除）。"
 }

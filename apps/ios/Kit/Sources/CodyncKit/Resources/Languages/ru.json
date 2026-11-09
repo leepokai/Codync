@@ -1809,5 +1809,10 @@
   "{n} tokens": "{n} токенов",
   "{used} of {limit} tokens": "{used} из {limit} токенов",
   "All bots today": "Все боты сегодня",
-  "Tokens": "Токены"
+  "Tokens": "Токены",
+  "Copy diagnostics": "Копировать диагностику",
+  "Preparing…": "Подготовка…",
+  "Copied. Paste it where you need it; secrets were removed.": "Скопировано. Вставьте куда нужно; секреты удалены.",
+  "The snapshot could not be made.": "Не удалось создать снимок.",
+  "Versions, health, settings and the end of the log, with secrets removed.": "Версии, состояние, настройки и конец журнала, без секретов."
 }

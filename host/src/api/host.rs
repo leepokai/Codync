@@ -16,6 +16,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     Ok(ControlFlow::Break(match method {
         "hostUpdateStatus" => crate::update::status()?,
         "hostHealth" => crate::health::value(hub),
+        "diagnostics" => crate::diagnostics::snapshot(hub)?,
         // The security decisions made on this computer.
         "auditLog" => crate::audit::list(hub),
         "enterpriseStatus" => crate::enterprise::status(&hub.store)?,

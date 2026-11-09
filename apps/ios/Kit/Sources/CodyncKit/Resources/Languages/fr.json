@@ -1809,5 +1809,10 @@
   "{n} tokens": "{n} jetons",
   "{used} of {limit} tokens": "{used} sur {limit} jetons",
   "All bots today": "Tous les bots aujourd’hui",
-  "Tokens": "Jetons"
+  "Tokens": "Jetons",
+  "Copy diagnostics": "Copier le diagnostic",
+  "Preparing…": "Préparation…",
+  "Copied. Paste it where you need it; secrets were removed.": "Copié. Collez-le où vous voulez ; les secrets ont été retirés.",
+  "The snapshot could not be made.": "L’instantané n’a pas pu être créé.",
+  "Versions, health, settings and the end of the log, with secrets removed.": "Versions, santé, réglages et fin du journal, secrets retirés."
 }

@@ -1800,5 +1800,14 @@
   "{name} downloads about {size} the first time it starts.": "При первом запуске {name} загружает около {size}.",
   "Download and start": "Загрузить и запустить",
   "Downloading {name}… {done} of {total}": "Загрузка {name}… {done} из {total}",
-  "Unpacking {name}…": "Распаковка {name}…"
+  "Unpacking {name}…": "Распаковка {name}…",
+  "n8n isn't set up on this computer yet. Choose its folder in the desktop app.": "n8n ещё не настроен на этом компьютере. Выберите его папку в приложении для компьютера.",
+  "Latest runs": "Последние запуски",
+  "No workflows yet.": "Рабочих процессов пока нет.",
+  "{count} more in n8n": "Ещё {count} в n8n",
+  "Start n8n to see its workflows and runs.": "Запустите n8n, чтобы увидеть его рабочие процессы и запуски.",
+  "Succeeded": "Успешно",
+  "Crashed": "Аварийно завершён",
+  "Unknown": "Неизвестно",
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "Рабочие процессы, которые n8n выполняет на компьютере. Включение публикует его там. Его редактор открывается в Codync на компьютере."
 }

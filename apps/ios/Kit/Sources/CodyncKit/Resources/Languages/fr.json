@@ -1800,5 +1800,14 @@
   "{name} downloads about {size} the first time it starts.": "{name} télécharge environ {size} au premier démarrage.",
   "Download and start": "Télécharger et démarrer",
   "Downloading {name}… {done} of {total}": "Téléchargement de {name}… {done} sur {total}",
-  "Unpacking {name}…": "Décompression de {name}…"
+  "Unpacking {name}…": "Décompression de {name}…",
+  "n8n isn't set up on this computer yet. Choose its folder in the desktop app.": "n8n n'est pas encore configuré sur cet ordinateur. Choisissez son dossier dans l'app de bureau.",
+  "Latest runs": "Dernières exécutions",
+  "No workflows yet.": "Aucun workflow pour le moment.",
+  "{count} more in n8n": "{count} de plus dans n8n",
+  "Start n8n to see its workflows and runs.": "Démarrez n8n pour voir ses workflows et ses exécutions.",
+  "Succeeded": "Réussie",
+  "Crashed": "Plantée",
+  "Unknown": "Inconnue",
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "Les workflows qu'n8n exécute sur l'ordinateur. Activer l'un le publie là-bas. Son éditeur s'ouvre dans Codync sur l'ordinateur."
 }

@@ -1800,5 +1800,14 @@
   "{name} downloads about {size} the first time it starts.": "{name} 首次啟動時會下載約 {size}。",
   "Download and start": "下載並啟動",
   "Downloading {name}… {done} of {total}": "正在下載 {name}… {done} / {total}",
-  "Unpacking {name}…": "正在解壓縮 {name}…"
+  "Unpacking {name}…": "正在解壓縮 {name}…",
+  "n8n isn't set up on this computer yet. Choose its folder in the desktop app.": "這台電腦上還沒有設定 n8n。請在桌面應用程式中選擇它的資料夾。",
+  "Latest runs": "最近執行",
+  "No workflows yet.": "還沒有工作流程。",
+  "{count} more in n8n": "n8n 中還有 {count} 個",
+  "Start n8n to see its workflows and runs.": "啟動 n8n 以檢視其工作流程和執行記錄。",
+  "Succeeded": "成功",
+  "Crashed": "已當機",
+  "Unknown": "未知",
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "n8n 在電腦上執行的工作流程。開啟開關會在電腦上發布它。其編輯器在電腦上的 Codync 中開啟。"
 }

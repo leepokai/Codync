@@ -1800,5 +1800,14 @@
   "{name} downloads about {size} the first time it starts.": "{name} は初回の起動時に約 {size} をダウンロードします。",
   "Download and start": "ダウンロードして開始",
   "Downloading {name}… {done} of {total}": "{name} をダウンロードしています… {done} / {total}",
-  "Unpacking {name}…": "{name} を展開しています…"
+  "Unpacking {name}…": "{name} を展開しています…",
+  "n8n isn't set up on this computer yet. Choose its folder in the desktop app.": "このコンピュータには n8n がまだ設定されていません。デスクトップアプリでそのフォルダを選んでください。",
+  "Latest runs": "最近の実行",
+  "No workflows yet.": "ワークフローはまだありません。",
+  "{count} more in n8n": "n8n にあと {count} 件",
+  "Start n8n to see its workflows and runs.": "n8n を起動すると、ワークフローと実行を表示できます。",
+  "Succeeded": "成功",
+  "Crashed": "クラッシュ",
+  "Unknown": "不明",
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "n8n がコンピュータで実行しているワークフロー。オンにするとそこで公開されます。エディタはコンピュータの Codync で開きます。"
 }

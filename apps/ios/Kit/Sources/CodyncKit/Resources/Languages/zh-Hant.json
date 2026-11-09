@@ -1796,5 +1796,9 @@
   "Making an image…": "正在產生影像…",
   "Cancelled": "已取消",
   "No NVIDIA graphics card was found, so ComfyUI runs on the processor. Images take minutes instead of seconds.": "找不到 NVIDIA 顯示卡，因此 ComfyUI 以處理器執行。產生一張影像需要幾分鐘而不是幾秒。",
-  "Make images on the computer. Its editor opens in Codync on the computer.": "在電腦上產生影像。其編輯器在電腦上的 Codync 中開啟。"
+  "Make images on the computer. Its editor opens in Codync on the computer.": "在電腦上產生影像。其編輯器在電腦上的 Codync 中開啟。",
+  "{name} downloads about {size} the first time it starts.": "{name} 首次啟動時會下載約 {size}。",
+  "Download and start": "下載並啟動",
+  "Downloading {name}… {done} of {total}": "正在下載 {name}… {done} / {total}",
+  "Unpacking {name}…": "正在解壓縮 {name}…"
 }

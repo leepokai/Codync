@@ -1796,5 +1796,9 @@
   "Making an image…": "Создание изображения…",
   "Cancelled": "Отменено",
   "No NVIDIA graphics card was found, so ComfyUI runs on the processor. Images take minutes instead of seconds.": "Видеокарта NVIDIA не найдена, поэтому ComfyUI работает на процессоре. Изображение создаётся минуты, а не секунды.",
-  "Make images on the computer. Its editor opens in Codync on the computer.": "Создавайте изображения на компьютере. Его редактор открывается в Codync на компьютере."
+  "Make images on the computer. Its editor opens in Codync on the computer.": "Создавайте изображения на компьютере. Его редактор открывается в Codync на компьютере.",
+  "{name} downloads about {size} the first time it starts.": "При первом запуске {name} загружает около {size}.",
+  "Download and start": "Загрузить и запустить",
+  "Downloading {name}… {done} of {total}": "Загрузка {name}… {done} из {total}",
+  "Unpacking {name}…": "Распаковка {name}…"
 }

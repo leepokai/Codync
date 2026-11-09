@@ -101,5 +101,9 @@
   "Making an image…": "جارٍ إنشاء صورة…",
   "Cancelled": "أُلغي",
   "No NVIDIA graphics card was found, so ComfyUI runs on the processor. Images take minutes instead of seconds.": "لم يُعثر على بطاقة رسومات NVIDIA، لذا يعمل ComfyUI على المعالج. تستغرق الصورة دقائق بدلًا من ثوانٍ.",
-  "Make images on the computer. Its editor opens in Codync on the computer.": "أنشئ الصور على الكمبيوتر. يُفتح محرره في Codync على الكمبيوتر."
+  "Make images on the computer. Its editor opens in Codync on the computer.": "أنشئ الصور على الكمبيوتر. يُفتح محرره في Codync على الكمبيوتر.",
+  "{name} downloads about {size} the first time it starts.": "يُنزّل {name} نحو {size} في أول تشغيل.",
+  "Download and start": "تنزيل وبدء",
+  "Downloading {name}… {done} of {total}": "جارٍ تنزيل {name}… {done} من {total}",
+  "Unpacking {name}…": "جارٍ فك ضغط {name}…"
 }

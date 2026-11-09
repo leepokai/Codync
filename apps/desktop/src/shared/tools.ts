@@ -1,3 +1,5 @@
+import { bytesText } from './health.ts'
+
 /** Bundled tools: programs the host runs for the user (see host/src/tools). Only ComfyUI so far; n8n has its own types. */
 
 export type ToolId = 'comfy'
@@ -27,8 +29,12 @@ export interface ToolJob {
 /** What the host shows on ComfyUI's card. */
 export interface ComfyCard {
   version: string
-  /** False when this build ships without the portable (Windows ARM64, a quick development package). */
+  /** False on a computer ComfyUI doesn't run on yet (it is built for Windows x64). */
   bundled: boolean
+  /** Whether its program is on this computer; the first start downloads it. */
+  installed: boolean
+  /** The download's size in bytes. */
+  downloadBytes: number
   dataDir: string
   modelsDir: string
   modelsUrl: string
@@ -49,4 +55,30 @@ export interface ToolState {
   logTail: string
   comfy?: ComfyCard
   job?: ToolJob | null
+  install?: ToolInstall
+}
+
+/** The program's first download (`host/src/tools/comfy_install.rs`). */
+export interface ToolInstall {
+  phase: 'idle' | 'downloading' | 'unpacking' | 'failed'
+  done: number
+  total: number
+  error: string | null
+}
+
+/** Whether the program is arriving right now. */
+export function installing(install: ToolInstall | undefined): boolean {
+  return install?.phase === 'downloading' || install?.phase === 'unpacking'
+}
+
+/** How the download goes, in the caller's language; null when nothing is arriving. */
+export function installLine(title: string, install: ToolInstall | undefined, tr: (text: string) => string): string | null {
+  if (install?.phase === 'downloading') {
+    return tr('Downloading {name}… {done} of {total}')
+      .replace('{name}', title)
+      .replace('{done}', bytesText(install.done))
+      .replace('{total}', bytesText(install.total))
+  }
+  if (install?.phase === 'unpacking') return tr('Unpacking {name}…').replace('{name}', title)
+  return null
 }

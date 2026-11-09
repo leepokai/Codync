@@ -1,10 +1,10 @@
 ComfyUI makes images on your computer. It runs as a window of Codync: the host starts and stops it for you, and your bots can use it when you turn it on for them.
 
-It is the official [ComfyUI](https://github.com/Comfy-Org/ComfyUI) portable, shipped inside the Windows app. You don't install Python or Git, and nothing leaves your computer: it listens only on `127.0.0.1`.
+It is the official [ComfyUI](https://github.com/Comfy-Org/ComfyUI) portable for Windows. It is too big for the installer, so Codync downloads it (about 2 GB) the first time you start it, checks that it is exactly the pinned release, and keeps it with your ComfyUI files. You don't install Python or Git, and nothing leaves your computer while it runs: it listens only on `127.0.0.1`.
 
 ## Open it
 
-In **Extensions → Apps → ComfyUI** (or the **ComfyUI** button in the sidebar), choose **Start** and then **Open**. The first start can take a few minutes; the window shows the last lines of the log while it waits and opens the editor by itself once ComfyUI answers. There is no sign-in.
+In **Extensions → Apps → ComfyUI** (or the **ComfyUI** button in the sidebar), choose **Start** and then **Open**. The very first time the button says **Download and start**: the window and the card show the download and the unpacking as they go, and a failed download says why, with **Try again**. The first start can take a few minutes; the window shows the last lines of the log while it waits and opens the editor by itself once ComfyUI answers. There is no sign-in.
 
 The card shows the state, the ComfyUI version that ships with your Codync, the space your ComfyUI data uses, and the job a bot is running. **Stop** stops it, **Log** opens its log, and **Models** opens the folder where models go.
 

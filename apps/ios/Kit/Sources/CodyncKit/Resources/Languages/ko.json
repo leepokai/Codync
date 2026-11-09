@@ -1796,5 +1796,9 @@
   "Making an image…": "이미지 만드는 중…",
   "Cancelled": "취소됨",
   "No NVIDIA graphics card was found, so ComfyUI runs on the processor. Images take minutes instead of seconds.": "NVIDIA 그래픽 카드를 찾지 못해 ComfyUI가 프로세서로 실행됩니다. 이미지 하나에 몇 초가 아니라 몇 분이 걸립니다.",
-  "Make images on the computer. Its editor opens in Codync on the computer.": "컴퓨터에서 이미지를 만듭니다. 편집기는 컴퓨터의 Codync에서 열립니다."
+  "Make images on the computer. Its editor opens in Codync on the computer.": "컴퓨터에서 이미지를 만듭니다. 편집기는 컴퓨터의 Codync에서 열립니다.",
+  "{name} downloads about {size} the first time it starts.": "{name}은(는) 처음 시작할 때 약 {size}을(를) 내려받습니다.",
+  "Download and start": "내려받고 시작",
+  "Downloading {name}… {done} of {total}": "{name} 내려받는 중… {done} / {total}",
+  "Unpacking {name}…": "{name} 압축 해제 중…"
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { TOOLS, type ToolId } from '@shared/tools'
+import { bytesText } from '@shared/health'
+import { TOOLS, installLine, installing, type ToolId } from '@shared/tools'
 import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { useTool } from '../../lib/use-tool'
@@ -31,23 +32,27 @@ export function ToolWindow({ id }: { id: ToolId }) {
       .finally(() => setBusy(false))
   }
 
-  // A Codync built without the tool (Windows ARM64, a quick development package) can only say so.
+  // A computer the tool doesn't run on (yet) can only say so.
   const missing = state?.comfy?.bundled === false
+  // Not downloaded yet: the window offers the download instead of starting one by surprise.
+  const installed = state?.comfy?.installed !== false
+  const arriving = installing(state?.install)
 
-  // Opening the window means "bring it up": start it if the host has it stopped.
+  // Opening the window means "bring it up": start it if the host has it stopped and its program is here.
   useEffect(() => {
-    if (state?.state === 'stopped' && !missing && !startedOnce.current) {
+    if (state?.state === 'stopped' && !missing && installed && !startedOnce.current) {
       startedOnce.current = true
       start()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.state, missing])
+  }, [state?.state, missing, installed])
 
   useEffect(() => {
     if (state?.state === 'running') void window.codync.tools.gotoEditor(id).catch(() => {})
   }, [state?.state, id])
 
-  const error = state?.state === 'error' ? (state.error ?? tr('Unknown error')) : actionError
+  const installError = state?.install?.phase === 'failed' ? state.install.error : null
+  const error = state?.state === 'error' ? (state.error ?? tr('Unknown error')) : (installError ?? actionError)
   const tail = (state?.logTail ?? '').split('\n').filter(Boolean).slice(-TAIL_LINES).join('\n')
 
   return (
@@ -74,6 +79,22 @@ export function ToolWindow({ id }: { id: ToolId }) {
           <>
             <Spinner size={20} />
             <p className="tool-detail">{tr('Checking {name}…').replace('{name}', spec.title)}</p>
+          </>
+        ) : arriving ? (
+          <>
+            <Spinner size={20} />
+            <p className="tool-detail">{installLine(spec.title, state.install, tr)}</p>
+          </>
+        ) : !installed && state.state === 'stopped' ? (
+          <>
+            <p className="tool-detail">
+              {tr('{name} downloads about {size} the first time it starts.')
+                .replace('{name}', spec.title)
+                .replace('{size}', bytesText(state.comfy?.downloadBytes ?? 0))}
+            </p>
+            <div className="tool-actions">
+              <Button onClick={start} disabled={busy}>{tr('Download and start')}</Button>
+            </div>
           </>
         ) : state.state === 'running' ? (
           <>

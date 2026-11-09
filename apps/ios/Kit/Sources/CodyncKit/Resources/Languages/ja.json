@@ -1796,5 +1796,9 @@
   "Making an image…": "画像を作成しています…",
   "Cancelled": "キャンセルしました",
   "No NVIDIA graphics card was found, so ComfyUI runs on the processor. Images take minutes instead of seconds.": "NVIDIA のグラフィックカードが見つからないため、ComfyUI はプロセッサで動作します。画像の生成には数秒ではなく数分かかります。",
-  "Make images on the computer. Its editor opens in Codync on the computer.": "コンピュータで画像を作ります。エディタはコンピュータの Codync で開きます。"
+  "Make images on the computer. Its editor opens in Codync on the computer.": "コンピュータで画像を作ります。エディタはコンピュータの Codync で開きます。",
+  "{name} downloads about {size} the first time it starts.": "{name} は初回の起動時に約 {size} をダウンロードします。",
+  "Download and start": "ダウンロードして開始",
+  "Downloading {name}… {done} of {total}": "{name} をダウンロードしています… {done} / {total}",
+  "Unpacking {name}…": "{name} を展開しています…"
 }

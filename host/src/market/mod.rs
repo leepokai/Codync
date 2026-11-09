@@ -298,7 +298,7 @@ fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value>
     update_connectors(store, |all| {
         if c.registry_name.is_none() {
             // Recheck under the write lock: another install may have finished during OAuth discovery.
-            custom::ensure_name_available(&c.name, all)?;
+            ensure_name_available(&c.name, all)?;
         }
         // A registry server is installed once: installing it again replaces it under the id the bots know.
         if let Some(name) = c.registry_name.as_deref()
@@ -313,6 +313,17 @@ fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value>
         all.push(c);
         Ok(public)
     })
+}
+
+/// A custom connector can't take an installed connector's name. Names are compared as
+/// given, not as slugs: distinct names may share an id prefix.
+fn ensure_name_available(name: &str, all: &[Connector]) -> Result<()> {
+    if all.iter().any(|c| c.name == name) {
+        bail!(
+            "A connector named \"{name}\" is already installed. Sign in to it or remove it in your library, or choose another name."
+        );
+    }
+    Ok(())
 }
 
 fn unique_id(base: &str, taken: &[String]) -> String {

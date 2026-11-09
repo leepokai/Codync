@@ -80,9 +80,3 @@ the host now rebuilds an installed registry connector when new values come in):
   is therefore not evidence that a connector can run.
 
 These checks add verification tooling only; they do not change shipped behavior.
-
-## Duplicate custom connector names
-
-`installConnector` with a custom command or URL rejects a name that already belongs to an installed connector. Names are compared exactly after trimming the submitted name; distinct names that produce the same ID slug remain valid. Rejection leaves the connector definition, encrypted credential record and bot assignments unchanged. The check runs before preparing a custom connector and again under the connector write lock.
-
-Registry reinstalls retain their existing update/retry behavior. `importConnectors` still adds every config entry with a distinct ID. This does not add replacement semantics or registry/remote editing to `updateConnector`.

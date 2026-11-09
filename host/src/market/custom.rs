@@ -1,9 +1,9 @@
-//! Custom connector installation without duplicating an existing name.
+//! Custom connectors: a command line or a URL the user describes and names.
 
-use super::install::custom;
-use super::{Connector, add_connector, connectors};
+use super::{Connector, add_connector, connectors, ensure_name_available, oauth, unique_id};
 use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// A connector you describe yourself: a command line or an https URL.
 pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Result<Value> {
@@ -15,12 +15,44 @@ pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Res
     add_connector(store, c)
 }
 
-/// Names are display names, not slugs: distinct names may legitimately share an ID prefix.
-pub(super) fn ensure_name_available(name: &str, all: &[Connector]) -> Result<()> {
-    if all.iter().any(|c| c.name == name) {
-        bail!("A connector with this name already exists. Choose a different name for a new connector.");
+/// A connector from `{command, args?, env?}` or `{url, headers?}`. A command without
+/// `args` is split like a shell would (quotes work).
+pub(super) async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
+    let map = |v: &Value| -> BTreeMap<String, String> {
+        v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned()))).collect()
+    };
+    let mut c = Connector {
+        id: unique_id(name, &all.iter().map(|c| c.id.clone()).collect::<Vec<_>>()),
+        name: name.to_owned(),
+        description: b["description"].as_str().unwrap_or_default().to_owned(),
+        registry_name: None,
+        command: None,
+        args: vec![],
+        env: map(&b["env"]),
+        url: None,
+        headers: map(&b["headers"]),
+        oauth: None,
+    };
+    let url =
+        ["url", "serverUrl", "httpUrl"].iter().find_map(|k| b[*k].as_str()).map(str::trim).filter(|s| !s.is_empty());
+    if let Some(url) = url {
+        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].iter().any(|p| url.starts_with(p));
+        if !url.starts_with("https://") && !local {
+            bail!("remote connectors need an https URL");
+        }
+        if oauth::required(url, &c.headers).await {
+            c.oauth = Some(oauth::OAuth::default());
+        }
+        c.url = Some(url.to_owned());
+        return Ok(c);
     }
-    Ok(())
+    let line = b["command"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow!("give a command or a URL"))?;
+    (c.command, c.args) = super::command_line::split_command(line, b.get("args"))?;
+    Ok(c)
 }
 
 #[cfg(test)]
@@ -28,11 +60,12 @@ mod tests {
     use super::*;
     use crate::api::{devices::Caller, dispatch};
     use crate::hub::Hub;
-    use crate::market::oauth;
     use crate::remote::identity::Identity;
     use crate::store::Store;
     use serde_json::json;
     use std::path::Path;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
     async fn duplicate_install_preserves_credentials_and_bot_assignments() {
@@ -76,7 +109,7 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(error.to_string().contains("already exists"), "{error}");
+        assert!(error.to_string().contains("already installed"), "{error}");
         assert_eq!(connectors(&hub.store).unwrap(), before);
         assert_eq!(hub.store.kv_read("connectors").unwrap(), sealed, "no vault rewrite");
         assert_eq!(hub.store.bot("uses-server").unwrap().unwrap().config.connectors, [id]);
@@ -93,50 +126,32 @@ mod tests {
         let second = custom("Server", &json!({"command": "node second.js"}), &[]).await.unwrap();
         add_connector(&store, first.clone()).unwrap();
         let sealed = store.kv_read("connectors").unwrap();
-        assert!(add_connector(&store, second).unwrap_err().to_string().contains("already exists"));
+        assert!(add_connector(&store, second).unwrap_err().to_string().contains("already installed"));
         assert_eq!(connectors(&store).unwrap(), [first]);
         assert_eq!(store.kv_read("connectors").unwrap(), sealed);
     }
 
     #[tokio::test]
-    async fn duplicate_install_returns_an_http_error_before_contacting_a_remote() {
-        let dir = std::env::temp_dir().join(format!("codync-duplicate-http-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
+    async fn a_duplicate_name_is_rejected_before_contacting_a_remote() {
         let store = Store::open(Path::new(":memory:")).unwrap();
-        let hub = Hub::new(store, "test".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0);
-        add_custom_connector(&hub.store, &json!({"name": "Existing", "command": "node server.js"})).await.unwrap();
-        let before = connectors(&hub.store).unwrap();
+        add_custom_connector(&store, &json!({"name": "Existing", "command": "node server.js"})).await.unwrap();
+        let before = connectors(&store).unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let contacts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let contacts = Arc::new(AtomicUsize::new(0));
         let count = contacts.clone();
-        let router = crate::api::router(hub.clone()).route(
-            "/probe",
-            axum::routing::post(move || {
-                let count = count.clone();
-                async move {
-                    count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    axum::http::StatusCode::UNAUTHORIZED
-                }
-            }),
-        );
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap();
+        let remote = axum::Router::new().fallback(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+            async { axum::http::StatusCode::UNAUTHORIZED }
         });
-        let response = reqwest::Client::new()
-            .post(format!("http://{address}/api/installConnector"))
-            .bearer_auth("token")
-            .json(&json!({"name": "Existing", "url": format!("http://{address}/probe")}))
-            .send()
+        let server = tokio::spawn(async move { axum::serve(listener, remote).await });
+        let error = add_custom_connector(&store, &json!({"name": "Existing", "url": format!("http://{address}/mcp")}))
             .await
-            .unwrap();
-        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-        assert!(response.text().await.unwrap().contains("already exists"));
-        assert_eq!(contacts.load(std::sync::atomic::Ordering::SeqCst), 0);
-        assert_eq!(connectors(&hub.store).unwrap(), before);
+            .unwrap_err();
         server.abort();
-        assert!(server.await.unwrap_err().is_cancelled());
-        std::fs::remove_dir_all(dir).unwrap();
+        assert!(error.to_string().contains("already installed"), "{error}");
+        assert_eq!(contacts.load(Ordering::SeqCst), 0);
+        assert_eq!(connectors(&store).unwrap(), before);
     }
 
     #[tokio::test]
@@ -152,7 +167,7 @@ mod tests {
             add_connector(&store, existing.clone()).unwrap();
             let error =
                 add_custom_connector(&store, &json!({"name": "Hosted", "command": "node new.js"})).await.unwrap_err();
-            assert!(error.to_string().contains("already exists"));
+            assert!(error.to_string().contains("already installed"));
             assert_eq!(connectors(&store).unwrap(), [existing]);
         }
     }

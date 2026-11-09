@@ -188,7 +188,8 @@ describe("sleep and wake", () => {
     const fetch = boat("archiving");
     const state = async () => (await call("GET", "/v1/host/sleep", { key: host.sign })).body.state;
     const before = await state();
-    // Recorded `stopping` before its relay is asked to take the host offline, and put back when the relay refuses.
+    // Recorded `stopping` before its relay is asked to take the host offline, and put back when the relay refuses or
+    // can't be reached.
     const asked: unknown[] = [];
     const RELAY = {
       idFromName: (name: string) => env.RELAY.idFromName(name),
@@ -202,6 +203,12 @@ describe("sleep and wake", () => {
     const busy = await callWith({ RELAY }, "POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
     expect(busy.body.error.code).toBe("conflict");
     expect(asked).toEqual(["stopping"]);
+    expect(await state()).toBe(before);
+    const unreachable = {
+      idFromName: RELAY.idFromName,
+      get: () => ({ fetch: () => Promise.reject(new Error("relay unreachable")) }),
+    } as unknown as typeof env.RELAY;
+    expect((await callWith({ RELAY: unreachable }, "POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(500);
     expect(await state()).toBe(before);
     // A relay from an earlier test may still be finishing a wake: only this computer's stop counts.
     const stop = "POST https://boat.dev/api/v1/sandboxes/bx_test/stop";

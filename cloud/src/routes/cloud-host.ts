@@ -30,12 +30,14 @@ export async function hostSleep(c: Ctx) {
       body: JSON.stringify(payload),
     });
   // Recorded before the relay takes the host offline: a wake reading it from then on waits for the stop (`refresh`),
-  // one that read it before retries (`wakeHost`). Put back when the relay keeps the host.
+  // one that read it before retries (`wakeHost`). Put back when the relay keeps the host, or can't be reached.
   await setState(c.env, row.id, "stopping", c.now);
-  const res = await relay("sleep", { wakeAt });
-  if (!res.ok) {
+  try {
+    const res = await relay("sleep", { wakeAt });
+    if (!res.ok) throw res.status === 409 ? new ApiError("conflict", "A device is connected.") : new ApiError("internal");
+  } catch (e) {
     await undoStopping(c.env, row);
-    throw res.status === 409 ? new ApiError("conflict", "A device is connected.") : new ApiError("internal");
+    throw e;
   }
   const d = drivers[row.provider];
   const stopped = d.machine(await providerSend(c.env, row.user_id, row.provider, d.sleep(row.provider_id, crypto.randomUUID()), c.now));

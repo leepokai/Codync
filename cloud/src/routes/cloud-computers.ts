@@ -47,12 +47,10 @@ const view = (r: CloudMachineRow) => ({
   createdAt: r.created_at,
 });
 
-/** Every signed-in account may have one, on a Worker that can seal their keys (`CLOUD_SECRET_KEYS`). */
-const available = (c: Ctx) => canSeal(c.env);
-
-export async function allowedUser(c: Ctx) {
+/** The signed-in user, on a Worker that can seal their keys (`CLOUD_SECRET_KEYS`): every account may then have one. */
+export async function cloudUser(c: Ctx) {
   const u = await user(c);
-  if (!available(c)) throw new ApiError("forbidden", "Codync Cloud isn't available for this account yet.");
+  if (!canSeal(c.env)) throw new ApiError("forbidden", "Codync Cloud isn't available here.");
   return u;
 }
 
@@ -87,7 +85,7 @@ function nameOf(c: Ctx): string | null {
  * `name` (default "Cloud computer") is what every app shows for it.
  */
 export async function createCloudComputer(c: Ctx) {
-  const u = await allowedUser(c);
+  const u = await cloudUser(c);
   const name = nameOf(c) ?? "Cloud computer";
   // ponytail: two creates at the same instant can both pass the count; the limit is a guard rail, not billing.
   if ((await machinesOf(c.env, u.userId)).length >= CLOUD_COMPUTER_LIMIT) {
@@ -150,7 +148,7 @@ export async function getCloudComputers(c: Ctx) {
   const rows = await machinesOf(c.env, u.userId);
   // Each at once, on its own: a provider out of reach leaves its machines as last seen, and the others still show.
   await Promise.all(rows.map((row) => settle(c.env, row, c.now)));
-  const open = rows.length > 0 || available(c);
+  const open = rows.length > 0 || canSeal(c.env);
   return {
     cloudComputers: rows.map(view),
     available: open,

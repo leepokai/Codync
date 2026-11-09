@@ -4,7 +4,7 @@
 import { expect, vi } from "vitest";
 import { saveCredential } from "../src/cloud-credentials";
 import worker, { type Env } from "../src/index";
-import { ORIGIN, call, clerkToken, env, hostSocket, newHost, type Json, type TestHost } from "./helpers";
+import { AUTHORITY, ORIGIN, call, clerkToken, env, hostSocket, newHost, type Json, type TestHost } from "./helpers";
 import * as ref from "./ref";
 
 export const uid = () => `user_cc_${ref.b64url(ref.random(6))}`;
@@ -12,17 +12,22 @@ export const uid = () => `user_cc_${ref.b64url(ref.random(6))}`;
 /** The Boat key every test user brings. */
 export const KEY = "boat_live_test9abc";
 
-/** Calls `/v1/cloud-computers` (or `path`) as `userId`, on the Worker's env with `over` on top; `body` goes as JSON. */
-export async function cc(method: string, userId: string, path = "/v1/cloud-computers", body?: unknown, over: Partial<Env> = {}) {
-  const headers: Record<string, string> = { Authorization: `Bearer ${await clerkToken(userId)}` };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await worker.fetch(
-    new Request(`${ORIGIN}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }),
-    { ...env, ...over },
-    {} as ExecutionContext,
-  );
+/** A signed or Clerk call through the Worker with some env overridden. */
+export async function callWith(over: Partial<Env>, method: string, path: string, o: { token?: string; key?: ref.SignKey; body?: unknown; app?: string } = {}) {
+  const bytes = o.body === undefined ? new Uint8Array() : ref.enc.encode(JSON.stringify(o.body));
+  const headers: Record<string, string> = {};
+  if (o.token) headers.Authorization = `Bearer ${o.token}`;
+  if (o.app) headers["Codync-App"] = o.app;
+  if (o.key) headers["Codync-Sig"] = ref.signRequest(o.key, { method, authority: AUTHORITY, pathAndQuery: path, body: bytes });
+  const res = await worker.fetch(new Request(ORIGIN + path, { method, headers, body: bytes.length ? bytes : undefined }), { ...env, ...over }, {
+    waitUntil: () => {},
+  } as unknown as ExecutionContext);
   return { status: res.status, body: (await res.json()) as Json };
 }
+
+/** Calls `/v1/cloud-computers` (or `path`) as `userId`; `body` goes as JSON. */
+export const cc = async (method: string, userId: string, path = "/v1/cloud-computers", body?: unknown) =>
+  callWith({}, method, path, { token: await clerkToken(userId), body });
 
 /** Gives `userId` a Boat key, as saving one does once Boat took it (the account row comes with the first call). */
 export async function withKey(userId: string) {

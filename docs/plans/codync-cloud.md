@@ -69,8 +69,8 @@ workspace admin's.
 
 ### Saving it (`PUT /v1/cloud-credentials/:provider {key}`)
 
-1. Only for accounts allowed Codync Cloud; at most 5 saves a minute per account (`CLOUD_KEY_LIMITER`), so the
-   endpoint can't be used to test other people's keys.
+1. Only on a cloud that can seal keys (`CLOUD_SECRET_KEYS`, every signed-in account there); at most 5 saves a minute
+   per account (`CLOUD_KEY_LIMITER`), so the endpoint can't be used to test other people's keys.
 2. Shape (the driver's `keyPattern`): Boat `boat_…` (or `box_…`), letters, digits, `_`, `-`; InstaBox `ibk_` and 52
    of a–z, 2–7.
 3. A read must succeed (`checkKey`): Boat `GET /sandboxes?limit=1` (the key works and reads sandboxes), InstaBox
@@ -228,8 +228,8 @@ What changes against the generic design below:
 
 ### Build order on Boat
 
-1. **Provision for a signed-in user** (no app UI yet): Worker `POST/GET/DELETE /v1/cloud-computers` (Clerk, an
-   allowlist of user IDs), D1 `cloud_machines`, the Boat calls in `cloud/machines/`
+1. **Provision for a signed-in user** (no app UI yet): Worker `POST/GET/DELETE /v1/cloud-computers` (Clerk),
+   D1 `cloud_machines`, the Boat calls in `cloud/machines/`
    (sans-I/O), and in the host a first-boot claim from `~/.codync/managed.json` (written by Boat's `files` before
    the sandbox is ready, deleted once used) plus `Approval::Auto`. The computer then appears in the account's
    Computers list on every app, as *Codync Cloud* with a cloud icon (`device: "cloud"`; the machine's own hostname
@@ -242,7 +242,7 @@ What changes against the generic design below:
    backup and the update before sleep (`POST /v1/host/sleep` answers `{update}`); backups, a cold wake and a
    restore from a backup passed on Boat's paid plan on 2026-10-31 ([trial log
    §15](codync-cloud-boat-trial.md#15-updates-backups-and-a-cold-wake-on-the-paid-plan-2026-10-31)). Still open:
-   a start-limit budget beyond retrying (decided once the internal beta shows real use, owner 2026-10-31).
+   a start-limit budget beyond retrying (decided once real use shows the need, owner 2026-10-31).
 3. **App UI** on iOS, Android and desktop (provisioning entry, "preparing your cloud computer" for the ~10 s until
    it is claimed, Cloud badge with provider and region, an automatic access request for the account's cloud
    computer instead of the "Ask for access" tap, a sleeping computer shown as ready ("wakes when you message")
@@ -706,11 +706,11 @@ changes nothing; with it set, every signed-in account has Codync Cloud (no allow
    `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
    with migrations `0007`–`0009` on the dev D1 and dev's own `CLOUD_SECRET_KEYS`, then `npm run e2e:cloud` and the iPhone and
    Android apps against dev.
-2. **Beta on `main`**: `deploy:main` right after the release merge (migrations up to `0009`, production's own
-   `CLOUD_SECRET_KEYS`), which opens Codync Cloud to every signed-in account, each bringing its own provider key.
-3. **Public launch**: terms, acceptable use and privacy policy, encryption at rest,
-   memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
-   screen's "Start a cloud computer", the user manual page.
+2. **Launch on `main`**: production's own `CLOUD_SECRET_KEYS` opens Codync Cloud to every signed-in account at once
+   (without an allowlist there is no smaller beta), so first: terms, acceptable use and privacy policy, encryption at
+   rest, memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
+   screen's "Start a cloud computer", the user manual page. Then `deploy:main` right after the release merge
+   (migrations up to `0009`) and that key; each account brings its own provider key.
 
 The cloud picks a cloud computer's version on its own (the soft and hard updates), and its owner can also update
 it to the latest release from any device, like any computer (owner, 2026-10-31): *Update* on its Codync row

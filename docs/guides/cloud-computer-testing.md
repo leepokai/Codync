@@ -111,7 +111,8 @@ Cloud hidden:
 
 Set `CODYNC_STACK_PORT` to keep the URL stable across runs. Ctrl-C deletes the machines.
 
-What to walk with the apps: Codync Cloud hidden for an account that isn't allowed; a key that isn't one, an admin key
+What to walk with the apps: Codync Cloud hidden on a cloud without `CLOUD_SECRET_KEYS` (`cloud:stack` with no provider
+key, or a worktree sandbox's own cloud); a key that isn't one, an admin key
 and a revoked key refused with what to fix; the test key (`BOAT_API_KEY_FILE`, or `INSTABOX_API_KEY_FILE` under
 InstaBox) pasted and shown as its hint; "+" → New cloud computer lists every provider with its logo (one without a
 working key opens that provider's key sheet, and is picked once its key is saved; a computer's `⋯` opens its

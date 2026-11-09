@@ -2,7 +2,7 @@
 
 import { runDurableObjectAlarm } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boat, bothProviders, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
+import { boat, bothProviders, callWith, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
 import { call, clerkToken, devicePath, newHost, sleep, socket } from "./helpers";
 import * as ref from "./ref";
 
@@ -11,9 +11,9 @@ afterEach(() => vi.restoreAllMocks());
 describe("cloud computers", () => {
   it("is open to every account, on a cloud that can seal their keys", async () => {
     const fetch = boat();
-    const noKeys = { CLOUD_SECRET_KEYS: undefined };
-    expect((await cc("GET", uid(), undefined, undefined, noKeys)).body).toEqual({ cloudComputers: [], available: false, limit: 3, providers: [] });
-    expect((await cc("POST", uid(), undefined, undefined, noKeys)).status).toBe(403);
+    const noKeys = async (method: string) => callWith({ CLOUD_SECRET_KEYS: undefined }, method, "/v1/cloud-computers", { token: await clerkToken(uid()) });
+    expect((await noKeys("GET")).body).toEqual({ cloudComputers: [], available: false, limit: 3, providers: [] });
+    expect((await noKeys("POST")).status).toBe(403);
     expect(fetch).not.toHaveBeenCalled();
     const open = (await cc("GET", uid())).body;
     expect(open).toMatchObject({

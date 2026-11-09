@@ -4,8 +4,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { wake } from "../src/cloud-machines";
 import { open, seal } from "../src/secrets";
-import { boat, bothProviders, calls, cc, cloudComputer, forbidden, KEY, onBothProviders, uid, withKey } from "./cloud-helpers";
-import { deliverClerk, env } from "./helpers";
+import { boat, bothProviders, callWith, calls, cc, cloudComputer, forbidden, KEY, onBothProviders, uid, withKey } from "./cloud-helpers";
+import { clerkToken, deliverClerk, env } from "./helpers";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -88,7 +88,7 @@ describe("saving a Boat key", () => {
 
   it("is refused by a cloud that can't seal keys, and for a provider it doesn't know", async () => {
     const fetch = boat("ready");
-    expect((await cc("PUT", uid(), PATH, { key: KEY }, { CLOUD_SECRET_KEYS: undefined })).status).toBe(403);
+    expect((await callWith({ CLOUD_SECRET_KEYS: undefined }, "PUT", PATH, { token: await clerkToken(uid()), body: { key: KEY } })).status).toBe(403);
     expect((await cc("PUT", uid(), "/v1/cloud-credentials/fly", { key: KEY })).status).toBe(404);
     expect(fetch).not.toHaveBeenCalled();
   });

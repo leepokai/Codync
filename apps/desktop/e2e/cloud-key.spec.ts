@@ -2,9 +2,11 @@ import { test, expect, type Page } from '@playwright/test'
 import { attach, openGeneralSettings } from './sandbox.ts'
 
 // Computers → Codync Cloud → "+": each provider's key, reached only through that provider (docs/plans/codync-cloud.md,
-// "Bring your own cloud"). Needs the sandbox on a cloud that offers this account Codync Cloud: `npm run cloud:stack` in
-// cloud/, then `CODYNC_CLOUD_URL=<its url> npm run dev -- --cdp --cloud` (docs/guides/cloud-computer-testing.md);
-// dev-api doesn't. CODYNC_E2E_BOAT_KEY, a key that cloud's Boat takes (the one in BOAT_API_KEY_FILE), adds saving,
+// "Bring your own cloud"). Needs the sandbox on a cloud that offers Codync Cloud: dev-api offers it to every account
+// (this then removes the account's keys and sends test keys to the real providers), or, to stay off the shared dev or
+// when the branch changes cloud/, `npm run cloud:stack` in cloud/ with a provider key, then
+// `CODYNC_CLOUD_URL=<its url> npm run dev -- --cdp --cloud` (docs/guides/cloud-computer-testing.md).
+// CODYNC_E2E_BOAT_KEY, a key that cloud's Boat takes (the one in BOAT_API_KEY_FILE), adds saving,
 // replacing and removing it; CODYNC_E2E_INSTABOX_KEY (the one in INSTABOX_API_KEY_FILE) does the same for InstaBox.
 // Run with `--trace off`: a trace would keep the pasted keys.
 
@@ -45,7 +47,7 @@ async function noComputers(page: Page, provider: string) {
   const offer = await cloud(page, 'GET', 'v1/cloud-computers')
   const value = offer.value as Offer | undefined
   const listed = value?.providers?.some((p) => p.provider === provider)
-  test.skip(!offer.ok || !value?.available || !listed || value.cloudComputers?.length !== 0, 'Needs a local cloud offering Codync Cloud and no cloud computer: see the top of this file.')
+  test.skip(!offer.ok || !value?.available || !listed || value.cloudComputers?.length !== 0, 'Needs a cloud offering Codync Cloud and no cloud computer: see the top of this file.')
   await forgetKeys(page, value!)
 }
 

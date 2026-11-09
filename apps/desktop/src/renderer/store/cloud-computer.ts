@@ -25,7 +25,7 @@ export class CloudComputerModel extends Observable {
   providers: CloudProvider[] = []
   /** The first answer came back for this account. */
   loaded = false
-  /** This account may create them (an allowlist of user ids). */
+  /** This account may create them (the cloud can seal keys: CLOUD_SECRET_KEYS). */
   available = false
   busy: CloudComputerAction | null = null
   error: string | null = null

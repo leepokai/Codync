@@ -4,25 +4,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { syncReleases } from "../src/host-releases";
 import { saveBackups, wake } from "../src/cloud-machines";
-import worker, { type Env } from "../src/index";
-import { boat, calls, cc, cloudComputer, spyFetch } from "./cloud-helpers";
-import { AUTHORITY, ORIGIN, call, clerkToken, devicePath, env, socket, type Json } from "./helpers";
+import { boat, callWith, calls, cc, cloudComputer, spyFetch } from "./cloud-helpers";
+import { call, clerkToken, devicePath, env, socket } from "./helpers";
 import * as ref from "./ref";
 
 afterEach(() => vi.restoreAllMocks());
-
-/** A signed or Clerk call through the Worker with some env overridden. */
-async function callWith(over: Partial<Env>, method: string, path: string, o: { token?: string; key?: ref.SignKey; body?: unknown; app?: string } = {}) {
-  const bytes = o.body === undefined ? new Uint8Array() : ref.enc.encode(JSON.stringify(o.body));
-  const headers: Record<string, string> = {};
-  if (o.token) headers.Authorization = `Bearer ${o.token}`;
-  if (o.app) headers["Codync-App"] = o.app;
-  if (o.key) headers["Codync-Sig"] = ref.signRequest(o.key, { method, authority: AUTHORITY, pathAndQuery: path, body: bytes });
-  const res = await worker.fetch(new Request(ORIGIN + path, { method, headers, body: bytes.length ? bytes : undefined }), { ...env, ...over }, {
-    waitUntil: () => {},
-  } as unknown as ExecutionContext);
-  return { status: res.status, body: (await res.json()) as Json };
-}
 
 /** A cloud computer whose owner has a registered phone that reported `app`. */
 async function withPhone(app: string) {

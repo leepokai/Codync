@@ -57,6 +57,9 @@ const LOCAL_ONLY: &[&str] = &[
     "memoryCall",
     "routineCall",
     "composioCall",
+    // Where n8n runs code from, and the port it listens on, are this computer's own settings.
+    "setN8nPath",
+    "setN8nPort",
     // The bots' ComfyUI tools: they act as a bot and read files on this computer.
     "comfyCall",
     "connectorTarget",

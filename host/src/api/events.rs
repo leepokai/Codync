@@ -90,7 +90,7 @@ pub fn events_stream(
         "screen": hub.screen.state(),
         // Live state like the two above: a `network` event sent before this stream began is in it.
         "network": crate::network::status(hub),
-        "n8n": hub.n8n.state(),
+        "n8n": crate::n8n_remote::view(caller, hub.n8n.state()),
         // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
         "catchUp": catch_up.len(),
     });
@@ -110,6 +110,11 @@ pub fn events_stream(
         async move {
             match msg {
                 Ok(v) if !local && v["type"].as_str().is_some_and(|t| LOCAL_EVENTS.contains(&t)) => None,
+                // The editor's session cookie rides in n8n's state: this computer's own app only.
+                Ok(mut v) if !local && v["type"] == "n8n" => {
+                    v["n8n"] = crate::n8n_remote::without_session(v["n8n"].take());
+                    Some(v)
+                }
                 // What a call's voice should say goes to the device holding that call only.
                 Ok(v) if v["type"] == "call" && v["owner"] != key.as_str() => None,
                 Ok(v) => Some(v),

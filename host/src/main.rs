@@ -35,6 +35,7 @@ mod local_api;
 mod market;
 mod mcp;
 mod n8n;
+mod n8n_remote;
 mod network;
 mod network_cli;
 mod proactive;

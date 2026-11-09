@@ -713,6 +713,8 @@ mod tests {
             "computerCall",
             "computerTools",
             "comfyCall",
+            "setN8nPath",
+            "setN8nPort",
         ] {
             assert_eq!(p.call(2, m, json!({})).await["err"]["status"], 403, "{m}");
         }

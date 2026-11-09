@@ -321,14 +321,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
             hub.screen.state()
         }
-        "n8nStatus" => hub.n8n.state(),
+        "n8nStatus" => crate::n8n_remote::view(caller, hub.n8n.state()),
         "n8nStart" => {
             hub.n8n.enable(hub)?;
-            hub.n8n.state()
+            crate::n8n_remote::view(caller, hub.n8n.state())
         }
         "n8nStop" => {
             hub.n8n.stop(&hub.store).await;
-            hub.n8n.state()
+            crate::n8n_remote::view(caller, hub.n8n.state())
         }
         "setN8nEnabled" => {
             if b["enabled"].as_bool().context("`enabled` must be a boolean")? {
@@ -336,8 +336,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 hub.n8n.disable(&hub.store).await?;
             }
-            hub.n8n.state()
+            crate::n8n_remote::view(caller, hub.n8n.state())
         }
+        // A phone's view of the workflows n8n runs here: list them, publish or unpublish one, read its runs.
+        "n8nWorkflows" => crate::n8n_remote::workflows(hub).await?,
+        "n8nSetWorkflowActive" => {
+            let active = b["active"].as_bool().context("`active` must be a boolean")?;
+            crate::n8n_remote::set_workflow_active(hub, str_arg(&b, "id")?, active).await?
+        }
+        "n8nExecutions" => crate::n8n_remote::executions(hub, b["workflowId"].as_str(), b["limit"].as_u64()).await?,
         "setN8nPath" => {
             hub.n8n.set_path(&hub.store, str_arg(&b, "path")?).await?;
             hub.n8n.state()

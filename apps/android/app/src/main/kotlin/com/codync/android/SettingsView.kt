@@ -99,6 +99,7 @@ import com.codync.android.design.*
         EnterpriseSection(state, store)
         BrowserSection(state, store)
         ComfySection(state, store)
+        N8nSection(state, store)
         AuditLogSection(state, store)
         CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
             row {

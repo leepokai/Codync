@@ -1,7 +1,8 @@
 //! ComfyUI as a bundled tool: where its files are, where its data lives, how it starts.
 //!
-//! The program is the official Windows portable (`python_embeded/` + `ComfyUI/`), unpacked by the
-//! packaging step into the app's resources and started as it is (`python main.py`), never edited.
+//! The program is the official Windows portable (`python_embeded/` + `ComfyUI/`), started as it is
+//! (`python main.py`), never edited. It is too big for the Windows installer (NSIS can't hold 2.5 GB), so
+//! the host downloads the pinned release the first time ComfyUI starts (`comfy_install`).
 //! Everything that changes (settings, models, custom nodes, inputs, outputs) lives under
 //! `<data>/comfy`, so replacing the program on an update keeps it all.
 //! Source: Comfy-Org/ComfyUI at the commit pinned in `packaging/comfy/version.json`; the flags used
@@ -24,11 +25,23 @@ const MIN_FREE: u64 = 10 * 1024 * 1024 * 1024;
 /// Where a missing checkpoint can be downloaded (the official model list).
 pub const MODELS_URL: &str = "https://github.com/Comfy-Org/ComfyUI?tab=readme-ov-file#manual-install-windows-linux";
 
-/// The one place the bundled version is named; the packaging script reads the same file.
+/// The one place the ComfyUI version is named: what the host downloads and checks, and what the
+/// development script (`packaging/comfy/fetch.mjs`) unpacks.
 #[derive(Deserialize)]
 pub struct Pin {
+    pub repo: String,
     pub version: String,
     pub commit: String,
+    /// The release asset, its size in bytes and its SHA-256.
+    pub asset: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+impl Pin {
+    pub fn url(&self) -> String {
+        format!("https://github.com/{}/releases/download/{}/{}", self.repo, self.version, self.asset)
+    }
 }
 
 pub fn pin() -> &'static Pin {
@@ -68,12 +81,29 @@ pub fn output_dir() -> PathBuf {
     data_dir().join("output")
 }
 
-/// The unpacked portable: `CODYNC_COMFY_DIR` for development, else `comfy/` beside the host.
+/// Whether this computer can run the portable: it is built for Windows on x64.
+pub const SUPPORTED: bool = cfg!(all(windows, target_arch = "x86_64"));
+
+/// Where the host keeps the program it downloaded: one folder per pinned version.
+pub fn downloaded_dir() -> PathBuf {
+    data_dir().join("program").join(&pin().version)
+}
+
+/// Whether `dir` holds an unpacked portable.
+pub fn is_program(dir: &Path) -> bool {
+    dir.join("python_embeded").is_dir() && dir.join("ComfyUI").join("main.py").is_file()
+}
+
+/// The unpacked portable: `CODYNC_COMFY_DIR` for development, `comfy/` beside the host in a package
+/// that ships it, else the copy the host downloaded.
 pub fn program_dir() -> Option<PathBuf> {
-    let dir = std::env::var_os("CODYNC_COMFY_DIR")
+    let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("comfy")));
+    std::env::var_os("CODYNC_COMFY_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::current_exe().ok()?.parent().map(|p| p.join("comfy")))?;
-    (dir.join("python_embeded").is_dir() && dir.join("ComfyUI").join("main.py").is_file()).then_some(dir)
+        .into_iter()
+        .chain(beside)
+        .chain([downloaded_dir()])
+        .find(|dir| is_program(dir))
 }
 
 /// What runs the models. AMD, Intel and no GPU all work on the CPU, only slowly.
@@ -130,7 +160,7 @@ fn prepare_data(data: &Path) -> Result<PathBuf> {
 }
 
 /// Free bytes on the disk that holds `path`.
-fn free_space(path: &Path) -> Option<u64> {
+pub(super) fn free_space(path: &Path) -> Option<u64> {
     let disks = sysinfo::Disks::new_with_refreshed_list();
     disks
         .list()
@@ -143,7 +173,7 @@ fn free_space(path: &Path) -> Option<u64> {
 /// Checks before the first start, then the process to run on `port`.
 pub fn launch(port: u16) -> Result<Launch> {
     let Some(program) = program_dir() else {
-        bail!("ComfyUI is not bundled in this build (no comfy/ folder beside the host)");
+        bail!("ComfyUI is not on this computer yet: start it again to download it");
     };
     let data = data_dir();
     std::fs::create_dir_all(&data).context("creating the ComfyUI data folder")?;
@@ -234,7 +264,10 @@ fn used_bytes_recent() -> u64 {
 pub fn card() -> Value {
     json!({
         "version": pin().version,
-        "bundled": program_dir().is_some(),
+        // Whether this computer can run ComfyUI at all; `installed` whether its program is here yet.
+        "bundled": SUPPORTED,
+        "installed": program_dir().is_some(),
+        "downloadBytes": pin().size,
         "dataDir": data_dir().to_string_lossy(),
         "modelsDir": checkpoints_dir().to_string_lossy(),
         "modelsUrl": MODELS_URL,

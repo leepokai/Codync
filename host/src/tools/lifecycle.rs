@@ -2,6 +2,7 @@
 //! switch survives restarts in the store. ComfyUI also offers its MCP tools to the bots while it runs.
 
 use super::comfy::{self, CONNECTOR_ID};
+use super::comfy_install::Installer;
 use super::comfy_job::Jobs;
 use super::log::Log;
 use super::runner::{Runner, State};
@@ -19,6 +20,8 @@ use tokio::sync::broadcast;
 pub struct Tools {
     runners: Vec<Arc<Runner>>,
     jobs: Arc<Jobs>,
+    /// Fetches ComfyUI's program the first time it starts.
+    installer: Arc<Installer>,
 }
 
 impl Tools {
@@ -32,6 +35,7 @@ impl Tools {
         Self {
             runners: engines.iter().map(|e| Arc::new(Runner::new(e, Log::open(logs, e.id), events.clone()))).collect(),
             jobs: Arc::new(Jobs::new(events.clone())),
+            installer: Arc::new(Installer::new(events.clone())),
         }
     }
 
@@ -68,6 +72,7 @@ impl Tools {
         if id == COMFY.id {
             status["comfy"] = tokio::task::spawn_blocking(comfy::card).await?;
             status["job"] = self.jobs.status();
+            status["install"] = self.installer.status();
         }
         Ok(status)
     }
@@ -107,6 +112,14 @@ impl Tools {
 fn spawn_start(runner: &Arc<Runner>, hub: &Arc<Hub>) {
     let (runner, hub) = (runner.clone(), hub.clone());
     tokio::spawn(async move {
+        // ComfyUI's program comes down the first time; its progress and any failure show in `install`.
+        if runner.engine().id == COMFY.id && hub.tools.installer.ensure().await.is_err() {
+            return;
+        }
+        // Stopped while it downloaded: the switch says off, so it doesn't start after all.
+        if !enabled(&hub.store, runner.engine().id) {
+            return;
+        }
         let launch = runner.engine().launch;
         // The runner logs the failure and keeps it in its state; nothing else waits on this task.
         if runner.start(launch).await.is_ok()

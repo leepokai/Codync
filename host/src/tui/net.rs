@@ -132,8 +132,15 @@ impl Client {
     }
 
     /// Uploads `files` in 384 KiB chunks (under the channel's message limit, like the apps), then sends
-    /// `body` with them attached. The reply comes back as `Msg::Reply(after, …)`.
-    pub fn spawn_send_files(&self, mut body: Value, files: Vec<PathBuf>, after: After, tx: UnboundedSender<Msg>) {
+    /// `body` with them attached once the call `before` it is done. The reply comes back as `Msg::Reply(after, …)`.
+    pub fn spawn_send_files(
+        &self,
+        before: Option<JoinHandle<()>>,
+        mut body: Value,
+        files: Vec<PathBuf>,
+        after: After,
+        tx: UnboundedSender<Msg>,
+    ) -> JoinHandle<()> {
         use base64::Engine as _;
         const CHUNK: usize = 384 * 1024;
         const MAX: u64 = 100 * 1024 * 1024;
@@ -167,10 +174,13 @@ impl Client {
                     ids.push(id);
                 }
                 body["attachments"] = ids.into();
+                if let Some(before) = before {
+                    let _ = before.await;
+                }
                 c.call("send", &body).await
             };
             let _ = tx.send(Msg::Reply(after, upload.await));
-        });
+        })
     }
 
     /// Streams a setup terminal's output (scrollback first) until it exits; returns where its

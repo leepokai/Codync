@@ -2,6 +2,7 @@
 //! decides what a read does to a chat marked unread.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
@@ -19,8 +20,9 @@ pub(super) struct ReadMarks {
     pub reading: HashSet<String>,
     /// The user picked the selected chat since the last tick: its read is theirs (`read_due`).
     pub chat_opened: bool,
-    /// The last one on its way, retries included: the next waits for it, so the host gets them in the order they were made.
-    last: Option<JoinHandle<()>>,
+    /// Each chat's last mark or message on its way, retries included: the next waits for it, so the host gets them
+    /// in the order they were made.
+    last: HashMap<String, JoinHandle<()>>,
     /// Each chat's last mark made here, numbered across all chats.
     marks: HashMap<String, u64>,
     made: u64,
@@ -53,14 +55,27 @@ impl App {
     }
 
     fn send_mark(&mut self, method: &'static str, body: Value, after: After) {
-        if let Some(id) = body["botId"].as_str() {
-            self.reads.made += 1;
-            self.reads.marks.insert(id.to_owned(), self.reads.made);
-            self.reads.unsent_opens.remove(id);
-            self.reads.due_opens.remove(id);
-        }
-        let before = self.reads.last.take();
-        self.reads.last = Some(self.client.spawn_call_after(before, method, body, after, self.tx.clone()));
+        let id = body["botId"].as_str().unwrap_or_default().to_owned();
+        self.reads.made += 1;
+        self.reads.marks.insert(id.clone(), self.reads.made);
+        self.reads.unsent_opens.remove(&id);
+        self.reads.due_opens.remove(&id);
+        let before = self.reads.last.remove(&id);
+        let call = self.client.spawn_call_after(before, method, body, after, self.tx.clone());
+        self.reads.last.insert(id, call);
+    }
+
+    /// A message sent from here reads the chat on the host, so it must not overtake the chat's marks on their way.
+    pub(super) fn send_after_marks(&mut self, body: Value, files: Vec<PathBuf>, after: After) {
+        let id = body["botId"].as_str().unwrap_or_default().to_owned();
+        let before = self.reads.last.remove(&id);
+        let tx = self.tx.clone();
+        let call = if files.is_empty() {
+            self.client.spawn_call_after(before, "send", body, after, tx)
+        } else {
+            self.client.spawn_send_files(before, body, files, after, tx)
+        };
+        self.reads.last.insert(id, call);
     }
 
     /// The `markRead` this tick owes. A chat the user just picked is the user reading it, whatever this screen knows
@@ -277,6 +292,53 @@ mod tests {
         assert!(app.hint.is_none());
         app.marked_unread(&json!({"bot": {"keptUnread": false}}));
         assert!(app.hint.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_message_goes_out_after_the_chats_mark_unread_is_done() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let (log, mut seen) = tokio::sync::mpsc::unbounded_channel::<String>();
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let log = log.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0; 65536];
+                    while let Ok(n) = socket.read(&mut buf).await {
+                        if n == 0 {
+                            return;
+                        }
+                        let request = String::from_utf8_lossy(&buf[..n]).into_owned();
+                        let Some(path) = request.split_whitespace().nth(1) else { return };
+                        let method = path.trim_start_matches("/api/").to_owned();
+                        log.send(format!("{method} arrived")).unwrap();
+                        if method == "markUnread" {
+                            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                        }
+                        log.send(format!("{method} answered")).unwrap();
+                        let answer = b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}";
+                        socket.write_all(answer).await.unwrap();
+                    }
+                });
+            }
+        });
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(super::super::Client::new(&base, Some("t")), tx, String::new());
+        app.upsert_bot(&json!({"id": "a", "name": "a", "unread": 0}));
+        app.selected = Some("a".into());
+        app.host_version = MARK_UNREAD_SINCE.into();
+
+        app.on_key(KeyEvent::from(KeyCode::Char('.')));
+        app.send_after_marks(json!({"botId": "a", "text": "hi"}), Vec::new(), After::Nothing);
+        app.reads.last.remove("a").unwrap().await.unwrap();
+
+        let mut order = Vec::new();
+        while let Ok(line) = seen.try_recv() {
+            order.push(line);
+        }
+        assert_eq!(order, ["markUnread arrived", "markUnread answered", "send arrived", "send answered"]);
     }
 
     #[tokio::test]

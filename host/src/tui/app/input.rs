@@ -138,11 +138,7 @@ impl App {
                     body["pasted"] = json!(pasted);
                 }
                 let after = After::Sent(key);
-                if files.is_empty() {
-                    self.call("send", body, after);
-                } else {
-                    self.client.spawn_send_files(body, files, after, self.tx.clone());
-                }
+                self.send_after_marks(body, files, after);
                 self.flash("Sending… Your draft stays here until delivered.");
             }
             KeyCode::Backspace if draft.text.is_empty() => {

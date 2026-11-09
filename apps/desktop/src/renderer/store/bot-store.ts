@@ -16,18 +16,17 @@ import {
 import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
+import { latestOnly } from '../lib/latest-only'
+import { trNow } from '../lib/l10n.ts'
+import { prefs } from '../lib/prefs'
+import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
+import { DevServerCommands } from './dev-servers'
 import { BotSync, sleep } from './bot-sync'
+import { filesToResend, type OutgoingFile } from './outgoing-files.ts'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
-
-/** A file picked in the composer, sent with the next message. */
-export interface OutgoingFile {
-  id: string
-  name: string
-  data: Uint8Array
-}
 
 /** What a message carries besides its text; `replyTo` shows on the bubble until the computer's own quote replaces it. */
 export interface SendOptions {
@@ -39,9 +38,6 @@ export interface SendOptions {
   call?: string | null
 }
 
-/** Anything larger is refused by the computer. */
-export const MAX_FILE_SIZE = 100 * 1024 * 1024
-
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 
 /**
@@ -51,14 +47,19 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 export class BotStore extends BotSync {
   readonly fileDownloads = new FileDownloads(() => this.changed())
   readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
+  readonly devServers = new DevServerCommands((op) => this.perform(op), (op) => this.withLink(op))
 
   override retire() { this.fileDownloads.retire(); super.retire() }
 
   private outgoingFiles = new Map<string, OutgoingFile[]>()
 
+  /** The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`). */
+  lastSentNonce: string | null = null
+
   send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, call = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
+    this.lastSentNonce = nonce
     const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
     if (call) data.call = call
     if (replyTo) data.replyTo = replyTo
@@ -91,6 +92,8 @@ export class BotStore extends BotSync {
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
         this.changed()
+        // Only once it arrived, so a resend counts once.
+        if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')
@@ -109,7 +112,8 @@ export class BotStore extends BotSync {
   }
 
   retry(entry: Entry) {
-    const files = (entry.data.clientNonce && this.outgoingFiles.get(entry.data.clientNonce)) || []
+    const files = filesToResend(entry, this.outgoingFiles)
+    if (!files) return this.setError(trNow("This message's files aren't on this device anymore. Delete it and attach them again."))
     const text = entry.data.text ?? ''
     if (!text && !files.length) return
     this.dropEntry(entry)
@@ -443,6 +447,18 @@ export class BotStore extends BotSync {
     return (await this.ready()).call<DirListing>('listDirs', { path })
   }
 
+  /** Whether this computer lists one agent's limits. */
+  async setUsageShown(id: string, shown: boolean) {
+    this.usage = await (await this.ready()).call<Usage>('setUsageShown', { id, shown })
+    this.changed()
+  }
+
+  /** The order this computer lists its agents in. */
+  setUsageOrder = latestOnly(async (ids: string[]) => {
+    this.usage = await (await this.ready()).call<Usage>('setUsageOrder', { ids })
+    this.changed()
+  })
+
   async refreshUsage() {
     if (this.retired || !this.client) return
     try {
@@ -465,16 +481,6 @@ export class BotStore extends BotSync {
   setSelection(id: string | null) {
     this.selection = id
     this.changed()
-  }
-}
-
-/** A full editor update must explicitly clear a previous model override. */
-function updatePayload(bot: Bot): BotDraft {
-  return {
-    id: bot.id, name: bot.name, description: bot.description, avatarColor: bot.avatarColor, avatarShape: bot.avatarShape,
-    backend: bot.backend, command: bot.command ?? null, cwd: bot.managedWorkspace ? '' : bot.cwd, permission: bot.permission,
-    model: bot.model ?? null, pinned: bot.pinned, hidden: bot.hidden, notify: bot.notify ?? null,
-    connectors: bot.connectors, skills: bot.skills, computer: bot.computer, fastMode: bot.fastMode,
   }
 }
 

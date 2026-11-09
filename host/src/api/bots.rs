@@ -51,6 +51,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::chat::fallbacks::call(hub, bot, name, &b["arguments"]).await?
             } else if crate::chat::artifacts::TOOLS.contains(&name) {
                 crate::chat::artifacts::call(hub, bot, name, &b["arguments"]).await?
+            } else if crate::dev_servers::TOOLS.contains(&name) {
+                crate::dev_servers::call(hub, bot, name, &b["arguments"]).await?
             } else {
                 crate::chat::outbox::call(hub, bot, name, &b["arguments"]).await?
             }
@@ -108,6 +110,22 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let hub = hub.clone();
             tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
             json!({})
+        }
+        // The apps name a dev server, and never send a command.
+        "devServerStop" => {
+            crate::dev_servers::stop(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?, "user").await?;
+            json!({})
+        }
+        "devServerRestart" => {
+            crate::dev_servers::restart(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?).await?;
+            json!({})
+        }
+        "devServerRemove" => {
+            crate::dev_servers::remove(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?)?;
+            json!({})
+        }
+        "devServerLogs" => {
+            json!({"text": crate::dev_servers::shown_logs(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?).await?})
         }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;

@@ -14,6 +14,18 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case signedOut
     /// The signed-out computers moved into the account at sign-in: with this phone's keys, or to be scanned again.
     case signedOutPairingsMoved(computers: Int, keys: MovedKeys)
+    case continuedWithoutAccount
+    case computerFoundOnNetwork
+    case addToAccountAsked
+    case addToAccountCompleted
+    case addToAccountFailed(AddToAccountFailure)
+    /// The user gave Codync Cloud the key to their own account with a cloud provider (`provider`: the cloud's id for it,
+    /// such as `boat`); never the key or its hint.
+    case cloudKeySaved(CloudKeyOutcome, provider: String)
+    /// The user made another Codync Cloud computer on `provider` (the cloud's id for it); never its name.
+    case cloudComputerCreated(CloudCreateOutcome, provider: String)
+    /// The user renamed one of their Codync Cloud computers; never the name.
+    case cloudComputerRenamed(CloudRenameOutcome)
     case pairingFailed(PairingFailure)
     case computerPaired(via: PairVia, computer: ComputerID)
     case accessRequested
@@ -27,12 +39,10 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// never), reconnects, the first phase stuck too long, why it failed.
     case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
     case screenViewed(Screen)
-    case reviewOpportunity(completed: Int)
-    case reviewCancelled(ReviewCancellation)
-    case reviewRequested(completed: Int)
+    case reviewRequested(prompts: Int)
     case reviewLinkOpened
-
-    public enum ReviewCancellation: String, Sendable { case background, interaction, unavailable }
+    /// A dev server opened, or its address copied; the host reports what it does itself.
+    case devServerAction(DevServerUse)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -47,6 +57,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Link: String, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
+    public enum DevServerUse: String, Sendable { case open, copy }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
     public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
@@ -70,6 +81,46 @@ public enum AnalyticsEvent: Equatable, Sendable {
         }
     }
 
+    /// `saved`; `refused`: the cloud or the provider turned the key down (what to fix was shown); `failed`: anything else.
+    public enum CloudKeyOutcome: String, Sendable {
+        case saved, refused, failed
+
+        public init(_ error: any Error) {
+            self = (error as? CloudError)?.code == "keyRefused" ? .refused : .failed
+        }
+    }
+
+    /// `created`; `refused`: the cloud said what to fix (`409`: at the limit or no key, or the provider turned the key
+    /// down); `failed`: anything else.
+    public enum CloudCreateOutcome: String, Sendable {
+        case created, refused, failed
+
+        public init(_ error: any Error) {
+            let cloud = error as? CloudError
+            self = cloud?.status == 409 || cloud?.code == "keyRefused" ? .refused : .failed
+        }
+    }
+
+    public enum CloudRenameOutcome: String, Sendable {
+        case renamed, failed
+    }
+
+    public enum AddToAccountFailure: String, Sendable {
+        case declined, certificate, unreachable, other
+
+        public init(_ error: any Error) {
+            switch error {
+            case let host as HostError where host.isTransient: self = .unreachable
+            case let HostError.http(_, message) where message == "The computer stayed out of this account.": self = .declined
+            case let HostError.http(_, message) where message.hasPrefix("Couldn't confirm your Codync account"): self = .certificate
+            case let cloud as CloudError where cloud.code == "noCertificate": self = .certificate
+            case let cloud as CloudError where cloud.isTransient: self = .unreachable
+            case is URLError: self = .unreachable
+            default: self = .other
+            }
+        }
+    }
+
     public enum PairingFailure: String, Sendable {
         case notPairingLink = "not_pairing_link", outdatedHost = "outdated_host", invalid
         case expired, unauthorized, unreachable, timeout, upgradeRequired = "upgrade_required", other
@@ -86,6 +137,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
             case let host as HostError:
                 self = switch host {
                 case .upgradeRequired: .upgradeRequired
+                case .unreachableDirectly: .unreachable
                 // The host turns down a pairing code that expired or was already used, and a phone it doesn't
                 // let in: another account's, one it can't confirm, or one its user declined.
                 case let .http(403, message): message.hasPrefix("This pairing code expired") ? .expired : .unauthorized
@@ -110,6 +162,14 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .signedIn: "signed_in"
         case .signedOut: "signed_out"
         case .signedOutPairingsMoved: "signed_out_pairings_moved"
+        case .continuedWithoutAccount: "continued_without_account"
+        case .computerFoundOnNetwork: "computer_found_on_network"
+        case .addToAccountAsked: "add_to_account_asked"
+        case .addToAccountCompleted: "add_to_account_completed"
+        case .addToAccountFailed: "add_to_account_failed"
+        case .cloudKeySaved: "cloud_key_saved"
+        case .cloudComputerCreated: "cloud_computer_created"
+        case .cloudComputerRenamed: "cloud_computer_renamed"
         case .pairingFailed: "pairing_failed"
         case .computerPaired: "computer_paired"
         case .accessRequested: "access_requested"
@@ -121,10 +181,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceCallStarted: "voice_call_started"
         case .voiceCallQuality: "voice_call_quality"
         case .screenViewed: "screen_viewed"
-        case .reviewOpportunity: "review_opportunity"
-        case .reviewCancelled: "review_cancelled"
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
+        case .devServerAction: "dev_server_action"
         }
     }
 
@@ -139,7 +198,12 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .onboardingCompleted(via): return ["via": .string(via.rawValue)]
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
-        case .signedOut, .accessRequested: return [:]
+        case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
+             .addToAccountCompleted: return [:]
+        case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
+        case let .cloudKeySaved(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
+        case let .cloudComputerCreated(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
+        case let .cloudComputerRenamed(outcome): return ["outcome": .string(outcome.rawValue)]
         case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .computerPaired(via, computer):
@@ -155,10 +219,10 @@ public enum AnalyticsEvent: Equatable, Sendable {
                                                 "stuck": .string(stuck.rawValue), "failure": .string(failure.rawValue)]
             p["ready_ms"] = readyMs.map(Analytics.Value.int)
             return p
-        case let .reviewOpportunity(completed), let .reviewRequested(completed):
-            return ["completed_interactions": .int(completed), "policy": .string("v1"), "trigger": .string("return_to_bots")]
-        case let .reviewCancelled(reason): return ["reason": .string(reason.rawValue), "policy": .string("v1")]
+        case let .reviewRequested(prompts):
+            return ["prompts": .int(prompts), "policy": .string("v2")]
         case .reviewLinkOpened: return ["source": .string("settings")]
+        case let .devServerAction(use): return ["action": .string(use.rawValue)]
         case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
         }
     }

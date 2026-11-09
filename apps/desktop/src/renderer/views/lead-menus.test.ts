@@ -19,7 +19,7 @@ test('any other bot can be made the lead, and the lead deleted', () => {
   const { store, made } = computer()
   const items = makeLeadItems(bot, store)
   assert.deepEqual(items.map((i) => [i.title, i.icon]), [['Make lead agent', 'star']])
-  items[0]!.action()
+  items[0]!.action?.()
   assert.deepEqual(made, ['bot'])
   assert.deepEqual(makeLeadItems(lead, store), [], 'the lead already is')
   assert.deepEqual(makeLeadItems(group, store), [], 'a group can\'t lead')

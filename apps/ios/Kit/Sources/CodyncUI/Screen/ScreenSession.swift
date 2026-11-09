@@ -65,13 +65,17 @@ public final class ScreenSession {
             try await connect()
         } catch {
             guard phase == .connecting else { return }
-            fail(error.localizedDescription)
+            guard await client.screenFallsBack() else { return fail(error.localizedDescription) }
+            // TURN may be what failed: the other way gets a try before this gives up.
+            lastError = error.localizedDescription
+            phase = .reconnecting
+            scheduleRecovery(after: .zero)
         }
     }
 
     private func connect() async throws {
         let preparing = generation
-        let connection = try await client.screenPrepare()
+        let connection = try await client.screenPrepare(failedAttempts: recoveryAttempts)
         guard generation == preparing, phase != .closed, !Task.isCancelled else {
             try? await client.screenClose(session: connection.session)
             throw CancellationError()

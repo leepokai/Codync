@@ -67,7 +67,7 @@ import kotlinx.serialization.json.put
 /** One computer's roster while the list shows it: its rows' and sections' drags and its section order (kept on this device). */
 private class ComputerRoster(private val context: Context, val key: String) {
     val reorder = RosterReorder()
-    val sections = SectionReorder()
+    val sections = ListReorder()
     var order by mutableStateOf(SectionOrders.load(context, key))
 
     /** Points the drags at [state]'s bots and sections as [list] shows them. */
@@ -91,7 +91,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
 @Composable internal fun BotListView(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
     newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit, bottomInset: Dp) {
     var confirmDelete by remember { mutableStateOf<Pair<String, Bot>?>(null) }
-    var naming by remember { mutableStateOf<SectionNaming?>(null) }
+    var naming by remember { mutableStateOf<Naming?>(null) }
     val context = LocalContext.current
     var folded by remember { mutableStateOf(FoldedSections.load(context)) }
     var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
@@ -104,7 +104,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
     // Computers that can take a new bot once they're connected, and the ones that can right now (iOS `availableStores`, `onlineStores`).
     val available = availableComputers(app, states)
     val online = available.filter { it.actualConnection is LinkState.Ready }
-    val computerReorder = remember { SectionReorder() }
+    val computerReorder = remember { ListReorder() }
     computerReorder.names = shown.map { it.computer.id }
     computerReorder.save = { ids -> accounts.orderComputers(ids) }
     computerReorder.position = { id -> listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "computer:$id" }?.offset?.toFloat() ?: 0f }
@@ -171,9 +171,9 @@ private class ComputerRoster(private val context: Context, val key: String) {
                 }
                 if (grouped && (movingComputer || id in collapsed)) continue
                 botLines(state, store, roster, folded, grouped, agentLogos, RosterActions(toggleSection,
-                    rename = { name -> naming = SectionNaming("Rename section", name) { renameSection(roster, store, name, it) } },
+                    rename = { name -> naming = Naming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },
-                    newSection = { bot -> naming = SectionNaming("New section", "") { store.setSection(bot.id, it) } },
+                    newSection = { bot -> naming = Naming("New section", "") { store.setSection(bot.id, it) } },
                     edit = { bot -> edit(id, bot) }, delete = { bot -> confirmDelete = id to bot }))
             }
         }
@@ -186,11 +186,11 @@ private class ComputerRoster(private val context: Context, val key: String) {
             confirmDelete?.let { (id, bot) -> accounts.store(id)?.deleteBot(bot) {} }
         })
     }
-    SectionNameDialog(naming) { naming = null }
+    NameDialog(naming, "Section name", { naming = null }, ::limitSectionName, ::sectionName)
 }
 
 /** A computer's heading (and, while it needs one, its update notice) that drags to reorder the computers. */
-@Composable private fun LazyItemScope.ComputerHeading(state: AppState, store: AppStore, reorder: SectionReorder, folded: Boolean, stale: Boolean,
+@Composable private fun LazyItemScope.ComputerHeading(state: AppState, store: AppStore, reorder: ListReorder, folded: Boolean, stale: Boolean,
     toggle: () -> Unit, extensions: () -> Unit) {
     val id = state.computer.id
     Column(reorderable(reorder, id)) {

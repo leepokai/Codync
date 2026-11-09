@@ -19,6 +19,19 @@ its selected host.
 - Headless Linux: provide a session D-Bus and unlocked Secret Service for the
   service user. An unavailable keyring gives an actionable error. There is no
   plaintext, kernel-keyring-only or automatic ephemeral fallback.
+- A [Codync Cloud](../plans/codync-cloud.md) computer has no keyring and no vault of its own: its secrets live in
+  its keeper (`host/src/keeper/`), a separate process under its own system user, sealed with a key the Codync Worker
+  hands only to that keeper and that never touches the disk. The host and its agents (another user, without sudo) use
+  most of them through the keeper's local proxy without reading them; the ones a process has to receive (website
+  logins, the 1Password token, stdio connectors' environment, unproxied agent variables, and a remote connector's URL,
+  a token in its query or user part included) stay readable by the agents:
+  [Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets).
+- Disposable hosts only (tests and [worktree sandboxes](../guides/dev-app.md#worktree-sandboxes)): a Dev build
+  with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
+  A production build ignores the switch.
+
+A host makes its key the first time something needs the vault, such as a connector, voice, credential or agent
+sign-in request, or a new bot once connectors are saved. A new computer's first start makes none.
 
 Unlocking runs on a blocking worker, one read at a time; callers that arrive
 meanwhile share its outcome. A locked Linux keyring gets one unlock prompt that

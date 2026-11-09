@@ -1,5 +1,14 @@
-use super::{AppLanguage, HANS, PREFERENCE, language_title, resolved_language, tr, translate, translate_with};
+use super::{AppLanguage, HANS, PREFERENCE, fill, language_title, resolved_language, tr, translate, translate_with};
 use crate::LockExt;
+
+#[test]
+fn what_fill_puts_in_stays_as_written() {
+    assert_eq!(
+        fill("{name} and {other}", &[("name", "Build {other}"), ("other", "Reviewer")]),
+        "Build {other} and Reviewer"
+    );
+    assert_eq!(fill("{name} and {missing} {", &[("name", "Build")]), "Build and {missing} {");
+}
 
 #[test]
 fn brazilian_portuguese_round_trips_its_saved_identifier() {

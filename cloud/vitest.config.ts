@@ -17,12 +17,16 @@ export default defineConfig(async () => ({
         // The pool's bundled workerd trails wrangler's; pin to the newest date it supports.
         compatibilityDate: "2026-08-22",
         bindings: {
+          // The switch's two sides are tested directly (test/relay-account.test.ts).
+          RELAY_NEEDS_ACCOUNT: "",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
           CLERK_JWT_KEY: publicKey.export({ type: "spki", format: "pem" }).toString(),
           TEST_CLERK_PRIVATE_JWK: JSON.stringify(privateKey.export({ format: "jwk" })),
           CLERK_WEBHOOK_SECRET: `whsec_${randomBytes(24).toString("base64")}`,
           DEVICE_CERT_KEY: JSON.stringify(cert.privateKey.export({ format: "jwk" })),
           TEST_DEVICE_CERT_PUB: cert.publicKey.export({ format: "jwk" }).x!,
+          // Codync Cloud on: users' Boat keys are sealed with a throwaway key; tests stub Boat's API with a fetch spy.
+          CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
         },
       },
     }),

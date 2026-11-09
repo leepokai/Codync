@@ -49,6 +49,10 @@ data class Bot(
     val harnessMemory: Boolean? = null,
     /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
     val harnessMemoryShared: Boolean? = null,
+    /** When Codync summarizes its chat; null where it doesn't (an agent it can't ask to, a group, an older host). */
+    val compaction: Compaction? = null,
+    /** The sizes its agent's window allows; null until the agent has told its window. */
+    val compactionTokens: CompactionTokens? = null,
     /** Moves whenever memory changes, so an open memory screen fetches it again. */
     val memoryRev: Long? = null,
     val autoName: Boolean = false,
@@ -79,6 +83,8 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    /** What it keeps running on the computer. Empty from an older host, and for a group. */
+    val devServers: List<DevServer> = emptyList(),
     val customIcon: CustomIcon? = null,
 ) {
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */

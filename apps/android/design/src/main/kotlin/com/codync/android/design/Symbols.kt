@@ -103,6 +103,7 @@ import androidx.annotation.DrawableRes
     "keyboard" -> R.drawable.sf_keyboard
     "keyboard.chevron.compact.down" -> R.drawable.sf_keyboard_chevron_compact_down
     "laptopcomputer" -> R.drawable.sf_laptopcomputer
+    "line.3.horizontal" -> R.drawable.sf_line_3_horizontal
     "list.bullet" -> R.drawable.sf_list_bullet
     "list.bullet.rectangle" -> R.drawable.sf_list_bullet_rectangle
     "lock.display" -> R.drawable.sf_lock_display
@@ -159,6 +160,7 @@ import androidx.annotation.DrawableRes
     "safari" -> R.drawable.sf_safari
     "shift" -> R.drawable.sf_shift
     "shippingbox" -> R.drawable.sf_shippingbox
+    "slider.horizontal.3" -> R.drawable.sf_slider_horizontal_3
     "square.and.arrow.down" -> R.drawable.sf_square_and_arrow_down
     "square.and.arrow.up" -> R.drawable.sf_square_and_arrow_up
     "square.and.pencil" -> R.drawable.sf_square_and_pencil

@@ -10,7 +10,7 @@ import org.junit.Test
 class PairingCopyTest {
     @Test fun `a pasted private relay is named and a bad link stays on Cloudflare`() {
         val cloudflare = "Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted."
-        assertEquals(cloudflare, pairingLine("not a link", "codync"))
+        assertEquals(cloudflare, pairingLine("not a link", "codync", signedIn = true))
         val link = "codync://pair?" + mapOf(
             "v" to "3",
             "id" to "NHUPmL1Z_PyUbaRaqr6TOw",
@@ -19,7 +19,12 @@ class PairingCopyTest {
             "code" to "CAgICAgICAgICAgICAgICA",
             "cloud" to "https://relay.example.com",
         ).entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
-        assertTrue(pairingLine(link, "codync").contains("Private relay (relay.example.com)"))
+        assertTrue(pairingLine(link, "codync", signedIn = true).contains("Private relay (relay.example.com)"))
+        assertTrue("a private relay is the user's own", pairingLine(link, "codync", signedIn = false).contains("Private relay (relay.example.com)"))
+    }
+
+    @Test fun `signed out it only names Wi-Fi and Tailscale`() {
+        assertEquals("Connects on Wi-Fi or over Tailscale. End-to-end encrypted.", pairingLine("not a link", "codync", signedIn = false))
     }
 
     @Test fun `the pairing check reads as two groups of three and fills the shared phrase`() {

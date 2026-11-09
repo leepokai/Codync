@@ -1,0 +1,28 @@
+# Going on without an account leads to pairing, directly (docs/plans/optional-sign-in.md).
+# On a signed-in simulator, run `xcrun simctl keychain <device> reset` first: clearing the app's state keeps the
+# iPhone's sign-in (docs/guides/test-stack.md).
+appId: com.pokai.Codync.ios.dev
+tags:
+  - smoke
+  - onboarding
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          clearState: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          clearState: true
+- tapOn: "Continue without an account"
+# The install page first; the line is on the scan page, under its sign-in buttons.
+- tapOn: "Continue"
+- scrollUntilVisible:
+    element: "Connects on Wi-Fi or over Tailscale\\. End-to-end encrypted\\."
+    direction: DOWN

@@ -1,13 +1,34 @@
 // Relay WebSocket upgrades (§7.1) and public routine webhook deliveries (§7.8), both forwarded
 // to the computer's Durable Object.
 
+import { compareVersions, parseApp, recordApp } from "../app-versions";
 import { COMPUTER_ID, computerIdFor, fromB64url, verifySig, type SignedRequest } from "../auth";
 import { HOOK_ID, HOOK_MAX_BODY } from "../hooks";
-import { ApiError, type Ctx } from "./common";
+import type { Env } from "../index";
+import { ApiError, notify, type Ctx } from "./common";
 
 function checkUpgrade(c: Ctx): void {
   if (c.url.searchParams.get("v") !== "1") throw new ApiError("upgradeRequired");
   if (c.req.headers.get("Upgrade")?.toLowerCase() !== "websocket") throw new ApiError("badRequest", "Expected a WebSocket upgrade");
+}
+
+/**
+ * Whether the relay and public webhooks are only for computers in an account (docs/plans/optional-sign-in.md). A
+ * switch so a release can turn it on once phones and hosts that follow the rule have shipped.
+ */
+export const relayNeedsAccount = (env: Env) => env.RELAY_NEEDS_ACCOUNT === "1";
+
+/**
+ * Whether a device key may open a socket on a computer's relay. In use: the computer is in an account and the device
+ * is signed in to that account. Pairing: the device has an account, which the computer is then asked to join.
+ */
+export async function mayUseRelay(db: D1Database, owner: string | null, key: string, pair: boolean): Promise<boolean> {
+  const { results } = await db
+    .prepare("SELECT owner_user_id, signed_out_at FROM devices WHERE sign_pub = ? AND revoked_at IS NULL")
+    .bind(key)
+    .all<{ owner_user_id: string; signed_out_at: number | null }>();
+  if (pair) return results.length > 0;
+  return owner !== null && results.some((d) => d.owner_user_id === owner && d.signed_out_at === null);
 }
 
 /** Forwards the upgrade to the computer's DO in a request the Worker builds itself; the client's URL never reaches it. */
@@ -49,8 +70,17 @@ export async function relayDevice(c: Ctx, [computerId]: string[]): Promise<Respo
   const s = await verifySig(c.req, c.raw, c.now);
   if (!s) throw new ApiError("badSignature");
   // Only registered computers get a DO; random IDs never create one.
-  const row = await c.env.DB.prepare("SELECT status FROM computers WHERE id = ?").bind(computerId).first<{ status: string }>();
+  const row = await c.env.DB.prepare("SELECT status, version, owner_user_id FROM computers WHERE id = ?")
+    .bind(computerId)
+    .first<{ status: string; version: string; owner_user_id: string | null }>();
   if (!row || row.status !== "active") throw new ApiError("unknownComputer");
+  if (relayNeedsAccount(c.env) && !(await mayUseRelay(c.env.DB, row.owner_user_id, s.kid, pair !== ""))) {
+    throw new ApiError("needsAccount", "This computer and this device must be in the same Codync account to use the relay.");
+  }
+  const app = parseApp(c.req.headers.get("Codync-App"));
+  await recordApp(c.env, s.kid, app, c.now);
+  // An app that needs a newer host: a cloud computer reads its update order now (a sleeping one on waking).
+  if (app?.minHost && compareVersions(app.minHost, row.version) > 0) c.exec.waitUntil(notify(c.env, computerId!));
   return forward(c, computerId!, "device", s, pair);
 }
 
@@ -68,8 +98,13 @@ export async function routineHook(c: Ctx, [computerId, hookId]: string[]): Promi
     if (!(await c.env.HOOK_LIMITER.limit({ key: `${ip}|${computerId}/${hookId}` })).success) throw new ApiError("rateLimited");
   }
   // Only registered computers get a DO; random IDs never create one.
-  const row = await c.env.DB.prepare("SELECT status FROM computers WHERE id = ?").bind(computerId).first<{ status: string }>();
+  const row = await c.env.DB.prepare("SELECT status, owner_user_id FROM computers WHERE id = ?")
+    .bind(computerId)
+    .first<{ status: string; owner_user_id: string | null }>();
   if (!row || row.status !== "active") throw new ApiError("notFound");
+  if (relayNeedsAccount(c.env) && !row.owner_user_id) {
+    throw new ApiError("needsAccount", "Public webhooks need this computer in a Codync account.");
+  }
   const headers = new Headers(c.req.headers);
   headers.set("X-Codync-Internal", "1");
   headers.set("X-Codync-Hook", hookId!);

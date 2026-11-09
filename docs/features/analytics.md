@@ -31,8 +31,9 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   packages have no install step that could ask.
 - **Identity.** Every device gets a person profile. Signed in to a Codync account: the Clerk
   user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
-  The first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events join
-  the account.
+  A device's first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events
+  join the account. Only once per device: PostHog refuses to merge an id into a second account
+  (`cannot_merge_already_identified`), so a later account on that device starts its own profile.
 - **Sessions.** Every event carries a `$session_id` (a UUIDv7) that changes after 30 minutes
   without events or 24 hours in all, as in PostHog's own SDKs, and on each launch of an app or
   start of the host (host `analytics/session.rs`, `AnalyticsSession` on the iPhone and Android),
@@ -43,7 +44,10 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   approximate location (`$geoip_country_name`, `$geoip_city_name`, …), then the project's
   *Discard client IP data* drops the IP before storage.
 - `env` is `main` or `dev`; filter dev out in PostHog. Debug host builds (`cargo test`, `cargo run`)
-  send nothing: every e2e test starts a fresh host that would count as a new user.
+  send nothing: every e2e test starts a fresh host that would count as a new user. Test machines that run
+  release builds (Dev and end-to-end cloud computers) start with `CODYNC_ANALYTICS_ENV=dev`: their events say
+  `env: dev`, so no chart counts them, and the mark is stored, so a release the machine updates to keeps it
+  (releases from before the mark, such as 2.24.0, don't know it).
 
 ## Adding a feature
 
@@ -85,7 +89,8 @@ can be traced from the events around it:
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
   never send.
-- **codync.dev** counts page views and clicks on download and outbound links without cookies.
+- **codync.dev** counts page views, time on page, scrolling, load speed and clicks on download
+  and outbound links without cookies, through its own `/e` path ([website](../reference/analytics-events.md#website)).
 
 Every event, its sender and its properties: [analytics events](../reference/analytics-events.md).
 
@@ -104,7 +109,8 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
   rendering (mechanism `react`: the chat and pairing windows show *Something went wrong* with
   *Try again* instead of going blank), and windows or helpers that crashed (`RendererGone`,
   `GPUGone`, … with Electron's reason), through `reportError`. A window whose page crashed loads
-  it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute. Not
+  it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute, and
+  says what came of it (`window_recovery`). Not
   reported: error events that carry no error (the ResizeObserver loop notice), and helpers that
   exited normally or were ended from outside (`clean-exit`, `killed`: logout, shutdown, an update),
   and a GPU process that couldn't launch (the app goes on with software rendering).

@@ -161,7 +161,7 @@ import com.kyant.shapes.Capsule
                     BotAvatar(bot, state.bots, 22.dp)
                     Text(bot.name, style = Type.system(13f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                ConnectionSubtitle(state)
+                ConnectionSubtitle(state, devServerSummary(bot.devServers))
             }
         }
         // The corner is the computer: it pulses while this bot is operating it (watch, then take over).
@@ -184,9 +184,17 @@ import com.kyant.shapes.Capsule
     }
 }
 
-/** The link to the computer: route icon (or a spinner) and a word. */
-@Composable private fun ConnectionSubtitle(state: AppState) {
-    Row(Modifier.clearAndSetSemantics { contentDescription = "${state.hostName}, ${connectionDescription(state)}" }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+/** The link to the computer: route icon (or a spinner) and a word, then what the bot keeps running. */
+@Composable private fun ConnectionSubtitle(state: AppState, summary: DevServerSummary) {
+    val servers = when (summary) {
+        DevServerSummary.None -> null
+        DevServerSummary.Starting -> tr("Starting")
+        DevServerSummary.Failed -> tr("Failed to start")
+        is DevServerSummary.Running -> summary.text
+    }
+    val style = Type.system(10f).medium
+    val description = listOfNotNull(state.hostName, connectionDescription(state), servers).joinToString(", ")
+    Row(Modifier.clearAndSetSemantics { contentDescription = description }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.width(12.dp), contentAlignment = Alignment.Center) {
             when (val link = state.connection) {
                 LinkState.Connecting -> Spinner(8.dp)
@@ -194,7 +202,14 @@ import com.kyant.shapes.Capsule
                 else -> Symbol("wifi.slash", size = 11.dp, tint = Palette.secondary)
             }
         }
-        Text(connectionLabel(state), style = Type.system(10f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(connectionLabel(state), style = style, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (servers != null) {
+                Text("·", style = style, color = Palette.secondary)
+                if (summary == DevServerSummary.Starting) Spinner(8.dp)
+                Text(servers, style = style.monospacedDigit, color = if (summary == DevServerSummary.Failed) Palette.danger else Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }
 

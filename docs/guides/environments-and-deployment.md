@@ -62,6 +62,8 @@ A migration that changes what the database accepts goes out before the Worker co
 
 ## Releasing cloud changes
 
+`RELAY_NEEDS_ACCOUNT` is on for dev and off for main. It keeps the relay and public webhooks to computers in an account ([optional sign-in](../plans/optional-sign-in.md#compatibility-and-rollout)). Turn it on for main with a `[vars]` entry in `wrangler.toml` once both stores have the apps from 2.41.0.
+
 CI only tests `cloud/`; nothing deploys it. A dev → main PR that changes `cloud/` (routes, bindings, migrations) goes out in this order:
 
 1. Before the PR merges: create any new binding in dev (R2 bucket, rate limit, D1 migration), `npm run deploy:dev`, and test the changed flows end to end against `dev-api.codync.dev` with the dev apps.

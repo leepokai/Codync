@@ -9,11 +9,14 @@ public struct DialogAction: Identifiable {
     public let id = UUID()
     public var title: String
     public var destructive: Bool
+    /// Off while what the dialog asks for isn't valid yet (a field that doesn't read).
+    public var enabled: Bool
     public var action: () -> Void
 
-    public init(_ title: String, destructive: Bool = false, action: @escaping () -> Void) {
+    public init(_ title: String, destructive: Bool = false, enabled: Bool = true, action: @escaping () -> Void) {
         self.title = title
         self.destructive = destructive
+        self.enabled = enabled
         self.action = action
     }
 }
@@ -22,10 +25,12 @@ public struct DialogAction: Identifiable {
 public struct DialogField {
     public var placeholder: String
     public var text: Binding<String>
+    public var keyboard: UIKeyboardType
 
-    public init(_ placeholder: String, text: Binding<String>) {
+    public init(_ placeholder: String, text: Binding<String>, keyboard: UIKeyboardType = .default) {
         self.placeholder = placeholder
         self.text = text
+        self.keyboard = keyboard
     }
 }
 
@@ -39,7 +44,6 @@ public extension View {
                       actions: @escaping () -> [DialogAction]) -> some View {
         modifier(CodyncDialog(title: title, message: message, field: field, cancel: cancel, inPlace: inPlace,
                               isPresented: isPresented, actions: actions))
-            .reviewInterruption(active: isPresented.wrappedValue)
     }
 }
 
@@ -113,6 +117,7 @@ private struct DialogCard: View {
                 .multilineTextAlignment(.center)
                 if let field {
                     TextField(L10n.tr(field.placeholder), text: field.text)
+                        .keyboardType(field.keyboard)
                         .textFieldStyle(.plain)
                         .font(.body)
                         .foregroundStyle(Palette.text)
@@ -132,6 +137,7 @@ private struct DialogCard: View {
                             Text(L10n.tr(action.title)).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(DialogButtonStyle(destructive: action.destructive, prominent: true))
+                        .disabled(!action.enabled)
                     }
                     if let cancel {
                         Button(action: close) { Text(L10n.tr(cancel)).frame(maxWidth: .infinity) }
@@ -146,6 +152,8 @@ private struct DialogCard: View {
             .shadow(color: .black.opacity(0.25), radius: 24, y: 10)
             .padding(24)
         }
+        // One modal container: on the bare stack the trait lands on every element and only the last (Cancel) stays reachable.
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
     }
 
@@ -156,7 +164,7 @@ private struct DialogCard: View {
     }
 
     private func run(_ action: DialogAction) {
-        guard !closed else { return }
+        guard !closed, action.enabled else { return }
         close()
         action.action()
     }
@@ -165,6 +173,7 @@ private struct DialogCard: View {
 private struct DialogButtonStyle: ButtonStyle {
     let destructive: Bool
     let prominent: Bool
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -172,7 +181,7 @@ private struct DialogButtonStyle: ButtonStyle {
             .foregroundStyle(destructive ? Color.white : (prominent ? Palette.onAccent : Palette.text))
             .padding(.vertical, 12)
             .background(destructive ? Palette.danger : (prominent ? Palette.accentFill : Palette.bubbleUser), in: Capsule())
-            .opacity(configuration.isPressed ? 0.85 : 1)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
             .scaleEffect(configuration.isPressed ? Motion.pressScale : 1)
             .animation(Motion.press, value: configuration.isPressed)
             .contentShape(Capsule())

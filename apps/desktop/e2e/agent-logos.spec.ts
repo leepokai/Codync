@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import type { HostSnapshot } from '../src/shared/ipc.ts'
-import { attach } from './sandbox.ts'
+import { attach, openGeneralSettings } from './sandbox.ts'
 
 type Bridge = {
   codync: {
@@ -22,11 +22,6 @@ function call<T>(page: Page, method: string, body: unknown): Promise<T> {
 }
 
 const createBot = async (page: Page, body: object) => (await call<{ bot: { id: string } }>(page, 'createBot', body)).bot.id
-
-async function openGeneralSettings(page: Page) {
-  await page.locator('.sidebar-account').click()
-  await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
-}
 
 test('bots on different agents show their logos until Show agent logos is turned off', async () => {
   const { browser, page } = await attach()

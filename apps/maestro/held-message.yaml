@@ -1,0 +1,55 @@
+# A computer in no account has no relay, so what a phone sends while it can't reach the computer waits on the phone: it
+# can be taken back, and the rest goes when the computer is back (held-message-delivered.yaml). Pair the phone first
+# (signed-out-pairing.yaml) with a sandbox in no account (`npm run dev`, without `--cloud`), and keep the app open. With
+# the sandbox running, make a bot the phone then shows:
+#   curl -H "Authorization: Bearer $(cat ~/.codync-dev-<sandbox name>/token)" -H 'Content-Type: application/json' \
+#     -d '{"name":"Held check","backend":"custom","command":"python3 -X utf8 -u '"$PWD"'/host/tests/fixtures/steer_agent.py plain 1","connectors":[],"skills":[],"notify":false}' \
+#     http://127.0.0.1:<sandbox port>/api/createBot
+# Stop the sandbox, and only then:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags held-message -e BOT_NAME="Held check" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - held-message
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: false
+- tapOn: ${BOT_NAME}
+# Android says it can't load the chat's history, 20 seconds after it opens.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible: "Something went wrong"
+          timeout: 30000
+      - tapOn: "OK"
+- tapOn: "Ask ${BOT_NAME}"
+- inputText: "take back ${maestro.platform}"
+- tapOn: "Send"
+# Up to how long the phone tries the computer before it holds the message.
+- extendedWaitUntil:
+    visible: "Waiting for the computer to come online"
+    timeout: 60000
+- takeScreenshot: held-take-back
+- tapOn: "Cancel|Don't send"
+- assertNotVisible: "take back ${maestro.platform}"
+- assertNotVisible: "Waiting for the computer to come online"
+- tapOn: "Ask ${BOT_NAME}"
+- inputText: "held ${maestro.platform}"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Waiting for the computer to come online"
+    timeout: 60000
+- takeScreenshot: held-waiting

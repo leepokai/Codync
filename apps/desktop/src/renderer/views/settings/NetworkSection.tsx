@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Network, NetworkComputer } from '@shared/network'
-import { Button } from '../../components/Controls'
+import { BetaTag, Button } from '../../components/Controls'
 import { Dialog, Sheet } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -80,7 +80,7 @@ export function NetworkSection({ store, heading }: { store: BotStore; /** The co
     <VStack gap={14}>
       <HStack gap={6} className="settings-section-header">
         <Text as="h3" size="body" weight="semibold" tone="text">{heading ?? tr('Network')}</Text>
-        <Text as="span" size="caption" weight="semibold" className="beta-tag">{tr('Beta')}</Text>
+        <BetaTag />
       </HStack>
       {nets.map((net) => (
         <NetworkCard

@@ -15,7 +15,8 @@
 //!
 //! Registry and GitHub JSON is untrusted input: names become ids and paths, so
 //! they're reduced to a safe slug first. Secret values (API keys, tokens) stay
-//! on this computer; listings only say which keys are set.
+//! on this computer; listings only say which keys are set. On a Codync Cloud
+//! computer, remote connectors' secrets are its keeper's: see `connector_keeper`.
 
 pub mod agent_sign_in;
 pub mod composio;
@@ -28,6 +29,7 @@ pub mod vault;
 pub mod verify;
 
 mod command_line;
+mod connector_keeper;
 mod custom;
 mod install;
 mod registry;
@@ -183,12 +185,20 @@ fn load<T: for<'de> Deserialize<'de>>(store: &crate::store::Store, key: &str) ->
     store.kv_get(key).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
+const CONNECTORS_SLOT: &str = "connectors";
+
 pub fn connectors(store: &crate::store::Store) -> Result<Vec<Connector>> {
-    vault::read(store, "connectors")?.map_or_else(|| Ok(Vec::new()), |s| serde_json::from_str(&s).map_err(Into::into))
+    vault::read(store, CONNECTORS_SLOT)?
+        .map_or_else(|| Ok(Vec::new()), |s| serde_json::from_str(&s).map_err(Into::into))
 }
 
 pub fn skills(store: &crate::store::Store) -> Vec<Skill> {
     load(store, "skills")
+}
+
+/// Whether a connector or connected app was ever saved, answered without the vault.
+pub fn connectors_saved(store: &crate::store::Store) -> Result<bool> {
+    Ok(vault::saved(store, CONNECTORS_SLOT)? || vault::saved(store, composio::SLOT)?)
 }
 
 /// Everything a bot can turn on: installed connectors and connected apps.
@@ -264,7 +274,12 @@ fn save<T: Serialize>(store: &crate::store::Store, key: &str, items: &[T]) -> Re
 }
 
 pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<()> {
-    vault::write(store, "connectors", &serde_json::to_string(items)?)
+    if crate::remote::managed::is_managed(store) {
+        let mut items = items.to_vec();
+        connector_keeper::hand_over(store, &mut items)?;
+        return vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?);
+    }
+    vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(items)?)
 }
 
 /// Serialize read/modify/write so OAuth refreshes and installations cannot replace each other.
@@ -369,6 +384,35 @@ mod tests {
         assert_eq!(c.public()["canSignIn"], false, "already signs in");
         c.oauth = None;
         assert_eq!(c.public()["canSignIn"], true, "set up with a token: can switch to signing in");
+    }
+
+    /// The credential store stays shut until something was saved, and a new bot still gets all of it after that.
+    #[tokio::test]
+    async fn a_new_bot_gets_what_the_computer_saved() {
+        let dir = std::env::temp_dir().join(format!("codync-new-bot-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let app = json!({"id": "1", "toolkit": "slack", "name": "Slack", "status": "active"});
+        for (slot, saved, id) in [
+            (CONNECTORS_SLOT, json!([{"id": "linear", "name": "Linear", "url": "https://example.com/mcp"}]), "linear"),
+            (composio::SLOT, json!({"key": "k", "userId": "u", "connections": [app]}), "composio-slack"),
+        ] {
+            let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
+            let hub = crate::hub::Hub::new(
+                store,
+                "test".into(),
+                crate::remote::identity::Identity::load_or_create(&dir).expect("identity"),
+                "test".into(),
+                19222,
+            );
+            let new_bot = async || {
+                let asked = json!({"name": "n", "backend": "fixture", "command": "true", "cwd": dir});
+                crate::agent::new_bot::with_defaults(&hub, asked).await.expect("new bot").connectors
+            };
+            assert!(new_bot().await.is_empty(), "nothing saved yet");
+            vault::write(&hub.store, slot, &saved.to_string()).expect("save");
+            assert_eq!(new_bot().await, [id], "{slot}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]

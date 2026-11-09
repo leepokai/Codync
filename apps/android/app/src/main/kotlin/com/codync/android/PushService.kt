@@ -130,7 +130,7 @@ object PushDelivery {
             try {
                 withTimeout(45_000) {
                     val identity = withContext(Dispatchers.IO) { local.identity() }
-                    val connected = HostConnector.connect(computer, identity)
+                    val connected = HostConnector.connect(computer, identity, BuildConfig.VERSION_NAME)
                     active = connected
                     connected.state.firstReady()
                     syncLocked(context, local, computer, connected)

@@ -90,7 +90,9 @@ public struct ComputerFilterHeader: View {
 
 public extension BotStore {
     var connectionLabel: String {
-        switch shownConnection {
+        if isAsleep { return "Sleeping" }
+        return switch shownConnection {
+        case .online where isCloudUpdating: "Updating…"
         case .online where mismatch != nil: "Needs update"
         case .online: "Connected"
         case .connecting: "Connecting…"

@@ -76,8 +76,12 @@ export const prefs = {
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
+  /** Chose to go on without signing in; signing in ends it. */
+  withoutAccount: pref('withoutAccount', false),
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
+  /** Prompts this computer delivered, voice calls aside; they bring the second star ask. */
+  promptsSent: pref('promptsSent', 0),
   appLanguage: pref<AppLanguage>('appLanguage', 'system'),
   /** The working pill unfolds the turn's thinking and steps; off keeps the chat to its messages. */
   thinkingDetails: pref('showThinkingDetails', false),

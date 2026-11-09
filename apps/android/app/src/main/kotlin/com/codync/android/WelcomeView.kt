@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,8 +56,8 @@ import kotlin.math.sin
 
 /**
  * Before any setup, and whenever signed out: who the bots are, a glimpse of talking to one, one way forward (iOS `WelcomeView`).
- * With accounts that way is signing in; builds without them go on to pairing. [signedOutComputers] were paired before
- * sign-in was required and move into the account at sign-in.
+ * With accounts that's signing in, or going on without one; builds without them go on to pairing. [signedOutComputers]
+ * were paired signed out; this phone keeps them when it signs in.
  */
 @Composable internal fun WelcomeView(state: AccountContext, store: AccountStore, signedOutComputers: Int = 0, start: () -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Welcome))
@@ -66,37 +67,49 @@ import kotlin.math.sin
     LaunchedEffect(Unit) {
         for (next in beat + 1..4) { delay(if (next == 1) 150 else 280); beat = next }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Palette.background).safeDrawingPadding()) {
-        val height = maxHeight
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            // Three flexible gaps as the iOS spacers: above the crew, under it, and over the buttons.
-            Column(Modifier.fillMaxWidth().heightIn(min = height).padding(horizontal = 24.dp).padding(bottom = 12.dp),
-                verticalArrangement = Arrangement.SpaceBetween) {
-                Spacer(Modifier.height(0.dp))
-                Crew(beat >= 1, Modifier.padding(top = 24.dp))
-                Column(Modifier.padding(top = 24.dp)) {
-                    ChatGlimpse(beat >= 2, Modifier.padding(bottom = 24.dp))
-                    Column(Modifier.rise(beat >= 3), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(tr("Your coding agents,\nas teammates."), style = Type.system(34f, FontWeight.SemiBold).copy(letterSpacing = (-0.6).sp),
-                            color = Palette.text)
-                        Text(tr("Give each one a name and a project. They work on your computer while you're away."), style = Type.body, color = Palette.secondary)
-                        DemoButton(Modifier.padding(top = 4.dp))
-                    }
-                }
-                Column(Modifier.padding(top = 32.dp).rise(beat >= 4), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (signedOutComputers > 0) Text(if (signedOutComputers == 1)
-                        tr("Sign in to keep using your computer. It moves into your account, so you won't need to scan again.")
-                    else tr("Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.")
-                        .replace("{count}", signedOutComputers.toString()),
-                        Modifier.fillMaxWidth().padding(bottom = 4.dp), style = Type.footnote, color = Palette.secondary)
-                    if (state.account.configured) SignInButtons(state, store) else WideButton("Get started", action = start)
-                    // Restoring sign-in failed (the only account error): Clerk retries on its own with a backoff of up to a minute; Try again asks now.
-                    state.account.error?.let {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(it, Modifier.weight(1f, fill = false), style = Type.footnote, color = Palette.danger)
-                            IconButton("Try again", "arrow.clockwise") { store.retryAccounts() }
+    Column(Modifier.fillMaxSize().background(Palette.background).safeDrawingPadding()) {
+        // The way forward stays on screen at any size: the pitch scrolls above it on the smallest.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val room = maxHeight
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                // Two flexible gaps as the iOS spacers: above the crew and under it.
+                Column(Modifier.fillMaxWidth().heightIn(min = room).padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.SpaceBetween) {
+                    Spacer(Modifier.height(0.dp))
+                    Crew(beat >= 1, Modifier.padding(top = 24.dp))
+                    Column(Modifier.padding(top = 24.dp)) {
+                        ChatGlimpse(beat >= 2, Modifier.padding(bottom = 24.dp))
+                        Column(Modifier.rise(beat >= 3), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(tr("Your coding agents,\nas teammates."), style = Type.system(34f, FontWeight.SemiBold).copy(letterSpacing = (-0.6).sp),
+                                color = Palette.text)
+                            Text(tr("Give each one a name and a project. They work on your computer while you're away."), style = Type.body, color = Palette.secondary)
+                            DemoButton(Modifier.padding(top = 4.dp))
                         }
                     }
+                }
+            }
+        }
+        Column(Modifier.padding(horizontal = 24.dp).padding(top = 20.dp, bottom = 12.dp).rise(beat >= 4),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (signedOutComputers > 0) Text(if (signedOutComputers == 1)
+                tr("Your computer stays paired. If you sign in with an account used on this phone before, scan its code again. Add to account brings it into your account.")
+            else tr("Your {count} computers stay paired. If you sign in with an account used on this phone before, scan their codes again. Add to account brings each into your account.")
+                .replace("{count}", signedOutComputers.toString()),
+                Modifier.fillMaxWidth().padding(bottom = 4.dp), style = Type.footnote, color = Palette.secondary)
+            if (state.account.configured) {
+                SignInButtons(state, store)
+                Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).plainButton(action = start),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
+                    Text(tr("Continue without an account"), style = Type.footnote.medium, color = Palette.text)
+                    Text(tr("Only on the same Wi-Fi or Tailscale as your computer"), style = Type.caption2, color = Palette.secondary,
+                        textAlign = TextAlign.Center)
+                }
+            } else WideButton("Get started", action = start)
+            // Restoring sign-in failed (the only account error): Clerk retries on its own with a backoff of up to a minute; Try again asks now.
+            state.account.error?.let {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(it, Modifier.weight(1f, fill = false), style = Type.footnote, color = Palette.danger)
+                    IconButton("Try again", "arrow.clockwise") { store.retryAccounts() }
                 }
             }
         }
@@ -175,15 +188,15 @@ private val CREW = listOf(
     val busy = "session" in state.busy
     val enabled = state.account.ready && !busy
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WideButton(enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.Apple) }) {
+        WideButton(enabled = enabled, busy = busy, height = SIGN_IN_HEIGHT, action = { store.signIn(SignInProvider.Apple) }) {
             Symbol("apple.logo", size = 20.dp, tint = Palette.onAccent)
             Text(tr("Continue with Apple"))
         }
-        WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.Google) }) {
+        WideButton(primary = false, enabled = enabled, busy = busy, height = SIGN_IN_HEIGHT, action = { store.signIn(SignInProvider.Google) }) {
             Image(painterResource(R.drawable.google_logo), null, Modifier.size(20.dp))
             Text(tr("Continue with Google"))
         }
-        WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.GitHub) }) {
+        WideButton(primary = false, enabled = enabled, busy = busy, height = SIGN_IN_HEIGHT, action = { store.signIn(SignInProvider.GitHub) }) {
             Symbol("github.logo", size = 20.dp)
             Text(tr("Continue with GitHub"))
         }
@@ -196,10 +209,10 @@ private val CREW = listOf(
 @Composable internal fun WideButton(title: String, primary: Boolean = true, enabled: Boolean = true, action: () -> Unit) =
     WideButton(primary, enabled, action = action) { Text(tr(title)) }
 
-@Composable internal fun WideButton(primary: Boolean = true, enabled: Boolean = true, busy: Boolean = false, action: () -> Unit,
+@Composable internal fun WideButton(primary: Boolean = true, enabled: Boolean = true, busy: Boolean = false, height: Dp = WIDE_HEIGHT, action: () -> Unit,
     label: @Composable () -> Unit) {
     val content: @Composable () -> Unit = {
-        Box(Modifier.fillMaxWidth().heightIn(min = WIDE_HEIGHT), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().heightIn(min = height), contentAlignment = Alignment.Center) {
             Row(Modifier.graphicsLayer { alpha = if (busy) 0f else 1f }, verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalTextStyle provides Type.headline) { label() }
@@ -212,6 +225,8 @@ private val CREW = listOf(
 
 // The label's own 50-point frame, inside the style's 11-point vertical padding (72 in all, as on iOS).
 private val WIDE_HEIGHT: Dp = 50.dp
+// 50 in all, so the welcome keeps its crew on small screens.
+private val SIGN_IN_HEIGHT: Dp = 28.dp
 
 /** Fades up into place once `shown`. */
 @Composable private fun Modifier.rise(shown: Boolean): Modifier {

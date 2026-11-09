@@ -24,6 +24,55 @@ async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
     assert_eq!(app.drafts["b"].text, "My unfinished message");
 }
 
+#[tokio::test]
+async fn the_dev_servers_sheet_offers_what_each_server_allows() {
+    use crate::tui::manage::DevServersSheet;
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    fn sheet(app: &App) -> &DevServersSheet {
+        let Some(Overlay::DevServers(sheet)) = app.overlays.last() else { panic!("the sheet is open") };
+        sheet
+    }
+
+    let failed = json!({"id": "a", "name": "web", "command": "npm run dev", "folder": "/site", "status": "failed",
+        "ports": [], "startedAt": null, "exitCode": 3, "managed": true});
+    let shell = json!({"id": "detected:9", "name": "node", "command": "node", "folder": null, "status": "running",
+        "ports": [{"port": 5173, "local": "http://localhost:5173", "remote": []}], "startedAt": null, "exitCode": null,
+        "managed": false});
+    let mut app = test_app();
+    let bot = json!({"id": "b", "name": "Bot", "devServers": [failed, shell]});
+    app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot with servers parses"));
+    app.selected = Some("b".into());
+    assert_eq!(app.bots["b"].dev_servers.len(), 2, "what the host sends decodes");
+
+    app.open_dev_servers();
+    assert_eq!(sheet(&app).selected, 0);
+
+    // Enter on one that failed reads why, and its log says how it ended.
+    app.on_key(KeyEvent::from(KeyCode::Enter));
+    let logs = sheet(&app).logs.as_ref().expect("the log opened");
+    assert_eq!(logs.detail, "npm run dev · Exit code 3");
+    app.on_key(KeyEvent::from(KeyCode::Char('r')));
+    assert!(sheet(&app).logs.is_some(), "a refresh stays in the log");
+    app.on_key(KeyEvent::from(KeyCode::Esc));
+    assert!(sheet(&app).logs.is_none(), "esc goes back to the list");
+
+    // One started through the shell has no log to read.
+    app.on_key(KeyEvent::from(KeyCode::Down));
+    assert_eq!(sheet(&app).selected, 1);
+    app.on_key(KeyEvent::from(KeyCode::Char('l')));
+    assert!(sheet(&app).logs.is_none());
+
+    // Attached from elsewhere, its address shows instead of a browser opening here.
+    app.on_this_computer = false;
+    app.on_key(KeyEvent::from(KeyCode::Enter));
+    let (hint, _) = app.hint.as_ref().expect("a hint shows");
+    assert!(hint.starts_with("http://localhost:5173 · "), "{hint}");
+
+    app.on_key(KeyEvent::from(KeyCode::Esc));
+    assert!(app.overlays.is_empty());
+}
+
 #[test]
 fn fuzzy_is_a_subsequence_match() {
     assert!(fuzzy("rx", &["Rex"]));
@@ -114,4 +163,39 @@ async fn lead_role_opens_from_the_keyboard_and_badge_without_changing_selection(
     assert_eq!(app.selected.as_deref(), Some("other"));
     app.on_key(KeyEvent::from(KeyCode::Enter));
     assert!(app.overlays.is_empty());
+}
+
+#[tokio::test]
+async fn the_settings_form_scrolls_to_keep_the_focused_field_in_sight() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = test_app();
+    app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "name": "B", "backend": "claude"})).expect("valid bot"));
+    app.selected = Some("b".into());
+    app.edit_bot();
+    let mut drawn = |field: usize| {
+        let Some(Overlay::Form(f)) = app.overlays.last_mut() else { panic!("the editor opens") };
+        f.field = field;
+        let mut terminal = Terminal::new(TestBackend::new(100, 44)).expect("terminal");
+        terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw the form");
+        terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+    };
+    assert!(!drawn(0).contains("Skills"), "more fields than the form has rows");
+    assert!(drawn(FIELDS.len() - 1).contains("Skills"), "scrolled to the focused one");
+}
+
+#[tokio::test]
+async fn a_long_field_help_wraps_to_a_second_row() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = test_app();
+    let bot = json!({"id": "b", "name": "B", "backend": "claude", "compaction": "early",
+        "compactionTokens": {"min": 50_000, "max": 960_000, "step": 10_000, "presets": [100_000]}});
+    app.bots.insert("b".into(), Bot::parse(&bot).expect("valid bot"));
+    app.selected = Some("b".into());
+    app.edit_bot();
+    let Some(Overlay::Form(f)) = app.overlays.last_mut() else { panic!("the editor opens") };
+    f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+    let mut terminal = Terminal::new(TestBackend::new(100, 44)).expect("terminal");
+    terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw the form");
+    let drawn = terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>();
+    assert!(drawn.contains("50K–960K"), "the sizes one can type, after a description longer than a row");
 }

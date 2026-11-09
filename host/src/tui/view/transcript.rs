@@ -4,7 +4,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
+use super::super::app::{App, Bot, Click, Entry, Exchange, Item, KOFI_URL, Kind, Outcome, Status, group};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
@@ -75,7 +76,12 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     // A bot's messages arrive whole (Grok Bot's `send_message`); what it writes along the way is trace.
     for item in group(&b.id, &entries) {
         match item {
-            Item::Entry(e) => entry_lines(&mut out, app, b, e, &info, width),
+            Item::Entry(e) => {
+                entry_lines(&mut out, app, b, e, &info, width);
+                if app.kofi_at() == Some(e.id.as_str()) {
+                    kofi_lines(&mut out, width);
+                }
+            }
             Item::Group(g) => {
                 let from = out.lines.len();
                 let lead = format!("{} messages with ", g.count);
@@ -99,6 +105,23 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
         out.lines.push(Line::from(line));
     }
     out
+}
+
+/// The Ko-fi invitation under its reply: one quiet sentence and the link (the terminal makes it clickable).
+fn kofi_lines(out: &mut Built, width: usize) {
+    let t = theme();
+    let text = tr("Codync is free and made by one person. If it helps you, you can support it on Ko-fi.");
+    gap(out);
+    out.lines.extend(md::wrap(
+        &[Span::styled(text.into_owned(), t.dim)],
+        width.saturating_sub(1),
+        &[Span::raw("   ")],
+        &[Span::raw("   ")],
+    ));
+    out.lines.push(Line::from(vec![
+        Span::raw("   "),
+        Span::styled(KOFI_URL, t.secondary.add_modifier(Modifier::UNDERLINED)),
+    ]));
 }
 
 /// An empty chat: who this is and how it works.

@@ -130,6 +130,10 @@ pub enum Event {
     CloudComputerCreated,
     /// The user renamed a Codync Cloud computer (desktop; phones send their own).
     CloudComputerRenamed,
+    /// The Ko-fi invitation under the first reply (desktop and terminal UI only) was shown; on the desktop, then opened
+    /// or dismissed.
+    KofiInviteShown,
+    KofiInviteAnswered,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
     /// A paired phone asked to add this computer to its account, and the computer answered.
@@ -218,6 +222,8 @@ impl Event {
             Self::CloudKeySaved => "cloud_key_saved",
             Self::CloudComputerCreated => "cloud_computer_created",
             Self::CloudComputerRenamed => "cloud_computer_renamed",
+            Self::KofiInviteShown => "kofi_invite_shown",
+            Self::KofiInviteAnswered => "kofi_invite_answered",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",
             Self::DiscoveryFailed => "discovery_failed",

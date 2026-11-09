@@ -1939,5 +1939,7 @@
   "Provider": "Provedor",
   "You can have up to 3 cloud computers. Delete one to make another.": "Você pode ter até 3 computadores na nuvem. Apague um para criar outro.",
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "Apague primeiro seus computadores na nuvem nesse provedor: o Codync precisa da chave para colocá-los para dormir.",
-  "Codync Cloud updates it before it next sleeps.": "O Codync Cloud o atualiza antes de ele dormir de novo."
+  "Codync Cloud updates it before it next sleeps.": "O Codync Cloud o atualiza antes de ele dormir de novo.",
+  "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "O Codync é gratuito e feito por uma só pessoa. Se ele ajuda você, dá para apoiá-lo no Ko-fi.",
+  "Support on Ko-fi": "Apoiar no Ko-fi"
 }

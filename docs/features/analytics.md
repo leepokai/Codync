@@ -160,6 +160,7 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | New user | First event of any kind in the period. A new computer also sends `host_started` with `first_run`. |
 | Onboarded | Desktop: `onboarding_completed`. Phones: `computer_paired` (or `onboarding_completed` with `via = skipped`, which is not onboarded). Funnels: [analytics events](../reference/analytics-events.md#funnels). |
 | Star rate | `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`. |
+| Ko-fi rate | `kofi_invite_answered` with `opened` ÷ `kofi_invite_shown`, per `app` (the terminal UI sends only `kofi_invite_shown`: its link opens in the terminal). |
 | Activated | Sent ≥1 message from a phone (`message_sent`, `client = remote`) within 7 days of first seen. In the first week of data, 4 of 5 such users came back after 24 h and none of the 6 computer-only ones did. |
 | Successful turn rate | `turn_finished` with `outcome = done` ÷ all `turn_finished` with `source = user`, per agent and per `$os`. |
 | Frustration rate | (`turn_stopped` + `session_reset`) ÷ `message_sent`, per `$os`. |

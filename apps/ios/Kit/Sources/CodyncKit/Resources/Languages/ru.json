@@ -1814,5 +1814,9 @@
   "Preparing…": "Подготовка…",
   "Copied. Paste it where you need it; secrets were removed.": "Скопировано. Вставьте куда нужно; секреты удалены.",
   "The snapshot could not be made.": "Не удалось создать снимок.",
-  "Versions, health, settings and the end of the log, with secrets removed.": "Версии, состояние, настройки и конец журнала, без секретов."
+  "Versions, health, settings and the end of the log, with secrets removed.": "Версии, состояние, настройки и конец журнала, без секретов.",
+  "Remove note": "Удалить заметку",
+  "Notes the bot gets with this channel’s memory": "Заметки, которые бот получает с памятью этого канала",
+  "A fact this channel should keep": "Факт, который канал должен помнить",
+  "Channel note": "Заметка канала"
 }

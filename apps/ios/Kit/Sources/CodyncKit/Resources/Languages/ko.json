@@ -1814,5 +1814,9 @@
   "Preparing…": "준비 중…",
   "Copied. Paste it where you need it; secrets were removed.": "복사했습니다. 필요한 곳에 붙여넣으세요. 비밀 정보는 제거되었습니다.",
   "The snapshot could not be made.": "스냅샷을 만들 수 없습니다.",
-  "Versions, health, settings and the end of the log, with secrets removed.": "버전, 상태, 설정, 로그 끝부분(비밀 정보 제거)."
+  "Versions, health, settings and the end of the log, with secrets removed.": "버전, 상태, 설정, 로그 끝부분(비밀 정보 제거).",
+  "Remove note": "메모 제거",
+  "Notes the bot gets with this channel’s memory": "이 채널의 기억과 함께 봇에게 전달되는 메모",
+  "A fact this channel should keep": "이 채널이 기억할 사실",
+  "Channel note": "채널 메모"
 }

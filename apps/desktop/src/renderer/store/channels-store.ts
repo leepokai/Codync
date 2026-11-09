@@ -86,6 +86,25 @@ export class ChannelsStore extends Observable {
     } catch (error) { if (this.active) this.error = String(error); return false }
     finally { if (this.active) { this.busy = false; this.changed() } }
   }
+
+  /** Small facts this channel keeps, given to the bot with its memory. */
+  async notes(provider: 'slack' | 'discord' | 'telegram', channel: string): Promise<string[]> {
+    const answer = await (await this.client()).call<{ notes: string[] }>('channelNotes', { provider, channel })
+    return answer.notes ?? []
+  }
+
+  /** Adds one note; the host checks its length and the channel's count. */
+  async addNote(provider: 'slack' | 'discord' | 'telegram', channel: string, text: string): Promise<string[]> {
+    const answer = await (await this.client()).call<{ notes: string[] }>('addChannelNote', { provider, channel, text })
+    return answer.notes ?? []
+  }
+
+  /** Removes the note at `index`, as the channel's list has it. */
+  async removeNote(provider: 'slack' | 'discord' | 'telegram', channel: string, index: number): Promise<string[]> {
+    const answer = await (await this.client()).call<{ notes: string[] }>('removeChannelNote', { provider, channel, index })
+    return answer.notes ?? []
+  }
+
   async disconnectSlack() {
     if (!this.active || this.busy) return
     this.busy = true; this.error = null; this.changed()

@@ -1814,5 +1814,9 @@
   "Preparing…": "準備中…",
   "Copied. Paste it where you need it; secrets were removed.": "コピーしました。必要な場所に貼り付けてください。秘密情報は削除済みです。",
   "The snapshot could not be made.": "スナップショットを作成できませんでした。",
-  "Versions, health, settings and the end of the log, with secrets removed.": "バージョン、状態、設定、ログの末尾（秘密情報を削除）。"
+  "Versions, health, settings and the end of the log, with secrets removed.": "バージョン、状態、設定、ログの末尾（秘密情報を削除）。",
+  "Remove note": "メモを削除",
+  "Notes the bot gets with this channel’s memory": "このチャンネルの記憶とともにボットへ渡すメモ",
+  "A fact this channel should keep": "このチャンネルが覚えておく事実",
+  "Channel note": "チャンネルのメモ"
 }

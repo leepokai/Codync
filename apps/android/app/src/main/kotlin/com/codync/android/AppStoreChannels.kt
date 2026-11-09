@@ -5,6 +5,9 @@ import com.codync.android.core.DiscordStatus
 import com.codync.android.core.SlackStatus
 import com.codync.android.core.TelegramBot
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -35,6 +38,27 @@ suspend fun AppStore.setChannelMemory(provider: String, channel: String, memory:
         put("channel", channel)
         put("memory", memory)
     })
+
+
+/** Small facts a channel keeps, given to the bot with its memory. */
+suspend fun AppStore.channelNotes(provider: String, channel: String): List<String> {
+    val answer = hostQuery("channelNotes", buildJsonObject { put("provider", provider); put("channel", channel) }).jsonObject
+    return answer["notes"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
+}
+
+suspend fun AppStore.addChannelNote(provider: String, channel: String, text: String): List<String> {
+    val answer = hostQuery("addChannelNote", buildJsonObject {
+        put("provider", provider); put("channel", channel); put("text", text)
+    }).jsonObject
+    return answer["notes"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
+}
+
+suspend fun AppStore.removeChannelNote(provider: String, channel: String, index: Int): List<String> {
+    val answer = hostQuery("removeChannelNote", buildJsonObject {
+        put("provider", provider); put("channel", channel); put("index", index)
+    }).jsonObject
+    return answer["notes"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
+}
 
 /** Gives a channel a picture (an SF Symbol name), or clears it. */
 suspend fun AppStore.setChannelIcon(provider: String, channel: String, icon: String): JsonElement =

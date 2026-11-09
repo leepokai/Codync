@@ -1814,5 +1814,9 @@
   "Preparing…": "正在准备…",
   "Copied. Paste it where you need it; secrets were removed.": "已复制。粘贴到需要的地方；机密已移除。",
   "The snapshot could not be made.": "无法生成快照。",
-  "Versions, health, settings and the end of the log, with secrets removed.": "版本、状态、设置和日志末尾，已移除机密。"
+  "Versions, health, settings and the end of the log, with secrets removed.": "版本、状态、设置和日志末尾，已移除机密。",
+  "Remove note": "移除备注",
+  "Notes the bot gets with this channel’s memory": "随此渠道记忆一并交给机器人的备注",
+  "A fact this channel should keep": "此渠道应记住的事实",
+  "Channel note": "渠道备注"
 }

@@ -1814,5 +1814,9 @@
   "Preparing…": "Preparando…",
   "Copied. Paste it where you need it; secrets were removed.": "Copiado. Pégalo donde lo necesites; los secretos se quitaron.",
   "The snapshot could not be made.": "No se pudo crear la instantánea.",
-  "Versions, health, settings and the end of the log, with secrets removed.": "Versiones, salud, ajustes y el final del registro, sin secretos."
+  "Versions, health, settings and the end of the log, with secrets removed.": "Versiones, salud, ajustes y el final del registro, sin secretos.",
+  "Remove note": "Quitar nota",
+  "Notes the bot gets with this channel’s memory": "Notas que el bot recibe con la memoria de este canal",
+  "A fact this channel should keep": "Un dato que este canal debe recordar",
+  "Channel note": "Nota del canal"
 }

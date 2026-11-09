@@ -173,7 +173,11 @@ fn deliver(hub: &Hub, event: &DiscordIncoming) -> Result<()> {
         hub.store.reject_discord(&event.event)?;
         return Ok(());
     };
-    let text = crate::channels::with_memory(&binding.memory, &event.text);
+    let text = crate::channels::with_notes(
+        &binding.memory,
+        &crate::channels::notes(&hub.store, "discord", &binding.channel_id),
+        &event.text,
+    );
     let Some(bot) = hub.store.bot(&event.bot)?.filter(|b| !b.deleted && !b.config.is_group()) else {
         hub.store.reject_discord(&event.event)?;
         return Ok(());

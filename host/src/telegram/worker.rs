@@ -170,8 +170,7 @@ async fn handle(hub: &Arc<Hub>, ep: &Endpoint, name: &str, shared: &Shared, upda
     let turn = hub.store.max_turn(&bot.bot_id) + 1;
     *shared.lock().await = Some(Route { chat, turn, live: None, cards: HashMap::new() });
     let nonce = format!("tg-{name}-{}", update["update_id"]);
-    let body =
-        json!({"botId": bot.bot_id, "text": crate::channels::with_memory(&bot.memory, text), "clientNonce": nonce});
+    let body = json!({"botId": bot.bot_id, "text": crate::channels::with_notes(&bot.memory, &crate::channels::notes(&hub.store, "telegram", &bot.name), text), "clientNonce": nonce});
     if let Err(error) = crate::api::dispatch(hub, &Caller::Local, "send", body).await {
         *shared.lock().await = None;
         say(ep, &bot, chat, &format!("Could not reach the bot: {error:#}")).await;

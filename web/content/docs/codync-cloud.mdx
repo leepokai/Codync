@@ -5,7 +5,7 @@ It needs a free Codync account (Apple, Google or GitHub). Every app reaches a cl
 ## Start a cloud computer
 
 1. Make an API key at your provider. In Codync, **How to make a key** on the provider's key sheet shows the steps and links to the provider's page.
-2. Open **Computers**, and in the **Codync Cloud** section choose **+**.
+2. Open **Manage computers** on the iPhone or Android (tap the connection status at the top of the Bots tab), or Settings → **Computers** in the desktop app, and in the **Codync Cloud** section choose **+**.
 3. Name the cloud computer, pick the provider, and paste its key when asked. The key is checked with the provider before it's saved.
 4. Choose **Create**. It shows "Preparing your cloud computer…" for a minute or two, then appears under its name with its own Codync bot.
 
@@ -18,7 +18,9 @@ A cloud computer goes to sleep while its bots have nothing to do, so it doesn't 
 ## Your keys
 
 - **The provider key** is stored encrypted, only for your account, and never shown again: the apps show its last four characters.
-- **On the cloud computer**, your bots and their agents run as a user without sudo. API keys you save for agents and for voice go through a keeper: the bots can use them but not read them. Your agents' own sign-ins (Claude Code's or Codex's login) stay readable to those agents, as on any computer.
+- **What Codync does with it:** Codync's service opens the key to create your cloud computers, put them to sleep, wake them and delete them. A Boat key is limited to its `codync` environment and can't run commands on or read a running machine. An InstaBox key reaches every machine in its workspace and can run commands on them (that's how Codync installs the host there), so make the key in a workspace you use only for Codync.
+- **On the cloud computer**, your bots and their agents run as a user without sudo. Anthropic, OpenAI and Gemini API keys and voice keys you save there go through a keeper: the bots can use them but not read them. Other agent keys, connector settings and your agents' own sign-ins (Claude Code's or Codex's login) stay readable to the agents, as on any computer.
+- **The provider runs the hardware**, so it can in principle read a running machine's memory and files. Boat documents no encryption at rest for its disks, and its snapshots may be stored outside the EU.
 
 ## Rename, snapshots and delete
 

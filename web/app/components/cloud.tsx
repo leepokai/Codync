@@ -25,7 +25,7 @@ const points: Point[] = [
   {
     icon: LockKey,
     title: "Keys kept apart",
-    body: "Your provider key is stored encrypted and shows only its last four. On the cloud computer, bots run without sudo, and agent and voice keys go through a keeper they can use but not read.",
+    body: "Your provider key is stored encrypted and shows only its last four. On the cloud computer, bots run without sudo, and Anthropic, OpenAI and Gemini API keys and voice keys go through a keeper they can use but not read.",
   },
 ];
 

@@ -5,7 +5,7 @@
 Key facts:
 
 - Price: $0, every feature included. No subscription, no paid tier, no in-app purchases. You pay only your agent's provider, through the plan or API key you already have (for example Claude Code with a Claude plan, Codex with a ChatGPT plan).
-- Codync Cloud: signed in to a free Codync account, start up to three cloud computers on your own Boat (EU) or InstaBox (US) account with a key you paste once. Codync charges nothing for them; the provider bills your account under its own plan. They sleep while the bots are idle and wake when you message one.
+- Codync Cloud (beta): signed in to a free Codync account, start up to three cloud computers on your own Boat (EU) or InstaBox (US) account with a key you paste once. Codync charges nothing for them; the provider bills your account under its own plan. They sleep while the bots are idle and wake when you message one.
 - Network (beta): your computers join private networks, and a bot on one messages a bot on another, peer to peer (iroh, QUIC), with a relay that sees only encrypted traffic when they can't connect directly. Each computer sets which bots may message its bots.
 - Where it runs: `codync-host`, one Rust binary, on macOS, Windows (x64, bundled in the desktop app) or Linux (desktop or headless server, static binary for x86_64 and arm64). Bots, chats and memory stay on that computer.
 - Clients: native SwiftUI iPhone app (iOS 26+), one Electron desktop app for macOS, Windows and Linux, and a terminal UI (`codync-host tui`) that works over SSH.

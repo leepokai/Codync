@@ -37,7 +37,7 @@ mod updates;
 pub use cmd::Cmd;
 use cmd::Queued;
 pub use compaction::{context_window, offers_threshold};
-pub(crate) use launch::{launch_commands, select_model, start_agent, system_prompt};
+pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};
 use crate::agent::config::FastModeSupport;
@@ -186,9 +186,8 @@ pub(crate) struct Conn {
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
     pub(crate) adapter: Adapter,
-    /// An OpenCode older than 2, which never ends a turn its model refused (docs/reference/acp-adapter-workarounds.md):
-    /// the registry build runs instead when there is one.
-    pub(crate) superseded: bool,
+    /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
+    superseded: bool,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     started: Instant,

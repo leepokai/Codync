@@ -106,6 +106,12 @@ function agentLines(vars: [string, string][]): string[] {
   ];
 }
 
+/** Agents the image ships as wrappers that install themselves on their first run, as root (Boat's `lazy-run`:
+ * Cursor, Hermes, OpenClaw, Mistral Vibe): installed now, while this user can, since the agents' user never will. Last,
+ * so the host claims itself meanwhile; a failed one stays a wrapper. */
+const PROVIDER_AGENTS =
+  'L=/usr/local/lib/ascii-harnesses/lazy-run; if [ -x "$L" ]; then for h in cursor hermes openclaw vibe; do sudo -n "$L" --install "$h" >/dev/null 2>&1 || true; done; fi';
+
 export function setupScript(env: Env): string {
   const lines = ["set -eu", `curl -fsSL ${INSTALL} | sh -s -- --host-only`, 'export PATH="$HOME/.local/bin:$PATH"'];
   const binary = env.CLOUD_HOST_BINARY_URL;
@@ -119,7 +125,7 @@ export function setupScript(env: Env): string {
     );
   }
   const vars = hostEnv(env.CLOUD_HOST_ENV);
-  lines.push(...keeperLines(vars), ...agentLines(vars));
+  lines.push(...keeperLines(vars), ...agentLines(vars), PROVIDER_AGENTS);
   return `${lines.join("\n")}\n`;
 }
 

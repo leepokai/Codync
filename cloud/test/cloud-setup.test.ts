@@ -40,7 +40,9 @@ describe("cloud computer setup", () => {
     expect(lines[at("codync-cloud.conf")]).toContain("Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000");
     expect(lines[at("codync-cloud.conf")]).toContain("sudo -n -u codync-agent tee");
     expect(at("enable-linger codync-agent")).toBeGreaterThan(at("enable --now codync-keeper"));
-    expect(lines.at(-1)).toMatch(/^sudo -n -u codync-agent env HOME="\$AH" .* "\$AH\/\.local\/bin\/codync-host" install$/);
+    expect(lines.at(-2)).toMatch(/^sudo -n -u codync-agent env HOME="\$AH" .* "\$AH\/\.local\/bin\/codync-host" install$/);
+    // Agents the image installs on first run as root are installed now, last.
+    expect(lines.at(-1)).toContain('"$L" --install "$h"');
     // The provider's own user keeps its sudo (its machine agent may need it): nothing here takes it away.
     expect(script).not.toMatch(/sudoers|restart "user@/);
   });

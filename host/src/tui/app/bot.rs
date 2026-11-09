@@ -62,8 +62,8 @@ pub struct Bot {
     pub harness_memory: Option<OwnMemory>,
     /// When Codync summarizes its chat; `None` where it doesn't.
     pub compaction: Option<codync_mem::compaction::Threshold>,
-    /// The sizes it may take, smallest first; none until the agent has told its window.
-    pub compaction_sizes: Vec<u64>,
+    /// The sizes it may take; `None` until the agent has told its window.
+    pub compaction_sizes: Option<codync_mem::compaction::Sizes>,
     /// Agents that carry on, in order, when its own can't answer (`agent::fallback`).
     pub fallbacks: Vec<crate::store::Fallback>,
     /// The bot may set its own fallbacks.
@@ -99,17 +99,6 @@ pub struct Rest {
 
 fn strs(v: &Value) -> Vec<String> {
     v.as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
-}
-
-/// `compactionTokens` (`{min, max, step}`) as the sizes it offers.
-fn sizes(v: &Value) -> Vec<u64> {
-    let (Some(min), Some(max), Some(step)) = (v["min"].as_u64(), v["max"].as_u64(), v["step"].as_u64()) else {
-        return vec![];
-    };
-    if step == 0 {
-        return vec![];
-    }
-    (min..=max).step_by(usize::try_from(step).unwrap_or(usize::MAX)).collect()
 }
 
 /// A model an agent offers (`agentModels`), with its own settings.
@@ -220,7 +209,7 @@ impl Bot {
                 .map(OwnMemory::Switch)
                 .or_else(|| (v["harnessMemoryShared"] == true).then_some(OwnMemory::Shared)),
             compaction: serde_json::from_value(v["compaction"].clone()).ok().flatten(),
-            compaction_sizes: sizes(&v["compactionTokens"]),
+            compaction_sizes: serde_json::from_value(v["compactionTokens"].clone()).ok().flatten(),
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),

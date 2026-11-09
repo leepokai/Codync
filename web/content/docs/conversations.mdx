@@ -118,7 +118,7 @@ Type `/` at the start of a message to see the bot's commands:
 - `/servers` (terminal UI): opens the bot's [dev servers](/docs/dev-servers), while it has some.
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
 
-Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it. See [Bots](/docs/bots#sessions).
+Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it, for a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) isn't Auto. See [Bots](/docs/bots#sessions).
 
 ## Fresh conversations
 
@@ -134,7 +134,7 @@ Before your next message, you can:
 
 Afterwards the card folds into one line that unfolds to what was carried.
 
-When Codync summarizes, and whether it starts fresh conversations at all, is the bot's [Summarize long chats](/docs/bots#summarize-long-chats) setting.
+Fresh conversations come only from a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) setting is something other than Auto, the default. Changing it takes back a card the new setting no longer calls for, and the conversation carries on.
 
 ## Notifications
 

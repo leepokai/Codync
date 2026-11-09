@@ -322,10 +322,26 @@ fn signed_out(c: &Connector) -> anyhow::Error {
 }
 
 /// What the `remote` MCP proxy sends to connector `id`: its URL and headers, with a fresh token.
-/// `stale`: the server just said 401, so refresh even if the token looks valid.
+/// `stale`: the server just said 401, so refresh even if the token looks valid. A cloud computer's keeper refreshes
+/// its own (`connector_keeper`).
 pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
     let c = market::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("unknown connector"))?;
     let url = c.url.clone().ok_or_else(|| anyhow!("{} isn't a remote connector", c.name))?;
+    if crate::remote::managed::is_managed(store) {
+        if let Some(o) = &c.oauth {
+            if !o.signed_in() {
+                return Err(signed_out(&c));
+            }
+            // The keeper drops a sign-in it can't renew: the connector then shows as signed out, as anywhere else.
+            if stale && market::connector_keeper::sign_in_ended(store, &c)? {
+                sign_out(store, &c)?;
+                return Err(signed_out(&c));
+            }
+        }
+        if let Some(target) = market::connector_keeper::target(store, &c, &url).await? {
+            return Ok(target);
+        }
+    }
     let mut headers = std::collections::BTreeMap::new();
     for (k, v) in &c.headers {
         headers.insert(k.clone(), market::passwords::resolve(store, v).await?);
@@ -395,9 +411,10 @@ async fn renew(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) 
     }
 }
 
-/// What the token endpoint's answer to a refresh means (RFC 6749 §5.2).
+/// What the token endpoint's answer to a refresh means (RFC 6749 §5.2); a cloud computer's keeper reads it the same
+/// way (`keeper::proxy`).
 #[derive(Debug, PartialEq)]
-enum Renewal {
+pub(crate) enum Renewal {
     Renewed,
     /// The server is down or busy, or something in front of it answered: ask again later.
     Retry,
@@ -407,7 +424,7 @@ enum Renewal {
     Unregistered,
 }
 
-fn renewal(status: reqwest::StatusCode, v: &Value) -> Renewal {
+pub(crate) fn renewal(status: reqwest::StatusCode, v: &Value) -> Renewal {
     if status.is_success() && v["access_token"].is_string() {
         return Renewal::Renewed;
     }

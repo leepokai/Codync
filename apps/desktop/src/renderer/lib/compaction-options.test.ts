@@ -1,34 +1,42 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compactionLabel, compactionMenu, compactionSizes } from './compaction-options.ts'
+import { compactionLabel, compactionMenu, fitSize, parseTypedSize } from './compaction-options.ts'
 
-test('a 1M window offers every 10K from 50K to 960K', () => {
-  const sizes = compactionSizes({ min: 50_000, max: 960_000, step: 10_000 })
-  assert.equal(sizes.length, 92)
-  assert.deepEqual([sizes[0], sizes.at(-1)], [50_000, 960_000])
-  assert.deepEqual(compactionSizes({ min: 50_000, max: 960_000, step: 0 }), [], 'a bad step lists nothing')
+const million = { min: 50_000, max: 960_000, step: 10_000, presets: [100_000, 200_000, 300_000] }
+
+test('a typed size goes to the nearest 10K the window takes', () => {
+  assert.deepEqual([354_000, 355_000, 10_000, 5_000_000].map((n) => fitSize(million, n)), [350_000, 360_000, 50_000, 960_000])
 })
 
-test('the menu checks the choice and opens the sizes', () => {
+test('a size is typed in thousands of tokens', () => {
+  assert.deepEqual(['350', '350k', ' 1.5K ', 'abc', '', '0', '-5'].map(parseTypedSize), [350_000, 350_000, 1500, null, null, null, null])
+})
+
+test('the menu lists the presets, then the sizes and a custom one', () => {
   const picked: unknown[] = []
-  const menu = compactionMenu(120_000, { min: 50_000, max: 160_000, step: 10_000 }, (t) => picked.push(t))
-  assert.deepEqual(menu.map((m) => m.title), ['Early (default)', 'Near the limit', 'Only when full', 'Set a size'])
+  let custom = 0
+  const menu = compactionMenu(200_000, million, (t) => picked.push(t), () => custom++)
+  assert.deepEqual(menu.map((m) => m.title), ['Auto (default)', 'Early', 'Near the limit', 'Set a size'])
   assert.ok(menu.slice(0, 3).every((m) => m.selected === false))
   const sizes = menu[3].submenu ?? []
-  assert.deepEqual(sizes.map((m) => m.title), ['50K', '60K', '70K', '80K', '90K', '100K', '110K', '120K', '130K', '140K', '150K', '160K'])
-  assert.deepEqual(sizes.filter((m) => m.selected).map((m) => m.title), ['120K'])
+  assert.deepEqual(sizes.map((m) => m.title), ['100K', '200K', '300K', 'Custom size…'])
+  assert.deepEqual(sizes.filter((m) => m.selected).map((m) => m.title), ['200K'])
   sizes[0].action?.()
   menu[1].action?.()
-  assert.deepEqual(picked, [50_000, 'nearLimit'])
+  sizes.at(-1)?.action?.()
+  assert.deepEqual(picked, [100_000, 'early'])
+  assert.equal(custom, 1)
+  const own = compactionMenu(350_000, million, () => {}, () => {})[3].submenu ?? []
+  assert.deepEqual(own.filter((m) => m.selected).map((m) => m.title), ['Custom size…'], 'a size of the user\'s own')
 })
 
 test('before the window is known the sizes wait for the next reply', () => {
-  const menu = compactionMenu('early', null, () => {})
+  const menu = compactionMenu('off', null, () => {}, () => {})
   assert.equal(menu[0].selected, true)
   assert.deepEqual(menu.at(-1), { title: "Sizes show after the bot's next reply", disabled: true, divider: true, action: menu.at(-1)?.action })
 })
 
 test('the pill shows a preset translated and a size as it is', () => {
-  assert.deepEqual(compactionLabel('off'), { title: 'Only when full', verbatim: false })
-  assert.deepEqual(compactionLabel(300_000), { title: '300K', verbatim: true })
+  assert.deepEqual(compactionLabel('off'), { title: 'Auto (default)', verbatim: false })
+  assert.deepEqual(compactionLabel(350_000), { title: '350K', verbatim: true })
 })

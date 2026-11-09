@@ -180,6 +180,8 @@ pub struct Acp {
     /// The process and process group leader.
     #[cfg(unix)]
     pid: Option<u32>,
+    /// A cloud computer's keeper grants this process started with: revoked once it is stopped, or gone.
+    grants: std::sync::Mutex<crate::keeper::client::Grants>,
 }
 
 impl Acp {
@@ -274,6 +276,7 @@ impl Acp {
             child,
             #[cfg(unix)]
             pid,
+            grants: std::sync::Mutex::default(),
         });
         note_started(&acp);
         Ok((acp, rx))
@@ -282,6 +285,16 @@ impl Acp {
     #[cfg(unix)]
     pub fn pid(&self) -> Option<u32> {
         self.pid
+    }
+
+    /// Keeps the grants in this process's environment for as long as it runs (`stop` or drop revokes them).
+    pub fn hold(&self, grants: crate::keeper::client::Grants) {
+        *self.grants.locked() = grants;
+    }
+
+    /// Whether it was started with keeper grants (which a restarted keeper no longer knows).
+    pub fn holds_grants(&self) -> bool {
+        !self.grants.locked().is_empty()
     }
 
     /// Everything still running in the agent's job.
@@ -337,6 +350,8 @@ impl Acp {
         if !child.begin_stop() {
             return;
         }
+        let grants = std::mem::take(&mut *self.grants.locked());
+        drop(grants);
         self.stdin.lock().await.take();
         let owned = self.child.clone();
         let mut stopping = STOPPING.locked();

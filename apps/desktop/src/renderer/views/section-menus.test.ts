@@ -3,7 +3,8 @@ import { test } from 'node:test'
 import type { Bot } from '@shared/models'
 import type { BotStore } from '../store/bot-store'
 import type { MenuItem } from '../components/Menu'
-import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus.ts'
+import type { Naming } from './NameDialog'
+import { moveToSectionItems, sectionHeaderItems } from './section-menus.ts'
 
 /** A computer's store as the menus read it (`archived` is hidden, its section still counts), logging what they ask of it. */
 function computer(hasRosterSections = true) {
@@ -14,7 +15,7 @@ function computer(hasRosterSections = true) {
     bots: new Map(bots.map((bot) => [bot.id, bot])),
     sections: { move: (bot: Bot, name: string | null) => calls.push(['move', bot.id, name]) },
   } as unknown as BotStore
-  const naming: SectionNaming[] = []
+  const naming: Naming[] = []
   return { store, calls, naming, bot: (id: string) => store.bots.get(id)! }
 }
 

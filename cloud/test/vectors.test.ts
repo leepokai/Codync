@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import V from "../../docs/reference/fixtures/remote-relay-vectors.json";
 import { claimCanonical as workerClaimCanonical } from "../src/api";
 import { computerIdFor, fromB64url, sigCanonical, verifyEd25519, verifySig } from "../src/auth";
-import { parseAcl } from "../src/relay";
+import { parseAcl } from "../src/relay-wire";
 import * as ref from "./ref";
 
 const u = ref.unb64url;

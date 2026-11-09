@@ -31,8 +31,8 @@ fn harness_adapter(backend: &str) -> Adapter {
 }
 
 /// The user's threshold where Codync compacts the bot's chat: by the adapter running it, or with none running (a
-/// custom command released or not started yet) by what its agent last reported. Elsewhere rollovers follow the
-/// default's.
+/// custom command released or not started yet) by what its agent last reported. Elsewhere the default: the agent's
+/// own compaction, and no rollovers.
 fn threshold(store: &Store, cfg: &BotConfig, running: Option<Adapter>) -> Threshold {
     let compacts = running.map_or_else(|| offers_threshold(store, cfg), |adapter| adapter != Adapter::Other);
     if compacts { cfg.compaction } else { Threshold::default() }
@@ -79,10 +79,10 @@ impl Actor {
         if let Some(life) = self.hub.store.kv_get(&self.cache_life_key()).and_then(|v| serde_json::from_str(&v).ok()) {
             return life;
         }
-        let api_key = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)
+        let api_key = crate::agent::auth::saved_env(&self.hub.store, &self.cfg.backend)
             .unwrap_or_default()
             .iter()
-            .any(|(k, _)| k == "ANTHROPIC_API_KEY")
+            .any(|k| k == "ANTHROPIC_API_KEY")
             || std::env::var_os("ANTHROPIC_API_KEY").is_some();
         if self.adapter() == Adapter::Claude && !api_key { CacheLife::OneHour } else { CacheLife::FiveMinutes }
     }
@@ -283,6 +283,18 @@ impl Actor {
         c
     }
 
+    /// The user changed when the chat is summarized: a fresh conversation the new setting doesn't call for is
+    /// withdrawn, and the old one goes on.
+    pub(super) fn threshold_changed(&self) {
+        let Some(sid) = &self.session_id else { return };
+        let Some((card, _)) = handoff::pending(&self.hub.store, &self.cfg.id) else { return };
+        let (c, at, now) = (self.conversation(sid), self.threshold(), now_ms());
+        if !rules::rollover_due(&c, at, self.cache_life(), now) && rules::at_turn_end(&c, at, now) != Decision::Rollover
+        {
+            handoff::withdraw(&self.hub, &self.cfg.id, &card);
+        }
+    }
+
     fn draft_handoff(&mut self, session: &str, reason: handoff::Reason) {
         if handoff::pending(&self.hub.store, &self.cfg.id).is_some() {
             return;
@@ -296,7 +308,14 @@ impl Actor {
     /// opening is rendered again, so the compaction keeps current memory (render, load, compact).
     pub(super) async fn start_compaction(&mut self, idle: bool, done_tx: &tokio::sync::mpsc::UnboundedSender<Done>) {
         let (Some(sid), Some(command)) = (self.session_id.clone(), self.compact_command()) else { return };
-        crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, self.threshold());
+        // Decided when it was queued; another turn or a change of the setting may have come first.
+        let (c, at, now) = (self.conversation(&sid), self.threshold(), now_ms());
+        let due =
+            if idle { rules::while_idle(&c, at, self.cache_life(), now) } else { rules::at_turn_end(&c, at, now) };
+        if due != Decision::Compact {
+            return;
+        }
+        crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, at);
         let _ = self.dreamer.send(memory::DreamEvent::Flush);
         if let Err(error) = context::refresh(&self.hub.store, &self.cfg.id, &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't refresh the opening");
@@ -361,12 +380,13 @@ mod tests {
         let path = std::env::temp_dir().join(format!("codync-threshold-{}.db", uuid::Uuid::new_v4()));
         let store = Store::open(&path).unwrap();
         let cfg: BotConfig =
-            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "custom", "compaction": "off"})).unwrap();
-        assert_eq!(threshold(&store, &cfg, None), Threshold::Early, "not known to run Claude's or Codex's adapter yet");
+            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "custom", "compaction": "nearLimit"}))
+                .unwrap();
+        assert_eq!(threshold(&store, &cfg, None), Threshold::Off, "not known to run Claude's or Codex's adapter yet");
         store.kv_set(&window_key("b"), "1000000").unwrap();
-        assert_eq!(threshold(&store, &cfg, None), Threshold::Off, "released after it reported its window");
-        assert_eq!(threshold(&store, &cfg, Some(Adapter::Claude)), Threshold::Off);
-        assert_eq!(threshold(&store, &cfg, Some(Adapter::Other)), Threshold::Early, "now running another adapter");
+        assert_eq!(threshold(&store, &cfg, None), Threshold::NearLimit, "released after it reported its window");
+        assert_eq!(threshold(&store, &cfg, Some(Adapter::Claude)), Threshold::NearLimit);
+        assert_eq!(threshold(&store, &cfg, Some(Adapter::Other)), Threshold::Off, "now running another adapter");
         let cold = Conversation { used: 150_000, size: 1_000_000, last_turn: 1, ..Conversation::default() };
         assert!(!rules::rollover_due(&cold, threshold(&store, &cfg, None), CacheLife::FiveMinutes, 2 * 3_600_000));
         std::fs::remove_file(&path).ok();

@@ -182,6 +182,7 @@ public struct ThreadView: View {
     }
 
     private var connectionDescription: String {
+        if model.isAsleep { return "Sleeping · wakes when you message" }
         switch model.shownConnection {
         case .connecting: return "Connecting"
         case .computerOffline, .offline: return "Offline"
@@ -189,6 +190,7 @@ public struct ThreadView: View {
         case .unpaired: return "Not paired"
         case .online: break
         }
+        if model.isCloudUpdating { return "Updating…" }
         if model.mismatch != nil { return "Needs update" }
         switch model.hostRoute {
         case .relay: return RelayCopy.connected(cloud: model.computer.cloud)

@@ -2,9 +2,9 @@ import type { CompactionSizes, CompactionThreshold } from '@shared/models'
 import type { MenuItem } from '../components/Menu'
 
 const PRESETS: { id: Exclude<CompactionThreshold, number>; title: string }[] = [
-  { id: 'early', title: 'Early (default)' },
+  { id: 'off', title: 'Auto (default)' },
+  { id: 'early', title: 'Early' },
   { id: 'nearLimit', title: 'Near the limit' },
-  { id: 'off', title: 'Only when full' },
 ]
 
 /** A size as the apps show it: thousands of tokens, `120K`. */
@@ -16,18 +16,27 @@ export function compactionLabel(threshold: CompactionThreshold): { title: string
   return { title: PRESETS.find((p) => p.id === threshold)?.title ?? PRESETS[0].title, verbatim: false }
 }
 
-/** Every size the window allows, smallest first. */
-export function compactionSizes(sizes: CompactionSizes): number[] {
-  if (sizes.step <= 0) return []
-  const out: number[] = []
-  for (let n = sizes.min; n <= sizes.max; n += sizes.step) out.push(n)
-  return out
+/** A typed size as one the window takes: to the nearest step, within `min` and `max`. */
+export function fitSize(sizes: CompactionSizes, tokens: number): number {
+  const step = Math.max(sizes.step, 1)
+  return Math.min(Math.max(Math.floor((tokens + step / 2) / step) * step, sizes.min), sizes.max)
 }
 
-/** The presets, then "Set a size" opening the sizes; before the window is known, a line saying when they come. */
-export function compactionMenu(selection: CompactionThreshold, sizes: CompactionSizes | null, pick: (threshold: CompactionThreshold) => void): MenuItem[] {
+/** What the user typed, in thousands of tokens (`350`, `350K`), as tokens; null when it isn't a size. */
+export function parseTypedSize(text: string): number | null {
+  const k = Number(text.trim().replace(/k$/i, ''))
+  return text.trim() && Number.isFinite(k) && k > 0 ? Math.round(k * 1000) : null
+}
+
+/**
+ * The presets, then "Set a size" opening the window's few listed sizes and "Custom size…" (`custom`); before the
+ * window is known, a line saying when they come.
+ */
+export function compactionMenu(selection: CompactionThreshold, sizes: CompactionSizes | null,
+  pick: (threshold: CompactionThreshold) => void, custom: () => void): MenuItem[] {
   const presets: MenuItem[] = PRESETS.map((p) => ({ title: p.title, selected: selection === p.id, action: () => pick(p.id) }))
   if (!sizes) return [...presets, { title: "Sizes show after the bot's next reply", disabled: true, divider: true, action: () => {} }]
-  const submenu: MenuItem[] = compactionSizes(sizes).map((n) => ({ title: sizeLabel(n), verbatim: true, selected: selection === n, action: () => pick(n) }))
-  return [...presets, { title: 'Set a size', divider: true, submenu }]
+  const listed: MenuItem[] = sizes.presets.map((n) => ({ title: sizeLabel(n), verbatim: true, selected: selection === n, action: () => pick(n) }))
+  const own = typeof selection === 'number' && !sizes.presets.includes(selection)
+  return [...presets, { title: 'Set a size', divider: true, submenu: [...listed, { title: 'Custom size…', selected: own, action: custom }] }]
 }

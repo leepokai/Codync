@@ -18,10 +18,10 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     let cwd = crate::service::data_dir().join("background");
     tokio::fs::create_dir_all(&cwd).await?;
     let cwd = cwd.to_string_lossy().into_owned();
-    if hub.store.kv_read(&format!("agent-env:{}", cfg.backend))?.is_some() {
+    if crate::market::vault::saved(&hub.store, &format!("agent-env:{}", cfg.backend))? {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let env = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
+    let (env, grants) = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
     let mut conn = None;
     let mut last_err = None;
     for candidate in crate::agent::bot::launch_commands(cfg)? {
@@ -40,6 +40,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         }
     }
     let mut conn = conn.ok_or_else(|| last_err.unwrap_or_else(|| anyhow!("no agent to run a background job")))?;
+    conn.acp.hold(grants);
     let acp = conn.acp.clone();
     let result = async {
         let mut params = json!({"cwd": cwd, "mcpServers": []});

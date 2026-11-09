@@ -25,6 +25,8 @@ export default defineConfig(async () => ({
           CLERK_WEBHOOK_SECRET: `whsec_${randomBytes(24).toString("base64")}`,
           DEVICE_CERT_KEY: JSON.stringify(cert.privateKey.export({ format: "jwk" })),
           TEST_DEVICE_CERT_PUB: cert.publicKey.export({ format: "jwk" }).x!,
+          // Codync Cloud on: users' Boat keys are sealed with a throwaway key; tests stub Boat's API with a fetch spy.
+          CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
         },
       },
     }),

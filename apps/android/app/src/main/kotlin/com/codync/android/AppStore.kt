@@ -138,6 +138,17 @@ class AppStore internal constructor(
         }
     }
 
+    /** What the account knows about this computer: Codync Cloud runs it, and the cloud's floor for this app version. */
+    internal fun setAccountView(cloudHosting: CloudPlacement?, appFloor: String?) {
+        mutableState.update { if (it.cloudHosting == cloudHosting && it.appFloor == appFloor) it else it.copy(cloudHosting = cloudHosting, appFloor = appFloor) }
+    }
+
+    /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
+     * asleep perhaps, says so). */
+    internal fun setHostName(name: String) = mutableState.update { state ->
+        state.hello?.let { state.copy(hello = JsonObject(it + ("name" to JsonPrimitive(name)))) } ?: state
+    }
+
     /** Saves the computer's latest copy (`changeComputer`), then shows it. */
     internal suspend fun save(computer: Computer) {
         saveComputer(computer)

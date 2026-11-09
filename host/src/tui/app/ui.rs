@@ -200,9 +200,9 @@ pub const FIELDS: [Field; 20] = [
     Field::Fast,
     Field::Fallbacks,
     Field::SelfFallbacks,
+    Field::Compaction,
     Field::Folder,
     Field::Approvals,
-    Field::Compaction,
     Field::Notify,
     Field::Computer,
     Field::Team,
@@ -246,7 +246,10 @@ pub struct Form {
     pub reachable_by_assistants: Option<bool>,
     /// `None`: Codync doesn't summarize this agent's chats.
     pub compaction: Option<codync_mem::compaction::Threshold>,
-    pub compaction_sizes: Vec<u64>,
+    /// `None` until the agent has told its window.
+    pub compaction_sizes: Option<codync_mem::compaction::Sizes>,
+    /// The digits of a size being typed, in thousands of tokens.
+    pub compaction_typed: String,
     pub color: usize,
     pub shape: usize,
     pub connectors: Vec<Toggle>,

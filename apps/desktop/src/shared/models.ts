@@ -282,11 +282,12 @@ export interface BotMessage {
 /** When Codync summarizes a bot's chat ahead of time: a preset, or at a size in tokens. */
 export type CompactionThreshold = 'early' | 'nearLimit' | 'off' | number
 
-/** The sizes a chat's window allows: `min`..`max` by `step` tokens. */
+/** The sizes a chat's window allows: `min`..`max` by `step` tokens, and the few a menu lists. */
 export interface CompactionSizes {
   min: number
   max: number
   step: number
+  presets: number[]
 }
 
 /** "Earlier context was summarized": the harness's summary, when it gave one. */

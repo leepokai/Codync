@@ -3,11 +3,12 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
+use ratatui::text::Span;
 
 use super::super::app::{App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
 use super::super::l10n::tr;
 use super::super::manage::Page;
-use super::super::md::{truncate, width as w};
+use super::super::md::{truncate, width as w, wrap};
 use super::super::sheets::page_tabs;
 use super::buffer::{centered, frame_box, put, put_line, restyle, rput, u};
 use super::chat::composer_lines;
@@ -20,9 +21,9 @@ use codync_mem::compaction::Threshold;
 /// A compaction threshold as the apps name it: a choice, or the size as "120K".
 fn compaction_label(at: Threshold) -> String {
     match at {
-        Threshold::Early => tr("Early (default)").into_owned(),
+        Threshold::Off => tr("Auto (default)").into_owned(),
+        Threshold::Early => tr("Early").into_owned(),
         Threshold::NearLimit => tr("Near the limit").into_owned(),
-        Threshold::Off => tr("Only when full").into_owned(),
         Threshold::Tokens(n) => format!("{}K", n / 1000),
     }
 }
@@ -34,6 +35,9 @@ fn created_by(app: &App, id: &str) -> Option<String> {
     let (month, day) = month_day(local(bot.created_at).0);
     Some(format!("created by {creator} · {} {day}", MONTHS[month]))
 }
+
+/// The rows under the fields: the help, up to two, and the buttons.
+const FOOTER: u16 = 3;
 
 /// The rows a field's value takes.
 fn field_rows(field: Field) -> u16 {
@@ -64,10 +68,13 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         Field::Compaction if f.compaction.is_none() => tr("Claude Code and Codex bots only").into_owned(),
         Field::Compaction => {
             let about = tr(
-                "When Codync summarizes this chat so it can go on. If the chat fills up first, the agent summarizes it itself.",
+                "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.",
             );
-            let sizes = if f.compaction_sizes.is_empty() { tr("Sizes show after the bot's next reply") } else { "".into() };
-            [about, sizes].join(" ").trim().to_owned()
+            let sizes = f.compaction_sizes.as_ref().map_or_else(
+                || tr("Sizes show after the bot's next reply").into_owned(),
+                |s| format!("{} {}K–{}K", tr("Or type a size in K:"), s.min / 1000, s.max / 1000),
+            );
+            [about.into_owned(), sizes].join(" ")
         }
         Field::Team => {
             "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.".to_owned()
@@ -103,7 +110,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let mut y = inner.y + 1;
     let agent_name = app.agent_name(&f.backend);
     // The form can outgrow the terminal: it starts as far down as keeps the focused field in sight.
-    let room = inner.bottom().saturating_sub(2).saturating_sub(y);
+    let room = inner.bottom().saturating_sub(FOOTER).saturating_sub(y);
     let mut first = 0;
     while first < f.field && FIELDS[first..f.field].iter().map(|field| field_rows(*field) + 1).sum::<u16>() >= room {
         first += 1;
@@ -346,13 +353,17 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
         }
         y += rows + 1;
-        if y >= inner.bottom().saturating_sub(2) {
+        if y >= inner.bottom().saturating_sub(FOOTER) {
             break;
         }
     }
     let by = inner.bottom() - 1;
     if let Some((line, style)) = field_help(app, f, &agent_name) {
-        put(buf, inner.x, by - 1, inner.width, &line, style.patch(t.panel));
+        let lines = wrap(&[Span::styled(line, style.patch(t.panel))], usize::from(inner.width), &[], &[]);
+        let shown = &lines[..lines.len().min(usize::from(FOOTER - 1))];
+        for (j, l) in shown.iter().enumerate() {
+            put_line(buf, inner.x, by.saturating_sub(u(shown.len() - j)), inner.width, l);
+        }
     }
     let save = if f.saving {
         " … Saving "

@@ -8,12 +8,12 @@ const agent = join(resolve(__dirname, '../../..'), 'host/tests/fixtures/instruct
 
 type Bot = { id: string; compaction: unknown }
 
-/** The bot's Summarize long chats row, on the Settings tab of the details beside its chat. */
+/** The bot's Summarize long chats row, in the Agent card on the Details tab of the details beside its chat. */
 async function summarizeRow(page: Page, name: string) {
   await page.locator('.roster-row', { hasText: name }).click()
   const details = page.locator('.details-panel')
   if (!(await details.isVisible())) await page.getByRole('button', { name: `${name}, view details` }).click()
-  await details.getByRole('tab', { name: 'Settings' }).click()
+  await details.getByRole('tab', { name: 'Details' }).click()
   return details.locator('.value-row', { hasText: 'Summarize long chats' })
 }
 
@@ -28,22 +28,33 @@ test('before its first reply a Claude Code bot offers only the three choices', a
   let botId: string | undefined
   try {
     botId = (await api<{ bot: Bot }>(page, 'createBot', { name, backend: 'claude', connectors: [], skills: [], notify: false })).bot.id
-    const pill = (await summarizeRow(page, name)).locator('.choice-picker')
-    await expect(pill).toHaveText('Early (default)')
+    const row = await summarizeRow(page, name)
+    const pill = row.locator('.choice-picker')
+    await expect(pill).toHaveText('Auto (default)')
     await pill.click()
-    for (const title of ['Early (default)', 'Near the limit', 'Only when full']) await expect(menuRow(page, title)).toBeEnabled()
+    for (const title of ['Auto (default)', 'Early', 'Near the limit']) await expect(menuRow(page, title)).toBeEnabled()
     await expect(menuRow(page, "Sizes show after the bot's next reply")).toBeDisabled()
     await expect(menuRow(page, 'Set a size')).toHaveCount(0)
-    await menuRow(page, 'Only when full').click()
-    await expect(pill).toHaveText('Only when full')
+    await menuRow(page, 'Early').click()
+    await expect(pill).toHaveText('Early')
+    await expect.poll(() => stored(page, botId!)).toBe('early')
+    await pill.click()
+    await menuRow(page, 'Auto (default)').click()
+    await expect(pill).toHaveText('Auto (default)')
     await expect.poll(() => stored(page, botId!)).toBe('off')
+
+    // It moved off the Settings tab.
+    const details = page.locator('.details-panel')
+    await details.getByRole('tab', { name: 'Settings' }).click()
+    await expect(details.locator('.value-row', { hasText: 'Workspace' })).toBeVisible()
+    await expect(row).toHaveCount(0)
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     await browser.close()
   }
 })
 
-test('once the agent tells its window, Set a size lists what it holds and the size picked is kept', async () => {
+test('once the agent tells its window, Set a size lists sizes by 100K and takes one typed', async () => {
   const { browser, page } = await attach()
   const name = `Summarize sizes e2e ${Date.now()}`
   let botId: string | undefined
@@ -55,19 +66,32 @@ test('once the agent tells its window, Set a size lists what it holds and the si
 
     await typeMessage(page, 'USAGE 10000 SIZE 1000000')
     const pill = row.locator('.choice-picker')
-    await expect(pill).toHaveText('Early (default)', { timeout: 20_000 })
+    await expect(pill).toHaveText('Auto (default)', { timeout: 20_000 })
     await pill.click()
     await menuRow(page, 'Set a size').click()
-    await expect(menuRow(page, /^50K$/)).toBeVisible()
-    await expect(menuRow(page, /^960K$/)).toBeAttached()
-    await menuRow(page, /^120K$/).click()
-    await expect(pill).toHaveText('120K')
-    await expect.poll(() => stored(page, botId!)).toBe(120_000)
+    await expect(menuRow(page, /^100K$/)).toBeVisible()
+    await expect(menuRow(page, /^900K$/)).toBeAttached()
+    await expect(menuRow(page, /^50K$/)).toHaveCount(0)
+    await menuRow(page, /^100K$/).click()
+    await expect(pill).toHaveText('100K')
+    await expect.poll(() => stored(page, botId!)).toBe(100_000)
+
+    // A size of one's own: typed in thousands, kept to the nearest 10K.
+    await pill.click()
+    await menuRow(page, 'Set a size').click()
+    await menuRow(page, 'Custom size…').click()
+    const field = page.locator('.dialog-field')
+    await expect(field).toHaveAttribute('placeholder', '50–960')
+    await expect(field).toHaveValue('100')
+    await field.fill('354')
+    await page.locator('.dialog-button', { hasText: 'Save' }).click()
+    await expect(pill).toHaveText('350K')
+    await expect.poll(() => stored(page, botId!)).toBe(350_000)
 
     // The submenu opens at the size picked, and its back row returns to the choices.
     await pill.click()
     await menuRow(page, 'Set a size').click()
-    await expect(menuRow(page, /^120K$/)).toHaveAttribute('aria-checked', 'true')
+    await expect(menuRow(page, 'Custom size…')).toHaveAttribute('aria-checked', 'true')
     await menuRow(page, 'Set a size').click()
     await menuRow(page, 'Near the limit').click()
     await expect(pill).toHaveText('Near the limit')
@@ -87,7 +111,7 @@ test('a bot on an agent Codync does not summarize for has no Summarize long chat
     botId = bot.id
     expect(bot.compaction).toBeNull()
     const row = await summarizeRow(page, name)
-    await expect(page.locator('.details-panel .value-row', { hasText: 'Workspace' })).toBeVisible()
+    await expect(page.locator('.details-panel h3', { hasText: 'Agent' })).toBeVisible()
     await expect(row).toHaveCount(0)
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

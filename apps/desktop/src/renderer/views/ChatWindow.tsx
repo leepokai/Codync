@@ -10,6 +10,7 @@ import { HStack, Spacer } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
+import { limitSectionName, sectionName } from '../lib/roster-sections'
 import { useApp, StoreContext } from '../store/context'
 import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef } from '../store/app-model'
@@ -45,12 +46,13 @@ import { DeleteAccountPrompt } from './DeleteAccountPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
 import { DesktopActionMenu } from './DesktopActionMenu'
-import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus'
+import { moveToSectionItems, sectionHeaderItems } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
-import { SectionNameDialog } from './SectionNameDialog'
+import { NameDialog, type Naming } from './NameDialog'
 import { useTraySummary } from './tray-summary'
 import { useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
+import { useCloudAttachments } from '../store/cloud-attachments'
 import './chat-window.css'
 import './sidebar-header.css'
 import { useTr } from '../lib/use-language'
@@ -66,6 +68,7 @@ export function ChatWindow() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [upToDate, setUpToDate] = useState(false)
   useSSHAttachments(app)
+  useCloudAttachments(app)
   const ssh = useSSH()
   const showsChat = shouldShowChat(app.host.state.kind, app.computers.length, ssh.state)
   const finishAccess = (ready: boolean, onboarding: boolean) => {
@@ -208,7 +211,7 @@ function ChatSplitView() {
   const [newMenu, setNewMenu] = useState(false)
   const [railNewMenu, setRailNewMenu] = useState(false)
   const [context, setContext] = useState<{ items: MenuItem[]; x: number; y: number } | null>(null)
-  const [naming, setNaming] = useState<SectionNaming | null>(null)
+  const [naming, setNaming] = useState<Naming | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
@@ -492,7 +495,7 @@ function ChatSplitView() {
         actions={confirmDelete ? [{ title: 'Delete bot and its conversation', destructive: true, action: () => confirmDelete.store.delete(confirmDelete.bot) }] : []}
         onClose={() => setConfirmDelete(null)}
       />
-      <SectionNameDialog naming={naming} onClose={() => setNaming(null)} />
+      <NameDialog naming={naming} placeholder="Section name" limit={limitSectionName} clean={sectionName} onClose={() => setNaming(null)} />
       <Dialog open={errorMessage !== null} title={tr('Something went wrong')} message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
       <SignInCodeDialog />
     </div>

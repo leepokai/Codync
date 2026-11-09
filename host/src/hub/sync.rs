@@ -89,7 +89,7 @@ mod tests {
         hub.store.kv_set("context.window.c", "1000000").unwrap();
         assert_eq!(
             hub.bot_value_for_test("c")["compactionTokens"],
-            json!({"min": 50_000, "max": 960_000, "step": 10_000})
+            json!({"min": 50_000, "max": 960_000, "step": 10_000, "presets": (1..=9).map(|n| n * 100_000).collect::<Vec<u64>>()})
         );
 
         let gemini = hub.bot_value_for_test("g");

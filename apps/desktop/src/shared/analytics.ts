@@ -63,6 +63,9 @@ export type AnalyticsEvent =
   | { event: 'reach_account_answered'; outcome: ReachOutcome; error?: ClaimFailure }
   | { event: 'continued_without_account' }
   | { event: 'join_offer_answered'; outcome: 'added' | 'kept_out' | 'failed' }
+  | { event: 'cloud_key_saved'; outcome: 'saved' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_computer_created'; outcome: 'created' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_computer_renamed'; outcome: 'renamed' | 'failed' }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

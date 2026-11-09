@@ -11,20 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -33,10 +25,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
@@ -110,27 +98,3 @@ internal fun sectionActions(rename: () -> Unit, remove: () -> Unit): List<MenuIt
     MenuItem("Rename section…", icon = "pencil", action = rename),
     MenuItem("Remove section", icon = "xmark.circle", action = remove),
 )
-
-/** An open section name dialog (desktop `SectionNaming`): its title, the name it opens with, and what Save does with the typed one. */
-internal class SectionNaming(val title: String, val name: String, val save: (String) -> Unit)
-
-/**
- * "New section" / "Rename section": a name, then Save. A name of nothing saves nothing; the host says what else it refuses.
- * Each opening ([naming] is a new object every time) starts from its own name; the last one stays on show while the dialog fades out.
- */
-@Composable internal fun SectionNameDialog(naming: SectionNaming?, dismiss: () -> Unit) {
-    var opened by remember { mutableStateOf<SectionNaming?>(null) }
-    var name by remember { mutableStateOf(TextFieldValue()) }
-    if (naming != null && naming !== opened) {
-        opened = naming
-        name = TextFieldValue(naming.name, TextRange(naming.name.length))
-    }
-    val submit = { if (naming != null) sectionName(name.text)?.let(naming.save) }
-    val focus = remember { FocusRequester() }
-    CodyncDialog(opened?.title.orEmpty(), naming != null, dismiss, field = {
-        LaunchedEffect(Unit) { focus.requestFocus() }
-        PlainTextField(name, { name = it.copy(text = limitSectionName(it.text)) }, Modifier.fillMaxWidth().pill().focusRequester(focus),
-            "Section name", singleLine = true, keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
-            actions = KeyboardActions(onDone = { dismiss(); submit() }))
-    }) { listOf(DialogAction("Save", action = submit)) }
-}

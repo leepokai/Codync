@@ -50,6 +50,13 @@ const bridge: CodyncBridge = {
       return host.subscribe(since, onData)
     },
   },
+  channel: {
+    call: async () => { throw { status: 503, message: DEMO_UNAVAILABLE } },
+    stream: (_c, _k, _p, _d, onEnd) => {
+      onEnd({ status: 503, message: DEMO_UNAVAILABLE })
+      return () => {}
+    },
+  },
   account: {
     state: async () => account,
     onChange: none,
@@ -92,11 +99,16 @@ const bridge: CodyncBridge = {
     newBot() {},
     openApp() {},
   },
-  cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }) },
+  cloud: {
+    request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }),
+    requestAccess: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }),
+  },
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
   artifacts: { show: async () => {}, openInBrowser: unavailable },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
   app: {
+    attended: async () => true,
+    onAttended: none,
     reportError() {},
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),

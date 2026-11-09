@@ -318,3 +318,17 @@ public extension View {
             .background(SwipeBackEnabler().frame(width: 0, height: 0))
     }
 }
+
+/// A quiet "Beta" pill beside a feature still in beta (Network, Codync Cloud).
+public struct BetaTag: View {
+    public init() {}
+
+    public var body: some View {
+        Text(L10n.tr("Beta"))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Palette.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Palette.bubbleAgent, in: Capsule())
+    }
+}

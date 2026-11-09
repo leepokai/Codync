@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactElement, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { reduceMotion } from '../lib/theme'
 import { afterExit } from '../lib/exit-delay'
@@ -228,6 +228,26 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCan
       </div>
     </div>,
     document.body,
+  )
+}
+
+/** A `Dialog`'s text box, focused as it opens: Return, once the IME has finished composing, runs `onSubmit`. */
+export function DialogField({ value, onChange, onSubmit, placeholder, label, inputMode }: {
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  placeholder: string
+  label: string
+  inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
+}) {
+  return (
+    <input className="dialog-field" data-autofocus value={value} placeholder={placeholder} aria-label={label} inputMode={inputMode} spellCheck={false}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
+        e.preventDefault()
+        onSubmit()
+      }} />
   )
 }
 

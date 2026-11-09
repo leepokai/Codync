@@ -415,13 +415,19 @@ private struct AccessBanners: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Array(accounts.pendingAccess.values).sorted { $0.requestId < $1.requestId }) { ticket in
-                let name = accounts.cloudComputers.first { $0.computerId == ticket.computerId }?.name ?? "Your computer"
+                let computer = accounts.cloudComputers.first { $0.computerId == ticket.computerId }
+                let name = computer?.name ?? "Your computer"
                 HStack(spacing: 12) {
                     Spinner(size: 16)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
-                        Text(verbatim: "\(L10n.tr("Code")) \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
-                            .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        if computer?.cloud != nil {
+                            // A cloud computer approves this iPhone by itself: no code to check.
+                            Text(L10n.tr("Connecting to \(name)…")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                        } else {
+                            Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                            Text(verbatim: "\(L10n.tr("Code")) \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
+                                .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        }
                     }
                     Spacer(minLength: 8)
                     IconButton("Cancel request", systemImage: "xmark") {

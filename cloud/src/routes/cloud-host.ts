@@ -5,7 +5,7 @@
 import { drivers } from "../../machines/src";
 import { softUpdate } from "../app-versions";
 import { providerSend } from "../cloud-credentials";
-import { machineFor, setState } from "../cloud-machines";
+import { machineFor, setState, undoStopping } from "../cloud-machines";
 import { value } from "./cloud-computers";
 import { ApiError, body, host, type Ctx } from "./common";
 
@@ -29,11 +29,14 @@ export async function hostSleep(c: Ctx) {
       headers: { "X-Codync-Internal": "1", "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-  const res = await relay("sleep", { wakeAt });
-  if (res.status === 409) throw new ApiError("conflict", "A device is connected.");
-  if (!res.ok) throw new ApiError("internal");
-  // Recorded before the stop goes out, so a wake meanwhile waits for it (`refresh`).
+  // Recorded before the relay takes the host offline: a wake reading it from then on waits for the stop (`refresh`),
+  // one that read it before retries (`wakeHost`). Put back when the relay keeps the host.
   await setState(c.env, row.id, "stopping", c.now);
+  const res = await relay("sleep", { wakeAt });
+  if (!res.ok) {
+    await undoStopping(c.env, row);
+    throw res.status === 409 ? new ApiError("conflict", "A device is connected.") : new ApiError("internal");
+  }
   const d = drivers[row.provider];
   const stopped = d.machine(await providerSend(c.env, row.user_id, row.provider, d.sleep(row.provider_id, crypto.randomUUID()), c.now));
   // Turned down (the key, busy, any refusal), it surely didn't stop, so the first wake takes the host back; only a

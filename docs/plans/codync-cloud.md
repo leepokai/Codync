@@ -115,7 +115,9 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
   missing action, the plan or the account's limits are cleared only by a write that works (a read says nothing about
   them). *Create* stays offered (it tries again, for an owner who fixed their plan there) unless the key itself was
   refused (`blocking`: rejected or expired), which only another key fixes.
-- A host asking to sleep is recorded `stopping` before the stop goes out. One whose stop is turned down (the key,
+- A host asking to sleep is recorded `stopping` before its relay takes it offline (and put back as it was if the relay
+  keeps it, a device being connected); a wake that read the machine before that and finds it running retries instead
+  of taking the host back, when the relay took the host offline meanwhile. One whose stop is turned down (the key,
   busy, any refusal) is recorded `running` again, so the first wake takes the host back; a refused key leaves no wake
   able to read the machine, so that host is put back online at once (`/internal/awake` on its relay). A provider
   failing (5xx) may have stopped it all the same, so it stays `stopping`.

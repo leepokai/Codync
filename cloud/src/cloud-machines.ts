@@ -100,6 +100,11 @@ export const setState = (env: Env, id: string, state: Machine["state"], now: num
     .bind(state, now, id)
     .run();
 
+/** Puts machine `m` back as it was (its state, and when it entered it) when `hostSleep` recorded it `stopping` for a
+ * sleep its relay refused; a state recorded since stays. */
+export const undoStopping = (env: Env, m: CloudMachineRow) =>
+  env.DB.prepare("UPDATE cloud_machines SET state = ?, updated_at = ? WHERE id = ? AND state = 'stopping'").bind(m.state, m.updated_at, m.id).run();
+
 export const autoStop = (env: Env) => (env.CLOUD_AUTO_STOP_SECONDS ? Number(env.CLOUD_AUTO_STOP_SECONDS) : undefined);
 
 /** The machine as its provider sees it now. */

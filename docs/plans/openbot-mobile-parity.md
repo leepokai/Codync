@@ -161,5 +161,8 @@ archive, delete; 22/22). The phone and iOS walks wait for the device (`adb devic
 for a Mac respectively.
 
 M4 (ElevenLabs) passed the host's `cargo fmt`/`clippy`/tests (1119 passed, plus the one known
-Windows symlink test), the Gradle gate, and the desktop `typecheck`/tests; its phone and iOS walks
-and the desktop visual check wait for the same devices.
+Windows symlink test), the Gradle gate, and the desktop `typecheck`/tests; the host API was checked
+end to end against the dev host (status lists ElevenLabs with its defaults, a live session is
+refused with the Speech-mode message, voices without a key report the missing key, and an invalid
+key is rejected by ElevenLabs and not saved). Its phone and iOS walks and the desktop visual check
+wait for the same devices.

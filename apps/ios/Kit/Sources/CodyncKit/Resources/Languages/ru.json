@@ -1885,6 +1885,7 @@
   "This message's files aren't on this device anymore. Delete it and attach them again.": "Файлов этого сообщения больше нет на этом устройстве. Удалите его и прикрепите файлы заново.",
   "{received} of {size}": "{received} из {size}",
   "Couldn't play. Tap to retry.": "Не удалось воспроизвести. Нажмите, чтобы повторить.",
+  "Couldn't play. Click to retry.": "Не удалось воспроизвести. Нажмите, чтобы повторить.",
   "Downloaded": "Загружено",
   "Tap to retry.": "Нажмите, чтобы повторить.",
   "View": "Открыть",

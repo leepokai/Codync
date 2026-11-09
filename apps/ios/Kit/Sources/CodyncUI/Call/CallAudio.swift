@@ -38,7 +38,7 @@ enum CallAudioSession {
 
     /// The session was activated and not released since: releasing an untouched one would start the audio system
     /// for nothing (in tests that start CoreAudio, which can deadlock on a simulator).
-    private static var active = false
+    private(set) static var active = false
 
     /// Before an engine's audio starts or resumes.
     static func activate() throws {

@@ -1885,6 +1885,7 @@
   "This message's files aren't on this device anymore. Delete it and attach them again.": "Los archivos de este mensaje ya no están en este dispositivo. Elimínalo y vuelve a adjuntarlos.",
   "{received} of {size}": "{received} de {size}",
   "Couldn't play. Tap to retry.": "No se pudo reproducir. Toca para reintentar.",
+  "Couldn't play. Click to retry.": "No se pudo reproducir. Haz clic para reintentar.",
   "Downloaded": "Descargado",
   "Tap to retry.": "Toca para reintentar.",
   "View": "Ver",

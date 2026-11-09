@@ -11,6 +11,7 @@ import { AttachmentImage, AttachmentViewer, attachmentSymbol, type ImageSource }
 import { cardActions, cardDetail, cardKeyAction, clickRunsFirstAction, downloadAction } from './file-card'
 import type { AudioSnapshot } from './shared-audio'
 import { useSharedAudio } from './use-shared-audio'
+import { useTr } from '../../lib/use-language'
 import './attachments.css'
 
 export function FileDownloadCard({ entry, file }: { entry: Entry; file: SharedFile }) {
@@ -72,6 +73,7 @@ function FileCard({ entry, file, audio, toggle, seek, icon }: {
 /** A shared file's keyboard and screen-reader stop: its caption, its actions with their menu, and the picture viewer. */
 function useFileStop(entry: Entry, file: SharedFile, audio?: AudioSnapshot, toggle?: () => void, seek?: (seconds: number) => void) {
   const store = useStore()
+  const tr = useTr()
   const state = store.fileDownloads.states.get(file.id)
   const busy = state?.kind === 'downloading'
   const [viewing, setViewing] = useState(false)
@@ -96,7 +98,7 @@ function useFileStop(entry: Entry, file: SharedFile, audio?: AudioSnapshot, togg
     state,
     busy,
     failed: state?.kind === 'failed' || audio?.phase === 'failed',
-    detail: cardDetail(state, file, audio),
+    detail: cardDetail(state, file, audio, tr),
     image,
     view,
     download,

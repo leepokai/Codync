@@ -31,6 +31,29 @@ test('a card that could not play says so before anything else', () => {
   assert.equal(cardDetail(downloading, file(1000), audio('failed')), `Couldn't play. Click to retry.`)
 })
 
+test('a card that could not play writes its retry in the saved language', (t) => {
+  // trNow reads `appLanguage` from localStorage on every call; stub it and put it back after.
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  })
+  let lang = 'fr'
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: { getItem: (key: string) => (key === 'appLanguage' ? JSON.stringify(lang) : null) },
+  })
+
+  const failed = audio('failed')
+  const french = cardDetail(undefined, file(1000), failed)
+  assert.equal(french, 'Lecture impossible. Cliquez pour réessayer.')
+  assert.notEqual(french, "Couldn't play. Click to retry.")
+
+  lang = 'en'
+  assert.equal(cardDetail(undefined, file(1000), failed), "Couldn't play. Click to retry.")
+})
+
 test('a downloading or failed download beats the sound clock', () => {
   const downloading: DownloadState = { kind: 'downloading', received: 500 }
   const failed: DownloadState = { kind: 'failed', message: 'No space left.' }

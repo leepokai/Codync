@@ -1885,6 +1885,7 @@
   "This message's files aren't on this device anymore. Delete it and attach them again.": "這則訊息的檔案已不在此裝置上。請刪除這則訊息並重新新增檔案。",
   "{received} of {size}": "{size} 中的 {received}",
   "Couldn't play. Tap to retry.": "無法播放。點一下重試。",
+  "Couldn't play. Click to retry.": "無法播放。按一下重試。",
   "Downloaded": "已下載",
   "Tap to retry.": "點一下重試。",
   "View": "檢視",

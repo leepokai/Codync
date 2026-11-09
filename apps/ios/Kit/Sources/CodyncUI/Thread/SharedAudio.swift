@@ -2,6 +2,7 @@ import AVFoundation
 import CodyncKit
 import Foundation
 import Observation
+@preconcurrency import WebRTC
 
 /// Plays a sound a bot shared (a voice note), fetched from the computer; one player per file card or
 /// voice-note bubble.
@@ -65,8 +66,8 @@ final class SharedAudio {
             if let other = Self.sounding, other !== self, other.state == .playing { other.pause() }
             // Heard with the ringer off too.
             let session = AVAudioSession.sharedInstance()
-            if session.category != .playAndRecord {
-                try session.setCategory(.playback)
+            if !recordingActive {
+                try session.setCategory(.playback, mode: .default, options: [])
                 try session.setActive(true)
                 ownsSession = true
             }
@@ -130,12 +131,15 @@ final class SharedAudio {
         releaseSession()
     }
 
-    /// Paused, stopped, ended or failed: other apps' audio may pick up again. A call or dictation that took the
-    /// session since (`.playAndRecord`) keeps it active.
+    private var recordingActive: Bool {
+        CallAudioSession.active || Dictation.active != nil || RTCAudioSession.sharedInstance().isActive
+    }
+
+    /// Only the session this note activated is ours to release; an active recording keeps it.
     private func releaseSession() {
         guard ownsSession else { return }
         ownsSession = false
-        guard AVAudioSession.sharedInstance().category == .playback else { return }
+        guard !recordingActive else { return }
         deactivate()
     }
 

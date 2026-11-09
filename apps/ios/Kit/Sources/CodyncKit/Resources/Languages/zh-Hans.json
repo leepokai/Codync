@@ -1885,6 +1885,7 @@
   "This message's files aren't on this device anymore. Delete it and attach them again.": "此消息的文件已不在此设备上。请删除这条消息并重新添加文件。",
   "{received} of {size}": "{size} 中的 {received}",
   "Couldn't play. Tap to retry.": "无法播放。轻点重试。",
+  "Couldn't play. Click to retry.": "无法播放。点击重试。",
   "Downloaded": "已下载",
   "Tap to retry.": "轻点重试。",
   "View": "查看",

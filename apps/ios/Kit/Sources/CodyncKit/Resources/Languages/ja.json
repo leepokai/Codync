@@ -1885,6 +1885,7 @@
   "This message's files aren't on this device anymore. Delete it and attach them again.": "このメッセージのファイルはこの端末にもうありません。メッセージを削除して、もう一度ファイルを添付してください。",
   "{received} of {size}": "{size} のうち {received}",
   "Couldn't play. Tap to retry.": "再生できませんでした。タップして再試行。",
+  "Couldn't play. Click to retry.": "再生できませんでした。クリックして再試行。",
   "Downloaded": "ダウンロード済み",
   "Tap to retry.": "タップして再試行。",
   "View": "表示",

@@ -41,6 +41,7 @@ private func silentWAV() -> Data {
     defer { store.retire() }
     let load = HeldLoad()
     let audio = SharedAudio(load: { _, _, _ in await load.call() }, deactivate: deactivate)
+    defer { audio.stop() }
     try await body(audio, load, store, SharedFile(id: UUID().uuidString, name: "note.wav", size: 0, sha256: ""))
 }
 
@@ -172,7 +173,10 @@ private func silentWAV() -> Data {
 
     @Test func pausingAVoiceNoteAfterACallTookTheAudioLeavesTheCallsSessionActive() async throws {
         let session = AVAudioSession.sharedInstance()
-        defer { try? session.setCategory(.soloAmbient) }
+        defer {
+            CallAudioSession.release()
+            try? session.setCategory(.soloAmbient)
+        }
         var deactivations = 0
         try await playing(deactivate: { deactivations += 1 }) { audio, load, store, note in
             let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
@@ -184,10 +188,68 @@ private func silentWAV() -> Data {
 
             await audio.toggle(note, entryId: "entry", model: store)
             #expect(audio.state == .playing)
-            try session.setCategory(.playAndRecord)
+            try CallAudioSession.activate()
             await audio.toggle(note, entryId: "entry", model: store)
             #expect(audio.state == .paused)
             #expect(deactivations == 1, "the call that took the audio keeps it")
+        }
+    }
+
+    @Test func aVoiceNoteAfterACallResetsRecordingOptionsAndReleasesItsSession() async throws {
+        let session = AVAudioSession.sharedInstance()
+        defer {
+            CallAudioSession.release()
+            try? session.setActive(false)
+            try? session.setCategory(.soloAmbient)
+        }
+        try CallAudioSession.activate()
+        CallAudioSession.release()
+        var deactivations = 0
+        await playing(deactivate: { deactivations += 1 }) { audio, load, store, note in
+            let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await tap.value
+            #expect(audio.state == .playing)
+            #expect(session.category == .playback)
+            #expect(session.mode == .default)
+            #expect(session.categoryOptions.isEmpty)
+            await audio.toggle(note, entryId: "entry", model: store)
+            #expect(deactivations == 1)
+        }
+    }
+
+    @Test func aVoiceNoteBorrowsLiveDictationButOwnsPlaybackAfterDictationStops() async throws {
+        let session = AVAudioSession.sharedInstance()
+        defer {
+            try? session.setActive(false)
+            try? session.setCategory(.soloAmbient)
+        }
+        let service = DictationService(picked: { .openAI }, hasKey: { _, _ in true }, allowMic: { true },
+                                      openMic: { _, _ in true }, transcribe: { _, _, _ in "" })
+        let dictation = Dictation(service: service)
+        defer { dictation.stop() }
+        var deactivations = 0
+        try await playing(deactivate: { deactivations += 1 }) { audio, load, store, note in
+            await dictation.start(after: "", model: store) { _ in }
+            try session.setCategory(.playAndRecord, options: [.duckOthers])
+            try session.setActive(true)
+            let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await tap.value
+            #expect(audio.state == .playing)
+            #expect(session.category == .playAndRecord)
+            await audio.toggle(note, entryId: "entry", model: store)
+            #expect(deactivations == 0)
+
+            dictation.stop()
+            await audio.toggle(note, entryId: "entry", model: store)
+            #expect(audio.state == .playing)
+            #expect(session.category == .playback)
+            #expect(!session.categoryOptions.contains(.duckOthers))
+            audio.stop()
+            #expect(deactivations == 1)
         }
     }
 }

@@ -114,7 +114,19 @@ extension ChannelTransport {
         comps?.scheme = url.scheme == "http" ? "ws" : "wss"
         var req = URLRequest(url: comps?.url ?? url, timeoutInterval: 15)
         req.setValue(header, forHTTPHeaderField: "Codync-Sig")
+        req.setValue(CloudClient.appHeader, forHTTPHeaderField: "Codync-App")
         return req
+    }
+
+    /// The relay refused the upgrade with 426, and a WebSocket can't read why: the same request over plain
+    /// HTTP gets the Worker's answer, so an emergency floor shows its reason (`AppFloor`).
+    private func readAppFloor() async {
+        guard let cloud = computer.cloud else { return }
+        var req = URLRequest(url: cloud.appending(path: "v1/relay/device/\(computer.id)"), timeoutInterval: 10)
+        req.setValue(CloudClient.appHeader, forHTTPHeaderField: "Codync-App")
+        guard let (body, response) = try? await URLSession.shared.data(for: req) else { return }
+        let error = CloudError(status: (response as? HTTPURLResponse)?.statusCode ?? 0, body: body)
+        if error.isAppUpdateRequired { await AppFloor.shared.refuse(error.message) }
     }
 
     private enum DirectResult: Sendable {
@@ -259,6 +271,7 @@ extension ChannelTransport {
         } catch let closedError as SocketClosed {
             end = outcome(closeCode: closedError.code)
         } catch let refused as SocketRefused {
+            if refused.status == 426 { await readAppFloor() }
             end = outcome(httpStatus: refused.status)
         } catch {
             end = .retry(HostError.unreachable.localizedDescription)

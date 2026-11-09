@@ -83,7 +83,6 @@ pub async fn download(url: &str, limit: usize) -> Result<Vec<u8>> {
 }
 
 pub async fn latest() -> Result<Release> {
-    let platform = platform()?;
     // Resolve latest once. Fetching manifest and signature through separate
     // latest redirects could straddle two releases.
     let response = crate::http()
@@ -96,6 +95,13 @@ pub async fn latest() -> Result<Release> {
     let metadata: serde_json::Value = response.json().await?;
     let tag = metadata["tag_name"].as_str().context("latest release has no tag")?;
     let version = semver::Version::parse(tag.strip_prefix('v').context("invalid release tag")?)?;
+    tagged(&version).await
+}
+
+/// The signed release `version`, whether or not it has the *latest* mark yet (a cloud computer catching up to
+/// the version an app needs).
+pub async fn tagged(version: &semver::Version) -> Result<Release> {
+    let platform = platform()?;
     let url = format!("{RELEASES}/download/v{version}/codync-host-{platform}.update.json");
     let bytes = download(&url, 16 * 1024).await.context("this release has no valid signed host update manifest")?;
     let signature = download(&format!("{url}.sig"), 1024).await?;

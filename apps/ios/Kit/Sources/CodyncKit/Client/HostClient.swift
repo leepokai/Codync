@@ -15,6 +15,8 @@ public enum HostEvent: Sendable {
     case call(CallCue)
     /// The computer's network changed (members, roles, presence, offered bots, cloud assistants).
     case network(NetworkView)
+    /// The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on.
+    case name(String)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -135,6 +137,9 @@ public struct HostClient: Sendable {
         case "network":
             // Not worth a rewind: the next stream's hello carries the view again.
             return (try? d.decode(NetworkWrap.self, from: data)).map { .network($0.network) }
+        case "name":
+            struct NameWrap: Decodable { var name: String }
+            return (try? d.decode(NameWrap.self, from: data)).map { .name($0.name) }
         case "resync":
             return .resync
         default:

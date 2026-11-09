@@ -199,9 +199,12 @@ private data class Editing<T>(val computerId: String, val draft: T)
         val screen = states.firstOrNull { it.screenRequest != null }
         LaunchedEffect(screen?.computer?.id, screen?.screenRequest) { if (screen != null) { closeAll(); showUsage = false } }
         ScreenLayer(screen, screen?.let { accounts.store(it.computer.id) })
-        // One place for every computer's errors the screen showing them doesn't handle itself (pairing, access, the new and edit sheets do).
-        val inline = root == Root.Pairing || showPairing || access != null || creating != null || editor != null || groupEditor != null
-        val error = app.error ?: states.firstNotNullOfOrNull { it.error }
+        // One place for every computer's errors the screen showing them doesn't handle itself (pairing, access, the new and edit sheets
+        // and Codync Cloud's sheets do; its card, while on screen, its cloud computers' own).
+        val inline = root == Root.Pairing || showPairing || access != null || creating != null || editor != null || groupEditor != null ||
+            app.cloudSheets > 0
+        val onCard = app.cloudCardShown && app.cloudErrorAt(CloudErrorPlace.Card) != null
+        val error = app.error?.takeUnless { onCard } ?: states.firstNotNullOfOrNull { it.error }
         CodyncDialog("Something went wrong", error != null && !inline, accounts::clearError, error, cancel = "OK") { emptyList() }
         // A connector sign-in with a code (GitHub), from wherever it started: the code, before its page opens.
         val coding = states.firstOrNull { it.signInCode != null }

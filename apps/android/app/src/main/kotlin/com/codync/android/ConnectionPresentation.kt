@@ -6,6 +6,7 @@ import com.codync.android.core.ConnectionRoute
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 import com.codync.android.core.Pairing
+import com.codync.android.core.VersionMismatch
 
 // What the roster header, Computer management and the chat header say about the computer's link
 // (iOS `ComputerStatus`, `ConnectionSummary`, `BotStore.connectionLabel`).
@@ -13,12 +14,31 @@ import com.codync.android.core.Pairing
 /** Turned away by the computer: access revoked, or its identity changed. */
 private val LinkState.unauthorized get() = this is LinkState.Failed && status == 403
 
+/** Codync Cloud runs this computer. */
+private val AppState.cloud get() = cloudHosting
+
+/** A cloud computer below this app's `MIN_HOST` moves to the host it needs by itself, so nobody has to update it. */
+internal val AppState.cloudUpdating: Boolean get() = mismatch is VersionMismatch.UpdateHost && cloud != null
+
+private val AppState.updateWord get() = if (cloudUpdating) "Updating…" else "Needs update"
+
+/** Not reached: a sleeping cloud computer wakes when messaged (not an error); a failed one is. */
+internal val AppState.cloudUnreached: String? get() = cloud?.let { when {
+    it.asleep -> "Sleeping · wakes when you message"
+    it.failed -> "Cloud computer failed"
+    else -> null
+} }
+
 /** One short line for the computer's connection, next to its name (iOS `BotStore.statusText`). */
 internal fun statusText(state: AppState): String = if (state.isUpdating) "Updating…" else when (val link = state.connection) {
-    is LinkState.Ready -> if (state.mismatch != null) "Needs update" else "Online"
+    is LinkState.Ready -> if (state.mismatch != null) state.updateWord else "Online"
     LinkState.Connecting -> "Connecting…"
-    is LinkState.ComputerOffline -> link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"
-    is LinkState.Failed -> if (link.unauthorized) link.message else "Can't reach"
+    is LinkState.ComputerOffline -> state.cloudUnreached ?: link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"
+    is LinkState.Failed -> when {
+        link.unauthorized -> link.message
+        state.mismatch != null -> "Needs update"
+        else -> state.cloudUnreached ?: "Can't reach"
+    }
 }
 
 /** The status line in Computer management: one that's offline while its new identity is around says so. */
@@ -27,10 +47,10 @@ internal fun computerStatusText(state: AppState, stale: Boolean): String =
 
 /** A word for the link: the computer filter's rows and the chat header. */
 internal fun connectionLabel(state: AppState): String = when (val link = state.connection) {
-    is LinkState.Ready -> if (state.mismatch != null) "Needs update" else "Connected"
+    is LinkState.Ready -> if (state.mismatch != null) state.updateWord else "Connected"
     LinkState.Connecting -> "Connecting…"
-    is LinkState.ComputerOffline -> "Offline"
-    is LinkState.Failed -> if (link.unauthorized) "No access" else "Offline"
+    is LinkState.ComputerOffline -> if (state.cloud?.asleep == true) "Sleeping" else "Offline"
+    is LinkState.Failed -> if (link.unauthorized) "No access" else if (state.cloud?.asleep == true) "Sleeping" else "Offline"
 }
 
 /** What TalkBack says for the chat header's connection: the route too, when there is one. */
@@ -39,7 +59,7 @@ internal fun connectionDescription(state: AppState): String {
     return when {
         link == LinkState.Connecting -> "Connecting"
         link !is LinkState.Ready -> connectionLabel(state)
-        state.mismatch != null -> "Needs update"
+        state.mismatch != null -> state.updateWord
         link.route == HostRoute.Relay -> connectedThrough(state.computer.cloud)
         else -> "Connected over Wi-Fi or Tailscale"
     }

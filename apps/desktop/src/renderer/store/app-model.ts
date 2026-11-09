@@ -8,6 +8,7 @@ import { account } from './account'
 import { analytics } from './analytics'
 import { BotStore } from './bot-store'
 import { CloudModel } from './cloud'
+import { CloudComputerModel } from './cloud-computer'
 import { DeviceComputerOrder } from './computer-order'
 import { ComputerAccess } from './computer-access'
 
@@ -71,12 +72,15 @@ export class AppModel extends Observable {
   readonly computerAccess: ComputerAccess
   readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
+  /** The account's Codync Cloud computer (Settings → Computers & devices). */
+  readonly cloudComputer: CloudComputerModel
 
   constructor(private mirrors = true) {
     super()
     this.computerAccess = new ComputerAccess(this)
     this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
+    this.cloudComputer = new CloudComputerModel(this)
     account.subscribe(() => this.noteAccount())
   }
 

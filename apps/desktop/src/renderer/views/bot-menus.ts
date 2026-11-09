@@ -2,11 +2,12 @@ import type { Bot } from '@shared/models'
 import type { BotStore } from '../store/bot-store'
 import type { MenuItem } from '../components/Menu'
 import { makeLeadItems, offersDelete } from './lead-menus'
-import { moveToSectionItems, type SectionNaming } from './section-menus'
+import { moveToSectionItems } from './section-menus'
+import type { Naming } from './NameDialog'
 
 /** What a bot row's menu opens in the window. */
 export interface BotMenuActions {
-  askName: (naming: SectionNaming) => void
+  askName: (naming: Naming) => void
   edit: () => void
   confirmDelete: () => void
 }

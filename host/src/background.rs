@@ -1,6 +1,7 @@
 //! Background services started alongside the host API.
 
-use crate::{agent::registry, hub::Hub, market, remote::relay, screen, update, usage, voice};
+use crate::remote::{claim, managed, relay};
+use crate::{agent::registry, hub::Hub, market, screen, update, usage, voice};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -32,6 +33,9 @@ pub fn start(hub: &Arc<Hub>) -> JoinSet<()> {
     tokio::spawn(update::release_watch());
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));
     tokio::spawn(relay::run(hub.clone()));
+    tokio::spawn(claim::run_ticket(hub.clone()));
+    tokio::spawn(managed::sleep_loop(hub.clone()));
+    tokio::spawn(managed::on_start(hub.clone()));
     tokio::spawn(crate::remote::discovery::run(hub.clone()));
     #[cfg(target_os = "linux")]
     tokio::spawn(screen::supervise_linux_helper(hub.screen.clone()));

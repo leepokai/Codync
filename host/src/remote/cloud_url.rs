@@ -78,6 +78,15 @@ pub fn when_on(store: &Store) -> Option<Address> {
     )
 }
 
+/// The cloud a Codync Cloud computer's keeper gets its vault key from: `CODYNC_CLOUD_URL`, else this build's.
+#[cfg(unix)]
+pub fn keeper_cloud_url() -> String {
+    let env = std::env::var("CODYNC_CLOUD_URL").ok();
+    let builtin = Environment::current().cloud_url();
+    resolve(false, Candidate { url: env.as_deref(), token: None }, Candidate::default(), builtin)
+        .map_or_else(|| builtin.to_owned(), |address| address.url)
+}
+
 /// The cloud base URL in use, or `None` when the cloud is off.
 pub fn url(store: &Store) -> Option<String> {
     current(store).map(|address| address.url)

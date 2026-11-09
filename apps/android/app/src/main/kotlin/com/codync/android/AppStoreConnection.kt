@@ -76,7 +76,7 @@ fun AppStore.connect() {
                 val target = state.value.computer
                 // With no relay, a changed address can only be found on the network.
                 val found = if (target.cloud == null) LocalDiscovery.urls(application, target.id).filter { it !in target.urls } else emptyList()
-                val active = HostConnector.connect(target, identity, found)
+                val active = HostConnector.connect(target, identity, BuildConfig.VERSION_NAME, found)
                 if (found.isNotEmpty()) Analytics.capture(AnalyticsEvent.ComputerFoundOnNetwork)
                 connected = active
                 channel = active
@@ -178,6 +178,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             refresh()
             receiveArtifacts(batch)
             receiveNetwork(batch)
+            batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()

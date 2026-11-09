@@ -85,11 +85,11 @@ impl Actor {
 
     /// A folder saved for the bot's agent (`setAgentEnv`) as `key`, such as where its own config is (`CODEX_HOME`).
     fn saved_env(&self, key: &str) -> Option<std::path::PathBuf> {
-        let saved = crate::agent::auth::env(&self.hub.store, &self.cfg.backend).unwrap_or_else(|e| {
+        let saved = crate::agent::auth::saved_value(&self.hub.store, &self.cfg.backend, key).unwrap_or_else(|e| {
             tracing::warn!(error = format!("{e:#}"), "couldn't read the agent's saved environment");
-            Vec::new()
+            None
         });
-        saved.into_iter().find(|(k, _)| k == key).map(|(_, v)| v.into())
+        saved.map(Into::into)
     }
 
     /// ACP connectors, team collaboration, and optional team management and computer control.
@@ -157,7 +157,7 @@ impl Actor {
     /// sets `turn_session`.
     async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
         if !self.cfg.connectors.is_empty()
-            || self.hub.store.kv_read(&format!("agent-env:{}", self.cfg.backend))?.is_some()
+            || crate::market::vault::saved(&self.hub.store, &format!("agent-env:{}", self.cfg.backend))?
         {
             crate::market::vault::unlock(self.hub.clone()).await?;
         }
@@ -184,7 +184,7 @@ impl Actor {
             };
             let candidates = launch_commands(&self.cfg)?;
             // Keys saved from an "environment variable" sign-in, and what the harness needs to start.
-            let mut env = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
+            let (mut env, mut grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
@@ -201,6 +201,7 @@ impl Actor {
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 match self.start_candidate(candidate, &env, budget, &progress).await {
                     Ok(conn) => {
+                        conn.acp.hold(std::mem::take(&mut grants));
                         self.conn = Some(conn);
                         break;
                     }

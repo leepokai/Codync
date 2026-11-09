@@ -55,15 +55,21 @@ pub fn exec(command: &str) -> Shell {
 /// The environment a fresh login would get (its PATH finds CLIs installed after this process
 /// started; its other variables are what the user's agents expect, such as API keys).
 /// Unix: the login shell's, via `$SHELL -ilc` with a timeout (nvm/conda can make shells
-/// slow); the shell writes it to a file only this user can read (it holds secrets), since a
-/// background job started by an rc file can hold a stdout pipe open long after the shell exits.
+/// slow); the shell writes it to a file, since a background job started by an rc file can hold a
+/// stdout pipe open long after the shell exits. It holds secrets, so it sits in a folder only this
+/// user can open; the shell creates the file itself, so an rc file's `noclobber` doesn't block it.
 #[cfg(unix)]
 pub fn user_env() -> Option<Vec<(String, String)>> {
-    use std::os::unix::fs::OpenOptionsExt as _;
+    login_env(&std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()))
+}
+
+#[cfg(unix)]
+fn login_env(shell: &str) -> Option<Vec<(String, String)>> {
+    use std::os::unix::fs::DirBuilderExt as _;
     use std::time::{Duration, Instant};
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let file = std::env::temp_dir().join(format!("codync-env-{}", uuid::Uuid::new_v4()));
-    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&file).ok()?;
+    let dir = std::env::temp_dir().join(format!("codync-env-{}", uuid::Uuid::new_v4()));
+    std::fs::DirBuilder::new().mode(0o700).create(&dir).ok()?;
+    let file = dir.join("env");
     let target = file.to_string_lossy().replace('\'', r"'\''");
     let child = std::process::Command::new(shell)
         .args(["-ilc", &format!("env -0 > '{target}'")])
@@ -72,7 +78,7 @@ pub fn user_env() -> Option<Vec<(String, String)>> {
         .stderr(std::process::Stdio::null())
         .spawn();
     let Ok(mut child) = child else {
-        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir_all(&dir);
         return None;
     };
     let deadline = Instant::now() + Duration::from_secs(8);
@@ -87,7 +93,7 @@ pub fn user_env() -> Option<Vec<(String, String)>> {
         }
     };
     let dump = std::fs::read(&file).ok().filter(|d| exited && !d.is_empty());
-    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_dir_all(&dir);
     Some(parse_env(&dump?))
 }
 
@@ -237,6 +243,20 @@ mod tests {
         let pairs: Vec<(&str, &str)> = [("A", "1"), ("MULTI", "x\ny=z"), ("EMPTY", "")].into();
         let want: Vec<(String, String)> = pairs.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
         assert_eq!(parse_env(dump), want);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reads_a_login_shell_with_noclobber() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = std::env::temp_dir().join(format!("codync-shell-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let shell = dir.join("shell");
+        std::fs::write(&shell, "#!/bin/sh\nset -C\nexport CODYNC_SHELL_TEST=yes\neval \"$2\"\n").unwrap();
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let env = login_env(&shell.to_string_lossy()).expect("the shell's environment");
+        assert!(env.contains(&("CODYNC_SHELL_TEST".to_owned(), "yes".to_owned())));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[cfg(windows)]

@@ -46,12 +46,12 @@ date to the newest one it supports. `wrangler.toml` keeps the deploy date.
 npm run e2e       # local D1 + wrangler dev + real codync-host + test/e2e/phone.ts
 ```
 
-Env: `CODYNC_HOST_BIN` (default `../host/target/debug/codync-host`), `CODYNC_E2E_CLOUD_PORT` (default
-8787), `E2E_VERBOSE=1` to stream wrangler and host logs. Needs `python3` for the fake agent.
+Env: `CODYNC_HOST_BIN` (default `../host/target/debug/codync-host`), `CODYNC_E2E_CLOUD_PORT` (default: a free
+port), `E2E_VERBOSE=1` to stream wrangler and host logs. Needs `python3` for the fake agent.
 
 ## Deploy
 
-Development deployment (see [environment readiness](../docs/guides/environments-and-deployment.md); these commands change remote resources):
+Development deployment (see [environment readiness](../docs/guides/environments-and-deployment.md); these commands change remote resources). Run them only from `dev`, never from a branch: a branch tests on its own local Worker ([which cloud](../docs/guides/cloudflare-testing.md#which-cloud-a-change-is-tested-on)).
 
 ```bash
 # Only if the database does not exist: npx wrangler d1 create codync-dev
@@ -64,6 +64,8 @@ grep '^CODYNC_DEVICE_CERT_KEY=' ../.env.development | cut -d= -f2- | npx wrangle
 npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 ```
 
+Every secret across the Workers, GitHub and local files, and what to do when one leaks: [secrets](../docs/reference/secrets.md).
+
 | Name | Kind | Purpose |
 |---|---|---|
 | `CLERK_SECRET_KEY` | secret | JWKS for session tokens |
@@ -75,9 +77,9 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 | `CLERK_JWT_KEY` | var, dev/e2e only | public key for networkless verification |
 | `ASSISTANT_LIMITER` | rate limit binding | cloud assistant (MCP connector) requests per account, 120 per minute |
 | `PAIRING_CODE_LIMITER` | rate limit binding | short pairing codes typed per account and per IP, 10 per minute, a miss counting twice |
-| `CLOUD_SECRET_KEYS` | secret, optional | Codync Cloud: `id:base64` AES-256 keys (space-separated, the first seals) that seal the provider keys users give it (`src/secrets.ts`; [bring your own cloud](../docs/plans/codync-cloud.md#bring-your-own-cloud)); unset = no cloud computers. Make one with `echo "k1:$(openssl rand -base64 32)"`; never reuse one across environments |
+| `CLOUD_SECRET_KEYS` | secret, optional | Codync Cloud: `id:base64` AES-256 keys (space-separated, the first seals) that seal the provider keys users give it and each cloud computer's keeper vault key (`src/secrets.ts`; [bring your own cloud](../docs/plans/codync-cloud.md#bring-your-own-cloud)); unset = no cloud computers. Make one with `echo "k1:$(openssl rand -base64 32)"`; never reuse one across environments |
 | `CLOUD_KEY_LIMITER` | rate limit binding | provider keys saved per account (each save calls the provider), 5 per minute |
-| `CLOUD_COMPUTER_USERS` | var, optional | comma-separated Clerk user ids allowed a cloud computer (`*`: everyone) |
+| `CLOUD_COMPUTER_USERS` | secret, optional | comma-separated Clerk user ids allowed a cloud computer (`*`: everyone, local runs only); a secret because the repository is public |
 | `BOAT_API_URL`, `INSTABOX_API_URL`, `CLOUD_AUTO_STOP_SECONDS` | var, dev/e2e only | Boat and InstaBox base URLs; provider auto-stop (Boat's trial needs ≤ 7200; InstaBox ignores it and pauses a machine idle for 30 minutes) |
 | `CLOUD_HOST_ENV`, `CLOUD_HOST_BINARY_URL`, `CLOUD_MACHINE_PREFIX` | var, dev/e2e only | a cloud computer's host service environment (`CODYNC_…=value`, e.g. its cloud URL, analytics off); a host build to boot instead of the release; the machine name prefix ([cloud computer testing](../docs/guides/cloud-computer-testing.md)) |
 | `HOST_FLOOR`, `HOST_FLOOR_REASON` | var, emergencies only | cloud hosts below it update at once; self-hosted ones below it get `426 hostUpdateRequired` at registration |

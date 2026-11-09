@@ -97,7 +97,7 @@ local only), forwards each new machine, and prints how to point each app at it:
 
 - iOS simulator: `SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> xcrun simctl launch <udid> com.pokai.Codync.ios.dev`, on a
   simulator no other session uses.
-- Desktop: `CODYNC_CLOUD_URL=<url> npm run dev` in the worktree (its sandbox host, signed in to its Clerk test
+- Desktop: `CODYNC_CLOUD_URL=<url> npm run dev -- --cloud` in the worktree (its sandbox host, signed in to its Clerk test
   account; a development build takes the local `http://127.0.0.1` cloud, a release build only HTTPS).
 - Android: `adb reverse tcp:<port> tcp:<port>` on its own emulator, built with `-PcodyncCloudUrl=<url>` together with
   `-PcodyncClerkPublishableKey=<dev pk_test>` and `-PcodyncPushRelayUrl=<relay>` (the build refuses one override alone).

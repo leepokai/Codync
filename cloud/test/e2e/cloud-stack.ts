@@ -48,7 +48,7 @@ const port = cloud.port;
 console.log(`
 Local cloud for Codync Dev apps: ${cloud.url} (dev Clerk sign-ins; test account: any name+clerk_test@example.com, code 424242)
   iOS simulator:    SIMCTL_CHILD_CODYNC_CLOUD_URL=${cloud.url} xcrun simctl launch <udid> com.pokai.Codync.ios.dev
-  Desktop sandbox:  CODYNC_CLOUD_URL=${cloud.url} npm run dev   (in apps/desktop)
+  Desktop sandbox:  CODYNC_CLOUD_URL=${cloud.url} npm run dev -- --cloud   (in apps/desktop)
   Android emulator: adb -s <serial> reverse tcp:${port} tcp:${port}, built with -PcodyncCloudUrl=${cloud.url} plus -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl
 Cloud computers: ${HOST_LINUX_BIN ? `boot ${HOST_LINUX_BIN}` : "boot the released host"}; ${ibx ? `they reach this cloud at ${hostCloudUrl}` : "each new one is forwarded here"}. Ctrl-C to stop.
 Keys to paste in the app: ${[key && "Boat: the one in BOAT_API_KEY_FILE (limited to the codync environment)", ibx && "InstaBox: the one in INSTABOX_API_KEY_FILE"].filter(Boolean).join("; ")}.

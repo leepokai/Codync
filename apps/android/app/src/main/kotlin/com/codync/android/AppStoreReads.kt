@@ -13,7 +13,7 @@ import kotlinx.serialization.json.put
 // Read marks: reading the chats on screen, opening one, the roster's "Mark as read" and "Mark as unread". The host decides what a read does to a chat marked unread; here they only go out in order.
 
 /** The first host with `markUnread`. */
-private const val MARK_UNREAD_HOST = "2.42.0"
+private const val MARK_UNREAD_HOST = "2.43.0"
 
 /** The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or on an older host (it refuses `markUnread`), "Mark as read". */
 internal fun AppState.offersMarkUnread(bot: Bot): Boolean =

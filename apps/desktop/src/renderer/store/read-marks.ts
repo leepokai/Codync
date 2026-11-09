@@ -3,7 +3,7 @@ import type { HostClient } from '../client/host-client'
 import { isBelow } from '../../shared/compat.ts'
 
 /** The first host with `markUnread`. */
-export const MARK_UNREAD_HOST = '2.42.0'
+export const MARK_UNREAD_HOST = '2.43.0'
 
 /** The roster offers "Mark as Unread" for a chat with nothing unread; otherwise, or on an older host (it refuses `markUnread`), "Mark as Read". */
 export function offersMarkUnread(bot: Bot, hostVersion: string | undefined) {

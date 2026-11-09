@@ -53,7 +53,7 @@ struct ComputerSection: View {
             Spacer(minLength: 8)
             Text(L10n.tr(store.statusText))
                 .font(.subheadline)
-                .foregroundStyle(store.isOffline && !store.isUpdating ? Palette.warning : Palette.tertiary)
+                .foregroundStyle(store.isOffline && !store.isUpdating && !store.isAsleep ? Palette.warning : Palette.tertiary)
                 .lineLimit(1)
                 .contentTransition(.opacity)
             if store.connection == .online {

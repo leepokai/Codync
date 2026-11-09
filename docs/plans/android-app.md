@@ -105,7 +105,7 @@ the Dynamic Island) with its feature graphic, per language.
 - [x] Account deletion inside the app: *Delete account* in the account sheet (2.35.0) deletes the
   Clerk user, whose webhook removes the rest. The web address Play asks for is
   `codync.dev/delete-account`.
-- [ ] Reviewer access: the app requires sign-in (2.35.0), and pairing needs a computer. In App
+- [ ] Reviewer access: pairing needs a computer, and signing in is optional (2.41.0). In App
   content → App access, say that the reviewer signs in with any Google account (no credentials
   needed), and link a way to a computer (a demo video of pairing and a chat, or a reusable demo
   host).

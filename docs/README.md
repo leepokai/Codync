@@ -18,6 +18,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Ship app and host updates | [Updates](guides/updates.md), [client and host compatibility](reference/compatibility.md) |
 | Plan and build Android | [Android plan](plans/android-app.md), [Android status](../apps/android/README.md) |
 | Test a phone over Cloudflare instead of LAN | [Cloudflare testing](guides/cloudflare-testing.md) |
+| Test cloud computers (Codync Cloud), isolated per worktree or on the persistent Dev | [Cloud computer testing](guides/cloud-computer-testing.md) |
 | Configure dev/main or deploy the services | [Environments and deployment](guides/environments-and-deployment.md) |
 | Run the host on a Linux server or cloud VM | [Linux servers](guides/linux-servers.md) |
 | Reproduce or check something on Windows (UTM VM) | [Windows testing](guides/windows-testing.md) |
@@ -38,6 +39,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Cloud assistants](features/cloud-assistants.md) (ChatGPT, Claude and others message the bots through the Codync connector)
 - [codync-network and cloud assistants: design](design/codync-network.md) (why iroh, connectors and relays, trust, addresses, quiet letters, the connector's choices, next steps)
 - [Context and memory](features/context-and-memory.md)
+- [Usage limits](features/usage-limits.md) (which agents show, how each one is read, and which can't be)
 - [Bot memory and compaction](design/bot-memory.md) (design; storage, gate and dreaming built, compaction to come)
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
 - [Bot workspaces](features/bot-workspaces.md)
@@ -60,10 +62,13 @@ Source review, a passing build, local integration tests and production acceptanc
 
 ## Plans
 
+- [Optional sign-in](plans/optional-sign-in.md) (signed-out phones, computers in no account, the relay only within an account; built, the rollout steps remain)
+- [Windows remote screen](plans/windows-remote-screen.md) (a screen helper for Windows; planned)
 - [Android parity and acceptance](plans/android-app.md)
 - [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)
+- [Codync Cloud](plans/codync-cloud.md) (a cloud computer Codync runs on the user's own cloud provider account, Boat or InstaBox, bring your own cloud; phase 1 built), its [provider survey](plans/codync-cloud-providers.md), [Boat trial log](plans/codync-cloud-boat-trial.md) and a not-adopted alternative for [updates](plans/codync-cloud-updates.md)
 
 ## Investigations
 

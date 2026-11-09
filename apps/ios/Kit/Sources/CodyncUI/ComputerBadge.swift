@@ -34,6 +34,7 @@ public struct ComputerBadge: View {
         case "macstudio": "macstudio"
         case "imac": "desktopcomputer"
         case "macpro": "macpro.gen3"
+        case "cloud": "cloud"
         default: "desktopcomputer"
         }
     }

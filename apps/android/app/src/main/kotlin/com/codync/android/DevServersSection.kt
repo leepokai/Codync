@@ -90,6 +90,7 @@ private fun menuItems(botId: String, server: DevServer, store: AppStore, showLog
     fun act(action: DevServerAction) = store.devServerAction(action, botId, server.id)
     return server.menuRows.mapIndexed { index, row ->
         when (row) {
+            is DevServerMenuRow.OpenAddress -> MenuItem(row.title, icon = "arrow.up.right", verbatim = true) { open(row.address) }
             DevServerMenuRow.OnlyOnComputer -> MenuItem("Only reachable on the computer", enabled = false)
             DevServerMenuRow.StartedByShell -> MenuItem("Started through the bot's shell: it stops with the bot", enabled = false)
             DevServerMenuRow.Open -> MenuItem("Open", icon = "arrow.up.right") { server.remoteAddress?.let(open) }

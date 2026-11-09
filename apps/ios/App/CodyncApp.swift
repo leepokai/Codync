@@ -93,6 +93,10 @@ struct CodyncApp: App {
                     if let s = ProcessInfo.processInfo.environment["CODYNC_PAIR_URL"], let p = Pairing(string: s) {
                         _ = try? await app.pair(p, via: .link)
                     }
+                    // Cloud computer tests: SIMCTL_CHILD_CODYNC_TEST_SIGN_IN=<name>+clerk_test@example.com
+                    if let email = ProcessInfo.processInfo.environment["CODYNC_TEST_SIGN_IN"] {
+                        await app.account.signInTestAccount(email)
+                    }
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .state; app.showUsage = true }
                     if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .state }
                     // Screenshots: CODYNC_OPEN_URL=codync://bot/<botId>?scope=local&computer=<id>, without the system prompt.
@@ -150,11 +154,12 @@ final class AppStore {
         }
         CrashReports.shared.start()
         contextID = storage.id
-        Self.adoptSignedOutPairings(into: storage)
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         // Accounts Clerk hasn't restored by launch keep their computers' push on.
         SharedStore.Context.splitPushSwitch(from: .standard,
                                             into: Set([nil, storage.accountID] + session.accounts.map(\.id)).map { SharedStore.Context(accountID: $0) })
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
+        if rescan { accounts.lastError = Self.scanAgain }
     }
 
     var storage: SharedStore.Context { accounts.storage }
@@ -170,7 +175,7 @@ final class AppStore {
         accounts.retire()
         PushRegistrar.shared.deactivate()
         LiveActivities.shared.endAll()
-        Self.adoptSignedOutPairings(into: storage)
+        let rescan = Self.adoptSignedOutPairings(into: storage)
         SharedStore.activeAccountID = userID
         storage.bots = []
         contextID = storage.id
@@ -178,6 +183,7 @@ final class AppStore {
         showComputers = false
         marketplace = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
+        if rescan { accounts.lastError = Self.scanAgain }
         BotsWidgetFeed.reset()
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -197,6 +203,7 @@ final class AppStore {
         storage.bots = []
         SharedStore.activeAccountID = nil
         UserDefaults.standard.set(false, forKey: "onboardingCompleted")
+        UserDefaults.standard.set(false, forKey: "withoutAccount")
         showComputers = false
         account.showSwitcher = false
         marketplace = nil
@@ -213,7 +220,7 @@ final class AppStore {
     func pairing(from text: String) async throws -> Pairing {
         do {
             guard let code = Pairing.shortCode(text) else { return try Pairing.parse(text) }
-            guard let cloud else { throw AccountStore.noCertificate }
+            guard let cloud else { throw AccountStore.signInForShortCode }
             return try Pairing.parse(try await cloud.pairingLink(code: code))
         } catch {
             throw pairingFailed(error)

@@ -40,6 +40,8 @@ A server's command and logs show in your apps, on all your devices. Keep secrets
 
 Most dev servers listen only on the computer they run on, so a phone can't reach them, and the menu says **Only reachable on the computer**. To open one from your phone, ask the bot to run it on all interfaces (for Vite, `npm run dev -- --host`). Your phone must be able to reach your computer directly, on the same Wi-Fi or over Tailscale.
 
+A tap opens the first address your computer has. If that one doesn't load (it's a Tailscale address and this device isn't on Tailscale), the **⋯** menu lists every address to try. The desktop app does the same for a computer attached over SSH, and the terminal UI shows them all.
+
 On all interfaces, anyone who can reach your computer on that network can open the server, and most dev servers have no sign-in. On shared Wi-Fi or a machine with a public address, that means strangers. Stay on Tailscale there, with a firewall that keeps the port closed elsewhere, or keep the default and open the server on the computer.
 
 ## When they stop

@@ -23,7 +23,7 @@ use crate::agent::process::Process;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::Store;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use detected::Detected;
 use ports::Port;
 use serde::{Deserialize, Serialize};
@@ -259,13 +259,8 @@ impl DevServers {
         }
     }
 
-    /// A bot's server by what it runs and where: starting the same thing twice isn't two servers.
     fn same(&self, bot: &str, folder: &str, command: &str) -> Option<String> {
-        self.live
-            .locked()
-            .values()
-            .find(|live| live.saved.bot == bot && live.saved.folder == folder && live.saved.command == command)
-            .map(|live| live.saved.id.clone())
+        same_server(&self.live.locked(), bot, folder, command)
     }
 
     fn view(&self, bot: &str, id: &str) -> Result<View> {
@@ -313,15 +308,28 @@ fn report(hub: &Hub, event: Event, key: &str, value: &str) {
     analytics::capture(hub, event, properties);
 }
 
-/// Refuses another running server past the limit, saying which ones run.
+/// A bot's server by what it runs and where: starting the same thing twice isn't two servers.
+fn same_server(live: &HashMap<String, Live>, bot: &str, folder: &str, command: &str) -> Option<String> {
+    live.values()
+        .find(|live| live.saved.bot == bot && live.saved.folder == folder && live.saved.command == command)
+        .map(|live| live.saved.id.clone())
+}
+
+/// Whether `bot` may run one more.
+fn has_room(live: &HashMap<String, Live>, bot: &str) -> bool {
+    live.values().filter(|live| live.saved.bot == bot && live.status.active()).count() < MAX_RUNNING
+}
+
+/// The refusal past the limit, saying which ones run. Call it with the servers unlocked.
+fn no_room(hub: &Hub, bot: &str) -> anyhow::Error {
+    report(hub, Event::DevServerStarted, "outcome", "limit");
+    anyhow!("at most {MAX_RUNNING} dev servers run at once; stop one first. Running: {}", hub.dev_servers.wire(bot))
+}
+
+/// Refuses another running server past the limit, before asking anyone about it. Only what starts one decides, under
+/// the lock that adds it: parallel starts can all pass here, and an approval card can take minutes.
 fn check_room(hub: &Hub, bot: &str) -> Result<()> {
-    let running =
-        hub.dev_servers.live.locked().values().filter(|live| live.saved.bot == bot && live.status.active()).count();
-    if running >= MAX_RUNNING {
-        report(hub, Event::DevServerStarted, "outcome", "limit");
-        bail!("at most {MAX_RUNNING} dev servers run at once; stop one first. Running: {}", hub.dev_servers.wire(bot));
-    }
-    Ok(())
+    if has_room(&hub.dev_servers.live.locked(), bot) { Ok(()) } else { Err(no_room(hub, bot)) }
 }
 
 /// A server's recent output, for the apps.

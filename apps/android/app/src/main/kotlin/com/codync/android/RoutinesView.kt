@@ -317,7 +317,8 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
                         IconButton(if (copied == "key") "Copied" else "Copy", if (copied == "key") "checkmark" else "doc.on.doc") { copy("key", value) }
                     }
                 }
-                Note(if (value.url == null) "The Codync cloud is off, so only this computer can send to it."
+                Note(if (value.url == null && value.needsAccount) "This computer isn't in an account, so only it can send to this address. Add it to your account for a public one."
+                    else if (value.url == null) "The Codync cloud is off, so only this computer can send to it."
                     else "POST with Authorization: Bearer <key>. For GitHub, use content type application/json and the key as the secret. " +
                         "Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them.")
             }

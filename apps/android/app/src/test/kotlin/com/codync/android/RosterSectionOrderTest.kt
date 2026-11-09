@@ -14,7 +14,7 @@ class RosterSectionOrderTest {
             rosterLines(bots, emptySet(), listOf("", "Work"), moving = true))
     }
     @Test fun aHeadingDragMovesBothWaysAcrossBots() {
-        val drag = SectionReorder()
+        val drag = ListReorder()
         drag.names = listOf("Work", "")
         drag.heights[""] = 40
         drag.heights["Work"] = 40
@@ -30,7 +30,7 @@ class RosterSectionOrderTest {
         assertEquals(null, drag.dragged)
     }
     @Test fun foldingKeepsTheHeadingUnderTheFingerAndCancellationDiscardsMoves() {
-        val drag = SectionReorder()
+        val drag = ListReorder()
         drag.names = listOf("Home", "Work", "")
         var top = 200f
         drag.position = { top }

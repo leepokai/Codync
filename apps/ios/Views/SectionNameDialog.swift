@@ -2,7 +2,7 @@ import CodyncKit
 import CodyncUI
 import SwiftUI
 
-/// An open section name dialog (desktop and Android `SectionNaming`): its title, the name it opens
+/// An open section name dialog (desktop and Android `Naming`): its title, the name it opens
 /// with, and what Save does with the typed one.
 struct SectionNaming {
     let title: String
@@ -11,7 +11,7 @@ struct SectionNaming {
 }
 
 extension View {
-    /// Asks for a section's name while `naming` is set (desktop and Android `SectionNameDialog`).
+    /// Asks for a section's name while `naming` is set (desktop and Android `NameDialog`).
     func sectionNameDialog(_ naming: Binding<SectionNaming?>) -> some View {
         modifier(SectionNameDialog(naming: naming))
     }

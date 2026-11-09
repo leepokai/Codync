@@ -1,4 +1,5 @@
 import { chromium, type Browser, type Page } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
@@ -23,6 +24,13 @@ export function sandbox() {
   return { name, port, cdp: port + 10000 }
 }
 
+/** Freezes the sandbox host, still connected and answering nothing, until the function it returns. Not on Windows. */
+export function freezeHost() {
+  const pid = Number(execFileSync('lsof', ['-t', '-sTCP:LISTEN', `-iTCP:${sandbox().port}`], { encoding: 'utf8' }).trim())
+  process.kill(pid, 'SIGSTOP')
+  return () => process.kill(pid, 'SIGCONT')
+}
+
 /** Attaches to the sandbox app's main window over the DevTools protocol. */
 export async function attach(): Promise<{ browser: Browser; page: Page }> {
   const { cdp } = sandbox()
@@ -35,6 +43,9 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     .find((p) => !p.url().startsWith('devtools://'))
   if (!page) throw new Error('The sandbox app has no window open.')
   await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
+  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox.
+  const notNow = page.getByRole('alertdialog').getByRole('button', { name: 'Not now' })
+  if (await notNow.isVisible()) await notNow.click()
   return { browser, page }
 }
 

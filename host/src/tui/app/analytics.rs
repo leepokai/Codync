@@ -53,7 +53,7 @@ impl App {
     /// one, else the full trace.
     fn screen_on_top(&self) -> Option<Screen> {
         let overlay = self.overlays.iter().rev().find_map(|o| match o {
-            Overlay::Usage(_) => Some(Screen::Usage),
+            Overlay::Usage(_) | Overlay::UsageChooser { .. } => Some(Screen::Usage),
             Overlay::Pair(_) => Some(Screen::Pairing),
             Overlay::Network(_) => Some(Screen::Network),
             Overlay::Memory(_) => Some(Screen::Memory),

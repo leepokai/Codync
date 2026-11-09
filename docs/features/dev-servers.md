@@ -108,11 +108,12 @@ white, and color comes from the bots.
   `⋯`, which on the desktop shows only when the row is hovered.
 - **Other devices:** a server listening only on its computer can't be opened from a phone, or from a desktop over SSH
   (`store === app.local`, not `isLoopback`: an SSH store is loopback through its tunnel). Its menu says so. A server on all
-  interfaces opens at its first `remote` address.
+  interfaces opens at its first `remote` address, which this device may not reach (a Tailscale address, without Tailscale
+  here), so with several the menu lists each one to open, in place of `Open`.
 - **Logs:** a sheet with the last 200 lines and a refresh button; for a failed server, its exit code.
 - **Terminal:** `/servers` or a click on the port opens a sheet instead of a section; keys in `tui/manage/dev_servers.rs`,
   the footer listing those that apply to the selected server. `codync-host tui --url` may be a tunnel, which looks local,
-  so it shows the address instead of opening a browser.
+  so its sheet lists the selected server's addresses, one line each, instead of opening a browser.
 
 Each client: desktop `views/thread/DevServersSection.tsx` and `src/shared/dev-servers.ts`; iPhone
 `CodyncUI/Bots/DevServersSection.swift`; Android `DevServersSection.kt`; terminal `tui/manage/dev_servers.rs` and
@@ -124,16 +125,18 @@ Instructions aren't a guarantee, and some agents have their own background-shell
 what an agent started outside Codync's helpers and listens below port 32768 (above is where systems hand out ports: an
 agent's own callback or inspector). The agent's own processes, by program name (its harness's `bins` and its command's
 first word, unless that's a runtime like `node`), don't count: `opencode acp` listens on 4096. Processes that share a
-socket are one server (a pre-fork server), whose Stop ends them all. These show with `managed: false`, marked as stopping
-with the bot, and offer only open, copy and stop: they can't leave the agent's tree. `background_work` still keeps their
-agent running. The `dev_server_detected` event measures how often this happens.
+socket are one server (a pre-fork server), whose Stop ends them all. A Stop reads the agent's tree again and ends only what
+is still in it, since a pid from the last scan can be reused; when the tree can't be read it fails and the row stays. These
+show with `managed: false`, marked as stopping with the bot, and offer only open, copy and stop: they can't leave the
+agent's tree. `background_work` still keeps their agent running. The `dev_server_detected` event measures how often this
+happens.
 
 ## Tests
 
 `host/tests/dev_server_e2e.rs` runs on every system host CI does, and walks the table above: its Unix-only parts are a
-crashed host's leftover process and an agent stopped after a routine's run (Windows can't tell that fixture from one with
-a server, see `background_work`). `apps/desktop/e2e/dev-servers.spec.ts` and `apps/maestro/dev-servers.yaml` walk the
-clients.
+crashed host's leftover process, an agent stopped after a routine's run (Windows can't tell that fixture from one with
+a server, see `background_work`) and a process list that can't be read. `apps/desktop/e2e/dev-servers.spec.ts` and
+`apps/maestro/dev-servers.yaml` walk the clients.
 
 ## Later
 

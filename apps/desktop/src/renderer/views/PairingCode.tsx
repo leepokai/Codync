@@ -53,11 +53,12 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
             <img src={code.qr} alt={tr('Pairing code for {name}').replaceAll('{name}', () => name)} width={200} height={200} />
           </div>
           <Text as="div" size="caption" tone="secondary" className="pairing-note">
-            {tr(`Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.`)}
+            {/* In no account there's no relay: the note below says what reaches it. */}
+            {cloud?.canJoinAccount ? tr('Scan with the Codync app or the iPhone Camera.') : tr(`Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.`)}
           </Text>
           {cloud?.canJoinAccount ? (
             <Text as="div" size="caption" tone="attention" className="pairing-note">
-              {tr('Not in an account: a signed-in phone that scans this asks to bring the computer into its account.')}
+              {tr('Not in an account: phones connect only over Wi-Fi or Tailscale until a signed-in phone adds it to its account.')}
             </Text>
           ) : null}
           {cloud?.enabled !== true ? (

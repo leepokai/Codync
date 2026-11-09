@@ -7,16 +7,15 @@
 //! Each connected app shows up as a connector `composio-<toolkit>`; a bot with
 //! some turned on gets the built-in `composio` MCP server, limited to those
 //! apps, which searches, describes and runs their tools through this host.
-//! The key never leaves the computer.
+//! The key never leaves the computer (a cloud computer's stays with its keeper: `api`).
+
+mod api;
 
 use crate::store::Store;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
+use api::{Api, get, post, request};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::time::Duration;
-
-const API: &str = "https://backend.composio.dev/api/v3.1";
-const TIMEOUT: Duration = Duration::from_secs(30);
 /// Connector ids for Composio apps: `composio-<toolkit slug>`.
 pub const PREFIX: &str = "composio-";
 pub(super) const SLOT: &str = "composio";
@@ -77,39 +76,6 @@ pub fn connections(store: &Store) -> Result<Vec<Connection>> {
     Ok(load(store)?.map(|c| c.connections).unwrap_or_default())
 }
 
-async fn request(
-    key: &str,
-    method: reqwest::Method,
-    path: &str,
-    query: &[(&str, &str)],
-    body: Option<&Value>,
-) -> Result<Value> {
-    let url = reqwest::Url::parse_with_params(&format!("{API}{path}"), query)?;
-    let mut req = crate::http().request(method.clone(), url).header("x-api-key", key).timeout(TIMEOUT);
-    if let Some(body) = body {
-        req = req.json(body);
-    }
-    let res = req.send().await.with_context(|| format!("can't reach Composio ({method} {path})"))?;
-    let status = res.status();
-    let text = res.text().await.unwrap_or_default();
-    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
-    if !status.is_success() {
-        if status.as_u16() == 401 {
-            bail!("Composio did not accept the API key. Reconnect in Extensions.");
-        }
-        bail!("Composio request failed ({status}). Check the connection and try again.");
-    }
-    Ok(v)
-}
-
-async fn get(key: &str, path: &str, query: &[(&str, &str)]) -> Result<Value> {
-    request(key, reqwest::Method::GET, path, query, None).await
-}
-
-async fn post(key: &str, path: &str, body: &Value) -> Result<Value> {
-    request(key, reqwest::Method::POST, path, &[], Some(body)).await
-}
-
 fn text(v: &Value) -> Option<String> {
     v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
@@ -152,13 +118,14 @@ pub async fn set_key(store: &Store, key: &str) -> Result<Value> {
     if key.is_empty() {
         let _guard = store.connector_lock.lock().map_err(|_| anyhow!("connector storage is busy"))?;
         super::vault::write(store, SLOT, "")?;
+        api::forget(store)?;
         return status(store);
     }
-    get(key, "/toolkits", &[("limit", "1")]).await?;
+    get(&Api::direct(key), "/toolkits", &[("limit", "1")]).await?;
     {
         let _guard = store.connector_lock.lock().map_err(|_| anyhow!("connector storage is busy"))?;
         let mut c = load(store)?.unwrap_or_default();
-        key.clone_into(&mut c.key);
+        c.key = api::keep(store, key)?;
         if c.user_id.is_empty() {
             c.user_id = format!("codync-{}", uuid::Uuid::new_v4());
         }
@@ -171,7 +138,7 @@ pub async fn set_key(store: &Store, key: &str) -> Result<Value> {
 /// Re-reads this computer's connected accounts from Composio.
 pub async fn refresh(store: &Store) -> Result<Vec<Connection>> {
     let mut c = config(store)?;
-    let v = get(&c.key, "/connected_accounts", &[("user_ids", &c.user_id), ("limit", "200")]).await?;
+    let v = get(&Api::of(store, &c)?, "/connected_accounts", &[("user_ids", &c.user_id), ("limit", "200")]).await?;
     let mut list: Vec<Connection> = v["items"]
         .as_array()
         .into_iter()
@@ -227,7 +194,8 @@ pub async fn toolkits(store: &Store, search: &str, cursor: &str) -> Result<Value
     if !cursor.is_empty() {
         query.push(("cursor", cursor));
     }
-    let (v, connected) = tokio::join!(get(&c.key, "/toolkits", &query), refresh(store));
+    let api = Api::of(store, &c)?;
+    let (v, connected) = tokio::join!(get(&api, "/toolkits", &query), refresh(store));
     let v = v?;
     let connected = connected.unwrap_or(c.connections);
     let items: Vec<Value> = v["items"]
@@ -258,15 +226,16 @@ pub async fn toolkits(store: &Store, search: &str, cursor: &str) -> Result<Value
 /// Starts connecting `toolkit`: a hosted link to open, or the fields a key-based app needs.
 pub async fn connect(store: &Store, toolkit: &str) -> Result<Value> {
     let c = config(store)?;
+    let api = Api::of(store, &c)?;
     let slug = checked_slug(toolkit)?.to_lowercase();
-    let detail = get(&c.key, &format!("/toolkits/{slug}"), &[]).await?;
+    let detail = get(&api, &format!("/toolkits/{slug}"), &[]).await?;
     let managed = detail["composio_managed_auth_schemes"].as_array().is_some_and(|a| !a.is_empty());
     if !managed && let Some((mode, fields)) = key_fields(&detail) {
         return Ok(json!({"status": "needsFields", "mode": mode, "fields": fields}));
     }
-    let auth_config = managed_auth_config(&c.key, &slug).await?;
+    let auth_config = managed_auth_config(&api, &slug).await?;
     let v =
-        post(&c.key, "/connected_accounts/link", &json!({"auth_config_id": auth_config, "user_id": c.user_id})).await?;
+        post(&api, "/connected_accounts/link", &json!({"auth_config_id": auth_config, "user_id": c.user_id})).await?;
     let url = text(&v["redirect_url"]).ok_or_else(|| anyhow!("Composio didn't return a sign-in link"))?;
     Ok(json!({"status": "redirect", "url": url, "connection": text(&v["connected_account_id"])}))
 }
@@ -306,8 +275,8 @@ fn key_fields(detail: &Value) -> Option<(String, Vec<Value>)> {
 }
 
 /// A Composio-managed auth config for `slug`, made on first use.
-async fn managed_auth_config(key: &str, slug: &str) -> Result<String> {
-    let list = get(key, "/auth_configs", &[("toolkit_slug", slug), ("limit", "100")]).await?;
+async fn managed_auth_config(api: &Api, slug: &str) -> Result<String> {
+    let list = get(api, "/auth_configs", &[("toolkit_slug", slug), ("limit", "100")]).await?;
     let existing = list["items"].as_array().into_iter().flatten().find(|a| {
         a["is_composio_managed"] == true
             && text(&a["status"]).is_none_or(|s| s.eq_ignore_ascii_case("enabled") || s.eq_ignore_ascii_case("active"))
@@ -316,7 +285,7 @@ async fn managed_auth_config(key: &str, slug: &str) -> Result<String> {
         return Ok(id);
     }
     let v = post(
-        key,
+        api,
         "/auth_configs",
         &json!({"toolkit": {"slug": slug}, "auth_config": {"type": "use_composio_managed_auth", "name": format!("Codync {slug}")}}),
     )
@@ -334,6 +303,7 @@ pub async fn connect_with_fields(
     fields: &serde_json::Map<String, Value>,
 ) -> Result<Value> {
     let c = config(store)?;
+    let api = Api::of(store, &c)?;
     let slug = checked_slug(toolkit)?.to_lowercase();
     let mode = checked_slug(mode)?.to_uppercase();
     let values: serde_json::Map<String, Value> = fields
@@ -345,7 +315,7 @@ pub async fn connect_with_fields(
         bail!("Fill in the fields first.");
     }
     let config = post(
-        &c.key,
+        &api,
         "/auth_configs",
         &json!({"toolkit": {"slug": slug}, "auth_config": {"type": "use_custom_auth", "authScheme": mode, "name": format!("Codync {slug}")}}),
     )
@@ -354,7 +324,7 @@ pub async fn connect_with_fields(
         .or_else(|| text(&config["id"]))
         .ok_or_else(|| anyhow!("Composio didn't return an auth config"))?;
     let v = post(
-        &c.key,
+        &api,
         "/connected_accounts",
         &json!({"auth_config": {"id": config}, "connection": {"user_id": c.user_id, "state": {"authScheme": mode, "val": values}}}),
     )
@@ -366,7 +336,7 @@ pub async fn connect_with_fields(
 /// One connection's state (polled while the user signs in).
 pub async fn connection(store: &Store, id: &str) -> Result<Value> {
     let c = config(store)?;
-    let v = get(&c.key, &format!("/connected_accounts/{}", checked_slug(id)?), &[]).await?;
+    let v = get(&Api::of(store, &c)?, &format!("/connected_accounts/{}", checked_slug(id)?), &[]).await?;
     let status = text(&v["status"]).unwrap_or_default().to_lowercase();
     if status == "active" {
         refresh(store).await?;
@@ -376,16 +346,10 @@ pub async fn connection(store: &Store, id: &str) -> Result<Value> {
 
 /// Disconnects the app behind connector `composio-<toolkit>` (every account of it).
 pub async fn disconnect(store: &Store, toolkit: &str) -> Result<()> {
-    let c = config(store)?;
+    let api = Api::of(store, &config(store)?)?;
     for conn in refresh(store).await?.iter().filter(|x| x.toolkit == toolkit) {
-        request(
-            &c.key,
-            reqwest::Method::DELETE,
-            &format!("/connected_accounts/{}", checked_slug(&conn.id)?),
-            &[],
-            None,
-        )
-        .await?;
+        request(&api, reqwest::Method::DELETE, &format!("/connected_accounts/{}", checked_slug(&conn.id)?), &[], None)
+            .await?;
     }
     refresh(store).await?;
     Ok(())
@@ -455,6 +419,7 @@ pub fn enabled_for(store: &Store, connectors: &[String]) -> Result<bool> {
 /// A tool call from a bot's `composio` MCP server.
 pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<Value> {
     let c = config(store)?;
+    let api = Api::of(store, &c)?;
     let apps = allowed(store, bot)?;
     if apps.is_empty() {
         bail!("No connected apps are turned on for this bot.");
@@ -473,7 +438,7 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
             let mut found = vec![];
             for app in targets.iter().take(8) {
                 let v =
-                    get(&c.key, "/tools", &[("toolkit_slug", &app.toolkit), ("query", query), ("limit", "8")]).await?;
+                    get(&api, "/tools", &[("toolkit_slug", &app.toolkit), ("query", query), ("limit", "8")]).await?;
                 for t in v["items"].as_array().into_iter().flatten() {
                     found.push(json!({
                         "slug": t["slug"], "name": t["name"], "app": app.toolkit,
@@ -485,7 +450,7 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
         }
         "get_tool" => {
             let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
-            let t = tool(&c.key, slug).await?;
+            let t = tool(&api, slug).await?;
             let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
             app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
             Ok(
@@ -494,12 +459,12 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
         }
         "execute" => {
             let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
-            let t = tool(&c.key, slug).await?;
+            let t = tool(&api, slug).await?;
             let toolkit = text(&t["toolkit"]["slug"]).unwrap_or_default();
             let app = app_of(&toolkit).ok_or_else(|| anyhow!("{slug} belongs to an app this bot can't use"))?;
             let arguments = args.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
             let v = post(
-                &c.key,
+                &api,
                 &format!("/tools/execute/{slug}"),
                 &json!({"user_id": c.user_id, "connected_account_id": app.id, "arguments": arguments}),
             )
@@ -513,8 +478,8 @@ pub async fn call(store: &Store, bot: &str, name: &str, args: &Value) -> Result<
     }
 }
 
-async fn tool(key: &str, slug: &str) -> Result<Value> {
-    get(key, &format!("/tools/{slug}"), &[("toolkit_versions", "latest")]).await
+async fn tool(api: &Api, slug: &str) -> Result<Value> {
+    get(api, &format!("/tools/{slug}"), &[("toolkit_versions", "latest")]).await
 }
 
 #[cfg(test)]

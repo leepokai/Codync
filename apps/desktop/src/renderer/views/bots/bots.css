@@ -153,6 +153,13 @@ textarea.field-box {
 .create-footer {
   padding: 12px 20px 20px;
 }
+/* A long computer name (a cloud computer's) shortens; Cancel and Create stay whole. */
+.create-footer .choice-picker {
+  min-width: 0;
+}
+.create-footer .styled-button {
+  flex-shrink: 0;
+}
 .import-sheet {
   width: 480px;
   min-height: 0;

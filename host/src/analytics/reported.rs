@@ -63,6 +63,7 @@ pub enum Reported {
         provider: Option<Provider>,
     },
     SignedOut,
+    ContinuedWithoutAccount,
     StarPromptAnswered {
         ask: Ask,
         starred: bool,
@@ -93,6 +94,22 @@ pub enum Reported {
         /// Why adding the computer failed.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ClaimFailure>,
+    },
+    JoinOfferAnswered {
+        outcome: JoinOutcome,
+    },
+    CloudKeySaved {
+        outcome: CloudKeyOutcome,
+        /// Older desktop builds don't say.
+        #[serde(default)]
+        provider: CloudProvider,
+    },
+    CloudComputerCreated {
+        outcome: CloudCreateOutcome,
+        provider: CloudProvider,
+    },
+    CloudComputerRenamed {
+        outcome: CloudRenameOutcome,
     },
 }
 
@@ -233,6 +250,61 @@ pub enum ReachOutcome {
     Other,
 }
 
+/// How the ask to add this computer to the signed-in account ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinOutcome {
+    Added,
+    KeptOut,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How giving Codync Cloud a provider's key ended: kept, turned down (the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudKeyOutcome {
+    Saved,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How creating a Codync Cloud computer ended: created, turned down (over the limit, or the provider refused the key or
+/// the plan, and the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudCreateOutcome {
+    Created,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How renaming a Codync Cloud computer ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudRenameOutcome {
+    Renamed,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// The cloud provider a Codync Cloud key or computer is for (the cloud's id for it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudProvider {
+    Boat,
+    Instabox,
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
 /// What the apps do with a dev server on their own (the host's methods report the rest).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -353,6 +425,23 @@ mod tests {
             ),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
+            (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
+            (
+                json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
+                Event::JoinOfferAnswered,
+            ),
+            (
+                json!({"event": "cloud_key_saved", "app": "desktop", "outcome": "refused", "provider": "instabox"}),
+                Event::CloudKeySaved,
+            ),
+            (
+                json!({"event": "cloud_computer_created", "app": "desktop", "outcome": "created", "provider": "boat"}),
+                Event::CloudComputerCreated,
+            ),
+            (
+                json!({"event": "cloud_computer_renamed", "app": "desktop", "outcome": "failed"}),
+                Event::CloudComputerRenamed,
+            ),
             (
                 json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),
                 Event::ReachAccountAnswered,

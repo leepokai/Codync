@@ -3,6 +3,7 @@
 //! the agent stops with its process group.
 //! The next message starts the agent again and reopens the session, so the conversation carries on.
 //! Agents that can't reopen a session keep everything: stopping them would lose the conversation.
+//! An agent whose keeper grants are gone (a cloud computer's keeper started again) starts again too.
 
 use super::Actor;
 use super::background_work::background_work;
@@ -15,6 +16,28 @@ use std::time::{Duration, Instant};
 const IDLE: Duration = Duration::from_mins(30);
 /// How often an idle bot looks for something to give back.
 const CHECK_EVERY: Duration = Duration::from_mins(1);
+
+/// What a keeper restart does to an agent, whose grants went with the keeper that gave them.
+#[derive(Debug, PartialEq)]
+enum AfterKeeper {
+    /// It holds none.
+    Nothing,
+    /// It starts again before its next turn, resuming its session.
+    BeforeNextTurn,
+    /// It can't resume a session, so it starts fresh (its keys would fail anyway) once its turn ends,
+    AfterTurn,
+    /// or now, between turns.
+    Now,
+}
+
+fn after_keeper(holds_grants: bool, can_reopen: bool, in_turn: bool) -> AfterKeeper {
+    match (holds_grants, can_reopen, in_turn) {
+        (false, ..) => AfterKeeper::Nothing,
+        (true, true, _) => AfterKeeper::BeforeNextTurn,
+        (true, false, true) => AfterKeeper::AfterTurn,
+        (true, false, false) => AfterKeeper::Now,
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum Release {
@@ -73,6 +96,17 @@ impl Actor {
                 }
             }
             Release::Nothing => {}
+        }
+    }
+
+    /// A cloud computer's keeper started again (`Cmd::KeeperRestarted`), so the grants the agent started with are gone.
+    pub(super) async fn keeper_restarted(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        match after_keeper(conn.acp.holds_grants(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
+            AfterKeeper::Nothing => {}
+            AfterKeeper::BeforeNextTurn => self.tools_changed = true,
+            AfterKeeper::AfterTurn => self.restart_after_turn = true,
+            AfterKeeper::Now => self.restart_agent().await,
         }
     }
 
@@ -162,5 +196,13 @@ mod tests {
         // A just-started agent isn't stopped before it had a chance to be used.
         assert_eq!(plan(&used(&[]), now, true, now), Release::Nothing);
         assert_eq!(plan(&used(&[("main", fresh)]), started, true, now), Release::Nothing);
+    }
+
+    #[test]
+    fn a_keeper_restart_restarts_only_agents_with_grants() {
+        assert_eq!(after_keeper(false, false, false), AfterKeeper::Nothing);
+        assert_eq!(after_keeper(true, true, true), AfterKeeper::BeforeNextTurn, "resumes its session");
+        assert_eq!(after_keeper(true, false, true), AfterKeeper::AfterTurn, "the running turn ends first");
+        assert_eq!(after_keeper(true, false, false), AfterKeeper::Now);
     }
 }

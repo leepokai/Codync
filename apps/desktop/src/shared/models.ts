@@ -73,6 +73,10 @@ export interface Bot {
   harnessMemory: boolean | null
   /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
   harnessMemoryShared: boolean
+  /** When Codync summarizes the chat ahead of time; null where it doesn't (an agent it can't ask, an older host). */
+  compaction: CompactionThreshold | null
+  /** The sizes the chat's window allows; null until its agent has told the window. */
+  compactionTokens: CompactionSizes | null
   /** Moves whenever memory changes, so an open memory screen fetches it again. */
   memoryRev: number
   autoName: boolean
@@ -131,6 +135,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     sharedMemory: raw.sharedMemory ?? raw.managedWorkspace ?? false,
     harnessMemory: raw.harnessMemory ?? null,
     harnessMemoryShared: raw.harnessMemoryShared ?? false,
+    compaction: raw.compaction ?? null,
+    compactionTokens: raw.compactionTokens ?? null,
     memoryRev: raw.memoryRev ?? 0,
     autoName: raw.autoName ?? false,
     createdAt,
@@ -257,6 +263,17 @@ export interface BotMessage {
   detail?: string
   /** The peer's name when it is on another of the user's computers (its id is `name@computer`). */
   peerName?: string
+}
+
+/** When Codync summarizes a bot's chat ahead of time: a preset, or at a size in tokens. */
+export type CompactionThreshold = 'early' | 'nearLimit' | 'off' | number
+
+/** The sizes a chat's window allows: `min`..`max` by `step` tokens, and the few a menu lists. */
+export interface CompactionSizes {
+  min: number
+  max: number
+  step: number
+  presets: number[]
 }
 
 /** "Earlier context was summarized": the harness's summary, when it gave one. */
@@ -425,10 +442,23 @@ export interface UsageProvider {
   windows: UsageWindow[]
   source: string
   updatedAt: number
+  /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
+  registry?: string
+}
+
+/** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
+export interface UsageService {
+  id: string
+  name: string
+  shown: boolean
+  /** The agent's ACP registry id, which its logo goes by. */
+  registry?: string
 }
 
 export interface Usage {
   providers: UsageProvider[]
+  /** Absent from a host older than the chooser. */
+  services?: UsageService[]
 }
 
 export interface Backend {
@@ -555,10 +585,16 @@ export interface PairingRequest {
   requestId: string
   deviceName: string
   platform?: string | null
-  /** The phone's account, which the computer joins. */
+  /** The phone's account, which the computer can join. */
   email?: string | null
   /** The 6 digits the phone shows too. */
   code: string
+  /** The phone is signed in and the Codync cloud is on, so the computer can join its account. */
+  canJoin?: boolean | null
+  /** The computer can stay out of an account: the phone then connects only over Wi-Fi or Tailscale. */
+  phoneOnly?: boolean | null
+  /** The phones that lose access if the computer joins. */
+  removes?: string[] | null
   expiresAt?: number | null
 }
 
@@ -658,6 +694,8 @@ export interface BotDraft {
   reachableByAssistants?: boolean
   sharedMemory?: boolean
   harnessMemory?: boolean
+  /** Left out where the bot has none: the host keeps what it has. */
+  compaction?: CompactionThreshold
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -686,6 +724,7 @@ export function draftOf(bot: Bot): BotDraft {
     manageTeam: bot.manageTeam ?? undefined,
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
+    compaction: bot.compaction ?? undefined,
   }
 }
 

@@ -85,6 +85,14 @@ pub fn agent_fell_back(hub: &Hub, agent: &str, reason: crate::agent::fallback::R
     capture(hub, Event::AgentFellBack, p.as_object().cloned().unwrap_or_default());
 }
 
+/// `context_compacted`: Codync started summarizing a bot's chat, at the end of a turn or while it rested, and at
+/// which of the user's thresholds.
+pub fn context_compacted(hub: &Hub, agent: &str, idle: bool, threshold: codync_mem::compaction::Threshold) {
+    let when = if idle { "idle" } else { "turn_end" };
+    let p = json!({"agent": agent, "when": when, "threshold": threshold.kind()});
+    capture(hub, Event::ContextCompacted, p.as_object().cloned().unwrap_or_default());
+}
+
 /// What became of a queued message the user had handled now (`message_steered`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

@@ -394,6 +394,39 @@ extension BotStore {
         try await ready().listDirs(path)
     }
 
+    /// Whether this computer lists one agent's limits.
+    public func setUsageShown(_ id: String, shown: Bool) async {
+        do {
+            setUsage(try await ready().setUsageShown(id, shown: shown))
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// The order this computer lists its agents in; returns once it's sent. One at a time and only the newest: the host
+    /// handles requests side by side, so two sent together could land in either order. A host older than this refuses
+    /// the call: the error shows and the order stays.
+    public func setUsageOrder(_ ids: [String]) async {
+        usageOrderWaiting = ids
+        let sending = usageOrderSending ?? Task { await sendUsageOrders() }
+        usageOrderSending = sending
+        await sending.value
+    }
+
+    private func sendUsageOrders() async {
+        while let ids = usageOrderWaiting {
+            usageOrderWaiting = nil
+            do {
+                setUsage(try await ready().setUsageOrder(ids))
+            } catch {
+                lastError = error.localizedDescription
+                // The row goes back to the host's order, and what waited was moved from one that didn't land.
+                usageOrderWaiting = nil
+            }
+        }
+        usageOrderSending = nil
+    }
+
     public func refreshUsage() async {
         guard !retired, let client else { return }
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }

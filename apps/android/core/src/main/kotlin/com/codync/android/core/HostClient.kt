@@ -49,6 +49,10 @@ data class Bot(
     val harnessMemory: Boolean? = null,
     /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
     val harnessMemoryShared: Boolean? = null,
+    /** When Codync summarizes its chat; null where it doesn't (an agent it can't ask to, a group, an older host). */
+    val compaction: Compaction? = null,
+    /** The sizes its agent's window allows; null until the agent has told its window. */
+    val compactionTokens: CompactionTokens? = null,
     /** Moves whenever memory changes, so an open memory screen fetches it again. */
     val memoryRev: Long? = null,
     val autoName: Boolean = false,

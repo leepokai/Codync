@@ -45,7 +45,7 @@ Built differently from the plan below, for now:
   the opening.
 
 In one line: **memory records the person, the transcript stays in the host, the opening stays frozen until
-compaction, and the host decides when to compact.**
+compaction, and the harness compacts unless the bot's Summarize long chats has the host do it sooner.**
 
 ## Why redesign
 
@@ -163,10 +163,10 @@ and keep the file camp's real requirement: no hidden state.
 
 | Pattern | Seen in | For Codync |
 |---|---|---|
-| Harness auto-compacts at a threshold | Claude Code (at the model limit, about 967k on 1M models), Codex | Kept as the safety net |
+| Harness auto-compacts at a threshold | Claude Code (at the model limit, about 967k on 1M models), Codex | The default (Auto), and the safety net |
 | Idle compaction inside the harness | Claude Code 2.1.299+: interactive terminal only, flag-gated off by default | Never active in bot sessions, so the host's idle compaction is the only one |
 | Summary written while idle, swapped in on return | Claude Code's flag-gated `compact_on_return` mode; its "resume from summary" offer after over 1 hour idle and over 100k tokens | Precedent for host idle compaction and rollover |
-| Host-timed compaction | No product feature found | **Adopted**: end of turn, and idle before the cache expires |
+| Host-timed compaction | No product feature found | **Adopted** when a bot picks Early, Near the limit or a size: end of turn, and idle before the cache expires |
 | Handoff to a fresh session | Amp Handoff, an editable draft; Amp calls compaction "lossy" and warns about "stacking summary on top of summary" | **Adopted** as rollover |
 | Anchored or iterative summaries | Factory: only the newly truncated span is summarized and merged. It scores 3.70 vs. 3.44 (Anthropic) and 3.35 (OpenAI); the artifact trail is weakest everywhere. | Left to the harness; rollover resets drift; probes in the evaluation |
 | Memory-flush turn before compaction | OpenClaw | Not needed: the host keeps the full transcript |
@@ -426,6 +426,31 @@ doubles the write cost on API billing.
 | **Idle** | 1-hour TTL: at TTL − 5 min when `used ≥ 100k`, main lane only. 5-minute TTL: no idle compaction. | Cheaper than a cold read on return. The threshold sits above break-even because compaction loses detail. |
 | **Rollover** | Any of: (1) returning with a cold cache and `used ≥ 100k`; (2) away ≥ 8 hours with ≥ 3 compactions; (3) the loop guard fires | Summaries of summaries drift. A new session starts with a handoff. |
 | **Safety net** | A single turn fills the window | The harness's own auto-compaction |
+
+These are Early's rules. Each Claude Code or Codex bot has a **Summarize long chats** setting (`compaction` in its
+config, `codync_mem::compaction::Threshold`) that decides whether they apply and moves the end-of-turn trigger. Its
+default is Auto: the host stays out and the harness compacts on its own.
+
+| Setting | End-of-turn trigger | Idle compaction and cold rollover |
+|---|---|---|
+| Auto (`"off"`, the default) | None | None: the harness's own auto-compaction is all there is |
+| Early (`"early"`) | `min(0.75 × size, 200k)` | Past 100k, as above |
+| Near the limit (`"nearLimit"`) | The largest size the window allows: `size − 40k`, rounded down to 10k (960k on a 1M window), never below Early's trigger | Only past the trigger |
+| A size (a number) | That many tokens, a multiple of 10k and at least 50k, held to the largest size the window allows | Only past the trigger (and 100k) |
+
+The 40k headroom is the compaction turn itself (its prompt and a summary of about 20k). Below 50k, the summary and
+the opening alone would trip the trigger every few turns. The long-absence rollover (8 hours, 3 compactions) and
+the loop guard apply to every setting but Auto. The apps take the sizes from `compactionTokens`
+(`{min, max, step, presets}`: the bounds a typed size is rounded and held to, and the 100k multiples a menu
+lists), which the host sends once the bot's own agent (not a fallback) has reported the main chat's window (kept
+in `context.window.<bot>`); before that they offer only the three choices. A custom command that
+reported a window keeps its setting while its agent isn't running. Other agents have no setting (`compaction` is
+`null`) and get the default: no compaction or rollover from the host.
+
+Decisions follow the setting in force when they act. A queued compaction runs only if it's still due then (another
+turn may have gone first, or the user changed the setting). When the setting changes, a handoff card it no longer
+calls for is withdrawn (shown as kept, without counting as the user turning the rollover down) and the old
+conversation goes on.
 
 The `idleCompaction` setting needs no change. The harness never idle-compacts in SDK/ACP sessions, and setting it
 to true "does not turn idle compaction on".

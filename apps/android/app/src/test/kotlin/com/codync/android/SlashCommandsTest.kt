@@ -49,9 +49,15 @@ class SlashCommandsTest {
         assertEquals(FastModeState.Off, GroupFastMode(emptyList()).state)
     }
 
-    @Test fun `mentions start after a space and stay short`() {
-        assertEquals("Re", mentionQuery("hi @Re"))
-        assertNull(mentionQuery("mail@host"))
-        assertNull(mentionQuery("@" + "x".repeat(25)))
+    @Test fun `mentions start after a space, stay short, and end with a member's full name`() {
+        val members = listOf(Bot("a", "Alpha"), Bot("t", "Alpha Two"))
+        assertEquals("", mentionQuery("@", members))
+        assertEquals("Re", mentionQuery("hi @Re", members))
+        assertNull(mentionQuery("mail@host", members))
+        assertNull(mentionQuery("@" + "x".repeat(25), members))
+        assertNull(mentionQuery("@Alpha\nnext", members))
+        assertNull("an @ and a space is ordinary text", mentionQuery("meet @ home", members))
+        assertNull(mentionQuery("@alpha ", members))
+        assertEquals("a longer name can still be typed", "Alpha T", mentionQuery("@Alpha T", members))
     }
 }

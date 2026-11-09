@@ -97,14 +97,13 @@ public final class Analytics {
         record("$exception", properties, sessionID: lastLaunchSession)
     }
 
-    /// One event for the signed-in account (merging the install ID into it once), else the install ID.
+    /// One event for the signed-in account, else the install ID. The install ID merges into the first
+    /// account only: PostHog refuses a second, so a later account on this phone starts its own profile.
     private func record(_ name: String, _ extra: [String: Value], sessionID: String?) {
         if let user = userID() {
-            var identified = defaults.stringArray(forKey: Self.identifiedKey) ?? []
-            if !identified.contains(user) {
+            if defaults.object(forKey: Self.identifiedKey) == nil {
                 enqueue("$identify", user, ["$anon_distinct_id": .string(installID)], sessionID)
-                identified.append(user)
-                defaults.set(identified, forKey: Self.identifiedKey)
+                defaults.set([user], forKey: Self.identifiedKey)
             }
             enqueue(name, user, extra, sessionID)
         } else {

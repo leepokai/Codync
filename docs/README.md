@@ -27,7 +27,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Check connectors against live services | [Connector verification](guides/connector-verification.md) |
 | Change transport or cryptography | [Remote protocol](reference/remote-relay.md) and [shared vectors](reference/fixtures/README.md) |
 | Review an issue or pull request | [Issue and PR review](guides/issue-pr-review.md) (the `review-issue-pr` workflow) and its [security check](guides/security-check.md) |
-| Patch around an agent adapter's bug, or check whether upstream fixed one | [ACP adapter workarounds](reference/acp-adapter-workarounds.md) |
+| Record or patch around an agent's bug, or check whether upstream fixed one | [Upstream agent bugs](upstream-agents/README.md) (one page per agent) |
 | Look into errors or failed turns users hit | [Usage analytics](features/analytics.md), [iPhone crash tracing](guides/iphone-crash-tracing.md), [investigations](#investigations) |
 
 ## Features

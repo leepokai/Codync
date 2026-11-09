@@ -12,7 +12,7 @@ Run them one at a time: never start a test binary several times in parallel, or 
 
 Everyday tests use the fake agents, which only answer the way we expect. Run the real ones too, one short turn per agent on the cheapest model, with nothing in parallel (it uses your own plan), when:
 
-1. The registry version of `claude-acp` or `codex-acp` moves ([ACP adapter workarounds](../reference/acp-adapter-workarounds.md)).
+1. The registry version of `claude-acp` or `codex-acp` moves ([upstream agent bugs](../upstream-agents/README.md)).
 2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
 3. Before a release.
 

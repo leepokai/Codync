@@ -64,7 +64,7 @@ Codync/
 ├── private-relay/             # Single-process relay (the cloud WebSocket subset) for a person's own computers
 ├── relay/                     # Separate APNs push Worker; src/ and test/
 ├── discord/                   # Discord GitHub-role Worker (discord.codync.dev)
-├── docs/                      # Architecture, features, design, guides, reference, plans, investigations, archive
+├── docs/                      # Architecture, features, design, guides, reference, upstream agent bugs, plans, investigations, archive
 ├── tools/                     # Release, App Store and Google Play submission (store_release.py: what both share), font scripts
 ├── packaging/                 # Distribution templates
 ├── marketing/app-store-screenshots/ # App Store screenshot editor (bun dev; Export bundle → out/)

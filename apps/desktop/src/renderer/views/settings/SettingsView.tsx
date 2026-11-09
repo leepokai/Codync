@@ -24,6 +24,7 @@ import { UsageLimits } from './UsageLimits'
 import { ThemePaletteSection } from './ThemePaletteSection'
 import { EnterpriseSection } from './EnterpriseSection'
 import { DiagnosticsButton } from './DiagnosticsButton'
+import { GettingStartedSection } from './GettingStartedSection'
 import { WeekSummaryView } from './WeekSummaryView'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
@@ -91,7 +92,7 @@ export function SettingsView({ page, setPage, onExtensions }: { page: SettingsPa
           <Text as="h2" size={24} weight="semibold" tone="text">{tr(current.title)}</Text>
         </HStack>
         <div key={page} className="settings-page">
-          <PageContent page={page} onExtensions={onExtensions} />
+          <PageContent page={page} onExtensions={onExtensions} onPage={setPage} />
         </div>
       </div>
       <span className="settings-close">
@@ -101,14 +102,14 @@ export function SettingsView({ page, setPage, onExtensions }: { page: SettingsPa
   )
 }
 
-function PageContent({ page, onExtensions }: { page: SettingsPage; onExtensions?: () => void }) {
+function PageContent({ page, onExtensions, onPage }: { page: SettingsPage; onExtensions?: () => void; onPage: (page: SettingsPage) => void }) {
   const tr = useTr()
   const app = useApp()
   switch (page) {
     case 'access':
       return <ComputerAccessView />
     case 'general':
-      return <GeneralSettings onExtensions={onExtensions} />
+      return <GeneralSettings onExtensions={onExtensions} onAccess={() => onPage('access')} />
     case 'computers':
       return <ComputersView />
     case 'network':
@@ -139,7 +140,7 @@ function PageContent({ page, onExtensions }: { page: SettingsPage; onExtensions?
 }
 
 /** Account, window and app preferences. */
-function GeneralSettings({ onExtensions }: { onExtensions?: () => void } = {}) {
+function GeneralSettings({ onExtensions, onAccess }: { onExtensions?: () => void; onAccess?: () => void } = {}) {
   const account = useAccount()
   const [appearance, setAppearance] = useState<Appearance>('system')
   useEffect(() => void window.codync.app.appearance().then(setAppearance), [])
@@ -161,6 +162,7 @@ function GeneralSettings({ onExtensions }: { onExtensions?: () => void } = {}) {
 
   return (
     <CardForm>
+      <GettingStartedSection onExtensions={onExtensions} onAccess={onAccess ?? (() => {})} />
       <CardSection title="Account" footer={account.errorMessage}>
         <div className="settings-row">
           <Icon name="person.crop.circle" size={26} color="var(--secondary)" />

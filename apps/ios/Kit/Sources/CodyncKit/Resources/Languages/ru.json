@@ -1829,5 +1829,17 @@
   "This folder is empty.": "Эта папка пуста.",
   "Inside this bot’s folder": "В папке этого бота",
   "Drop to send to {name}": "Отпустите, чтобы отправить: {name}",
-  "this bot": "этот бот"
+  "this bot": "этот бот",
+  "This computer’s host": "Хост этого компьютера",
+  "A coding agent": "Агент для кода",
+  "Answering": "Отвечает",
+  "Not running": "Не запущен",
+  "Installed and signed in": "Установлен и выполнен вход",
+  "Installed; sign in": "Установлен; войдите",
+  "None installed": "Ничего не установлено",
+  "None yet": "Пока никого",
+  "{n} ready": "{n} готовы",
+  "Grant it to let bots use apps and the screen": "Разрешите, чтобы боты использовали приложения и экран",
+  "Getting started": "Первые шаги",
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Каждый шаг настраивается на этом компьютере; те же страницы есть в Настройках и Расширениях."
 }

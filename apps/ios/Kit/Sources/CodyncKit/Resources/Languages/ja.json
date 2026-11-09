@@ -1829,5 +1829,17 @@
   "This folder is empty.": "このフォルダーは空です。",
   "Inside this bot’s folder": "このボットのフォルダー内",
   "Drop to send to {name}": "ドロップして {name} に送信",
-  "this bot": "このボット"
+  "this bot": "このボット",
+  "This computer’s host": "このコンピューターのホスト",
+  "A coding agent": "コーディングエージェント",
+  "Answering": "応答中",
+  "Not running": "停止中",
+  "Installed and signed in": "インストール済み・サインイン済み",
+  "Installed; sign in": "インストール済み・サインインが必要",
+  "None installed": "未インストール",
+  "None yet": "まだありません",
+  "{n} ready": "{n} 件準備完了",
+  "Grant it to let bots use apps and the screen": "ボットがアプリと画面を使えるように許可します",
+  "Getting started": "はじめに",
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "各ステップはこのコンピューターで設定します。同じページは設定と拡張機能にあります。"
 }

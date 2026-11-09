@@ -1829,5 +1829,17 @@
   "This folder is empty.": "此文件夹为空。",
   "Inside this bot’s folder": "在此机器人的文件夹中",
   "Drop to send to {name}": "拖放以发送给 {name}",
-  "this bot": "这个机器人"
+  "this bot": "这个机器人",
+  "This computer’s host": "此电脑的主机",
+  "A coding agent": "编码代理",
+  "Answering": "正在应答",
+  "Not running": "未运行",
+  "Installed and signed in": "已安装并登录",
+  "Installed; sign in": "已安装；请登录",
+  "None installed": "尚未安装",
+  "None yet": "还没有",
+  "{n} ready": "{n} 个就绪",
+  "Grant it to let bots use apps and the screen": "允许机器人的应用与屏幕访问",
+  "Getting started": "开始使用",
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "每一步都在此电脑设置；相同页面在设置和扩展中。"
 }

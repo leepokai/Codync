@@ -1829,5 +1829,17 @@
   "This folder is empty.": "此資料夾為空。",
   "Inside this bot’s folder": "在此機器人的資料夾中",
   "Drop to send to {name}": "拖放以傳送給 {name}",
-  "this bot": "這個機器人"
+  "this bot": "這個機器人",
+  "This computer’s host": "此電腦的主機",
+  "A coding agent": "編碼代理",
+  "Answering": "正在回應",
+  "Not running": "未執行",
+  "Installed and signed in": "已安裝並登入",
+  "Installed; sign in": "已安裝；請登入",
+  "None installed": "尚未安裝",
+  "None yet": "還沒有",
+  "{n} ready": "{n} 個就緒",
+  "Grant it to let bots use apps and the screen": "允許機器人的應用程式與螢幕存取",
+  "Getting started": "開始使用",
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "每一步都在此電腦設定；相同頁面在設定與擴充功能中。"
 }

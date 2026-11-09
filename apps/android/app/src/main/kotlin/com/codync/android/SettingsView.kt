@@ -96,6 +96,7 @@ import com.codync.android.design.*
         }
         SecuritySection()
         NotificationsSection()
+        GettingStartedSection(state)
         EnterpriseSection(state, store)
         BrowserSection(state, store)
         AuditLogSection(state, store)

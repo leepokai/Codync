@@ -1829,5 +1829,17 @@
   "This folder is empty.": "Dieser Ordner ist leer.",
   "Inside this bot’s folder": "Im Ordner dieses Bots",
   "Drop to send to {name}": "Zum Senden an {name} ablegen",
-  "this bot": "diesen Bot"
+  "this bot": "diesen Bot",
+  "This computer’s host": "Der Host dieses Computers",
+  "A coding agent": "Ein Coding-Agent",
+  "Answering": "Antwortet",
+  "Not running": "Läuft nicht",
+  "Installed and signed in": "Installiert und angemeldet",
+  "Installed; sign in": "Installiert; anmelden",
+  "None installed": "Keiner installiert",
+  "None yet": "Noch keiner",
+  "{n} ready": "{n} bereit",
+  "Grant it to let bots use apps and the screen": "Erlaube es, damit Bots Apps und den Bildschirm nutzen",
+  "Getting started": "Erste Schritte",
+  "Each step is set on this computer; the same pages stay in Settings and Extensions.": "Jeder Schritt wird auf diesem Computer gesetzt; dieselben Seiten bleiben in Einstellungen und Erweiterungen."
 }

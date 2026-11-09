@@ -140,10 +140,10 @@ describe("snapshots", () => {
   it("deletes an awake computer's saved history, but not while it sleeps", async () => {
     const { userId, id } = await cloudComputer();
     const fetch = boat("ready");
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(200);
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(200);
     expect(calls(fetch)).toContain("DELETE https://boat.dev/api/v1/sandboxes/bx_test/snapshots");
     boat("archived");
-    const asleep = await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}/snapshots`);
+    const asleep = await cc("DELETE", userId, `/v1/cloud-computers/${id}/snapshots`);
     expect(asleep.status).toBe(409);
   });
 
@@ -173,7 +173,7 @@ describe("snapshots", () => {
     const old = Date.now() - 11 * 86_400_000;
     await env.DB.prepare("UPDATE cloud_machines SET state = 'stopped', updated_at = ? WHERE id = ?").bind(old, id).run();
     boat("archived");
-    expect((await cc("PATCH", userId, userId, `/v1/cloud-computers/${id}`, { name: "Research" })).status).toBe(200);
+    expect((await cc("PATCH", userId, `/v1/cloud-computers/${id}`, { name: "Research" })).status).toBe(200);
     const saving = boat("archived");
     await saveBackups(env, Date.now());
     expect(calls(saving)).toEqual(["POST https://boat.dev/api/v1/saved-snapshots"]);

@@ -1,9 +1,9 @@
-// Codync Cloud test helpers: Boat stubbed with a fetch spy, the Worker with `userId` allowed a cloud computer, the
-// user's own Boat key, and a claimed cloud computer with its host connected.
+// Codync Cloud test helpers: Boat stubbed with a fetch spy, the Worker's cloud computer routes, the user's own Boat
+// key, and a claimed cloud computer with its host connected.
 
 import { expect, vi } from "vitest";
 import { saveCredential } from "../src/cloud-credentials";
-import worker from "../src/index";
+import worker, { type Env } from "../src/index";
 import { ORIGIN, call, clerkToken, env, hostSocket, newHost, type Json, type TestHost } from "./helpers";
 import * as ref from "./ref";
 
@@ -12,13 +12,13 @@ export const uid = () => `user_cc_${ref.b64url(ref.random(6))}`;
 /** The Boat key every test user brings. */
 export const KEY = "boat_live_test9abc";
 
-/** Calls `/v1/cloud-computers` (or `path`) with `userId` on the allowlist; `body` goes as JSON. */
-export async function cc(method: string, userId: string, allowed = userId, path = "/v1/cloud-computers", body?: unknown) {
+/** Calls `/v1/cloud-computers` (or `path`) as `userId`, on the Worker's env with `over` on top; `body` goes as JSON. */
+export async function cc(method: string, userId: string, path = "/v1/cloud-computers", body?: unknown, over: Partial<Env> = {}) {
   const headers: Record<string, string> = { Authorization: `Bearer ${await clerkToken(userId)}` };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await worker.fetch(
     new Request(`${ORIGIN}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }),
-    { ...env, CLOUD_COMPUTER_USERS: `someone_else, ${allowed}` },
+    { ...env, ...over },
     {} as ExecutionContext,
   );
   return { status: res.status, body: (await res.json()) as Json };
@@ -147,8 +147,8 @@ export async function onBothProviders() {
   await withKey(userId);
   await withInstaboxKey(userId);
   boat();
-  await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" });
+  await cc("POST", userId, "/v1/cloud-computers", { provider: "boat" });
   instaboxApi();
-  await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
+  await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
   return userId;
 }

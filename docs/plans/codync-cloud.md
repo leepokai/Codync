@@ -699,16 +699,15 @@ public.
 
 ## Delivery
 
-Three releases, each gated by the Worker (`CLOUD_SECRET_KEYS` unset or the user not in `CLOUD_COMPUTER_USERS`: the
-apps show no Codync Cloud section, so shipping the code changes nothing for anyone else).
+The Worker gates it: with `CLOUD_SECRET_KEYS` unset the apps show no Codync Cloud section, so shipping the code
+changes nothing; with it set, every signed-in account has Codync Cloud (no allowlist, the owner's call on 2026-11-09).
 
 1. **Dark merge into `dev`**: the branch split into reviewable commits that pass the pre-commit checks, the
    `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
    with migrations `0007`–`0009` on the dev D1 and dev's own `CLOUD_SECRET_KEYS`, then `npm run e2e:cloud` and the iPhone and
    Android apps against dev.
-2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations up to `0009`,
-   production's own `CLOUD_SECRET_KEYS`, `CLOUD_COMPUTER_USERS` = internal accounts, each bringing its own Boat
-   key); MFA on the internal accounts.
+2. **Beta on `main`**: `deploy:main` right after the release merge (migrations up to `0009`, production's own
+   `CLOUD_SECRET_KEYS`), which opens Codync Cloud to every signed-in account, each bringing its own provider key.
 3. **Public launch**: terms, acceptable use and privacy policy, encryption at rest,
    memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
    screen's "Start a cloud computer", the user manual page.

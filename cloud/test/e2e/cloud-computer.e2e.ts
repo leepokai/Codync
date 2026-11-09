@@ -47,7 +47,6 @@ async function main() {
   if (swept.length) console.log(`  swept test machines left behind: ${swept.join(", ")}`);
   await cloud.start({
     CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
-    CLOUD_COMPUTER_USERS: USER_ID,
     // A machine a crashed run leaves behind stops by itself; two hours cover the long run.
     CLOUD_AUTO_STOP_SECONDS: "7200",
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,

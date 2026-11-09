@@ -93,9 +93,9 @@ recreate them.
 
 `npm run cloud:stack` starts the same local cloud, accepting **dev Clerk** sessions (it reads the dev issuer from
 `wrangler.toml` and its public key from the instance's JWKS), and prints how to point each app at it. With
-`BOAT_API_KEY_FILE` or `INSTABOX_API_KEY_FILE` it also allows every account a cloud computer (`CLOUD_COMPUTER_USERS=*`,
-local only) and forwards each new machine; without one it is the plain local cloud a worktree sandbox runs, with
-Codync Cloud hidden:
+`BOAT_API_KEY_FILE` or `INSTABOX_API_KEY_FILE` it also seals keys (`CLOUD_SECRET_KEYS`), so every account gets Codync
+Cloud, and forwards each new machine; without one it is the plain local cloud a worktree sandbox runs, with Codync
+Cloud hidden:
 
 - iOS simulator: `SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> xcrun simctl launch <udid> com.pokai.Codync.ios.dev`, on a
   simulator no other session uses.
@@ -139,8 +139,8 @@ Setup (once, then kept up with `dev`):
 1. Apply `cloud/migrations/0007_cloud_machines.sql`, `0008_app_versions.sql` and `0009_cloud_credentials.sql` to `codync-dev` (note the restore
    point; [deployment procedure](environments-and-deployment.md#deployment-procedure)) before deploying Worker code
    that reads them: `/v1/computers` joins `cloud_machines`.
-2. Secrets on `--env dev`: `CLOUD_SECRET_KEYS` (its own, never production's), `CLOUD_COMPUTER_USERS` (the dev
-   Clerk ids allowed; a secret, the repository is public). Each dev account pastes its own Boat key in the app.
+2. Secret on `--env dev`: `CLOUD_SECRET_KEYS` (its own, never production's); with it, every signed-in dev account
+   gets Codync Cloud. Each dev account pastes its own provider key in the app.
 3. Vars in `[env.dev]`: `CLOUD_MACHINE_PREFIX = "codync-dev"`, `CLOUD_HOST_ENV = "CODYNC_CLOUD_URL=https://dev-api.codync.dev
    CODYNC_ANALYTICS_ENV=dev"` (hosts are built for the production cloud and would report as `main`), and
    `HOST_RELEASES_URL = "https://dev-releases.codync.dev"`.

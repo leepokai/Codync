@@ -47,15 +47,12 @@ const view = (r: CloudMachineRow) => ({
   createdAt: r.created_at,
 });
 
-/** An allowlist of Clerk user ids decides who may have one (`*`: everyone), on a Worker that can seal their keys. */
-const available = (c: Ctx, userId: string) => {
-  const allowed = (c.env.CLOUD_COMPUTER_USERS ?? "").split(",").map((s) => s.trim());
-  return canSeal(c.env) && (allowed.includes(userId) || allowed.includes("*"));
-};
+/** Every signed-in account may have one, on a Worker that can seal their keys (`CLOUD_SECRET_KEYS`). */
+const available = (c: Ctx) => canSeal(c.env);
 
 export async function allowedUser(c: Ctx) {
   const u = await user(c);
-  if (!available(c, u.userId)) throw new ApiError("forbidden", "Codync Cloud isn't available for this account yet.");
+  if (!available(c)) throw new ApiError("forbidden", "Codync Cloud isn't available for this account yet.");
   return u;
 }
 
@@ -153,7 +150,7 @@ export async function getCloudComputers(c: Ctx) {
   const rows = await machinesOf(c.env, u.userId);
   // Each at once, on its own: a provider out of reach leaves its machines as last seen, and the others still show.
   await Promise.all(rows.map((row) => settle(c.env, row, c.now)));
-  const open = rows.length > 0 || available(c, u.userId);
+  const open = rows.length > 0 || available(c);
   return {
     cloudComputers: rows.map(view),
     available: open,

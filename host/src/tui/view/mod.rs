@@ -175,7 +175,7 @@ fn status_line(buf: &mut Buffer, r: Rect, app: &mut App) {
     if app.online
         && let Some(phrase) = super::app::comfy::header(&app.comfy)
     {
-        x = put(buf, x, r.y, 40, &phrase, t.dim.patch(t.panel)) + 2;
+        x = put(buf, x, r.y, 60, &phrase, t.dim.patch(t.panel)) + 2;
     }
     let hint = if insert { "↵ send · esc nav" } else { "? keys" };
     let mut right = rput(buf, r.right() - 1, r.y, hint, t.dim.patch(t.panel)).saturating_sub(3);

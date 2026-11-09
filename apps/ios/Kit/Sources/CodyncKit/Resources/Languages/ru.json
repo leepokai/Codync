@@ -1819,5 +1819,7 @@
   "Notes the bot gets with this channel’s memory": "Заметки, которые бот получает с памятью этого канала",
   "A fact this channel should keep": "Факт, который канал должен помнить",
   "Channel note": "Заметка канала",
-  "Channels": "Каналы"
+  "Channels": "Каналы",
+  "Show the page": "Показать страницу",
+  "Hide the page": "Скрыть страницу"
 }

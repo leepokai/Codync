@@ -1819,5 +1819,7 @@
   "Notes the bot gets with this channel’s memory": "Notes transmises au bot avec la mémoire de ce canal",
   "A fact this channel should keep": "Un fait que ce canal doit retenir",
   "Channel note": "Note du canal",
-  "Channels": "Canaux"
+  "Channels": "Canaux",
+  "Show the page": "Afficher la page",
+  "Hide the page": "Masquer la page"
 }

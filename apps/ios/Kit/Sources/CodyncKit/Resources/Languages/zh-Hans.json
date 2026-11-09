@@ -1819,5 +1819,7 @@
   "Notes the bot gets with this channel’s memory": "随此渠道记忆一并交给机器人的备注",
   "A fact this channel should keep": "此渠道应记住的事实",
   "Channel note": "渠道备注",
-  "Channels": "渠道"
+  "Channels": "渠道",
+  "Show the page": "显示页面",
+  "Hide the page": "隐藏页面"
 }

@@ -1819,5 +1819,7 @@
   "Notes the bot gets with this channel’s memory": "이 채널의 기억과 함께 봇에게 전달되는 메모",
   "A fact this channel should keep": "이 채널이 기억할 사실",
   "Channel note": "채널 메모",
-  "Channels": "채널"
+  "Channels": "채널",
+  "Show the page": "페이지 표시",
+  "Hide the page": "페이지 숨기기"
 }

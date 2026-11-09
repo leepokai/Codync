@@ -82,6 +82,7 @@ pub async fn open(hub: &std::sync::Arc<Hub>, url: Option<&str>) -> Result<Value>
                 rpc(&mut panel.pipe, "Target.createTarget", json!({"url":url,"browserContextId":panel.context}), None)
                     .await?;
             created["targetId"].as_str().context("The browser did not open a tab")?.clone_into(&mut panel.active);
+            let _ = rpc(&mut panel.pipe, "Target.activateTarget", json!({"targetId":panel.active}), None).await;
             let targets = rpc(&mut panel.pipe, "Target.getTargets", json!({}), None).await?;
             return Ok(answer(panel, pages(&targets, &panel.context)));
         }
@@ -114,6 +115,28 @@ async fn spawn(hub: &std::sync::Arc<Hub>, url: &str) -> Result<Panel> {
     let active = target["targetId"].as_str().context("The browser did not open a tab")?.to_owned();
     let _ = hub;
     Ok(Panel { process, folder: parent, pipe: socket, context, active })
+}
+
+/// Puts the panel's browser window at `left, top, width, height`, so it sits beside the app instead of behind it.
+pub async fn place(screen: &Screen, body: &Value) -> Result<Value> {
+    let mut current = screen.panel.lock().await;
+    let panel = current.as_mut().context("Open the browser panel first")?;
+    let window = rpc(&mut panel.pipe, "Browser.getWindowForTarget", json!({"targetId":panel.active}), None).await?;
+    let window_id = window["windowId"].as_i64().context("The browser gave no window")?;
+    let number = |key: &str, max: i64| body[key].as_i64().filter(|value| (0..=max).contains(value));
+    let (Some(left), Some(top), Some(width), Some(height)) =
+        (number("x", 20_000), number("y", 20_000), number("width", 20_000), number("height", 20_000))
+    else {
+        bail!("The browser window needs x, y, width and height");
+    };
+    rpc(
+        &mut panel.pipe,
+        "Browser.setWindowBounds",
+        json!({"windowId":window_id, "bounds":{"left":left, "top":top, "width":width, "height":height, "windowState":"normal"}}),
+        None,
+    )
+    .await?;
+    Ok(json!({"placed":true}))
 }
 
 /// Shows `tab`: it becomes the active tab.
@@ -236,6 +259,7 @@ pub async fn call(hub: &std::sync::Arc<Hub>, method: &str, body: &Value) -> Resu
         }
         "browserPanelClose" => close(&hub.screen, body["tabId"].as_str().context("`tabId` is required")?).await,
         "browserPanelShot" => shot(&hub.screen, body["tabId"].as_str()).await,
+        "browserPanelPlace" => place(&hub.screen, body).await,
         "browserPanelShutdown" => shutdown(&hub.screen).await,
         other => bail!("unknown browser panel method `{other}`"),
     }

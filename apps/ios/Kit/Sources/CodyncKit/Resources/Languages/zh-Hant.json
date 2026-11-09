@@ -1819,5 +1819,7 @@
   "Notes the bot gets with this channel’s memory": "隨此頻道記憶一併交給機器人的備註",
   "A fact this channel should keep": "此頻道應記住的事實",
   "Channel note": "頻道備註",
-  "Channels": "頻道"
+  "Channels": "頻道",
+  "Show the page": "顯示頁面",
+  "Hide the page": "隱藏頁面"
 }

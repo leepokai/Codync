@@ -27,6 +27,13 @@ export function BrowserWindow() {
   const [panel, setPanel] = useState<Panel>({ open: false, tabs: [] })
   const [image, setImage] = useState<string | null>(null)
   const [address, setAddress] = useState('')
+  const [compact, setCompact] = useState(() => localStorage.getItem('codync.browser.compact') === '1')
+  const toggleCompact = () => {
+    setCompact((on) => {
+      localStorage.setItem('codync.browser.compact', on ? '0' : '1')
+      return !on
+    })
+  }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const active = useRef<string | null>(null)
@@ -94,6 +101,32 @@ export function BrowserWindow() {
     void shoot()
   }, [panel.activeId, shoot])
 
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const place = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        void (async () => {
+          const c = await client()
+          if (!c) return
+          const width = Math.max(480, Math.round(window.screen.availWidth / 2))
+          const height = Math.max(420, window.screen.availHeight - 80)
+          try {
+            await c.call('browserPanelPlace', { x: window.screen.availWidth - width, y: 40, width, height })
+          } catch {
+            // A host without placement keeps the browser where Chrome put it.
+          }
+        })()
+      }, 150)
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('resize', place)
+      if (timer) clearTimeout(timer)
+    }
+  }, [client])
+
   const run = async (method: string, params: object = {}) => {
     setBusy(true)
     setError(null)
@@ -145,14 +178,15 @@ export function BrowserWindow() {
           <Button kind="secondary" disabled={busy || !address.trim()}
             onClick={() => void (panel.activeId ? navigate() : openTab())}>{tr('Go')}</Button>
           <Button kind="secondary" disabled={busy || !panel.activeId} onClick={() => void run('browserPanelShot', { tabId: panel.activeId })}>{tr('Refresh')}</Button>
+          <IconButton title={tr(compact ? 'Show the page' : 'Hide the page')} icon={compact ? 'rectangle.expand.vertical' : 'rectangle.compress.vertical'} size={16} onClick={toggleCompact} />
         </HStack>
       </header>
       {error ? <Text size="caption" role="alert" tone="danger" className="browser-error">{error}</Text> : null}
-      <div className="browser-page">
+      {compact ? null : <div className="browser-page">
         {image ? <img src={image} alt={tr('Browser page')} draggable={false} /> : (
           <Text tone="secondary">{panel.open ? tr('Loading the page…') : tr('Opening the browser…')}</Text>
         )}
-      </div>
+      </div>}
       <footer>
         <Text size="caption" tone="tertiary">{tr('Type and click in its own window; this panel shows it and keeps its tabs.')}</Text>
       </footer>

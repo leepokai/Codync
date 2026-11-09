@@ -6,33 +6,42 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.39.0
+## 2.42.1
 ### zh-Hant
-- 第一次設定時，如果帳號裡已有電腦，可以向它申請訪問，或配對一臺新電腦（例如 VPS）。安裝頁也能一鍵複製網站連結，到電腦上下載。
-- bot 工作中送出的訊息會排在輸入框上方：按箭頭立即送給 bot（Claude、Codex 會直接併進正在寫的回覆），按垃圾桶收回。
-- bot 用了不只一種智慧體時，列表會在頭像左下角標出各自的智慧體標誌，可在「設定 › 外觀」關閉。
-- 修正語音通話中，bot 唸完回覆、要再聽你說話時 app 可能閃退的問題。
-- 語音通話的對話紀錄更好讀：最上方顯示是跟哪個 bot、什麼時候、通話多久，語音說的話也更清楚。
-- 通話列在 bot 沒說話時會顯示一排靜止的點，深色頭像的 bot 也看得到。
-- 語音辨識出問題時，語音通話和聽寫會告訴你，不再一直停在聆聽或默默結束。
-- 介面新增巴西葡萄牙文：可在設定選擇「Português (Brasil)」，或跟隨系統的葡萄牙文語言。
-- 新增俄文介面：在設定選擇「Русский」，或跟隨系統的俄文語言。
-- 用 QR Code 配對時，如果電腦當下沒能加入你的帳號（例如手機連不上 Codync 雲端，或電腦的雲端關著），下次連上時會自動補上。
-- 排隊狀態、例行任務和執行紀錄會跟隨介面語言，名稱與訊息保留原文。
-- 新增義大利文介面：可在設定選擇「Italiano」，或跟隨系統的義大利文語言。
-- 擴充功能的「已安裝」提示也會顯示技能的圖示。
+- bot 詳情「智慧體」區塊的「壓縮對話」預設改為「自動」：交給 Claude Code 或 Codex 在對話快滿時自己壓縮。想讓 Codync 提早壓縮，可以改選提早、接近上限或指定數量（從 100K、200K… 裡挑，或自己輸入）。已經是「提早」的 bot 會保留原設定，想交給智慧體自己壓縮可以改選「自動」。
 
 ### en-US
-- First-time setup now checks your account: ask a computer already in it for access, or pair a new one, like a VPS. The install page also has a button that copies the website link, to download on your computer.
-- Messages you send while a bot works wait above the message box: tap the arrow to hand one over now (Claude and Codex take it into the reply they're writing), or the trash can to take it back.
-- When your bots use more than one agent, the bot list marks each avatar with its agent's logo. Turn it off in Settings › Appearance.
-- Fixed a crash in voice calls when the bot finished reading a reply and started listening again.
-- A call's conversation is easier to read: the bot, when the call ended and how long it lasted sit at the top, and the voice's words are clearer.
-- The call bar shows a still row of dots while the bot isn't talking, for dark bots too.
-- When speech recognition stops working, voice calls and dictation tell you, instead of listening forever or ending without a word.
-- Choose Português (Brasil) in Settings, or follow your Portuguese system language.
-- Choose Русский in Settings, or follow your Russian system language.
-- Choose Italiano in Settings, or follow your Italian system language.
-- The Installed button in Extensions also shows your skills' icons.
-- A computer you pair with a QR code that couldn't join your account at the time (the phone couldn't reach the Codync cloud, or the computer's cloud was off, say) joins it the next time it connects.
-- Queue status, routine notices and trace labels follow your language; names and messages stay as written.
+- Summarize long chats, in a bot's Agent section, now defaults to Auto: Claude Code or Codex summarizes a chat on its own once it fills up. Pick Early, Near the limit or a size (100K, 200K and so on, or one you type) to have Codync summarize sooner. Bots already on Early keep it; pick Auto to leave it to the agent.
+
+## 2.42.0
+### zh-Hant
+- bot 詳情的「智慧體」區塊新增「壓縮對話」：選擇 Codync 什麼時候把長對話壓縮成摘要。可以選提早（預設）、接近上限、不主動壓縮，或指定數量：從 100K、200K… 裡挑，或自己輸入，最多到模型裝得下的上限。適用於 Claude Code 和 Codex 的 bot。
+
+### en-US
+- New Summarize long chats setting in a bot's Agent section: choose when Codync summarizes a long chat. Pick Early (default), Near the limit, Only when full, or a size: 100K, 200K and so on, or one you type, up to what the model holds. For Claude Code and Codex bots.
+
+## 2.41.0
+### zh-Hant
+- 不登入也能用了：在歡迎畫面選擇「不登入繼續」，手機掃電腦的 QR 碼就能配對，透過 Wi-Fi 或 Tailscale 連線。之後登入，配對會留在手機上；到「管理電腦」按「加入帳號」，電腦確認後就能從任何地方連線。
+- 電腦可以不加入帳號。配對時電腦會詢問；不加入的話，手機只能用 Wi-Fi 或 Tailscale 連線，之後也能在「管理電腦」加入帳號。
+- 遠端畫面會照連線設定換路：自動是先直連再走 Cloudflare，Cloudflare 優先則相反。
+- 群組裡輸入 @ 會列出成員，一排一個，和 / 指令選單一樣。
+
+### en-US
+- Use Codync without an account: choose Continue without an account on the welcome screen, then scan your computer's QR code. It connects over Wi-Fi or Tailscale. Sign in later and your computers stay paired; Add to account in Manage computers brings each into your account once the computer confirms.
+- A computer can stay out of your account. It asks when you pair; without it, your phone connects only over Wi-Fi or Tailscale, and you can add it later in Manage computers.
+- Remote screen now follows the Connection setting: Auto tries direct first, then Cloudflare, and Cloudflare first does the reverse.
+- Typing @ in a group lists its members one per row, like the / command list.
+
+## 2.40.3
+### zh-Hant
+- bot 現在可以讓 dev server 持續在電腦上執行，不會因為 bot 閒置或重新啟動而中斷。port 會顯示在聊天標題下方；點 bot 的名稱，就能看記錄、重新啟動或停止；手機連得到電腦時，也能直接開啟。
+- 用量頁面可以自己選要看哪些服務並調整順序：預設只顯示 bot 正在用的，也可以打開或隱藏其他服務，或拖曳排列。另外支援顯示 Google Antigravity 和 GitHub Copilot 的額度。
+- 修正 bot 更新時，選單偶爾點了沒反應的問題。
+- 修正 iOS 27.2 之後的部分測試版上，登入後 app 當掉，之後每次開啟都立刻關閉（重新安裝也一樣）的問題。
+
+### en-US
+- Bots can now keep a dev server running on your computer, even when the bot goes idle or restarts. Its port shows under the chat title; tap the bot's name to read its logs, restart or stop it, and to open it when your phone can reach it.
+- Choose and arrange which agents show in Usage: by default it lists the ones your bots run, and you can turn others on, hide them or drag them into order. Usage now also reads Google Antigravity's and GitHub Copilot's limits.
+- Fixed menus sometimes ignoring a tap while a bot was updating.
+- Fixed a crash on some betas of iOS 27.2 and later that closed the app after sign-in and at every launch afterwards, even after reinstalling.

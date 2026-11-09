@@ -66,9 +66,6 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
-            .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
-                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
-                           && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -143,15 +140,36 @@ public struct ThreadView: View {
             }
             .frame(width: 12)
             .accessibilityHidden(true)
-            Text(L10n.tr(model.connectionLabel))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            HStack(spacing: 3) {
+                Text(L10n.tr(model.connectionLabel))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let devServerLabel {
+                    Text("·")
+                    if devServerSummary == .starting { Spinner(size: 8) }
+                    Text(devServerLabel)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .foregroundStyle(devServerSummary == .failed ? Palette.danger : Palette.secondary)
+                }
+            }
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundStyle(Palette.secondary)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(model.hostName), \(L10n.tr(connectionDescription))")
+        .accessibilityLabel([model.hostName, L10n.tr(connectionDescription), devServerLabel].compactMap(\.self).joined(separator: ", "))
         .help("\(model.hostName) · \(L10n.tr(connectionDescription))")
+    }
+
+    private var devServerSummary: DevServerSummary { DevServerSummary(bot?.devServers ?? []) }
+
+    private var devServerLabel: String? {
+        switch devServerSummary {
+        case .none: nil
+        case .starting: L10n.tr("Starting")
+        case .failed: L10n.tr("Failed to start")
+        case let .running(text): text
+        }
     }
 
     private var connectionSymbol: String {
@@ -164,6 +182,7 @@ public struct ThreadView: View {
     }
 
     private var connectionDescription: String {
+        if model.isAsleep { return "Sleeping · wakes when you message" }
         switch model.shownConnection {
         case .connecting: return "Connecting"
         case .computerOffline, .offline: return "Offline"
@@ -171,6 +190,7 @@ public struct ThreadView: View {
         case .unpaired: return "Not paired"
         case .online: break
         }
+        if model.isCloudUpdating { return "Updating…" }
         if model.mismatch != nil { return "Needs update" }
         switch model.hostRoute {
         case .relay: return RelayCopy.connected(cloud: model.computer.cloud)
@@ -292,9 +312,7 @@ struct IntroCard: View {
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text(bot.managedWorkspace
                  ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
-                 : L10n.tr("{agent} in {path}")
-                    .replacingOccurrences(of: "{agent}", with: model.backendName(bot.backend))
-                    .replacingOccurrences(of: "{path}", with: bot.cwd))
+                 : L10n.fill(L10n.tr("{agent} in {path}"), ["agent": model.backendName(bot.backend), "path": bot.cwd]))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -388,7 +406,9 @@ extension ThreadView {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
                         header
-                        connectionSubtitle
+                        // The port shows here, so a tap on it opens the details too.
+                        Button(action: openDetails) { connectionSubtitle }
+                            .buttonStyle(.plain)
                     }
                 }
                 if model.screen != nil {

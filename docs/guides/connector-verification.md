@@ -41,7 +41,9 @@ the handshake; another edit cannot supply its readiness result. Token refreshes
 may advance the same grant, but sign-out or a new registration invalidates the check.
 URL or header changes advance the revision, including when values are later restored. Remote URL or header changes are saved before
 verification so OAuth can use the new endpoint. A failed check leaves them saved
-without refreshing bots; local runtime edits instead check before saving.
+without refreshing bots. Existing proxies are already invalidated, so bots using the
+connector cannot call it until sign-in or corrections and a successful retry refresh
+their tools. Local runtime edits instead check before saving.
 Changing only a name or description performs no check and returns `verify: null`.
 Explicit `url` or `headers` requests verification even when unchanged. After
 sign-in, repeat `updateConnector` with the current URL to verify and refresh bots

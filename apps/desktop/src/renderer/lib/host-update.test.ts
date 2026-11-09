@@ -27,6 +27,11 @@ test('the Codync row offers a newer release, says it is current, or makes no cla
   assert.deepEqual(line('2.29.0', { kind: 'updating' }).accessory, { kind: 'updating' })
 })
 
+test('a Codync Cloud computer says the cloud updates it, not how to update it by hand', () => {
+  assert.deepEqual(hostVersionLine('2.28.0', '2.29.0', null, { kind: 'unavailable' }, 'Cloud', 'linux', true).detail,
+    ['Version 2.29.0 is available.', 'Codync Cloud updates it before it next sleeps.'])
+})
+
 test('a computer too old for this app, or an update that did not take, is a problem', () => {
   const behind = { kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' } as const
   assert.deepEqual(hostVersionLine('2.20.0', null, behind, { kind: 'available', last: null }, 'Mac', 'linux'),

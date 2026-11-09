@@ -59,7 +59,8 @@ internal enum class FormPart { All, Often, Rarely }
                 }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot); computerRow(state, online)
-                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }; placeRows(state, store, draft, change, modelReload) { folders = true }
+                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
+                    compactionRow(bot, draft, change); placeRows(state, store, draft, change, modelReload) { folders = true }
                 }
                 CardSection("Activity") {
                     notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
@@ -71,6 +72,7 @@ internal enum class FormPart { All, Often, Rarely }
                 CardSection("Agent") {
                     fallbackBanner(state, store, bot)
                     agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
+                    compactionRow(bot, draft, change)
                     if (!online) row { OfflineNote() }
                 }
             }
@@ -80,7 +82,9 @@ internal enum class FormPart { All, Often, Rarely }
                     nameRow(draft, change); createdByRow(state, bot)
                 }
                 // The agent and its model are on the Details page; what's left is where it works.
-                CardSection("Workspace") { computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true } }
+                CardSection("Workspace") {
+                    computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
+                }
                 CardSection("Activity") { notifyRow(draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change) }
                 Plugins(state, draft, change) { viewingSkill = it }
             }

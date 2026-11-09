@@ -30,10 +30,16 @@ public struct UpdateNeededCard: View {
 
     public var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "arrow.down.circle")
-                .font(.title3)
-                .foregroundStyle(Palette.warning)
-                .accessibilityHidden(true)
+            Group {
+                if store.isCloudUpdating {
+                    Spinner(size: 18)
+                } else {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.title3)
+                        .foregroundStyle(Palette.warning)
+                }
+            }
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
                 Text(detail)
@@ -54,13 +60,14 @@ public struct UpdateNeededCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    var title: String { UpdateNeededText.title(mismatch, host: store.hostName) }
+    var title: String { UpdateNeededText.title(mismatch, host: store.hostName, cloud: store.cloudHosting != nil) }
     var detail: String {
         let offer = hostOffer
         if offer == .updating { return UpdateNeededText.updating(host: store.hostName) }
         let text = UpdateNeededText.detail(mismatch, host: store.hostName, hostVersion: store.hostVersion?.version,
                                            // With a button here, instructions for that computer would only confuse.
-                                           os: store.hello?.os, instructions: action == nil)
+                                           os: store.hello?.os, instructions: action == nil,
+                                           cloud: store.cloudHosting != nil)
         if case let .available(last?) = offer { return "\(text) \(UpdateNeededText.notUpdated(last, host: store.hostName))" }
         return inReview ? "\(text) That version is still in App Store review; it'll be there soon." : text
     }
@@ -79,12 +86,12 @@ public struct UpdateNeededCard: View {
 
     private var action: (title: String, run: () -> Void)? {
         switch mismatch {
-        case .updateApp:
+        case .updateApp, .appFloor:
             guard let appUpdate else { return nil }
             return ("Update Codync", { appUpdate() })
         case .updateHost:
-            // Otherwise the card says how to update it on the computer.
-            guard case .available = hostOffer else { return nil }
+            // Otherwise the card says how to update it on the computer; the cloud updates a cloud computer.
+            guard store.cloudHosting == nil, case .available = hostOffer else { return nil }
             return ("Update now", { store.requestHostUpdate() })
         }
     }
@@ -93,28 +100,34 @@ public struct UpdateNeededCard: View {
 /// The words every client uses for a version mismatch (the desktop app and the terminal client
 /// mirror them).
 public enum UpdateNeededText {
-    public static func title(_ mismatch: VersionMismatch, host: String) -> String {
+    /// `cloud`: a Codync Cloud computer, which the cloud updates by itself.
+    public static func title(_ mismatch: VersionMismatch, host: String, cloud: Bool = false) -> String {
         switch mismatch {
-        case .updateApp: "Update this app"
-        case .updateHost: "Update Codync on \(host)"
+        case .updateApp, .appFloor: "Update this app"
+        case .updateHost: cloud ? "Your cloud computer is updating…" : "Update Codync on \(host)"
         }
     }
 
     public static func detail(_ mismatch: VersionMismatch, host: String, hostVersion: String?, os: String?,
-                              instructions: Bool = true) -> String {
+                              instructions: Bool = true, cloud: Bool = false) -> String {
         switch mismatch {
         case let .updateApp(minimum):
             let runs = hostVersion.map { "\(host) runs Codync \($0) and" } ?? host
             return "\(runs) needs this app to be \(minimum) or newer. Your chats are safe on the computer."
+        case let .appFloor(reason):
+            return reason
+        case let .updateHost(version, minimum) where cloud:
+            return "It's moving from Codync \(version) to \(minimum) or newer. This app reconnects when it's done."
         case let .updateHost(version, minimum):
             let needs = "\(host) runs Codync \(version); this app needs \(minimum) or newer."
             return instructions ? "\(needs) \(how(os: os))" : needs
         }
     }
 
-    /// How to update Codync on a computer this app can't update.
-    public static func how(os: String?) -> String {
-        switch os {
+    /// How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself.
+    public static func how(os: String?, cloud: Bool = false) -> String {
+        if cloud { return "Codync Cloud updates it before it next sleeps." }
+        return switch os {
         case "macos": "Open Codync on that Mac and choose Check for Updates."
         case "linux": "Run codync-host update there."
         default: "Update Codync on that computer."

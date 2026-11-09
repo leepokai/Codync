@@ -16,11 +16,14 @@ import { buildChat, rowIn, useArrivals, type ChatItem } from './chat-items'
 import { BotConversationView, BotMessageRow } from './BotConversation'
 import { CallConversationView, CallLineRow } from '../call/CallRows'
 import { hidingCalls } from '@shared/calls'
+import { devServerSummary } from '@shared/dev-servers'
 import { ChatRow, TimeSeparator } from './ChatRows'
+import { DevServerTitle } from './DevServersSection'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
 import { QueuedMessages } from './QueuedMessages'
+import { fill } from '../../lib/fill.ts'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
@@ -112,6 +115,12 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
     if (!wide) setCompactDetails((c) => !c)
     else setShowSettings((s) => !s)
   }, [wide])
+  const devServers = devServerSummary(bot?.devServers ?? [])
+  // The title's port leads to its row, whichever page the inspector was left on.
+  const openFromTitle = useCallback(() => {
+    if (devServers.kind !== 'none') setDetailsTab('details')
+    toggleDetails()
+  }, [devServers.kind, toggleDetails])
 
   useEffect(
     () =>
@@ -171,10 +180,11 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             ) : null}
           </div>
           {/* The call bar takes the pill's place; its frosted glass would show the name blurred. */}
-          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={toggleDetails} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title="View conversation details">
+          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title="View conversation details">
             <HStack as="span" gap={7}>
               {bot ? isGroup(bot) ? <GroupAvatar members={store.members(bot)} size={22} /> : <BotAvatar bot={bot} size={22} /> : null}
               <Text size="body" weight="medium" tone="text" truncate>{bot?.name ?? ''}</Text>
+              <DevServerTitle summary={devServers} />
               {/* Grok Bot's hint on hover: the pill opens the details. */}
               <span className="title-pill-chevron">
                 <Icon name="chevron.right" size={10} weight="semibold" color="var(--secondary)" />
@@ -258,6 +268,7 @@ function ConnectionSubtitle() {
   const connecting = store.shownConnection.kind === 'connecting'
   const symbol = store.connection.kind !== 'online' ? 'wifi.slash' : store.hostRoute === 'relay' ? 'cloud' : store.hostRoute === 'direct' ? 'wifi' : store.hostRoute === 'loopback' ? 'desktopcomputer' : 'network'
   const description = (() => {
+    if (store.isAsleep) return 'Sleeping · wakes when you message'
     switch (store.shownConnection.kind) {
       case 'connecting':
         return 'Connecting'
@@ -269,6 +280,7 @@ function ConnectionSubtitle() {
       case 'unpaired':
         return 'Not paired'
     }
+    if (store.isCloudUpdating) return 'Updating…'
     if (store.mismatch) return 'Needs update'
     return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? tr('Connected over Wi-Fi or Tailscale') : store.hostRoute === 'loopback' ? tr('Connected locally') : 'Connected'
   })()
@@ -276,7 +288,7 @@ function ConnectionSubtitle() {
   return (
     <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
-      <Text size="caption" weight="medium" truncate>{store.connectionLabel}</Text>
+      <Text size="caption" weight="medium" truncate>{store.isAsleep ? description : store.connectionLabel}</Text>
     </HStack>
   )
 }
@@ -452,7 +464,7 @@ function IntroCard({ bot }: { bot: Bot }) {
   const tr = useTr()
   const where = bot.managedWorkspace
     ? `${store.backendName(bot.backend)} · ${tr('Personal workspace')}`
-    : tr('{agent} in {path}').replace('{agent}', store.backendName(bot.backend)).replace('{path}', bot.cwd)
+    : fill(tr('{agent} in {path}'), { agent: store.backendName(bot.backend), path: bot.cwd })
   return (
     <div className="intro-card">
       <BotAvatar bot={bot} size={72} />

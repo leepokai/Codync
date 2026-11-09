@@ -19,6 +19,19 @@ its selected host.
 - Headless Linux: provide a session D-Bus and unlocked Secret Service for the
   service user. An unavailable keyring gives an actionable error. There is no
   plaintext, kernel-keyring-only or automatic ephemeral fallback.
+- A [Codync Cloud](../plans/codync-cloud.md) computer has no keyring and no vault of its own: its secrets live in
+  its keeper (`host/src/keeper/`), a separate process under its own system user, sealed with a key the Codync Worker
+  hands only to that keeper and that never touches the disk. The host and its agents (another user, without sudo) use
+  most of them through the keeper's local proxy without reading them; the ones a process has to receive (website
+  logins, the 1Password token, stdio connectors' environment, unproxied agent variables, and a remote connector's URL,
+  a token in its query or user part included) stay readable by the agents:
+  [Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets).
+- Disposable hosts only (tests and [worktree sandboxes](../guides/dev-app.md#worktree-sandboxes)): a Dev build
+  with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
+  A production build ignores the switch.
+
+A host makes its key the first time something needs the vault, such as a connector, voice, credential or agent
+sign-in request, or a new bot once connectors are saved. A new computer's first start makes none.
 
 Unlocking runs on a blocking worker, one read at a time; callers that arrive
 meanwhile share its outcome. A locked Linux keyring gets one unlock prompt that
@@ -68,7 +81,10 @@ clears it; `env` merges, with `null` removing a key. A change to how it runs (`c
 `args`, `env`) is checked on the edited copy and exactly that copy is saved if it passes,
 so a typo can't break a working connector and an error means the edit changed nothing. A
 save by anything else during the check refuses the edit, so overlapping edits never combine
-into settings nobody checked. A new `name` or `description` alone starts nothing: it saves
+into settings nobody checked. A rename cannot take another installed connector's name; rejection leaves the saved
+connector and bot choices unchanged. The name is checked again after verification,
+under the save lock, so a concurrent install cannot introduce a collision. An unchanged
+name remains valid, including duplicates imported from a config. A new `name` or `description` alone starts nothing: it saves
 even while the server can't start, `verify` is null in the answer and no bot restarts.
 Otherwise the bots that have the connector on are told to rebuild their tools. An agent that
 can resume restarts whole before its next turn (not only this connector's process); one
@@ -78,6 +94,8 @@ that can't be told is logged and doesn't fail the saved edit (`host/src/market/c
 Custom URL connectors use the same loopback-only method with `url` and `headers`.
 Remote connection changes are saved before verification, allowing sign-in against
 the new endpoint; failed verification leaves the edit saved and refreshes no bots.
+Old running proxies are already invalidated, so affected bots cannot use the connector
+until a successful retry checks the saved settings and refreshes their tools.
 Metadata-only edits need no check. Explicit URL/header retries verify even when
 unchanged, so repeating the current URL after sign-in refreshes affected bots.
 The saved connection is checked before and after verification; token refreshes may

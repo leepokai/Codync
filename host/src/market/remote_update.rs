@@ -1,6 +1,8 @@
 //! Remote edits keep bot references, but credentials belong to one endpoint revision.
 
-use super::{Connector, connector_update, connectors, oauth, passwords, update_connectors};
+use super::custom::validate_url;
+use super::{Connector, connector_update, connectors, oauth, passwords};
+use crate::LockExt;
 use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -81,6 +83,7 @@ fn same_sign_in(a: Option<&oauth::OAuth>, b: Option<&oauth::OAuth>) -> bool {
 async fn save_remote(store: &crate::store::Store, before: &Connector, b: &Value) -> Result<(Connector, bool)> {
     use connector_update::EditFailure;
     let mut edited = prepare(before, b).map_err(|e| EditFailure::Invalid.error(e))?;
+    connector_update::check_rename(before, &edited, &connectors(store)?)?;
     // Repeating a URL/header edit after sign-in is also a request to check and refresh.
     let needs_check = b.get("url").is_some() || b.get("headers").is_some();
     if edited.url != before.url {
@@ -92,7 +95,12 @@ async fn save_remote(store: &crate::store::Store, before: &Connector, b: &Value)
             edited.oauth = Some(oauth::OAuth::default());
         }
     }
-    let connector = update_connectors(store, |all| {
+    let connector = {
+        // Keep the lock through the reread: managed storage hands secrets to the keeper
+        // and replaces them with placeholders before verification sees this definition.
+        let _guard = store.connector_lock.locked();
+        let mut all = connectors(store)?;
+        connector_update::check_rename(before, &edited, &all)?;
         let current = all
             .iter_mut()
             .find(|c| c.id == before.id)
@@ -102,8 +110,12 @@ async fn save_remote(store: &crate::store::Store, before: &Connector, b: &Value)
             return Err(EditFailure::Conflict.error("The connector changed during this edit. Read it again and retry."));
         }
         *current = edited;
-        Ok(current.clone())
-    })?;
+        super::save_connectors(store, &all)?;
+        connectors(store)?
+            .into_iter()
+            .find(|c| c.id == before.id)
+            .ok_or_else(|| EditFailure::Conflict.error("Unknown connector"))?
+    };
     Ok((connector, needs_check))
 }
 
@@ -137,20 +149,6 @@ fn prepare(before: &Connector, b: &Value) -> Result<Connector> {
         edited.auth_revision = uuid::Uuid::new_v4().to_string();
     }
     Ok(edited)
-}
-
-fn validate_url(raw: &str) -> Result<()> {
-    let url = reqwest::Url::parse(raw).map_err(|_| anyhow!("Invalid remote URL"))?;
-    let loopback = url.host_str().is_some_and(|h| {
-        h == "localhost" || h.trim_matches(['[', ']']).parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
-    });
-    if !(url.scheme() == "https" || url.scheme() == "http" && loopback) || url.host_str().is_none() {
-        bail!("Use HTTPS, or HTTP on a loopback address");
-    }
-    if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
-        bail!("Remote URLs cannot contain user information or a fragment");
-    }
-    Ok(())
 }
 
 fn merge_headers(c: &mut Connector, value: &Value) -> Result<()> {

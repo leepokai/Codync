@@ -16,19 +16,29 @@ import './account-welcome.css'
 
 const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 
-/** Whether the welcome covers the window (`showsWelcome`). `finish`: the first run's choice was made. */
+/** Whether the welcome covers the window (`showsWelcome`). `finish`: the first run's choice was made. `back`: make it again, while signed out. */
 export function useWelcomeGate() {
   const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
+  const [withoutAccount, setWithoutAccount] = usePref(prefs.withoutAccount)
   const { isConfigured, isReady, isSignedIn } = useAccount()
   const finish = useCallback(() => {
+    if (!account.isSignedIn && account.isConfigured) {
+      setWithoutAccount(true)
+      analytics.track({ event: 'continued_without_account' })
+    }
     if (prefs.onboardingDone.get()) return
     setOnboarded(true)
     analytics.track({ event: 'onboarding_completed', signed_in: account.isSignedIn })
-  }, [setOnboarded])
-  return { shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn }), finish }
+  }, [setOnboarded, setWithoutAccount])
+  // Signing in, however it happens, ends going on without an account.
+  useEffect(() => {
+    if (isSignedIn && withoutAccount) setWithoutAccount(false)
+  }, [isSignedIn, withoutAccount, setWithoutAccount])
+  const back = isConfigured && !isSignedIn ? () => setWithoutAccount(false) : undefined
+  return { shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn, withoutAccount }), finish, back }
 }
 
-/** The welcome: signing in, or, in a build without accounts, going on without one. A restored session skips it as soon as it is back. */
+/** The welcome: signing in, or going on without an account. A restored session skips it as soon as it is back. */
 export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   const account = useAccount()
   const reduce = useReduceMotion()
@@ -70,26 +80,33 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   return (
     <div className="welcome">
       <VStack className="welcome-column">
-        <Spacer min={24} />
-        <WelcomeCrew shown={beat >= 1} />
-        <Spacer min={24} />
-        <div className="welcome-glimpse">
-          <WelcomeChatGlimpse shown={beat >= 2} />
-        </div>
-        <VStack gap={10} style={rise(beat >= 3)}>
-          <div className="welcome-title">{tr('Your coding agents,\nas teammates.')}</div>
-          <Text as="div" size="body" tone="secondary">{tr(`Give each one a name and a project. They work on your computer while you're away.`)}</Text>
+        {/* The way forward stays on screen at any size: the pitch scrolls above it in a short window (account-welcome.css). */}
+        <VStack className="welcome-pitch">
+          <Spacer min={24} />
+          <WelcomeCrew shown={beat >= 1} />
+          <Spacer min={24} />
+          <div className="welcome-glimpse">
+            <WelcomeChatGlimpse shown={beat >= 2} />
+          </div>
+          <VStack gap={10} style={rise(beat >= 3)}>
+            <div className="welcome-title">{tr('Your coding agents,\nas teammates.')}</div>
+            <Text as="div" size="body" tone="secondary">{tr(`Give each one a name and a project. They work on your computer while you're away.`)}</Text>
+          </VStack>
         </VStack>
-        <Spacer min={32} />
-        <VStack gap={10} style={rise(beat >= 4)}>
-          {account.isConfigured ? null : (
-            <Button onClick={onContinue} className="welcome-button">
-              {onThis}
-            </Button>
-          )}
+        <VStack gap={10} className="welcome-actions" style={rise(beat >= 4)}>
           <ProviderButton provider="apple" mark={<Icon name="apple.logo" size={20} />} title="Continue with Apple" />
           <ProviderButton provider="google" kind="secondary" mark={<img src={googleLogo} alt="" width={20} height={20} />} title="Continue with Google" />
           <ProviderButton provider="github" kind="secondary" mark={<Icon name="github.logo" size={20} />} title="Continue with GitHub" />
+          {account.isConfigured ? (
+            <button className="welcome-continue" onClick={onContinue}>
+              <VStack as="span" align="center" gap={2}>
+                <Text size="footnote" weight="medium">{tr('Continue without an account')}</Text>
+                <Text size="caption2" tone="secondary">{tr('Phones then connect only over Wi-Fi or Tailscale.')}</Text>
+              </VStack>
+            </button>
+          ) : (
+            <Button kind="secondary" onClick={onContinue} className="welcome-button">{onThis}</Button>
+          )}
           {!account.isConfigured ? (
             <Text as="div" size="footnote" tone="tertiary">{tr(deviceName === 'Mac' ? "Sign-in isn't configured in this build. You can still use Codync on this Mac." : "Sign-in isn't configured in this build. You can still use Codync on this computer.")}</Text>
           ) : null}

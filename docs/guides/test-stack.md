@@ -4,7 +4,7 @@ How the end-to-end (e2e) checks drive the apps: Playwright for the desktop app, 
 
 ## Host tests
 
-`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`).
+`host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`). `tests/common` also sets `CODYNC_VAULT=folder`, so a test's credential key stays out of the system's credential store and goes with its data; `tools/check-connectors.py` keeps a real Keychain key on purpose.
 
 Run them one at a time: never start a test binary several times in parallel, or several copies of the suite, not even to hunt a flake. Repeat it one run after another, a few times at most. On 2026-11-04 parallel repeats left about 200 `claude -p /usage` processes behind, using 55 GB on a 32 GB Mac, and froze it.
 
@@ -38,7 +38,7 @@ maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-ta
 
 The devices are the worktree's own simulator `Codync <sandbox name>` and the shared `codync_worktree` emulator, under its lock ([worktree sandboxes](dev-app.md#worktree-sandboxes)). Install the worktree's builds first: `xcodebuild … -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd` for the simulator, `./gradlew :app:assembleDebug` for the emulator.
 
-A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it and signs the app out, so run such a flow in a Maestro run of its own, after the sign-in. Signed in isn't past first-run setup: `agent-logos.yaml` skips the choice page when it's there. The `computer-choice` flows need setup unfinished (fresh app data) and each finishes or changes it, so each gets its own run with its own start: `computer-choice` and `computer-choice-skip` with a computer in the account (`npm run dev -- --cloud`), `computer-choice-empty` without one.
+A flow past the welcome screen (`agent-logos.yaml`) needs the phone signed in with `npm run phone-account` and keeps the app's state. `welcome.yaml` (`smoke`) clears it. That signs the Android app out, but the iPhone's sign-in stays in the simulator's Keychain, so run `xcrun simctl keychain <device> reset` before `smoke` on a signed-in simulator. `sign-in-cancel.yaml` (`sign-in`) clears it the same way and needs the phone online, since it opens Google's page and leaves it. `signed-out-pairing.yaml` needs a sandbox in no account and the phone signed out, and takes the pairing link as `PAIRING_URL`. Run a flow past the welcome screen in a Maestro run of its own, after the sign-in. Signed in isn't past first-run setup: `agent-logos.yaml` skips the choice page when it's there. The `computer-choice` flows need setup unfinished (fresh app data) and each finishes or changes it, so each gets its own run with its own start: `computer-choice` and `computer-choice-skip` with a computer in the account (`npm run dev -- --cloud`, or the sandbox's own local cloud on a branch that changes `cloud/`), `computer-choice-empty` without one.
 
 Two things that look like failures but aren't the app's:
 
@@ -49,7 +49,7 @@ Two things that look like failures but aren't the app's:
 
 ## What Computer Use covers
 
-Computer Use (cluadex, in the background) checks only these steps. Tag them `@native` in the change's e2e list. Everything else uses Playwright or Maestro. If cluadex fails, stop and ask the user to reconnect it with `/mcp`; don't switch to cua-driver.
+Computer Use (cua-driver, in the background: never bring an app to the front) checks only these steps. Tag them `@native` in the change's e2e list. Everything else uses Playwright or Maestro. If cua-driver fails, stop and ask the user to reconnect it with `/mcp`.
 
 - **Desktop**: the tray or menu bar icon and its menu; the approval island's global shortcut; system notification banners; macOS privacy prompts (screen recording, notifications); Clerk sign-in in the system browser and the `codync-dev://` callback back into the app; anything that needs the packaged `Codync Dev.app` (Codync Screen, computer use, `SMAppService`).
 - **Phones**: how system alerts and notification banners look; the desktop QR pairing (Computer Use reads the QR on the Mac, Maestro finishes on the phone); widgets, Live Activity and the Dynamic Island.

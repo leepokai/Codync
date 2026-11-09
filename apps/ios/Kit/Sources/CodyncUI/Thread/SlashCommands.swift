@@ -59,3 +59,13 @@ enum SlashCommands {
                              warning: fast.state == .refused, action: .fast)]
     }
 }
+
+/// The `@partial` being typed at the end of a group's draft, if any. A member's full name and its space end it, so the
+/// list doesn't stay up for a longer name that holds this one.
+func mentionQuery(_ draft: String, members: [Bot]) -> String? {
+    guard let at = draft.lastIndex(of: "@") else { return nil }
+    if at > draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
+    let query = String(draft[draft.index(after: at)...])
+    if query.first?.isWhitespace == true || query.contains(where: \.isNewline) || query.count > 24 { return nil }
+    return members.contains { query.lowercased() == "\($0.name.lowercased()) " } ? nil : query
+}

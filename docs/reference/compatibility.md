@@ -38,9 +38,17 @@ reason to lock someone out.
 Drafts are kept while sending is blocked. A host update restarts the host, so the reconnect
 reads the new `hello` and the notice goes away on its own.
 
+**Codync Cloud computers** never ask the user to update the host: every app sends
+`Codync-App: <platform>/<version>; minHost=<version>` to the cloud, and a cloud computer below an app's `minHost`
+installs exactly that version before the app talks to it ("Your cloud computer is updating…", seconds). The cloud
+also holds emergency floors that answer `426 appUpdateRequired` or `426 hostUpdateRequired`
+([Codync Cloud plan](../plans/codync-cloud.md#cloud-hard-update-雲端強更新-emergencies-only)).
+
 The iPhone and desktop apps also treat **undecodable data from a newer host** as *Update this app*: an event
 that stays undecodable after the one rewind, or a `hello` whose other fields can't be decoded
 (its `version` and `minApp` are still read). From an older or equal host it's only logged.
+
+Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud` is null there, which they save, and they have no **Add to account** row. They reach it over Wi-Fi or Tailscale until the computer joins an account some other way, and `hello.joinAccount` stays `false` so they never call `joinAccount`, which takes a certificate now. It raises no floor: a computer in an account is unchanged for them.
 
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.

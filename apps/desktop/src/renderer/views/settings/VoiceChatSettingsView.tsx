@@ -13,6 +13,7 @@ import { errorText, liveClient } from './parts'
 import * as voice from './voice-settings'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 
 
 /**
@@ -245,7 +246,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
         </div>
       ) : !canEditKey ? (
         <VStack gap={4} className="settings-row">
-          <Text>{tr('No {name} key on {other}').replaceAll('{name}', () => info.name).replaceAll('{other}', () => store.hostName)}</Text>
+          <Text>{fill(tr('No {name} key on {other}'), { name: info.name, other: store.hostName })}</Text>
           <Text size="footnote" tone="secondary">{tr('Add it in Codync on {name}: Settings → Voice chat, or connect to that computer over SSH.').replaceAll('{name}', () => store.hostName)}</Text>
         </VStack>
       ) : (

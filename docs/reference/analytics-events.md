@@ -35,9 +35,10 @@ host answers and sends it once the host is up.
 |---|---|---|---|
 | `app_opened` | host `track` (desktop, TUI), iOS, Android | Desktop: each launch, once the host answers. TUI: each start. Phones: each return to the foreground. | desktop `at_login` (opened by the login item); phones `notifications` (`allowed`/`denied`/`not_asked`), `widgets` (count on the Home Screen) |
 | `window_opened` | host `track` (desktop) | The chat window is shown after being hidden (tray, dock, shortcut, second launch). A long-running menu bar app opens it many times per launch. | — |
+| `window_recovery` | host `track` (desktop) | A window's page crashed (`RendererGone` in error tracking): it loaded again, or crashed too often and stays down | `outcome` (`reloaded`/`gave_up`) |
 | `host_started` | host | Each start of the host process | `first_run` (the first start of a new install; `open_store` marks a new host id with an empty `analytics_version`), `updated_from` (the previous version, when it changed), `service` (started by launchd, systemd or the Windows runner: `XPC_SERVICE_NAME`, `SYSTEMD_EXEC_PID`, `CODYNC_SERVICE`) |
 | `host_setup_failed` | desktop main | The desktop app couldn't get a working host | `stage` (`missing_binary`/`install`/`verify`/`not_responding`/`environment`) |
-| `onboarding_step_viewed` | iOS, Android | An onboarding screen appears. `welcome` is also the sign-in screen, so it's sent again after each sign-out (builds with accounts require sign-in): count persons, or the first one per person, for first runs | `step` (`welcome`/`choose`/`install`/`scan`; `choose`: the account has computers, ask one or pair a new one) |
+| `onboarding_step_viewed` | iOS, Android | An onboarding screen appears. `welcome` is also the sign-in screen, so it's sent again after each sign-out: count persons, or the first one per person, for first runs | `step` (`welcome`/`choose`/`install`/`scan`; `choose`: the account has computers, ask one or pair a new one) |
 | `onboarding_completed` | host `track` (desktop), iOS, Android | Once per setup. Desktop: the first run's welcome is finished (by signing in, in a build with accounts). Phones: the first-run screens are finished and the tabs appear (a computer reached, or skipped). | desktop `signed_in`; phones `via` (`paired`: by its code; `account`: approved after asking; `skipped`) |
 | `computer_access_finished` | host `track` (desktop) | The *Computer access* step is left | `ready` (screen recording and control granted), `onboarding` |
 | `sign_in_started` | host `track` (desktop), iOS, Android | A sign-in button is pressed | `provider` (`apple`/`google`/`github`/`hosted`) |
@@ -45,18 +46,30 @@ host answers and sends it once the host is up.
 | `signed_in` | host `track` (desktop), iOS, Android | Signed in to a Codync account | `provider` |
 | `signed_out` | host `track` (desktop), iOS, Android | Signed out | — |
 | `signed_out_pairings_moved` | iOS, Android | At sign-in, computers paired while signed out (before sign-in was required) moved into the account | `computers` (count), `keys` (`moved`: this phone's keys went along, nothing to scan; `rescan`: the account already had its own key on this phone, so they need a new scan) |
+| `continued_without_account` | host `track` (desktop), iOS, Android | **Continue without an account** on the welcome screen | — |
+| `add_to_account_asked` | iOS, Android | **Add to account** on a computer in no account | — |
+| `add_to_account_completed` | iOS, Android | That ended with the computer in the account | — |
+| `add_to_account_failed` | iOS, Android | That ended without the computer joining | `reason` (`declined`/`certificate`/`unreachable`/`other`) |
+| `join_from_phone_answered` | host (`joinAccount`) | The computer answered a paired phone's **Add to account** | `outcome` (`approved`/`declined`) |
+| `discovery_failed` | host | A computer in no account couldn't advertise on the local network, reported once per host run | `stage` (`start`/`update`) |
+| `join_offer_answered` | host `track` (desktop) | The ask to add a computer to the signed-in account ended | `outcome` (`added`/`kept_out`/`failed`) |
+| `cloud_key_saved` | iOS, Android, host `track` (desktop) | The user gave Codync Cloud the key to their own account with a cloud provider (never the key or its hint) | `outcome` (`saved`; `refused`: the cloud or the provider turned it down and the app said what to fix; `failed`: anything else), `provider` (the cloud's id for it: `boat`/`instabox`; the host reads one it doesn't know yet as `other`) |
+| `cloud_computer_created` | iOS, Android, host `track` (desktop) | The user created a Codync Cloud computer from *New cloud computer* | `outcome` (`created`; `refused`: the cloud said no with what to fix (the account's limit, or the provider turned down the key or the plan); `failed`: anything else), `provider` (`boat`/`instabox`; the host reads one it doesn't know yet as `other`) |
+| `cloud_keeper_checked` | host (a Codync Cloud computer, once per start; on its first boot, once its claim lands) | The host checked the keeper that holds this cloud computer's secrets | `state` (`unlocked`; `locked`: still waiting for its key from the cloud; `missing`: no keeper on this machine), `sudo` (whether the agents' user could still use sudo, which would leave the secrets unprotected) |
+| `cloud_computer_renamed` | iOS, Android, host `track` (desktop) | The user renamed a Codync Cloud computer (never the name) | `outcome` (`renamed`/`failed`) |
+| `computer_found_on_network` | iOS, Android | A phone reached a computer in no account at an address it found on the local network | — |
 | `pairing_code_created` | host (`pairing`) | A pairing QR code is made (desktop, terminal UI, `codync-host pair`), including each new one an open pairing screen makes when its code expires: count persons, not events | `client` |
 | `pairing_failed` | iOS, Android | A pairing attempt fails | `reason` (`not_pairing_link`/`outdated_host`/`invalid`/`expired`/`unauthorized`/`unreachable`/`timeout`/`upgrade_required`/`other`) |
 | `computer_paired` | iOS, Android | The phone reached a computer | `via` (`qr`: scanned or pasted on the scan screen; `link`: a pairing link opened from outside; `account`), `computer` |
-| `device_paired` | host | A phone was added: a pairing code redeemed or an account request approved | `via` (`qr`/`account`), `platform`, `automatic` (approved without a tap) |
+| `device_paired` | host | A phone was added: a pairing code redeemed or an account request approved | `via` (`qr`/`account`), `platform`, `automatic` (approved without a tap), `account` (`joined`: in the computer's account, or the computer joined the phone's; `phone_only`: signed in, the computer stayed out; `signed_out`) |
 | `access_requested` | iOS, Android | The phone asks an account computer for access | — |
 | `access_request_failed` | iOS, Android | The request ended without access | `reason` (`denied`/`expired`/`cancelled`) |
 | `access_request_denied` | host (`decideAccessRequest`) | The computer's owner denied a phone | `client` |
 | `device_revoked` | host (`revokeDevice`) | A phone's access was removed | `client` |
-| `phone_connected` | host | A paired phone connects, at most once per phone per UTC day | `platform` |
+| `phone_connected` | host | A paired phone connects, at most once per phone per UTC day | `platform`, `route` (`direct`/`relay`: how that first connection of the day came in) |
 | `notifications_answered` | iOS, Android | The system notification prompt was answered | `granted`, `source` (`settings`/`widgets`/`automatic`) |
 | `notification_opened` | iOS, Android | A Codync notification was tapped | `kind` (`done`/`needs_input`/`failed`) |
-| `star_prompt_answered` | host `track` (desktop) | The GitHub star setup invitation or reminder was answered or closed | `ask` (`first`/`second`), `starred` |
+| `star_prompt_answered` | host `track` (desktop) | The GitHub star setup invitation or the fifth-prompt invitation was answered or closed | `ask` (`first`/`second`), `starred` |
 | `link_opened` | host `track` (desktop), iOS, Android | An outbound link was opened (`install_command`: an install command copied; `install_link`: the phone's website link copied) | `link` (`github`/`docs`/`issues`/`discord`/`app_store`/`demo`/`tailscale`/`privacy`/`support`/`install_command`/`install_link`/`product_hunt`) |
 
 ## Using Codync
@@ -66,7 +79,7 @@ host answers and sends it once the host is up.
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `bots_imported` | host | `importBots` (bots it makes send no `bot_created`) | `source` (`grok-bot`/`openbot`/`other`), `bots`, `groups` (counts) |
-| `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values |
+| `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values; when the edit changes `compaction`, also `compaction`: the kind picked (`early`/`nearLimit`/`off`/`tokens`, never the size) |
 | `bots_reordered` | host | `reorderBots` | — |
 | `section_renamed` | host | `renameSection` | `removed`: whether it removed the section (`to` empty or `null`); never the names |
 | `bot_deleted` | host | `deleteBot` | — |
@@ -76,6 +89,8 @@ host answers and sends it once the host is up.
 | `turn_stopped` | host | `stop` | — |
 | `turn_finished` | host | An agent's turn ends: once per agent it ran on, so a turn that fell back once and then answered sends a `failed` and a `done` | `agent`, `outcome` (`done`/`stopped`/`failed`/`needs_setup`/`incomplete`; `needs_setup` is a failure whose `error` is `sign_in` or `not_installed`: the user has a step to take, nothing broke), `stop_reason`, `source` (`user`/`routine`/`group`/`bot`/`host`: the lead opening a call), `seconds`; when failed or needs_setup, `error` (`not_installed`/`timeout`/`exited`/`no_model`/`sign_in`/`agent_error`/`io`/`other`) and, for `agent_error`, `rpc_code` and `agent_reason` (the adapter's own category, else one the host reads from the message, which is never sent: `session_ended`/`rate_limit`/`quota`/`overloaded`/`context`/`model`/`network`/`provider`/`unknown`) |
 | `agent_fell_back` | host | A turn moves on to the bot's next agent ([agent fallbacks](../features/agent-fallback.md)) | `agent` (the one that couldn't answer), `reason` (`usageLimit`/`outOfCredits`/`rateLimited`/`overloaded`/`signedOut`/`notStarting`/`modelMissing`) |
+| `context_compacted` | host | Codync starts summarizing a bot's chat ([context and memory](../features/context-and-memory.md)) | `agent`, `when` (`turn_end`/`idle`), `threshold` (the bot's Summarize long chats: `early`/`nearLimit`/`tokens`) |
+| `usage_read_failed` | host | Reading an agent's usage stopped, once per failing run, for the readers that start the agent's server or read a CLI's JSON report ([usage limits](../features/usage-limits.md#failures)) | `agent`, `stage` (`start`/`session`/`no_command`/`prompt`/`timeout`/`parse`: the agent's report changed format) |
 | `session_reset` | host | `newSession` | — |
 | `permission_answered` | host | `respondPermission` | `choice` (`allow_once`/`allow_always`/`reject_once`/`reject_always`/`other`) |
 | `reaction_added` | host | `react` | — |
@@ -85,6 +100,10 @@ host answers and sends it once the host is up.
 | `routine_deleted` | host | `deleteRoutine` | — |
 | `routine_run` | host | `runRoutine` | — |
 | `routine_retried` | host | `retryRoutineRun` (the retry button on a failed run's notice) | — |
+| `dev_server_started` | host | A bot's `start_dev_server` finished | `outcome` (`port`, `no_port`, `exited`, `refused`, `limit`, `failed`) |
+| `dev_server_stopped` | host | A dev server ended | `by` (`user`, `bot`, `restart`, `exited`, `failed`) |
+| `dev_server_action` | host (`devServerStop`, `devServerRestart`, `devServerRemove`, `devServerLogs`), host `track` (desktop, terminal UI), iOS, Android | Someone acted on a dev server | `action` (`stop`, `restart`, `remove`, `logs`, `open`, `copy`) |
+| `dev_server_detected` | host | A bot left a listening program running through its own shell | `kind` (`shell`) |
 | `voice_call_started` | host `track` (desktop), iOS, Android | A voice call starts, with the engine it really uses after any fallback | `engine` (`on_device`; `openai`/`gemini` realtime; `cloud`: cloud speech to text and back) |
 | `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
@@ -93,7 +112,7 @@ host answers and sends it once the host is up.
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
 | `connectors_imported` | host | `importConnectors` | `count` |
 | `connector_removed` | host | `removeConnector` | — |
-| `connector_updated` | host | `updateConnector`, whether or not the edit was saved | `outcome` (`ready`: how it runs changed and it passed its check; `saved`: name or description only; `failed`); on failure `error` (`invalid`, `refused`, `wont_start`, `conflict`, `other`). Never the connector, its fields, values or the error's message |
+| `connector_updated` | host | `updateConnector`, whether or not the edit was saved; a remote edit can remain saved when verification reports `failed` / `wont_start` | `outcome` (`ready`: verification passed, including a retry of unchanged remote settings; `saved`: name or description only; `failed`); on failure `error` (`invalid`, `refused`, `wont_start`, `conflict`, `other`). Never the connector, its fields, values or the error's message |
 | `connector_signin_started` | host | `connectorSignIn` | — |
 | `skill_installed` | host | `installSkill` | `custom` |
 | `skill_removed` | host | `removeSkill` | — |
@@ -102,7 +121,8 @@ host answers and sends it once the host is up.
 | `credential_saved` | host | A key, login or vault is saved (clearing one isn't) | `kind` (`login`/`onepassword`/`connector`/`composio`/`voice`/`agent_env`) |
 | `agent_setup_started` | host | `agentSetup` (an agent's install or sign-in terminal) | `agent` |
 | `agent_signed_in` | host | `agentAuthenticate` | `agent` |
-| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`; phones: `push`/`live_activities`), `on` |
+| `reach_account_answered` | host `track` (desktop) | The ask before *Reach from anywhere* turns on for a computer in no account ended | `outcome` (`added`/`own_relay`/`cancelled`/`failed`), `error` on `failed` (`unreachable`: the cloud couldn't be reached; `refused`: it refused; `host`: the host failed) |
+| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`/`usage_shown` (with `agent`: which agent's limits the Usage screen lists)/`usage_order` (the agents were arranged); phones: `push`/`live_activities`), `on` |
 | `host_update_installed` | host | `installHostUpdate` | — |
 | `network_joined` | host | `networkCreate` / `networkJoin`: the computer is in a network of the user's computers | `via` (`create`/`invite`), never a name, invite or connector address |
 | `network_changed` | host | `networkInvite` / `networkPromote` / `networkRemove` / `networkRecover` / `setNetworkRules` / `networkLeave` | `action` (`invite`/`promote`/`remove`/`recover`/`rules`/`leave`), never a computer's name, the invite, the recovery code or a rule |
@@ -144,7 +164,7 @@ The *Onboarding & conversion* dashboard in PostHog reads these steps, each per `
   `message_sent` with `client = remote` (Activated).
 - **iPhone / Android**: first `onboarding_step_viewed` `welcome` → `sign_in_started` → `signed_in`
   → `install` → `scan` → `computer_paired` → `message_sent` with `client = remote` on that
-  `computer`; an account with computers goes `choose` → `access_requested` → `computer_paired` (`via = account`), or `choose` → `install`. The sign-in steps are the gate's sign-in rate (sign-in is required since 2.35.0).
+  `computer`; an account with computers goes `choose` → `access_requested` → `computer_paired` (`via = account`), or `choose` → `install`. The sign-in steps are the welcome screen's sign-in rate (required 2.35.0 to 2.40.x); `continued_without_account` takes the other way from 2.41.0.
 - **Star**: `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`.
 - **Website**: `$pageview` → `download_clicked` (per `platform`) → the first `app_opened` that day
   (counts only, no link between a visitor and an install).
@@ -153,11 +173,13 @@ The *Onboarding & conversion* dashboard in PostHog reads these steps, each per `
 
 codync.dev counts visits without cookies or anything stored on the visitor's device
 (posthog-js `cookieless_mode: 'always'`, which needs the project's *cookieless server hash mode*;
-without it PostHog drops these events): `$pageview`, `download_clicked` (`platform`:
+without it PostHog drops these events): `$pageview`, `$pageleave` (time on page and scroll depth), `$web_vitals` (load speed, without attribution), `download_clicked` (`platform`:
 `mac`/`windows`/`linux`/`ios`; `linux` counts the Linux download links (x86_64 and arm64) and copies of the install command; the Homebrew `mac` is a copy of its command),
-`link_opened` (`link`; `android_test` is the Google Play button, which opens the Android tester sign-up form). One document-level click listener in `web/app/analytics.tsx` reads each
-link's `href`, so a new link is counted without code; the film counts as `demo` when focus moves
-into its frame.
+`link_opened` (`link`: `issues`, `github`, `discord`, `lark`, `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, and `lark_qr` / `wechat_qr`, the QR code downloads on the China community page). One document-level click listener in `web/app/analytics.tsx` matches each
+link's `href` against its `links` table, so a new link needs a row there to be counted; the film counts as `demo` when focus moves
+into its frame. Events go through the site's own `/e` path, which `web/vercel.json` rewrites to
+PostHog, so content blockers don't drop them; only Vercel has the rewrite, so `next dev` on a LAN
+address sends nothing that arrives.
 
 ## Store review invitations (iPhone App Store, Android Google Play)
 
@@ -166,9 +188,7 @@ opt-out. Android sends only `review_link_opened` until it has the invitation. No
 
 | Event | When | Properties |
 | --- | --- | --- |
-| `review_opportunity` | An eligible, viewed result is followed by returning to Bots | `completed_interactions` (count), `policy: v1`, `trigger: return_to_bots` |
-| `review_cancelled` | An opportunity is abandoned before StoreKit | `reason: background / interaction / unavailable`, `policy: v1` |
-| `review_requested` | The persisted cooldown is consumed and StoreKit is about to be called | `completed_interactions` (count), `policy: v1`, `trigger: return_to_bots` |
+| `review_requested` | The persisted cooldown is consumed and StoreKit is about to be called | `prompts` (count), `policy: v2` |
 | `review_link_opened` | The person taps Rate on the App Store (Android: Rate on Google Play) in Settings | `source: settings` |
 
 `review_requested` does not mean the system displayed a prompt or the person submitted a

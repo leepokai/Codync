@@ -49,7 +49,7 @@ async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions(
         );
         assert!(
             remote
-                .post_legacy(&old_url, &message)
+                .post_legacy(&Endpoint::Url(old_url.clone()), &message)
                 .await
                 .unwrap_err()
                 .to_string()

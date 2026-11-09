@@ -60,6 +60,10 @@ pub struct Bot {
     pub created_at: i64,
     /// The harness's own memory beside Codync's; `None` where the screen says nothing about it.
     pub harness_memory: Option<OwnMemory>,
+    /// When Codync summarizes its chat; `None` where it doesn't.
+    pub compaction: Option<codync_mem::compaction::Threshold>,
+    /// The sizes it may take; `None` until the agent has told its window.
+    pub compaction_sizes: Option<codync_mem::compaction::Sizes>,
     /// Agents that carry on, in order, when its own can't answer (`agent::fallback`).
     pub fallbacks: Vec<crate::store::Fallback>,
     /// The bot may set its own fallbacks.
@@ -68,6 +72,8 @@ pub struct Bot {
     pub agent_step: Option<String>,
     /// Agents of its chain resting now.
     pub resting: Vec<Rest>,
+    /// What it keeps running.
+    pub dev_servers: Vec<super::super::manage::DevServer>,
     pub connectors: Vec<String>,
     pub skills: Vec<String>,
     pub status: Status,
@@ -163,7 +169,7 @@ impl Bot {
         if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
     }
 
-    pub(super) fn parse(v: &Value) -> Option<Self> {
+    pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
         let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
         Some(Self {
             id: v["id"].as_str()?.to_owned(),
@@ -202,10 +208,13 @@ impl Bot {
                 .as_bool()
                 .map(OwnMemory::Switch)
                 .or_else(|| (v["harnessMemoryShared"] == true).then_some(OwnMemory::Shared)),
+            compaction: serde_json::from_value(v["compaction"].clone()).ok().flatten(),
+            compaction_sizes: serde_json::from_value(v["compactionTokens"].clone()).ok().flatten(),
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
             resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
+            dev_servers: serde_json::from_value(v["devServers"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),
             status: match v["status"].as_str() {

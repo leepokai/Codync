@@ -6,6 +6,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
@@ -28,8 +29,6 @@ class AppStore internal constructor(
     internal val opened: (AppStore) -> Unit,
     /** A usage read finished (the account refreshes the Usage widget). */
     internal val usageRead: suspend (AppStore) -> Unit = {},
-    /** Its hello says this phone paired without the computer joining the account: finish the join with this signer. */
-    internal val joinAccount: (sign: suspend (PairingClaim) -> JsonObject) -> Unit = {},
 ) {
     val id: String = computer.id
     private val job = SupervisorJob(parent)
@@ -61,7 +60,11 @@ class AppStore internal constructor(
     internal var callWait: Job? = null
     internal val transportRequired: Boolean get() = foreground || state.value.voice != null
     internal val sends = mutableSetOf<String>()
+    /** The message sent from here last: its row in the queue scrolls into view ([QueuedMessages]). */
+    internal var lastSentNonce: String? = null
     internal val actions = mutableMapOf<String, Job>()
+    /** The agents' order waiting to go to the host (`setUsageOrder`). */
+    internal val usageOrders = Channel<List<String>>(Channel.CONFLATED)
     /** The bots as the mirror last had them; the state shows them with [pendingSectionMoves] laid over (`withMoves`). */
     internal var mirrorBots: List<Bot> = emptyList()
     /** Section moves shown but not answered yet, oldest first. */
@@ -133,6 +136,17 @@ class AppStore internal constructor(
                 catch (error: CancellationException) { throw error }
                 catch (_: Exception) { }
         }
+    }
+
+    /** What the account knows about this computer: Codync Cloud runs it, and the cloud's floor for this app version. */
+    internal fun setAccountView(cloudHosting: CloudPlacement?, appFloor: String?) {
+        mutableState.update { if (it.cloudHosting == cloudHosting && it.appFloor == appFloor) it else it.copy(cloudHosting = cloudHosting, appFloor = appFloor) }
+    }
+
+    /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
+     * asleep perhaps, says so). */
+    internal fun setHostName(name: String) = mutableState.update { state ->
+        state.hello?.let { state.copy(hello = JsonObject(it + ("name" to JsonPrimitive(name)))) } ?: state
     }
 
     /** Saves the computer's latest copy (`changeComputer`), then shows it. */

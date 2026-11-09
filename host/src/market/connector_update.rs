@@ -56,12 +56,11 @@ impl std::error::Error for EditFailed {}
 /// first and exactly what started is what gets saved, so an error means this edit changed nothing,
 /// and overlapping edits never combine. A new name or description starts nothing: `verify` is null.
 pub async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &Value, port: u16) -> Result<Value> {
-    let before = connectors(store)?
-        .into_iter()
-        .find(|c| c.id == id)
-        .ok_or_else(|| EditFailure::Invalid.error("Unknown connector"))?;
-    ensure_custom_local(&before).map_err(|e| EditFailure::Refused.error(e))?;
+    let all = connectors(store)?;
+    let before =
+        all.iter().find(|c| c.id == id).cloned().ok_or_else(|| EditFailure::Invalid.error("Unknown connector"))?;
     let after = edited(&before, b).map_err(|e| EditFailure::Invalid.error(e))?;
+    check_rename(&before, &after, &all)?;
     let runs_the_same = after.command == before.command && after.args == before.args && after.env == before.env;
     let check = if runs_the_same {
         None
@@ -69,6 +68,7 @@ pub async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &
         Some(verify::check_connector(store, &after, port).await.map_err(|e| EditFailure::WontStart.error(e))?)
     };
     let connector = update_connectors(store, |all| {
+        check_rename(&before, &after, all)?;
         let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| EditFailure::Conflict.error("Unknown connector"))?;
         // The check can take a minute: a save in between means it didn't prove what would be saved now.
         if *c != before {
@@ -82,14 +82,10 @@ pub async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &
     Ok(json!({"connector": connector, "verify": check}))
 }
 
-/// Registry installs rebuild their command line from the registry, and a remote connector's
-/// URL and OAuth handling are the registry's or the user's to redo, so those are refused here.
-fn ensure_custom_local(c: &Connector) -> Result<()> {
-    if c.command.is_none() {
-        bail!("{} is a remote connector: remove it and add the URL you want", c.name);
-    }
-    if c.registry_name.is_some() {
-        bail!("{} came from the MCP registry: install it again to change how it runs", c.name);
+/// Imported definitions may already share a name. An unchanged name needs no repair.
+pub(super) fn check_rename(before: &Connector, after: &Connector, all: &[Connector]) -> Result<()> {
+    if before.name != after.name {
+        super::ensure_name_available(&after.name, all, Some(&before.id)).map_err(|e| EditFailure::Invalid.error(e))?;
     }
     Ok(())
 }
@@ -228,16 +224,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registry_and_remote_connectors_are_not_edited_in_place() {
+    async fn registry_edits_and_remote_command_changes_are_refused() {
         let mut remote = local();
         (remote.id, remote.command, remote.url) = ("remote".into(), None, Some("https://example.com/mcp".into()));
         let mut registry = local();
         (registry.id, registry.registry_name) = ("registry".into(), Some("io.example/server".into()));
         let store = store_with(&[remote, registry]);
         for (id, why) in [("remote", "remote connector"), ("registry", "MCP registry")] {
-            let err = update_custom_connector(&store, id, &json!({"command": "node"}), 0).await.expect_err(id);
+            let err = crate::market::update_connector(&store, id, &json!({"command": "node"}), 0).await.expect_err(id);
             assert!(err.to_string().contains(why), "{err}");
-            assert_eq!(category(&err), "refused");
+            assert_eq!(category(&err), if id == "registry" { "refused" } else { "invalid" });
         }
     }
 
@@ -400,3 +396,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+#[cfg(test)]
+#[path = "connector_rename_tests.rs"]
+mod rename_tests;

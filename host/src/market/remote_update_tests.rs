@@ -1,5 +1,5 @@
 use super::*;
-use crate::market::{save_connectors, vault};
+use crate::market::{save_connectors, update_connectors, vault};
 use crate::store::Store;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -364,4 +364,63 @@ async fn retrying_a_saved_url_after_sign_in_requests_readiness_and_refresh() {
     assert_eq!(reply["verify"]["status"], "ready", "a non-null result permits the existing bot refresh path");
     let (_, metadata_check) = save_remote(&store, &saved, &json!({"description":"metadata"})).await.unwrap();
     assert!(!metadata_check, "metadata alone must not restart bots");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn managed_edits_verify_the_definition_saved_after_secret_handover() {
+    let keeper = crate::keeper::tests::test_keeper();
+    let (store, mut original) = fixture();
+    original.oauth = None;
+    keeper.manage(&store);
+    save_connectors(&store, &[original]).unwrap();
+    let before = connectors(&store).unwrap().remove(0);
+    let (saved, needs_check) =
+        save_remote(&store, &before, &json!({"headers":{"X-Api-Key":"new-private"}})).await.unwrap();
+    assert!(needs_check);
+    let result = checked_remote(&store, &saved, async { Ok(json!({"status":"ready"})) }).await;
+    assert_eq!(result.unwrap()["verify"]["status"], "ready");
+    assert_eq!(keeper.keeper.record("connector:remote").unwrap().unwrap().headers["x-api-key"], "new-private");
+}
+
+#[tokio::test]
+async fn remote_rename_collision_is_rejected_before_discovery_or_save() {
+    let (store, original) = fixture();
+    let mut other = original.clone();
+    other.id = "other".into();
+    other.name = "Taken".into();
+    save_connectors(&store, &[original.clone(), other.clone()]).unwrap();
+    let error =
+        save_edit(&store, &json!({"id":"remote", "name":" Taken ", "url":"http://127.0.0.1:1/mcp", "headers":{}}))
+            .await
+            .unwrap_err();
+    assert!(error.to_string().contains("already installed"));
+    assert_eq!(connectors(&store).unwrap(), [original, other]);
+}
+
+#[tokio::test]
+async fn remote_discovery_cannot_save_a_name_taken_by_a_concurrent_install() {
+    use axum::{Router, http::StatusCode, routing};
+    let (store, original) = fixture();
+    let store = Arc::new(store);
+    let concurrent = store.clone();
+    let app = Router::new().route(
+        "/mcp",
+        routing::post(move || {
+            let store = concurrent.clone();
+            async move {
+                crate::market::add_custom_connector(&store, &json!({"name":"Taken", "command":"node"})).await.unwrap();
+                StatusCode::UNAUTHORIZED
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let error = save_edit(&store, &json!({"id":"remote","name":"Taken","url":url,"headers":{}})).await.unwrap_err();
+    assert!(error.to_string().contains("already installed"));
+    let all = connectors(&store).unwrap();
+    assert_eq!(all[0], original);
+    assert_eq!(all.iter().filter(|c| c.name == "Taken").count(), 1);
+    server.abort();
+    let _ = server.await;
 }

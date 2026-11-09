@@ -68,6 +68,8 @@ public protocol RemoteTransport: HostTransport {
 public enum HostError: LocalizedError, Sendable, Equatable {
     case http(Int, String)
     case unreachable
+    /// With no relay, a computer that's off and a phone that's away look the same.
+    case unreachableDirectly
     case computerOffline(lastSeen: Date?)
     case unauthorized(String)
     case upgradeRequired
@@ -77,6 +79,7 @@ public enum HostError: LocalizedError, Sendable, Equatable {
         case .http(401, _): "This device isn't allowed on that computer anymore."
         case let .http(_, message): message
         case .unreachable: "Can't reach your computer. Is it on and connected to the internet?"
+        case .unreachableDirectly: "Can't reach your computer. Check you're on the same network or that Tailscale is on."
         case .computerOffline: "Your computer is offline."
         case let .unauthorized(message): message
         case .upgradeRequired: "Update Codync to connect to this computer."
@@ -86,7 +89,7 @@ public enum HostError: LocalizedError, Sendable, Equatable {
     /// The link failed, not the request: the same call can work once the computer is reachable again.
     public var isTransient: Bool {
         switch self {
-        case .unreachable, .computerOffline: true
+        case .unreachable, .unreachableDirectly, .computerOffline: true
         default: false
         }
     }

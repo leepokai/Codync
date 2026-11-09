@@ -1,6 +1,6 @@
 //! The models an agent offers, read from a session it opens for that alone.
 
-use super::{probe_dir, start, text};
+use super::{Started, probe_dir, start, text};
 use crate::LockExt;
 use crate::agent::acp::Incoming;
 use crate::hub::Hub;
@@ -42,7 +42,7 @@ pub async fn shared_models(hub: &Hub, backend: &str) -> Result<Value> {
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str) -> Result<Value> {
-    let (acp, mut inbox, _, _) = start(store, backend).await?;
+    let Started { acp, mut inbox, .. } = start(store, backend).await?;
     let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
         tokio::pin!(request);

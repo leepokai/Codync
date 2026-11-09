@@ -7,6 +7,7 @@ import { Text } from '../../components/Text'
 import './permission-card.css'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
+import { fill } from '../../lib/fill.ts'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
@@ -69,7 +70,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
         </Text>
         <HStack gap={6}>
           <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
-          <Text size="caption" tone="tertiary">{tr('Runs on {name}{path}').replaceAll('{name}', () => hostName).replaceAll('{path}', () => cwd)}</Text>
+          <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
         </HStack>
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>

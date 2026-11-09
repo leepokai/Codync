@@ -53,8 +53,15 @@ struct Candidate<'a> {
 
 /// The cloud in use: its public address, its kind, and the registration token when it has one.
 pub fn current(store: &Store) -> Option<Address> {
-    let off =
-        std::env::var("CODYNC_CLOUD").is_ok_and(|v| v == "off") || store.kv_get(ENABLED).as_deref() == Some("false");
+    if store.kv_get(ENABLED).as_deref() == Some("false") {
+        return None;
+    }
+    when_on(store)
+}
+
+/// The cloud this computer uses with Reach from anywhere on. `CODYNC_CLOUD=off` keeps it off whatever the switch says.
+pub fn when_on(store: &Store) -> Option<Address> {
+    let off = std::env::var("CODYNC_CLOUD").is_ok_and(|v| v == "off");
     if cfg!(test) {
         // No fake cloud, no cloud: a test never reaches a real one.
         let url = store.kv_get("test_cloud_url")?;
@@ -69,6 +76,15 @@ pub fn current(store: &Store) -> Option<Address> {
         Candidate { url: saved_url.as_deref(), token: saved_token.as_deref() },
         Environment::current().cloud_url(),
     )
+}
+
+/// The cloud a Codync Cloud computer's keeper gets its vault key from: `CODYNC_CLOUD_URL`, else this build's.
+#[cfg(unix)]
+pub fn keeper_cloud_url() -> String {
+    let env = std::env::var("CODYNC_CLOUD_URL").ok();
+    let builtin = Environment::current().cloud_url();
+    resolve(false, Candidate { url: env.as_deref(), token: None }, Candidate::default(), builtin)
+        .map_or_else(|| builtin.to_owned(), |address| address.url)
 }
 
 /// The cloud base URL in use, or `None` when the cloud is off.
@@ -362,5 +378,24 @@ mod tests {
         let status = set_cloud(&hub, true).unwrap();
         assert_eq!((status.token_set, status.relay), (false, RelayKind::Codync));
         assert!(!set_cloud(&hub, false).unwrap().enabled);
+    }
+
+    #[test]
+    fn with_the_cloud_off_the_status_still_says_whether_turning_it_on_joins_an_account() {
+        let hub = temp_hub();
+        hub.store.kv_set("test_cloud_url", "https://relay.example.com").unwrap();
+        assert!(set_cloud(&hub, false).unwrap().joins_account_on_enable, "in no account, on the Codync cloud");
+
+        hub.store.kv_set("test_cloud_token", "s3cret-token-value").unwrap();
+        let private = set_cloud(&hub, false).unwrap();
+        assert_eq!(private.relay, RelayKind::Codync, "off, the status names no relay");
+        assert!(!private.joins_account_on_enable, "a saved private relay has no accounts");
+        hub.store.kv_delete("test_cloud_token").unwrap();
+
+        let owner = cloud::Owner { user_id: "user_1".into(), email: None };
+        crate::remote::owner::remember(&hub, Some(&owner)).unwrap();
+        let in_account = set_cloud(&hub, false).unwrap();
+        assert_eq!(in_account.owner, None, "off, the status names no account");
+        assert!(!in_account.joins_account_on_enable, "it goes back to the account it was in");
     }
 }

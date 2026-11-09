@@ -50,31 +50,7 @@ In the **Connectors** section, choose **Custom connector**, above the registry l
 - **URL:** a hosted MCP server. Add headers under **Headers**, one `Name: value` per line, or leave them empty if the service has you sign in.
 - **Config:** paste an MCP config from a README or another app (Claude, Cursor, VS Code), such as an `mcpServers` block. Every server in it is added. If one isn't valid, for example its `args` aren't all text, none are, and the error names that server.
 
-Everything you enter is saved on that computer only.
-
-### Edit a custom URL connector through the API
-
-Use `POST /api/updateConnector` with the connector's `id` and the fields to change:
-`name`, `description`, `url` or `headers`. The ID and bot assignments stay in place.
-At the same URL, omitted headers are kept, supplied values replace them, and
-`null` removes a header. Header names are compared without regard to case.
-An existing OAuth sign-in is retained and manages its own Authorization header.
-
-To change the endpoint, supply both `url` and a complete replacement `headers`
-object. Use `headers: {}` to send no saved headers. Previous headers and OAuth
-sign-in are cleared so their credentials cannot follow the connector to another
-server. If the new server requires sign-in, sign in again, then repeat `updateConnector` with the same `id` and current `url`.
-You don't need to resend headers. This rechecks the saved connection and refreshes
-its bots after success.
-Changing back to the old URL also requires a fresh sign-in.
-
-Only HTTPS and local loopback HTTP URLs are accepted. URL or header changes remain saved
-if verification fails; correct it or sign in, then retry. Successful verification
-refreshes tools only for bots using this connector. Changing only the name or
-description needs no connection check and does not restart bots. URL or header
-changes invalidate pending sign-ins and existing proxies; repeating unchanged
-values still requests verification and refresh. If another edit lands during a
-check, the request reports a conflict instead of another edit's readiness.
+Everything you enter is saved on that computer only. A command or URL can't reuse the name of a connector you already have: Codync names that connector and changes nothing, so you can sign in to it or remove it in your library, or choose another name. Pasting a config still adds every entry.
 
 ## Apps through Composio
 

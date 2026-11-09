@@ -41,7 +41,8 @@ it returns drafts, and the session reads them, checks each claim against the cod
    green, no conflict with `dev`, and Greptile's confidence score **4/5 or more** (`python3 tools/pr-gate.py <n>`),
    and the squash is pinned to that commit (`gh pr merge --match-head-commit`). Up to two rounds fix the failing
    checks and the Greptile findings that hold up against the code. The *Greptile Review* check passes whatever the
-   score, so read the score, not the check.
+   score, so read the score, not the check. A merged change to `cloud/`, an issue's or a PR's, is deployed to dev
+   right away ([releasing cloud changes](environments-and-deployment.md#releasing-cloud-changes)).
 
 Items run their security checks together and the rest one at a time, because confirming and after-change drive
 the real apps.

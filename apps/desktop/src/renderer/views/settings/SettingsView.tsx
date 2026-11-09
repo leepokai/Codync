@@ -57,7 +57,7 @@ const pages: { id: SettingsPage; title: string; label?: string; group: string; i
 const pageScreens: Record<SettingsPage, Screen | null> = { general: 'settings', updates: 'settings', computers: 'computers', network: 'settings', usage: 'usage', access: null, voice: null, diagnostics: null, n8n: null }
 
 /** `page` is the window's: a command (the menu bar's network rows) can turn the open sheet to another page. */
-export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (page: SettingsPage) => void }) {
+export function SettingsView({ page, setPage, onExtensions }: { page: SettingsPage; setPage: (page: SettingsPage) => void; onExtensions?: () => void }) {
   const app = useApp()
   const dismiss = useDismiss()
   const tr = useTr()
@@ -90,7 +90,7 @@ export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (
           <Text as="h2" size={24} weight="semibold" tone="text">{tr(current.title)}</Text>
         </HStack>
         <div key={page} className="settings-page">
-          <PageContent page={page} />
+          <PageContent page={page} onExtensions={onExtensions} />
         </div>
       </div>
       <span className="settings-close">
@@ -100,14 +100,14 @@ export function SettingsView({ page, setPage }: { page: SettingsPage; setPage: (
   )
 }
 
-function PageContent({ page }: { page: SettingsPage }) {
+function PageContent({ page, onExtensions }: { page: SettingsPage; onExtensions?: () => void }) {
   const tr = useTr()
   const app = useApp()
   switch (page) {
     case 'access':
       return <ComputerAccessView />
     case 'general':
-      return <GeneralSettings />
+      return <GeneralSettings onExtensions={onExtensions} />
     case 'computers':
       return <ComputersView />
     case 'network':
@@ -138,7 +138,7 @@ function PageContent({ page }: { page: SettingsPage }) {
 }
 
 /** Account, window and app preferences. */
-function GeneralSettings() {
+function GeneralSettings({ onExtensions }: { onExtensions?: () => void } = {}) {
   const account = useAccount()
   const [appearance, setAppearance] = useState<Appearance>('system')
   useEffect(() => void window.codync.app.appearance().then(setAppearance), [])
@@ -249,7 +249,7 @@ function GeneralSettings() {
       </CardSection>
       <PrivacySettings />
       {window.codync.platform === 'win32' ? <ResearchSettingsSection /> : null}
-      <ChannelsSection />
+      <ChannelsSection onExtensions={onExtensions} />
       <GitHubSection />
       <AgentImportSection />
       <DemoSection />

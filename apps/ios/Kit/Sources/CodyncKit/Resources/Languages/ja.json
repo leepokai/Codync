@@ -1772,5 +1772,20 @@
   "Loading the page…": "ページを読み込み中…",
   "Opening the browser…": "ブラウザを開いています…",
   "This computer’s host is not answering.": "このコンピューターのホストが応答しません。",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "専用ウィンドウで入力・クリックします。このパネルは表示とタブの保持を行います。"
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "専用ウィンドウで入力・クリックします。このパネルは表示とタブの保持を行います。",
+  "Messaging channels": "メッセージチャンネル",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "チャンネルに書き込めるのは、ペア設定または許可した人だけです。トークンはこのコンピューターに残ります。",
+  "Answers with {bot}": "{bot} として返信",
+  "People allowed": "許可された人",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "WhatsApp ウィンドウのリンク、そのボット、許可されたチャットを管理します。",
+  "Bot assigned on this computer": "このコンピューターで割り当てられたボット",
+  "No bot assigned yet": "ボットはまだ割り当てられていません",
+  "Manage the link": "リンクを管理",
+  "Link a number": "番号をリンク",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack はこのコンピューターでホストの設定により接続されています。署名シークレットとアプリトークンがアプリに渡ることはありません。",
+  "Needs attention": "対応が必要",
+  "Not connected": "未接続",
+  "Open channels in Extensions": "拡張機能でチャンネルを開く",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp、Telegram、Slack、Discord：いつも使う場所からボットと話せます。許可した人だけが書き込めます。",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "WhatsApp、Telegram、Slack、Discord からボットと話せます。ペア設定または許可した人だけが書き込め、トークンはこのコンピューターの保管庫に残ります。"
 }

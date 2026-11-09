@@ -1772,5 +1772,20 @@
   "Loading the page…": "페이지 불러오는 중…",
   "Opening the browser…": "브라우저를 여는 중…",
   "This computer’s host is not answering.": "이 컴퓨터의 호스트가 응답하지 않습니다.",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "전용 창에서 입력하고 클릭하세요. 이 패널은 화면을 보여 주고 탭을 유지합니다."
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "전용 창에서 입력하고 클릭하세요. 이 패널은 화면을 보여 주고 탭을 유지합니다.",
+  "Messaging channels": "메시징 채널",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "채널에는 페어링하거나 허용한 사람만 글을 쓸 수 있습니다. 토큰은 이 컴퓨터에 남습니다.",
+  "Answers with {bot}": "{bot}(으)로 답변",
+  "People allowed": "허용된 사람",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "WhatsApp 창의 연결, 봇, 허용된 대화를 관리합니다.",
+  "Bot assigned on this computer": "이 컴퓨터에 지정된 봇",
+  "No bot assigned yet": "아직 지정된 봇이 없습니다",
+  "Manage the link": "연결 관리",
+  "Link a number": "번호 연결",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack은 이 컴퓨터에서 호스트 설정으로 연결되어 있습니다. 서명 비밀과 앱 토큰은 앱에 전달되지 않습니다.",
+  "Needs attention": "주의 필요",
+  "Not connected": "연결 안 됨",
+  "Open channels in Extensions": "확장에서 채널 열기",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack, Discord: 이미 쓰는 곳에서 허용한 사람과만 봇과 대화하세요.",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "WhatsApp, Telegram, Slack, Discord에서 봇과 대화하세요. 페어링하거나 허용한 사람만 글을 쓸 수 있으며 토큰은 이 컴퓨터의 보관소에 남습니다."
 }

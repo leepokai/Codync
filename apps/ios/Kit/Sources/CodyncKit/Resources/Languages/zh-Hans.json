@@ -1772,5 +1772,20 @@
   "Loading the page…": "正在加载页面…",
   "Opening the browser…": "正在打开浏览器…",
   "This computer’s host is not answering.": "此电脑的主机没有响应。",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "在其自己的窗口中输入和点击；此面板显示页面并保留标签页。"
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "在其自己的窗口中输入和点击；此面板显示页面并保留标签页。",
+  "Messaging channels": "消息渠道",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "只有你配对或允许的人才能向渠道写入。令牌留在此电脑。",
+  "Answers with {bot}": "由 {bot} 回复",
+  "People allowed": "允许的人",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "管理关联、其机器人以及 WhatsApp 窗口中允许的聊天。",
+  "Bot assigned on this computer": "已在此电脑指定机器人",
+  "No bot assigned yet": "尚未指定机器人",
+  "Manage the link": "管理关联",
+  "Link a number": "关联号码",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack 已通过主机设置连接到此电脑；签名密钥和应用令牌不会传到应用。",
+  "Needs attention": "需要处理",
+  "Not connected": "未连接",
+  "Open channels in Extensions": "在扩展中打开渠道",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp、Telegram、Slack 和 Discord：在你日常书写的地方与机器人对话，仅限你允许的人。",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "通过 WhatsApp、Telegram、Slack 或 Discord 与机器人对话。只有你配对或允许的人才能写入；令牌留在此电脑的保管库。"
 }

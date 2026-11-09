@@ -5,7 +5,11 @@ import { Icon } from '../../components/Icon'
 import { Dialog, SheetPage, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { useStore } from '../../store/context'
+import { useStore, useApp } from '../../store/context'
+import { ChannelsStore } from '../../store/channels-store'
+import { buildChannelCatalog, matchChannels, type ChannelProviderEntry } from '../channels/channel-catalog'
+import { ChannelCards } from '../channels/ChannelCards'
+import { ChannelSheet } from '../channels/ChannelSheet'
 import { useScreenViewed } from '../../store/analytics'
 import { ComputerBadge } from '../ComputerBadge'
 import { AgentSheet } from './AgentSheet'
@@ -63,6 +67,15 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
   const [section, setSection] = useState<ExtensionSection>(initialSection)
+  const app = useApp()
+  // The messaging channels are this computer's own; their state comes from the same host calls Settings uses.
+  const [channels] = useState(() => new ChannelsStore(async () => {
+    const local = app.local
+    if (!local) throw new Error('Start this computer’s host to set up channels.')
+    return local.ready()
+  }))
+  const channelModel = useModel(channels)
+  const [viewingChannel, setViewingChannel] = useState<ChannelProviderEntry | null>(null)
   const [agentGroup, setAgentGroup] = useState('all')
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
@@ -83,6 +96,21 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
     : shownMarketAgents.filter((a) => (agentGroup === 'featured' ? a.featured : a.category === agentGroup))
   const installedCount = plugins.installedConnectors.length + plugins.installedSkills.length
   const onCatalogAdded = (id: string) => setCatalogAdded((list) => [...list, id])
+  const botNames = (id: string) => (app.local?.roster ?? []).find((bot) => bot.id === id)?.name ?? null
+  const channelEntries = matchChannels(buildChannelCatalog({
+    whatsapp: store.whatsapp ?? null,
+    telegram: channelModel.telegram,
+    slack: channelModel.slack,
+    discord: channelModel.discord,
+  }, botNames), query)
+
+  useEffect(() => {
+    channelModel.resume()
+    void channelModel.load()
+    void store.refreshWhatsApp()
+    const refresh = setInterval(() => void channelModel.load(), 15_000)
+    return () => { clearInterval(refresh); channelModel.dispose() }
+  }, [channelModel, store])
 
   useEffect(() => {
     void plugins.refresh()
@@ -209,6 +237,9 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
                 trailing={<Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
               />
             </MarketSection>
+            <MarketSection title={tr('Messaging channels')}>
+              <ChannelCards entries={channelEntries} onOpen={setViewingChannel} />
+            </MarketSection>
             <AppsPanel
               apps={shownApps}
               query={query}
@@ -220,6 +251,15 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
               onInstallConnector={setInstalling}
               onViewConnector={setViewingConnector}
             />
+            </>
+          ) : section === 'channels' ? (
+            <>
+              <MarketSection title={tr('Messaging channels')}>
+                <ChannelCards entries={channelEntries} onOpen={setViewingChannel} />
+              </MarketSection>
+              <Text size="caption" tone="tertiary" className="market-channel-note">
+                {tr('Only people you pair or allow can write to a channel. Tokens stay in this computer.')}
+              </Text>
             </>
           ) : section === 'agents' ? (
             <div className="market-split">
@@ -303,6 +343,16 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
       <FormSheet open={whatsapp} onClose={() => setWhatsApp(false)}>
         <WhatsAppSheet />
       </FormSheet>
+      {viewingChannel ? (
+        <ChannelSheet
+          entry={viewingChannel}
+          store={channelModel}
+          whatsapp={store.whatsapp ?? null}
+          bots={(app.local?.roster ?? []).filter((bot) => bot.kind !== 'group' && bot.backend !== 'external').map((bot) => ({ id: bot.id, label: bot.name }))}
+          onConnect={() => { setViewingChannel(null); setWhatsApp(true) }}
+          onClose={() => setViewingChannel(null)}
+        />
+      ) : null}
       <FormSheet open={addingConnector} onClose={() => setAddingConnector(false)}>
         <CustomConnectorSheet />
       </FormSheet>

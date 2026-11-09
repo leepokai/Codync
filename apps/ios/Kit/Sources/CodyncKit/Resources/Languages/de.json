@@ -1772,5 +1772,20 @@
   "Loading the page…": "Seite wird geladen…",
   "Opening the browser…": "Browser wird geöffnet…",
   "This computer’s host is not answering.": "Der Host dieses Computers antwortet nicht.",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "Tippe und klicke in seinem eigenen Fenster; dieses Panel zeigt es und behält seine Tabs."
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "Tippe und klicke in seinem eigenen Fenster; dieses Panel zeigt es und behält seine Tabs.",
+  "Messaging channels": "Nachrichtenkanäle",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "Nur Personen, die du koppelst oder zulässt, können in einen Kanal schreiben. Token bleiben auf diesem Computer.",
+  "Answers with {bot}": "Antwortet mit {bot}",
+  "People allowed": "Erlaubte Personen",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "Verwalte die Verknüpfung, ihren Bot und die erlaubten Chats im WhatsApp-Fenster.",
+  "Bot assigned on this computer": "Bot auf diesem Computer zugewiesen",
+  "No bot assigned yet": "Noch kein Bot zugewiesen",
+  "Manage the link": "Verknüpfung verwalten",
+  "Link a number": "Nummer verknüpfen",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack ist auf diesem Computer mit der Slack-Konfiguration des Hosts verbunden; Signaturgeheimnis und App-Token erreichen die App nie.",
+  "Needs attention": "Braucht Aufmerksamkeit",
+  "Not connected": "Nicht verbunden",
+  "Open channels in Extensions": "Kanäle in Erweiterungen öffnen",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack und Discord: sprich mit einem Bot dort, wo du ohnehin schreibst, nur mit den Personen, die du zulässt.",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Sprich mit einem Bot über WhatsApp, Telegram, Slack oder Discord. Nur Personen, die du koppelst oder zulässt, können schreiben; Token bleiben im Tresor dieses Computers."
 }

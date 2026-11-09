@@ -1772,5 +1772,20 @@
   "Loading the page…": "Cargando la página…",
   "Opening the browser…": "Abriendo el navegador…",
   "This computer’s host is not answering.": "El host de este equipo no responde.",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "Escribe y haz clic en su propia ventana; este panel la muestra y conserva sus pestañas."
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "Escribe y haz clic en su propia ventana; este panel la muestra y conserva sus pestañas.",
+  "Messaging channels": "Canales de mensajería",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "Solo pueden escribir en un canal las personas que emparejas o permites. Los tokens se quedan en este equipo.",
+  "Answers with {bot}": "Responde con {bot}",
+  "People allowed": "Personas permitidas",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "Gestiona el vínculo, su bot y los chats permitidos en la ventana de WhatsApp.",
+  "Bot assigned on this computer": "Bot asignado en este equipo",
+  "No bot assigned yet": "Aún no hay bot asignado",
+  "Manage the link": "Gestionar el vínculo",
+  "Link a number": "Vincular un número",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack está conectado en este equipo con la configuración del host; el secreto de firma y el token de la app nunca llegan a la app.",
+  "Needs attention": "Requiere atención",
+  "Not connected": "Sin conectar",
+  "Open channels in Extensions": "Abrir canales en Extensiones",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack y Discord: habla con un bot desde donde ya escribes, solo con las personas que permitas.",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Habla con un bot desde WhatsApp, Telegram, Slack o Discord. Solo pueden escribir las personas que emparejes o permitas; los tokens se quedan en la bóveda de este equipo."
 }

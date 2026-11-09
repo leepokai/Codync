@@ -1,0 +1,92 @@
+/* The messaging channels in the Marketplace and their page. */
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .channel-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.channel-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.channel-card:hover {
+  background: var(--roster-selected);
+}
+
+.channel-card:active {
+  transform: scale(0.995);
+}
+
+.channel-card-text {
+  min-width: 0;
+}
+
+.channel-card-text .text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tertiary);
+}
+
+.channel-dot.ok {
+  background: var(--added);
+}
+
+.channel-dot.starting {
+  background: var(--warning);
+}
+
+.channel-dot.error {
+  background: var(--danger);
+}
+
+.channel-dot.off {
+  background: var(--accent-dim);
+}
+
+.channel-sheet {
+  padding: 4px 18px 20px;
+  overflow-y: auto;
+}
+
+.channel-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.channel-item-logo {
+  flex: none;
+}
+
+.market-channel-note {
+  display: block;
+  padding: 10px 2px 0;
+}

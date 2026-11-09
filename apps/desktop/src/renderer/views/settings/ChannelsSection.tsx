@@ -13,7 +13,7 @@ import { ChannelMemory } from './ChannelMemory'
 import { ChannelIconPicker } from './ChannelIconPicker'
 
 /** Telegram bots (add, pair, who may write, which bot answers, state) and the Slack connection of this computer's host. */
-export function ChannelsSection() {
+export function ChannelsSection({ onExtensions }: { onExtensions?: () => void } = {}) {
   const app = useApp()
   const local = app.local
   const model = useModel(useMemo(() => new ChannelsStore(async () => {
@@ -29,7 +29,8 @@ export function ChannelsSection() {
   }, [model])
   const slack = model.slack
   const bots = (local?.roster ?? []).filter((b) => b.kind !== 'group' && b.backend !== 'external').map((b) => ({ id: b.id, label: b.name }))
-  return <CardSection title="Channels" footer="Talk to a bot from Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.">
+  return <CardSection title="Channels" footer="Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.">
+    {onExtensions ? <Button kind="secondary" onClick={onExtensions}>Open channels in Extensions</Button> : null}
     {model.telegram.map((bot) => <TelegramRow key={bot.name} bot={bot} model={model} onRemove={() => setRemoving(bot.name)} />)}    {model.telegram.length === 0 ? <Text tone="secondary">No Telegram bots yet.</Text> : null}
     <AddTelegram model={model} bots={bots} />
     <DiscordChannel status={model.discord} model={model} bots={bots} />
@@ -51,7 +52,7 @@ export function ChannelsSection() {
   </CardSection>
 }
 
-function TelegramRow({ bot, model, onRemove }: { bot: TelegramBotStatus; model: ChannelsStore; onRemove: () => void }) {
+export function TelegramRow({ bot, model, onRemove }: { bot: TelegramBotStatus; model: ChannelsStore; onRemove: () => void }) {
   const code = model.pairing?.name === bot.name ? model.pairing.code : null
   return <VStack gap={6} className="settings-stack">
     <Text>{bot.name}{bot.username ? ` · @${bot.username}` : ''} → {bot.botName}</Text>
@@ -70,7 +71,7 @@ function TelegramRow({ bot, model, onRemove }: { bot: TelegramBotStatus; model: 
   </VStack>
 }
 
-function AddTelegram({ model, bots }: { model: ChannelsStore; bots: { id: string; label: string }[] }) {
+export function AddTelegram({ model, bots }: { model: ChannelsStore; bots: { id: string; label: string }[] }) {
   const [name, setName] = useState('')
   const [token, setToken] = useState('')
   const [botId, setBotId] = useState('')

@@ -56,6 +56,7 @@ import './chat-window.css'
 import './sidebar-header.css'
 import { useOnboardingTelemetry } from './use-onboarding-telemetry'
 import { useTr } from '../lib/use-language'
+import type { ExtensionSection } from './marketplace/market-models'
 
 
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
@@ -240,7 +241,7 @@ function ChatSplitView() {
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
-  const [marketplaceLink, setMarketplaceLink] = useState<{ section: 'apps' | 'agents' | 'skills'; id: string } | null>(null)
+  const [marketplaceLink, setMarketplaceLink] = useState<{ section: ExtensionSection; id?: string } | null>(null)
   const [canvasBot, setCanvasBot] = useState<string | null>(null)
   const [canvasStore, setCanvasStore] = useState<BotStore | null>(null)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
@@ -335,7 +336,10 @@ function ChatSplitView() {
     ...(localOnline ? [{ title: 'Import botsÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
   ]
 
-  const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
+  const openMarketplace = (section?: ExtensionSection) => {
+    setMarketplaceLink(section ? { section } : null)
+    setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
+  }
 
   // One plain list. The lead stays in sight: no hide.
   const botActions = (bot: Bot, store: BotStore): ActionItem[] => [
@@ -431,7 +435,7 @@ function ChatSplitView() {
             onUsage={() => setSettings('usage')}
             onN8n={() => window.codync.n8n.open()}
             onBrowser={() => void window.codync.browser.open()}
-            onExtensions={openMarketplace}
+            onExtensions={() => openMarketplace()}
             onSettings={() => setSettings('general')}
             onAccount={() => setShowAccount((s) => !s)}
             accountOpen={showAccount}
@@ -568,7 +572,7 @@ function ChatSplitView() {
         ) : null}
       </Sheet>
       <Sheet open={settings !== null} onClose={() => setSettings(null)} width={Math.min(800, windowSize.width - 80)} height={Math.min(620, sheetHeight)}>
-        {settings ? <SettingsView page={settings} setPage={setSettings} /> : null}
+        {settings ? <SettingsView page={settings} setPage={setSettings} onExtensions={() => { setSettings(null); openMarketplace('channels') }} /> : null}
       </Sheet>
       <Dialog
         open={confirmDelete !== null}

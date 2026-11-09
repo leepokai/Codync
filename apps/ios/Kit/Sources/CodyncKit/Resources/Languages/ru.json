@@ -1772,5 +1772,20 @@
   "Loading the page…": "Загрузка страницы…",
   "Opening the browser…": "Открытие браузера…",
   "This computer’s host is not answering.": "Хост этого компьютера не отвечает.",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "Вводите текст и щёлкайте в его собственном окне; панель показывает его и хранит вкладки."
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "Вводите текст и щёлкайте в его собственном окне; панель показывает его и хранит вкладки.",
+  "Messaging channels": "Каналы сообщений",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "Писать в канал могут только те, кого вы подключили или разрешили. Токены остаются на этом компьютере.",
+  "Answers with {bot}": "Отвечает через {bot}",
+  "People allowed": "Разрешённые люди",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "Управляйте привязкой, её ботом и разрешёнными чатами в окне WhatsApp.",
+  "Bot assigned on this computer": "Бот назначен на этом компьютере",
+  "No bot assigned yet": "Бот ещё не назначен",
+  "Manage the link": "Управлять привязкой",
+  "Link a number": "Привязать номер",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack подключён на этом компьютере через настройку хоста; секрет подписи и токен приложения не попадают в приложение.",
+  "Needs attention": "Требует внимания",
+  "Not connected": "Не подключено",
+  "Open channels in Extensions": "Открыть каналы в Расширениях",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack и Discord: общайтесь с ботом там, где уже пишете, только с разрешёнными людьми.",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Общайтесь с ботом через WhatsApp, Telegram, Slack или Discord. Писать могут только подключённые или разрешённые люди; токены остаются в хранилище этого компьютера."
 }

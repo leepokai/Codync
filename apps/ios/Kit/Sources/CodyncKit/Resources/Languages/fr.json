@@ -1772,5 +1772,20 @@
   "Loading the page…": "Chargement de la page…",
   "Opening the browser…": "Ouverture du navigateur…",
   "This computer’s host is not answering.": "L'hôte de cet ordinateur ne répond pas.",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "Saisissez et cliquez dans sa propre fenêtre ; ce panneau l'affiche et garde ses onglets."
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "Saisissez et cliquez dans sa propre fenêtre ; ce panneau l'affiche et garde ses onglets.",
+  "Messaging channels": "Canaux de messagerie",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "Seules les personnes que vous associez ou autorisez peuvent écrire dans un canal. Les jetons restent sur cet ordinateur.",
+  "Answers with {bot}": "Répond avec {bot}",
+  "People allowed": "Personnes autorisées",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "Gérez le lien, son bot et les conversations autorisées dans la fenêtre WhatsApp.",
+  "Bot assigned on this computer": "Bot attribué sur cet ordinateur",
+  "No bot assigned yet": "Aucun bot attribué",
+  "Manage the link": "Gérer le lien",
+  "Link a number": "Lier un numéro",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack est connecté sur cet ordinateur avec la configuration de l’hôte ; le secret de signature et le jeton de l’application ne parviennent jamais à l’application.",
+  "Needs attention": "Nécessite votre attention",
+  "Not connected": "Non connecté",
+  "Open channels in Extensions": "Ouvrir les canaux dans Extensions",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack et Discord : parlez à un bot depuis là où vous écrivez déjà, avec seulement les personnes que vous autorisez.",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Parlez à un bot depuis WhatsApp, Telegram, Slack ou Discord. Seules les personnes que vous associez ou autorisez peuvent écrire ; les jetons restent dans le coffre de cet ordinateur."
 }

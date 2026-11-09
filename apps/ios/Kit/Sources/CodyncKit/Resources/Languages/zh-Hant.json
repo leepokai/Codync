@@ -1772,5 +1772,20 @@
   "Loading the page…": "正在載入頁面…",
   "Opening the browser…": "正在開啟瀏覽器…",
   "This computer’s host is not answering.": "此電腦的主機沒有回應。",
-  "Type and click in its own window; this panel shows it and keeps its tabs.": "在其自己的視窗中輸入和點擊；此面板顯示頁面並保留分頁。"
+  "Type and click in its own window; this panel shows it and keeps its tabs.": "在其自己的視窗中輸入和點擊；此面板顯示頁面並保留分頁。",
+  "Messaging channels": "訊息頻道",
+  "Only people you pair or allow can write to a channel. Tokens stay in this computer.": "只有你配對或允許的人才能寫入頻道。權杖留在此電腦。",
+  "Answers with {bot}": "由 {bot} 回覆",
+  "People allowed": "允許的人",
+  "Manage the link, its bot and the chats allowed in the WhatsApp window.": "管理關聯、其機器人以及 WhatsApp 視窗中允許的聊天。",
+  "Bot assigned on this computer": "已在此電腦指定機器人",
+  "No bot assigned yet": "尚未指定機器人",
+  "Manage the link": "管理關聯",
+  "Link a number": "連結號碼",
+  "Slack is connected on this computer with the host’s Slack setup; the signing secret and app token never reach the app.": "Slack 已透過主機設定連線到此電腦；簽章密鑰與應用程式權杖不會傳到應用程式。",
+  "Needs attention": "需要處理",
+  "Not connected": "未連線",
+  "Open channels in Extensions": "在擴充功能中開啟頻道",
+  "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp、Telegram、Slack 和 Discord：在你日常書寫的地方與機器人對話，僅限你允許的人。",
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "透過 WhatsApp、Telegram、Slack 或 Discord 與機器人對話。只有你配對或允許的人才能寫入；權杖留在此電腦的保管庫。"
 }

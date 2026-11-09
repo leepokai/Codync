@@ -113,6 +113,11 @@ import kotlinx.coroutines.launch
     var busySkill by remember { mutableStateOf<String?>(null) }
     var addingConnector by remember { mutableStateOf(false) }
     var showWhatsApp by remember { mutableStateOf(false) }
+    var showChannels by remember { mutableStateOf(false) }
+    var telegramBots by remember { mutableStateOf<List<com.codync.android.core.TelegramBot>>(emptyList()) }
+    var slackStatus by remember { mutableStateOf<com.codync.android.core.SlackStatus?>(null) }
+    var discordStatus by remember { mutableStateOf<com.codync.android.core.DiscordStatus?>(null) }
+    var whatsappLink by remember { mutableStateOf<com.codync.android.core.WhatsAppLink?>(null) }
     var writingSkill by remember { mutableStateOf(false) }
     var viewingSkill by remember { mutableStateOf<SkillRef?>(null) }
     var agent by remember { mutableStateOf<AgentBackend?>(null) }
@@ -150,6 +155,15 @@ import kotlinx.coroutines.launch
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = failure.message ?: "Couldn't load the marketplace." }
     }
+    LaunchedEffect(canLoad, state.contextId, section) {
+        if (!canLoad || section != ExtensionSection.Channels) return@LaunchedEffect
+        telegramBots = runCatching { store.telegramBots() }.getOrNull() ?: telegramBots
+        slackStatus = runCatching { store.slackStatus() }.getOrDefault(slackStatus)
+        discordStatus = runCatching { store.discordStatus() }.getOrDefault(discordStatus)
+        whatsappLink = runCatching { store.whatsapp() }.getOrNull() ?: whatsappLink
+    }
+    val channels = channelSummaries(telegramBots, slackStatus, discordStatus, whatsappLink)
+    val shownChannels = matchChannelSummaries(channels, query)
     val backends = agentBackends(state)
     val agents = backends.filter { it.available || it.installed || it.curated }.filter { query.isEmpty() || it.name.contains(query, ignoreCase = true) }
     val installedSkills = state.plugins?.skills.orEmpty()
@@ -159,7 +173,7 @@ import kotlinx.coroutines.launch
     val side = if (inModal) 44.dp else 24.dp
     val inset = Modifier.padding(horizontal = side)
     val needsNode = backends.any { it.needsNode }
-    val pinned = section == ExtensionSection.Apps || section == ExtensionSection.Skills || (section == ExtensionSection.Clis && needsNode)
+    val pinned = section == ExtensionSection.Apps || section == ExtensionSection.Channels || section == ExtensionSection.Skills || (section == ExtensionSection.Clis && needsNode)
     // Each section opens at its top.
     val listState = remember(section) { LazyListState() }
     // A second tap on Extensions brings the open section back to its top.
@@ -231,6 +245,14 @@ import kotlinx.coroutines.launch
                             icon = { ServiceLogo(app.website, app.name, null) }, open = { viewingApp = app }) { viewingApp = app }
                     }
                 }
+            }
+            ExtensionSection.Channels -> {
+                item(key = "channels:title") { MarketSection("Messaging channels") {} }
+                items(shownChannels, key = { "channel:${it.provider.name}" }) { channel ->
+                    MarketRow(channel.provider.title, channel.summary, added = channel.connected, addLabel = "Manage",
+                        icon = { TileIcon(channel.provider.icon) }) { showChannels = true }
+                }
+                item { Text("Only people you pair or allow can write to a channel. Tokens stay in this computer.", style = Type.caption, color = Palette.tertiary, modifier = Modifier.padding(top = 8.dp)) }
             }
             ExtensionSection.Agents -> when {
                 shownMarketAgents.isEmpty() -> item {
@@ -322,6 +344,7 @@ import kotlinx.coroutines.launch
     CodyncSheet(showCredentials, { showCredentials = false }) { CredentialsView(state, store) }
     CodyncSheet(addingConnector, { addingConnector = false }) { CustomConnectorSheet(state, store) }
     CodyncSheet(showWhatsApp, { showWhatsApp = false }) { WhatsAppSheet(state, store) }
+    CodyncSheet(showChannels, { showChannels = false }) { ChannelsSheet(state, store) }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
     CodyncSheet(writingSkill, { writingSkill = false }) { NewSkillSheet(store) }
     CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store) }

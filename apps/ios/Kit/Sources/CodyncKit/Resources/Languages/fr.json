@@ -1818,5 +1818,6 @@
   "Remove note": "Retirer la note",
   "Notes the bot gets with this channel’s memory": "Notes transmises au bot avec la mémoire de ce canal",
   "A fact this channel should keep": "Un fait que ce canal doit retenir",
-  "Channel note": "Note du canal"
+  "Channel note": "Note du canal",
+  "Channels": "Canaux"
 }

@@ -231,6 +231,16 @@ function ChatSplitView() {
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
+  // Command palette: Ctrl+K (⌘K on a Mac) from anywhere in the window.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return
+      e.preventDefault()
+      setSearching(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
@@ -536,6 +546,15 @@ function ChatSplitView() {
         { id: 'settings', title: 'Settings', icon: 'gearshape', run: () => { setSearching(false); setSettings('general') } },
         { id: 'computers', title: 'Computers', icon: 'desktopcomputer', run: () => { setSearching(false); setSettings('computers') } },
         { id: 'account', title: 'Account', icon: 'person.crop.circle', run: () => { setSearching(false); setShowAccount(true) } },
+        { id: 'extensions', title: 'Extensions', icon: 'square.grid.2x2', run: () => { setSearching(false); openMarketplace() } },
+        { id: 'channels', title: 'Channels', icon: 'bubble.left.and.bubble.right', run: () => { setSearching(false); openMarketplace('channels') } },
+        { id: 'agents', title: 'Agents', icon: 'terminal', run: () => { setSearching(false); openMarketplace('agents') } },
+        { id: 'skills', title: 'Skills', icon: 'book.pages', run: () => { setSearching(false); openMarketplace('skills') } },
+        { id: 'usage', title: 'Usage', icon: 'gauge.with.dots.needle.33percent', run: () => { setSearching(false); setSettings('usage') } },
+        { id: 'network', title: 'Network', icon: 'network', run: () => { setSearching(false); setSettings('network') } },
+        { id: 'voice', title: 'Voice', icon: 'waveform', run: () => { setSearching(false); setSettings('voice') } },
+        { id: 'updates', title: 'Updates', icon: 'arrow.down.circle', run: () => { setSearching(false); setSettings('updates') } },
+        { id: 'access', title: 'Computer access', icon: 'lock.shield', run: () => { setSearching(false); setSettings('access') } },
       ]} />
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (

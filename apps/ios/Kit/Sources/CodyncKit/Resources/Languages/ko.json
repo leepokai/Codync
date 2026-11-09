@@ -1818,5 +1818,6 @@
   "Remove note": "메모 제거",
   "Notes the bot gets with this channel’s memory": "이 채널의 기억과 함께 봇에게 전달되는 메모",
   "A fact this channel should keep": "이 채널이 기억할 사실",
-  "Channel note": "채널 메모"
+  "Channel note": "채널 메모",
+  "Channels": "채널"
 }

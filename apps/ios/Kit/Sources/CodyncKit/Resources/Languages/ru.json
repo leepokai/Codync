@@ -1818,5 +1818,6 @@
   "Remove note": "Удалить заметку",
   "Notes the bot gets with this channel’s memory": "Заметки, которые бот получает с памятью этого канала",
   "A fact this channel should keep": "Факт, который канал должен помнить",
-  "Channel note": "Заметка канала"
+  "Channel note": "Заметка канала",
+  "Channels": "Каналы"
 }

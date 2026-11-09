@@ -1818,5 +1818,6 @@
   "Remove note": "メモを削除",
   "Notes the bot gets with this channel’s memory": "このチャンネルの記憶とともにボットへ渡すメモ",
   "A fact this channel should keep": "このチャンネルが覚えておく事実",
-  "Channel note": "チャンネルのメモ"
+  "Channel note": "チャンネルのメモ",
+  "Channels": "チャンネル"
 }

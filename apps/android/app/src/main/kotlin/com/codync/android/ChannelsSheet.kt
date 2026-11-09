@@ -114,9 +114,9 @@ import kotlinx.coroutines.launch
                     row {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(tr("Telegram bot name"), style = Type.caption, color = Palette.secondary)
-                            PlainTextField(newName, { newName = it }, prompt = tr("A short name: home, work…"), singleLine = true)
+                            PlainInput(newName, { newName = it }, "A short name: home, work…")
                             Text(tr("Telegram bot token"), style = Type.caption, color = Palette.secondary)
-                            PlainTextField(newToken, { newToken = it }, prompt = tr("The token @BotFather gave you"), singleLine = true)
+                            PlainInput(newToken, { newToken = it }, "The token @BotFather gave you", secret = true)
                             ChoicePicker(newBot.ifEmpty { fallbackBot }, choices.map { it.id to it.name }, { newBot = it })
                             SecondaryButton(if (busy) tr("Adding…") else tr("Add Telegram bot"),
                                 enabled = !busy && Channels.nameOk(newName.trim()) && Channels.tokenOk(newToken.trim()) && choices.isNotEmpty()) {
@@ -159,20 +159,20 @@ import kotlinx.coroutines.launch
                     row {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(tr("Server id"), style = Type.caption, color = Palette.secondary)
-                            PlainTextField(guildId, { guildId = it }, prompt = "123456789012345678", singleLine = true)
+                            PlainInput(guildId, { guildId = it }, "123456789012345678")
                             Text(tr("Bot user id"), style = Type.caption, color = Palette.secondary)
-                            PlainTextField(botUserId, { botUserId = it }, prompt = "123456789012345678", singleLine = true)
+                            PlainInput(botUserId, { botUserId = it }, "123456789012345678")
                             Text(tr("Bot token"), style = Type.caption, color = Palette.secondary)
-                            PlainTextField(discordToken, { discordToken = it }, prompt = tr("The token from the Bot tab"), singleLine = true)
+                            PlainInput(discordToken, { discordToken = it }, "The token from the Bot tab", secret = true)
                             for ((index, draft) in rows.withIndex()) {
                                 Text(tr("Channel id"), style = Type.caption, color = Palette.secondary)
-                                PlainTextField(draft.channelId, { rows = rows.updated(index, draft.copy(channelId = it)) },
-                                    prompt = "123456789012345678", singleLine = true)
+                                PlainInput(draft.channelId, { rows = rows.updated(index, draft.copy(channelId = it)) },
+                                    "123456789012345678")
                                 ChoicePicker(draft.botId.ifEmpty { fallbackBot }, choices.map { it.id to it.name },
                                     { rows = rows.updated(index, draft.copy(botId = it)) })
                                 Text(tr("Allowed user ids"), style = Type.caption, color = Palette.secondary)
-                                PlainTextField(draft.allowed, { rows = rows.updated(index, draft.copy(allowed = it)) },
-                                    prompt = tr("Separated by spaces or commas"), singleLine = true)
+                                PlainInput(draft.allowed, { rows = rows.updated(index, draft.copy(allowed = it)) },
+                                    "Separated by spaces or commas")
                                 if (rows.size > 1) SecondaryButton(tr("Remove channel")) { rows = rows.filterIndexed { i, _ -> i != index } }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -218,7 +218,7 @@ import kotlinx.coroutines.launch
                                 act { github = store.disconnectGitHub() }
                             }
                         } else if (connected != null) {
-                            PlainTextField(githubToken, { githubToken = it }, prompt = "github_pat_…", singleLine = true)
+                            PlainInput(githubToken, { githubToken = it }, "github_pat_…", secret = true)
                             SecondaryButton(if (busy) tr("Checking…") else tr("Connect GitHub"),
                                 enabled = !busy && GitHub.tokenOk(githubToken)) {
                                 act {

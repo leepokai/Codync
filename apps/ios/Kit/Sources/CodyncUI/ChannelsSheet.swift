@@ -126,7 +126,7 @@ public struct ChannelsSheet: View {
                     Text(L10n.tr("Telegram bot name")).font(.caption).foregroundStyle(Palette.secondary)
                     plainField($newName, prompt: "A short name: home, work…")
                     Text(L10n.tr("Telegram bot token")).font(.caption).foregroundStyle(Palette.secondary)
-                    plainField($newToken, prompt: "The token @BotFather gave you")
+                    secretField($newToken, prompt: "The token @BotFather gave you")
                     ChoicePicker(selection: Binding(
                         get: { newBot.isEmpty ? fallbackBot : newBot },
                         set: { newBot = $0 }
@@ -183,7 +183,7 @@ public struct ChannelsSheet: View {
                     Text(L10n.tr("Bot user id")).font(.caption).foregroundStyle(Palette.secondary)
                     plainField($botUserId, prompt: "123456789012345678")
                     Text(L10n.tr("Bot token")).font(.caption).foregroundStyle(Palette.secondary)
-                    plainField($discordToken, prompt: "The token from the Bot tab")
+                    secretField($discordToken, prompt: "The token from the Bot tab")
                     ForEach($rows) { $row in
                         Text(L10n.tr("Channel id")).font(.caption).foregroundStyle(Palette.secondary)
                         plainField($row.channelId, prompt: "123456789012345678")
@@ -242,7 +242,7 @@ public struct ChannelsSheet: View {
                     .buttonStyle(.secondary)
                     .disabled(busy)
                 } else if github != nil {
-                    plainField($githubToken, prompt: "github_pat_…")
+                    secretField($githubToken, prompt: "github_pat_…")
                     Button(busy ? L10n.tr("Checking…") : L10n.tr("Connect GitHub")) {
                         act {
                             github = try await store.setGitHubToken(githubToken)
@@ -306,6 +306,16 @@ public struct ChannelsSheet: View {
             .plainTextInput()
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            .background(Palette.bubbleUser, in: Capsule())
+    }
+
+    /// A token: the same field, hidden as it is typed.
+    private func secretField(_ text: Binding<String>, prompt: String) -> some View {
+        SecureField(prompt, text: text)
+            .textFieldStyle(.plain)
+            .plainTextInput()
             .padding(.horizontal, 14)
             .frame(height: 38)
             .background(Palette.bubbleUser, in: Capsule())

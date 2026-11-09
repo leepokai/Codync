@@ -147,7 +147,7 @@ impl Client {
         let c = self.clone();
         tokio::spawn(async move {
             let upload = async {
-                let mut ids = Vec::new();
+                let mut ids: Vec<String> = Vec::new();
                 for path in &files {
                     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                     let data = tokio::fs::read(path).await.map_err(|e| format!("Can't read {name}: {e}"))?;
@@ -173,13 +173,20 @@ impl Client {
                     }
                     ids.push(id);
                 }
-                body["attachments"] = ids.into();
-                if let Some(before) = before {
-                    let _ = before.await;
-                }
-                c.call("send", &body).await
+                Ok(ids)
             };
-            let _ = tx.send(Msg::Reply(after, upload.await));
+            let uploaded = upload.await;
+            if let Some(before) = before {
+                let _ = before.await;
+            }
+            let r = match uploaded {
+                Ok(ids) => {
+                    body["attachments"] = ids.into();
+                    c.call("send", &body).await
+                }
+                Err(e) => Err(e),
+            };
+            let _ = tx.send(Msg::Reply(after, r));
         })
     }
 
@@ -402,6 +409,32 @@ mod tests {
         socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await.unwrap();
         call.await.unwrap();
         assert!(rx.try_recv().is_ok(), "the reply came back");
+    }
+
+    #[tokio::test]
+    async fn a_send_whose_files_fail_still_waits_for_the_call_before_it() {
+        let client = super::Client::new("http://127.0.0.1:9", Some("t"));
+        let (done, finished) = tokio::sync::oneshot::channel::<()>();
+        let before = tokio::spawn(async move {
+            let _ = finished.await;
+        });
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let missing = std::env::temp_dir().join(format!("codync-missing-{}", uuid::Uuid::new_v4()));
+        let send = client.spawn_send_files(
+            Some(before),
+            serde_json::json!({"botId": "b"}),
+            vec![missing],
+            super::After::Nothing,
+            tx,
+        );
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(!send.is_finished(), "a later action can't overtake the one before it");
+
+        done.send(()).unwrap();
+        send.await.unwrap();
+        let Some(super::Msg::Reply(_, r)) = rx.recv().await else { panic!("no reply") };
+        assert!(r.unwrap_err().starts_with("Can't read"));
     }
 
     #[test]

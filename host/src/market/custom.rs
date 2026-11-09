@@ -10,7 +10,7 @@ pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Res
     let name =
         b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
     let all = connectors(store)?;
-    ensure_name_available(name, &all)?;
+    ensure_name_available(name, &all, None)?;
     let c = custom(name, b, &all).await?;
     add_connector(store, c)
 }

@@ -56,12 +56,12 @@ impl std::error::Error for EditFailed {}
 /// first and exactly what started is what gets saved, so an error means this edit changed nothing,
 /// and overlapping edits never combine. A new name or description starts nothing: `verify` is null.
 pub async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &Value, port: u16) -> Result<Value> {
-    let before = connectors(store)?
-        .into_iter()
-        .find(|c| c.id == id)
-        .ok_or_else(|| EditFailure::Invalid.error("Unknown connector"))?;
+    let all = connectors(store)?;
+    let before =
+        all.iter().find(|c| c.id == id).cloned().ok_or_else(|| EditFailure::Invalid.error("Unknown connector"))?;
     ensure_custom_local(&before).map_err(|e| EditFailure::Refused.error(e))?;
     let after = edited(&before, b).map_err(|e| EditFailure::Invalid.error(e))?;
+    check_rename(&before, &after, &all)?;
     let runs_the_same = after.command == before.command && after.args == before.args && after.env == before.env;
     let check = if runs_the_same {
         None
@@ -69,6 +69,7 @@ pub async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &
         Some(verify::check_connector(store, &after, port).await.map_err(|e| EditFailure::WontStart.error(e))?)
     };
     let connector = update_connectors(store, |all| {
+        check_rename(&before, &after, all)?;
         let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| EditFailure::Conflict.error("Unknown connector"))?;
         // The check can take a minute: a save in between means it didn't prove what would be saved now.
         if *c != before {
@@ -80,6 +81,14 @@ pub async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &
         Ok(public)
     })?;
     Ok(json!({"connector": connector, "verify": check}))
+}
+
+/// Imported definitions may already share a name. An unchanged name needs no repair.
+fn check_rename(before: &Connector, after: &Connector, all: &[Connector]) -> Result<()> {
+    if before.name != after.name {
+        super::ensure_name_available(&after.name, all, Some(&before.id)).map_err(|e| EditFailure::Invalid.error(e))?;
+    }
+    Ok(())
 }
 
 /// Registry installs rebuild their command line from the registry, and a remote connector's
@@ -400,3 +409,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+#[cfg(test)]
+#[path = "connector_rename_tests.rs"]
+mod rename_tests;

@@ -70,11 +70,12 @@ struct ComputersView: View {
                 }
                 .buttonStyle(.plain)
             }
+            if let cloudMachine = accounts.cloudMachine { CloudComputerSection(store: cloudMachine) }
         }
-        .refreshable { await accounts.refreshCloud() }
+        .refreshable { await refreshCloud() }
         .page("Computer management", icon: "gearshape")
         .tracked(.screenViewed(.computers))
-        .task { await accounts.refreshCloud() }
+        .task { await refreshCloud() }
         .codyncSheet(isPresented: $addingComputer) {
             PairingView(inModal: true)
         }
@@ -106,6 +107,11 @@ struct ComputersView: View {
     private struct AccessTarget: Identifiable {
         let computer: CloudComputer
         var id: ComputerID { computer.computerId }
+    }
+
+    private func refreshCloud() async {
+        await accounts.refreshCloud()
+        await accounts.cloudMachine?.refresh()
     }
 
     private func cloudComputer(_ id: ComputerID) -> CloudComputer? {
@@ -174,7 +180,8 @@ private struct ComputerRows: View {
             }
         }
         ComputerNotificationsRow(store: store)
-        connection
+        ComputerConnectionRow(store: store)
+        AddToAccountRow(store: store)
         // Kept while an update asked from here restarts the computer: its spinner says it's updating.
         if store.connection == .online || store.isUpdating, store.hello != nil {
             CodyncVersionRow(store: store)
@@ -198,8 +205,9 @@ private struct ComputerRows: View {
                         .accessibilityLabel(L10n.tr("In your account"))
                 }
             }
+            if let hosting = store.cloudHosting { CloudHostingLine(hosting) }
             connectionDetail
-            if store.isOffline, !store.isUpdating, let ask {
+            if store.isOffline, !store.isUpdating, !store.isAsleep, let ask {
                 Button(accounts.pendingAccess[store.computer.id] == nil ? "Ask for access" : "Show code", action: ask)
                     .buttonStyle(.secondary)
             }
@@ -243,36 +251,11 @@ private struct ComputerRows: View {
         }
     }
 
-    /// How this iPhone reaches the computer: the short name on the row, the whole route in the menu.
-    private var connection: some View {
-        DropdownMenu {
-            ConnectionRoute.allCases.map { route in
-                MenuItem(RelayCopy.routeTitle(route, cloud: store.computer.cloud), icon: route.icon, selected: route == preference) {
-                    accounts.setRoute(store.computer.id, route)
-                }
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: preference.icon).font(.system(size: 17)).frame(width: 26)
-                Text(L10n.tr("Connection"))
-                Spacer(minLength: 8)
-                Text(L10n.tr(RelayCopy.routeShortTitle(preference, cloud: store.computer.cloud)))
-                    .foregroundStyle(Palette.secondary)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
-            }
-            .foregroundStyle(Palette.text)
-            .contentShape(Rectangle())
-        }
-    }
-
     private var connectionDetail: some View {
         Text(L10n.tr(detail)).font(.footnote)
-            .foregroundStyle(store.isOffline && !store.isUpdating ? Palette.warning : Palette.secondary)
+            .foregroundStyle(store.isOffline && !store.isUpdating && !store.isAsleep ? Palette.warning : Palette.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
-
-    private var preference: ConnectionRoute { store.computer.route ?? .automatic }
 
     /// In a network of the user's computers, or cloud assistants on (hosts before it say nothing).
     private var showsNetwork: Bool { store.network?.hasContent == true }
@@ -325,67 +308,6 @@ private struct CodyncVersionRow: View {
     }
 }
 
-/// A computer in the account that this iPhone can't use yet.
-private struct AccountComputerRow: View {
-    let computer: CloudComputer
-    let ticket: AccessTicket?
-    let ask: () -> Void
-    let revoke: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ComputerBadge(Computer(id: computer.computerId, name: computer.name, signKey: computer.signKey, device: computer.device), size: 40)
-                .opacity(0.5)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(computer.name).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
-                Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
-            }
-            Spacer()
-            if ticket != nil {
-                Button(L10n.tr("Code"), action: ask).buttonStyle(.secondary)
-            } else if computer.isGranted {
-                Button(L10n.tr("Revoke"), role: .destructive, action: revoke).buttonStyle(.secondary)
-            } else {
-                Button(L10n.tr("Ask for access"), action: ask).buttonStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    private var detail: String {
-        let online = computer.isOnline ? "Online" : "Offline"
-        if let ticket { return "Waiting for your OK on the computer · \(ticket.code)" }
-        return switch computer.access {
-        case "granted": "Approved for an earlier install of Codync. Revoke it, then ask again."
-        case "pending": "\(online) · A request is waiting"
-        default: "\(online) · In your account"
-        }
-    }
-}
-
-/// An older account identity stays visible; only account management can remove it.
-private struct OlderCopyRow: View {
-    let computer: CloudComputer
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ComputerBadge(Computer(id: computer.computerId, name: computer.name, signKey: computer.signKey, device: computer.device), size: 40)
-                .opacity(0.35)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(computer.name).font(.body.weight(.semibold)).foregroundStyle(Palette.secondary)
-                Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.tertiary).lineLimit(2)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 2)
-    }
-
-    private var detail: String {
-        let seen = computer.lastSeenAt.map { " · last seen \(RelativeTime.day(Date(milliseconds: $0)))" } ?? ""
-        return "Older copy of this computer\(seen)"
-    }
-}
-
 /// The computer color choices: a grid of colored dots, the current one checked.
 private struct SwatchPanel: View {
     let selected: String?
@@ -409,16 +331,6 @@ private struct SwatchPanel: View {
             }
         }
         .padding(14)
-    }
-}
-
-private extension ConnectionRoute {
-    var icon: String {
-        switch self {
-        case .automatic: "arrow.triangle.branch"
-        case .cloudflareFirst: "cloud"
-        case .directOnly: "wifi"
-        }
     }
 }
 

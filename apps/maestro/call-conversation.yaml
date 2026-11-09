@@ -1,0 +1,46 @@
+# A voice call's line opens its conversation: who it was with and when on top, then what was said; a long call
+# opens at its end, and a call where nothing was said says so. The phone must already be signed in and paired with
+# the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose
+# clearState undoes that; the flow makes its own bot and calls there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags call \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - call
+onFlowComplete:
+  - runScript:
+      file: call-conversation.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: call-conversation.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+# A short call: the header (the bot, the time and the length), then everything said, read from the top.
+- tapOn: ".*· 00:16"
+- assertVisible: "Today.*· 00:16"
+- assertVisible: "Can you check the build\\?"
+- assertVisible: "You are welcome\\."
+- takeScreenshot: call-short
+- tapOn: "Close"
+# A long call opens at its end.
+- tapOn: ".*· 03:05"
+- assertVisible: "Answer 20: it goes out once the review is green\\."
+- assertNotVisible: "Today.*· 03:05"
+- takeScreenshot: call-long
+- tapOn: "Close"
+- tapOn: ".*· 00:03"
+- assertVisible: "Today.*· 00:03"
+- assertVisible: "Nothing was said on this call\\."
+- tapOn: "Close"

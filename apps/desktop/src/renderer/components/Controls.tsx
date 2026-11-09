@@ -1,6 +1,7 @@
 import { Children, Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Icon } from './Icon'
-import { AnchoredMenu, IconButtonBase, usePresence, type MenuItem } from './Overlay'
+import { IconButtonBase, usePresence } from './Overlay'
+import { AnchoredMenu, type MenuItem } from './Menu'
 import { HStack, Spacer, VStack } from './Stack'
 import { useTr } from '../lib/use-language'
 import { Text } from './Text'
@@ -79,12 +80,12 @@ export function Switch({ on, onChange, children, label, disabled, className }: {
 }
 
 /** A button that opens a Codync menu. */
-export function DropdownMenu({ items, children, className, style, title }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string }) {
+export function DropdownMenu({ items, children, className, style, title, disabled }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
   return (
     <>
-      <button ref={ref} className={className} style={style} title={title} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button ref={ref} className={className} style={style} title={title} disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {children}
       </button>
       <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} />
@@ -290,8 +291,8 @@ export function Disclosure({ expanded, onToggle, label, children }: { expanded: 
 }
 
 /** Keeps `children` mounted while it fades and folds away. */
-export function Reveal({ show, children }: { show: boolean; children: ReactNode }) {
-  const { mounted, shown } = usePresence(show)
+export function Reveal({ show, animateOnMount, children }: { show: boolean; animateOnMount?: boolean; children: ReactNode }) {
+  const { mounted, shown } = usePresence(show, undefined, animateOnMount)
   if (!mounted) return null
   return (
     <div className={`reveal ${shown ? 'shown' : ''}`}>
@@ -377,4 +378,10 @@ export function ResizeHandle({ label, width, min, max, edge, onResize, onDraggin
       onKeyDown={onKeyDown}
     />
   )
+}
+
+/** A quiet "Beta" pill beside a feature still in beta (Network, Codync Cloud). */
+export function BetaTag() {
+  const tr = useTr()
+  return <Text as="span" size="caption" weight="semibold" className="beta-tag">{tr('Beta')}</Text>
 }

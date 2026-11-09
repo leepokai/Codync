@@ -1,4 +1,5 @@
 import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
+import { mixesAgents } from '@shared/fallbacks'
 import {
   type AccessRequest,
   type Bot,
@@ -6,11 +7,14 @@ import {
   type Computer,
   type Entry,
   type Hello,
+  type PairingRequest,
   type ScreenState,
   type Usage,
+  withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
+import type { CloudPlacement } from '../lib/cloud-computer'
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
@@ -18,6 +22,7 @@ import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
+import { trNow } from '../lib/l10n.ts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -69,6 +74,8 @@ export class BotMirror extends Observable {
   computer: Computer
   connection: Connection = { kind: 'connecting' }
   hostRoute: HostRoute | null = null
+  /** Set for a Codync Cloud computer: who runs it, where, and whether it's awake (the account's computer list). */
+  cloudHosting: CloudPlacement | null = null
   client: HostClient | null = null
   hello: Hello | null = null
   hostVersion: { version: string; minApp?: string | null } | null = null
@@ -79,6 +86,7 @@ export class BotMirror extends Observable {
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
+  pairingRequests: PairingRequest[] = []
   cloud: CloudStatus | null = null
   /** This computer's network; null until known, and on hosts without `networkView`. */
   network: NetworkView | null = null
@@ -113,7 +121,7 @@ export class BotMirror extends Observable {
     super()
     this.computer = computer
     this.composerDrafts = new ComposerDrafts(localStorage, `codync-drafts-v1-${JSON.stringify([contextId, computer.id])}`,
-      () => this.setError("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it."))
+      () => this.setError(trNow("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it.")))
     this.loadCache()
   }
 
@@ -136,6 +144,30 @@ export class BotMirror extends Observable {
 
   get hostName() {
     return this.hello?.name ?? this.computer.name
+  }
+
+  /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
+   * asleep perhaps, says so). */
+  setHostName(name: string) {
+    if (!this.hello || this.hello.name === name) return
+    this.hello = { ...this.hello, name }
+    this.changed()
+  }
+
+  setCloudHosting(hosting: CloudPlacement | null) {
+    if (JSON.stringify(hosting) === JSON.stringify(this.cloudHosting)) return
+    this.cloudHosting = hosting
+    this.changed()
+  }
+
+  /** A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline. */
+  get isAsleep() {
+    return this.connection.kind === 'computerOffline' && (this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+  }
+
+  /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */
+  get isCloudUpdating() {
+    return this.mismatch?.kind === 'updateHost' && this.cloudHosting !== null
   }
 
   get mismatch(): VersionMismatch | null {
@@ -165,7 +197,7 @@ export class BotMirror extends Observable {
   hostVersionLine(now = Date.now()): HostVersionLine | null {
     if (!this.hello) return null
     return hostVersionLine(this.hello.version, this.hello.latestVersion, this.mismatch,
-      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os)
+      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os, this.cloudHosting !== null)
   }
 
   /** Out of reach while an update asked from here installs: the computer restarts on its own, so it
@@ -184,6 +216,12 @@ export class BotMirror extends Observable {
     return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
   }
 
+  /** The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+   * `hello`: it names the logos, and without it every badge would be the same generic one. */
+  get mixesAgents(): boolean {
+    return this.hello !== null && mixesAgents([...this.bots.values()].filter((b) => !b.hidden))
+  }
+
   get hiddenBots(): Bot[] {
     return [...this.bots.values()].filter((b) => b.hidden).sort((a, b) => a.name.localeCompare(b.name))
   }
@@ -199,7 +237,8 @@ export class BotMirror extends Observable {
 
   /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
-    return this.entries.get(botId) ?? []
+    const list = this.entries.get(botId)
+    return list ? withoutRemoved(list) : []
   }
 
   canLoadOlder(botId: string) {
@@ -212,13 +251,14 @@ export class BotMirror extends Observable {
 
   /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
   authorName(id: string | null | undefined, fallback?: string) {
-    return (id && this.bots.get(id)?.name) || fallback || 'A deleted bot'
+    return (id && this.bots.get(id)?.name) || fallback || trNow('A deleted bot')
   }
 
   get connectionLabel() {
+    if (this.isAsleep) return 'Sleeping'
     switch (this.shownConnection.kind) {
       case 'online':
-        return this.mismatch ? 'Needs update' : 'Connected'
+        return this.isCloudUpdating ? 'Updating…' : this.mismatch ? 'Needs update' : 'Connected'
       case 'connecting':
         return 'Connecting…'
       case 'computerOffline':
@@ -337,6 +377,6 @@ export function builtInBackendName(id: string) {
     case 'gemini':
       return 'Gemini CLI'
     default:
-      return 'Custom agent'
+      return trNow('Custom agent')
   }
 }

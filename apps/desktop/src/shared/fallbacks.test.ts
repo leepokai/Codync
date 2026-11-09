@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clockTime, moveFallback, restLine, restOf, stepBanner, withBackend } from './fallbacks.ts'
+import { clockTime, mixesAgents, moveFallback, restLine, restOf, runningAgent, stepBanner, withBackend } from './fallbacks.ts'
 import { draftOf, normalizeBot } from './models.ts'
 
 const now = new Date(2026, 9, 21, 10, 0).getTime()
@@ -67,4 +67,13 @@ test('switching harness clears its model and effort, selecting the same harness 
   assert.deepEqual(changed.modelOptions, {})
   const defaultModel = withBackend({ ...draft, model: null }, 'codex')
   assert.deepEqual(defaultModel.modelOptions, {})
+})
+
+test('bots mix agents when they run more than one, counting a fallback and leaving groups out', () => {
+  const claude = normalizeBot({ id: 'a', backend: 'claude' })
+  const onCodex = normalizeBot({ id: 'b', backend: 'claude', agentStep: { step: 1, agent: 'codex', model: null, since: now, reason: 'usageLimit' } })
+  const group = normalizeBot({ id: 'g', kind: 'group', backend: 'codex' })
+  assert.equal(runningAgent(onCodex), 'codex')
+  assert.equal(mixesAgents([claude, normalizeBot({ id: 'c', backend: 'claude' }), group]), false)
+  assert.equal(mixesAgents([claude, onCodex]), true)
 })

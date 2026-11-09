@@ -1,6 +1,7 @@
 // Shared test plumbing: Clerk tokens, signed requests, WebSocket wrappers, a registered host.
 
 import { SELF, type D1Migration } from "cloudflare:test";
+import { Webhook } from "svix";
 import { env as rawEnv } from "cloudflare:workers";
 import type { Env } from "../src/index";
 import { aclMessage, b64url, boxKey, computerId, enc, signKey, signRequest, type AclBody, type BoxKey, type SignKey } from "./ref";
@@ -8,6 +9,8 @@ import { aclMessage, b64url, boxKey, computerId, enc, signKey, signRequest, type
 export interface TestEnv extends Env {
   TEST_MIGRATIONS: D1Migration[];
   TEST_CLERK_PRIVATE_JWK: string;
+  /** The device certificate key's public half, b64url. */
+  TEST_DEVICE_CERT_PUB: string;
 }
 
 export const env = rawEnv as unknown as TestEnv;
@@ -80,6 +83,19 @@ export async function call(method: string, path: string, o: CallOptions = {}): P
   }
   const res = await SELF.fetch(ORIGIN + path, { method, headers, body: bytes.length ? bytes : undefined });
   return { status: res.status, body: await res.json() };
+}
+
+/** Delivers a Clerk webhook, signed with `secret`. */
+export function deliverClerk(id: string, payload: unknown, secret = env.CLERK_WEBHOOK_SECRET!) {
+  const now = new Date();
+  return call("POST", "/v1/webhooks/clerk", {
+    body: payload,
+    headers: {
+      "svix-id": id,
+      "svix-timestamp": String(Math.floor(now.getTime() / 1000)),
+      "svix-signature": new Webhook(secret).sign(id, now, JSON.stringify(payload)),
+    },
+  });
 }
 
 // ---- WebSockets ----
@@ -158,10 +174,11 @@ export class Sock {
 export async function upgrade(
   path: string,
   key: SignKey,
-  o: { authority?: string; nonce?: string } = {},
+  o: { authority?: string; nonce?: string; headers?: Record<string, string> } = {},
 ): Promise<{ status: number; sock?: Sock; body?: Json }> {
   const res = await SELF.fetch(ORIGIN + path, {
     headers: {
+      ...o.headers,
       Upgrade: "websocket",
       "Codync-Sig": signRequest(key, { method: "GET", authority: o.authority ?? AUTHORITY, pathAndQuery: path, nonce: o.nonce }),
     },
@@ -170,8 +187,8 @@ export async function upgrade(
   return { status: 101, sock: new Sock(res.webSocket!) };
 }
 
-export async function socket(path: string, key: SignKey): Promise<Sock> {
-  const r = await upgrade(path, key);
+export async function socket(path: string, key: SignKey, headers?: Record<string, string>): Promise<Sock> {
+  const r = await upgrade(path, key, { headers });
   if (!r.sock) throw new Error(`upgrade ${path} failed: ${r.status} ${JSON.stringify(r.body)}`);
   return r.sock;
 }

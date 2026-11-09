@@ -1,10 +1,11 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@shared/models'
+import { isChat, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import type { CallCue } from '@shared/calls'
+import { trNow } from '../lib/l10n.ts'
 
 const REFRESH_TIMEOUT = 20_000
 const DROP_GRACE = 5000
@@ -42,6 +43,7 @@ export class BotSync extends BotMirror {
   private dropTimer: ReturnType<typeof setTimeout> | null = null
   private closeEvents: (() => void) | null = null
   private eventsLoop = 0
+  private paused = false
   private rewound = false
   /** The `since` the current events connection asked for, and the per-bot floors snapshotted at its `hello`. */
   private requestedSince = 0
@@ -61,18 +63,37 @@ export class BotSync extends BotMirror {
     this.selection = null
   }
 
+  /** A store paused before it started (a window nobody looks at) connects on `resume`. */
   start() {
-    this.restartStream()
+    if (!this.paused) this.restartStream()
   }
 
   restartStream() {
     if (this.retired) return
+    this.paused = false
     this.stopTransport()
     if (this.connection.kind !== 'online') this.setConnection({ kind: 'connecting' })
     const transport = this.makeTransport()
     this.client = new HostClient(transport)
-    this.hostRoute = this.isLoopback ? 'loopback' : null
+    this.hostRoute = transport.route ?? null
     this.runEvents(this.client)
+  }
+
+  /**
+   * Lets go of a cloud computer while nobody looks at the window, so it can sleep: the events stream stops and
+   * the channel closes behind it. Its bots and chats stay; `resume` (or any action) reconnects, and until it has,
+   * it reads as connecting rather than as it was (it may have gone to sleep meanwhile).
+   */
+  pause() {
+    if (this.retired || this.paused) return
+    this.paused = true
+    this.stopTransport()
+    this.connection = { kind: 'connecting' }
+    this.changed()
+  }
+
+  resume() {
+    if (this.paused) this.restartStream()
   }
 
   /** Manual refresh waits for the new stream to answer, independently of the online grace period. */
@@ -80,7 +101,7 @@ export class BotSync extends BotMirror {
     if (this.retired) return Promise.resolve()
     this.restartStream()
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.finishRefresh?.(new Error('Connection timed out')), REFRESH_TIMEOUT)
+      const timer = setTimeout(() => this.finishRefresh?.(new Error(trNow('Connection timed out'))), REFRESH_TIMEOUT)
       this.finishRefresh = (error) => {
         clearTimeout(timer)
         this.finishRefresh = null
@@ -152,6 +173,9 @@ export class BotSync extends BotMirror {
             this.accessRequests = (await client.call<{ requests: AccessRequest[] }>('accessRequests')).requests
           } catch {}
           try {
+            this.pairingRequests = (await client.call<{ requests: PairingRequest[] }>('pairingRequests')).requests
+          } catch {}
+          try {
             this.cloud = await client.call<CloudStatus>('cloudStatus')
           } catch {}
           this.changed()
@@ -177,7 +201,7 @@ export class BotSync extends BotMirror {
         if (!alive()) return
         const message = error instanceof Error ? error.message : String(error)
         this.finishRefresh?.(new Error(message))
-        this.setConnection({ kind: 'offline', message })
+        this.setConnection(error instanceof HostError && error.offline ? { kind: 'computerOffline', lastSeen: null } : { kind: 'offline', message })
         if (error instanceof HostError && error.status === 401) return
       }
       if (!alive()) return
@@ -268,8 +292,14 @@ export class BotSync extends BotMirror {
       case 'accessRequests':
         this.accessRequests = event.requests
         break
+      case 'pairingRequests':
+        this.pairingRequests = event.requests
+        break
       case 'cloud':
         this.cloud = event.cloud
+        break
+      case 'name':
+        this.setHostName(event.name)
         break
       case 'network':
         this.network = event.network
@@ -329,7 +359,7 @@ export class BotSync extends BotMirror {
   }
 
   private isBelowFloor(e: Entry) {
-    const held = this.allEntries(e.botId).some((x) => x.id === e.id)
+    const held = !!this.entries.get(e.botId)?.some((x) => x.id === e.id)
     return isOutsideLoadedWindow(this.floors.get(e.botId), held, e)
   }
 
@@ -340,13 +370,14 @@ export class BotSync extends BotMirror {
   // MARK: link
 
   protected get live(): HostClient | null {
-    return this.connection.kind === 'online' && !this.heldDrop && !this.retired ? this.client : null
+    return this.connection.kind === 'online' && !this.heldDrop && !this.retired && !this.paused ? this.client : null
   }
 
   /** The client once the link is up. A reconnect in progress is waited out (headers show it). */
   async ready(deadline = Date.now() + ACTION_PATIENCE): Promise<HostClient> {
     let counted = false
     let retried = false
+    this.resume()
     try {
       while (!this.retired) {
         if (this.live) return this.live
@@ -364,7 +395,13 @@ export class BotSync extends BotMirror {
           case 'unpaired':
             throw HostError.unreachable()
           case 'computerOffline':
-            throw new HostError(0, 'Your computer is offline.')
+            // A cloud computer asleep wakes when this device connects: reconnect once and wait for it.
+            if (this.cloudHosting && !retried) {
+              retried = true
+              this.restartStream()
+              break
+            }
+            throw new HostError(0, trNow('Your computer is offline.'))
           case 'unauthorized':
             throw new HostError(401, this.connection.message)
         }

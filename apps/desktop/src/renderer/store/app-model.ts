@@ -1,12 +1,14 @@
 import { trackBody } from '@shared/analytics'
 import type { HostSnapshot, LocalHost } from '@shared/ipc'
-import type { AccessRequest, Bot, Computer } from '@shared/models'
+import type { AccessRequest, Bot, Computer, PairingRequest } from '@shared/models'
 import { HostError, LoopbackTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
+import { undoOnFailure } from '../lib/undo-on-failure'
 import { account } from './account'
 import { analytics } from './analytics'
 import { BotStore } from './bot-store'
 import { CloudModel } from './cloud'
+import { CloudComputerModel } from './cloud-computer'
 import { DeviceComputerOrder } from './computer-order'
 import { ComputerAccess } from './computer-access'
 
@@ -37,6 +39,13 @@ export interface Approval {
   request: AccessRequest
 }
 
+/** A signed-in phone asking a computer this app manages, in no account, to let it in and join its account. */
+export interface PairingAsk {
+  id: string
+  store: BotStore
+  request: PairingRequest
+}
+
 /**
  * The window's model: this computer's own host (from the main process), one `BotStore` per
  * computer, the selection, and what the menu bar shows. Mirrors kit's `AccountStore`.
@@ -56,18 +65,22 @@ export class AppModel extends Observable {
   private signedIn: boolean | null = null
   /** Approvals closed with "later"; they come back when the request changes (its code arrives). */
   private deferred = new Set<string>()
+  private answeredPairings = new Set<string>()
   private storeSubscriptions = new Map<string, () => void>()
 
   /** The signed-in account's side of this computer (claims, cloud default, account computers). */
   readonly computerAccess: ComputerAccess
   readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
+  /** The account's Codync Cloud computer (Settings → Computers & devices). */
+  readonly cloudComputer: CloudComputerModel
 
   constructor(private mirrors = true) {
     super()
     this.computerAccess = new ComputerAccess(this)
     this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
+    this.cloudComputer = new CloudComputerModel(this)
     account.subscribe(() => this.noteAccount())
   }
 
@@ -224,6 +237,24 @@ export class AppModel extends Observable {
   async decide(a: Approval, approve: boolean) {
     const client = await a.store.ready()
     await client.call('decideAccessRequest', { requestId: a.request.requestId, approve }, 30_000)
+  }
+
+  /** Phones waiting to be let in, without those answered here (the host's event takes them off a moment later). */
+  get pairingAsks(): PairingAsk[] {
+    return this.managedStores
+      .flatMap((store) => store.pairingRequests.map((request) => ({ id: `${store.computer.id}/${request.requestId}`, store, request })))
+      .filter((ask) => !this.answeredPairings.has(ask.id))
+  }
+
+  decidePairing(ask: PairingAsk, approve: boolean, join?: boolean) {
+    this.answeredPairings.add(ask.id)
+    this.changed()
+    const answer = ask.store.ready().then((client) => client.call('decidePairing', { requestId: ask.request.requestId, approve, join }, 30_000))
+    // The host may not have the answer: the question comes back.
+    return undoOnFailure(answer, () => {
+      this.answeredPairings.delete(ask.id)
+      this.changed()
+    }, (message) => this.setError(message))
   }
 
   get needsAttention() {

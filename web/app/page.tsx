@@ -4,6 +4,8 @@ import Film from "./components/film";
 import { Answers, Features } from "./components/features";
 import Fallbacks from "./components/fallbacks";
 import Computers from "./components/computers";
+import Network from "./components/network";
+import CodyncCloud from "./components/cloud";
 import Surfaces from "./components/surfaces";
 import Privacy from "./components/privacy";
 import Compare from "./components/compare";
@@ -27,6 +29,8 @@ export default function Home() {
         <Features />
         <Fallbacks />
         <Computers />
+        <Network />
+        <CodyncCloud />
         <Surfaces />
         <Privacy />
         <Compare />

@@ -6,7 +6,8 @@ every device; *Share usage analytics* in Settings turns it off. It exists to spo
 lives in `web/app/privacy/page.tsx`: keep it true. The info button beside the switch (terminal
 UI: *About usage analytics…*) shows the same promise in the app, in one text per client
 (desktop `views/settings/AnalyticsSheet.tsx`, `CodyncUI/AnalyticsSheet.swift`, Android
-`AnalyticsSheet.kt`, `host/src/tui/view/analytics.rs`): change all four with the policy.
+`AnalyticsSheet.kt`, `host/src/tui/view/analytics.rs`), and the Windows installer sums it up
+(`apps/desktop/resources/installer.nsh`): change all five with the policy.
 
 ## Rules
 
@@ -17,11 +18,22 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
 - **Setting per device.** The computer's owner decides for that computer (host kv
   `analytics_enabled`, on unless `0`); each iPhone decides for itself (`UserDefaults`
   `analyticsEnabled`, on unless `false`; each Android phone in its `codync-analytics` preferences). Turning it off drops anything still queued. A
-  device that said no to the earlier opt-in question stays off.
+  device that said no to the earlier opt-in question stays off. `codync-host analytics on|off`
+  sets the computer's choice from the command line: through the running host, or saved for its
+  next start.
+- **The Windows installer asks.** An install run by hand (not an update, not a silent `/S` one)
+  shows what is shared, links the privacy policy and asks before anything is sent
+  (`resources/installer.nsh`): *No* runs `codync-host analytics off`; *Yes* leaves the setting
+  as it is (on for a new computer), so the first launch can still report `host_setup_failed`.
+  Known gap: a reinstall answered *No* over an app that last saw analytics on can still report
+  one `host_setup_failed` if the host never starts (the app's `host-prefs.json` copy is stale).
+  Open source code signing (SignPath) requires this for a signed installer; the Mac and Linux
+  packages have no install step that could ask.
 - **Identity.** Every device gets a person profile. Signed in to a Codync account: the Clerk
   user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
-  The first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events join
-  the account.
+  A device's first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events
+  join the account. Only once per device: PostHog refuses to merge an id into a second account
+  (`cannot_merge_already_identified`), so a later account on that device starts its own profile.
 - **Sessions.** Every event carries a `$session_id` (a UUIDv7) that changes after 30 minutes
   without events or 24 hours in all, as in PostHog's own SDKs, and on each launch of an app or
   start of the host (host `analytics/session.rs`, `AnalyticsSession` on the iPhone and Android),
@@ -32,7 +44,30 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   approximate location (`$geoip_country_name`, `$geoip_city_name`, …), then the project's
   *Discard client IP data* drops the IP before storage.
 - `env` is `main` or `dev`; filter dev out in PostHog. Debug host builds (`cargo test`, `cargo run`)
-  send nothing: every e2e test starts a fresh host that would count as a new user.
+  send nothing: every e2e test starts a fresh host that would count as a new user. Test machines that run
+  release builds (Dev and end-to-end cloud computers) start with `CODYNC_ANALYTICS_ENV=dev`: their events say
+  `env: dev`, so no chart counts them, and the mark is stored, so a release the machine updates to keeps it
+  (releases from before the mark, such as 2.24.0, don't know it).
+
+## Adding a feature
+
+Every new feature or module ships with its PostHog events in the same change, so a later bug
+can be traced from the events around it:
+
+- **Use**: an event when it is used. A host method gets it from `api::dispatch`
+  (`analytics::observe_call` in `analytics/observe.rs`); an app-only action from its client
+  (`track` on the desktop and terminal UI, added to `analytics::Reported`; the analytics client
+  on the iPhone and Android, both alike).
+- **Outcome**: how it ended, as `turn_finished` does: `outcome` (`done`, `failed`, …) and, for a
+  failure, its category in `error`. Never the error's message.
+- **Errors**: failures that should never happen go to *Error tracking* below (`reportError` on
+  the host, desktop and terminal UI); crashes are already caught.
+- **Display preferences send nothing.** A device's own look (Settings › Appearance: theme, text
+  size, usage icons, compact sidebar, agent logos; thinking details) has no outcome or failure to
+  trace, so switching one is not an event.
+- The *Rules* above apply: feature use only, never content. List each new event and property in
+  [analytics events](../reference/analytics-events.md), and check they arrive in PostHog
+  (`env = dev`) during the change's e2e test.
 
 ## Where events come from
 
@@ -54,7 +89,8 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
   never send.
-- **codync.dev** counts page views and clicks on download and outbound links without cookies.
+- **codync.dev** counts page views, time on page, scrolling, load speed and clicks on download
+  and outbound links without cookies, through its own `/e` path ([website](../reference/analytics-events.md#website)).
 
 Every event, its sender and its properties: [analytics events](../reference/analytics-events.md).
 
@@ -69,8 +105,12 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
   analytics task), and `reportError`, loopback only, for the computer's apps. Process `host`.
 - **Terminal UI**: its panics, through `reportError` from the panic hook. Process `tui`.
 - **Desktop** (`apps/desktop/src/main/error-reports.ts`, `shared/error-report.ts`): uncaught
-  errors and rejections in the main process and every window, and windows or helpers that
-  crashed (`RendererGone`, `GPUGone`, … with Electron's reason), through `reportError`. Not
+  errors and rejections in the main process and every window, errors a view threw while
+  rendering (mechanism `react`: the chat and pairing windows show *Something went wrong* with
+  *Try again* instead of going blank), and windows or helpers that crashed (`RendererGone`,
+  `GPUGone`, … with Electron's reason), through `reportError`. A window whose page crashed loads
+  it again (`renderer-recovery.ts`), at most twice in a row before it has stayed up a minute, and
+  says what came of it (`window_recovery`). Not
   reported: error events that carry no error (the ResizeObserver loop notice), and helpers that
   exited normally or were ended from outside (`clean-exit`, `killed`: logout, shutdown, an update),
   and a GPU process that couldn't launch (the app goes on with software rendering).
@@ -120,6 +160,7 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | New user | First event of any kind in the period. A new computer also sends `host_started` with `first_run`. |
 | Onboarded | Desktop: `onboarding_completed`. Phones: `computer_paired` (or `onboarding_completed` with `via = skipped`, which is not onboarded). Funnels: [analytics events](../reference/analytics-events.md#funnels). |
 | Star rate | `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`. |
+| Ko-fi rate | `kofi_invite_answered` with `opened` ÷ `kofi_invite_shown`, per `app` (the terminal UI sends only `kofi_invite_shown`: its link opens in the terminal). |
 | Activated | Sent ≥1 message from a phone (`message_sent`, `client = remote`) within 7 days of first seen. In the first week of data, 4 of 5 such users came back after 24 h and none of the 6 computer-only ones did. |
 | Successful turn rate | `turn_finished` with `outcome = done` ÷ all `turn_finished` with `source = user`, per agent and per `$os`. |
 | Frustration rate | (`turn_stopped` + `session_reset`) ÷ `message_sent`, per `$os`. |

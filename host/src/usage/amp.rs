@@ -6,15 +6,7 @@ use std::time::Duration;
 use super::Window;
 
 pub(super) async fn collect() -> Option<Vec<Window>> {
-    let bin = super::command::program("amp")?;
-    let text = super::command::output(&bin, &["usage", "--no-color"], None, Duration::from_secs(8)).await?;
-    let windows = parse(&text);
-    if windows.is_empty() {
-        tracing::debug!("amp usage output had no credit lines");
-        None
-    } else {
-        Some(windows)
-    }
+    super::command::windows("amp", &["usage", "--no-color"], None, Duration::from_secs(8), parse).await
 }
 
 fn parse(text: &str) -> Vec<Window> {

@@ -12,6 +12,12 @@ public enum ActivityIconCache {
         if !FileManager.default.fileExists(atPath: file.path) { try data.write(to: file, options: .atomic) }
     }
 
+    /// Start over: every account's icons.
+    static func eraseAll() throws {
+        guard let root, FileManager.default.fileExists(atPath: root.path) else { return }
+        try FileManager.default.removeItem(at: root)
+    }
+
     public static func erase(context: String) throws {
         guard let directory = directory(context), FileManager.default.fileExists(atPath: directory.path) else { return }
         try FileManager.default.removeItem(at: directory)
@@ -61,9 +67,12 @@ public enum ActivityIconCache {
         return UIImage(contentsOfFile: directory.appendingPathComponent(filename).path)
     }
 
-    private static func directory(_ context: String) -> URL? {
+    private static var root: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedStore.appGroup)?
             .appendingPathComponent("CustomIcons", isDirectory: true)
-            .appendingPathComponent(SHA256.hash(data: Data(context.utf8)).map { String(format: "%02x", $0) }.joined(), isDirectory: true)
+    }
+
+    private static func directory(_ context: String) -> URL? {
+        root?.appendingPathComponent(SHA256.hash(data: Data(context.utf8)).map { String(format: "%02x", $0) }.joined(), isDirectory: true)
     }
 }

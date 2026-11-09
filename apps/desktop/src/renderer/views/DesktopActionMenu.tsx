@@ -1,15 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { MenuItem } from '../components/Overlay'
+import type { MenuItem } from '../components/Menu'
 import { ACTION_MENU_WIDTH, menuPlacement, submenuPlacement } from '../lib/menu-placement'
 import { submenuHover } from '../lib/submenu-hover'
 import { useTr } from '../lib/use-language'
 import { PanelRows, type PanelItem } from './PanelMenus'
 
-/** Roster actions, with one level of desktop submenus. */
-export type ActionItem = MenuItem | (Omit<MenuItem, 'action'> & { submenu: MenuItem[] })
-
-/** Hover opens a child beside its parent. Clicking, Enter, and → enter it; ← or Escape returns. */
-export function DesktopActionMenu({ items, onDismiss, x, y }: { items: ActionItem[]; onDismiss: () => void; x: number; y: number }) {
+/** Roster actions, with one level of submenus beside them. Hover opens a child beside its parent. Clicking, Enter, and → enter it; ← or Escape returns. */
+export function DesktopActionMenu({ items, onDismiss, x, y }: { items: MenuItem[]; onDismiss: () => void; x: number; y: number }) {
   const tr = useTr()
   const menu = useRef<HTMLDivElement>(null)
   const child = useRef<HTMLDivElement>(null)
@@ -39,7 +36,7 @@ export function DesktopActionMenu({ items, onDismiss, x, y }: { items: ActionIte
   const returnToParent = () => { closeChild(); anchor.current?.focus({ preventScroll: true }) }
   const enter = (index: number, row: HTMLButtonElement | null) => {
     const item = items[index]
-    if (!row || !item || !('submenu' in item)) return
+    if (!row || !item?.submenu) return
     hover.current?.cancel()
     anchor.current = row
     setOpen(index)
@@ -48,18 +45,18 @@ export function DesktopActionMenu({ items, onDismiss, x, y }: { items: ActionIte
   const point = (index: number, row: HTMLButtonElement) => {
     const item = items[index]
     setLevel('parent')
-    if (item && 'submenu' in item) {
+    if (item?.submenu) {
       hoveredRow.current = row
       hover.current?.schedule(index)
     } else hover.current?.schedule(null)
   }
-  const convert = (item: ActionItem, index: number): PanelItem => ({
+  const convert = (item: MenuItem, index: number): PanelItem => ({
     title: item.title, icon: item.icon ?? 'circle', detail: item.detail, verbatim: item.verbatim, destructive: item.destructive,
-    ...('submenu' in item ? { chevron: true, submenu: true, expanded: open === index, action: (row: HTMLButtonElement | null) => enter(index, row) }
+    ...(item.submenu ? { chevron: true, submenu: true, expanded: open === index, action: (row: HTMLButtonElement | null) => enter(index, row) }
       : { action: () => { onDismiss(); item.action() } }),
   })
   const branch = open === null ? null : items[open]
-  const sub = branch && 'submenu' in branch ? branch : null
+  const sub = branch?.submenu ? branch : null
   const placement = menuPlacement({ x, y }, { width: ACTION_MENU_WIDTH, height: size.parent }, view)
   const subPlacement = sub && anchor.current && menu.current ? submenuPlacement(
     { ...placement, right: placement.left + placement.width, height: size.parent }, anchor.current.getBoundingClientRect(),

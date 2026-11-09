@@ -15,10 +15,12 @@
 //!
 //! Registry and GitHub JSON is untrusted input: names become ids and paths, so
 //! they're reduced to a safe slug first. Secret values (API keys, tokens) stay
-//! on this computer; listings only say which keys are set.
+//! on this computer; listings only say which keys are set. On a Codync Cloud
+//! computer, remote connectors' secrets are its keeper's: see `connector_keeper`.
 
 pub mod agent_sign_in;
 pub mod composio;
+pub mod connector_update;
 pub mod logins;
 pub mod oauth;
 pub mod passwords;
@@ -26,12 +28,16 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
+mod command_line;
+mod connector_keeper;
+mod custom;
 mod install;
 mod registry;
 mod skills;
 mod updates;
 
-pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
+pub use custom::add_custom_connector;
+pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
 pub use skills::{
     add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,
@@ -55,6 +61,9 @@ const UA: &str = concat!("codync-host/", env!("CARGO_PKG_VERSION"));
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// Registry search is slow (often 20-30 s); lookups by name are fast.
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// The largest value a connector keeps in its environment or headers.
+pub const MAX_CREDENTIAL_BYTES: usize = 64 * 1024;
 
 // MARK: stored items
 
@@ -121,6 +130,8 @@ impl Connector {
                 Some(o) if o.signed_in() => "signedIn",
                 Some(_) => "signedOut",
             },
+            // Set up with a token before Codync could sign in to it (GitHub): it can switch.
+            "canSignIn": self.oauth.is_none() && self.url.as_deref().is_some_and(oauth::offers_sign_in),
         })
     }
 }
@@ -174,12 +185,20 @@ fn load<T: for<'de> Deserialize<'de>>(store: &crate::store::Store, key: &str) ->
     store.kv_get(key).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
+const CONNECTORS_SLOT: &str = "connectors";
+
 pub fn connectors(store: &crate::store::Store) -> Result<Vec<Connector>> {
-    vault::read(store, "connectors")?.map_or_else(|| Ok(Vec::new()), |s| serde_json::from_str(&s).map_err(Into::into))
+    vault::read(store, CONNECTORS_SLOT)?
+        .map_or_else(|| Ok(Vec::new()), |s| serde_json::from_str(&s).map_err(Into::into))
 }
 
 pub fn skills(store: &crate::store::Store) -> Vec<Skill> {
     load(store, "skills")
+}
+
+/// Whether a connector or connected app was ever saved, answered without the vault.
+pub fn connectors_saved(store: &crate::store::Store) -> Result<bool> {
+    Ok(vault::saved(store, CONNECTORS_SLOT)? || vault::saved(store, composio::SLOT)?)
 }
 
 /// Everything a bot can turn on: installed connectors and connected apps.
@@ -190,6 +209,13 @@ pub fn connector_ids(store: &crate::store::Store) -> Result<Vec<String>> {
         .flatten()
         .filter_map(|c| c["id"].as_str().map(str::to_owned))
         .collect())
+}
+
+/// The bots that have this connector turned on.
+pub fn bots_using(store: &crate::store::Store, id: &str) -> Result<Vec<crate::store::BotRow>> {
+    let mut bots = store.bots()?;
+    bots.retain(|row| !row.deleted && !row.config.is_group() && row.config.connectors.iter().any(|c| c == id));
+    Ok(bots)
 }
 
 /// What the computer installs for its bots.
@@ -248,7 +274,12 @@ fn save<T: Serialize>(store: &crate::store::Store, key: &str, items: &[T]) -> Re
 }
 
 pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<()> {
-    vault::write(store, "connectors", &serde_json::to_string(items)?)
+    if crate::remote::managed::is_managed(store) {
+        let mut items = items.to_vec();
+        connector_keeper::hand_over(store, &mut items)?;
+        return vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?);
+    }
+    vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(items)?)
 }
 
 /// Serialize read/modify/write so OAuth refreshes and installations cannot replace each other.
@@ -265,6 +296,10 @@ pub fn update_connectors<T>(
 
 fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
     update_connectors(store, |all| {
+        if c.registry_name.is_none() {
+            // Recheck under the write lock: another install may have finished during OAuth discovery.
+            ensure_name_available(&c.name, all)?;
+        }
         // A registry server is installed once: installing it again replaces it under the id the bots know.
         if let Some(name) = c.registry_name.as_deref()
             && let Some(existing) = all.iter_mut().find(|x| x.registry_name.as_deref() == Some(name))
@@ -278,6 +313,17 @@ fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value>
         all.push(c);
         Ok(public)
     })
+}
+
+/// A custom connector can't take an installed connector's name. Names are compared as
+/// given, not as slugs: distinct names may share an id prefix.
+fn ensure_name_available(name: &str, all: &[Connector]) -> Result<()> {
+    if all.iter().any(|c| c.name == name) {
+        bail!(
+            "A connector named \"{name}\" is already installed. Sign in to it or remove it in your library, or choose another name."
+        );
+    }
+    Ok(())
 }
 
 fn unique_id(base: &str, taken: &[String]) -> String {
@@ -340,9 +386,44 @@ mod tests {
         let remote = c.acp(exe, 1).unwrap();
         assert_eq!(remote["args"][1], "remote", "remote servers go through the proxy");
         assert_eq!(remote["env"], only_data_dir);
+        assert_eq!(c.public()["canSignIn"], false, "only servers Codync has its own app for");
         c.oauth = Some(oauth::OAuth::default());
         assert!(c.acp(exe, 1).is_none(), "not signed in yet");
         assert_eq!(c.public()["auth"], "signedOut");
+        assert_eq!(c.public()["canSignIn"], false, "already signs in");
+        c.url = Some("https://api.githubcopilot.com/mcp/".into());
+        assert_eq!(c.public()["canSignIn"], false, "already signs in");
+        c.oauth = None;
+        assert_eq!(c.public()["canSignIn"], true, "set up with a token: can switch to signing in");
+    }
+
+    /// The credential store stays shut until something was saved, and a new bot still gets all of it after that.
+    #[tokio::test]
+    async fn a_new_bot_gets_what_the_computer_saved() {
+        let dir = std::env::temp_dir().join(format!("codync-new-bot-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let app = json!({"id": "1", "toolkit": "slack", "name": "Slack", "status": "active"});
+        for (slot, saved, id) in [
+            (CONNECTORS_SLOT, json!([{"id": "linear", "name": "Linear", "url": "https://example.com/mcp"}]), "linear"),
+            (composio::SLOT, json!({"key": "k", "userId": "u", "connections": [app]}), "composio-slack"),
+        ] {
+            let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
+            let hub = crate::hub::Hub::new(
+                store,
+                "test".into(),
+                crate::remote::identity::Identity::load_or_create(&dir).expect("identity"),
+                "test".into(),
+                19222,
+            );
+            let new_bot = async || {
+                let asked = json!({"name": "n", "backend": "fixture", "command": "true", "cwd": dir});
+                crate::agent::new_bot::with_defaults(&hub, asked).await.expect("new bot").connectors
+            };
+            assert!(new_bot().await.is_empty(), "nothing saved yet");
+            vault::write(&hub.store, slot, &saved.to_string()).expect("save");
+            assert_eq!(new_bot().await, [id], "{slot}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]

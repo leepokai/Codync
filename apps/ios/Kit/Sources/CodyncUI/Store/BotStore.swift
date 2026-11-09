@@ -63,9 +63,14 @@ public final class BotStore {
     public internal(set) var hostVersion: HostVersion?
     /// An update this phone asked of the computer; cleared when its version changes.
     public internal(set) var hostUpdate: HostUpdate?
+    /// Who runs it when it's a Codync Cloud computer, as the account lists it; nil for the user's own.
+    public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
+    /// The newest order still to send, and the task sending them (`setUsageOrder`).
+    @ObservationIgnored var usageOrderWaiting: [String]?
+    @ObservationIgnored var usageOrderSending: Task<Void, Never>?
     /// The computer's remote screen (`nil`: the host predates it).
     public internal(set) var screen: ScreenState?
     /// The computer's network of the user's computers (`nil`: the host predates it).
@@ -97,6 +102,8 @@ public final class BotStore {
     public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     /// A message to the bot from this phone moved along (the Live Activity follows it).
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
+    /// A prompt reached the computer or its mailbox.
+    var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
     /// A bot appeared, changed or went away.
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
@@ -109,6 +116,8 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`).
+    @ObservationIgnored var lastSentNonce: String?
     /// Section moves shown but not answered yet, oldest first.
     @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 
@@ -181,6 +190,15 @@ public final class BotStore {
         if case .computerOffline = heldDrop ?? connection { computer.boxKey != nil && transport is any RemoteTransport } else { false }
     }
 
+    /// Can't reach a computer with no relay: text waits on this phone until it can (`sendHeld`).
+    public var holdsOnPhone: Bool {
+        guard computer.cloud == nil else { return false }
+        switch connection {
+        case .connecting, .offline: return true
+        default: return false
+        }
+    }
+
     /// What headers show: a reconnect the grace period keeps quiet reads "Connecting…"
     /// as soon as an action is waiting on it.
     public var shownConnection: Connection { waiting > 0 && connection == .online ? .connecting : connection }
@@ -191,6 +209,7 @@ public final class BotStore {
     /// (docs/reference/compatibility.md). `nil` until the host has answered, and whenever
     /// a version can't be read: an unknown is never a reason to lock someone out.
     public var mismatch: VersionMismatch? {
+        if let reason = AppFloor.shared.reason { return .appFloor(reason: reason) }
         guard let hostVersion else { return nil }
         if let found = VersionMismatch.check(app: appVersion, hostVersion: hostVersion.version, minApp: hostVersion.minApp) {
             return found
@@ -203,7 +222,18 @@ public final class BotStore {
         return nil
     }
 
-    /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
+    /// A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's
+    /// `Codync-App` header asks for it), so it reads as updating, not as something for the user to do.
+    public var isCloudUpdating: Bool {
+        if case .updateHost = mismatch { cloudHosting != nil } else { false }
+    }
+
+    /// A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline.
+    public var isAsleep: Bool {
+        if case .computerOffline = connection { cloudHosting?.state.isAsleep == true } else { false }
+    }
+
+        /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {
         bots.values.filter { !$0.hidden }.sorted {
             if $0.band != $1.band { return $0.band < $1.band }
@@ -211,6 +241,10 @@ public final class BotStore {
             return $0.lastAt > $1.lastAt
         }
     }
+
+    /// The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+    /// `hello`: it names the logos, and without it every badge would be the same generic one.
+    public var mixesAgents: Bool { hello != nil && bots.values.filter { !$0.hidden }.mixesAgents }
 
     /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
     public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }
@@ -227,6 +261,13 @@ public final class BotStore {
     }
 
     static let leadChoiceHost = "2.33.0"
+
+    /// From host 2.39.0 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
+    public var supportsQueueActions: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.queueActionsHost) } ?? false
+    }
+
+    static let queueActionsHost = "2.39.0"
 
     static let sectionsHost = "2.32.0"
 
@@ -248,7 +289,9 @@ public final class BotStore {
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
     /// Everything in a bot's or group's chat this device has, oldest first (trace included).
-    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard
+    /// against a late response.
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
     public func canLoadOlder(_ botId: String) -> Bool {
         !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }

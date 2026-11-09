@@ -28,10 +28,21 @@ impl Drop for Host {
 
 impl Host {
     pub async fn start() -> Self {
+        Self::start_with(&[]).await
+    }
+
+    /// [`Self::start`] with `env` on top of the test host's own. [`Self::restart`] doesn't keep it.
+    pub async fn start_with(env: &[(&str, &std::ffi::OsStr)]) -> Self {
         let home = std::env::temp_dir().join(format!("codync-memory-e2e-{}", uuid::Uuid::new_v4()));
-        let (child, base) = super::serve(&home).await;
+        let (child, base) = super::serve_with(&home, env).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
         Self { child, home, base, token }
+    }
+
+    /// Kills the host outright, as a crash would. `restart` starts it again.
+    pub fn crash(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 
     /// Stops the host, lets `between` change its files, and starts it again on the same data.
@@ -167,13 +178,13 @@ impl Host {
         }
     }
 
-    /// The JSON lines a fixture agent logged to `file` in a bot's workspace.
+    /// The JSON lines a fixture agent logged to `file` in a bot's workspace (none before it started).
     pub fn log(&self, bot: &str, file: &str) -> Vec<Value> {
-        let log = std::fs::read_to_string(self.home.join("bots").join(bot).join("workspace").join(file)).unwrap();
-        log.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
+        let log = std::fs::read_to_string(self.home.join("bots").join(bot).join("workspace").join(file));
+        log.unwrap_or_default().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
     }
 
-    /// The requests `instructions_agent.py` logged in a bot's workspace.
+    /// The requests a fixture agent (`instructions_agent.py`, `steer_agent.py`) logged in a bot's workspace.
     pub fn requests(&self, bot: &str, method: &str) -> Vec<Value> {
         self.log(bot, "requests.jsonl").into_iter().filter(|r| r["method"] == method).collect()
     }

@@ -65,6 +65,10 @@ const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'long' })
 
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
+/** A call's length after its title or time: " · 00:16"; empty while it has none. */
+export const callLength = (seconds?: number) =>
+  seconds === undefined ? '' : ` · ${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+
 export const relativeTime = {
   time: (ms: number) => time.format(new Date(ms)),
   /** Chat separator: Today 3:27 AM · Yesterday 5:20 PM · Sep 16 9:02 AM */

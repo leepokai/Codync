@@ -146,23 +146,6 @@ jobs:
             { echo "audio-input entitlement missing"; exit 1; }
           if [ "$NOTARIZE" = true ]; then spctl --assess --type execute -v dist/mac-universal/Codync.app; fi
 
-      - name: Update feeds
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-        run: |
-          VERSION=$(node -p 'require("./apps/desktop/package.json").version')
-          # Installs of the earlier native app update through Sparkle: one more appcast, now for the zip.
-          test -n "$SPARKLE_PRIVATE_KEY" || { echo 'SPARKLE_PRIVATE_KEY is required'; exit 1; }
-          curl -sSL https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz | tar xJ -C "$RUNNER_TEMP"
-          mkdir -p build/updates && cp apps/desktop/dist/codync-macos.zip build/updates/
-          printf '%s' "$SPARKLE_PRIVATE_KEY" | "$RUNNER_TEMP/bin/generate_appcast" --ed-key-file - --maximum-deltas 0 \
-            --download-url-prefix "https://github.com/leepokai/Codync/releases/download/v${VERSION}/" \
-            --link https://www.codync.dev/ -o build/appcast.xml build/updates
-          python3 -m venv "$RUNNER_TEMP/update-verification"
-          "$RUNNER_TEMP/update-verification/bin/pip" install 'cryptography>=44,<47'
-          "$RUNNER_TEMP/update-verification/bin/python" packaging/updates/verify-appcast.py \
-            build/appcast.xml apps/desktop/dist/mac-universal/Codync.app apps/desktop/dist/codync-macos.zip
-
       - uses: actions/upload-artifact@v4
         if: "!startsWith(github.ref, 'refs/tags/')"
         with:
@@ -170,7 +153,6 @@ jobs:
           path: |
             apps/desktop/dist/codync-macos.dmg
             apps/desktop/dist/latest-mac.yml
-            build/appcast.xml
 
       - name: Publish
         if: startsWith(github.ref, 'refs/tags/')
@@ -184,12 +166,18 @@ jobs:
           # latest: release-gate.yml marks it (and updates the Homebrew tap) once it's safe to offer.
           gh release create "$GITHUB_REF_NAME" $FILES --title "Codync $GITHUB_REF_NAME" --generate-notes --latest=false ||
             gh release upload "$GITHUB_REF_NAME" $FILES --clobber
-          # Update feeds last: the release gate takes a release with all its feeds as fully uploaded.
-          gh release upload "$GITHUB_REF_NAME" latest-mac.yml ../../../build/appcast.xml --clobber
+          # The update feed last: the release gate takes a release with all its feeds as fully uploaded.
+          gh release upload "$GITHUB_REF_NAME" latest-mac.yml --clobber
 
   windows:
     needs: check
     if: needs.check.outputs.package == 'true'
+    # The bundled host's Cargo profile (tools/native-host.mjs). Dry runs on PRs into dev build `dev-app`:
+    # release minus thin LTO and the single codegen unit, about 3 minutes less per build. Tags and
+    # release PRs into main build the `release` profile that ships. The macOS job stays on `release`,
+    # the only profile in the cache rust-cache.yml saves for it.
+    env:
+      CODYNC_HOST_PROFILE: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' && 'dev-app' || 'release' }}
     strategy:
       fail-fast: false
       matrix:
@@ -216,6 +204,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host
+          # A fully matched cache is never saved again, so each profile keeps its own.
+          key: ${{ env.CODYNC_HOST_PROFILE }}
       - name: Initialize Windows networking provider
         shell: powershell
         # The first CIM query on a fresh ARM runner can exceed the SSH tool's 30-second timeout.

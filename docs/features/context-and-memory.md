@@ -160,13 +160,23 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   from `usage_update`, compactions, and when turns end. How long the provider keeps prompts cached is learned
   from turns that came after a pause (`cache.life.<bot>`); until then it is an hour for Claude on a subscription
   and five minutes otherwise. Each turn's cached read and write tokens are logged (`turn usage`).
-- **Compacting ahead of time**, in the bot's own chat only (never rooms, routines or bot requests):
+- **Compacting ahead of time**, when the user's threshold asks for it (Early's rules here), in the bot's own chat
+  only (never rooms, routines or bot requests):
   - at the end of a turn past three quarters of the window or 200k tokens, whichever is less;
   - while idle, with a one-hour cache and over 100k in use, five minutes before the cache expires.
 
   It runs as a hidden turn: dreaming first, then the opening rendered again (a Claude session reloads only when
   it changed), then `/compact <keep-list>` for Claude, or `/compact` for Codex, whose keep-list is its
   `CODEX_CONFIG` `compact_prompt`. Other harnesses compact on their own. The keep-list is also in the opening.
+  A compaction queued behind another turn runs only if it is still due when its turn comes.
+- **The user's threshold** (*Summarize long chats* in a Claude Code or Codex bot's settings, the bot's
+  `compaction`): Auto (`"off"`, the default: no compaction or rollover from the host, the harness compacts on its
+  own), Early (the rules above), Near the limit, or a size from 50k up to the window less 40k (the apps list 100k
+  steps and take any other size typed, rounded to 10k). A size or Near the limit also keeps idle compaction and
+  the cold rollover away until the context reaches it. The bot's JSON carries `compaction`
+  (`null` for other agents, or a custom command until it turns out to run Claude's or Codex's adapter) and
+  `compactionTokens` (`{min, max, step, presets}`, `null` until the agent has reported the window, kept in
+  `context.window.<bot>`). The rules and the table are in the [design](../design/bot-memory.md#compaction).
 - **Loop guard:** after three host compactions in a day, or one that left 60% of the trigger in use, or one
   fewer than five turns ago, the host rolls over instead of compacting again.
 - **Rollover:** also due when a conversation over 100k went cold (its cache expired) or after eight hours away
@@ -174,7 +184,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   the user's last four messages and the last reply (each cut at 2,000 characters, so a pasted document doesn't fill
   the new conversation), the open plan, and a bookmark for `search_history`. The user can
   edit it (`editHandoff`) or keep the conversation (`keepConversation`); otherwise their next message there starts
-  a new session that begins with it.
+  a new session that begins with it. A change of the threshold withdraws a card it no longer calls for (shown as
+  kept, not counted as the user turning it down).
 - **After every compaction** the host records a notice ("Earlier context was summarized to make room.", its
   `compaction` field carrying Claude's summary, which the next handoff starts from). The apps don't show it: the
   same conversation goes on.
@@ -187,11 +198,17 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 
 ## Turns
 
-- Messages sent while the agent works are folded into one next turn, joined by blank lines.
+- Messages sent while the agent works wait above the composer and are folded into one next turn, joined by blank
+  lines. *Send now* (`steer`) hands one to the agent at once: an agent with `_session/steering` (Claude, Codex, omp)
+  takes it into the running turn of the user's own chat, and the message joins that turn (its `turn`, its reply,
+  memory, a fallback's retry). The turn's end waits for the agent's answer, at most 15 seconds, so a late `injected`
+  still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
+  and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
+  never goes out, its files are deleted and the chat hides it (`removed`).
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
 - A request turn (the recipient's) doesn't set the restart marker: its pending notices become interrupted errors instead of automatically replaying work. A reply turn is the sender's own chat turn and sets it, so it resumes like a user turn.
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
-  the next turn). `session/new`, `session/load` and `session/fork` get three minutes before the agent is
+  the next turn). `session/new`, `session/load`, `session/resume` and `session/fork` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
   that can't keeps its session, and its next new session gets them.
 - `turn.inflight.<bot>` records when the running turn in the bot's chat started. If the host stops mid-turn (update, crash, restart), the next

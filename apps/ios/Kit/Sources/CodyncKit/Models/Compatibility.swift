@@ -8,6 +8,8 @@ public enum VersionMismatch: Equatable, Sendable {
     case updateApp(minimum: String)
     /// The host is older than `minHost`.
     case updateHost(version: String, minimum: String)
+    /// The Codync cloud's emergency floor turned this app version away (`AppFloor`); `reason` says why.
+    case appFloor(reason: String)
 
     /// The oldest host this app works with. Raise it only when the app starts depending on
     /// something older hosts don't have (an optional feature hides its control instead).

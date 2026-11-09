@@ -23,12 +23,15 @@ import com.codync.android.design.*
 
 /**
  * A plain field in a card row (`TextField` / `SecureField` with `.plainTextInput()`): no chrome,
- * no autocorrect, the prompt in the tertiary ink; a secret one hides what's typed.
+ * no autocorrect, the prompt in the tertiary ink; a secret one hides what's typed. [label] names it for accessibility
+ * when the prompt is only an example (`boat_…`).
  */
 @Composable internal fun PlainInput(text: String, onChange: (String) -> Unit, prompt: String, modifier: Modifier = Modifier,
-    secret: Boolean = false, style: TextStyle = Type.body, minLines: Int = 1, maxLines: Int = 1, enabled: Boolean = true) {
+    secret: Boolean = false, style: TextStyle = Type.body, minLines: Int = 1, maxLines: Int = 1, enabled: Boolean = true,
+    label: String? = null) {
     val hint = tr(prompt)
-    BasicTextField(text, onChange, modifier.fillMaxWidth().semantics { contentDescription = hint }, enabled = enabled,
+    val name = label ?: hint
+    BasicTextField(text, onChange, modifier.fillMaxWidth().semantics { contentDescription = name }, enabled = enabled,
         singleLine = maxLines == 1, minLines = minLines, maxLines = maxLines, textStyle = style.copy(color = Palette.text),
         cursorBrush = SolidColor(Palette.accent),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,

@@ -3,15 +3,18 @@
 `standard` advertises ACP `systemPrompt`; `reporting` reports compactions with `compaction_update`; `silent` only
 shows them in `usage_update`; `flaky` resumes sessions and fails its first prompt ever (across restarts), as a rate limit does; `codex` and `claude` answer `initialize` the way those adapters do, so the host asks
 them to compact. A prompt containing COMPACT_NOW, or one that is a `/compact` command, compacts; one containing
-`USAGE <n>` (optionally `SIZE <m>`) reports that much context in use. Every request is appended to
-`requests.jsonl` in the working directory.
+`USAGE <n>` (optionally `SIZE <m>`) reports that much context in use; one containing HOLD ends only once a `release`
+file appears in the working directory (and takes it), or exits with its parent (a background job that quotes the chat
+never gets one). Every request is appended to `requests.jsonl` in the working directory.
 """
 import json
 import os
 import re
 import sys
+import time
 
 mode = sys.argv[1] if len(sys.argv) > 1 else "reporting"
+parent = os.getppid()
 sessions = 0
 compactions = 0
 
@@ -73,6 +76,12 @@ for line in sys.stdin:
             size = re.search(r"SIZE (\d+)", text)
             update(session, {"sessionUpdate": "usage_update", "used": int(usage.group(1)),
                              "size": int(size.group(1)) if size else 200000})
+        if "HOLD" in text:
+            while not os.path.exists("release"):
+                if os.getppid() != parent:
+                    sys.exit()
+                time.sleep(0.05)
+            os.remove("release")
         update(session, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "ok"}})
         result = {"stopReason": "end_turn"}
     else:

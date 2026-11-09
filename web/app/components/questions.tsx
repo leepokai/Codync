@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { DiscordLogo, Plus, WechatLogo } from "@phosphor-icons/react/ssr";
 import Reveal from "./reveal";
-import { DISCORD, WECHAT } from "../links";
+import { CHINA_COMMUNITY, DISCORD } from "../links";
 
 const questions: [string, string][] = [
   [
     "Is Codync free?",
-    "Yes. Codync costs $0 with every feature included, and it's Apache 2.0 licensed. You pay only your agent's provider, through the plan or key you already have.",
+    "Yes. Codync costs $0 with every feature included, Codync Cloud too, and it's Apache 2.0 licensed. You pay only your agent's provider, through the plan or key you already have, and for a cloud computer, your Boat or InstaBox account under its own plan.",
   ],
   [
     "Can I bring my own Claude or ChatGPT subscription?",
@@ -18,19 +18,27 @@ const questions: [string, string][] = [
   ],
   [
     "How do I start?",
-    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair.",
+    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair. Signing in with Apple, Google or GitHub is optional.",
   ],
   [
     "Where does my data go?",
-    "Bots, chats and memory stay on your computer. Your phone reaches it directly on the same network, or through an end-to-end encrypted relay anywhere else, which can't read your messages. Your agent's provider receives the prompts the agent sends.",
+    "Bots, chats and memory stay on your computer. Your phone reaches it directly on the same network or over Tailscale. With an account, it can also go through an end-to-end encrypted relay, which can't read your messages. Your agent's provider receives the prompts the agent sends.",
   ],
   [
     "Do I need an account?",
-    "No. Pair your phone by scanning a code. Signing in with Apple or Google is optional: it lists every computer on your account on your phone, and each computer still approves each device itself.",
+    "No. Without one, your phone pairs by scanning a code and connects over Wi-Fi or Tailscale. A free account (Apple, Google or GitHub) adds the relay, which needs the computer and the phone in the same account, and lists your computers on your phone. An account alone never unlocks a computer: you still pair in person by scanning a code, or approve a 6-digit code on the computer.",
   ],
   [
     "Which computers can run it?",
     "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host, and the desktop app on Mac, Windows and Linux adds other machines over SSH, with their bots in the same sidebar.",
+  ],
+  [
+    "Can my bots run in the cloud?",
+    "Yes, with Codync Cloud (beta). Signed in to a free Codync account, start a cloud computer on your own Boat (EU) or InstaBox (US) account with a key you paste once. Codync charges nothing for it; the provider bills your account under its own plan. It sleeps while your bots are idle and wakes when you message one, and every app reaches it like any other computer.",
+  ],
+  [
+    "Can bots on different computers work together?",
+    "Yes. Put your computers in a private network (beta) and a bot on one can message a bot on another, which works on its own computer and answers. Computers connect peer to peer, through a relay that sees only encrypted traffic when they must, and each one decides which bots may message its bots.",
   ],
   [
     "What happens when my agent runs out of usage?",
@@ -71,9 +79,9 @@ export default function Questions() {
               <DiscordLogo size={20} aria-hidden="true" />
               <span className="underline underline-offset-4">Ask on Discord</span>
             </a>
-            <Link href={WECHAT} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
+            <Link href={CHINA_COMMUNITY} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
               <WechatLogo size={20} aria-hidden="true" />
-              <span className="underline underline-offset-4">微信中国用户交流群</span>
+              <span className="underline underline-offset-4">微信 / Lark 中国用户交流群</span>
             </Link>
           </div>
         </Reveal>

@@ -4,6 +4,7 @@ import { DOT_RADIUS, dotGrid } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
 import { Icon } from './Icon'
 import './avatar.css'
+import { AgentIcon, agentTint } from './AgentIcon'
 import { LeadAgentBadge } from './LeadAgentBadge'
 import { CustomIcon } from './CustomIcon'
 
@@ -288,11 +289,22 @@ export function GroupAvatar({ members, size = 40, animated = true }: { members: 
   return <div aria-hidden className="avatar-frame" style={{ width: size, height: size }}>{content}</div>
 }
 
-/** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members. */
-export function AvatarWithStatus({ bot, members = [], size = 44 }: { bot: Bot; members?: Bot[]; size?: number }) {
+/** A bot's character, or a group's members (Android `BotAvatar`). */
+export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true }: { bot: Bot; members?: Bot[]; size?: number; animated?: boolean }) {
+  return isGroup(bot) && !bot.customIcon ? <GroupAvatar members={members} size={size} animated={animated} /> : <BotAvatar bot={bot} size={size} animated={animated} />
+}
+
+/** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members; `agent`
+ * (a registry id) puts the agent's logo in the bottom-left corner. */
+export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
   return (
     <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
-      {isGroup(bot) && !bot.customIcon ? <GroupAvatar members={members} size={size} /> : <BotAvatar bot={bot} size={size} />}
+      <BotOrGroupAvatar bot={bot} members={members} size={size} />
+      {agent ? (
+        <span className="avatar-agent" style={{ width: size * 0.4, height: size * 0.4 }}>
+          <AgentIcon registry={agent} size={size * 0.28} color={agentTint(agent)} />
+        </span>
+      ) : null}
       {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
       {needsInput(bot) ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>

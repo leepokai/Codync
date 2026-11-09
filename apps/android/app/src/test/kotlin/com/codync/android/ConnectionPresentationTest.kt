@@ -66,6 +66,25 @@ class ConnectionPresentationTest {
         assertEquals("Needs update", connectionDescription(online))
     }
 
+    @Test fun aCloudComputerSleepsUpdatesItselfOrFails() {
+        fun cloudState(link: LinkState, machine: String) = state(link).copy(cloudHosting = CloudPlacement("boat", "Boat", "EU", machine))
+        val asleep = cloudState(LinkState.ComputerOffline(null), "stopped")
+        assertEquals("Sleeping · wakes when you message", statusText(asleep))
+        assertEquals("Sleeping", connectionLabel(asleep))
+        assertEquals("Cloud computer failed", statusText(cloudState(LinkState.Failed("Connection closed."), "failed")))
+        assertEquals("Connecting…", statusText(cloudState(LinkState.Connecting, "stopped")))
+        val behind = cloudState(LinkState.Ready(HostRoute.Relay), "running").copy(hello = buildJsonObject { put("version", "2.0.0") })
+        assertTrue(behind.cloudUpdating)
+        assertEquals("Updating…", statusText(behind))
+    }
+
+    @Test fun theCloudTurningThisAppAwayAsksForAnUpdate() {
+        val floor = state(LinkState.Failed("Update Codync: security fix.", 426))
+        assertEquals(VersionMismatch.AppFloor("Update Codync: security fix."), floor.mismatch)
+        assertEquals("Needs update", statusText(floor))
+        assertEquals(VersionMismatch.AppFloor("Fix"), state(LinkState.Ready(HostRoute.Direct)).copy(appFloor = "Fix").mismatch)
+    }
+
     @Test fun theHeaderSummarizesTheComputers() {
         assertEquals("1 connected", connectionSummary(listOf(state(LinkState.Ready(HostRoute.Direct)))).filled())
         assertEquals("Connecting…", connectionSummary(listOf(state(LinkState.Connecting))).filled())

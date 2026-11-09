@@ -1,5 +1,6 @@
 use super::search_path::TestSearchPath;
 use super::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 struct TempDir(PathBuf);
@@ -49,6 +50,51 @@ fn an_installed_cli_comes_before_the_registry_build() {
             "{id}: the installed CLI first, the registry build kept for a CLI too old for ACP"
         );
     }
+}
+
+/// A usage reading holds off for a new build only when starting the agent would really install it.
+#[test]
+fn an_update_is_pending_only_for_a_download_nothing_installed_yet() {
+    let dir = TempDir::new();
+    let _path = TestSearchPath::set(dir.0.clone());
+    let target = json!({"archive": "https://example.com/a.zip", "cmd": "./a"});
+    let binaries: serde_json::Map<String, Value> =
+        ["darwin-aarch64", "darwin-x86_64", "linux-aarch64", "linux-x86_64", "windows-aarch64", "windows-x86_64"]
+            .into_iter()
+            .map(|platform| (platform.to_owned(), target.clone()))
+            .collect();
+    let version = uuid::Uuid::new_v4().to_string();
+    let build = |id: &str| json!({"id": id, "version": version, "distribution": {"binary": binaries}});
+    let npx = json!({"id": "kilo", "distribution": {"npx": {"package": "kilo"}}});
+    registry::set_cache(Some(json!({"agents": [build("antigravity-acp"), build("grok-build"), npx]})));
+    let antigravity = update_pending("antigravity");
+    let installed = crate::service::data_dir().join("agents/antigravity-acp").join(&version);
+    std::fs::create_dir_all(&installed).expect("create the build's folder");
+    std::fs::write(installed.join(".installed"), "").expect("mark it installed");
+    let after_install = update_pending("antigravity");
+    write_cli(&dir.0, "grok");
+    let with_cli = update_pending("grok");
+    let not_a_download = update_pending("kilo");
+    registry::set_cache(None);
+    let _ = std::fs::remove_dir_all(&installed);
+    assert!(antigravity, "its current build isn't here");
+    assert!(!after_install);
+    assert!(!with_cli, "the installed CLI starts: no build gets installed");
+    assert!(!not_a_download, "npx keeps its older packages");
+}
+
+#[test]
+fn a_harness_the_registry_also_lists_shows_once() {
+    let dir = TempDir::new();
+    let _path = TestSearchPath::set(dir.0.clone());
+    let agents: Vec<_> =
+        HARNESSES.iter().map(|h| h.id).chain(["unknown-agent"]).map(|id| json!({"id": id, "name": id})).collect();
+    registry::set_cache(Some(json!({"agents": agents})));
+    let listed = list();
+    registry::set_cache(None);
+    let ids: Vec<_> = listed.iter().filter_map(|b| b["id"].as_str()).collect();
+    assert_eq!(ids.iter().collect::<HashSet<_>>().len(), ids.len(), "clients key their lists by id: {ids:?}");
+    assert!(ids.contains(&"unknown-agent"), "a registry agent we don't know by name is still offered");
 }
 
 #[test]

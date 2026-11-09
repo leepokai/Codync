@@ -4,20 +4,21 @@ import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startu
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
-import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
+import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
+import { AnchoredMenu, type MenuItem } from '../components/Menu'
 import { HStack, Spacer } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
+import { limitSectionName, sectionName } from '../lib/roster-sections'
 import { useApp, StoreContext } from '../store/context'
-import { account } from '../store/account'
 import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
-import { SidebarFooter } from './SidebarFooter'
+import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
@@ -26,10 +27,11 @@ import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
+import { SignInCodeDialog } from './marketplace/ConnectorSheets'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
 import { SearchPalette } from './SearchPalette'
-import { AccountWelcomeView } from './AccountWelcomeView'
+import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
 import { HostStateView } from './HostStateView'
@@ -37,15 +39,20 @@ import { StartupRecovery } from './StartupRecovery'
 export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
 import { StarPrompt } from './StarPrompt'
+import { JoinAccountPrompt } from './JoinAccountPrompt'
+import { MoveComputerPrompt } from './MoveComputerPrompt'
+import { PairingRequestPrompt } from './PairingRequestPrompt'
+import { DeleteAccountPrompt } from './DeleteAccountPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
-import { DesktopActionMenu, type ActionItem } from './DesktopActionMenu'
-import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus'
+import { DesktopActionMenu } from './DesktopActionMenu'
+import { moveToSectionItems, sectionHeaderItems } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
-import { SectionNameDialog } from './SectionNameDialog'
+import { NameDialog, type Naming } from './NameDialog'
 import { useTraySummary } from './tray-summary'
 import { useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
+import { useCloudAttachments } from '../store/cloud-attachments'
 import './chat-window.css'
 import './sidebar-header.css'
 import { useTr } from '../lib/use-language'
@@ -55,12 +62,13 @@ import { useTr } from '../lib/use-language'
 export function ChatWindow() {
   const tr = useTr()
   const app = useApp()
-  const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
+  const welcome = useWelcomeGate()
   const [accessSetup, setAccessSetup] = usePref(prefs.computerAccessSetup)
   const [showAccess, setShowAccess] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [upToDate, setUpToDate] = useState(false)
   useSSHAttachments(app)
+  useCloudAttachments(app)
   const ssh = useSSH()
   const showsChat = shouldShowChat(app.host.state.kind, app.computers.length, ssh.state)
   const finishAccess = (ready: boolean, onboarding: boolean) => {
@@ -123,24 +131,19 @@ export function ChatWindow() {
     <div className="chat-window">
       <Summaries />
       <RefreshIndicator />
-      {onboarded ? (
+      {!welcome.shown ? (
         accessSetup === null ? (
-          <AccessOnboarding onContinue={(ready) => finishAccess(ready, true)} />
+          <AccessOnboarding onContinue={(ready) => finishAccess(ready, true)} onBack={welcome.back} />
         ) : showsChat ? (
           <ChatSplitView />
         ) : (
           <HostStateView />
         )
       ) : (
-        <AccountWelcomeView
-          onContinue={() => {
-            setOnboarded(true)
-            analytics.track({ event: 'onboarding_completed', signed_in: account.isSignedIn })
-          }}
-        />
+        <AccountWelcomeView onContinue={welcome.finish} />
       )}
-      {onboarded && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
-      {onboarded && accessSetup !== null ? <StarPrompt /> : null}
+      {!welcome.shown && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
+      {!welcome.shown && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /><JoinAccountPrompt /><DeleteAccountPrompt /></> : null}
       <Sheet open={showAccess} onClose={() => setShowAccess(false)} width={660} height={Math.min(820, window.innerHeight - 80)}>
         <ModalHeader icon="hand.raised" title={tr(`Computer access`)} />
         <ComputerAccessView onContinue={(ready) => { finishAccess(ready, false); setShowAccess(false) }} />
@@ -164,6 +167,7 @@ export function ChatWindow() {
       <Sheet open={approval !== null} onClose={() => approval && app.deferApproval(approval)}>
         {approval ? <ApprovalSheet key={approval.id} approval={approval} /> : null}
       </Sheet>
+      <PairingRequestPrompt />
     </div>
   )
 }
@@ -206,8 +210,8 @@ function ChatSplitView() {
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
   const [railNewMenu, setRailNewMenu] = useState(false)
-  const [context, setContext] = useState<{ items: ActionItem[]; x: number; y: number } | null>(null)
-  const [naming, setNaming] = useState<SectionNaming | null>(null)
+  const [context, setContext] = useState<{ items: MenuItem[]; x: number; y: number } | null>(null)
+  const [naming, setNaming] = useState<Naming | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
@@ -299,7 +303,7 @@ function ChatSplitView() {
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
 
   // One plain list. The lead stays in sight: no hide.
-  const botActions = (bot: Bot, store: BotStore): ActionItem[] => [
+  const botActions = (bot: Bot, store: BotStore): MenuItem[] => [
     { title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) },
     ...moveToSectionItems(bot, store, setNaming),
     { title: 'Mark as Read', icon: 'bell.badge', action: () => store.markAllRead(bot.id) },
@@ -415,6 +419,7 @@ function ChatSplitView() {
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
             <UpdateBadge size={32} />
+            <RailAccountNotice />
             <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
               <ProfileAvatar />
             </button>
@@ -424,7 +429,7 @@ function ChatSplitView() {
           <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
         )}
       </aside>
-      <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
+      <ResizeHandle label={tr('Resize sidebar')} width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
@@ -485,13 +490,14 @@ function ChatSplitView() {
       </Sheet>
       <Dialog
         open={confirmDelete !== null}
-        title={`Delete ${confirmDelete?.bot.name ?? 'bot'}?`}
+        title={tr('Delete {name}?').replaceAll('{name}', () => confirmDelete?.bot.name ?? 'bot')}
         message={tr('Files it changed on your computer stay as they are.')}
         actions={confirmDelete ? [{ title: 'Delete bot and its conversation', destructive: true, action: () => confirmDelete.store.delete(confirmDelete.bot) }] : []}
         onClose={() => setConfirmDelete(null)}
       />
-      <SectionNameDialog naming={naming} onClose={() => setNaming(null)} />
+      <NameDialog naming={naming} placeholder="Section name" limit={limitSectionName} clean={sectionName} onClose={() => setNaming(null)} />
       <Dialog open={errorMessage !== null} title={tr('Something went wrong')} message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
+      <SignInCodeDialog />
     </div>
   )
 }

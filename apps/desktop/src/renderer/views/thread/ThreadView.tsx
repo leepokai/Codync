@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { draftOf, isGroup, isWorkingIn, type Bot, type BotDraft, type Entry } from '@shared/models'
+import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -16,10 +16,15 @@ import { buildChat, rowIn, useArrivals, type ChatItem } from './chat-items'
 import { BotConversationView, BotMessageRow } from './BotConversation'
 import { CallConversationView, CallLineRow } from '../call/CallRows'
 import { hidingCalls } from '@shared/calls'
+import { devServerSummary } from '@shared/dev-servers'
 import { ChatRow, TimeSeparator } from './ChatRows'
+import { DevServerTitle } from './DevServersSection'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
+import { QueuedMessages } from './QueuedMessages'
+import { fill } from '../../lib/fill.ts'
+import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
@@ -32,6 +37,8 @@ import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
 import { ArtifactView } from '../library/ArtifactView'
+import { KofiInviteCard } from './KofiInvite'
+import { useKofiInviteAt } from '../../lib/use-kofi-invite'
 import './thread.css'
 import './composer.css'
 import './chat-controls.css'
@@ -43,6 +50,7 @@ const WIDE = 740
  * calls and thinking live in the "Full conversation" sheet. Replying to a message quotes it in the composer.
  */
 export const ThreadView = memo(function ThreadView({ botId }: { botId: string }) {
+  const tr = useTr()
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
   const [showTrace, setShowTrace] = useState(false)
@@ -109,6 +117,12 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
     if (!wide) setCompactDetails((c) => !c)
     else setShowSettings((s) => !s)
   }, [wide])
+  const devServers = devServerSummary(bot?.devServers ?? [])
+  // The title's port leads to its row, whichever page the inspector was left on.
+  const openFromTitle = useCallback(() => {
+    if (devServers.kind !== 'none') setDetailsTab('details')
+    toggleDetails()
+  }, [devServers.kind, toggleDetails])
 
   useEffect(
     () =>
@@ -168,10 +182,11 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             ) : null}
           </div>
           {/* The call bar takes the pill's place; its frosted glass would show the name blurred. */}
-          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={toggleDetails} aria-label={`${bot?.name ?? 'Conversation'}, view details`} title="View conversation details">
+          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title="View conversation details">
             <HStack as="span" gap={7}>
               {bot ? isGroup(bot) ? <GroupAvatar members={store.members(bot)} size={22} /> : <BotAvatar bot={bot} size={22} /> : null}
               <Text size="body" weight="medium" tone="text" truncate>{bot?.name ?? ''}</Text>
+              <DevServerTitle summary={devServers} />
               {/* Grok Bot's hint on hover: the pill opens the details. */}
               <span className="title-pill-chevron">
                 <Icon name="chevron.right" size={10} weight="semibold" color="var(--secondary)" />
@@ -190,13 +205,16 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             </div>
           ) : artifactId ? null : (
             // The artifact over the chat has its own box (two would both take the voice shortcut).
-            <Composer
-              botId={botId}
-              reply={replyTo}
-              cancelReply={cancelReply}
-              onCall={!calling && bot ? () => setCalling(true) : null}
-              onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
-            />
+            <>
+              <QueuedMessages botId={botId} />
+              <Composer
+                botId={botId}
+                reply={replyTo}
+                cancelReply={cancelReply}
+                onCall={!calling && bot ? () => setCalling(true) : null}
+                onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
+              />
+            </>
           )}
         </div>
         {calling ? (
@@ -252,6 +270,7 @@ function ConnectionSubtitle() {
   const connecting = store.shownConnection.kind === 'connecting'
   const symbol = store.connection.kind !== 'online' ? 'wifi.slash' : store.hostRoute === 'relay' ? 'cloud' : store.hostRoute === 'direct' ? 'wifi' : store.hostRoute === 'loopback' ? 'desktopcomputer' : 'network'
   const description = (() => {
+    if (store.isAsleep) return 'Sleeping · wakes when you message'
     switch (store.shownConnection.kind) {
       case 'connecting':
         return 'Connecting'
@@ -263,14 +282,15 @@ function ConnectionSubtitle() {
       case 'unpaired':
         return 'Not paired'
     }
+    if (store.isCloudUpdating) return 'Updating…'
     if (store.mismatch) return 'Needs update'
-    return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? 'Connected over Wi-Fi or Tailscale' : store.hostRoute === 'loopback' ? 'Connected locally' : 'Connected'
+    return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? tr('Connected over Wi-Fi or Tailscale') : store.hostRoute === 'loopback' ? tr('Connected locally') : 'Connected'
   })()
   const spoken = tr(description)
   return (
     <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
-      <Text size="caption" weight="medium" truncate>{store.connectionLabel}</Text>
+      <Text size="caption" weight="medium" truncate>{store.isAsleep ? description : store.connectionLabel}</Text>
     </HStack>
   )
 }
@@ -285,9 +305,12 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   const live = !!bot && isWorkingIn(bot, botId) && !store.isOffline
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
   const entries = store.allEntries(botId)
-  // What voice calls carried shows in each call's conversation, not in the chat.
-  const all = useMemo(() => buildChat(hidingCalls(entries)), [entries])
+  // What voice calls carried shows in each call's conversation, not in the chat; what waits for the bot, in the queue.
+  const working = !!bot && isWorking(bot)
+  const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])
+  const all = useMemo(() => chatOf(entries), [chatOf, entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
+  const kofiAt = useKofiInviteAt(botId, all)
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
@@ -326,7 +349,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
     if (at === 0) {
       const anchor = list[0]?.id
       await store.loadOlder(botId)
-      list = buildChat(hidingCalls(store.allEntries(botId)))
+      list = chatOf(store.allEntries(botId))
       at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
     }
     if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)
@@ -367,7 +390,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
         className="transcript"
         ref={scroller}
         role="log"
-        aria-label="Messages"
+        aria-label={tr('Messages')}
         onScroll={(e) => {
           const el = e.currentTarget
           const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 8
@@ -387,6 +410,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
               <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />
+              {item.id === kofiAt ? <KofiInviteCard /> : null}
             </div>
           ))}
           {bot ? <WorkingTransition bot={bot} visible={live} steps={steps} /> : null}
@@ -444,7 +468,7 @@ function IntroCard({ bot }: { bot: Bot }) {
   const tr = useTr()
   const where = bot.managedWorkspace
     ? `${store.backendName(bot.backend)} · ${tr('Personal workspace')}`
-    : tr('{agent} in {path}').replace('{agent}', store.backendName(bot.backend)).replace('{path}', bot.cwd)
+    : fill(tr('{agent} in {path}'), { agent: store.backendName(bot.backend), path: bot.cwd })
   return (
     <div className="intro-card">
       <BotAvatar bot={bot} size={72} />

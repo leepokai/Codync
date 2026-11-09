@@ -22,7 +22,7 @@ reaching the end of a history response determines when there are no earlier mess
 
 | Path | |
 |---|---|
-| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) |
+| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) and reloading a crashed window (`renderer-recovery.ts`) |
 | `src/preload/` | The `window.codync` bridge (types in `src/shared/ipc.ts`) |
 | `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession` |
 | `src/renderer/components/` | Design system: controls, overlays (sheets, dialogs, menus), SF Symbol icons, character avatars, thinking orbs |
@@ -62,8 +62,9 @@ The TUI connects to one host at a time, so it keeps its single roster.
 
 ## Platform notes
 
-- **First-run computer access** uses a capsule with one permission per panel, the app icon above it, and directional transitions (disabled with Reduce Motion). GitHub Star is the optional final panel and shares its answer history with the later reminder. macOS has three permission panels; Linux combines capture and input; Windows only shows control availability. Settings and the menu-bar setup keep their permission overview. iOS, Android and the terminal UI continue to show remote permission status and direct people to this desktop setup; they cannot request these desktop OS grants.
+- **First-run computer access** uses a capsule with one permission per panel, the app icon above it, and directional transitions (disabled with Reduce Motion). GitHub Star is the optional final panel and shares its answer history with the invitation at the fifth prompt. macOS has three permission panels; Linux combines capture and input; Windows only shows control availability. Settings and the menu-bar setup keep their permission overview. iOS, Android and the terminal UI continue to show remote permission status and direct people to this desktop setup; they cannot request these desktop OS grants.
 
+- **Ko-fi invitation** (`views/thread/KofiInvite.tsx`, `lib/use-kofi-invite.ts`, rule in `lib/kofi-invite.ts`): once per computer, a quiet card under the first finished reply to the first prompt sent from it, until *Support on Ko-fi* or dismiss; never while a GitHub star ask is due or in a session that answered one (setup's panel or the invitation), so it waits for a later session. Prompts are counted from 2.39.1, so an installation whose prompts all came before then gets it on its next one. The terminal UI shows the same sentence and link under that reply for the run in which that chat is on screen (`host/src/tui/app/kofi.rs`, state in `tui-kofi-invite`); it keeps no record of older messages, so an existing terminal gets it on its next message. Each client keeps its own state, like the star ask: it's a client's invitation, not host state, so someone using both sees it once in each. iOS and Android don't show it: App Store and Google Play rules on external tip links outside the US.
 - **Local host recovery** uses the Codync character: looking around and bobbing while starting,
   resting for setup, and a still disappointed expression with lowered eyelids and a downturned mouth if the host is missing or
   failed. Error text and install/retry actions remain available in both full-window and compact
@@ -103,15 +104,18 @@ The TUI connects to one host at a time, so it keeps its single roster.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
 - **Other computers in the account** are reached through this computer's own host and SSH
-  tunnels only. The encrypted channel to account computers (`ChannelTransport`) wasn't ported:
-  the product targets one computer, so "Ask for access" rows show status only. Every offline row
-  has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
+  tunnels, except the account's Codync Cloud computers: the main process opens the relay's encrypted channel to each
+  (`main/channel/`, the iPhone's `ChannelTransport` over the relay only, since a cloud computer has no address to
+  dial), asks each for access once per launch (they approve the account's devices by themselves), and the window uses them
+  like any computer: chats, bots and their settings, setup terminals. The channel is open only while someone looks
+  at the window (shown, not minimized, the computer used in the last 10 minutes: `main/attention.ts`), as a phone
+  connects only in the foreground, since a connected device keeps a cloud computer awake and billed. Other
+  computers' "Ask for access" rows show status only: the product targets one computer. Every offline row
+  but a cloud computer's (deleted in its own section) has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
   *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate
   (`tools/release-gate.py`) sets that mark
   ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
-  Installs of the SwiftUI app get the first desktop release through one more Sparkle appcast, generated for the zip by the release workflow (deprecated, removed after
-  2026-11-06: [updates guide](../guides/updates.md#deprecated-the-sparkle-migration-appcast-remove-after-2026-11-06)).
   On macOS the app removes an idle installer job (`<appId>.ShipIt`) whose update request is gone:
   launchd would otherwise restart it every 2 seconds, forever.
 
@@ -163,13 +167,17 @@ one, so app and host always match, plus the Codync Screen helper (`tools/native-
 `dist:mac:dev` builds only what this Mac runs: the app folder for its architecture
 (`dist/mac-arm64/Codync Dev.app` on Apple silicon), the host for that architecture in the faster
 `dev-app` profile, and signatures without Apple's timestamp server (only notarized builds need it;
-asking it for every file adds about 5 minutes). Extra electron-builder flags go after `--`. The speech
+asking it for every file adds about 5 minutes). `CODYNC_HOST_PROFILE` (`dev-app` or `release`)
+overrides the host's profile: the release workflow's Windows dry runs on PRs into `dev` build
+`dev-app`, since nothing they make ships (its macOS job keeps `release`, the profile its cache holds).
+Extra electron-builder flags go after `--`. The speech
 helper at the top of `electron-builder.yml` doesn't depend on the environment; place it first
 (the release workflow, `.github/workflows/release-desktop.yml`, shows how).
 `dist:mac:dev` signs with the team 7FUM8A8H72 development certificate (`CSC_NAME` in
 `package.json`): the Screen launch agent only runs code from that team, and the keychain holds
-another team's certificate electron-builder would otherwise pick. Update the name when it is
-renewed.
+another team's certificate electron-builder would otherwise pick. When it is renewed, update the
+name there and in `signDevHost` (`tools/native-host.mjs`), which otherwise falls back to an ad hoc
+signature and Keychain asks after every rebuild again.
 Codync and Codync Dev can run side by side: separate app identities, host services, ports, data and login callbacks. See [Dev app isolation](../guides/dev-app.md) for the resource map and external signing/account setup.
 
 For a local signed Mac build, explicitly select a development identity from the project's

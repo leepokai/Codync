@@ -2,14 +2,14 @@ import CodyncKit
 import SwiftUI
 
 /// A dotted line (the call bar, the composer's recording pill): it follows your voice while
-/// listening, ripples while the bot talks, breathes while it works, and rests as faint dots otherwise.
+/// listening, ripples while the bot talks, breathes while it works, and rests as a still row of dots
+/// otherwise. In the ink color, so a dark bot's line stays visible on the dark bar.
 /// While a call connects it shows an indeterminate progress line instead, and fades back to the dots.
 struct LevelDots: View {
     let level: Float
     let speaking: Bool
     let working: Bool
     var connecting = false
-    let color: Color
     let reduceMotion: Bool
 
     var body: some View {
@@ -40,8 +40,7 @@ struct LevelDots: View {
                     }
                     let height = 4 + CGFloat(amount) * (size.height - 4)
                     let rect = CGRect(x: x - 1.25, y: (size.height - height) / 2, width: 2.5, height: height)
-                    let tint = speaking ? Palette.accent : color
-                    canvas.fill(Path(roundedRect: rect, cornerRadius: 1.25), with: .color(tint.opacity(0.5 + 0.5 * amount)))
+                    canvas.fill(Path(roundedRect: rect, cornerRadius: 1.25), with: .color(Palette.accent.opacity(0.5 + 0.5 * amount)))
                 }
             }
         }

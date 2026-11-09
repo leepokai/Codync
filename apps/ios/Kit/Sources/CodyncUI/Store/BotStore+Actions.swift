@@ -85,6 +85,17 @@ extension BotStore {
     /// The bot's own agent again, off the fallback it runs on.
     public func switchBack(_ botId: String) { perform(replay: true) { try await $0.switchBack(botId) } }
 
+    // MARK: dev servers
+
+    /// A refusal shows; the bot's next update shows the rest.
+    public func devServerAction(_ action: DevServer.Action, botId: String, id: String) {
+        perform { try await $0.devServer(action, botId: botId, id: id) }
+    }
+
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        try await withLink(replay: true) { try await $0.devServerLogs(botId: botId, id: id) }
+    }
+
     // MARK: remote screen
 
     /// Takes control from bots (they can still look) or hands it back.
@@ -105,6 +116,22 @@ extension BotStore {
             let e = try await client.react(entryId: entry.id, emoji: emoji)
             self.upsert(e)
         }
+    }
+
+    /// Sends a queued message now: into the bot's running turn when its agent can take it, else as its next turn. It
+    /// leaves the queue once the computer says so.
+    public func steer(_ entry: Entry) {
+        answer(entry, "steer") { try await $0.steer(botId: entry.botId, entryId: entry.id) }
+    }
+
+    /// Takes back a queued message, which never goes out: gone at once, back if the computer refuses.
+    public func unqueue(_ entry: Entry) {
+        let mark = { (removed: Bool?) in
+            guard let i = self.entries[entry.botId]?.firstIndex(where: { $0.id == entry.id }) else { return }
+            Motion.animate { self.entries[entry.botId]?[i].data.removed = removed }
+        }
+        mark(true)
+        Task { await attempt(undo: { mark(nil) }) { try await $0.unqueue(botId: entry.botId, entryId: entry.id) } }
     }
 
     /// A card's button: `entry` shows `choice` as answering (its spinner) while `op` runs.
@@ -365,6 +392,39 @@ extension BotStore {
 
     public func listDirs(_ path: String?) async throws -> DirListing {
         try await ready().listDirs(path)
+    }
+
+    /// Whether this computer lists one agent's limits.
+    public func setUsageShown(_ id: String, shown: Bool) async {
+        do {
+            setUsage(try await ready().setUsageShown(id, shown: shown))
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    /// The order this computer lists its agents in; returns once it's sent. One at a time and only the newest: the host
+    /// handles requests side by side, so two sent together could land in either order. A host older than this refuses
+    /// the call: the error shows and the order stays.
+    public func setUsageOrder(_ ids: [String]) async {
+        usageOrderWaiting = ids
+        let sending = usageOrderSending ?? Task { await sendUsageOrders() }
+        usageOrderSending = sending
+        await sending.value
+    }
+
+    private func sendUsageOrders() async {
+        while let ids = usageOrderWaiting {
+            usageOrderWaiting = nil
+            do {
+                setUsage(try await ready().setUsageOrder(ids))
+            } catch {
+                lastError = error.localizedDescription
+                // The row goes back to the host's order, and what waited was moved from one that didn't land.
+                usageOrderWaiting = nil
+            }
+        }
+        usageOrderSending = nil
     }
 
     public func refreshUsage() async {

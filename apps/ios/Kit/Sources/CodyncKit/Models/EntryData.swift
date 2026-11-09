@@ -19,8 +19,10 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var addFallback: Bool?
     public var text: String?
     public var final: Bool?
-    /// user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired
+    /// user: queued | sent | cancelled | failed, and before the computer has it: sending | waiting (in the relay) | held (on this phone) | delivering · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired
     public var status: String?
+    /// user: taken back while it waited (`unqueue`): it never went out, and no view reads it (`BotStore.chat`).
+    public var removed: Bool?
     public var clientNonce: String?
     public var title: String?
     public var toolKind: String?
@@ -61,6 +63,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     /// The voice call it was said in (user), answered during (agent), or that it ends (notice); the chat shows those
     /// messages only in the call's conversation.
     public var call: String?
+    /// What the user pasted rather than typed, which memory never takes as their own words: kept for a resend.
+    public var pasted: [String]?
     /// user: `voice` when a call's voice model wrote it for the user (`send_to_bot`).
     public var from: String?
     /// notice: what was said on a realtime call, oldest first.

@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.InstalledConnector
 import com.codync.android.core.MarketConnector
+import com.codync.android.core.fill
 import com.codync.android.design.*
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -86,7 +87,7 @@ import kotlinx.coroutines.launch
                     val onComputer = tr("On {name} ({kind})")
                     ChoiceList(optionId, item.options.map {
                         Triple(it.id, if (it.kind == "remote") hosted.replace("{name}", item.title)
-                            else onComputer.replace("{name}", state.hostName).replace("{kind}", it.kind), null)
+                            else fill(onComputer, "name" to state.hostName, "kind" to it.kind), null)
                     },
                         { optionId = it; values = emptyMap() })
                 }

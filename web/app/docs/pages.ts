@@ -56,6 +56,11 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
     title: "What bots can do",
     pages: [
       {
+        slug: "dev-servers",
+        title: "Dev servers",
+        description: "Let a bot keep a dev server running on your computer, see its port from any device, and stop it.",
+      },
+      {
         slug: "routines",
         title: "Routines",
         description:
@@ -105,6 +110,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         title: "Remote access",
         description:
           "How your phone reaches your computer: directly over Wi-Fi, Tailscale or your own URL, or through the Codync relay, always end-to-end encrypted.",
+      },
+      {
+        slug: "codync-cloud",
+        title: "Codync Cloud",
+        description:
+          "Run your bots on a cloud computer on your own Boat or InstaBox account: free from Codync, asleep while idle, woken by a message.",
       },
       {
         slug: "linux-servers",

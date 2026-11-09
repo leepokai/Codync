@@ -1,8 +1,10 @@
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { runningAgent } from '@shared/fallbacks'
 import { isGroup, type Bot } from '@shared/models'
 import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
+import { prefs, usePref } from '../lib/prefs'
 import { sameRosterGroup } from '../lib/roster-sections'
 import { reduceMotion } from '../lib/theme'
 import { useSlide } from '../lib/slide'
@@ -13,7 +15,7 @@ import { StoreContext, useApp } from '../store/context'
 import { BotRow } from './BotRow'
 import { ComputerHeadingLabel, ComputerRosterSection } from './ComputerRosterSection'
 import { SectionRoster } from './SectionRoster'
-import { UpdateNeededCard } from './UpdateNeededCard'
+import { AppFloorCard, UpdateNeededCard } from './UpdateNeededCard'
 
 /** A bot being dragged among its computer's bots, and the order it has made so far. */
 interface BotDrag {
@@ -46,6 +48,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
 }) {
   const app = useApp()
   const selected = app.selection
+  const [agentLogos] = usePref(prefs.agentLogos)
   const [hovered, setHovered] = useState<string | null>(null)
   const [botDrag, setBotDragState] = useState<BotDrag | null>(null)
   // The drag's handlers outlive the render that started it, so they read the latest drag here.
@@ -189,12 +192,14 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
     // The held row shows as hovered, or as an empty slot while its lifted copy follows the pointer.
     const held = botDrag?.item.bot.id === item.bot.id && botDrag.item.ref.computerId === item.ref.computerId
     const many = roster.sections.length > 1
+    const agent = logoAgent(item, agentLogos)
+    const name = agent ? `${item.bot.name}, ${item.store.backendName(agent)}` : item.bot.name
     return (
       <RosterRow
         key={key}
         hovered={hovered === key || held}
         compact={compact}
-        label={many ? `${item.bot.name}, on ${item.store.hostName}` : item.bot.name}
+        label={many ? `${name}, on ${item.store.hostName}` : name}
         title={many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
         selected={isSelected}
         dragKey={key}
@@ -204,7 +209,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
         lifted={held && lift !== null}
         drag={pointerDrag({ start: (from) => liftRow(item, siblings, from), over: dragOver, drop, cancel: endDrag })}
       >
-        <RosterBotRow item={item} compact={compact} />
+        <RosterBotRow item={item} compact={compact} agent={agent} />
       </RosterRow>
     )
   }
@@ -235,27 +240,33 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
   })
   return (
     <>
+      {compact ? null : <AppFloorCard />}
       {sections}
-      {lift ? <RosterGhost key={lift.seq} lift={lift} ghost={ghost} compact={compact} /> : null}
+      {lift ? <RosterGhost key={lift.seq} lift={lift} ghost={ghost} compact={compact} logos={agentLogos} /> : null}
     </>
   )
 }
 
 /** The lifted row or heading under the pointer (iOS's lifted cell): a smaller, translucent copy that follows it. */
-function RosterGhost({ lift, ghost, compact }: { lift: Lift; ghost: RefObject<HTMLDivElement | null>; compact: boolean }) {
+function RosterGhost({ lift, ghost, compact, logos }: { lift: Lift; ghost: RefObject<HTMLDivElement | null>; compact: boolean; logos: boolean }) {
   const card = 'item' in lift.held ? `roster-row ${compact ? 'compact' : ''}` : 'computer-roster-toggle'
   return createPortal(
     <div ref={ghost} className="roster-ghost" style={{ width: lift.width, translate: ghostTranslate(lift.at, lift.grab) }}>
       <div className={`${card} roster-ghost-card`} style={{ transformOrigin: `${lift.grab.x}px ${lift.grab.y}px` }}>
-        {'item' in lift.held ? <RosterBotRow item={lift.held.item} compact={compact} /> : <ComputerHeadingLabel store={lift.held.store} compact={compact} collapsed />}
+        {'item' in lift.held ? <RosterBotRow item={lift.held.item} compact={compact} agent={logoAgent(lift.held.item, logos)} /> : <ComputerHeadingLabel store={lift.held.store} compact={compact} collapsed />}
       </div>
     </div>,
     document.body,
   )
 }
 
-function RosterBotRow({ item, compact }: { item: RosterItem; compact: boolean }) {
-  return <BotRow bot={item.bot} store={item.store} compact={compact} usingComputer={item.store.screen?.agentBot === item.bot.id} members={isGroup(item.bot) ? item.store.members(item.bot) : noMembers} />
+/** The agent whose logo marks a bot's avatar: only while its computer's bots mix agents, and never a group's. */
+function logoAgent(item: RosterItem, logos: boolean): string | null {
+  return logos && !isGroup(item.bot) && item.store.mixesAgents ? runningAgent(item.bot) : null
+}
+
+function RosterBotRow({ item, compact, agent }: { item: RosterItem; compact: boolean; agent: string | null }) {
+  return <BotRow bot={item.bot} store={item.store} compact={compact} usingComputer={item.store.screen?.agentBot === item.bot.id} members={isGroup(item.bot) ? item.store.members(item.bot) : noMembers} agent={agent} />
 }
 
 /** One roster button: drags to reorder, and slides when the others move. */

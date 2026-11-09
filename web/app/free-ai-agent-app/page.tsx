@@ -6,7 +6,7 @@ import Halftone from "../components/halftone";
 import Install from "../components/install";
 import { SiteFooter, SiteHeader } from "../components/site-chrome";
 import Surfaces from "../components/surfaces";
-import AppStoreButton from "../components/app-store-button";
+import { AppStoreButton, PlayStoreButton } from "../components/store-buttons";
 import { DMG, WINDOWS } from "../links";
 
 // For people searching "free AI agent" / "AI agent app": what free means here, and what the bots do.
@@ -76,6 +76,7 @@ export default function Page() {
                 Windows
               </a>
               <AppStoreButton />
+              <PlayStoreButton />
             </div>
           </div>
         </section>

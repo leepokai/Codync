@@ -1,111 +1,31 @@
 // Cross-track integration test (spec §12.1): the real codync-host against `wrangler dev`, driven by a
 // fake phone. Run with `npm run e2e` after `cargo build` in host/ (or set CODYNC_HOST_BIN).
 //
-// Steps: local D1 + wrangler dev with a test Clerk key → host with CODYNC_CLOUD_URL → QR pairing over the
-// relay → chat through the relay → mailbox while the host is down → account claim + SAS access request →
-// cloud revocation → injected grant ignored → direct /channel and loopback-only bearer token.
+// Steps: local D1 + wrangler dev with a test Clerk key and device certificate key → host with CODYNC_CLOUD_URL
+// trusting that key → QR pairing over the relay with a certified phone, which the computer (in no account) lets in
+// → chat through the relay → mailbox while the host is down → account claim + SAS access request → another
+// account's phone turned away → cloud revocation → injected grant ignored → direct /channel and loopback-only
+// bearer token.
 
-import { type ChildProcess, execFile, spawn, spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
-import { networkInterfaces, tmpdir } from "node:os";
+import { type ChildProcess, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import * as ref from "../ref.ts";
+import { check, freePort, LocalCloud, ROOT, step, stop } from "./harness.ts";
 import { exerciseIcons } from "./icons.ts";
 import { Channel, FakePhone, parsePairing, waitFor, type Json, type PairingInfo, type Wire } from "./phone.ts";
 
-const CLOUD_DIR = fileURLToPath(new URL("../..", import.meta.url));
-const ROOT = join(CLOUD_DIR, "..");
 const HOST_BIN = process.env.CODYNC_HOST_BIN ?? join(ROOT, "host/target/debug/codync-host");
 const FAKE_AGENT = join(ROOT, "host/tests/fake_agent.py");
-const CLOUD_PORT = Number(process.env.CODYNC_E2E_CLOUD_PORT ?? 8787);
-const CLOUD = `http://127.0.0.1:${CLOUD_PORT}`;
-const ISSUER = "https://clerk.test.local"; // [env.local] CLERK_ISSUER
-const WRANGLER = join(CLOUD_DIR, "node_modules/.bin/wrangler");
-
-const tmp = mkdtempSync(join(tmpdir(), "codync-e2e-"));
-const persist = join(tmp, "wrangler");
+const local = new LocalCloud(Number(process.env.CODYNC_E2E_CLOUD_PORT ?? (await freePort())));
+const CLOUD = local.url;
+const tmp = local.tmp;
 const home = join(tmp, "home");
-const children: ChildProcess[] = [];
-
-function step(name: string) {
-  console.log(`\n▶ ${name}`);
-}
-
-function check(cond: unknown, what: string): asserts cond {
-  if (!cond) throw new Error(`check failed: ${what}`);
-  console.log(`  ✓ ${what}`);
-}
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve) => {
-    const s = createServer();
-    s.listen(0, "127.0.0.1", () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => resolve(port));
-    });
-  });
-}
-
-function run(cmd: string, args: string[], env: Record<string, string> = {}): ChildProcess {
-  const child = spawn(cmd, args, { cwd: CLOUD_DIR, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
-  const tag = cmd.split("/").pop();
-  child.stdout?.on("data", (d) => process.env.E2E_VERBOSE && process.stdout.write(`[${tag}] ${d}`));
-  child.stderr?.on("data", (d) => process.env.E2E_VERBOSE && process.stderr.write(`[${tag}] ${d}`));
-  children.push(child);
-  return child;
-}
-
-async function stop(child: ChildProcess) {
-  if (child.exitCode !== null || child.signalCode) return;
-  const exited = new Promise((r) => child.once("exit", r));
-  child.kill("SIGTERM");
-  await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
-  if (child.exitCode === null && !child.signalCode) child.kill("SIGKILL");
-}
-
-/// Async on purpose: a blocking spawn stalls the event loop past wrangler's keep-alive timeout, and
-/// the next `fetch` then reuses a socket the server already closed (ECONNRESET).
-function d1(sql: string): Promise<Json[]> {
-  const args = ["d1", "execute", "codync-local", "--local", "--env", "local", "--persist-to", persist, "--json", "--command", sql];
-  return new Promise((resolve, reject) =>
-    execFile(WRANGLER, args, { cwd: CLOUD_DIR, encoding: "utf8" }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`d1 failed: ${stderr}`));
-      resolve((JSON.parse(stdout) as { results: Json[] }[])[0]?.results ?? []);
-    }),
-  );
-}
-
-// ---- Clerk test tokens ----
-
-const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-// @clerk/backend strips PEM armor itself; a single line survives `--var`.
-const jwtKey = publicKey
-  .export({ type: "spki", format: "pem" })
-  .toString()
-  .replace(/-----[A-Z ]+-----|\s/g, "");
-
-async function clerkToken(sub: string): Promise<string> {
-  const key = await crypto.subtle.importKey("jwk", privateKey.export({ format: "jwk" }), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
-  const now = Math.floor(Date.now() / 1000);
-  const part = (v: unknown) => ref.b64url(ref.enc.encode(JSON.stringify(v)));
-  const head = `${part({ alg: "RS256", typ: "JWT" })}.${part({ iss: ISSUER, sub, sid: `sess_${sub}`, iat: now - 5, nbf: now - 5, exp: now + 3600, email: `${sub}@example.com` })}`;
-  return `${head}.${ref.b64url(new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, ref.enc.encode(head))))}`;
-}
-
-async function cloud(method: string, path: string, o: { token?: string; key?: ref.SignKey; body?: unknown } = {}): Promise<{ status: number; body: Json }> {
-  const bytes = o.body === undefined ? new Uint8Array() : ref.enc.encode(JSON.stringify(o.body));
-  const headers: Record<string, string> = {};
-  if (o.token) headers.Authorization = `Bearer ${o.token}`;
-  if (o.body !== undefined) headers["Content-Type"] = "application/json";
-  if (o.key) headers["Codync-Sig"] = ref.signRequest(o.key, { method, authority: `127.0.0.1:${CLOUD_PORT}`, pathAndQuery: path, body: bytes });
-  const res = await fetch(CLOUD + path, { method, headers, body: bytes.length ? bytes : undefined });
-  return { status: res.status, body: await res.json() };
-}
+const run = local.run.bind(local);
+const d1 = local.d1.bind(local);
+const clerkToken = local.token.bind(local);
+const cloud = local.call.bind(local);
 
 // ---- the host ----
 
@@ -115,7 +35,12 @@ let host: ChildProcess | undefined;
 async function startHost() {
   hostPort ||= await freePort();
   // 0.0.0.0 so step 7 can prove a non-loopback bearer token is refused.
-  host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], { CODYNC_HOME: home, CODYNC_CLOUD_URL: CLOUD });
+  host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], {
+    CODYNC_HOME: home,
+    CODYNC_CLOUD_URL: CLOUD,
+    CODYNC_DEVICE_CERT_KEY: local.certPub,
+    CODYNC_AGENT_CHECKS: "off",
+  });
   await waitFor("host /health", () => fetch(`http://127.0.0.1:${hostPort}/health`).then((r) => r.ok || undefined).catch(() => undefined), 30_000);
 }
 
@@ -131,6 +56,14 @@ async function loopback(method: string, body: unknown = {}): Promise<Json> {
   return v;
 }
 
+/** A phone signed in to `token`'s account: registered with it, and the cloud's certificate for its key. */
+async function certify(phone: FakePhone, token: string): Promise<Json> {
+  check((await cloud("POST", "/v1/devices", { token, key: phone.key, body: { name: "E2E iPhone", platform: "ios" } })).status === 200, "phone registered with its account");
+  const r = await cloud("POST", "/v1/devices/certificate", { token, key: phone.key });
+  check(r.status === 200, "the cloud certified the phone's key");
+  return r.body.certificate;
+}
+
 /** The relay refused the upgrade (the socket never opened). */
 const refused = (wire: Wire) => wire.opened.then(
   () => false,
@@ -143,14 +76,7 @@ const computerOnline = async (id: string) => (await d1(`SELECT online FROM compu
 
 async function main() {
   step("1. local D1 + wrangler dev");
-  const migrate = spawnSync(WRANGLER, ["d1", "migrations", "apply", "codync-local", "--local", "--env", "local", "--persist-to", persist], {
-    cwd: CLOUD_DIR,
-    encoding: "utf8",
-    env: { ...process.env, CI: "1" },
-  });
-  if (migrate.status !== 0) throw new Error(`migrations failed: ${migrate.stderr}`);
-  run(WRANGLER, ["dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(CLOUD_PORT), "--persist-to", persist, "--var", `CLERK_JWT_KEY:${jwtKey}`]);
-  await waitFor("cloud /v1/health", () => fetch(`${CLOUD}/v1/health`).then((r) => r.ok || undefined).catch(() => undefined), 60_000);
+  await local.start();
 
   step("2–3. host registers and comes online");
   await startHost();
@@ -161,12 +87,19 @@ async function main() {
   await waitFor("DO presence online", () => computerOnline(computerId), 20_000);
   check(true, "D1 row exists and the DO marked it online");
 
-  step("4. QR pairing over the relay, then chat");
+  step("4. QR pairing over the relay (the computer, in no account, asks first), then chat");
+  const userId = "user_e2e";
+  const token = await clerkToken(userId);
   const pairing: PairingInfo = parsePairing((await loopback("pairing")).pairingUrl);
   check(pairing.computerId === computerId && pairing.cloud === CLOUD, "pairing link names this computer and cloud");
   const phone = new FakePhone();
-  const paired = await phone.pair(pairing);
-  check(paired.computerId === computerId, "pair answered, link closed with 4100");
+  // No claim: the computer stays out of the account until step 6 claims it.
+  const pairs = phone.pair(pairing, { certificate: await certify(phone, token) });
+  const ask = await waitFor("the computer asks", async () => (await loopback("pairingRequests")).requests[0]);
+  check(ask.email === `${userId}@example.com` && ask.code === ref.pairCheck(phone.key.pub, pairing.signKey), `it shows the phone's account and code (${ask.code})`);
+  await loopback("decidePairing", { requestId: ask.requestId, approve: true });
+  const paired = await pairs;
+  check(paired.computerId === computerId && paired.claim === null, "pair answered, link closed with 4100");
   // 6c: the normal reconnect is not a pairing socket, so it isn't capped at 16 messages.
   let ch = await phone.relay(CLOUD, computerId, pairing.signKey);
   const hello = await ch.call("hello", {});
@@ -175,8 +108,7 @@ async function main() {
   check(true, "more than 16 messages on the regular link");
 
   if (process.env.CODYNC_E2E_ICONS_ONLY === "1") {
-    const userId = "user_icons_e2e";
-    const token = await clerkToken(userId);
+    // The phone's own account: joining another one would turn the phone away.
     const claim = await cloud("POST", "/v1/claims", { token });
     const signed = await loopback("claimSign", { claimId: claim.body.claimId, nonce: claim.body.nonce, userId });
     check((await cloud("POST", `/v1/claims/${claim.body.claimId}/complete`, { token, body: signed })).status === 200, "icon test computer claimed");
@@ -262,14 +194,18 @@ async function main() {
   check(run2.event?.event === "pull_request.opened" && run2.event?.repo === "o/r", "delivered once the host is back, as a GitHub event");
   ch = await Channel.open(ch.wire, phone.key, pairing.signKey, { relay: true });
 
-  step("6. account: claim, access request with SAS, revocation");
-  const userId = "user_e2e";
-  const token = await clerkToken(userId);
+  step("6. account: claim, access request with SAS, another account's phone, revocation");
   const claim = await cloud("POST", "/v1/claims", { token });
   const signed = await loopback("claimSign", { claimId: claim.body.claimId, nonce: claim.body.nonce, userId });
   const done = await cloud("POST", `/v1/claims/${claim.body.claimId}/complete`, { token, body: signed });
   check(done.status === 200 && done.body.computer.computerId === computerId, "computer claimed");
   await waitFor("host sees its owner", async () => (await loopback("cloudStatus")).owner?.userId === userId || undefined);
+  check((await loopback("devices")).devices.some((d: Json) => d.key === phone.dk), "the phone paired before the claim keeps its access");
+
+  const stranger = new FakePhone();
+  const strangerPairing = parsePairing((await loopback("pairing")).pairingUrl);
+  const turnedAway = await stranger.pair(strangerPairing, { certificate: await certify(stranger, await clerkToken("someone_else")) }).catch((e: Error) => e);
+  check(turnedAway instanceof Error && turnedAway.message.includes("u•••@example.com's account"), "a phone of another account is turned away, the owner masked");
 
   const phone2 = new FakePhone();
   check((await cloud("POST", "/v1/devices", { token, key: phone2.key, body: { name: "Phone 2", platform: "ios" } })).status === 200, "phone 2 registered");
@@ -339,10 +275,7 @@ async function main() {
   console.log("\nE2E passed");
 }
 
-async function cleanup() {
-  await Promise.all(children.map(stop));
-  rmSync(tmp, { recursive: true, force: true });
-}
+const cleanup = () => local.cleanup();
 
 try {
   if (spawnSync(HOST_BIN, ["--version"]).error) {

@@ -40,9 +40,9 @@ export class Wire {
     });
   }
 
-  static connect(url: string, key?: ref.SignKey): Wire {
+  static connect(url: string, key?: ref.SignKey, extra: Record<string, string> = {}): Wire {
     const u = new URL(url);
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extra };
     if (key) headers["Codync-Sig"] = ref.signRequest(key, { method: "GET", authority: u.host, pathAndQuery: u.pathname + u.search });
     // undici's WebSocket takes headers in its init object (not in the DOM typings).
     return new Wire(new WebSocket(url, { headers } as unknown as string[]));
@@ -79,6 +79,7 @@ export interface PairingInfo {
 export function parsePairing(link: string): PairingInfo {
   const u = new URL(link);
   const q = u.searchParams;
+  // A debug host build is Codync Dev and links with its own scheme.
   if (!["codync:", "codync-dev:"].includes(u.protocol) || q.get("v") !== "3") throw new Error(`not a v3 pairing link: ${link}`);
   const signKey = ref.unb64url(q.get("sk") ?? "");
   if (ref.computerId(signKey) !== q.get("id")) throw new Error("pairing link id doesn't match sk");
@@ -191,8 +192,9 @@ export class FakePhone {
     return `${base}/v1/relay/device/${computerId}?v=1${pair ? `&pair=${pair}` : ""}`;
   }
 
-  relayWire(cloud: string, computerId: string, pair?: string): Wire {
-    return Wire.connect(this.relayUrl(cloud, computerId, pair), this.key);
+  /** `headers`: what a real app adds, such as its `Codync-App` version. */
+  relayWire(cloud: string, computerId: string, pair?: string, headers?: Record<string, string>): Wire {
+    return Wire.connect(this.relayUrl(cloud, computerId, pair), this.key, headers);
   }
 
   async relay(cloud: string, computerId: string, hostSignPub: Uint8Array): Promise<Channel> {
@@ -204,11 +206,14 @@ export class FakePhone {
     return Channel.open(Wire.connect(url), this.key, hostSignPub, { relay: false });
   }
 
-  /** §4.1 over the relay: pair on a pairing link, expect the host to close it with 4100. */
-  async pair(p: PairingInfo, name = "E2E iPhone"): Promise<Json> {
+  /**
+   * §4.1 over the relay: pair on a pairing link with the account's device `certificate` (and a `claim` to bring a
+   * computer in no account into it), expect the host to close it with 4100. A computer in no account asks first.
+   */
+  async pair(p: PairingInfo, proof: { certificate: Json; claim?: Json }, name = "E2E iPhone"): Promise<Json> {
     const wire = this.relayWire(p.cloud!, p.computerId, ref.offerId(ref.unb64url(p.code)));
     const ch = await Channel.open(wire, this.key, p.signKey, { relay: true, pair: true });
-    const ok = await ch.call("pair", { code: p.code, name, platform: "ios" });
+    const ok = await ch.call("pair", { code: p.code, name, platform: "ios", ...proof }, 60_000);
     const code = await wire.closed();
     if (code !== 4100) throw new Error(`pairing link closed with ${code}, expected 4100`);
     return ok;

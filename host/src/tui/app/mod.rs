@@ -10,20 +10,25 @@ mod fallbacks;
 mod forms;
 mod group_form;
 mod input;
+mod kofi;
 mod model;
 mod navigate;
 mod new_bot;
 mod overlay_keys;
+mod pair;
+mod queue;
 mod roster;
 mod section_order;
 mod slash;
 mod steps;
 mod ui;
+mod usage_chooser;
 
 pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
+pub(in crate::tui) use kofi::URL as KOFI_URL;
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
@@ -57,6 +62,8 @@ pub struct App {
     pub client: Client,
     pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
+    /// Whether the host is this computer's. Attached with `--url` nothing tells: a tunnel's address looks local.
+    pub on_this_computer: bool,
     pub host: String,
     pub home: String,
     /// The host's version (`hello`): features newer than `MIN_HOST` check it.
@@ -71,6 +78,10 @@ pub struct App {
     pub screen: Value,
     /// This computer's network (`networkView`'s shape); null on hosts without one.
     pub network: Value,
+    /// The host's account and relay (`cloudStatus`, `cloud` events): null until the pair sheet asks.
+    pub cloud: Value,
+    /// Phones waiting for this computer to let them in (`pairingRequests`), oldest first.
+    pub pairing_requests: Vec<Value>,
     pub backends: Vec<Value>,
     pub custom_icons: bool,
     pub selected: Option<String>,
@@ -148,6 +159,7 @@ pub struct App {
     pub analytics: Option<bool>,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
+    kofi: kofi::Invite,
 }
 
 impl App {
@@ -158,6 +170,7 @@ impl App {
             client,
             tx,
             url,
+            on_this_computer: true,
             host: String::new(),
             home: String::new(),
             host_version: String::new(),
@@ -169,6 +182,8 @@ impl App {
             usage: Value::Null,
             screen: Value::Null,
             network: Value::Null,
+            cloud: Value::Null,
+            pairing_requests: vec![],
             backends: vec![],
             custom_icons: false,
             selected: None,
@@ -216,6 +231,7 @@ impl App {
             hint: None,
             analytics: None,
             seen: analytics::Seen::default(),
+            kofi: kofi::Invite::load(),
         }
     }
 
@@ -250,6 +266,8 @@ impl App {
         // line when the call ends, or when its app went away. A file or an artifact the bot sent stays, to be opened.
         let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
         v.retain(|e| e.kind == Kind::Notice || e.call().is_none() || opens(e));
+        // A queued message the user took back (`unqueue`).
+        v.retain(|e| e.data["removed"] != true);
         // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v
@@ -420,6 +438,10 @@ pub fn mismatch_text(m: &crate::compat::Mismatch, host: &str) -> String {
 
 /// OSC 52: the terminal puts it on the clipboard, over SSH too.
 pub fn copy(text: &str) {
+    // Tests run in the developer's terminal: leave its clipboard alone.
+    if cfg!(test) {
+        return;
+    }
     let mut out = std::io::stdout();
     let _ = write!(out, "\x1b]52;c;{}\x07", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, text));
     let _ = out.flush();

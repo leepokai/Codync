@@ -1,0 +1,13 @@
+name: Feature request
+description: Something Codync doesn't do yet.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: feature
+    attributes:
+      label: The feature
+      description: >-
+        What should Codync do, where, and what is it for? Say what you'd tap or type and what happens then.
+        One feature per issue.
+    validations:
+      required: true

@@ -33,6 +33,9 @@ pub enum App {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Reported {
+    DevServerAction {
+        action: DevServerAction,
+    },
     AppOpened {
         /// Opened by the login item (desktop).
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,6 +63,7 @@ pub enum Reported {
         provider: Option<Provider>,
     },
     SignedOut,
+    ContinuedWithoutAccount,
     StarPromptAnswered {
         ask: Ask,
         starred: bool,
@@ -82,15 +86,58 @@ pub enum Reported {
         stuck: VoiceStuck,
         failure: VoiceFailure,
     },
+    WindowRecovery {
+        outcome: WindowRecoveryOutcome,
+    },
+    ReachAccountAnswered {
+        outcome: ReachOutcome,
+        /// Why adding the computer failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ClaimFailure>,
+    },
+    JoinOfferAnswered {
+        outcome: JoinOutcome,
+    },
+    CloudKeySaved {
+        outcome: CloudKeyOutcome,
+        /// Older desktop builds don't say.
+        #[serde(default)]
+        provider: CloudProvider,
+    },
+    CloudComputerCreated {
+        outcome: CloudCreateOutcome,
+        provider: CloudProvider,
+    },
+    CloudOfferOpened {
+        provider: CloudProvider,
+    },
+    CloudComputerRenamed {
+        outcome: CloudRenameOutcome,
+    },
+    KofiInviteShown,
+    KofiInviteAnswered {
+        opened: bool,
+    },
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
+
+/// What came of a desktop window whose page crashed: it loaded again, or crashed too often and stays down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowRecoveryOutcome {
+    Reloaded,
+    GaveUp,
+    #[serde(other)]
+    Other,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
     Apple,
     Google,
+    Github,
     Hosted,
     #[serde(other)]
     Other,
@@ -198,6 +245,94 @@ pub enum VoiceFailure {
     Other,
 }
 
+/// How the ask before Reach from anywhere turns on ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReachOutcome {
+    Added,
+    OwnRelay,
+    Cancelled,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How the ask to add this computer to the signed-in account ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinOutcome {
+    Added,
+    KeptOut,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How giving Codync Cloud a provider's key ended: kept, turned down (the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudKeyOutcome {
+    Saved,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How creating a Codync Cloud computer ended: created, turned down (over the limit, or the provider refused the key or
+/// the plan, and the user was told what to fix), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudCreateOutcome {
+    Created,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How renaming a Codync Cloud computer ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudRenameOutcome {
+    Renamed,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// The cloud provider a Codync Cloud key or computer is for (the cloud's id for it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudProvider {
+    Boat,
+    Instabox,
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
+/// What the apps do with a dev server on their own (the host's methods report the rest).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DevServerAction {
+    Open,
+    Copy,
+    #[serde(other)]
+    Other,
+}
+
+/// Why a computer couldn't be added to the account.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimFailure {
+    Unreachable,
+    Refused,
+    Host,
+    #[serde(other)]
+    Other,
+}
+
 impl Track {
     /// The body to send for `event`, as `app` (what the terminal UI posts).
     pub fn body(app: App, event: Reported) -> Value {
@@ -280,18 +415,50 @@ mod tests {
                 Event::SignInFailed,
             ),
             (json!({"event": "signed_in", "app": "desktop", "provider": "google"}), Event::SignedIn),
+            (json!({"event": "signed_in", "app": "desktop", "provider": "github"}), Event::SignedIn),
             (json!({"event": "signed_out", "app": "desktop"}), Event::SignedOut),
             (
                 json!({"event": "star_prompt_answered", "app": "desktop", "ask": "second", "starred": true}),
                 Event::StarPromptAnswered,
             ),
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
+            (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,
                     "reconnects": 1, "stuck": "none", "failure": "none"}),
                 Event::VoiceCallQuality,
+            ),
+            (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),
+            (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
+            (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
+            (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
+            (json!({"event": "kofi_invite_answered", "app": "desktop", "opened": true}), Event::KofiInviteAnswered),
+            (
+                json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
+                Event::JoinOfferAnswered,
+            ),
+            (
+                json!({"event": "cloud_key_saved", "app": "desktop", "outcome": "refused", "provider": "instabox"}),
+                Event::CloudKeySaved,
+            ),
+            (
+                json!({"event": "cloud_computer_created", "app": "desktop", "outcome": "created", "provider": "boat"}),
+                Event::CloudComputerCreated,
+            ),
+            (json!({"event": "cloud_offer_opened", "app": "desktop", "provider": "instabox"}), Event::CloudOfferOpened),
+            (
+                json!({"event": "cloud_computer_renamed", "app": "desktop", "outcome": "failed"}),
+                Event::CloudComputerRenamed,
+            ),
+            (
+                json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),
+                Event::ReachAccountAnswered,
+            ),
+            (
+                json!({"event": "reach_account_answered", "app": "desktop", "outcome": "failed", "error": "refused"}),
+                Event::ReachAccountAnswered,
             ),
         ];
         for (body, event) in cases {

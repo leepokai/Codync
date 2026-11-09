@@ -6,10 +6,19 @@ export const SANDBOX_PREFIX = '.codync-dev-'
 /** A worktree folder name made safe for a data folder and a window title. */
 export const sandboxName = (folder: string) => folder.replace(/[^A-Za-z0-9._-]+/g, '-')
 
+/** The iPhone simulator a sandbox tests on, its own so nothing from another test (keys, sign-in, pairings) carries over; `--prune` deletes it with the sandbox. */
+export const sandboxSimulator = (name: string) => `Codync ${name}`
+
 /** Ports for sandboxes, lowest first, without the ones other sandboxes hold; 19222/19223 stay with Codync and Codync Dev. */
 export function sandboxPorts(claimed: Iterable<number>): number[] {
   const taken = new Set(claimed)
   return Array.from({ length: 100 }, (_, i) => 19300 + i).filter((port) => !taken.has(port))
+}
+
+/** The cloud a sandbox uses: the dev cloud with `--cloud`; its own local cloud with `--local-cloud`, and by default on a branch that changes cloud/ (not on Windows, where it doesn't run yet: tools/local-cloud.mjs); else none. */
+export function sandboxCloudMode(o: { cloud?: boolean; localCloud?: boolean; changesCloud: boolean; windows: boolean }): 'dev' | 'local' | 'off' {
+  if (o.cloud) return 'dev'
+  return o.localCloud || (o.changesCloud && !o.windows) ? 'local' : 'off'
 }
 
 /** The Clerk development secret key a sandbox may use: the environment's, else the `.env` file's `CODYNC_CLERK_SECRET_KEY`; null when neither is set. Anything but an `sk_test_` key throws, so production is never reached. */

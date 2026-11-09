@@ -1,0 +1,17 @@
+/* The Ko-fi invitation under the first reply: one quiet line on the agent bubble's fill, its two actions at the end. */
+.kofi-invite {
+  max-width: 560px;
+  padding: 8px 6px 8px 14px;
+  border-radius: var(--radius-l);
+  background: var(--bubble-agent);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--morph), transform var(--morph);
+}
+.kofi-invite.shown {
+  opacity: 1;
+  transform: none;
+}
+.kofi-invite-text {
+  line-height: 1.4;
+}

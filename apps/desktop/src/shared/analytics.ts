@@ -23,7 +23,7 @@ export type Screen =
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
 
-export type SignInProvider = 'apple' | 'google'
+export type SignInProvider = 'apple' | 'google' | 'github'
 
 /** Why a sign-in ended without an account. */
 export type SignInFailure = 'cancelled' | 'timeout' | 'verification' | 'error'
@@ -34,6 +34,13 @@ export type VoiceCallEngine = 'on_device' | 'openai' | 'gemini' | 'cloud'
 export type VoiceStuck = 'none' | 'connecting' | 'reconnecting' | 'speaking'
 /** Why a call's engine gave up. */
 export type VoiceFailure = 'none' | 'microphone' | 'connection' | 'provider'
+
+/** What came of a window whose page crashed: it loaded again, or crashed too often and stays down. */
+export type WindowRecoveryOutcome = 'reloaded' | 'gave_up'
+/** How the ask before Reach from anywhere turns on ended. */
+export type ReachOutcome = 'added' | 'own_relay' | 'cancelled' | 'failed'
+/** Why a computer couldn't be added to the account: the cloud couldn't be reached, it refused, or the host failed. */
+export type ClaimFailure = 'unreachable' | 'refused' | 'host'
 
 export type AnalyticsEvent =
   | { event: 'app_opened'; at_login: boolean }
@@ -46,9 +53,20 @@ export type AnalyticsEvent =
   | { event: 'signed_out' }
   | { event: 'star_prompt_answered'; ask: 'first' | 'second'; starred: boolean }
   | { event: 'link_opened'; link: Link }
+  | { event: 'dev_server_action'; action: 'open' | 'copy' }
   | { event: 'screen_viewed'; screen: Screen }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
+  | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }
+  | { event: 'reach_account_answered'; outcome: ReachOutcome; error?: ClaimFailure }
+  | { event: 'continued_without_account' }
+  | { event: 'join_offer_answered'; outcome: 'added' | 'kept_out' | 'failed' }
+  | { event: 'cloud_key_saved'; outcome: 'saved' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_computer_created'; outcome: 'created' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_offer_opened'; provider: string }
+  | { event: 'cloud_computer_renamed'; outcome: 'renamed' | 'failed' }
+  | { event: 'kofi_invite_shown' }
+  | { event: 'kofi_invite_answered'; opened: boolean }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

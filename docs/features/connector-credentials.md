@@ -19,6 +19,19 @@ its selected host.
 - Headless Linux: provide a session D-Bus and unlocked Secret Service for the
   service user. An unavailable keyring gives an actionable error. There is no
   plaintext, kernel-keyring-only or automatic ephemeral fallback.
+- A [Codync Cloud](../plans/codync-cloud.md) computer has no keyring and no vault of its own: its secrets live in
+  its keeper (`host/src/keeper/`), a separate process under its own system user, sealed with a key the Codync Worker
+  hands only to that keeper and that never touches the disk. The host and its agents (another user, without sudo) use
+  most of them through the keeper's local proxy without reading them; the ones a process has to receive (website
+  logins, the 1Password token, stdio connectors' environment, unproxied agent variables, and a remote connector's URL,
+  a token in its query or user part included) stay readable by the agents:
+  [Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets).
+- Disposable hosts only (tests and [worktree sandboxes](../guides/dev-app.md#worktree-sandboxes)): a Dev build
+  with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
+  A production build ignores the switch.
+
+A host makes its key the first time something needs the vault, such as a connector, voice, credential or agent
+sign-in request, or a new bot once connectors are saved. A new computer's first start makes none.
 
 Unlocking runs on a blocking worker, one read at a time; callers that arrive
 meanwhile share its outcome. A locked Linux keyring gets one unlock prompt that
@@ -51,12 +64,30 @@ A readiness check starts the connector, performs MCP initialize and tools/list,
 and stops the check process. It never invokes a business tool. Failures and a
 90-second timeout remain visible and retryable. Package acquisition is performed
 by the configured runtime (npx, uvx, Docker, etc.), so that runtime must be present.
+A local connector is found and started the way a bot runs it (`shell::program`, so
+npm's `.cmd` shims on Windows too), in the folder of the first bot that has it on, or
+the host's folder when none does, so a relative path means the same thing in both.
 
 Installing a registry connector that is already installed (Add again after a failed
 check, or Connect on a request card) keeps it as it is when nothing new is typed and
 it would run the same way, so its sign-in survives. New values or another way to run
 it (package runtime or hosted) rebuild it in place, under the same id, so each bot
 keeps it on or off as before (`install_server` in `host/src/market/install.rs`).
+
+Editing a custom local connector (`updateConnector`, loopback only, no form in the
+apps) keeps its id and each bot's choice. Omitted fields stay; `command` is an
+executable path, never split into arguments; `args` replaces the list and `args: []`
+clears it; `env` merges, with `null` removing a key. A change to how it runs (`command`,
+`args`, `env`) is checked on the edited copy and exactly that copy is saved if it passes,
+so a typo can't break a working connector and an error means the edit changed nothing. A
+save by anything else during the check refuses the edit, so overlapping edits never combine
+into settings nobody checked. A new `name` or `description` alone starts nothing: it saves
+even while the server can't start, `verify` is null in the answer and no bot restarts.
+Otherwise the bots that have the connector on are told to rebuild their tools. An agent that
+can resume restarts whole before its next turn (not only this connector's process); one
+that can't keeps its session, and the old definition, until its next new session. A bot
+that can't be told is logged and doesn't fail the saved edit. Registry and remote
+connectors are refused (`host/src/market/connector_update.rs`).
 
 ## Conversation requests
 

@@ -32,7 +32,7 @@ import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.launch
 
-/** "Boat API key": a provider's key sheet, its key button and menu item, and its field. */
+/** "Boat API key": a provider's key sheet, its menu items, and its field. */
 @Composable internal fun keyTitle(providerName: String) = tr("{provider} API key").replace("{provider}", providerName)
 
 /**

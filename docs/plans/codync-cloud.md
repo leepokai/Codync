@@ -146,8 +146,8 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
   *Delete snapshots*, *Delete cloud computer*). The card's **+** opens *New cloud computer*: a name (suggested "Cloud
   computer", "Cloud computer 2", …) and every provider with its logo, where it runs and its key (or *Add a key first*).
   A provider is reached only where it is picked (owner, 2026-11-09: no separate Cloud providers row; picking a provider
-  shows only that provider's options): a row without a working key, the key button on a row with one, or a computer's
-  `⋯` opens *{provider} API key*, a sheet with just that provider: its key (last four, replace, remove) or a field to
+  shows only that provider's options): a row without a working key, the `⋯` inside a row with one (*{provider} API key*,
+  and *Remove key* while no cloud computer runs there), or a computer's `⋯` opens *{provider} API key*, a sheet with just that provider: its key (last four, replace, remove) or a field to
   paste one, and *How to make a key* folded under it; saving one goes back to New cloud computer with it picked. A key
   the provider turned down for its own sake (revoked, expired) leaves its row unpicked; one turned down for the plan or
   the account still creates, which tries again. At the limit **+** still opens, with *Create* off and why, so every

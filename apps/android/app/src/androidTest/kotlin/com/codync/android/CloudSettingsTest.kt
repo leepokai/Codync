@@ -71,8 +71,8 @@ class CloudSettingsTest {
         compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = true, providers = listOf(boat()))), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithText("EU · Add a key first").assertIsDisplayed()
-        // Only a usable key has its own key button.
-        compose.onNodeWithContentDescription("Boat API key").assertDoesNotExist()
+        // Only a usable key has its row's ⋯.
+        compose.onNodeWithTag("cloudProviderKey.boat").assertDoesNotExist()
         compose.onNodeWithContentDescription("Boat").performClick()
         // Only that provider's key.
         compose.onNodeWithText("Boat API key").assertIsDisplayed()
@@ -95,7 +95,7 @@ class CloudSettingsTest {
         compose.onNodeWithText("EU · boat_…9abc").assertIsDisplayed()
         compose.onNodeWithText("US · Add a key first").assertIsDisplayed()
         compose.onNodeWithContentDescription("Create").assertIsEnabled()
-        compose.onNodeWithContentDescription("InstaBox API key").assertDoesNotExist()
+        compose.onNodeWithTag("cloudProviderKey.instabox").assertDoesNotExist()
         snapshot("new")
         compose.onNodeWithContentDescription("InstaBox").performClick()
         compose.onNodeWithText("InstaBox API key").assertIsDisplayed()
@@ -103,14 +103,31 @@ class CloudSettingsTest {
         compose.onNodeWithText("Boat API key").assertDoesNotExist()
     }
 
-    @Test fun aSavedKeyOpensFromItsOwnButton() {
+    @Test fun aSavedKeyOpensFromItsRowsMenu() {
         val offer = CloudOffer(emptyList(), available = true, providers = listOf(boat(CloudCredential("boat_…9abc"))))
         compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Boat API key").performClick()
+        compose.onNodeWithTag("cloudProviderKey.boat").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Remove key").assertIsDisplayed()
+        snapshot("provider-menu")
+        compose.onNodeWithText("Boat API key").performClick()
         compose.onNodeWithText("Boat API key").assertIsDisplayed()
         compose.onNodeWithContentDescription("Replace key").assertIsDisplayed()
         compose.onNodeWithContentDescription("Remove key").assertIsDisplayed()
+    }
+
+    @Test fun aKeyAComputerRunsOnStaysAndAFailedRemovalSaysWhy() {
+        val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, CloudCredential("ibk_…0001"))
+        val offer = CloudOffer(listOf(machine("stopped")), available = true, providers = listOf(boat(CloudCredential("boat_…9abc")), instabox))
+        val failed = fixture(offer).copy(error = "Couldn't reach Codync Cloud.", failedAction = cloudKeyAction("instabox"))
+        compose.setContent { Hosted { ComputersView(failed, emptyList(), viewModel(), {}, {}, {}) } }
+        compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
+        // A removal asked from InstaBox's ⋯ fails in New cloud computer, where it was asked.
+        compose.onNodeWithText("Couldn't reach Codync Cloud.").assertIsDisplayed()
+        // Boat runs a computer: its ⋯ opens its key, and offers no Remove key.
+        compose.onNodeWithTag("cloudProviderKey.boat").performClick()
+        compose.onNodeWithText("Boat API key").assertIsDisplayed()
+        compose.onNodeWithText("Remove key").assertDoesNotExist()
     }
 
     @Test fun aKeyTheProviderTurnsDownCantBePickedAndOpensItsKey() {
@@ -119,7 +136,7 @@ class CloudSettingsTest {
         compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Boat API key").assertDoesNotExist()
+        compose.onNodeWithTag("cloudProviderKey.boat").assertDoesNotExist()
         compose.onNodeWithContentDescription("Boat").performClick()
         compose.onNodeWithText("Boat API key").assertIsDisplayed()
     }
@@ -141,8 +158,8 @@ class CloudSettingsTest {
         compose.onNodeWithText("You can have up to 3 cloud computers. Delete one to make another.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
         // A key no computer uses can still be replaced or removed.
-        compose.onNodeWithContentDescription("InstaBox API key").performClick()
-        compose.onNodeWithContentDescription("Remove key").assertIsDisplayed()
+        compose.onNodeWithTag("cloudProviderKey.instabox").performClick()
+        compose.onNodeWithText("Remove key").assertIsDisplayed()
     }
 
     @Test fun aKeyTheProviderTurnsDownSaysWhatToFix() {

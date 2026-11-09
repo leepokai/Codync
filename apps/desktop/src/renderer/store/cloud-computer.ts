@@ -82,6 +82,11 @@ export class CloudComputerModel extends Observable {
     return this.error && errorPlace(this.failed) === place ? this.error : null
   }
 
+  /** A key removal's failure, whichever provider's: New cloud computer shows one asked from a row's `⋯` there. */
+  get keyRemovalError() {
+    return this.failed?.startsWith('removeKey:') ? this.error : null
+  }
+
   /** Forgets an earlier failure shown at `place` (a sheet opened afresh). */
   clearError(place: ReturnType<typeof errorPlace>) {
     if (!this.errorAt(place)) return

@@ -39,6 +39,7 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     const newSheet = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'New cloud computer' }) })
     const keySheet = (name: string) => page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: `${name} API key` }) })
     const providerRow = (name: string) => newSheet.locator('button.agent-picker-item', { hasText: name })
+    const rowMenu = (name: string) => newSheet.locator('.cloud-provider-row', { hasText: name }).getByRole('button', { name: 'More' })
     const nameField = newSheet.getByLabel('Name your cloud computer')
     const create = newSheet.getByRole('button', { name: 'Create', exact: true })
     const row = (name: string) => section.locator('.settings-row').filter({ has: page.getByText(name, { exact: true }) })
@@ -123,12 +124,15 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     await expect(sidebar('Lab 2')).toBeVisible({ timeout: 60_000 })
     await expect(sidebar('Research')).toHaveCount(0)
 
-    // "+": both keys usable, each with its own key button, and the next free name.
+    // "+": both keys usable, each with its row's ⋯, and the next free name.
     await section.getByRole('button', { name: 'New cloud computer' }).click()
     await expect(nameField).toHaveAttribute('placeholder', 'Cloud computer 2')
-    await expect(newSheet.getByRole('button', { name: 'InstaBox API key' })).toBeVisible()
-    // Boat's key button opens Boat's key alone; a replacement Boat turns down shows what to fix and keeps the saved key.
-    await newSheet.getByRole('button', { name: 'Boat API key' }).click()
+    await expect(rowMenu('InstaBox')).toBeVisible()
+    // Boat's ⋯ has no Remove key while a computer runs there, and opens Boat's key alone; a replacement Boat turns down
+    // shows what to fix there and keeps the saved key, and once it's closed New cloud computer doesn't repeat it.
+    await rowMenu('Boat').click()
+    await expect(page.getByRole('menuitem')).toHaveText(['Boat API key'])
+    await page.getByRole('menuitem', { name: 'Boat API key' }).click()
     const boat = keySheet('Boat')
     await expect(boat.getByLabel('InstaBox API key')).toHaveCount(0)
     await boat.getByRole('button', { name: 'Replace key' }).click()
@@ -138,6 +142,7 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     await boat.getByRole('button', { name: 'Cancel', exact: true }).click()
     await expect(boat.getByText(hint(boatKey!), { exact: true })).toBeVisible()
     await boat.getByRole('button', { name: 'Close' }).click()
+    await expect(newSheet.getByText(/^(This key wasn't accepted|The provider refused this key)/)).toHaveCount(0)
 
     // A third, named Third on InstaBox: then the account is full, and Create says why while the keys stay in reach.
     await providerRow('InstaBox').click()
@@ -146,7 +151,7 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     await section.getByRole('button', { name: 'New cloud computer' }).click()
     await expect(newSheet.getByText('You can have up to 3 cloud computers. Delete one to make another.', { exact: true })).toBeVisible()
     await expect(create).toBeDisabled()
-    await expect(newSheet.getByRole('button', { name: 'Boat API key' })).toBeEnabled()
+    await expect(rowMenu('Boat')).toBeEnabled()
     await newSheet.getByRole('button', { name: 'Cancel', exact: true }).click()
 
     // Deleted after asking by name: gone from the card, the sidebar and the account.
@@ -159,13 +164,11 @@ test('Codync Cloud runs named cloud computers on Boat and InstaBox side by side'
     await expect.poll(() => accountNames(page), { timeout: 30_000 }).toEqual([])
     expect(((await cloud(page, 'GET', 'v1/cloud-computers')).value as Offer).cloudComputers).toEqual([])
 
-    // With no computer left, each key goes from its key button in New cloud computer.
+    // With no computer left, each key goes from its row's ⋯ in New cloud computer.
     await section.getByRole('button', { name: 'New cloud computer' }).click()
     for (const name of ['Boat', 'InstaBox']) {
-      await newSheet.getByRole('button', { name: `${name} API key` }).click()
-      await keySheet(name).getByRole('button', { name: 'Remove key' }).click()
-      await expect(keySheet(name).getByLabel(`${name} API key`)).toBeVisible()
-      await keySheet(name).getByRole('button', { name: 'Close' }).click()
+      await rowMenu(name).click()
+      await page.getByRole('menuitem', { name: 'Remove key' }).click()
       await expect(providerRow(name)).toContainText('Add a key first')
     }
     await expect(create).toBeDisabled()

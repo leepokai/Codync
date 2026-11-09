@@ -27,6 +27,8 @@ public struct CloudKeySheet: View {
             }
         }
         .background(Palette.background)
+        // Closed, its failure was seen: New cloud computer under it shows only a removal asked from its own row.
+        .onDisappear { store.clearError(at: .key(provider)) }
     }
 }
 

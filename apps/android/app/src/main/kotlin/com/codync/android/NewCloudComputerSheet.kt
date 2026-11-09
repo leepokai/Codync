@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -35,8 +36,8 @@ import com.kyant.shapes.RoundedRectangle
 /**
  * Computers → Codync Cloud → "+" (iOS `NewCloudComputerSheet`): its name (empty, the suggested one), then the provider it
  * runs on. Every provider the cloud offers is listed with its logo; one without a usable key opens that provider's key
- * ([openKey]) and is picked once it has one, and one with a key opens it from its key button. Create closes the sheet
- * once the computer is made; a refusal shows here, and at the account's limit why it's off.
+ * ([openKey]) and is picked once it has one, and one with a key opens it, or removes it, from its row's `⋯`. Create closes
+ * the sheet once the computer is made; a refusal shows here, and at the account's limit why it's off.
  */
 @Composable internal fun NewCloudComputerSheet(offer: CloudOffer, state: AccountContext, store: AccountStore, openKey: (String) -> Unit) {
     DisposableEffect(store) {
@@ -49,12 +50,14 @@ import com.kyant.shapes.RoundedRectangle
     val selected = offer.chosenProvider(picked)
     val suggested = offer.suggestedName(tr("Cloud computer"), tr("Cloud computer {n}"))
     val creating = CLOUD_CREATE in state.busy
+    // One action at a time, as on iOS: a key being saved or removed holds Create and the other rows' `⋯`.
+    val busy = creating || offer.providers.any { cloudKeyAction(it.provider) in state.busy }
     val full = offer.machines.size >= offer.limit
-    val create = { if (selected != null && !creating && !full) store.createCloudComputer(selected, name.trim().ifEmpty { suggested }, dismiss) }
+    val create = { if (selected != null && !busy && !full) store.createCloudComputer(selected, name.trim().ifEmpty { suggested }, dismiss) }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader("New cloud computer") {
             if (creating) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
-            else IconButton("Create", "checkmark", enabled = selected != null && !full) { create() }
+            else IconButton("Create", "checkmark", enabled = selected != null && !busy && !full) { create() }
         }
         CardForm {
             CardSection("Name") {
@@ -67,14 +70,24 @@ import com.kyant.shapes.RoundedRectangle
             }
             CardSection("Provider") {
                 for (provider in offer.providers) row {
-                    ProviderRow(provider, provider.provider == selected, openKey = { openKey(provider.provider) }) {
+                    val keyLabel = keyTitle(provider.name)
+                    val menu = {
+                        buildList {
+                            add(MenuItem(keyLabel, icon = "key.fill", verbatim = true) { openKey(provider.provider) })
+                            if (offer.canRemoveKey(provider.provider)) {
+                                add(MenuItem("Remove key", icon = "trash", destructive = true) { store.removeCloudKey(provider.provider) })
+                            }
+                        }
+                    }
+                    ProviderRow(provider, provider.provider == selected, cloudKeyAction(provider.provider) in state.busy,
+                        menuEnabled = !busy, menu = menu) {
                         picked = provider.provider
                         if (!provider.usable) openKey(provider.provider)
                     }
                 }
             }
-            // The cloud's own words for a create over the limit.
-            val note = state.cloudErrorAt(CloudErrorPlace.Create)
+            // The cloud's own words for a create over the limit; a key removed from a row's `⋯` fails here, where it was asked.
+            val note = state.cloudErrorAt(CloudErrorPlace.Create) ?: state.cloudKeyError()
                 ?: "You can have up to ${offer.limit} cloud computers. Delete one to make another.".takeIf { full }
             note?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
         }
@@ -82,9 +95,10 @@ import com.kyant.shapes.RoundedRectangle
 }
 
 /** A provider on its logo tile, with its name and its key: picked (checkmark) while its key is usable, else a tap picks it
- * for once it is and opens its key ([tap]). One with a usable key also opens it from its key button ([openKey]: replace or
- * remove it). */
-@Composable private fun ProviderRow(provider: CloudProvider, selected: Boolean, openKey: () -> Unit, tap: () -> Unit) {
+ * for once it is and opens its key ([tap]). One with a usable key has a `⋯` ([menu]): its key, and removing it while no
+ * cloud computer runs there; a spinner while it's being removed ([removing]). */
+@Composable private fun ProviderRow(provider: CloudProvider, selected: Boolean, removing: Boolean, menuEnabled: Boolean,
+    menu: () -> List<MenuItem>, tap: () -> Unit) {
     val credential = provider.credential
     val problem = credential?.problem
     val detail = when {
@@ -106,6 +120,11 @@ import com.kyant.shapes.RoundedRectangle
             if (!provider.usable) Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
             else Symbol("checkmark", size = 15.dp, tint = Palette.text, modifier = Modifier.graphicsLayer { alpha = if (selected) 1f else 0f })
         }
-        if (provider.usable) IconButton(keyTitle(provider.name), "key.fill", action = openKey)
+        if (provider.usable) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+            if (removing) Spinner()
+            else DropdownMenu(menu, Modifier.size(36.dp).testTag("cloudProviderKey.${provider.provider}"), enabled = menuEnabled, label = tr("More")) {
+                Symbol("ellipsis", size = 18.dp, tint = Palette.secondary)
+            }
+        }
     }
 }

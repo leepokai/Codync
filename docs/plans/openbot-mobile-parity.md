@@ -166,3 +166,9 @@ end to end against the dev host (status lists ElevenLabs with its defaults, a li
 refused with the Speech-mode message, voices without a key report the missing key, and an invalid
 key is rejected by ElevenLabs and not saved). Its phone and iOS walks and the desktop visual check
 wait for the same devices.
+
+The review pass fixed what older or newer sides would have hit: the iPhone reads a provider id
+leniently, so an app that predates a new provider still decodes the list, the Settings mode switch
+redraws its model rows at once, a saved ElevenLabs voice survives the account list, and Test
+playback frees its temp file and blob URL. The gates above were re-run after those fixes; the
+phone and iOS walks still wait for the same devices.

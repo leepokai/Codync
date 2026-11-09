@@ -245,7 +245,8 @@ the provider shows its speech-to-text picker too. When dictation's engine is a p
 engine isn't, that provider gets its own section below with just the key and speech-to-text picker
 ("For dictation in the message box."), so its key can be added without switching the call engine; its **Test** lists the key's models instead of minting a call credential. The model list comes from the provider through the computer (`voiceModels`: OpenAI `GET /v1/models`
 ids sorted into realtime, transcribe and tts models; Gemini `GET v1beta/models` by
-`bidiGenerateContent` / `generateContent` and name; translation and diarization models left out), fetched after a successful test and each time the form opens. The call bar
+`bidiGenerateContent` / `generateContent` and name; ElevenLabs `GET /v1/models`, its text-to-speech
+models, with Scribe v1/v2 for transcription; translation and diarization models left out), fetched after a successful test and each time the form opens. The call bar
 shows the provider's name next to the dots whenever audio leaves the device.
 
 ### Where the key lives

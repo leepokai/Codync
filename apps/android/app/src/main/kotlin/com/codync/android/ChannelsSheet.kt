@@ -158,45 +158,45 @@ import kotlinx.coroutines.launch
                     if (editingDiscord && rows.isEmpty()) startDiscord()
                     row {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(tr("Server id"), style = Type.caption, color = Palette.secondary)
-                        PlainTextField(guildId, { guildId = it }, prompt = "123456789012345678", singleLine = true)
-                        Text(tr("Bot user id"), style = Type.caption, color = Palette.secondary)
-                        PlainTextField(botUserId, { botUserId = it }, prompt = "123456789012345678", singleLine = true)
-                        Text(tr("Bot token"), style = Type.caption, color = Palette.secondary)
-                        PlainTextField(discordToken, { discordToken = it }, prompt = tr("The token from the Bot tab"), singleLine = true)
-                        for ((index, draft) in rows.withIndex()) {
-                            Text(tr("Channel id"), style = Type.caption, color = Palette.secondary)
-                            PlainTextField(draft.channelId, { rows = rows.updated(index, draft.copy(channelId = it)) },
-                                prompt = "123456789012345678", singleLine = true)
-                            ChoicePicker(draft.botId.ifEmpty { fallbackBot }, choices.map { it.id to it.name },
-                                { rows = rows.updated(index, draft.copy(botId = it)) })
-                            Text(tr("Allowed user ids"), style = Type.caption, color = Palette.secondary)
-                            PlainTextField(draft.allowed, { rows = rows.updated(index, draft.copy(allowed = it)) },
-                                prompt = tr("Separated by spaces or commas"), singleLine = true)
-                            if (rows.size > 1) SecondaryButton(tr("Remove channel")) { rows = rows.filterIndexed { i, _ -> i != index } }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SecondaryButton(tr("Add channel")) { rows = rows + BindingDraft("", "", "") }
-                            val clean = rows.map {
-                                DiscordBinding(it.channelId.trim(), it.botId.ifEmpty { fallbackBot },
-                                    it.allowed.split(Regex("[\\s,]+")).filter { u -> u.isNotEmpty() })
-                            }.filter { it.channelId.isNotEmpty() || it.allowedUsers.isNotEmpty() }
-                            val ready = Channels.idOk(guildId.trim()) && Channels.idOk(botUserId.trim()) &&
-                                Channels.discordTokenOk(discordToken.trim()) && clean.isNotEmpty() &&
-                                clean.all { Channels.idOk(it.channelId) && it.botId.isNotEmpty() && it.allowedUsers.isNotEmpty() }
-                            SecondaryButton(if (busy) tr("Checking…") else tr("Connect Discord"), enabled = !busy && ready) {
-                                act {
-                                    discord = store.setDiscord(guildId, botUserId, discordToken, clean)
-                                    editingDiscord = false; discordToken = ""
-                                }
+                            Text(tr("Server id"), style = Type.caption, color = Palette.secondary)
+                            PlainTextField(guildId, { guildId = it }, prompt = "123456789012345678", singleLine = true)
+                            Text(tr("Bot user id"), style = Type.caption, color = Palette.secondary)
+                            PlainTextField(botUserId, { botUserId = it }, prompt = "123456789012345678", singleLine = true)
+                            Text(tr("Bot token"), style = Type.caption, color = Palette.secondary)
+                            PlainTextField(discordToken, { discordToken = it }, prompt = tr("The token from the Bot tab"), singleLine = true)
+                            for ((index, draft) in rows.withIndex()) {
+                                Text(tr("Channel id"), style = Type.caption, color = Palette.secondary)
+                                PlainTextField(draft.channelId, { rows = rows.updated(index, draft.copy(channelId = it)) },
+                                    prompt = "123456789012345678", singleLine = true)
+                                ChoicePicker(draft.botId.ifEmpty { fallbackBot }, choices.map { it.id to it.name },
+                                    { rows = rows.updated(index, draft.copy(botId = it)) })
+                                Text(tr("Allowed user ids"), style = Type.caption, color = Palette.secondary)
+                                PlainTextField(draft.allowed, { rows = rows.updated(index, draft.copy(allowed = it)) },
+                                    prompt = tr("Separated by spaces or commas"), singleLine = true)
+                                if (rows.size > 1) SecondaryButton(tr("Remove channel")) { rows = rows.filterIndexed { i, _ -> i != index } }
                             }
-                            if (connected?.configured == true) {
-                        SecondaryButton(tr("Cancel"), enabled = !busy) { editingDiscord = false }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SecondaryButton(tr("Add channel")) { rows = rows + BindingDraft("", "", "") }
+                                val clean = rows.map {
+                                    DiscordBinding(it.channelId.trim(), it.botId.ifEmpty { fallbackBot },
+                                        it.allowed.split(Regex("[\\s,]+")).filter { u -> u.isNotEmpty() })
+                                }.filter { it.channelId.isNotEmpty() || it.allowedUsers.isNotEmpty() }
+                                val ready = Channels.idOk(guildId.trim()) && Channels.idOk(botUserId.trim()) &&
+                                    Channels.discordTokenOk(discordToken.trim()) && clean.isNotEmpty() &&
+                                    clean.all { Channels.idOk(it.channelId) && it.botId.isNotEmpty() && it.allowedUsers.isNotEmpty() }
+                                SecondaryButton(if (busy) tr("Checking…") else tr("Connect Discord"), enabled = !busy && ready) {
+                                    act {
+                                        discord = store.setDiscord(guildId, botUserId, discordToken, clean)
+                                        editingDiscord = false; discordToken = ""
+                                    }
+                                }
+                                if (connected?.configured == true) {
+                                    SecondaryButton(tr("Cancel"), enabled = !busy) { editingDiscord = false }
+                                }
                             }
                         }
                     }
                 }
-            }
             }
             CardSection(tr("GitHub"), footer = tr("A fine-grained token with the repository permissions your workflows need. It stays on the computer; Codync never sends it anywhere else.")) {
                 val connected = github

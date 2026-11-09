@@ -176,15 +176,16 @@ to On device tries the picked cloud engine again the same way. Desktop and Andro
 settings view closes (desktop: the gear, Settings; Android: the gear, the computer's card in Computer
 management); on the iPhone only the gear is open during a call.
 On Windows and Linux, an old/default On device call preference first selects a configured provider
-and remembers it. The picker offers only OpenAI and Gemini.
+and remembers it. The picker offers OpenAI, Gemini and ElevenLabs.
 
 | Engine | Needs | Transport | Code |
 | --- | --- | --- | --- |
 | On device (default) | nothing | Apple speech, as above | `OnDeviceEngine` |
 | OpenAI | OpenAI API key on the computer | WebRTC, device ↔ OpenAI (default `gpt-realtime-2.1`) | `OpenAIRealtimeEngine` |
 | Gemini | Google AI Studio key on the computer | WebSocket, device ↔ Google (default `gemini-3.8-live`) | `GeminiLiveEngine` |
+| ElevenLabs | ElevenLabs API key on the computer | Speech mode only: Scribe hears, ElevenLabs voices speak (defaults `scribe_v1`, `eleven_flash_v2_5`) | `CloudSpeechEngine` |
 
-Each cloud engine has two **modes**:
+OpenAI and Gemini each have two **modes**:
 
 - **Realtime**: a live conversation with the provider's realtime model (below), talk over replies.
 - **Speech** (`CloudSpeechEngine`): the on-device loop with the provider's models instead of Apple's.
@@ -192,8 +193,10 @@ Each cloud engine has two **modes**:
   noise, and 0.4 s after playback is ignored as echo), each one goes to the provider's
   speech-to-text and is sent as an ordinary message; replies are read with its text-to-speech. Both
   run on the computer (`voiceTranscribe`, `voiceSpeak`), so the key never leaves it; utterances stop
-  at 20 s and replies are spoken in clips (OpenAI 600 characters as AAC, Gemini 150 as WAV) so every
-  request and answer fits one 1 MiB channel message. Speech-to-text gets the app's and
+  at 20 s and replies are spoken in clips (OpenAI 600 characters as AAC, Gemini 150 as WAV,
+  ElevenLabs 600 as 64 kbps MP3) so every request and answer fits one 1 MiB channel message.
+  ElevenLabs holds no live conversation, so it is always Speech mode and its Mode row is hidden.
+  Speech-to-text gets the app's and
   the bots' names as hints (gpt-transcribe also as `keywords`). gpt-transcribe returns Chinese in
   Simplified characters whatever the prompt says, so the client turns it into Traditional
   (`Hans-Hant`) for a reader whose first Chinese language, or region, is Traditional. Only a
@@ -222,17 +225,21 @@ generation wins, full models over `mini`; Gemini's names carry the version, plai
 `-lite` / variants; dated snapshots and previews never become defaults. Clients remember the
 last `defaults` they saw (`callDefaults.<provider>`) and refresh them at every call. The ids
 built into the host and the app (today `gpt-realtime-2.1`, `gpt-transcribe`, `gpt-4o-mini-tts`;
-`gemini-3.8-live`, `gemini-3.8-flash`, `gemini-3.8-flash-tts`) are used only until the first
-list arrives.
+`gemini-3.8-live`, `gemini-3.8-flash`, `gemini-3.8-flash-tts`; `scribe_v1`, `eleven_flash_v2_5`)
+are used only until the first list arrives. ElevenLabs' models list covers text to speech only, so
+its Scribe choices (`scribe_v2`, `scribe_v1`) are fixed, and its voices come from the account.
 
 Voice settings (`VoiceChatSettingsView`) open from the call bar's gear and from settings: on the
 iPhone and Android, **Voice chat** on the computer's card in **Manage computers**; on the desktop, **Settings → Voice chat** (this
 computer) or the waveform button on a computer's card in **Computers & devices**. Keys are entered
-on the computer only: the host takes `setVoiceKey` from loopback, and the iPhone shows whether a key
-is there and can test it. Picking a cloud engine shows its key form instead of the on-device settings: a secure field, a link
+on the computer only: the host takes `setVoiceKey` from loopback, and the iPhone and Android show
+whether a key is there and can test it. Picking a cloud engine shows its key form instead of the on-device settings: a secure field, a link
 to the provider's key page, **Test** (the computer checks a new key with the provider and keeps it
 only if it works, otherwise the provider's error is shown; with a key saved, it mints a call
-credential for the chosen model and voice), a model picker, a voice picker, and minutes used this month.
+credential for the chosen model and voice, or in Speech mode reads "OK" aloud in the chosen voice,
+which ElevenLabs always does), a model picker, a voice picker, and minutes used this month.
+ElevenLabs' voice picker comes from the account through `voiceVoices`, by name; the other
+providers have fixed voice ids.
 Speech mode adds speech-to-text and text-to-speech pickers and the pause length; dictating with
 the provider shows its speech-to-text picker too. When dictation's engine is a provider the call
 engine isn't, that provider gets its own section below with just the key and speech-to-text picker
@@ -248,9 +255,11 @@ shows the provider's name next to the dots whenever audio leaves the device.
   desktop app. It reaches the host once, over the encrypted channel, and never leaves it again; it is never
   logged and never sent to the relay or our cloud.
 - Host methods (control scope): `voiceStatus` (which providers have a key), `setVoiceKey
-  {provider, key}` (checked with one credential mint before it's kept; empty removes it),
+  {provider, key}` (checked with the provider before it's kept: one credential mint for
+  OpenAI/Gemini, and for ElevenLabs the voice list plus one character read aloud; empty removes it),
   `voiceSession {provider, model, voice}` → `{credential}`, `voiceModels {provider}` → `{models,
-  transcribe, speech}`, `voiceTranscribe {provider, model, audio}` (base64 16 kHz WAV) → `{text}`,
+  transcribe, speech}`, `voiceVoices {provider}` → `{voices}` (ElevenLabs' account voices),
+  `voiceTranscribe {provider, model, audio}` (base64 16 kHz WAV) → `{text}`,
   `voiceSpeak {provider, model, voice, text}` → `{audio, format}`.
 - The long-lived key is used for minting a short-lived credential at call start (OpenAI
   `POST /v1/realtime/client_secrets`, 10 minutes; Gemini `POST v1alpha/auth_tokens`, one use) and

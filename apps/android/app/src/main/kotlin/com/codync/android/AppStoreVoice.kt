@@ -275,6 +275,9 @@ fun AppStore.voiceSettings(settings: VoiceSettings) { VoicePreferences.save(getA
 internal suspend fun AppStore.voiceStatus(): VoiceStatus = WireJson.decodeFromJsonElement(hostCall("voiceStatus", JsonObject(emptyMap()), 30_000))
 internal suspend fun AppStore.voiceModels(provider: VoiceProvider): VoiceModels =
     WireJson.decodeFromJsonElement(hostCall("voiceModels", body("provider" to provider.id), 30_000))
+/** The provider's own voices (ElevenLabs): premade, cloned and saved. */
+internal suspend fun AppStore.voiceVoices(provider: VoiceProvider): VoiceVoices =
+    WireJson.decodeFromJsonElement(hostCall("voiceVoices", body("provider" to provider.id), 30_000))
 
 /** A short-lived credential, which checks a key in the call settings. */
 internal suspend fun AppStore.voiceSession(provider: VoiceProvider, model: String, voice: String): String =

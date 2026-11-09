@@ -117,6 +117,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "voiceModels" => {
             crate::voice::models(&hub.store, crate::voice::Provider::parse(str_arg(&b, "provider")?)?).await?
         }
+        "voiceVoices" => {
+            crate::voice::voices(&hub.store, crate::voice::Provider::parse(str_arg(&b, "provider")?)?).await?
+        }
         "voiceTranscribe" => {
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::transcribe(&hub.store, provider, str_arg(&b, "model")?, str_arg(&b, "audio")?).await?

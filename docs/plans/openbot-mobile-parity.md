@@ -93,6 +93,13 @@ Done from M5/M6:
 | Plush or Flat bot avatar, on all three clients, widgets included | Done | `AvatarStyle`, `CharacterAvatar` (`flat`), iOS `Appearance.swift`, desktop `Avatar.tsx` and its tray icons |
 | Calmer resting faces and a group float | Done | half-lidded idle eyes in each `CharacterAvatar`; drift in `GroupAvatar` |
 
+Voice also gained ElevenLabs (the owner's M4): the key stays on the computer, its voices come from
+the account (`voiceVoices`), Scribe hears speech and Flash 2.5 reads replies, and **Test key** plays
+"OK" in the chosen voice. It holds no live conversation, so its calls are always Speech mode.
+Supertonic 3 and Parakeet v3 are not bundled: Codync's local engine stays the platform voice on both
+phones (a deliberate adaptation gap, documented in `openbot-android-inventory.md`, not a missing
+user-facing capability).
+
 - **M1/M7**: marketplace connectors (Coinbase, RevenueCat, TickTick, Proton Pass, Higgsfield),
   the Apps connector list with status, marketplace Load more, the spent usage window under a
   model.
@@ -152,3 +159,7 @@ M2 (threads) passed the Gradle gate, the host's `cargo fmt`/`clippy`/tests, the 
 `typecheck`/tests, and a host API E2E (branch, chip summary, unread, open marks read, rename,
 archive, delete; 22/22). The phone and iOS walks wait for the device (`adb devices` is empty) and
 for a Mac respectively.
+
+M4 (ElevenLabs) passed the host's `cargo fmt`/`clippy`/tests (1119 passed, plus the one known
+Windows symlink test), the Gradle gate, and the desktop `typecheck`/tests; its phone and iOS walks
+and the desktop visual check wait for the same devices.

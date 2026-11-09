@@ -230,7 +230,7 @@ export class CloudSpeechEngine extends VoiceEngine {
   }
 
   private play(clip: { audio: Uint8Array; format: string }) {
-    const type = clip.format === 'aac' ? 'audio/aac' : clip.format === 'wav' ? 'audio/wav' : `audio/${clip.format}`
+    const type = clip.format === 'aac' ? 'audio/aac' : clip.format === 'wav' ? 'audio/wav' : clip.format === 'mp3' ? 'audio/mpeg' : `audio/${clip.format}`
     const url = URL.createObjectURL(new Blob([clip.audio as BlobPart], { type }))
     const player = new Audio(url)
     const generation = this.speakGeneration

@@ -1,7 +1,9 @@
-//! Realtime voice for calls on the user's own provider keys (`OpenAI` Realtime,
-//! Gemini Live). The keys stay in this computer's vault; a client starting a
-//! call gets a short-lived credential minted here and then streams audio to the
-//! provider directly, so audio never crosses the channel or the relay.
+//! Voice on the user's own provider keys: `OpenAI` Realtime and Gemini Live for
+//! a live call, and their speech models (plus `ElevenLabs`) for speech mode, where
+//! each utterance is transcribed and each reply is read aloud. The keys stay in
+//! this computer's vault; a client starting a live call gets a short-lived
+//! credential minted here and then streams audio to the provider directly, so
+//! audio never crosses the channel or the relay.
 
 pub(crate) mod decisions;
 mod endpoint;
@@ -28,15 +30,19 @@ pub enum Provider {
     OpenAi,
     #[serde(rename = "gemini")]
     Gemini,
+    /// Speech only: `ElevenLabs` holds no live conversation here.
+    #[serde(rename = "elevenlabs")]
+    ElevenLabs,
 }
 
 impl Provider {
-    const ALL: [Self; 2] = [Self::OpenAi, Self::Gemini];
+    const ALL: [Self; 3] = [Self::OpenAi, Self::Gemini, Self::ElevenLabs];
 
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "openai" => Ok(Self::OpenAi),
             "gemini" => Ok(Self::Gemini),
+            "elevenlabs" => Ok(Self::ElevenLabs),
             _ => bail!("unknown voice provider `{s}`"),
         }
     }
@@ -45,6 +51,7 @@ impl Provider {
         match self {
             Self::OpenAi => "openai",
             Self::Gemini => "gemini",
+            Self::ElevenLabs => "elevenlabs",
         }
     }
 
@@ -52,6 +59,7 @@ impl Provider {
         match self {
             Self::OpenAi => "OpenAI",
             Self::Gemini => "Gemini",
+            Self::ElevenLabs => "ElevenLabs",
         }
     }
 
@@ -60,8 +68,14 @@ impl Provider {
         let (realtime, transcribe, speech) = match self {
             Self::OpenAi => ("gpt-realtime-2.1", "gpt-transcribe", "gpt-4o-mini-tts"),
             Self::Gemini => ("gemini-3.8-live", "gemini-3.8-flash", "gemini-3.8-flash-tts"),
+            Self::ElevenLabs => ("", "scribe_v1", "eleven_flash_v2_5"),
         };
         Defaults { realtime: realtime.into(), transcribe: transcribe.into(), speech: speech.into() }
+    }
+
+    /// `ElevenLabs` reads replies and hears speech, but holds no live call.
+    fn live(self) -> bool {
+        self != Self::ElevenLabs
     }
 }
 
@@ -108,6 +122,8 @@ struct Keys {
     openai: String,
     #[serde(default)]
     gemini: String,
+    #[serde(default)]
+    elevenlabs: String,
 }
 
 impl Keys {
@@ -115,6 +131,7 @@ impl Keys {
         match p {
             Provider::OpenAi => &self.openai,
             Provider::Gemini => &self.gemini,
+            Provider::ElevenLabs => &self.elevenlabs,
         }
     }
 
@@ -122,6 +139,7 @@ impl Keys {
         match p {
             Provider::OpenAi => self.openai = key,
             Provider::Gemini => self.gemini = key,
+            Provider::ElevenLabs => self.elevenlabs = key,
         }
     }
 }
@@ -155,8 +173,12 @@ async fn send(p: Provider, req: reqwest::RequestBuilder) -> Result<Value> {
     let v: Value = serde_json::from_str(&res.text().await.unwrap_or_default()).unwrap_or(Value::Null);
     if !status.is_success() {
         // The provider's own message ("Incorrect API key provided…") says what to fix.
-        let message =
-            v["error"]["message"].as_str().map_or_else(|| format!("{} answered {status}.", p.name()), str::to_owned);
+        // ElevenLabs nests it under `detail`.
+        let message = v["error"]["message"]
+            .as_str()
+            .or_else(|| v["detail"]["message"].as_str())
+            .or_else(|| v["detail"].as_str())
+            .map_or_else(|| format!("{} answered {status}.", p.name()), str::to_owned);
         bail!(message);
     }
     Ok(v)
@@ -190,10 +212,12 @@ async fn mint(p: Provider, key: &str, model: &str, voice: &str) -> Result<String
             )
             .await?
         }
+        Provider::ElevenLabs => bail!("{} doesn't hold live calls. Choose Speech mode.", p.name()),
     };
     let field = match p {
         Provider::OpenAi => "value",
         Provider::Gemini => "name",
+        Provider::ElevenLabs => unreachable!(),
     };
     v[field]
         .as_str()
@@ -215,21 +239,90 @@ pub fn status(store: &Store) -> Result<Value> {
     Ok(json!({"providers": providers}))
 }
 
-/// Checks the key with the provider (one credential mint), then keeps it. An empty key removes it.
+const ELEVENLABS: &str = "https://api.elevenlabs.io";
+
+/// The account's voices: premade, cloned and saved. A key that lists none is still valid.
+async fn elevenlabs_voices(key: &str) -> Result<Value> {
+    let v = send(
+        Provider::ElevenLabs,
+        crate::http().get(format!("{ELEVENLABS}/v2/voices?page_size=100")).header("xi-api-key", key),
+    )
+    .await?;
+    let voices: Vec<Value> = v["voices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|voice| {
+            let id = voice["voice_id"].as_str()?;
+            Some(json!({"id": id, "name": voice["name"].as_str().unwrap_or(id)}))
+        })
+        .collect();
+    Ok(json!({"voices": voices}))
+}
+
+/// One stretch of a reply as MP3, by voice id: 64 kbps keeps each clip inside one channel message.
+async fn elevenlabs_speech(key: &str, model: &str, voice: &str, text: &str) -> Result<Vec<u8>> {
+    let res = crate::http()
+        .post(format!("{ELEVENLABS}/v1/text-to-speech/{voice}?output_format=mp3_44100_64"))
+        .header("xi-api-key", key)
+        .json(&json!({"model_id": model, "text": text}))
+        .timeout(TIMEOUT * 4)
+        .send()
+        .await
+        .map_err(|_| anyhow!("Can't reach ElevenLabs."))?;
+    let status = res.status();
+    let bytes = res.bytes().await.map_err(|_| anyhow!("ElevenLabs sent no audio."))?;
+    if !status.is_success() {
+        let v: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        let message = v["detail"]["message"]
+            .as_str()
+            .or_else(|| v["detail"].as_str())
+            .or_else(|| v["error"]["message"].as_str())
+            .map_or_else(|| format!("ElevenLabs answered {status}."), str::to_owned);
+        bail!(message);
+    }
+    Ok(bytes.to_vec())
+}
+
+/// Checks both permissions before the key is kept: it lists the voices, and reads one character
+/// with the first of them, which costs one character of the account's quota.
+async fn check_elevenlabs(key: &str) -> Result<()> {
+    let voices = elevenlabs_voices(key).await?;
+    if let Some(voice) = voices["voices"][0]["id"].as_str() {
+        elevenlabs_speech(key, "eleven_flash_v2_5", voice, ".").await?;
+    }
+    Ok(())
+}
+
+/// The voices the key can read with, for the picker. Other providers have a fixed list.
+pub async fn voices(store: &Store, p: Provider) -> Result<Value> {
+    match p {
+        Provider::ElevenLabs => elevenlabs_voices(&key(store, p)?).await,
+        _ => bail!("{} has a fixed voice list.", p.name()),
+    }
+}
+
+/// Checks the key with the provider (a credential mint, or for `ElevenLabs` its voices and one
+/// character read), then keeps it. An empty key removes it.
 pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
     let key = key.trim();
     if !key.is_empty() {
-        let voice = match p {
-            Provider::OpenAi => "marin",
-            Provider::Gemini => "Kore",
-        };
-        if p == Provider::OpenAi
-            && let Some(base) = openai_base()?
-        {
-            // Compatible speech servers may not implement Realtime credential minting.
-            send(p, openai_http()?.get(openai_url(Some(&base), "/v1/models")).bearer_auth(key)).await?;
+        if p == Provider::ElevenLabs {
+            check_elevenlabs(key).await?;
         } else {
-            mint(p, key, &defaults(store, p).realtime, voice).await?;
+            let voice = match p {
+                Provider::OpenAi => "marin",
+                Provider::Gemini => "Kore",
+                Provider::ElevenLabs => unreachable!(),
+            };
+            if p == Provider::OpenAi
+                && let Some(base) = openai_base()?
+            {
+                // Compatible speech servers may not implement Realtime credential minting.
+                send(p, openai_http()?.get(openai_url(Some(&base), "/v1/models")).bearer_auth(key)).await?;
+            } else {
+                mint(p, key, &defaults(store, p).realtime, voice).await?;
+            }
         }
     }
     {
@@ -247,6 +340,9 @@ pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
 
 /// A credential for a call starting now.
 pub async fn session(store: &Store, p: Provider, model: &str, voice: &str) -> Result<Value> {
+    if !p.live() {
+        bail!("{} doesn't hold live calls. Choose Speech mode.", p.name());
+    }
     let key = key(store, p)?;
     Ok(json!({"credential": mint(p, &key, checked(model)?, checked(voice)?).await?}))
 }
@@ -294,13 +390,43 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
                 })
                 .collect()
         }
+        Provider::ElevenLabs => {
+            // `/v1/models` is a plain array; every voice model says whether it reads text.
+            let req = crate::http().get(format!("{ELEVENLABS}/v1/models")).header("xi-api-key", &key);
+            let v = send(p, req).await?;
+            v.as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|m| {
+                    Some(Model {
+                        id: m["model_id"].as_str()?.to_owned(),
+                        live: false,
+                        generate: m["can_do_text_to_speech"].as_bool().unwrap_or(false),
+                        created: None,
+                    })
+                })
+                .collect()
+        }
     };
     let (realtime, transcribe, speech) = classify(p, &entries);
     let fallback = p.fallback();
-    let defaults = Defaults {
-        realtime: newest(p, &entries, &realtime).unwrap_or(fallback.realtime),
-        transcribe: newest(p, &entries, &transcribe).unwrap_or(fallback.transcribe),
-        speech: newest(p, &entries, &speech).unwrap_or(fallback.speech),
+    let defaults = if p == Provider::ElevenLabs {
+        // Flash 2.5 is the low-latency model a call needs; Scribe v1 is on every plan.
+        Defaults {
+            realtime: String::new(),
+            transcribe: "scribe_v1".into(),
+            speech: if speech.iter().any(|id| id == "eleven_flash_v2_5") {
+                "eleven_flash_v2_5".into()
+            } else {
+                newest(p, &entries, &speech).unwrap_or(fallback.speech)
+            },
+        }
+    } else {
+        Defaults {
+            realtime: newest(p, &entries, &realtime).unwrap_or(fallback.realtime),
+            transcribe: newest(p, &entries, &transcribe).unwrap_or(fallback.transcribe),
+            speech: newest(p, &entries, &speech).unwrap_or(fallback.speech),
+        }
     };
     store.kv_set(&defaults_key(p), &serde_json::to_string(&defaults)?)?;
     Ok(json!({"models": realtime, "transcribe": transcribe, "speech": speech, "defaults": defaults}))
@@ -344,6 +470,11 @@ fn newest(p: Provider, models: &[Model], ids: &[String]) -> Option<String> {
             .into_iter()
             .max_by(|a, b| (version(a), !lesser(a)).cmp(&(version(b), !lesser(b))).then_with(|| b.len().cmp(&a.len())))
             .cloned(),
+        Provider::ElevenLabs => ["eleven_flash_v2_5", "eleven_turbo_v2_5", "eleven_flash_v2", "eleven_turbo_v2"]
+            .iter()
+            .find(|want| ids.iter().any(|id| id == *want))
+            .map(|want| (*want).to_owned())
+            .or_else(|| ids.first().cloned()),
     }
 }
 
@@ -382,6 +513,11 @@ fn classify(p: Provider, models: &[Model]) -> (Vec<String>, Vec<String>, Vec<Str
                     && !has(&m.id, &["tts", "live", "image", "embedding", "native-audio", "translate"])
             }),
             pick(&|m| m.generate && m.id.contains("tts")),
+        ),
+        Provider::ElevenLabs => (
+            // Batch transcription is Scribe; the model list only covers text to speech.
+            vec!["scribe_v2".to_owned(), "scribe_v1".to_owned()],
+            pick(&|m| m.generate && !has(&m.id, &["music"])),
         ),
     };
     (realtime, transcribe, speech)
@@ -459,6 +595,19 @@ pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) ->
                 .filter_map(|part| part["text"].as_str())
                 .collect::<String>()
         }
+        Provider::ElevenLabs => {
+            let file = reqwest::multipart::Part::bytes(wav).file_name("speech.wav").mime_str("audio/wav")?;
+            let form = reqwest::multipart::Form::new()
+                .text("model_id", model.to_owned())
+                // The reply is read aloud: "(laughter)" has no place in the transcript.
+                .text("tag_audio_events", "false")
+                .part("file", file);
+            let req = crate::http()
+                .post(format!("{ELEVENLABS}/v1/speech-to-text"))
+                .header("xi-api-key", &key)
+                .multipart(form);
+            send(p, req).await?["text"].as_str().unwrap_or_default().to_owned()
+        }
     };
     Ok(json!({"text": text.trim()}))
 }
@@ -513,6 +662,10 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
                 .ok_or_else(|| anyhow!("{} sent no audio.", p.name()))?;
             let pcm = STANDARD.decode(pcm).map_err(|_| anyhow!("{} sent unreadable audio.", p.name()))?;
             Ok(json!({"audio": STANDARD.encode(wav(&pcm, 24_000)), "format": "wav"}))
+        }
+        Provider::ElevenLabs => {
+            let bytes = elevenlabs_speech(&key, model, voice, text).await?;
+            Ok(json!({"audio": STANDARD.encode(bytes), "format": "mp3"}))
         }
     }
 }
@@ -634,6 +787,24 @@ mod tests {
     }
 
     #[test]
+    fn elevenlabs_models_and_defaults() {
+        let models = [
+            Model { id: "eleven_flash_v2_5".into(), live: false, generate: true, created: None },
+            Model { id: "eleven_multilingual_v2".into(), live: false, generate: true, created: None },
+            Model { id: "eleven_v3".into(), live: false, generate: true, created: None },
+            Model { id: "eleven_music".into(), live: false, generate: true, created: None },
+            Model { id: "not_a_voice_model".into(), live: false, generate: false, created: None },
+        ];
+        let (realtime, transcribe, speech) = classify(Provider::ElevenLabs, &models);
+        assert_eq!(realtime, Vec::<String>::new());
+        assert_eq!(transcribe, ["scribe_v2", "scribe_v1"]);
+        assert_eq!(speech, ["eleven_flash_v2_5", "eleven_multilingual_v2", "eleven_v3"]);
+        assert_eq!(newest(Provider::ElevenLabs, &models, &speech).as_deref(), Some("eleven_flash_v2_5"));
+        assert!(!Provider::ElevenLabs.live());
+        assert!(Provider::OpenAi.live());
+    }
+
+    #[test]
     fn wav_header_matches_pcm() {
         let out = wav(&[0, 0, 1, 0], 24_000);
         assert_eq!(out.len(), 48);
@@ -648,6 +819,7 @@ mod tests {
         assert!(checked("x\"}").is_err());
         assert!(checked("").is_err());
         assert!(Provider::parse("openai").is_ok());
+        assert!(Provider::parse("elevenlabs").is_ok());
         assert!(Provider::parse("anthropic").is_err());
     }
 }

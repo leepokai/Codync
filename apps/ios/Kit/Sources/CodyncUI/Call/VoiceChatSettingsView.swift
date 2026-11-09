@@ -2,9 +2,10 @@ import AVFoundation
 import CodyncKit
 import SwiftUI
 
-/// Voice chat settings: which voice carries calls (Apple's on this device, or OpenAI / Gemini on the
-/// user's own key kept by the computer), the mode, models and voice. Opened from a call's gear and
-/// from the computer's row in settings; the computer is the `BotStore` in the environment.
+/// Voice chat settings: which voice carries calls (Apple's on this device, or OpenAI / Gemini /
+/// ElevenLabs on the user's own key kept by the computer), the mode, models and voice. Opened from
+/// a call's gear and from the computer's row in settings; the computer is the `BotStore` in the
+/// environment.
 public struct VoiceChatSettingsView: View {
     @AppStorage(VoiceSettings.engineKey) private var engine = "device"
     @AppStorage(VoiceSettings.dictationEngineKey) private var dictationEngine = "device"
@@ -70,19 +71,23 @@ public struct VoiceChatSettingsView: View {
 
 /// A provider's mode, and the pause that ends what you say when it's Speech.
 private struct ModeRows: View {
+    let provider: VoiceProvider
     @AppStorage private var mode: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(provider: VoiceProvider) {
+        self.provider = provider
         _mode = AppStorage(wrappedValue: "realtime", VoiceSettings.modeKey(provider))
     }
 
     var body: some View {
-        ValueRow("Mode", detail: mode == "speech" ? "Sent when you pause, replies read aloud." : "A live conversation. Talk over replies.") {
-            ChoicePicker(selection: $mode.animation(Motion.reduced(Motion.layout, reduceMotion)),
-                         options: [("realtime", "Realtime"), ("speech", "Speech")])
+        if provider.live {
+            ValueRow("Mode", detail: mode == "speech" ? "Sent when you pause, replies read aloud." : "A live conversation. Talk over replies.") {
+                ChoicePicker(selection: $mode.animation(Motion.reduced(Motion.layout, reduceMotion)),
+                             options: [("realtime", "Realtime"), ("speech", "Speech")])
+            }
         }
-        if mode == "speech" { PauseRow() }
+        if !provider.live || mode == "speech" { PauseRow() }
     }
 }
 
@@ -104,7 +109,6 @@ private struct ProviderVoiceSettings: View {
     let dictationOnly: Bool
     @Environment(BotStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage private var mode: String
     @AppStorage(VoiceSettings.dictationEngineKey) private var dictationEngine = "device"
     /// nil while the computer hasn't answered yet.
     @State private var saved: Bool?
@@ -112,7 +116,10 @@ private struct ProviderVoiceSettings: View {
     @State private var key = ""
     @State private var busy = false
     @State private var result: (ok: Bool, text: String)?
+    /// Plays the Test sample ("OK") until it ends.
+    @State private var sample: AVAudioPlayer?
     @State private var voice = ""
+    @State private var voices: [(id: String, name: String)] = []
     @State private var model = ""
     @State private var transcribeModel = ""
     @State private var speechModel = ""
@@ -121,10 +128,9 @@ private struct ProviderVoiceSettings: View {
     init(provider: VoiceProvider, dictationOnly: Bool = false) {
         self.provider = provider
         self.dictationOnly = dictationOnly
-        _mode = AppStorage(wrappedValue: "realtime", VoiceSettings.modeKey(provider))
     }
 
-    private var speechMode: Bool { mode == "speech" }
+    private var speechMode: Bool { VoiceSettings.isSpeechMode(provider) }
     /// Speech mode and dictation with this provider both use its speech-to-text model.
     private var transcribes: Bool { dictationOnly || speechMode || dictationEngine == provider.rawValue }
     private var hasKey: Bool { saved == true }
@@ -156,7 +162,7 @@ private struct ProviderVoiceSettings: View {
                     } else {
                         ValueRow("Model") { picker($model, models.models) }
                     }
-                    ValueRow("Voice") { ChoicePicker(selection: $voice, options: provider.voices.map { ($0, $0) }) }
+                    ValueRow("Voice") { ChoicePicker(selection: $voice, options: voiceOptions.map { ($0.id, $0.name) }) }
                     ValueRow("This month", value: "≈ \(VoiceUsage.minutes(for: provider)) min")
                 }
             }
@@ -254,6 +260,11 @@ private struct ProviderVoiceSettings: View {
         }
     }
 
+    private var voiceOptions: [(id: String, name: String)] {
+        let base = voices.isEmpty ? provider.voices.map { (id: $0, name: $0) } : voices
+        return base.contains { $0.id == voice } ? base : [(id: voice, name: voice)] + base
+    }
+
     private func picker(_ selection: Binding<String>, _ list: [String]) -> some View {
         // The current choice stays listed before the provider's list arrives.
         let options = list.contains(selection.wrappedValue) ? list : [selection.wrappedValue] + list
@@ -287,6 +298,13 @@ private struct ProviderVoiceSettings: View {
     }
 
     private func loadModels(_ client: HostClient) async {
+        if provider == .elevenLabs, let list = try? await client.voiceVoices(provider).voices, !list.isEmpty {
+            voices = list.map { ($0.id, $0.name) }
+            if !voices.contains(where: { $0.id == voice }) {
+                voice = voices[0].id
+                UserDefaults.standard.set(voice, forKey: VoiceSettings.voiceKey(provider))
+            }
+        }
         guard let list = try? await client.voiceModels(provider) else { return }
         models = list
         // A newer default moves every choice the user hasn't made themselves.
@@ -304,11 +322,13 @@ private struct ProviderVoiceSettings: View {
         let typed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typed.isEmpty || hasKey else { return }
         run { client in
+            /// Speech mode's sample is heard once the key is known to work.
+            var heard: (Data, String)?
             if typed.isEmpty || !replacing && hasKey {
                 if dictationOnly {
                     _ = try await client.voiceModels(provider)
                 } else if speechMode {
-                    _ = try await client.voiceSpeak(provider, model: speechModel, voice: voice, text: "OK")
+                    heard = try await client.voiceSpeak(provider, model: speechModel, voice: voice, text: "OK")
                 } else {
                     _ = try await client.voiceSession(provider, model: model, voice: voice)
                 }
@@ -320,7 +340,17 @@ private struct ProviderVoiceSettings: View {
                 result = (true, "Key works and is saved on \(store.hostName)")
             }
             await loadModels(client)
+            if let heard { play(heard) }
         }
+    }
+
+    /// Reads the Test sample with the chosen voice, from a temporary file the player reads by container.
+    private func play(_ clip: (Data, String)) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("codync-test-\(UUID().uuidString).\(clip.1)")
+        guard (try? clip.0.write(to: url)) != nil, let player = try? AVAudioPlayer(contentsOf: url) else { return }
+        try? FileManager.default.removeItem(at: url)
+        player.play()
+        sample = player
     }
 
     private func remove() {

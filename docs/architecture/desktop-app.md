@@ -94,7 +94,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
   quit close the tunnel; startup removes leftover tunnels for this app variant.
 - **Icons**: SF Symbols may only ship in apps for Apple platforms, so the masks are generated
   on macOS at build time and never committed; Linux draws the closest Lucide icons.
-- **On-device speech** is macOS only; Linux calls use OpenAI or Gemini on the user's key.
+- **On-device speech** is macOS only; Linux calls use OpenAI, Gemini or ElevenLabs on the user's key.
 - **Host**: the Mac app bundles `codync-host` in `Contents/Resources`; Linux uses the installed
   host (an AppImage's mount path changes on every launch, so a service can't point into it).
 - **Windows** (x64 or ARM64, per-user NSIS install, unsigned for now so SmartScreen warns once) bundles

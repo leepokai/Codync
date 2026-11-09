@@ -18,8 +18,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Voice chat settings (iOS `VoiceChatSettingsView`): which voice carries calls (Android speech on this
- * phone, or OpenAI / Gemini on the user's own key kept by the computer), the mode, models and voice.
- * Opened from a call's gear and from Settings.
+ * phone, or OpenAI / Gemini / ElevenLabs on the user's own key kept by the computer), the mode,
+ * models and voice. Opened from a call's gear and from Settings.
  */
 @Composable internal fun VoiceChatSettings(state: AppState, store: AppStore) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.VoiceSettings))
@@ -49,7 +49,7 @@ import kotlinx.coroutines.launch
                     }
                 }
                 if (provider != null) {
-                    row {
+                    if (provider.live) row {
                         ValueRow("Mode", detail = if (speech) "Sent when you pause, replies read aloud." else "A live conversation. Talk over replies.") {
                             ChoicePicker(speech, listOf(false to "Realtime", true to "Speech"), { speech = it; choices.speechMode(provider, it) }, label = "Mode")
                         }
@@ -110,13 +110,23 @@ private val readingSpeedOptions: List<Pair<Float, String>> = readingSpeeds.map {
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     var voice by remember { mutableStateOf(choices.voice(provider)) }
+    /** The provider's voices: its own list (ElevenLabs), or the fixed ids until it answers. */
+    var voices by remember { mutableStateOf(provider.voices.map { it to it }) }
     var model by remember { mutableStateOf(choices.model(provider, VoiceChoices.Model.Realtime)) }
     var transcribe by remember { mutableStateOf(choices.model(provider, VoiceChoices.Model.Transcribe)) }
     var speechModel by remember { mutableStateOf(choices.model(provider, VoiceChoices.Model.Speech)) }
     var models by remember { mutableStateOf(choices.cachedModels(provider) ?: VoiceModels()) }
     val hasKey = saved == true
 
+    suspend fun loadVoices() {
+        if (provider != VoiceProvider.ElevenLabs) return
+        val list = try { store.voiceVoices(provider).voices } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return }
+        if (list.isEmpty()) return
+        voices = list.map { it.id to it.name }
+        if (list.none { it.id == voice }) { voice = list.first().id; choices.voice(provider, voice) }
+    }
     suspend fun loadModels() {
+        loadVoices()
         val list = try { store.voiceModels(provider) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return }
         models = list
         // A newer default moves every choice the user hasn't made themselves.
@@ -141,19 +151,22 @@ private val readingSpeedOptions: List<Pair<Float, String>> = readingSpeeds.map {
         busy = true; result = null
         scope.launch {
             try {
-                if (speech) store.voiceSpeak(provider, speechModel, voice, "OK") else store.voiceSession(provider, model, voice)
+                val clip = if (speech) store.voiceSpeak(provider, speechModel, voice, "OK") else null
+                if (clip == null) store.voiceSession(provider, model, voice)
                 result = true to "Key works"
                 loadModels()
+                // Reads "OK" with this voice, so the key's reading is heard, not just checked.
+                if (clip != null) AndroidClipPlayer.play(clip.first, clip.second)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { result = false to (error.message ?: "The key didn't work.") }
             finally { busy = false }
         }
     }
-    @Composable fun picker(label: String, selection: String, list: List<String>, select: (String) -> Unit) {
+    @Composable fun picker(label: String, selection: String, choices: List<Pair<String, String>>, select: (String) -> Unit) {
         // The current choice stays listed before the provider's list arrives.
-        val options = if (selection in list) list else listOf(selection) + list
+        val options = if (choices.any { it.first == selection }) choices else listOf(selection to selection) + choices
         ValueRow(label, Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) {
-            ChoicePicker(selection, options.map { it to it }, select, label = label, enabled = hasKey)
+            ChoicePicker(selection, options, select, label = label, enabled = hasKey)
         }
     }
 
@@ -181,10 +194,10 @@ private val readingSpeedOptions: List<Pair<Float, String>> = readingSpeeds.map {
             }
         }
         if (speech) {
-            row { picker("Speech to text", transcribe, models.transcribe) { transcribe = it; choices.choose(provider, VoiceChoices.Model.Transcribe, it) } }
-            row { picker("Text to speech", speechModel, models.speech) { speechModel = it; choices.choose(provider, VoiceChoices.Model.Speech, it) } }
-        } else row { picker("Model", model, models.models) { model = it; choices.choose(provider, VoiceChoices.Model.Realtime, it) } }
-        row { picker("Voice", voice, provider.voices) { voice = it; choices.voice(provider, it) } }
+            row { picker("Speech to text", transcribe, models.transcribe.map { it to it }) { transcribe = it; choices.choose(provider, VoiceChoices.Model.Transcribe, it) } }
+            row { picker("Text to speech", speechModel, models.speech.map { it to it }) { speechModel = it; choices.choose(provider, VoiceChoices.Model.Speech, it) } }
+        } else row { picker("Model", model, models.models.map { it to it }) { model = it; choices.choose(provider, VoiceChoices.Model.Realtime, it) } }
+        row { picker("Voice", voice, voices) { voice = it; choices.voice(provider, it) } }
         row { ValueRow("This month", "≈ ${choices.minutes(provider)} min", Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) }
     }
 }

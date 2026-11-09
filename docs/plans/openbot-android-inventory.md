@@ -15,8 +15,8 @@ motion on every open, no native control outside the documented exceptions. OpenB
 left as a one-line comment where code is copied.
 
 Order of work: A9 and A3 are already landed; the list below is the owner's: M2 and M4, then M5
-and M6, then M1 and M7, then M8 and the X adaptations. M2 (threads) landed on 2026-11-09; M4 is
-next.
+and M6, then M1 and M7, then M8 and the X adaptations. M2 (threads) and M4 (voice) landed on
+2026-11-09; M5 is next.
 
 ## A. Already in Codync Android: keep
 
@@ -60,15 +60,27 @@ event carries each chip's summary. Every client has the same feature in its own 
 (`ThreadSheet`, `ThreadsView`), desktop (`RepliesView`, `ThreadsCard`) and the TUI (`t` on a
 picked message, `T` for the list).
 
-### M4 Voice, expanded
+### M4 Voice, expanded, done (ElevenLabs; the local models are the adaptation gap)
 
-- Reading with a local engine (Supertonic 3) or ElevenLabs with a key, samples and deletion.
-- Recognition with Parakeet v3 (670 MB, 25 languages) or Scribe, downloadable.
-- Pause before sending (1–10 s) and speed: present, keep. Send with an empty box starts and ends
+- ElevenLabs as a speech provider: the key stays on the computer, its **voices** come from the
+  account (premade, cloned and saved), Scribe hears speech and Flash 2.5 reads replies. It holds
+  no live conversation, so calls with it are always Speech mode and the Mode row is hidden.
+- **Test key** reads "OK" in the chosen voice on every client, so the sample is heard, not just
+  checked. ElevenLabs' default key tab and its `detail` error shape are handled in the host.
+- Pause before sending (1–10 s) and speed: present, kept. Send with an empty box starts and ends
   the conversation.
 
-Nothing of the engines exists yet (`supertonic`, `elevenlabs`, `parakeet` appear in neither the
-app nor the host).
+Host: `Provider::ElevenLabs` (key slot, `voiceVoices`, dynamic models and defaults), with
+`check_elevenlabs` verifying both the voices and text-to-speech permissions before a key is kept.
+Every client lists the account's voices: Android `VoiceChoices.voice`, `VoiceChatSettings.kt`,
+iOS `VoiceSettings.voice` + `VoiceChatSettingsView.swift`, desktop `chosenVoice` +
+`VoiceChatSettingsView.tsx`. The players already take `mp3`; the desktop maps it to `audio/mpeg`.
+
+**Deliberate adaptation gap:** Supertonic 3 and Parakeet v3 are on-device neural models OpenBot
+bundles in its own app (native libs plus about 1.7 GB of downloads). Codync's local engine is the
+platform voice on both phones (Android TTS plus the on-device recognizer/Vosk, Apple's voices on
+iOS), so nothing of that size ships here. No user-facing capability is lost: whoever wants a
+cloud voice picks ElevenLabs or the existing OpenAI/Gemini speech models.
 
 ### M5 Agent settings on the server
 

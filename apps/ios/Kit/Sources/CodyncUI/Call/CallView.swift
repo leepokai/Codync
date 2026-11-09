@@ -129,6 +129,8 @@ struct CallView: View {
             engine = switch provider {
             case .openAI: OpenAIRealtimeEngine(model: chosen, voice: voice, link: link)
             case .gemini: GeminiLiveEngine(model: chosen, voice: voice, link: link)
+            // Speech-only, so the branch above always takes it.
+            case .elevenLabs: preconditionFailure("ElevenLabs has no realtime engine")
             }
             cloudStartedAt = .now
         } else {

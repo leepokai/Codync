@@ -18,7 +18,13 @@ enum class VoiceProvider(val id: String, val title: String, val keyPage: String,
     OpenAI("openai", "OpenAI", "https://platform.openai.com/api-keys", "sk-…", "gpt-realtime-2.1", "gpt-transcribe",
         "gpt-4o-mini-tts", 600, listOf("marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse")),
     Gemini("gemini", "Gemini", "https://aistudio.google.com/apikey", "AIza…", "gemini-3.8-live", "gemini-3.8-flash",
-        "gemini-3.8-flash-tts", 150, listOf("Kore", "Puck", "Charon", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr"));
+        "gemini-3.8-flash-tts", 150, listOf("Kore", "Puck", "Charon", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr")),
+    /** Speech only: ElevenLabs holds no live conversation here. Its voices come from the account. */
+    ElevenLabs("elevenlabs", "ElevenLabs", "https://elevenlabs.io/app/settings/api-keys", "sk_…", "", "scribe_v1",
+        "eleven_flash_v2_5", 600, listOf("21m00Tcm4TlvDq8ikWAM"));
+
+    /** A live conversation is only possible with a provider that holds one. */
+    val live: Boolean get() = this != ElevenLabs
 
     val defaults: VoiceDefaults get() = VoiceDefaults(model, transcribeModel, speechModel)
 
@@ -37,6 +43,11 @@ enum class VoiceProvider(val id: String, val title: String, val keyPage: String,
 /** The models the computer's key can use, per voice mode. */
 @Serializable data class VoiceModels(val models: List<String> = emptyList(), val transcribe: List<String> = emptyList(),
     val speech: List<String> = emptyList(), val defaults: VoiceDefaults? = null)
+
+/** The voices the computer's key can read with (ElevenLabs). */
+@Serializable data class VoiceVoices(val voices: List<Entry> = emptyList()) {
+    @Serializable data class Entry(val id: String, val name: String)
+}
 
 /**
  * The call settings kept on this phone (iOS `VoiceSettings`): the engine, each provider's mode,
@@ -57,8 +68,10 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
     fun remember(status: VoiceStatus) { for (entry in status.providers) VoiceProvider.of(entry.provider)?.let { remember(entry.defaults, it) } }
 
     /** Speech: speech to text, then the reply read aloud. Otherwise a realtime conversation. */
-    fun speechMode(provider: VoiceProvider): Boolean = read("callMode.${provider.id}") == "speech"
-    fun speechMode(provider: VoiceProvider, on: Boolean) = write("callMode.${provider.id}", if (on) "speech" else "realtime")
+    fun speechMode(provider: VoiceProvider): Boolean = !provider.live || read("callMode.${provider.id}") == "speech"
+    fun speechMode(provider: VoiceProvider, on: Boolean) {
+        if (provider.live) write("callMode.${provider.id}", if (on) "speech" else "realtime")
+    }
 
     fun model(provider: VoiceProvider, kind: Model): String = read("${kind.prefix}.${provider.id}") ?: fallback(provider, kind)
     fun choose(provider: VoiceProvider, kind: Model, model: String) =
@@ -67,7 +80,14 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
         when (kind) { Model.Realtime -> it.realtime; Model.Transcribe -> it.transcribe; Model.Speech -> it.speech }
     }
 
-    fun voice(provider: VoiceProvider): String = read("callVoice.${provider.id}")?.takeIf { it in provider.voices } ?: provider.voices[0]
+    fun voice(provider: VoiceProvider): String {
+        val stored = read("callVoice.${provider.id}")?.takeIf { it.isNotBlank() }
+        return when {
+            provider == VoiceProvider.ElevenLabs -> stored ?: provider.voices[0]
+            stored != null && stored in provider.voices -> stored
+            else -> provider.voices[0]
+        }
+    }
     fun voice(provider: VoiceProvider, voice: String) = write("callVoice.${provider.id}", voice)
 
     /** What a call's engine is built from (`language`: on device): a different one picked mid-call takes over the call. */

@@ -46,6 +46,18 @@ test('a call takes another engine only when what its engine is built from change
 })
 
 
+test('ElevenLabs holds no live call, so its mode is always speech', async () => {
+  const { VoiceSettings } = await import('./voice.ts')
+  const settings = await import('../settings/voice-settings.ts')
+  settings.mode('elevenlabs').set('realtime')
+  assert.equal(VoiceSettings.isSpeechMode('elevenlabs'), true)
+  assert.ok(VoiceSettings.engineChoice('elevenlabs').startsWith('elevenlabs speech'))
+  // Its voices come from the account, so the fixed list doesn't validate them.
+  settings.saveVoice('elevenlabs', '21m00Tcm4TlvDq8ikWAM')
+  assert.equal(VoiceSettings.voice('elevenlabs'), '21m00Tcm4TlvDq8ikWAM')
+})
+
+
 test('Windows and Linux retain automatic call fallback until a provider is explicitly picked', async () => {
   const { VoiceSettings } = await import('./voice.ts')
   const settings = await import('../settings/voice-settings.ts')

@@ -2,11 +2,11 @@ import { voiceEngine, voiceEngineIds } from '../../../shared/voice-engine'
 import type { HostClient } from '../../client/host-client'
 import { pref, type Pref } from '../../lib/prefs'
 
-// Realtime voice on the user's own provider keys (host/src/voice.rs, kit Voice.swift +
-// VoiceSettings). The keys stay on the computer; these are this device's choices.
+// Voice on the user's own provider keys (host/src/voice.rs, kit Voice.swift + VoiceSettings).
+// The keys stay on the computer; these are this device's choices.
 
-export type VoiceProvider = 'openai' | 'gemini'
-export const VOICE_PROVIDERS: VoiceProvider[] = ['openai', 'gemini']
+export type VoiceProvider = 'openai' | 'gemini' | 'elevenlabs'
+export const VOICE_PROVIDERS: VoiceProvider[] = ['openai', 'gemini', 'elevenlabs']
 
 /** The provider's newest model for each voice mode, as the computer last found them. */
 export interface VoiceDefaults {
@@ -25,6 +25,11 @@ export interface VoiceModels {
   transcribe: string[]
   speech: string[]
   defaults?: VoiceDefaults | null
+}
+
+/** The voices the computer's key can read with (ElevenLabs). */
+export interface VoiceVoices {
+  voices: { id: string; name: string }[]
 }
 
 export const voiceInfo: Record<VoiceProvider, {
@@ -49,9 +54,20 @@ export const voiceInfo: Record<VoiceProvider, {
     defaults: { realtime: 'gemini-3.8-live', transcribe: 'gemini-3.8-flash', speech: 'gemini-3.8-flash-tts' },
     voices: ['Kore', 'Puck', 'Charon', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'],
   },
+  elevenlabs: {
+    name: 'ElevenLabs',
+    keyPage: 'https://elevenlabs.io/app/settings/api-keys',
+    keyPrompt: 'sk_…',
+    // Speech only: there is no live conversation, and the account's voices come from the computer.
+    defaults: { realtime: '', transcribe: 'scribe_v1', speech: 'eleven_flash_v2_5' },
+    voices: ['21m00Tcm4TlvDq8ikWAM'],
+  },
 }
 
-export const isVoiceProvider = (s: string): s is VoiceProvider => s === 'openai' || s === 'gemini'
+/** Providers that hold a live conversation; ElevenLabs reads and hears only. */
+export const supportsRealtime = (p: VoiceProvider) => p !== 'elevenlabs'
+
+export const isVoiceProvider = (s: string): s is VoiceProvider => s === 'openai' || s === 'gemini' || s === 'elevenlabs'
 export const configured = (s: VoiceStatus, p: VoiceProvider) => s.providers.some((x) => x.provider === p && x.configured)
 
 /** `device` (on-device speech) or a provider. */
@@ -129,7 +145,8 @@ export function saveModel(p: VoiceProvider, kind: ModelKind, model: string) {
 
 export function chosenVoice(p: VoiceProvider) {
   const v = voicePref(p).get()
-  return v && voiceInfo[p].voices.includes(v) ? v : voiceInfo[p].voices[0]!
+  if (v && (p === 'elevenlabs' || voiceInfo[p].voices.includes(v))) return v
+  return voiceInfo[p].voices[0]!
 }
 
 export const saveVoice = (p: VoiceProvider, v: string) => voicePref(p).set(v)
@@ -164,6 +181,9 @@ export const voiceSession = async (c: HostClient, p: VoiceProvider, model: strin
 /** The models the computer's key can use, per voice mode. */
 export const voiceModels = (c: HostClient, p: VoiceProvider) => c.call<VoiceModels>('voiceModels', { provider: p }, 30_000)
 
-/** Text to speech for a stretch of a reply: base64 audio and its format (`aac` or `wav`). */
+/** The provider's own voices (ElevenLabs). */
+export const voiceVoices = (c: HostClient, p: VoiceProvider) => c.call<VoiceVoices>('voiceVoices', { provider: p }, 30_000)
+
+/** Text to speech for a stretch of a reply: base64 audio and its format (`aac`, `wav` or `mp3`). */
 export const voiceSpeak = (c: HostClient, p: VoiceProvider, model: string, voice: string, text: string) =>
   c.call<{ audio: string; format: string }>('voiceSpeak', { provider: p, model, voice, text }, 90_000)

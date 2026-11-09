@@ -13,6 +13,7 @@ import {
   mode,
   pause,
   rate,
+  supportsRealtime,
   voiceInfo,
   type VoiceProvider,
 } from '../settings/voice-settings'
@@ -23,8 +24,8 @@ export type { VoiceProvider, VoiceStatus } from '../settings/voice-settings'
 
 export const providerName = (p: VoiceProvider) => voiceInfo[p].name
 
-/** Longest stretch of a reply turned into audio at once: each clip has to fit one channel message. Gemini returns PCM, OpenAI AAC. */
-export const SPEECH_CHUNK: Record<VoiceProvider, number> = { openai: 600, gemini: 150 }
+/** Longest stretch of a reply turned into audio at once: each clip has to fit one channel message. Gemini returns PCM, OpenAI AAC, ElevenLabs MP3. */
+export const SPEECH_CHUNK: Record<VoiceProvider, number> = { openai: 600, gemini: 150, elevenlabs: 600 }
 
 /** Recognition through the Swift helper: macOS only. */
 export const onDeviceAvailable = () => window.codync.speech.available
@@ -50,7 +51,7 @@ export const VoiceSettings = {
   transcribeModel: (p: VoiceProvider) => chosenModel(p, 'transcribe'),
   speechModel: (p: VoiceProvider) => chosenModel(p, 'speech'),
   voice: chosenVoice,
-  isSpeechMode: (p: VoiceProvider) => mode(p).get() === 'speech',
+  isSpeechMode: (p: VoiceProvider) => !supportsRealtime(p) || mode(p).get() === 'speech',
   /** A pause this long (seconds) ends what you're saying and sends it. */
   pause: () => (pause.get() > 0 ? pause.get() : 1.5),
   /** AVSpeechUtterance's rate (0…1, 0.5 normal), as the Mac stores it. */

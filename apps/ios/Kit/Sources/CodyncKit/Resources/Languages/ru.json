@@ -1804,5 +1804,10 @@
   "Resuming after a restart": "Продолжение после перезапуска",
   "Document": "Документ",
   "Slack thread": "Ветка Slack",
-  "Routine thread": "Ветка рутины"
+  "Routine thread": "Ветка рутины",
+  "No tokens counted today": "Сегодня токены не расходовались",
+  "{n} tokens": "{n} токенов",
+  "{used} of {limit} tokens": "{used} из {limit} токенов",
+  "All bots today": "Все боты сегодня",
+  "Tokens": "Токены"
 }

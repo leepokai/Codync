@@ -179,6 +179,20 @@ impl Budgets {
             .collect();
         json!({"budgets": rows})
     }
+    /// What one bot spent today, whether or not it has a limit, and when the tally resets.
+    pub fn bot_usage(&self, bot: &str, now_ms: i64) -> Value {
+        let day = day_of(now_ms);
+        let state = self.0.locked();
+        let used = |key: &str| state.tallies.get(key).filter(|t| t.day == day).map_or(0, |t| t.tokens);
+        json!({
+            "botId": bot,
+            "used": used(bot),
+            "limit": state.limits.get(bot),
+            "fleetUsed": used(FLEET),
+            "fleetLimit": state.limits.get(FLEET),
+            "resetsAt": next_day(now_ms),
+        })
+    }
 }
 
 /// The tokens a turn's `usage` report counts against a budget: what was read fresh, written to the cache and
@@ -206,6 +220,17 @@ mod tests {
         assert!(budgets.saving("a", today), "80 % is the warning level");
         assert!(!budgets.saving("a", today + DAY_MS), "tomorrow starts clean");
         assert!(!budgets.saving("other", today), "a bot with no limit of its own is not affected");
+    }
+
+    #[test]
+    fn usage_counts_today_for_a_bot_without_a_limit() {
+        let budgets = Budgets(Mutex::new(State::default()));
+        let today = 5 * DAY_MS;
+        budgets.0.locked().add("a", 5, 120);
+        let usage = budgets.bot_usage("a", today);
+        assert_eq!(usage["used"], 120);
+        assert!(usage["limit"].is_null());
+        assert_eq!(budgets.bot_usage("a", today + DAY_MS)["used"], 0, "tomorrow starts clean");
     }
 
     #[test]

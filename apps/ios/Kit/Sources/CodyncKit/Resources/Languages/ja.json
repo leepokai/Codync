@@ -1804,5 +1804,10 @@
   "Resuming after a restart": "再起動後に再開",
   "Document": "ドキュメント",
   "Slack thread": "Slack スレッド",
-  "Routine thread": "ルーチンのスレッド"
+  "Routine thread": "ルーチンのスレッド",
+  "No tokens counted today": "今日はトークン未使用",
+  "{n} tokens": "{n} トークン",
+  "{used} of {limit} tokens": "{limit} 中 {used} トークン",
+  "All bots today": "今日の全ボット",
+  "Tokens": "トークン"
 }

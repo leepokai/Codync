@@ -16,6 +16,7 @@ import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
 import { AgentAccountPicker } from './AgentAccountPicker'
 import { BotAgentKeys } from './BotAgentKeys'
+import { BotUsageRows } from './BotUsageRows'
 import { AgentModelPicker } from './AgentModelPicker'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { useAgentSetup } from './agent-status'
@@ -298,6 +299,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             <ValueRow label="Skills">{String((draft.skills ?? []).length)}</ValueRow>
             <ValueRow label="Connectors">{String((draft.connectors ?? []).length)}</ValueRow>
             <ValueRow label="Computer">{draft.computer ? 'Can use it' : 'Off'}</ValueRow>
+            <BotUsageRows botId={saved.id} />
           </CardSection>
         ) : null}
         <CardSection title="Profile">

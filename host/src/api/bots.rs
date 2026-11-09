@@ -219,6 +219,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let id = str_arg(&b, "botId")?.to_owned();
             json!({"bot": tokio::task::spawn_blocking(move || hub.duplicate_bot(&id)).await??})
         }
+        "botUsage" => hub.budget.bot_usage(str_arg(&b, "botId")?, crate::store::now_ms()),
         // What this bot waits on: open approvals, routine runs and threads with unread replies.
         "botTasks" => {
             let bot = str_arg(&b, "botId")?;

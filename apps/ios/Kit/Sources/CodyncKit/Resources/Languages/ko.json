@@ -1804,5 +1804,10 @@
   "Resuming after a restart": "재시작 후 재개",
   "Document": "문서",
   "Slack thread": "Slack 스레드",
-  "Routine thread": "루틴 스레드"
+  "Routine thread": "루틴 스레드",
+  "No tokens counted today": "오늘 사용한 토큰 없음",
+  "{n} tokens": "{n} 토큰",
+  "{used} of {limit} tokens": "{limit} 중 {used} 토큰",
+  "All bots today": "오늘 모든 봇",
+  "Tokens": "토큰"
 }

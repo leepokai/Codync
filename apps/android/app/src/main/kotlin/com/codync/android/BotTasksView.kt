@@ -41,13 +41,20 @@ private fun threadName(id: String): String = when {
 @Composable internal fun BotTasksView(bot: Bot, state: AppState, store: AppStore) {
     var data by remember(bot.id) { mutableStateOf<JsonObject?>(null) }
     var error by remember(bot.id) { mutableStateOf<String?>(null) }
+    var usage by remember(bot.id) { mutableStateOf<JsonObject?>(null) }
     LaunchedEffect(bot.id, state.generation) {
         try { data = store.botTasks(bot.id) } catch (e: Exception) { error = e.message }
+        usage = runCatching { store.botUsage(bot.id) }.getOrNull()
     }
     val approvals: JsonArray = data?.get("approvals")?.jsonArray ?: JsonArray(emptyList())
     val runs: JsonArray = data?.get("runs")?.jsonArray ?: JsonArray(emptyList())
     val threads: JsonArray = data?.get("threads")?.jsonArray ?: JsonArray(emptyList())
+    val used = usage?.get("used")?.jsonPrimitive?.content
+    val limit = usage?.get("limit")?.jsonPrimitive?.content
     CardForm {
+        if (used != null) CardSection("Today") {
+            row { ValueRow("Tokens", if (limit != null) "$used of $limit" else used) }
+        }
         CardSection("Approvals") {
             if (approvals.isEmpty()) row { Text("Nothing waiting for you.", style = Type.body, color = Palette.secondary) }
             for (approval in approvals) {

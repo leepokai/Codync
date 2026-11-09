@@ -1804,5 +1804,10 @@
   "Resuming after a restart": "Reprise après un redémarrage",
   "Document": "Document",
   "Slack thread": "Fil Slack",
-  "Routine thread": "Fil de routine"
+  "Routine thread": "Fil de routine",
+  "No tokens counted today": "Aucun jeton compté aujourd’hui",
+  "{n} tokens": "{n} jetons",
+  "{used} of {limit} tokens": "{used} sur {limit} jetons",
+  "All bots today": "Tous les bots aujourd’hui",
+  "Tokens": "Jetons"
 }

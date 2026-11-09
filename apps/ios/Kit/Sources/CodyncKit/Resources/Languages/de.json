@@ -1804,5 +1804,10 @@
   "Resuming after a restart": "Wird nach einem Neustart fortgesetzt",
   "Document": "Dokument",
   "Slack thread": "Slack-Thread",
-  "Routine thread": "Routinen-Thread"
+  "Routine thread": "Routinen-Thread",
+  "No tokens counted today": "Heute keine Token gezählt",
+  "{n} tokens": "{n} Token",
+  "{used} of {limit} tokens": "{used} von {limit} Token",
+  "All bots today": "Alle Bots heute",
+  "Tokens": "Token"
 }

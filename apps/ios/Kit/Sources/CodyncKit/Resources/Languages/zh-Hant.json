@@ -1804,5 +1804,10 @@
   "Resuming after a restart": "重新啟動後繼續",
   "Document": "文件",
   "Slack thread": "Slack 會話",
-  "Routine thread": "例程會話"
+  "Routine thread": "例程會話",
+  "No tokens counted today": "今天沒有使用權杖",
+  "{n} tokens": "{n} 個權杖",
+  "{used} of {limit} tokens": "{used}/{limit} 個權杖",
+  "All bots today": "今天的全部機器人",
+  "Tokens": "權杖"
 }

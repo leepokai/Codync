@@ -1,7 +1,7 @@
 //! The bot's ACP sessions: starting its agent, new/reopen, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
+use super::launch::{claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
 use super::{Actor, Adapter, Conn, Instructions, codex_names, pi_tools};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
@@ -127,13 +127,12 @@ impl Actor {
     async fn start_candidate(
         &self,
         candidate: Candidate,
-        env: &[(String, String)],
+        mut env: Vec<(String, String)>,
         budget: Duration,
         progress: impl Fn(&str),
     ) -> Result<Conn> {
         let mut command = [candidate.resolve(progress).await?.acp()];
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
-        let mut env = env.to_vec();
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
         let conn = start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
             tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
@@ -184,7 +183,7 @@ impl Actor {
             };
             let candidates = launch_commands(&self.cfg)?;
             // Keys saved from an "environment variable" sign-in, and what the harness needs to start.
-            let (mut env, mut grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
+            let (mut env, grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
@@ -193,24 +192,14 @@ impl Actor {
             if pi {
                 env.extend(pi_tools::env(&servers).await?);
             }
-            let mut last_err = None;
-            let count = candidates.len();
-            for (i, candidate) in candidates.into_iter().enumerate() {
-                let fallback_left = i + 1 < count;
+            let conn = start_first(candidates, &env, |candidate, env, fallback_left| {
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
-                match self.start_candidate(candidate, &env, budget, &progress).await {
-                    Ok(conn) => {
-                        conn.acp.hold(std::mem::take(&mut grants));
-                        self.conn = Some(conn);
-                        break;
-                    }
-                    Err(e) => last_err = Some(e),
-                }
-            }
-            if self.conn.is_none() {
-                return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
-            }
+                self.start_candidate(candidate, env, budget, &progress)
+            })
+            .await?;
+            conn.acp.hold(grants);
+            self.conn = Some(conn);
         }
         if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
             renamed = codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("CODEX_HOME")).await;

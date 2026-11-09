@@ -1,6 +1,7 @@
-//! Installing connectors: registry install options and inputs, pasted configs, custom
-//! servers, listing and removal.
+//! Installing connectors: registry install options and inputs, pasted configs, listing
+//! and removal.
 
+use super::custom::custom;
 use super::registry::{listing, registry_server};
 use super::{Connector, add_connector, composio, connectors, oauth, unique_id, update_connectors};
 use anyhow::{Context, Result, anyhow, bail};
@@ -262,15 +263,6 @@ async fn install_server(
     add_connector(store, c)
 }
 
-/// A connector you describe yourself: a command line or an https URL.
-pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Result<Value> {
-    let name =
-        b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
-    let all = connectors(store)?;
-    let c = custom(name, b, &all).await?;
-    add_connector(store, c)
-}
-
 /// Adds every server in a pasted MCP config: the `mcpServers` / `servers` JSON that
 /// Claude, Cursor, VS Code and most READMEs use, or one server's own entry.
 pub async fn import_connectors(store: &crate::store::Store, config: &str) -> Result<Value> {
@@ -311,46 +303,6 @@ fn config_servers(v: &Value) -> Vec<(String, Value)> {
             .map(|(k, e)| (k.clone(), e.clone()))
             .collect(),
     }
-}
-
-/// A connector from `{command, args?, env?}` or `{url, headers?}`. A command without
-/// `args` is split like a shell would (quotes work).
-async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
-    let map = |v: &Value| -> BTreeMap<String, String> {
-        v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned()))).collect()
-    };
-    let mut c = Connector {
-        id: unique_id(name, &all.iter().map(|c| c.id.clone()).collect::<Vec<_>>()),
-        name: name.to_owned(),
-        description: b["description"].as_str().unwrap_or_default().to_owned(),
-        registry_name: None,
-        command: None,
-        args: vec![],
-        env: map(&b["env"]),
-        url: None,
-        headers: map(&b["headers"]),
-        oauth: None,
-    };
-    let url =
-        ["url", "serverUrl", "httpUrl"].iter().find_map(|k| b[*k].as_str()).map(str::trim).filter(|s| !s.is_empty());
-    if let Some(url) = url {
-        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].iter().any(|p| url.starts_with(p));
-        if !url.starts_with("https://") && !local {
-            bail!("remote connectors need an https URL");
-        }
-        if oauth::required(url, &c.headers).await {
-            c.oauth = Some(oauth::OAuth::default());
-        }
-        c.url = Some(url.to_owned());
-        return Ok(c);
-    }
-    let line = b["command"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow!("give a command or a URL"))?;
-    (c.command, c.args) = super::command_line::split_command(line, b.get("args"))?;
-    Ok(c)
 }
 
 /// Installed MCP servers, then the apps connected through Composio.

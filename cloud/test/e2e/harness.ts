@@ -3,8 +3,8 @@
 // for runs that share an outside resource, and the child processes to clean up.
 
 import { type ChildProcess, execFile, spawn, spawnSync } from "node:child_process";
-import { createPublicKey, generateKeyPairSync } from "node:crypto";
-import { closeSync, createReadStream, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
+import { createPrivateKey, createPublicKey, generateKeyPairSync, type KeyObject } from "node:crypto";
+import { closeSync, createReadStream, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -53,7 +53,20 @@ const oneLine = (pem: string) => pem.replace(/-----[A-Z ]+-----|\s/g, "");
 const jwtKey = oneLine(publicKey.export({ type: "spki", format: "pem" }).toString());
 // The cloud signs device certificates with the private half (DEVICE_CERT_KEY); hosts check them with the public
 // half (CODYNC_DEVICE_CERT_KEY), as a self-hosted cloud's hosts do.
-const certKey = generateKeyPairSync("ed25519");
+type KeyPair = { publicKey: KeyObject; privateKey: KeyObject };
+const certKey: KeyPair = generateKeyPairSync("ed25519");
+
+/** The device certificate key kept in `file`: a cloud that keeps its data across runs keeps its key, so the devices
+ * its hosts accepted before still check out. */
+function keptCertKey(file: string): KeyPair {
+  if (existsSync(file)) {
+    const privateKey = createPrivateKey({ key: JSON.parse(readFileSync(file, "utf8")) as JsonWebKey, format: "jwk" });
+    return { privateKey, publicKey: createPublicKey(privateKey) };
+  }
+  const pair = generateKeyPairSync("ed25519");
+  writeFileSync(file, JSON.stringify(pair.privateKey.export({ format: "jwk" })), { mode: 0o600 });
+  return pair;
+}
 
 /** The dev Clerk instance's issuer and public key, so a local cloud accepts real apps signed in to Codync Dev. */
 async function devClerk(): Promise<Record<string, string>> {
@@ -105,19 +118,25 @@ function alive(pid: number): boolean {
   }
 }
 
-/** A local cloud on `port`, with its own D1 and temp folder. */
+/** A local cloud on `port`, with its own D1 and temp folder. With `keep`, its D1 and device certificate key live in
+ * that folder and outlast the run (a worktree sandbox's own cloud, `npm run dev`); else they go with the temp folder. */
 export class LocalCloud {
   readonly tmp = mkdtempSync(join(tmpdir(), "codync-e2e-"));
-  readonly persist = join(this.tmp, "wrangler");
+  readonly persist: string;
   readonly port: number;
   readonly url: string;
   /** For hosts of this cloud: `CODYNC_DEVICE_CERT_KEY`. */
-  readonly certPub = certKey.publicKey.export({ format: "jwk" }).x!;
+  readonly certPub: string;
+  private readonly cert: KeyPair;
   private readonly children: ChildProcess[] = [];
 
-  constructor(port: number) {
+  constructor(port: number, o: { keep?: string } = {}) {
     this.port = port;
     this.url = `http://127.0.0.1:${port}`;
+    if (o.keep) mkdirSync(o.keep, { recursive: true });
+    this.persist = join(o.keep ?? this.tmp, "wrangler");
+    this.cert = o.keep ? keptCertKey(join(o.keep, "device-cert-key.json")) : certKey;
+    this.certPub = this.cert.publicKey.export({ format: "jwk" }).x!;
   }
 
   run(cmd: string, args: string[], env: Record<string, string> = {}): ChildProcess {
@@ -139,7 +158,7 @@ export class LocalCloud {
     });
     if (migrate.status !== 0) throw new Error(`migrations failed: ${migrate.stderr}`);
     const clerk = o.clerk === "dev" ? await devClerk() : { CLERK_JWT_KEY: jwtKey };
-    const cert = { DEVICE_CERT_KEY: JSON.stringify(certKey.privateKey.export({ format: "jwk" })) };
+    const cert = { DEVICE_CERT_KEY: JSON.stringify(this.cert.privateKey.export({ format: "jwk" })) };
     const varArgs = Object.entries({ ...clerk, ...cert, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
     // `--test-scheduled`: `cron()` runs the Worker's cron jobs on demand.
     this.run(WRANGLER, ["dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(this.port), "--persist-to", this.persist, "--test-scheduled", ...varArgs]);

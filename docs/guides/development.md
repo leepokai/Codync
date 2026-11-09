@@ -163,7 +163,7 @@ For interface catalogs, supported language choices and translation checks, see [
 
 Follow [UI conventions](../design/ui-conventions.md) for native toolbar behavior and [widget design](../design/mobile-widgets.md) for previews. Widget previews live in `apps/ios/Widgets/WidgetPreviews.swift`.
 
-Versions are defined in `apps/project.yml` (`MARKETING_VERSION`), `host/Cargo.toml` and `apps/desktop/package.json`; keep them equal (the desktop release workflow fails when the app and host differ), then regenerate the Xcode project.
+Versions are defined in `apps/project.yml` (`MARKETING_VERSION`, also in the generated Xcode project), `host/Cargo.toml` and `apps/desktop/package.json` (+ their lock files), and must stay equal (the desktop release workflow fails when the app and host differ): change them only with `tools/bump-version.py` (CLAUDE.md "Versioning"); `python3 tools/bump-version-test.py` checks it.
 
 ## GitHub releases
 
@@ -172,6 +172,16 @@ Greptile reviews every PR into `dev` or `main` when it opens and on each push (`
 Before a release, run the real agents once ([test stack](test-stack.md#real-agents)).
 
 Auto Tag (`.github/workflows/auto-tag.yml`) creates each `v*` release right after pushing the tag, before the host and desktop jobs upload to it. Releases go up without GitHub's *latest* mark: the release gate gives it to the newest fully uploaded release the App Store's iPhone app works with, so downloads, updaters and Homebrew wait for App Review when a release needs a newer iPhone app ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)). Its description comes from `tools/release-notes.sh`: the `## Summary` of the PR that merged the version bump into `main` (or the PR's opening text without that heading), else the `feat`/`fix` commits since the previous tag, followed by GitHub's generated PR list and compare link. Write the release PR's Summary for people reading the release page. The same description is posted to the Discord server's #releases channel through the webhook in the `DISCORD_RELEASES_WEBHOOK` secret (a failed post only leaves a warning on the run); each `@login` there whose GitHub account is linked on the Discord Worker becomes a mention that pings them (`DISCORD_MENTIONS_SECRET`, [discord/README.md](../../discord/README.md)).
+
+## Dev release channel
+
+`dev` has host releases of its own, so cloud computers on the dev cloud run what `dev` has before any of it is released. Each push to `dev` that changes `host/`, `apps/screen-linux/` or `packaging/` runs the jobs that build a `v*` tag's host (`.github/workflows/host.yml`: the four platforms, `CODYNC_ENV=main`, the same signing key, used only by the `release` job, which runs none of the build's code) and uploads the result to the R2 bucket `codync-releases-dev`, served at `https://dev-releases.codync.dev` in GitHub's layout: `<base>/download/v<version>/<asset>` and `<base>/latest/download/<asset>`. The assets are each platform's `codync-host-<platform>.tar.gz` (+ `.sha256`) and `.update.json` (+ `.sig`), plus `install.sh` and `codync-host-compat.json` (the version and its `MIN_APP`); tags attach the same two files to their GitHub release.
+
+Only the URL differs between the channels. `install.sh`, the host's updater and the keeper read `CODYNC_RELEASES_URL` (unset: GitHub), and the cloud reads `HOST_RELEASES_URL` (set for dev in `cloud/wrangler.toml`), installs new cloud computers from that channel and gives them its URL. A manifest names its own channel's download URL and a host takes only manifests for its channel, so a dev build never installs on a host that follows GitHub.
+
+The version is `dev`'s real one, the one `main` will release. A new cloud computer installs the channel's latest; one already running only moves to a higher version (before it sleeps, or *Update* from an app). So bump the patch on `dev` when a host change should reach it (`tools/bump-version.py patch`, CLAUDE.md "Versioning"); without a bump the channel's build of that version is replaced and running computers keep theirs.
+
+CI uploads with the R2 key `DEV_RELEASES_R2_KEY_ID` / `DEV_RELEASES_R2_SECRET`, which can write that bucket only ([secrets](../reference/secrets.md)). Objects are `no-cache`, so a new build is served at once.
 
 ## codync-mem releases
 

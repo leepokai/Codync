@@ -6,9 +6,13 @@
 // every machine, and fetch CODYNC_HOST_LINUX_BIN (else the released host) through a second one. Ctrl-C deletes the
 // test machines and stops everything. Run with `npm run cloud:stack`; also: CLOUD_COMPUTER_USERS (dev Clerk user ids
 // allowed a cloud computer, default `*`), CODYNC_STACK_PORT (a fixed port, so a simulator launched once keeps
-// working), CODYNC_SLEEP_IDLE_SECS (a short idle time to watch sleep happen).
+// working), CODYNC_SLEEP_IDLE_SECS (a short idle time to watch sleep happen). Without a provider key it is a plain local
+// cloud with cloud computers off, as a worktree sandbox runs it (`npm run dev` in apps/desktop, which also sets
+// CODYNC_STACK_DIR, a folder that keeps its D1 and device certificate key across runs, and CODYNC_STACK_INFO, a file this
+// writes `{url, certPub}` to once the cloud answers).
 
 import { randomBytes } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { boatKey, keepForwarded, sweep } from "./boat.ts";
 import { freePort, LocalCloud, lock, ROOT, serveFiles, TEST_PREFIX } from "./harness.ts";
@@ -18,13 +22,29 @@ const HOST_LINUX_BIN = process.env.CODYNC_HOST_LINUX_BIN;
 const idle = process.env.CODYNC_SLEEP_IDLE_SECS;
 
 const ibx = instaboxKey();
-// Boat when its key is given, or when nothing else is.
-const wantsBoat = Boolean(process.env.BOAT_API_KEY || process.env.BOAT_API_KEY_FILE) || !ibx;
-const key = wantsBoat ? boatKey() : null;
-const release = lock("boat");
-const cloud = new LocalCloud(Number(process.env.CODYNC_STACK_PORT ?? (await freePort())));
+const key = process.env.BOAT_API_KEY || process.env.BOAT_API_KEY_FILE ? boatKey() : null;
+const providers = Boolean(key || ibx);
+const release = providers ? lock("boat") : () => {};
+const cloud = new LocalCloud(Number(process.env.CODYNC_STACK_PORT ?? (await freePort())), { keep: process.env.CODYNC_STACK_DIR });
 const filesPort = await freePort();
 const files = serveFiles({ ...(HOST_LINUX_BIN ? { "codync-host": HOST_LINUX_BIN } : {}), "fake_agent.py": join(ROOT, "host/tests/fake_agent.py") }, filesPort);
+
+// Set before anything starts, so a signal or a failed start stops all of it.
+let watch: ReturnType<typeof setInterval> | undefined;
+let stopping = false;
+const shutdown = async (code = 0) => {
+  if (stopping) return;
+  stopping = true;
+  clearInterval(watch);
+  console.log(providers ? "\nstopping: deleting the test machines" : "\nstopping");
+  if (key) await sweep(key, 0).catch((e) => console.error(String(e)));
+  if (ibx) await sweepInstabox(ibx, 0).catch((e) => console.error(String(e)));
+  files.close();
+  await cloud.cleanup();
+  release();
+  process.exit(code);
+};
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => void shutdown());
 
 if (key) await sweep(key, 2 * 3600_000);
 if (ibx) await sweepInstabox(ibx, 2 * 3600_000);
@@ -35,27 +55,36 @@ const filesUrl = HOST_LINUX_BIN && (ibx ? await tunnel(cloud, `http://127.0.0.1:
 await cloud.start(
   {
     CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
-    CLOUD_COMPUTER_USERS: process.env.CLOUD_COMPUTER_USERS ?? "*",
+    // Without a provider key nobody gets a cloud computer: one made here could never reach this cloud.
+    ...(providers ? { CLOUD_COMPUTER_USERS: process.env.CLOUD_COMPUTER_USERS ?? "*" } : {}),
     CLOUD_AUTO_STOP_SECONDS: "7200",
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,
     CLOUD_HOST_ENV: [`CODYNC_CLOUD_URL=${hostCloudUrl}`, `CODYNC_DEVICE_CERT_KEY=${cloud.certPub}`, "CODYNC_ANALYTICS_ENV=dev", ...(idle ? [`CODYNC_SLEEP_IDLE_SECS=${idle}`] : [])].join(" "),
     ...(filesUrl ? { CLOUD_HOST_BINARY_URL: `${filesUrl}/codync-host` } : {}),
   },
   { clerk: "dev" },
-);
+).catch(async (e: unknown) => {
+  console.error(String(e));
+  await shutdown(1);
+});
 
 const port = cloud.port;
+if (process.env.CODYNC_STACK_INFO) writeFileSync(process.env.CODYNC_STACK_INFO, JSON.stringify({ url: cloud.url, certPub: cloud.certPub }));
 console.log(`
 Local cloud for Codync Dev apps: ${cloud.url} (dev Clerk sign-ins; test account: any name+clerk_test@example.com, code 424242)
   iOS simulator:    SIMCTL_CHILD_CODYNC_CLOUD_URL=${cloud.url} xcrun simctl launch <udid> com.pokai.Codync.ios.dev
-  Desktop sandbox:  CODYNC_CLOUD_URL=${cloud.url} npm run dev   (in apps/desktop)
+  Desktop sandbox:  CODYNC_CLOUD_URL=${cloud.url} CODYNC_DEVICE_CERT_KEY=${cloud.certPub} npm run dev -- --cloud   (in apps/desktop)
   Android emulator: adb -s <serial> reverse tcp:${port} tcp:${port}, built with -PcodyncCloudUrl=${cloud.url} plus -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl
-Cloud computers: ${HOST_LINUX_BIN ? `boot ${HOST_LINUX_BIN}` : "boot the released host"}; ${ibx ? `they reach this cloud at ${hostCloudUrl}` : "each new one is forwarded here"}. Ctrl-C to stop.
-Keys to paste in the app: ${[key && "Boat: the one in BOAT_API_KEY_FILE (limited to the codync environment)", ibx && "InstaBox: the one in INSTABOX_API_KEY_FILE"].filter(Boolean).join("; ")}.
+${
+  providers
+    ? `Cloud computers: ${HOST_LINUX_BIN ? `boot ${HOST_LINUX_BIN}` : "boot the released host"}; ${ibx ? `they reach this cloud at ${hostCloudUrl}` : "each new one is forwarded here"}.
+Keys to paste in the app: ${[key && "Boat: the one in BOAT_API_KEY_FILE (limited to the codync environment)", ibx && "InstaBox: the one in INSTABOX_API_KEY_FILE"].filter(Boolean).join("; ")}.`
+    : "Cloud computers: off (start with BOAT_API_KEY_FILE or INSTABOX_API_KEY_FILE to test them)."
+} Ctrl-C to stop.
 `);
 
 const forwarded = new Set<string>();
-const watch = setInterval(async () => {
+watch = setInterval(async () => {
   if (!key) return;
   const rows = await cloud.d1("SELECT provider_id FROM cloud_machines WHERE provider = 'boat' AND state != 'deleted'").catch(() => []);
   for (const row of rows) {
@@ -66,17 +95,3 @@ const watch = setInterval(async () => {
     console.log(`cloud computer ${id}: forwarded`);
   }
 }, 5000);
-
-let stopping = false;
-process.on("SIGINT", async () => {
-  if (stopping) return;
-  stopping = true;
-  clearInterval(watch);
-  console.log("\nstopping: deleting the test machines");
-  if (key) await sweep(key, 0).catch((e) => console.error(String(e)));
-  if (ibx) await sweepInstabox(ibx, 0).catch((e) => console.error(String(e)));
-  files.close();
-  await cloud.cleanup();
-  release();
-  process.exit(0);
-});

@@ -18,7 +18,7 @@ import { Channel, FakePhone, parsePairing, waitFor, type Json, type PairingInfo,
 
 const HOST_BIN = process.env.CODYNC_HOST_BIN ?? join(ROOT, "host/target/debug/codync-host");
 const FAKE_AGENT = join(ROOT, "host/tests/fake_agent.py");
-const local = new LocalCloud(Number(process.env.CODYNC_E2E_CLOUD_PORT ?? 8787));
+const local = new LocalCloud(Number(process.env.CODYNC_E2E_CLOUD_PORT ?? (await freePort())));
 const CLOUD = local.url;
 const tmp = local.tmp;
 const home = join(tmp, "home");

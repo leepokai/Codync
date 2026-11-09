@@ -82,21 +82,26 @@ export interface UpdateOrder {
 
 /**
  * A cloud computer's update that can't wait: an app of its owner needs a newer host (`minHost`), or an
- * emergency floor (`HOST_FLOOR`). Installed at once, also mid-task (bots' sessions resume). The target is
- * exactly the version needed, the oldest release that works for that app, so older apps keep working.
+ * emergency floor (`HOST_FLOOR`). Installed at once, also mid-task (bots' sessions resume). The target is the
+ * oldest known release (`host_releases`) at or above the version needed, so older apps keep working: that version
+ * itself, unless `dev` bumped past it before it was released. While no known release reaches it (the release gate
+ * still holds it), the version needed as is.
  */
 export async function urgentUpdate(env: Env, comp: ComputerRow, now: number): Promise<UpdateOrder | null> {
   if (!comp.owner_user_id) return null;
   const { neededHost } = await recent(env, comp.owner_user_id, now);
   const floor = env.HOST_FLOOR && VERSION.test(env.HOST_FLOOR) ? env.HOST_FLOOR : null;
-  const target = highest([neededHost, floor]);
-  return target && compareVersions(target, comp.version) > 0 ? { version: target, force: true } : null;
+  const needed = highest([neededHost, floor]);
+  if (!needed || compareVersions(needed, comp.version) <= 0) return null;
+  const { results } = await env.DB.prepare("SELECT version FROM host_releases").all<{ version: string }>();
+  const published = lowest(results.map((r) => r.version).filter((v) => compareVersions(v, needed) >= 0));
+  return { version: published ?? needed, force: true };
 }
 
 /**
- * The cloud soft update, offered when the host asks to sleep: the newest published release (up to GitHub's
- * latest) that every device of the last 30 days can use (`minApp` at most the oldest app) and that is at least
- * the host they need. Devices that never reported a version don't hold it back.
+ * The cloud soft update, offered when the host asks to sleep: the newest published release (up to its release
+ * channel's latest) that every device of the last 30 days can use (`minApp` at most the oldest app) and that is at
+ * least the host they need. Devices that never reported a version don't hold it back.
  */
 export async function softUpdate(env: Env, comp: ComputerRow, now: number): Promise<UpdateOrder | null> {
   if (!comp.owner_user_id) return null;

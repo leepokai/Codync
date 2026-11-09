@@ -7,6 +7,17 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.43.1
+### zh-Hant
+- 新功能 Codync Cloud（Beta）：登入 Codync 帳號後，可以在你自己的 Boat（歐洲）或 InstaBox（美國）帳號上開雲端電腦，你的電腦沒開，bot 也能工作。Codync 不收費，機器由供應商依它的方案向你的帳號收費。在「管理電腦」的 Codync Cloud 區塊按 +。
+- 雲端電腦閒置時會睡著，傳訊息給它的 bot 就會醒來。每個帳號最多三台，各自命名。
+- 還沒有 InstaBox 帳號？它的免費方案有一台機器，在 InstaBox 的 key 頁面點「Get a free sandbox」。
+
+### en-US
+- New: Codync Cloud (beta). Signed in, start a cloud computer on your own Boat (EU) or InstaBox (US) account, so bots work while your computer is off. Codync charges nothing; the provider bills you under its plan. Manage computers, then + under Codync Cloud.
+- It sleeps while idle and wakes when you message one of its bots. Up to three per account.
+- No InstaBox account yet? Its free plan includes one machine: choose Get a free sandbox on InstaBox's key sheet.
+
 ## 2.42.2
 ### zh-Hant
 - 第一次用 Google、GitHub 或 Apple 登入的新使用者，現在能直接建立帳號；之前會回到歡迎畫面，帳號沒有建立。

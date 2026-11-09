@@ -1787,5 +1787,6 @@
   "Not connected": "연결 안 됨",
   "Open channels in Extensions": "확장에서 채널 열기",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack, Discord: 이미 쓰는 곳에서 허용한 사람과만 봇과 대화하세요.",
-  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "WhatsApp, Telegram, Slack, Discord에서 봇과 대화하세요. 페어링하거나 허용한 사람만 글을 쓸 수 있으며 토큰은 이 컴퓨터의 보관소에 남습니다."
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "WhatsApp, Telegram, Slack, Discord에서 봇과 대화하세요. 페어링하거나 허용한 사람만 글을 쓸 수 있으며 토큰은 이 컴퓨터의 보관소에 남습니다.",
+  "Duplicate": "복제"
 }

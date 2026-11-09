@@ -9,7 +9,7 @@ use crate::screen::Screen;
 use crate::service;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, Store};
 use crate::usage::Usage;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -281,6 +281,24 @@ impl Hub {
 
     pub fn bot_name(&self, id: &str) -> String {
         self.store.bot(id).ok().flatten().map_or_else(|| "A deleted bot".into(), |b| b.config.name)
+    }
+
+    /// Copies a bot's setup into a new one: same agent, folder, permissions, skills and persona, but no
+    /// conversation, no pinned/lead place and no owner. Groups are not copied.
+    pub fn duplicate_bot(self: &Arc<Self>, id: &str) -> Result<Value> {
+        let row = self.store.bot(id)?.filter(|b| !b.deleted).context("unknown bot")?;
+        if row.config.is_group() {
+            bail!("a group is made from its bots, not copied");
+        }
+        let mut cfg = row.config;
+        let taken: Vec<String> = self.store.bots()?.into_iter().map(|b| b.config.name).collect();
+        cfg.name = copy_name(&taken, &cfg.name);
+        cfg.pinned = false;
+        cfg.lead = false;
+        cfg.hidden = false;
+        cfg.created_by = None;
+        cfg.auto_name = false;
+        self.create_bot(cfg)
     }
 
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
@@ -653,5 +671,30 @@ impl Hub {
 
     pub fn phone_connected(&self) -> bool {
         self.phone_clients.load(Ordering::Relaxed) > 0
+    }
+}
+
+/// `Name (2)`, `Name (3)`: the first copy name the roster does not use yet.
+fn copy_name(taken: &[String], base: &str) -> String {
+    let base = if base.trim().is_empty() { "Bot" } else { base.trim() };
+    for n in 2..1000 {
+        let candidate = format!("{base} ({n})");
+        if !taken.iter().any(|name| name == &candidate) {
+            return candidate;
+        }
+    }
+    format!("{base} (copy)")
+}
+
+#[cfg(test)]
+mod copy_name_tests {
+    use super::copy_name;
+
+    #[test]
+    fn copies_are_numbered_around_the_names_in_use() {
+        let taken = vec!["Desk".to_string(), "Desk (2)".to_string()];
+        assert_eq!(copy_name(&taken, "Desk"), "Desk (3)");
+        assert_eq!(copy_name(&[], "Desk"), "Desk (2)");
+        assert_eq!(copy_name(&[], "  "), "Bot (2)");
     }
 }

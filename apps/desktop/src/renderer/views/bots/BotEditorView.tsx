@@ -289,6 +289,17 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   return (
     <div className="bot-form">
       <div className="bot-form-content">
+        {part === 'all' && saved ? (
+          <CardSection key="overview" title="Overview">
+            <ValueRow label="Agent">{backend?.name ?? draft.backend}</ValueRow>
+            <ValueRow label="Model">{draft.model ?? 'Default'}</ValueRow>
+            <ValueRow label="Folder"><Text truncate>{draft.cwd}</Text></ValueRow>
+            <ValueRow label="Permissions">{draft.permission === 'auto' ? 'Approves automatically' : 'Asks before acting'}</ValueRow>
+            <ValueRow label="Skills">{String((draft.skills ?? []).length)}</ValueRow>
+            <ValueRow label="Connectors">{String((draft.connectors ?? []).length)}</ValueRow>
+            <ValueRow label="Computer">{draft.computer ? 'Can use it' : 'Off'}</ValueRow>
+          </CardSection>
+        ) : null}
         <CardSection title="Profile">
           <ValueRow label="Avatar">
             <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>

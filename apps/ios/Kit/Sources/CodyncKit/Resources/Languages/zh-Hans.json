@@ -1787,5 +1787,6 @@
   "Not connected": "未连接",
   "Open channels in Extensions": "在扩展中打开渠道",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp、Telegram、Slack 和 Discord：在你日常书写的地方与机器人对话，仅限你允许的人。",
-  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "通过 WhatsApp、Telegram、Slack 或 Discord 与机器人对话。只有你配对或允许的人才能写入；令牌留在此电脑的保管库。"
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "通过 WhatsApp、Telegram、Slack 或 Discord 与机器人对话。只有你配对或允许的人才能写入；令牌留在此电脑的保管库。",
+  "Duplicate": "复制"
 }

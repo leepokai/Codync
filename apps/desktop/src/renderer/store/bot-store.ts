@@ -462,6 +462,15 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('deleteBot', { botId: bot.id }), true)
   }
 
+  /** Copies the bot's setup into a new one; the host names it and adds it to the roster. */
+  async duplicateBot(bot: Bot): Promise<Bot> {
+    const res = await (await this.ready()).call<{ bot: Bot }>('duplicateBot', { botId: bot.id })
+    const copy = this.putHostBot(normalizeBot(res.bot))
+    this.onRosterChanged?.()
+    this.changed()
+    return copy
+  }
+
   /** Creates a group chat (or opens the one these bots already share) and selects it. */
   async createGroup(name: string, description: string, members: string[], chiefBotId: string | null = null) {
     const draft: GroupDraft = { kind: 'group', name, description, members, chiefBotId }

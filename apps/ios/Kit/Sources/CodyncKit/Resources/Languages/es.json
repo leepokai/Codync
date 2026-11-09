@@ -1787,5 +1787,6 @@
   "Not connected": "Sin conectar",
   "Open channels in Extensions": "Abrir canales en Extensiones",
   "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.": "WhatsApp, Telegram, Slack y Discord: habla con un bot desde donde ya escribes, solo con las personas que permitas.",
-  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Habla con un bot desde WhatsApp, Telegram, Slack o Discord. Solo pueden escribir las personas que emparejes o permitas; los tokens se quedan en la bóveda de este equipo."
+  "Talk to a bot from WhatsApp, Telegram, Slack or Discord. Only people you pair or allow can write to it; tokens stay in this computer's credential vault.": "Habla con un bot desde WhatsApp, Telegram, Slack o Discord. Solo pueden escribir las personas que emparejes o permitas; los tokens se quedan en la bóveda de este equipo.",
+  "Duplicate": "Duplicar"
 }

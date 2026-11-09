@@ -214,6 +214,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
             json!({})
         }
+        "duplicateBot" => {
+            let hub = hub.clone();
+            let id = str_arg(&b, "botId")?.to_owned();
+            json!({"bot": tokio::task::spawn_blocking(move || hub.duplicate_bot(&id)).await??})
+        }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
             json!({})

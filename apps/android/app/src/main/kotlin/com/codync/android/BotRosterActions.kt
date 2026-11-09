@@ -100,6 +100,7 @@ internal fun botRosterActions(bot: Bot, store: AppStore, edit: () -> Unit, delet
                 store.markBotRead(bot)
             },
         )
+        if (bot.kind != "group") add(MenuItem("Duplicate", icon = "square.on.square") { store.duplicateBot(bot) })
         if (bot.kind != "group") add(MenuItem("New session", icon = "arrow.counterclockwise", action = newSession))
         if (!bot.lead) add(
             MenuItem("Hide from list", icon = "eye.slash") {

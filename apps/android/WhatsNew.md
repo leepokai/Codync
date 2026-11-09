@@ -38,6 +38,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 頻道畫面會顯示這台電腦的 Telegram 機器人、Discord、Slack 與 GitHub；可以替機器人配對對象或把人移除。
 - WhatsApp 現在有自己的一列，從擴充功能市集也能開啟連結畫面。
 - 工作流程的連線可以指定目標機器人那一輪要用的模型與選項。
+- 每個聊天都可以有討論串：從任何訊息或列表開啟，回覆留在討論串裡，聊天只顯示回覆數。
+- 語音通話新增 ElevenLabs：使用你自己的金鑰，由 Scribe 聽你說話、帳號中的聲音讀出回覆；測試會唸出「OK」。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -68,6 +70,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Channels shows the computer's Telegram bots, Discord, Slack and GitHub from this phone; pair someone to a bot or take them out.
 - WhatsApp has its own row in Extensions, and the linked number stays reachable from computer management.
 - A workflow link can name the model and its options for the target bot's turn.
+- Every chat can have threads: open one from any message or the list; replies stay in the thread and the chat shows a "3 replies" chip.
+- Voice calls add ElevenLabs: on your own key, Scribe hears you and the account's own voices read replies; Test says "OK".
 
 ## 2.32.0
 

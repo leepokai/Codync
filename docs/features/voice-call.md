@@ -61,8 +61,8 @@ window takes the speech helper; it doesn't stop on a pause. On the iPhone the pi
 was recognized so far. The desktop island's message field has the same mic and pill.
 
 A `chevron.up` beside the composer's mic picks dictation's engine, kept on the device apart from the
-call engine (`dictationEngine`): **On device** (the above), or **OpenAI** / **Gemini** on the user's
-own key. With a provider, the mic first checks that the computer holds its key (`voiceStatus`; no key
+call engine (`dictationEngine`): **On device** (the above), or **OpenAI** / **Gemini** /
+**ElevenLabs** on the user's own key. With a provider, the mic first checks that the computer holds its key (`voiceStatus`; no key
 opens Voice chat settings before anything is recorded), then records; the pill (and its time) appears only once
 the microphone is open, so nothing said before it is lost; nothing is typed while recording. The
 pill's stop turns the pill into "Transcribing…" and the whole recording goes through
@@ -185,7 +185,7 @@ and remembers it. The picker offers OpenAI, Gemini and ElevenLabs.
 | Gemini | Google AI Studio key on the computer | WebSocket, device ↔ Google (default `gemini-3.8-live`) | `GeminiLiveEngine` |
 | ElevenLabs | ElevenLabs API key on the computer | Speech mode only: Scribe hears, ElevenLabs voices speak (defaults `scribe_v1`, `eleven_flash_v2_5`) | `CloudSpeechEngine` |
 
-OpenAI and Gemini each have two **modes**:
+OpenAI and Gemini each have two **modes** (ElevenLabs has only Speech):
 
 - **Realtime**: a live conversation with the provider's realtime model (below), talk over replies.
 - **Speech** (`CloudSpeechEngine`): the on-device loop with the provider's models instead of Apple's.

@@ -99,7 +99,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         slug: "voice",
         title: "Voice",
         description:
-          "Talk to a bot in a hands-free voice call, or dictate into the message box, with on-device speech or OpenAI and Gemini on your own API key.",
+          "Talk to a bot in a hands-free voice call, or dictate into the message box, with on-device speech or OpenAI, Gemini and ElevenLabs on your own API key.",
       },
     ],
   },

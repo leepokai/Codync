@@ -1,8 +1,14 @@
+import { centeringOffset, offsetToShow } from './find-position'
 import { findSpans, type TextRun } from './text-find'
 
-/** Finding text in the conversation on screen, drawn with the page's own highlights (`::highlight(find-match)`, `find-active`). */
-const BLOCKS = 'p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, tr, td, th, table, section, article, button, div'
-const SKIPPED = 'script, style, [aria-hidden="true"]'
+/**
+ * Finding text in the conversation on screen, drawn with the page's own highlights (`::highlight(find-match)`,
+ * `find-active`). Views mark what the find treats specially: `data-find-block` on an element that holds text of its
+ * own without being one of these tags (a table cell drawn as a span in a grid), `data-find-skip` on the transcript's
+ * own text that isn't the conversation (Load earlier messages, an empty chat's hints).
+ */
+const BLOCKS = '[data-find-block], p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, tr, td, th, table, section, article, button, div'
+const SKIPPED = 'script, style, [aria-hidden="true"], [data-find-skip]'
 
 type VisibilityCheck = { checkVisibility?: (options?: { checkVisibilityCSS?: boolean }) => boolean }
 
@@ -48,26 +54,42 @@ export function clearPaint() {
   CSS.highlights.delete('find-active')
 }
 
-/** The ancestors that scroll vertically, innermost first (a card with its own scroll sits inside the transcript's). */
-function scrollers(from: Element | null): Element[] {
-  const found: Element[] = []
+const SCROLLING = new Set(['auto', 'scroll'])
+
+/** A box around the match that scrolls, and on which axes. */
+interface Scroller {
+  el: Element
+  x: boolean
+  y: boolean
+}
+
+/** The ancestors that scroll, innermost first (a wide table or code block scrolls sideways inside the transcript). */
+function scrollers(from: Element | null): Scroller[] {
+  const found: Scroller[] = []
   for (let el = from; el; el = el.parentElement) {
-    const overflow = getComputedStyle(el).overflowY
-    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) found.push(el)
+    const style = getComputedStyle(el)
+    const x = SCROLLING.has(style.overflowX) && el.scrollWidth > el.clientWidth
+    const y = SCROLLING.has(style.overflowY) && el.scrollHeight > el.clientHeight
+    if (x || y) found.push({ el, x, y })
   }
   return found
 }
 
-/** Scrolls the match itself (not the block it sits in: a long message or code block holds many) to the middle, in every box that scrolls around it. */
+/**
+ * Scrolls the match itself (not the block it sits in: a long message or code block holds many) into view in every box
+ * that scrolls around it: to the middle top to bottom, and sideways only when it is out of sight.
+ */
 export function reveal(range: Range) {
   const parent = range.startContainer.parentElement
   const views = scrollers(parent)
-  if (views.length === 0 || (range.getBoundingClientRect().width === 0 && range.getBoundingClientRect().height === 0)) {
-    return void parent?.scrollIntoView({ block: 'center' })
-  }
-  for (const view of views) {
+  const first = range.getBoundingClientRect()
+  if (views.length === 0 || (first.width === 0 && first.height === 0)) return void parent?.scrollIntoView({ block: 'center' })
+  for (const { el, x, y } of views) {
     const rect = range.getBoundingClientRect()
-    const box = view.getBoundingClientRect()
-    view.scrollBy({ top: rect.top - box.top - (view.clientHeight - rect.height) / 2 })
+    const box = el.getBoundingClientRect()
+    el.scrollBy({
+      top: y ? centeringOffset({ start: rect.top, size: rect.height }, { start: box.top + el.clientTop, size: el.clientHeight }) : 0,
+      left: x ? offsetToShow({ start: rect.left, size: rect.width }, { start: box.left + el.clientLeft, size: el.clientWidth }) : 0,
+    })
   }
 }

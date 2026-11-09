@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FindState } from '../lib/find-label'
+import { keptMatch } from '../lib/find-position'
 import { clearPaint, findRanges, paint, reveal } from '../lib/transcript-find'
 import { analytics } from '../store/analytics'
 
@@ -8,6 +9,9 @@ const NONE: FindState = { active: 0, matches: 0 }
 const SETTLE_MS = 700
 /** New messages and streaming text change the page in bursts: look again once they pause. */
 const REFRESH_MS = 200
+
+/** Which of two matches starts first in the page. */
+const startOrder = (a: Range, b: Range) => a.compareBoundaryPoints(Range.START_TO_START, b)
 
 /**
  * Find in the open conversation (⌘F): the matches of `query` in the transcript, the current one, and stepping
@@ -32,20 +36,21 @@ export function useConversationFind(root: () => HTMLElement | null) {
     if (scroll && current) reveal(current)
   }, [])
 
+  /** Searches the transcript again: from the first match for a new text, or staying on the current one as the page changes. */
   const search = useCallback(
-    (text: string, scroll: boolean) => {
+    (text: string, from: 'first' | 'current') => {
       const element = rootRef.current()
+      const previous = ranges.current[active.current]
       ranges.current = element ? findRanges(element, text) : []
-      show(scroll)
+      if (from === 'first') active.current = 0
+      // Page ranges are live: the current one still marks the same text after messages went in above it.
+      else if (previous?.startContainer.isConnected) active.current = keptMatch(ranges.current, previous, startOrder)
+      show(from === 'first')
     },
     [show],
   )
 
-  // A new text starts from its first match.
-  useEffect(() => {
-    active.current = 0
-    search(query, true)
-  }, [query, search])
+  useEffect(() => search(query, 'first'), [query, search])
 
   // Counted once per text searched, when typing pauses or a step is taken, as whether it found anything; never the text.
   const report = useCallback(() => {
@@ -65,7 +70,7 @@ export function useConversationFind(root: () => HTMLElement | null) {
     let timer: ReturnType<typeof setTimeout> | undefined
     const observer = new MutationObserver(() => {
       clearTimeout(timer)
-      timer = setTimeout(() => search(query, false), REFRESH_MS)
+      timer = setTimeout(() => search(query, 'current'), REFRESH_MS)
     })
     observer.observe(element, { subtree: true, childList: true, characterData: true })
     return () => {

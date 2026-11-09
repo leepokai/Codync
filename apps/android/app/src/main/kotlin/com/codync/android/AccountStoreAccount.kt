@@ -17,7 +17,10 @@ internal fun AccountStore.signIn(provider: SignInProvider) = sessionAction {
         NativeAccounts.signIn(provider)
     } catch (error: CancellationException) { throw error }
     catch (error: Exception) {
-        Analytics.capture(AnalyticsEvent.SignInFailed(provider, (error as? SignInError)?.reason ?: SignInFailure.Error))
+        val reason = (error as? SignInError)?.reason ?: SignInFailure.Error
+        Analytics.capture(AnalyticsEvent.SignInFailed(provider, reason))
+        // The user closed the browser: no error to show, as on the iPhone.
+        if (reason == SignInFailure.Cancelled) return@sessionAction
         throw error
     }
     // Clerk holds the new session already, so this counts toward the account.

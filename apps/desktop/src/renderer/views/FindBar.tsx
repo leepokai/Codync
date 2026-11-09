@@ -14,6 +14,7 @@ const transcript = () => document.querySelector<HTMLElement>('[data-find-root]')
 export function FindBar({ focusKey, onClose }: { focusKey: number; onClose: () => void }) {
   const tr = useTr()
   const input = useRef<HTMLInputElement>(null)
+  const bar = useRef<HTMLDivElement>(null)
   const { query, setQuery, state, step } = useConversationFind(transcript)
 
   // ⌘F again puts the cursor back in the field with the text selected, ready to be replaced.
@@ -35,18 +36,13 @@ export function FindBar({ focusKey, onClose }: { focusKey: number; onClose: () =
     e.preventDefault()
     step(!e.shiftKey)
   }
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Escape') return
-    e.preventDefault()
-    e.stopPropagation()
-    onClose()
-  }
+  useEscapeLast(bar, onClose)
 
   const label = findLabel(query, state, tr('No results'))
   const none = !!query.trim() && state.matches === 0
   const title = tr('Find in conversation')
   return (
-    <div className="find-bar" role="search" onKeyDown={onKey}>
+    <div ref={bar} className="find-bar" role="search">
       <Icon name="magnifyingglass" size={13} color="var(--secondary)" />
       <input ref={input} value={query} placeholder={title} aria-label={title} spellCheck={false} onChange={(e) => setQuery(e.target.value)} onKeyDown={onInputKey} />
       {label ? (
@@ -59,4 +55,25 @@ export function FindBar({ focusKey, onClose }: { focusKey: number; onClose: () =
       <IconButton title="Close" icon="xmark" size={24} onClick={onClose} />
     </div>
   )
+}
+
+/**
+ * Escape closes the bar wherever focus is (its field, the composer, the chat), once nothing else took the key: a dialog
+ * or menu opened over it (`useEscape` stops the key; the account panel and the composer's reply and `/` list prevent
+ * its default), an input method's candidate, or a modal that made the page under the bar inert.
+ */
+function useEscapeLast(bar: React.RefObject<HTMLElement | null>, onEscape: () => void) {
+  const handler = useRef(onEscape)
+  handler.current = onEscape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return
+      // Decided once the key has reached every listener: a menu that opened after the bar hears it after this one.
+      setTimeout(() => {
+        if (!e.defaultPrevented && !bar.current?.closest('[inert]')) handler.current()
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [bar])
 }
